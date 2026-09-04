@@ -45,9 +45,7 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
             <Text key={index} size="sm" style={{ overflowWrap: "anywhere" }}>
               {rule.hosts.join(", ")} · {rule.methods ? rule.methods.join(" ") : "any method"} ·{" "}
               {rule.paths ? rule.paths.join(", ") : "any path"}
-              {rule.credential
-                ? ` · ${rule.credential.header} from ${rule.credential.secret}/${rule.credential.key}`
-                : " · no credential"}
+              {rule.credential ? ` · credential ${rule.credential}` : " · no credential"}
             </Text>
           ))}
         </Stack>

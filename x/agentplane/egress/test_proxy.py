@@ -30,6 +30,7 @@ from x.agentplane.egress.conftest import (
     PLACEHOLDER,
     POD_A_IP,
     SANDBOX_A,
+    SCHEME,
     SECRET_NAME,
     SECRET_VALUE,
     TOKEN_A,
@@ -331,8 +332,11 @@ async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest)
     view = json.loads(response.body)
     assert view["sandbox"] == SANDBOX_A
     credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
-    assert any(c is not None and c["placeholder"] == PLACEHOLDER for c in credentials), view
-    assert PLACEHOLDER in response.body.decode()
+    presented = one(c for c in credentials if c is not None)
+    assert presented["placeholder"] == PLACEHOLDER, view
+    # The targets, not the placeholder alone: without the scheme a sandbox sends the placeholder
+    # bare and the upstream refuses the substituted value.
+    assert {"header": "Authorization", "method": "schemeToken", "scheme": SCHEME} in presented["targets"], view
     assert SECRET_VALUE not in response.body.decode(), "the proxy handed the sandbox the real credential"
 
 

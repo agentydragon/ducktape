@@ -1,8 +1,9 @@
-"""List-and-watch over the four kinds the decision reads, into one `Index`, plus binding status.
+"""List-and-watch over the five kinds the decision reads, into one `Index`, plus binding status.
 
 The loop itself is `x.agentplane.kubernetes_watch`; this names the kinds and folds each into the `Index`.
-Three namespaces, and the split is the point: policies and bindings are read from the operator's
-namespace, Sandboxes from the one their Pods run in, Secrets from the credentials namespace.
+Three namespaces, and the split is the point: policies, bindings and credentials are read from the
+operator's namespace, Sandboxes from the one their Pods run in, Secrets -- the credentials' values,
+which only the proxy ever holds -- from the credentials namespace.
 
 Bindings' `status` is derived from the index whenever policies or bindings change and when the
 nearest expiry passes, and written through the status subresource only when it differs from what
@@ -25,6 +26,7 @@ from util.kubernetes import CustomObjectsClient
 from x.agentplane.egress.policy import Index, binding_status
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
     GROUP,
     POLICIES_PLURAL,
     SANDBOX_GROUP,
@@ -32,6 +34,7 @@ from x.agentplane.egress.resources import (
     SANDBOXES_PLURAL,
     VERSION,
     EgressBinding,
+    EgressCredential,
     EgressPolicy,
     Sandbox,
     Secret,
@@ -48,6 +51,11 @@ _STATUS_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL})
 def _parse_policy(raw: dict[str, Any]) -> tuple[str, EgressPolicy]:
     policy = EgressPolicy.model_validate(raw)
     return policy.metadata.name, policy
+
+
+def _parse_credential(raw: dict[str, Any]) -> tuple[str, EgressCredential]:
+    credential = EgressCredential.model_validate(raw)
+    return credential.metadata.name, credential
 
 
 def _parse_binding(raw: dict[str, Any]) -> tuple[str, EgressBinding]:
@@ -100,6 +108,14 @@ class Informer:
                     parse=_parse_binding,
                     names=lambda: set(index.bindings),
                     apply=lambda name, obj: apply_to(index.bindings, name, obj),
+                ),
+                WatchedKind(
+                    name=CREDENTIALS_PLURAL,
+                    list=custom_objects.list_namespaced_custom_object,
+                    args=(GROUP, VERSION, namespace, CREDENTIALS_PLURAL),
+                    parse=_parse_credential,
+                    names=lambda: set(index.credentials),
+                    apply=lambda name, obj: apply_to(index.credentials, name, obj),
                 ),
                 WatchedKind(
                     name=SANDBOXES_PLURAL,

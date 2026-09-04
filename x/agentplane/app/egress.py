@@ -72,21 +72,15 @@ class _ObjectMeta(_Wire):
     labels: dict[str, str] = Field(default_factory=dict)
 
 
-class _SecretKeyRef(_Wire):
+class _CredentialRef(_Wire):
     name: str
-    key: str
-
-
-class _Credential(_Wire):
-    secret_ref: _SecretKeyRef = Field(alias="secretRef")
-    header: str
 
 
 class _Rule(_Wire):
     hosts: list[str]
     methods: list[str] | None = None
     paths: list[str] | None = None
-    credential: _Credential | None = None
+    credential_ref: _CredentialRef | None = Field(alias="credentialRef", default=None)
 
 
 class _PolicySpec(_Wire):
@@ -129,23 +123,17 @@ class _ResourceList(_Wire):
 # API views.
 
 
-class CredentialView(BaseModel):
-    """The credential a rule substitutes, by name: the value lives only in the proxy."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    secret: str
-    key: str
-    header: str = Field(description="The request header the proxy rewrites.")
-
-
 class RuleView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hosts: list[str]
     methods: list[str] | None = Field(default=None, description="Absent admits any method.")
     paths: list[str] | None = Field(default=None, description="Absent admits any path.")
-    credential: CredentialView | None = None
+    credential: str | None = Field(
+        default=None,
+        description="The EgressCredential this rule lets a subject present. Where it goes and what "
+        "it draws from is the credential's own object; the value only ever reaches the proxy.",
+    )
 
 
 class PolicyView(BaseModel):
@@ -292,13 +280,7 @@ def _policy_view(policy: _EgressPolicy) -> PolicyView:
                 hosts=rule.hosts,
                 methods=rule.methods,
                 paths=rule.paths,
-                credential=CredentialView(
-                    secret=rule.credential.secret_ref.name,
-                    key=rule.credential.secret_ref.key,
-                    header=rule.credential.header,
-                )
-                if rule.credential is not None
-                else None,
+                credential=None if rule.credential_ref is None else rule.credential_ref.name,
             )
             for rule in policy.spec.rules
         ],

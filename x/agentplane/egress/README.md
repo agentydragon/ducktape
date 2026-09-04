@@ -11,14 +11,16 @@ bbr test //x/agentplane/egress/...
 
 ## Layout
 
-- `resources.py`: the boundary models of the two kinds, Sandboxes, and Secrets as read off the
-  API server.
+- `resources.py`: the boundary models of the three kinds, Sandboxes, and Secrets as read off the
+  API server; the derivation of a credential's placeholder from its name.
+- `presentation.py`: one parse per declared target, shared by detection and substitution — where a
+  credential's placeholder sits in a request, and how to put the real value there.
 - `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching rule
   the request's placeholder directs it to, substitution, binding status. No I/O.
 - `identity.py`: TokenReview, live Pod lookup, Sandbox owner, and the bounded verdict cache.
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
   globally reachable, and pinned so the dial goes to the address checked.
-- `informer.py`: list-and-watch of the four kinds into the `Index`, and the binding status
+- `informer.py`: list-and-watch of the five kinds into the `Index`, and the binding status
   writes.
 - `addon.py`: the mitmproxy addon gating CONNECTs and requests; `decisions.py` the ring and the
   JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
@@ -41,8 +43,8 @@ cluster manifests' concern (`cluster/k8s/agentplane-staging`).
 
 ## ServiceAccount permissions
 
-In the sandbox namespace: `get`, `list`, `watch` on `egresspolicies`, `egressbindings` and
-`sandboxes.agents.x-k8s.io`; `get` on `pods`; `patch` on `egressbindings/status`. In the
+In the sandbox namespace: `get`, `list`, `watch` on `egresspolicies`, `egressbindings`,
+`egresscredentials` and `sandboxes.agents.x-k8s.io`; `get` on `pods`; `patch` on `egressbindings/status`. In the
 credentials namespace (`--credentials-namespace`, `agentplane-egress-credentials` by default):
 `get`, `list`, `watch` on `secrets`, and nothing in the sandbox namespace. Cluster-wide: `create`
 on `tokenreviews.authentication.k8s.io`. The `EgressBinding` CRD must enable the `status`

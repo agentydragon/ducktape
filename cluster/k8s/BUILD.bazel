@@ -51,6 +51,7 @@ filegroup(
 exports_files(
     [
         "agentplane-crds/crd-egressbindings.yaml",
+        "agentplane-crds/crd-egresscredentials.yaml",
         "agentplane-crds/crd-egresspolicies.yaml",
         "agents/public-coder-agent/app/deployment.yaml",
         "agents/public-coder-agent/proxy/cnp-egress.yaml",

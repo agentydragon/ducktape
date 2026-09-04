@@ -553,6 +553,7 @@ py_test(
     srcs = ["test_agentplane_crd_schemas.py"],
     data = [
         "//cluster/k8s:agentplane-crds/crd-egressbindings.yaml",
+        "//cluster/k8s:agentplane-crds/crd-egresscredentials.yaml",
         "//cluster/k8s:agentplane-crds/crd-egresspolicies.yaml",
         "//cluster/schemas",
     ],

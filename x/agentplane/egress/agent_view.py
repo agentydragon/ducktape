@@ -1,15 +1,18 @@
 """What a sandbox may know about its own egress.
 
 An agent cannot act on rules it cannot read. Without this it has to be told out of band which hosts
-it may reach and which placeholder stands in for a credential -- and being told out of band means a
+it may reach and how to present a credential it does not hold -- and being told out of band means a
 prompt, a hardcoded constant in a test, or a guess.
 
+What a sandbox is told about a credential is its placeholder and every target it may be presented
+in: the header, the shape of the value, and the scheme where the shape has one. That is exactly
+enough to build a request the proxy will substitute into -- a placeholder plus a header name is not,
+because a client has to know whether the value reads `Bearer <placeholder>` or the placeholder bare.
+
 Secretless by construction, and by construction rather than by discipline: this module builds the
-projection from its own field list and never from a rule object wholesale, so a field added to
-`Credential` -- a second `secretRef`, a decrypted value, anything -- does not appear here until
-someone writes it in. What a sandbox is told about a credential is the header it goes in and the
-placeholder to put there, which is exactly what it needs to send a request and nothing that would
-help it forge one.
+projection from its own field list and never from a resource object wholesale, so a field added to
+`EgressCredential` -- a second source, a decrypted value, anything -- does not appear here until
+someone writes it in. The value source never does.
 """
 
 from __future__ import annotations
@@ -19,16 +22,29 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from x.agentplane.egress.policy import Index, subject_bindings
-from x.agentplane.egress.resources import Rule, Sandbox
+from x.agentplane.egress.resources import EgressCredential, Rule, Sandbox, SchemeTokenTarget, Target, TargetMethod
 
 
-class CredentialView(BaseModel):
-    """How to present a credential the sandbox does not hold: the header, and what to put in it."""
+class TargetView(BaseModel):
+    """One place the credential may be presented, as the client has to build it."""
 
     model_config = ConfigDict(extra="forbid")
 
-    header: str = Field(description="Request header the placeholder goes in.")
+    header: str = Field(description="Request header this presentation puts the placeholder in.")
+    method: TargetMethod = Field(description="Shape of the header value around the placeholder.")
+    scheme: str | None = Field(
+        default=None, description="The scheme `schemeToken` expects; absent for every other method."
+    )
+
+
+class CredentialView(BaseModel):
+    """How to present a credential the sandbox does not hold: what to send, and where."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
     placeholder: str = Field(description="Inert string to send; the proxy swaps the real value in.")
+    targets: list[TargetView] = Field(description="Every location the proxy substitutes at.")
 
 
 class RuleView(BaseModel):
@@ -60,15 +76,31 @@ class AgentEgressView(BaseModel):
     policies: list[PolicyView] = Field(description="Granted by an active binding; empty means no egress.")
 
 
-def _rule_view(rule: Rule) -> RuleView:
-    credential = rule.credential
+def _target_view(target: Target) -> TargetView:
+    return TargetView(
+        header=target.header,
+        method=target.method,
+        scheme=target.scheme if isinstance(target, SchemeTokenTarget) else None,
+    )
+
+
+def _credential_view(credential: EgressCredential) -> CredentialView:
+    return CredentialView(
+        name=credential.metadata.name,
+        placeholder=credential.placeholder,
+        targets=[_target_view(target) for target in credential.spec.targets],
+    )
+
+
+def _rule_view(index: Index, rule: Rule) -> RuleView:
+    # A rule naming a credential the namespace does not hold reads as no credential, which is what
+    # the decision does with it too: nothing to present, so nothing to substitute.
+    credential = None if rule.credential_ref is None else index.credentials.get(rule.credential_ref.name)
     return RuleView(
         hosts=list(rule.hosts),
         methods=list(rule.methods) if rule.methods is not None else None,
         paths=list(rule.paths) if rule.paths is not None else None,
-        credential=(
-            None if credential is None else CredentialView(header=credential.header, placeholder=credential.placeholder)
-        ),
+        credential=None if credential is None else _credential_view(credential),
     )
 
 
@@ -81,7 +113,7 @@ def agent_view(index: Index, sandbox: Sandbox, now: datetime) -> AgentEgressView
     return AgentEgressView(
         sandbox=sandbox.metadata.name,
         policies=[
-            PolicyView(name=policy.metadata.name, rules=[_rule_view(rule) for rule in policy.spec.rules])
+            PolicyView(name=policy.metadata.name, rules=[_rule_view(index, rule) for rule in policy.spec.rules])
             for resolution in subject_bindings(index, sandbox, now)
             for policy in resolution.policies
         ],

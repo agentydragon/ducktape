@@ -3,27 +3,31 @@
 `Index` is the proxy's picture of the namespace, kept equal to the API server's by the informer;
 `evaluate` answers one request for one subject against it, and `binding_status` derives the status
 the proxy writes back. Both take `now` so expiry is decided by the caller's clock.
+
+Where a credential sits in a request, and what the forwarded headers become, is `presentation.py`:
+one parse per declared target, read by detection and substitution alike.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
+from more_itertools import one
+
+from x.agentplane.egress.presentation import HeaderRewrite, Presentation, present
 from x.agentplane.egress.resources import (
     ACTIVE_CONDITION,
     ActiveReason,
     BindingStatus,
     Condition,
     ConditionStatus,
-    Credential,
     EgressBinding,
+    EgressCredential,
     EgressPolicy,
     Rule,
     Sandbox,
@@ -56,6 +60,7 @@ class Index:
 
     policies: dict[str, EgressPolicy] = field(default_factory=dict)
     bindings: dict[str, EgressBinding] = field(default_factory=dict)
+    credentials: dict[str, EgressCredential] = field(default_factory=dict)
     sandboxes: dict[str, Sandbox] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
     synced: bool = field(default=False)
@@ -92,19 +97,11 @@ class EgressRequest:
 
 
 @dataclass(frozen=True)
-class Substitution:
-    """The one header to rewrite before forwarding, already rewritten."""
-
-    header: str
-    values: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class Allowed:
     binding: str
     policy: str
     rule: int
-    substitution: Substitution | None = None
+    rewrites: tuple[HeaderRewrite, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -228,18 +225,6 @@ class _Match:
     rule: Rule
 
 
-@dataclass(frozen=True)
-class _Placeholder:
-    """What a request presents and a credential resolves: the string, and the header it sits in."""
-
-    header: str
-    text: str
-
-    @classmethod
-    def of(cls, credential: Credential) -> _Placeholder:
-        return cls(header=credential.header.lower(), text=credential.placeholder)
-
-
 def _matching_rules(bindings: Sequence[BindingResolution], request: EgressRequest) -> list[_Match]:
     """Every rule that admits the request, in walk order: bindings by name, policies and rules as listed."""
     return [
@@ -251,35 +236,32 @@ def _matching_rules(bindings: Sequence[BindingResolution], request: EgressReques
     ]
 
 
-def _presented_placeholders(index: Index, request: EgressRequest) -> set[_Placeholder]:
-    """The known placeholders the request carries.
+def presented_credentials(index: Index, request: EgressRequest) -> dict[str, Presentation]:
+    """Every known credential this request presents, by name.
 
-    Known is namespace-wide: any credential of any `EgressPolicy` names one, whether or not the
-    subject is bound to that policy, so a placeholder it was never granted is recognised too.
+    Known is namespace-wide: any `EgressCredential` in the index counts, whether or not the subject
+    is bound to a policy naming it, so a placeholder the subject was never granted is recognised and
+    refused rather than forwarded.
     """
-    presented: set[_Placeholder] = set()
-    for policy in index.policies.values():
-        for rule in policy.spec.rules:
-            credential = rule.credential
-            if credential is not None and any(
-                contains_placeholder(value, credential.placeholder)
-                for value in _header_values(request, credential.header)
-            ):
-                presented.add(_Placeholder.of(credential))
-    return presented
+    return {
+        credential.metadata.name: presentation
+        for credential in index.credentials.values()
+        if (presentation := present(credential, request.headers)) is not None
+    }
 
 
-def _resolves(rule: Rule, presented: set[_Placeholder]) -> bool:
-    """Whether this rule's credential substitutes away every placeholder the request carries."""
-    return rule.credential is not None and presented == {_Placeholder.of(rule.credential)}
+def _resolves(rule: Rule, presented: Collection[str]) -> bool:
+    """Whether this rule names exactly the one credential the request presents."""
+    return rule.credential_ref is not None and set(presented) == {rule.credential_ref.name}
 
 
 def evaluate(index: Index, sandbox: Sandbox, request: EgressRequest, now: datetime) -> Decision:
-    """Fail closed: only a matching rule admits, and the placeholder the request carries picks which.
+    """Fail closed: only a matching rule admits, and the placeholder the request presents picks which.
 
-    A request carrying a known placeholder is decided by a matching rule whose credential resolves
-    exactly it; one carrying none is decided by the first matching rule. So a placeholder is never
-    forwarded, and widening what a subject may reach never takes a credential away from it.
+    A request presenting a known placeholder is decided by a matching rule naming exactly that
+    credential; one presenting none is decided by the first matching rule and is forwarded as it
+    came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
+    credential away from it.
     """
     bindings = subject_bindings(index, sandbox, now)
     if not bindings:
@@ -287,64 +269,26 @@ def evaluate(index: Index, sandbox: Sandbox, request: EgressRequest, now: dateti
     matches = _matching_rules(bindings, request)
     if not matches:
         return Denied(DenyReason.NO_RULE)
-    if not request.is_connect and (presented := _presented_placeholders(index, request)):
-        matches = [match for match in matches if _resolves(match.rule, presented)]
-        if not matches:
-            return Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
-    match = matches[0]
-    credential = None if request.is_connect else match.rule.credential
-    if credential is None:
-        return Allowed(binding=match.binding, policy=match.policy, rule=match.number)
-    secret = index.secrets.get(credential.secret_ref.name)
-    value = secret.data.get(credential.secret_ref.key) if secret is not None else None
+    # A CONNECT is decided on host alone: its headers belong to the tunnel, and the requests inside
+    # it are decided one by one, which is where a target applies.
+    presented = {} if request.is_connect else presented_credentials(index, request)
+    if not presented:
+        first = matches[0]
+        return Allowed(binding=first.binding, policy=first.policy, rule=first.number)
+    resolving = [match for match in matches if _resolves(match.rule, presented)]
+    if not resolving:
+        return Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
+    match = resolving[0]
+    # `_resolves` admitted exactly one presented credential, and every presented one is in the index.
+    credential = index.credentials[one(presented)]
+    secret_ref = credential.spec.source.secret_ref
+    secret = index.secrets.get(secret_ref.name)
+    value = secret.data.get(secret_ref.key) if secret is not None else None
     if value is None:
         return Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     return Allowed(
         binding=match.binding,
         policy=match.policy,
         rule=match.number,
-        substitution=_substitute(request, credential, value),
+        rewrites=presented[credential.metadata.name].rewrites(value),
     )
-
-
-def _header_values(request: EgressRequest, header: str) -> tuple[str, ...]:
-    header = header.lower()
-    return tuple(value for name, values in request.headers.items() if name.lower() == header for value in values)
-
-
-def _substitute(request: EgressRequest, credential: Credential, value: str) -> Substitution | None:
-    values = _header_values(request, credential.header)
-    swapped = tuple(swap_placeholder(current, credential.placeholder, value) for current in values)
-    return Substitution(header=credential.header, values=swapped) if swapped != values else None
-
-
-def _basic_payload(header_value: str) -> bytes | None:
-    """The decoded `Basic` credential, the shape git over HTTPS sends; None for anything else."""
-    scheme, separator, payload = header_value.partition(" ")
-    if not separator or scheme.lower() != "basic":
-        return None
-    try:
-        return base64.b64decode(payload, validate=True)
-    except binascii.Error:
-        return None
-
-
-def swap_placeholder(header_value: str, placeholder: str, value: str) -> str:
-    """Substring swap, reaching inside a base64 `Basic` payload."""
-    swapped = header_value.replace(placeholder, value)
-    if swapped != header_value:
-        return swapped
-    payload = _basic_payload(header_value)
-    if payload is None:
-        return header_value
-    swapped_payload = payload.replace(placeholder.encode(), value.encode())
-    if swapped_payload == payload:
-        return header_value
-    return f"{header_value.partition(' ')[0]} {base64.b64encode(swapped_payload).decode()}"
-
-
-def contains_placeholder(header_value: str, placeholder: str) -> bool:
-    if placeholder in header_value:
-        return True
-    payload = _basic_payload(header_value)
-    return payload is not None and placeholder.encode() in payload

@@ -41,31 +41,12 @@
                   "minLength": 1
                 }
               },
-              "credential": {
-                "description": "The credential the proxy substitutes on a matching request: it replaces the placeholder value in the named header with the Secret key's value. The Secret is resolved in the proxy's configured credentials namespace (agentplane-egress-credentials), never the policy's, and only the proxy reads it.",
+              "credentialRef": {
+                "description": "The EgressCredential this rule lets a subject present, in the same namespace. The credential declares where it is substituted; this rule decides where it may go. A request that presents no placeholder is admitted by the rule and forwarded untouched.",
                 "type": "object",
-                "required": ["secretRef", "header", "placeholder"],
+                "required": ["name"],
                 "properties": {
-                  "secretRef": {
-                    "type": "object",
-                    "required": ["name", "key"],
-                    "properties": {
-                      "name": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "key": {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    }
-                  },
-                  "header": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "placeholder": {
-                    "description": "The inert value the sandbox sends in the header.",
+                  "name": {
                     "type": "string",
                     "minLength": 1
                   }

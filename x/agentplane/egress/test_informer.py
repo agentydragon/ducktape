@@ -14,6 +14,7 @@ from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import ActiveReason, ConditionStatus
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
     POLICIES_PLURAL,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
@@ -119,7 +120,13 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
     /healthz reads these to tell a wedged informer from a quiet one; a timestamp set anywhere but
     the end of a cycle would keep advancing through exactly the failure it has to catch.
     """
-    assert set(index.refreshed) == {POLICIES_PLURAL, BINDINGS_PLURAL, SANDBOXES_PLURAL, SECRETS_PLURAL}
+    assert set(index.refreshed) == {
+        POLICIES_PLURAL,
+        BINDINGS_PLURAL,
+        CREDENTIALS_PLURAL,
+        SANDBOXES_PLURAL,
+        SECRETS_PLURAL,
+    }
     seeded = index.refreshed[POLICIES_PLURAL]
 
     async def end_watches_until_the_policies_cycle_completes() -> None:

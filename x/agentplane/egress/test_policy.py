@@ -16,44 +16,73 @@ from x.agentplane.egress.policy import (
     DenyReason,
     EgressRequest,
     Index,
-    Substitution,
     binding_status,
     evaluate,
     host_matches,
     path_matches,
 )
+from x.agentplane.egress.presentation import HeaderRewrite
 from x.agentplane.egress.resources import (
     ActiveReason,
+    BasicPasswordTarget,
+    BasicUsernameTarget,
     BindingSpec,
     ConditionStatus,
-    Credential,
+    CredentialRef,
+    CredentialSource,
+    CredentialSpec,
     EgressBinding,
+    EgressCredential,
     EgressPolicy,
     ObjectMeta,
     PolicySpec,
     Rule,
     Sandbox,
     SandboxRef,
+    SchemeTokenTarget,
     Secret,
     SecretKeyRef,
     Subject,
+    Target,
+    TargetMethod,
+    WholeValueTarget,
 )
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-PLACEHOLDER = "PLACEHOLDER-TOKEN"
 SECRET_VALUE = "real-value"
-SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
-CREDENTIAL = Credential(
-    secret_ref=SecretKeyRef(name="pat", key="token"), header="Authorization", placeholder=PLACEHOLDER
-)
-GITHUB_RULE = Rule(hosts=["api.github.com"], methods=["GET", "POST"], paths=["/repos/**"], credential=CREDENTIAL)
-PUBLIC_RULE = Rule(hosts=["*.example.com"], paths=["/public/*"])
-APP_PLACEHOLDER = "PLACEHOLDER-APP"
 APP_SECRET_VALUE = "real-app-value"
-APP_CREDENTIAL = Credential(
-    secret_ref=SecretKeyRef(name="pat", key="app"), header="Authorization", placeholder=APP_PLACEHOLDER
+SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
+AUTHORIZATION = "Authorization"
+BEARER = SchemeTokenTarget(header=AUTHORIZATION, method=TargetMethod.SCHEME_TOKEN, scheme="Bearer")
+BASIC_PASSWORD = BasicPasswordTarget(header=AUTHORIZATION, method=TargetMethod.BASIC_PASSWORD)
+
+
+def credential(name: str, *targets: Target, key: str = "token") -> EgressCredential:
+    return EgressCredential(
+        metadata=ObjectMeta(name=name, generation=1),
+        spec=CredentialSpec(
+            source=CredentialSource(secret_ref=SecretKeyRef(name="pat", key=key)), targets=list(targets)
+        ),
+    )
+
+
+GITHUB_CREDENTIAL = credential("github-pat", BEARER, BASIC_PASSWORD)
+PLACEHOLDER = GITHUB_CREDENTIAL.placeholder
+APP_CREDENTIAL = credential("app-token", BEARER, key="app")
+APP_PLACEHOLDER = APP_CREDENTIAL.placeholder
+GITHUB_RULE = Rule(
+    hosts=["api.github.com"],
+    methods=["GET", "POST"],
+    paths=["/repos/**"],
+    credential_ref=CredentialRef(name=GITHUB_CREDENTIAL.metadata.name),
 )
-APP_RULE = Rule(hosts=["api.github.com"], methods=["GET", "POST"], paths=["/repos/**"], credential=APP_CREDENTIAL)
+PUBLIC_RULE = Rule(hosts=["*.example.com"], paths=["/public/*"])
+APP_RULE = Rule(
+    hosts=["api.github.com"],
+    methods=["GET", "POST"],
+    paths=["/repos/**"],
+    credential_ref=CredentialRef(name=APP_CREDENTIAL.metadata.name),
+)
 OPEN_RULE = Rule(hosts=["api.github.com"])
 
 
@@ -75,11 +104,17 @@ def binding(
 
 
 def index(
-    *, policies: list[EgressPolicy], bindings: list[EgressBinding], secret_value: str | None = SECRET_VALUE
+    *,
+    policies: list[EgressPolicy],
+    bindings: list[EgressBinding],
+    credentials: list[EgressCredential] | None = None,
+    secret_value: str | None = SECRET_VALUE,
 ) -> Index:
+    resolved = [GITHUB_CREDENTIAL, APP_CREDENTIAL] if credentials is None else credentials
     return Index(
         policies={p.metadata.name: p for p in policies},
         bindings={b.metadata.name: b for b in bindings},
+        credentials={c.metadata.name: c for c in resolved},
         sandboxes={SANDBOX.metadata.name: SANDBOX},
         secrets=(
             {"pat": Secret(name="pat", data={"token": secret_value, "app": APP_SECRET_VALUE})}
@@ -96,8 +131,14 @@ def request(
 
 
 BASE_INDEX = index(policies=[policy("github", GITHUB_RULE, PUBLIC_RULE)], bindings=[binding("b", policies=["github"])])
-SWAPPED = Substitution(header="Authorization", values=(f"Bearer {SECRET_VALUE}",))
-APP_SWAPPED = Substitution(header="Authorization", values=(f"Bearer {APP_SECRET_VALUE}",))
+SWAPPED = (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {SECRET_VALUE}",)),)
+APP_SWAPPED = (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {APP_SECRET_VALUE}",)),)
+
+
+def basic(payload: str) -> str:
+    return f"Basic {base64.b64encode(payload.encode()).decode()}"
+
+
 TWO_CREDENTIALS = index(
     policies=[policy("tokens", GITHUB_RULE, APP_RULE)], bindings=[binding("b", policies=["tokens"])]
 )
@@ -155,12 +196,32 @@ CASES = [
     Case(
         "deny placeholder inside basic payload unsubstituted",
         BASE_INDEX,
-        request(
-            host="www.example.com",
-            path="/public/x",
-            authorization="Basic " + base64.b64encode(f"git:{PLACEHOLDER}".encode()).decode(),
-        ),
+        request(host="www.example.com", path="/public/x", authorization=basic(f"git:{PLACEHOLDER}")),
         Denied(DenyReason.PLACEHOLDER_UNRESOLVED),
+    ),
+    Case(
+        "a placeholder that is only a substring of the component is not presented",
+        BASE_INDEX,
+        request(authorization=f"Bearer prefix-{PLACEHOLDER}-suffix"),
+        Allowed("b", "github", 0),
+    ),
+    Case(
+        "a placeholder under a scheme no target declares is not presented",
+        BASE_INDEX,
+        request(authorization=f"Token {PLACEHOLDER}"),
+        Allowed("b", "github", 0),
+    ),
+    Case(
+        "a placeholder in a header no target names is not presented",
+        BASE_INDEX,
+        request(**{"x-other": PLACEHOLDER}),
+        Allowed("b", "github", 0),
+    ),
+    Case(
+        "a basic payload with no colon is not the basicPassword target's shape",
+        BASE_INDEX,
+        request(authorization=basic(PLACEHOLDER)),
+        Allowed("b", "github", 0),
     ),
     Case(
         "no binding",
@@ -274,12 +335,39 @@ def test_evaluate(case: Case) -> None:
     assert evaluate(case.index, SANDBOX, case.request, NOW) == case.expected
 
 
-def test_substitution_reaches_inside_basic_payload() -> None:
-    """git over HTTPS sends `Basic base64(user:token)`; the swap re-encodes the payload."""
-    presented = base64.b64encode(f"x-access-token:{PLACEHOLDER}".encode()).decode()
-    decision = evaluate(BASE_INDEX, SANDBOX, request(authorization=f"Basic {presented}"), NOW)
-    expected = base64.b64encode(f"x-access-token:{SECRET_VALUE}".encode()).decode()
-    assert decision == Allowed("b", "github", 0, Substitution("Authorization", (f"Basic {expected}",)))
+def test_one_credential_is_substituted_at_whichever_target_the_request_uses() -> None:
+    """The GitHub PAT is a bearer token to the API and a `Basic` password to git. Both targets are
+    declared on the one credential, and each fires only where the request actually presents it."""
+    bearer = evaluate(BASE_INDEX, SANDBOX, request(authorization=f"Bearer {PLACEHOLDER}"), NOW)
+    assert bearer == Allowed("b", "github", 0, SWAPPED)
+    git = evaluate(BASE_INDEX, SANDBOX, request(authorization=basic(f"x-access-token:{PLACEHOLDER}")), NOW)
+    rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"x-access-token:{SECRET_VALUE}"),)),)
+    assert git == Allowed("b", "github", 0, rewritten)
+
+
+def test_a_basic_username_target_takes_the_half_before_the_first_colon() -> None:
+    """What `https://<token>@github.com` sends. The placeholder carries no `:` -- it is derived, and
+    the separator is `-` for exactly this reason -- so it can be a whole username component."""
+    credentials = [
+        credential("github-pat", BasicUsernameTarget(header=AUTHORIZATION, method=TargetMethod.BASIC_USERNAME))
+    ]
+    scoped = index(
+        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=credentials
+    )
+    decision = evaluate(scoped, SANDBOX, request(authorization=basic(f"{PLACEHOLDER}:")), NOW)
+    rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"{SECRET_VALUE}:"),)),)
+    assert decision == Allowed("b", "github", 0, rewritten)
+
+
+def test_a_whole_value_target_takes_the_header_entire() -> None:
+    """The shape an API key travels in: `x-api-key: <key>`, no scheme to strip."""
+    header = "X-Api-Key"
+    credentials = [credential("github-pat", WholeValueTarget(header=header, method=TargetMethod.WHOLE_VALUE))]
+    scoped = index(
+        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=credentials
+    )
+    decision = evaluate(scoped, SANDBOX, request(**{"x-api-key": PLACEHOLDER}), NOW)
+    assert decision == Allowed("b", "github", 0, (HeaderRewrite(header=header, values=(SECRET_VALUE,)),))
 
 
 def test_substitution_covers_every_value_of_the_header() -> None:
@@ -291,9 +379,17 @@ def test_substitution_covers_every_value_of_the_header() -> None:
         headers={"authorization": [f"Bearer {PLACEHOLDER}", "Bearer other"]},
     )
     decision = evaluate(BASE_INDEX, SANDBOX, egress, NOW)
-    assert decision == Allowed(
-        "b", "github", 0, Substitution("Authorization", (f"Bearer {SECRET_VALUE}", "Bearer other"))
+    rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {SECRET_VALUE}", "Bearer other")),)
+    assert decision == Allowed("b", "github", 0, rewritten)
+
+
+def test_a_rule_naming_a_credential_the_namespace_does_not_hold_forwards_untouched() -> None:
+    """The ref dangles, so nothing is presented and nothing is substituted -- the rule's hosts,
+    methods and paths still decide, which is what a request carrying no placeholder always gets."""
+    scoped = index(
+        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=[]
     )
+    assert evaluate(scoped, SANDBOX, request(authorization=f"Bearer {PLACEHOLDER}"), NOW) == Allowed("b", "github", 0)
 
 
 @pytest.mark.parametrize(

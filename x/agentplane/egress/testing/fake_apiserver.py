@@ -22,6 +22,7 @@ from more_itertools import one
 from x.agentplane.egress.identity import POD_NAME_CLAIM, POD_UID_CLAIM
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
     GROUP,
     POLICIES_PLURAL,
     SANDBOX_GROUP,
@@ -43,6 +44,7 @@ _NAMESPACE_OF = {
     SANDBOXES_PLURAL: SANDBOX_NAMESPACE,
     POLICIES_PLURAL: NAMESPACE,
     BINDINGS_PLURAL: NAMESPACE,
+    CREDENTIALS_PLURAL: NAMESPACE,
 }
 
 
@@ -70,7 +72,13 @@ class FakeApiServer:
     tokens: dict[str, TokenVerdict] = field(default_factory=dict)
     pods: dict[str, dict[str, Any]] = field(default_factory=dict)
     objects: dict[str, dict[str, dict[str, Any]]] = field(
-        default_factory=lambda: {POLICIES_PLURAL: {}, BINDINGS_PLURAL: {}, SANDBOXES_PLURAL: {}, SECRETS_PLURAL: {}}
+        default_factory=lambda: {
+            POLICIES_PLURAL: {},
+            BINDINGS_PLURAL: {},
+            CREDENTIALS_PLURAL: {},
+            SANDBOXES_PLURAL: {},
+            SECRETS_PLURAL: {},
+        }
     )
     status_patches: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     token_reviews: int = 0
@@ -266,6 +274,15 @@ def policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
         "kind": "EgressPolicy",
         "metadata": {"name": name},
         "spec": {"rules": rules},
+    }
+
+
+def credential(name: str, *, secret_name: str, key: str, targets: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "EgressCredential",
+        "metadata": {"name": name},
+        "spec": {"source": {"secretRef": {"name": secret_name, "key": key}}, "targets": targets},
     }
 
 

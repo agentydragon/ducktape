@@ -89,7 +89,11 @@ py_library(
 py_library(
     name = "policy",
     srcs = ["policy.py"],
-    deps = [":resources"],
+    deps = [
+        ":presentation",
+        ":resources",
+        "@pypi//more_itertools",
+    ],
 )
 
 py_library(
@@ -114,6 +118,7 @@ py_library(
     deps = [
         ":informer",
         ":policy",
+        ":resources",
         "//util:kubernetes",
         "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",
@@ -160,6 +165,7 @@ py_test(
     deps = [
         ":conftest",
         ":policy",
+        ":presentation",
         ":resources",
         "//:conftest",
         "@pypi//pytest",
@@ -339,6 +345,25 @@ py_test(
         ":policy",
         ":resources",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "presentation",
+    srcs = ["presentation.py"],
+    deps = [":resources"],
+)
+
+py_test(
+    name = "test_presentation",
+    srcs = ["test_presentation.py"],
+    deps = [
+        ":conftest",
+        ":presentation",
+        ":resources",
+        "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

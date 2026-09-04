@@ -212,12 +212,12 @@ class EgressAddon:
                         binding=decision.binding,
                         policy=decision.policy,
                         rule=decision.rule,
-                        substituted=decision.substitution is not None,
+                        substituted=bool(decision.rewrites),
                         address=str(pin.address) if pin is not None else None,
                     )
                 )
-                if decision.substitution is not None:
-                    request.headers.set_all(decision.substitution.header, list(decision.substitution.values))
+                for rewrite in decision.rewrites:
+                    request.headers.set_all(rewrite.header, list(rewrite.values))
                 flow.response = None  # cleared last: everything that can fail has already run
             case Denied():
                 self._ring.record(DecisionRecord(**common, outcome=Outcome.DENY, reason=decision.reason))

@@ -10,9 +10,11 @@ exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds 
 
 - **`EgressPolicy`** is a named, subject-free rule set. `spec.rules` is inline — there is no
   `EgressRule` object, so a rule belongs to exactly one policy (N:1). The policy is therefore the
-  unit of reuse, which is why
-  [`github-public`](../../../cluster/k8s/agentplane-staging/egress/egresspolicy-github-public.yaml)
-  is a policy rather than a rule.
+  unit of reuse, which is why `github-public` is a policy rather than a rule.
+- **`EgressCredential`** is its own object, unlike a rule, because a credential is referenced by
+  many rules across many policies and has no such N:1 relation to any of them. Naming it is also
+  what makes its placeholder unique: the placeholder is `agentplane-credential-<name>`, derived and
+  never authored, and detection is namespace-global.
 - **`EgressBinding.spec.policies`** is an array of policy names, `minItems: 1` and no upper bound,
   in precedence order. A binding may name many policies and a policy may be named by many
   bindings: n:m.
@@ -64,7 +66,7 @@ have to, is the rest of this page.
 
 ## Rules are alternatives, and there is no exclusion
 
-A rule carries hosts, methods, paths and an optional credential. There is no deny form and no way
+A rule carries hosts, methods, paths and an optional credential reference. There is no deny form and no way
 to subtract a host from a broader pattern, which is what the `EgressPolicy` CRD means by "Rules
 are alternatives; a request matching any one of them is allowed."
 
@@ -98,14 +100,15 @@ credentialed one can stop the credentialed traffic instead of widening it.
 
 Take `researcher` above with the list reversed, so a credential-less `open-internet` rule
 (`hosts: ["*.com"]`) precedes `github-public`. A request to `api.github.com` carrying
-`Authorization: Bearer agentplane-credential:github-pat`:
+`Authorization: Bearer agentplane-credential-github-pat`:
 
-1. `open-internet`'s rule matches first. It has no credential, so nothing is substituted.
-2. `_placeholder_left` scans every policy in the namespace for a credential whose placeholder is
-   still present in its header, and finds `github-public`'s untouched in `Authorization`.
+1. `open-internet`'s rule matches first. It names no credential, so nothing is substituted.
+2. The scan for presented credentials walks every `EgressCredential` in the namespace and finds
+   `github-pat` presented at its `schemeToken` target, which no matching rule names.
 3. The request is refused `403` with `x-agentplane-egress: denied; reason=placeholder-unresolved`.
 
-Granting more makes GitHub start failing.
+Granting more would make GitHub start failing, which is what placeholder-directed matching below
+forecloses.
 
 Inside one binding the author chooses that order. Across bindings nobody does: `subject_bindings`
 walks `sorted(index.bindings)`, so the **binding name** decides. A seed named `all-sandboxes-open`
@@ -118,14 +121,15 @@ decision.
 The placeholder a request carries already says which credential the caller wants. The model takes
 it as the selector:
 
-- A request carrying a known placeholder is a request to use that credential. It is allowed if and
-  only if some rule bound to the subject grants **that placeholder** for that host, method and
-  path, and that rule's credential is what gets substituted.
-- A request carrying no known placeholder falls back to the first bound rule that matches.
+- A request presenting a known placeholder is a request to use that credential. It is allowed if
+  and only if some rule bound to the subject names **that credential** for that host, method and
+  path, and that credential is what gets substituted.
+- A request presenting no known placeholder falls back to the first bound rule that matches.
 
-This is not a new concept. `_placeholder_left` already scans every policy in the namespace rather
-than only the bound ones, so a placeholder is already a namespace-global credential identifier
-rather than a string private to the rule that mentions it.
+The scan for presented credentials walks every `EgressCredential` in the namespace rather than only
+the bound ones, so a placeholder is a namespace-global credential identifier rather than a string
+private to the rule that mentions it -- which is also why the placeholder is derived from the
+credential's name instead of being written by hand.
 
 What it buys:
 
@@ -133,15 +137,12 @@ What it buys:
   already claims. A broad policy is then safely additive: it can widen a subject's reach and cannot
   take away a credentialed route.
 - Cross-binding name order stops being observable, so there is nothing left to prioritise.
-- Residual order — two rules resolving the same placeholder, or two credential-less rules — decides
-  only which rule the decision log names.
+- Residual order — two rules naming the same credential, or two naming none — decides only which
+  rule the decision log names.
 
-The cost, stated plainly: it changes a line <../egress/SPEC.md> currently states, that the first
-rule whose hosts, methods and paths match decides. That is a contract change, acceptable at
-`v1alpha1` under `x/` but not free.
-
-**Not yet enforced**: `evaluate` (<../egress/policy.py>) selects the first matching rule regardless
-of placeholder, so the refusal above is live. Delete this paragraph once it selects by placeholder.
+The cost, stated plainly: it changes a line <../egress/SPEC.md> used to state, that the first rule
+whose hosts, methods and paths match decides. That is a contract change, acceptable at `v1alpha1`
+under `x/` but not free.
 
 ### Rejected: a priority integer on the binding
 

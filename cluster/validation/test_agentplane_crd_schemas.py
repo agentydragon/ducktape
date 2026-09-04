@@ -1,6 +1,6 @@
 """The kubeconform schemas under cluster/schemas/ are the Agentplane CRDs' openAPIV3Schema.
 
-The pre-commit kubeconform hook validates EgressPolicy and EgressBinding manifests against
+The pre-commit kubeconform hook validates EgressPolicy, EgressBinding and EgressCredential manifests against
 `cluster/schemas/<group>/<kind>_<version>.json`; each file is generated from its CRD here and
 pinned, so an edit to a CRD that is not mirrored fails this test rather than letting the
 hook accept manifests the API server would reject.
@@ -20,6 +20,7 @@ from util.bazel.runfiles import get_required_path
 _CRD_FILES = [
     get_required_path("_main/cluster/k8s/agentplane-crds/crd-egresspolicies.yaml"),
     get_required_path("_main/cluster/k8s/agentplane-crds/crd-egressbindings.yaml"),
+    get_required_path("_main/cluster/k8s/agentplane-crds/crd-egresscredentials.yaml"),
 ]
 _SCHEMAS_DIR = get_required_path("_main/cluster/schemas")
 

@@ -1,9 +1,8 @@
 # Declared credential substitution rules
 
-Status: **proposed**; nothing implements this. The egress proxy substitutes a credential by
-replacing one `placeholder` string wherever a stack of undeclared heuristics happens to find it.
-This entry replaces that with a rule that names the parse and the location, and matches a whole
-parsed component exactly.
+Status: **implemented in the proxy and the CRDs**; what remains is the staging policy, which is
+expressed in the new shape once the image carrying it has rolled. Everything below states the
+design as built, except where it is marked open.
 
 The proxy is <../egress/SPEC.md>; the kind is
 <../../../cluster/k8s/agentplane-crds/crd-egresspolicies.yaml>; how the kinds compose into one

@@ -6,31 +6,49 @@ from datetime import UTC, datetime, timedelta
 
 import pytest_bazel
 
-from x.agentplane.egress.agent_view import CredentialView, agent_view
+from x.agentplane.egress.agent_view import CredentialView, TargetView, agent_view
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import (
+    BasicPasswordTarget,
     BindingSpec,
-    Credential,
+    CredentialRef,
+    CredentialSource,
+    CredentialSpec,
     EgressBinding,
+    EgressCredential,
     EgressPolicy,
     ObjectMeta,
     PolicySpec,
     Rule,
     Sandbox,
     SandboxRef,
+    SchemeTokenTarget,
     Secret,
     SecretKeyRef,
     Subject,
+    TargetMethod,
 )
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
-PLACEHOLDER = "PLACEHOLDER-TOKEN"
 SECRET_VALUE = "the-real-credential"
 SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
-CREDENTIAL = Credential(
-    secret_ref=SecretKeyRef(name="vault-entry", key="credential-key"), header="Authorization", placeholder=PLACEHOLDER
+CREDENTIAL = EgressCredential(
+    metadata=ObjectMeta(name="github-pat", generation=1),
+    spec=CredentialSpec(
+        source=CredentialSource(secret_ref=SecretKeyRef(name="vault-entry", key="credential-key")),
+        targets=[
+            SchemeTokenTarget(header="Authorization", method=TargetMethod.SCHEME_TOKEN, scheme="Bearer"),
+            BasicPasswordTarget(header="Authorization", method=TargetMethod.BASIC_PASSWORD),
+        ],
+    ),
 )
-GITHUB_RULE = Rule(hosts=["api.github.com"], methods=["GET", "POST"], paths=["/repos/**"], credential=CREDENTIAL)
+PLACEHOLDER = CREDENTIAL.placeholder
+GITHUB_RULE = Rule(
+    hosts=["api.github.com"],
+    methods=["GET", "POST"],
+    paths=["/repos/**"],
+    credential_ref=CredentialRef(name=CREDENTIAL.metadata.name),
+)
 OPEN_RULE = Rule(hosts=["*.example.com"])
 
 
@@ -49,13 +67,17 @@ def _index(*, expires_at: datetime | None = None, policies: list[str] | None = N
     return Index(
         policies={"github": policy},
         bindings={"b": bound},
+        credentials={CREDENTIAL.metadata.name: CREDENTIAL},
         sandboxes={"sb": SANDBOX},
         secrets={"vault-entry": Secret(name="vault-entry", data={"credential-key": SECRET_VALUE})},
     )
 
 
-def test_a_sandbox_is_told_the_header_and_the_placeholder() -> None:
-    """Exactly what it needs to send an admitted request, and it cannot get this anywhere else."""
+def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
+    """Enough to build a request the proxy substitutes into. A placeholder and a header name are not:
+    a client still has to know whether the value reads `Bearer <placeholder>` or the placeholder
+    bare, and getting that wrong is a 401 from the upstream with the real credential in the header.
+    """
     view = agent_view(_index(), SANDBOX, NOW)
 
     (policy,) = view.policies
@@ -63,7 +85,14 @@ def test_a_sandbox_is_told_the_header_and_the_placeholder() -> None:
     github, public = policy.rules
     assert github.hosts == ["api.github.com"]
     assert github.methods == ["GET", "POST"]
-    assert github.credential == CredentialView(header="Authorization", placeholder=PLACEHOLDER)
+    assert github.credential == CredentialView(
+        name="github-pat",
+        placeholder=PLACEHOLDER,
+        targets=[
+            TargetView(header="Authorization", method=TargetMethod.SCHEME_TOKEN, scheme="Bearer"),
+            TargetView(header="Authorization", method=TargetMethod.BASIC_PASSWORD),
+        ],
+    )
     assert public.credential is None, "a rule that substitutes nothing offers nothing to present"
 
 

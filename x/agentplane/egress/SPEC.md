@@ -25,25 +25,37 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
   any policy of any of the subject's bindings is enough to admit the request; nothing matching
   refuses with `no-rule`. A CONNECT is matched on host alone; each request inside the tunnel is
   decided on its own.
-- Which of the matching rules decides is directed by the placeholder the request carries. A
-  placeholder is known when a credential of some `EgressPolicy` in the namespace names it, whether
-  or not the subject is bound to that policy. A request carrying a known placeholder is decided by
-  a matching rule whose credential resolves exactly that placeholder in that header; when none
-  does — the matching rules carry no credential, or another one, or the request carries two
-  placeholders no single credential resolves — it is refused with `placeholder-unresolved`. A
-  request carrying no known placeholder is decided by the first matching rule. Granting a subject
-  a broader binding therefore only widens what it may reach; it never takes a credential away from
-  a call that asks for one.
-- Where several matching rules would decide alike — two resolving the same placeholder, two
-  carrying no credential — the first in walk order is the one recorded: bindings by name, their
+- A credential is an `EgressCredential`: where its real value comes from, and every exact location
+  it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
+  object's own name and written nowhere, so one placeholder means one credential by construction.
+  A rule names a credential; the credential names the targets.
+- A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
+  `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
+  `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),
+  or `basicWhole` (a `Basic` payload that is the credential entire). A request **presents** a
+  placeholder when some target's parse of some value of that header yields a component **equal** to
+  it. A placeholder that is merely a substring of a component, or sits in a header or a shape no
+  target declares, is not presented — it is neither detected nor substituted, and reaches the
+  upstream inert.
+- Which of the matching rules decides is directed by the placeholder the request presents. A
+  placeholder is known when some `EgressCredential` in the namespace has it, whether or not the
+  subject is bound to a policy naming that credential. A request presenting a known placeholder is
+  decided by a matching rule naming exactly that credential; when none does — the matching rules
+  name no credential, or another one, or the request presents two — it is refused with
+  `placeholder-unresolved`. A request presenting no known placeholder is decided by the first
+  matching rule and forwarded as it came. Granting a subject a broader binding therefore only
+  widens what it may reach; it never takes a credential away from a call that asks for one.
+- Where several matching rules would decide alike — two naming the same credential, two naming
+  none — the first in walk order is the one recorded: bindings by name, their
   policies as listed, their rules in order. Which one that is changes neither the verdict nor what
   is forwarded, and shows only in the decision log.
 - Hosts match exactly (case-insensitive) or by `*.` suffix, which never matches the apex. Path
   globs match the path without its query: `*` stays within one segment, `**` crosses segments.
-- The deciding rule's credential replaces the placeholder in the named header with the value of
-  the Secret named in the credentials namespace, also inside a `Basic` base64 payload; a
-  placeholder is never forwarded. A credential whose Secret or key is absent denies rather than
-  forwards.
+- Substitution rebuilds each presented value around the real credential, through the same parse
+  that found it, at every target the request presents it in and no others — so a placeholder the
+  proxy recognised is never one it forwards. A value of that header the request sent alongside and
+  did not present the placeholder in is forwarded untouched. A credential whose Secret or key is
+  absent denies with `credential-unavailable` rather than forwarding.
 - Nothing else is forwarded: no binding, no rule, an unproven token, a Pod that does not match,
   an unknown Sandbox, or any failure to reach the API server all refuse. A refusal is `403`
   (`502` when the proxy itself could not decide) with an empty body and
@@ -57,9 +69,11 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 - **A sandbox can read the rules that apply to it**, at
   `https://egress.agentplane.internal/v1/rules` through the same proxy it sends everything else
   through. The answer names the sandbox and the policies an active binding grants it: each rule's
-  hosts, methods, paths, and where a credential is substituted, the header it goes in and the
-  placeholder to put there. Never the Secret, its key, or its value — the projection is built from
-  its own field list, so a field added to a rule does not appear here until someone writes it in.
+  hosts, methods, paths, and where a credential is substituted, its placeholder and every target —
+  which is what a client needs to build the value, since a header name and a placeholder leave open
+  whether the value reads `Bearer <placeholder>` or the placeholder bare. Never the Secret, its key,
+  or its value — the projection is built from its own field list, so a field added to a resource
+  does not appear here until someone writes it in.
   The name is reserved and resolves nowhere: nothing is dialled for it, no rule can admit it, and
   identity is proved at the CONNECT exactly as it is for egress, because `Proxy-Authorization` is
   hop-by-hop and a plain request would arrive with none.

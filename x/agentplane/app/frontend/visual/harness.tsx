@@ -112,7 +112,7 @@ const POLICIES: PolicyView[] = [
         hosts: ["api.github.com", "github.com", "*.githubusercontent.com"],
         methods: ["GET", "POST"],
         paths: null,
-        credential: { secret: "harness-github-pat", key: "token", header: "Authorization" },
+        credential: "harness-github-pat",
       },
     ],
   },

@@ -14,11 +14,7 @@ from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_bin
 GITHUB_RULE = {
     "hosts": ["api.github.com", "*.githubusercontent.com"],
     "methods": ["GET", "POST"],
-    "credential": {
-        "secretRef": {"name": "test-github-pat", "key": "token"},
-        "header": "Authorization",
-        "placeholder": "test-placeholder",
-    },
+    "credentialRef": {"name": "test-github-pat"},
 }
 
 
@@ -78,12 +74,7 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
         ["GET", "POST"],
         None,
     )
-    assert rule.credential is not None
-    assert (rule.credential.secret, rule.credential.key, rule.credential.header) == (
-        "test-github-pat",
-        "token",
-        "Authorization",
-    )
+    assert rule.credential == "test-github-pat"
 
     expiring = by_name["live-expiring"]
     assert expiring.expires_at == datetime(2026, 12, 1, tzinfo=UTC)
