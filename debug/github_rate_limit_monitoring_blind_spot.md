@@ -1,10 +1,12 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **every candidate anyone proposed has been eliminated by measurement, and the
-burn continues.** It requires wyrm2 to be up, yet nothing observed on wyrm2 accounts for
-it. The single untested lead is that both instruments filtered on a subset of GitHub's
-API addresses, so the traffic was invisible to each of them for the same reason. Fix the
-filters before trusting any elimination below.
+Status: **the consumer is a metronomic 1 Hz poller, and it is not on wyrm2.** With
+kubelet and containerd stopped for six hours — no pods on the node — the account still
+spent exactly 60 points a minute, hour after hour, while the unfiltered connection
+recorder on wyrm2 saw no GitHub traffic at all. That baseline is ~3600/h, below the 5000
+budget, so the symptom that started this has gone even though the cause has not been
+found. Bursts of 600–1600 ride on top of the baseline and are what used to push the
+account to 2x budget.
 
 ## The blind spot, and why it existed
 
@@ -828,6 +830,55 @@ filter from `api.github.com/meta`, then re-run the residual measurement. Every
 elimination above is scoped to the addresses that were watched, and the residual that
 cleared the CLI is the only one that compared against the account-wide counter rather
 than a filtered capture.
+
+## The 1 Hz poller
+
+kubelet and containerd were stopped on wyrm2 at 13:23 UTC and left down until 19:14 —
+six hours with no pods on the node, host processes untouched, recorder running
+unfiltered throughout. The 14:00 window, per minute:
+
+```text
+14:04Z  used=10309   previous hour, exhausted
+14:05Z  used= 1629   reset, and 1629 points already gone
+14:06Z  +60
+14:07Z  +30
+14:08Z  +60   ... +60 every minute ...
+14:20Z  +600
+```
+
+Two consumers, separable for the first time:
+
+- **A metronomic +60/minute** — one point per second, sustained for hours. 3600/h, which
+  is exactly the 15:00–19:00 plateau (3590, 3561, 3861, 3830, 3830).
+- **Bursts** of 600–1600 on top. Those are what used to take the account to 2x budget.
+
+The 1 Hz stream is the thing to chase. It is not a human, an agent turn, or a
+reconcile loop; it is a one-second sleep in a loop.
+
+### It is not on wyrm2
+
+Over the same six hours, with every pod gone, the recorder's public destinations were
+`147.135.*` (this cluster's own OVH nodes) and Google. **No `140.82.*`, no `20.29.*`, no
+`172.182.*`, no QUIC.** So the poller is neither a pod on wyrm2 nor a host process on
+wyrm2, under instruments that now filter nothing.
+
+### Which reframes the partition test
+
+The account went quiet when wyrm2 was **powered off**, and stayed burning at 3600/h when
+only its **pods** went away. The difference between those two states is the machine's
+network presence, not its workloads. That fits a poller that runs elsewhere and targets
+wyrm2, or one whose host loses connectivity along with the node — the operator's
+original suspicion, recorded earlier in this note and not pursued.
+
+### Next
+
+1. **Characterise the cadence.** Sample `github_graphql_rate_used` every 5s for two
+   minutes: a clean 1.000/s is a timer, drift is a request loop. Mimir's minute
+   resolution cannot distinguish them.
+2. **Rotate the credential.** The poller survived kubelet, containerd, every pod and
+   every process on wyrm2. The remaining lever is which token it holds — rotating
+   `Ducktape cluster secrets sync` kills it if that is the one, and is uninformative
+   otherwise. It is the last unturned knob.
 
 ## Knobs not yet turned
 
