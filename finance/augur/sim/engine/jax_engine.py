@@ -3565,11 +3565,17 @@ def _compute_tax_for_link(
     ordinary_rate = tcfg.link_ordinary_rate[link]
     ordinary_count = static.ordinary_count
     if static.has_ltcg == 1:
+        # §63 nets the deduction against taxable income, which includes the gain, and §1(h)
+        # rates what is left of it — the order the Qualified Dividends and Capital Gain Tax
+        # Worksheet starts from, opening at Form 1040 line 15. Flooring the ordinary side at
+        # zero and rating the whole gain on top would discard a deduction larger than
+        # ordinary income and tax a return that owes nothing.
+        total_taxable = jnp.maximum(ordinary_for_brackets + stcg + ltcg - deduction_used, 0)
         ordinary_taxable = jnp.maximum(ordinary_for_brackets + stcg - deduction_used, 0)
-        capital_taxable = ltcg
+        capital_taxable = total_taxable - ordinary_taxable
         ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
         ltcg_tax = _apply_ltcg_brackets(
-            ltcg,
+            capital_taxable,
             ordinary_taxable,
             upper=tcfg.link_ltcg_upper[link],
             rate=tcfg.link_ltcg_rate[link],
