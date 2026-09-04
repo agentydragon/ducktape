@@ -11,7 +11,7 @@ actually offers, in the shape a later side-by-side with Codex's `thread/queue/*`
 
 The normative source here is the **published type declarations** in
 `@anthropic-ai/claude-agent-sdk` (`sdk.d.ts`), which document these frames and their semantics
-directly; the notes below quote them. Frame *shapes* not named as a type there were read off the
+directly; the notes below quote them. Frame _shapes_ not named as a type there were read off the
 harness. Per the [shared rules](provider_protocols.md#shared-rules), none of this is pinned in a
 scripted test yet: **a live probe must confirm each behavior before a driver depends on it.** The
 coalescing rule in particular has a counter-intuitive outcome that deserves its own capture.
@@ -45,12 +45,11 @@ Lifecycle transitions come back as an outbound stream frame:
 
 Two distinct operations, with different reach:
 
-**1. `cancel_async_message`** — the targeted one. Documented as: *"Drops a pending async user
-message from the command queue by uuid. No-op if already dequeued for execution."*
+**1. `cancel_async_message`** — the targeted one. Documented as: _"Drops a pending async user
+message from the command queue by uuid. No-op if already dequeued for execution."_
 
 ```json
-{ "type": "control_request", "request": { "subtype": "cancel_async_message",
-                                          "message_uuid": "<uuid>" } }
+{ "type": "control_request", "request": { "subtype": "cancel_async_message", "message_uuid": "<uuid>" } }
 ```
 
 The response reports `{ "cancelled": <bool> }`. It is **best-effort against the queue, not an
@@ -58,10 +57,10 @@ interrupt**: an already-running turn is never pulled. There is a race guard — 
 arrives before its target marks the uuid cancel-pending, so a message admitted later under that
 uuid is dropped on admission rather than slipping through.
 
-**2. `interrupt` with `cancel_queued: true`** — the broad one. Aborts the running turn *and*
+**2. `interrupt` with `cancel_queued: true`** — the broad one. Aborts the running turn _and_
 sweeps the queue, closing each swept uuid with a terminal `cancelled` lifecycle and listing them
 under the response's `cancelled` field. A plain `interrupt` does the opposite: queued commands
-**survive**, and the response lists them under `still_queued` — uuids that *will* run unless
+**survive**, and the response lists them under `still_queued` — uuids that _will_ run unless
 cancelled first.
 
 That `still_queued` receipt is the piece with no analogue in the seam today: it is the harness
@@ -100,11 +99,11 @@ workaround, not a contract.
 Claude advertises an **open set** of protocol capabilities on the `system`/`init` event, so a
 driver should feature-detect rather than version-sniff. Relevant here:
 
-| Capability | Meaning |
-| --- | --- |
-| `interrupt_receipt_v1` | the interrupt response carries `still_queued` |
-| `interrupt_cancel_queued_v1` | the interrupt request honors `cancel_queued: true` |
-| `queued_notifications` | the CLI accepts inbound `queued_notification` frames |
+| Capability                   | Meaning                                              |
+| ---------------------------- | ---------------------------------------------------- |
+| `interrupt_receipt_v1`       | the interrupt response carries `still_queued`        |
+| `interrupt_cancel_queued_v1` | the interrupt request honors `cancel_queued: true`   |
+| `queued_notifications`       | the CLI accepts inbound `queued_notification` frames |
 
 Older CLIs simply resolve `interrupt()` to `undefined`. Absence of a capability is the supported
 signal; it is not an error. This is a better fit for the seam's "never present an unsupported
@@ -117,18 +116,18 @@ Set next to Codex's durable `thread/queue/{add,list,update,delete,reorder,start}
 `common_protocol.md` currently assumes — both have a real enqueued state and a withdraw
 operation — but they are **not** the same object:
 
-| | Claude | Codex |
-| --- | --- | --- |
-| Enqueue | implicit: every uuid-stamped input is queued | explicit `queue/add` |
-| Withdraw | `cancel_async_message` by uuid | `queue/delete` |
-| Withdraw is race-free | no — best-effort, with a cancel-pending guard for the early race | yes — mutex-serialized against dispatch, reports whether it actually removed something |
-| Enumerate the queue | only indirectly, via `still_queued` on an interrupt receipt | `queue/list` |
-| Reorder / update | not exposed | `queue/reorder`, `queue/update` |
-| Relation to the active turn | drains into the current/imminent turn; **coalesces** | never touches the active turn; starts a new one when idle |
-| Unit of withdrawal | the input, until coalescing makes it the batch | the queued item |
+|                             | Claude                                                           | Codex                                                                                  |
+| --------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Enqueue                     | implicit: every uuid-stamped input is queued                     | explicit `queue/add`                                                                   |
+| Withdraw                    | `cancel_async_message` by uuid                                   | `queue/delete`                                                                         |
+| Withdraw is race-free       | no — best-effort, with a cancel-pending guard for the early race | yes — mutex-serialized against dispatch, reports whether it actually removed something |
+| Enumerate the queue         | only indirectly, via `still_queued` on an interrupt receipt      | `queue/list`                                                                           |
+| Reorder / update            | not exposed                                                      | `queue/reorder`, `queue/update`                                                        |
+| Relation to the active turn | drains into the current/imminent turn; **coalesces**             | never touches the active turn; starts a new one when idle                              |
+| Unit of withdrawal          | the input, until coalescing makes it the batch                   | the queued item                                                                        |
 
-The load-bearing asymmetry is the last two rows. Codex's queue is a durable list *beside* the
-turn; Claude's is a staging buffer *feeding* the turn, and its entries can merge. A facade that
+The load-bearing asymmetry is the last two rows. Codex's queue is a durable list _beside_ the
+turn; Claude's is a staging buffer _feeding_ the turn, and its entries can merge. A facade that
 exposes "withdraw this input" over both would be honest on Codex and misleading on Claude the
 moment a batch forms.
 
