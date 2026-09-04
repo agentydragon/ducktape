@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import string
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
@@ -28,8 +29,8 @@ ARCHIVED_LABEL = "agentplane.allegedly.works/archived"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
 _TEMPLATES_PLURAL = "sandboxtemplates"
-_SANDBOX_API = ("agents.x-k8s.io", "v1beta1")
-_SANDBOXES_PLURAL = "sandboxes"
+SANDBOX_API = ("agents.x-k8s.io", "v1beta1")
+SANDBOXES_PLURAL = "sandboxes"
 _MERGE_PATCH = "application/merge-patch+json"
 
 # Five lowercase alphanumerics, like `generateName`; the slug bound keeps the name a DNS label.
@@ -202,18 +203,13 @@ class SandboxInventory:
     async def list_sandboxes(self, *, include_archived: bool = False) -> list[SandboxView]:
         sandboxes_page, pods = await asyncio.gather(
             self._custom_objects.list_namespaced_custom_object(
-                *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
+                *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
             ),
             self._core_v1.list_namespaced_pod(self._namespace),
         )
-        pods_by_name = {pod.metadata.name: pod for pod in pods.items}
-        views = []
-        for item in _ResourceList.model_validate(sandboxes_page).items:
-            sandbox = _Sandbox.model_validate(item)
-            views.append(_view(sandbox, pods_by_name.get(sandbox.metadata.name)))
-        if include_archived:
-            return views
-        return [view for view in views if not view.archived]
+        return sandbox_views(
+            _ResourceList.model_validate(sandboxes_page).items, pods.items, include_archived=include_archived
+        )
 
     async def get(self, name: str) -> SandboxView:
         sandbox = await self._sandbox(name)
@@ -227,7 +223,7 @@ class SandboxInventory:
         )
         suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
         body = {
-            "apiVersion": f"{_SANDBOX_API[0]}/{_SANDBOX_API[1]}",
+            "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
             "kind": "Sandbox",
             "metadata": {"name": f"{spec.slug}-{suffix}", "labels": {MANAGED_LABEL: "true"}},
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
@@ -238,7 +234,7 @@ class SandboxInventory:
             },
         }
         created = await self._custom_objects.create_namespaced_custom_object(
-            *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, body
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, body
         )
         return _view(_Sandbox.model_validate(created), None)
 
@@ -272,7 +268,7 @@ class SandboxInventory:
         if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
-            *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions()
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
     async def _set_operating_mode(self, name: str, mode: OperatingMode) -> None:
@@ -281,14 +277,14 @@ class SandboxInventory:
 
     async def _patch(self, name: str, patch: dict[str, object]) -> None:
         await self._custom_objects.patch_namespaced_custom_object(
-            *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, name, patch, _content_type=_MERGE_PATCH
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, patch, _content_type=_MERGE_PATCH
         )
 
     async def _sandbox(self, name: str) -> _Sandbox:
         """The named Sandbox, only if it is Agentplane's: an unmanaged one is not in this inventory."""
         try:
             raw = await self._custom_objects.get_namespaced_custom_object(
-                *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, name
+                *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
@@ -306,6 +302,29 @@ class SandboxInventory:
             if error.status == 404:
                 return None
             raise
+
+
+# The projection, over objects however they were obtained: one request's list, or the copy
+# `live.py` keeps under a watch. Both go through here, so a pushed row and a fetched one are the
+# same row.
+
+
+def sandbox_views(
+    sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod], *, include_archived: bool
+) -> list[SandboxView]:
+    """One row per Sandbox, each joined to the Pod of the same name."""
+    pods_by_name = {pod.metadata.name: pod for pod in pods}
+    views = []
+    for item in sandboxes:
+        parsed = _Sandbox.model_validate(item)
+        views.append(_view(parsed, pods_by_name.get(parsed.metadata.name)))
+    if include_archived:
+        return views
+    return [view for view in views if not view.archived]
+
+
+def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
+    return _view(_Sandbox.model_validate(sandbox), pod)
 
 
 def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:

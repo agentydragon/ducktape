@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 
-const REFRESH_MS = 5000;
+// The proxy keeps its recent decisions in memory and offers no stream, so this one view still
+// asks. Everything else on the page is pushed (live.tsx).
+const DECISIONS_REFRESH_MS = 5000;
 
 /** The proxy's Active condition as written; grey until the proxy has looked at the binding. */
 function ActiveBadge({ binding }: { binding: BindingView }): JSX.Element {
@@ -298,30 +300,17 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
   );
 }
 
-/** What may leave the sandbox and what recently did: its bindings and the proxy's decisions. */
-export function EgressSection({ name }: { name: string }): JSX.Element {
-  const [bindings, setBindings] = useState<BindingView[] | null>(null);
+/** What may leave the sandbox and what recently did: its pushed bindings and the proxy's decisions. */
+export function EgressSection({ name, bindings }: { name: string; bindings: BindingView[] | null }): JSX.Element {
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // What a grant, a revoke, or the one-shot policy list was refused with. The poll below clears
-  // `error` on every successful read, so these would flash and vanish if they shared it.
-  const [actionError, setActionError] = useState<string | null>(null);
   // The namespace's policies, and the ones picked to grant this sandbox next.
   const [policies, setPolicies] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
-    const params = { params: { path: { name } } };
-    const [rules, recent] = await Promise.all([
-      api.GET("/sandboxes/{name}/egress", params),
-      api.GET("/sandboxes/{name}/egress/decisions", params),
-    ]);
-    if (rules.error) setError(displayableError(rules.error));
-    else {
-      setBindings(rules.data);
-      setError(null);
-    }
+    const recent = await api.GET("/sandboxes/{name}/egress/decisions", { params: { path: { name } } });
     if (recent.error) {
       setDecisions(null);
       setDecisionsError(displayableError(recent.error));
@@ -333,24 +322,25 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
 
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), REFRESH_MS);
+    const timer = setInterval(() => void refresh(), DECISIONS_REFRESH_MS);
     return () => clearInterval(timer);
   }, [refresh]);
 
   useEffect(() => {
     void (async () => {
       const { data, error: failure } = await api.GET("/egress/policies");
-      setActionError(failure ? displayableError(failure) : null);
+      setError(failure ? displayableError(failure) : null);
       if (!failure) setPolicies(data.map((policy) => policy.name));
     })();
   }, []);
 
+  // What the API server now holds, granted or revoked, arrives on the page's stream; nothing to
+  // re-read here.
   async function revoke(binding: string): Promise<void> {
     const { error: failure } = await api.DELETE("/egress/bindings/{name}", {
       params: { path: { name: binding } },
     });
-    setActionError(failure ? displayableError(failure) : null);
-    await refresh();
+    setError(failure ? displayableError(failure) : null);
   }
 
   async function grant(): Promise<void> {
@@ -358,15 +348,13 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
       params: { path: { name } },
       body: { policies: picked },
     });
-    setActionError(failure ? displayableError(failure) : null);
+    setError(failure ? displayableError(failure) : null);
     if (!failure) setPicked([]);
-    await refresh();
   }
 
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {actionError && <Text c="red">{actionError}</Text>}
       <GrantPolicies policies={policies} picked={picked} onPick={setPicked} onGrant={() => void grant()} />
       {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>

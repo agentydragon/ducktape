@@ -2,8 +2,9 @@
 
 The browser and agent surface over Agentplane's sandboxes: a FastAPI service that stamps
 Sandboxes from a `SandboxTemplate`, dials each runner Pod over the runner protocol,
-streams sessions to the browser over SSE, and copies every event into the trajectory store as it
-arrives. The staging instance lives in `cluster/k8s/agentplane-staging/`.
+streams sessions to the browser over SSE, keeps a watch over the objects its views read so a change
+is pushed rather than polled for, and copies every event into the trajectory store as it arrives.
+The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 ```sh
 bbr test //x/agentplane/app/...
@@ -28,11 +29,33 @@ bbr test //x/agentplane/app/...
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
+- `live.py`: one list-and-watch over Sandboxes, their Pods, and the egress objects
+  (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open tab.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
+
+## Live views
+
+`/live/sandboxes` and `/live/sandboxes/{name}` are SSE, authenticated like every other route. Each
+carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
+the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bindings, and its
+threads, the last of these from the store rather than a watch, since the app is the only writer of
+a thread's name.
+
+Two things stay request-shaped, both because their source offers no stream. The proxy's recent
+decisions live in its memory and the egress tab still asks for them on an interval; the runner
+answers `ListSessions` per request, so the sandbox page re-reads the session table when the
+sandbox's Pod comes or goes and when a session opens (which reaches it as a new thread).
+
+A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
+`resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves
+one failure to handle honestly -- a watch that has wedged looks exactly like a cluster where
+nothing is happening -- so every frame carries how long ago each kind last completed a cycle,
+against the same three-cycle bound the egress proxy's `/healthz` uses, and a page whose data has
+stopped moving says so rather than showing it as live.
 
 ## Authentication
 
@@ -100,7 +123,8 @@ product state beyond that until a feature needs it.
   `Open` plus unary commands waits for a second, non-browser client that wants it, since the
   stream is what identifies the controlling attachment today.
 - **One replica:** the bridge holds live runner attachments in memory, and a second replica would
-  supersede them.
+  supersede them. The live watch would not mind more -- each replica would hold its own copy of the
+  same objects and push it to its own tabs -- so it is the bridge alone that keeps the count at one.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and

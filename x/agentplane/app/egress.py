@@ -10,6 +10,8 @@ proxy's `Active` condition is shown as written, never recomputed.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Iterable
 from datetime import datetime
 from uuid import UUID
 
@@ -24,9 +26,9 @@ from x.agentplane.app.inventory import Condition, InventoryError
 FLUX_KUSTOMIZATION_LABEL = "kustomize.toolkit.fluxcd.io/name"
 ACTIVE_CONDITION = "Active"
 
-_EGRESS_API = ("agentplane.allegedly.works", "v1alpha1")
-_POLICIES_PLURAL = "egresspolicies"
-_BINDINGS_PLURAL = "egressbindings"
+EGRESS_API = ("agentplane.allegedly.works", "v1alpha1")
+POLICIES_PLURAL = "egresspolicies"
+BINDINGS_PLURAL = "egressbindings"
 _SANDBOX_API_VERSION = "agents.x-k8s.io/v1beta1"
 
 
@@ -175,24 +177,17 @@ class EgressInventory:
         self._custom_objects = custom_objects
 
     async def list_policies(self) -> list[PolicyView]:
-        return [_policy_view(policy) for policy in await self._policies()]
+        return policy_views(_ResourceList.model_validate(await self._list(POLICIES_PLURAL)).items)
 
     async def require_policies(self, names: list[str]) -> None:
         """Every name must resolve to a policy the namespace holds, or nothing is written."""
-        _require_known(names, await self._policy_views())
+        _require_known(names, await self._policies_by_name())
 
     async def bindings_for(self, sandbox: str) -> list[BindingView]:
         """Every binding with a subject naming the sandbox, in name order."""
-        policies = await self._policy_views()
-        page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _BINDINGS_PLURAL)
-        bindings = [_EgressBinding.model_validate(item) for item in _ResourceList.model_validate(page).items]
-        return sorted(
-            (
-                _binding_view(binding, policies)
-                for binding in bindings
-                if any(subject.sandbox.name == sandbox for subject in binding.spec.subjects)
-            ),
-            key=lambda view: view.name,
+        policies, bindings = await asyncio.gather(self._list(POLICIES_PLURAL), self._list(BINDINGS_PLURAL))
+        return matching_bindings(
+            _ResourceList.model_validate(bindings).items, _ResourceList.model_validate(policies).items, sandbox=sandbox
         )
 
     async def revoke(self, name: str) -> None:
@@ -201,7 +196,7 @@ class EgressInventory:
         if FLUX_KUSTOMIZATION_LABEL in (await self._binding(name)).metadata.labels:
             raise FluxOwnedBindingError(name)
         await self._custom_objects.delete_namespaced_custom_object(
-            *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
+            *EGRESS_API, self._namespace, BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
     async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str]) -> BindingView:
@@ -210,14 +205,14 @@ class EgressInventory:
         already-running sandbox adds another binding rather than editing one it has, so each grant's
         `expiresAt` is its own.
         """
-        known = await self._policy_views()
+        known = await self._policies_by_name()
         _require_known(policies, known)
         created = await self._custom_objects.create_namespaced_custom_object(
-            *_EGRESS_API,
+            *EGRESS_API,
             self._namespace,
-            _BINDINGS_PLURAL,
+            BINDINGS_PLURAL,
             {
-                "apiVersion": "/".join(_EGRESS_API),
+                "apiVersion": "/".join(EGRESS_API),
                 "kind": "EgressBinding",
                 "metadata": {
                     # The API server names it. A sandbox may be granted more than once, and a name
@@ -244,17 +239,16 @@ class EgressInventory:
         )
         return _binding_view(_EgressBinding.model_validate(created), known)
 
-    async def _policy_views(self) -> dict[str, PolicyView]:
-        return {policy.metadata.name: _policy_view(policy) for policy in await self._policies()}
+    async def _policies_by_name(self) -> dict[str, PolicyView]:
+        return {view.name: view for view in await self.list_policies()}
 
-    async def _policies(self) -> list[_EgressPolicy]:
-        page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _POLICIES_PLURAL)
-        return [_EgressPolicy.model_validate(item) for item in _ResourceList.model_validate(page).items]
+    async def _list(self, plural: str) -> dict[str, object]:
+        return await self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, plural)
 
     async def _binding(self, name: str) -> _EgressBinding:
         try:
             raw = await self._custom_objects.get_namespaced_custom_object(
-                *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name
+                *EGRESS_API, self._namespace, BINDINGS_PLURAL, name
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
@@ -266,6 +260,28 @@ class EgressInventory:
 def _require_known(names: list[str], policies: dict[str, PolicyView]) -> None:
     if unknown := [name for name in names if name not in policies]:
         raise UnknownPolicyError(unknown)
+
+
+# The projections, over objects however they were obtained: one request's list, or the copy
+# `live.py` keeps under a watch. Both go through here, so a pushed row and a fetched one are the
+# same row.
+
+
+def matching_bindings(bindings: Iterable[object], policies: Iterable[object], *, sandbox: str) -> list[BindingView]:
+    """Every binding with a subject naming the sandbox, in name order."""
+    resolved = {policy.metadata.name: _policy_view(policy) for policy in map(_EgressPolicy.model_validate, policies)}
+    return sorted(
+        (
+            _binding_view(binding, resolved)
+            for binding in map(_EgressBinding.model_validate, bindings)
+            if any(subject.sandbox.name == sandbox for subject in binding.spec.subjects)
+        ),
+        key=lambda view: view.name,
+    )
+
+
+def policy_views(policies: Iterable[object]) -> list[PolicyView]:
+    return [_policy_view(_EgressPolicy.model_validate(policy)) for policy in policies]
 
 
 def _policy_view(policy: _EgressPolicy) -> PolicyView:

@@ -18,6 +18,7 @@ from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from x.agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -102,6 +103,12 @@ def authentication() -> FakeAuthenticationV1Api:
 @pytest.fixture
 def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
     return TokenReviewer(cast(Any, authentication), audience=AUDIENCE)
+
+
+@pytest.fixture
+def live_index() -> LiveIndex:
+    """An index nothing is watching: the fixtures that need one drive it themselves."""
+    return LiveIndex(stale_after_seconds=90)
 
 
 @pytest.fixture

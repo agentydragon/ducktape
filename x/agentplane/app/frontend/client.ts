@@ -84,13 +84,6 @@ export function eventsUrl(sandbox: string, sessionId: string): string {
   return `/sandboxes/${encodeURIComponent(sandbox)}/sessions/${encodeURIComponent(sessionId)}/events`;
 }
 
-/** The sandbox's persisted threads, one per session the bridge has opened. */
-export async function listThreads(sandbox: string): Promise<ThreadView[]> {
-  const { data, error } = await api.GET("/threads", { params: { query: { sandbox } } });
-  if (error) throw new Error(displayableError(error));
-  return data;
-}
-
 /** A session's thread, or null before the bridge has opened the session. */
 export async function findThread(sandbox: string, sessionId: string): Promise<ThreadView | null> {
   const { data, error } = await api.GET("/threads", { params: { query: { sandbox, session_id: sessionId } } });

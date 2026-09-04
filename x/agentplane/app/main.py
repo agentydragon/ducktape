@@ -27,6 +27,7 @@ from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.live import STALE_AFTER_CYCLES, LiveIndex, watch_for
 from x.agentplane.app.oidc import load_settings
 from x.agentplane.app.trajectory import TrajectoryStore
 
@@ -93,6 +94,11 @@ class Settings(BaseSettings):
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
     )
+    resync_seconds: int = Field(
+        default=300,
+        description="Watch lifetime; every kind the live stream pushes is relisted this often, and a "
+        "kind that misses several cycles is what the stream reports as stale.",
+    )
     token_audience: str = Field(
         default="agentplane",
         description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
@@ -143,6 +149,15 @@ async def async_main(settings: Settings) -> None:
             core_v1=CoreV1Api(api),
         )
         egress = EgressInventory(namespace=settings.namespace, custom_objects=custom_objects)
+        live = LiveIndex(stale_after_seconds=float(settings.resync_seconds * STALE_AFTER_CYCLES))
+        watch = watch_for(
+            live,
+            custom_objects=custom_objects,
+            core_v1=CoreV1Api(api),
+            namespace=settings.namespace,
+            sandbox_namespace=settings.sandbox_namespace,
+            resync_seconds=settings.resync_seconds,
+        )
         store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
         bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
@@ -155,17 +170,21 @@ async def async_main(settings: Settings) -> None:
             settings.models,
             egress,
             DecisionsClient(admin_http),
+            live,
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience),
         )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
+        watch_task = asyncio.create_task(watch.run(), name="live-watch")
         try:
             await bridge.start(
                 [view.name for view in await inventory.list_sandboxes() if view.state is ProvisioningState.RUNNING]
             )
             await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
         finally:
+            watch_task.cancel()
+            await asyncio.gather(watch_task, return_exceptions=True)
             await bridge.close()
             await store.close()
 

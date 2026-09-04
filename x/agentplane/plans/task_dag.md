@@ -77,7 +77,7 @@ flowchart TB
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
         C6["C6 Session view legibility<br/>the input's own text, over the protocol"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::completed
-        C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
+        C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::completed
         C9["C9 The profile a sandbox runs under<br/>withdrawn: profiles deferred pending design"]:::withdrawn
         C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
     end
@@ -213,21 +213,6 @@ ones still open.
   the client half already renders `input.text`. Decided (Rai): the protocol changes, so the text
   arrives with the event and a client that joined later or replayed from the log sees it too —
   which is the case an app-side echo of what this tab sent cannot cover.
-- **C8 live push for every view:** the server tells the browser what changed; no page polls.
-  Decided (Rai): a push channel, not a shorter interval. Three surfaces poll at five seconds today
-  — the sandbox list, the sandbox page, and the egress tab — each hand-rolling the same
-  `useEffect`/`setInterval` pair, and a fourth was written with no refresh at all (`listThreads`
-  runs once on mount, so a session named after you arrived keeps its old name until a reload).
-  Polling is also why a state change takes up to five seconds to appear and why every view costs a
-  request per client per interval whether or not anything happened.
-  The app already runs one push channel — the session's SSE stream — so the shape exists; what
-  does not exist is a source to push _from_. `inventory.py` and `egress.py` answer each request
-  with a fresh list against the API server and hold nothing between requests, so this package's
-  real content is server-side: a watch the app keeps over Sandboxes and EgressBindings, and a
-  stream that fans its changes out to the open tabs. The egress proxy's `Informer`
-  ([`../egress/informer.py`](../egress/informer.py)) is the shape to reuse rather than reinvent —
-  same list-and-watch, same freshness question, and its `/healthz` already answers "has this
-  stopped moving", which a UI feeding off a watch will need too.
 - **C9 the profile a sandbox runs under: withdrawn** (Rai). Making profiles visible and pickable
   presumed the concept, and the concept has no design yet: a profile is expected to span more than
   egress, so nothing about it may be settled by its first consumer. The half of it that had
