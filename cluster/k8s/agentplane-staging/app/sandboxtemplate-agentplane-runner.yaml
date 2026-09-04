@@ -29,8 +29,10 @@ spec:
       dnsPolicy: ClusterFirst
       imagePullSecrets:
         - name: forgejo-images-creds
+      # With the rest of the namespace and with LiteLLM, which is already here: a runner's model
+      # calls and its hop to the app both stay inside the zone instead of crossing the mesh.
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/zone: hil-ovh
       serviceAccountName: agentplane-runner
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
@@ -181,7 +183,12 @@ spec:
     - metadata:
         name: state
       spec:
-        storageClassName: local-path-proxmox
+        # The NVMe tier: this is the agent's working directory, where it clones and builds, and
+        # the bulk tier is spinning disk shared with SeaweedFS. R3 reserves `-ssd` for
+        # fsync-critical databases, but it is a rule about CNPG clusters and does not reach a
+        # Pod's volume. Node-local, so a sandbox does not outlive its node -- which is what a
+        # sandbox is for; `seaweedfs-ovh` is the swap if they should survive one.
+        storageClassName: local-path-ovh-ssd
         accessModes:
           - ReadWriteOnce
         resources:
