@@ -191,8 +191,21 @@ explicitly skips dispatch when the idle cause was `Interrupted`). Every mutating
 lock, so `thread/queue/delete` cannot race the moment a queued item gets promoted to a turn:
 `ThreadQueueDeleteResponse.deleted` tells the caller definitively whether the item was actually
 still in the queue to remove. This is the shape that supports a clean
-enqueued-but-not-yet-turn/dequeued-before-turn state machine; joining does not. Not yet exercised
-by the driver or captured live — the earlier "not observed" note in
+enqueued-but-not-yet-turn/dequeued-before-turn state machine; joining does not.
+
+Promotion itself is observable, not just inferrable from absence: `thread/queue/add`'s
+`clientUserMessageId` is threaded straight into the stored item's `TurnInput::UserInput.client_id`
+(`thread_queue_processor.rs::add` → `submission_into_turn_input`), and dispatch starts the queued
+item as ordinary turn-start input, so it goes through the exact same
+`record_user_prompt_and_emit_turn_item` path as joining — the same `item/started`/`item/completed`
+`userMessage` pair, carrying that same `clientUserMessageId` back as `client_id`, fires the moment
+Core records it into history, immediately before it goes out in the turn's first model request.
+Concretely, promotion looks like: a `thread/queue/changed {threadId}` (the delete-on-dispatch that
+removed it from the queue, indistinguishable on its own from any other queue mutation), a
+`turn/started` for a brand-new turn (dispatch always starts fresh, never joins), then
+`item/started`/`item/completed` for the `userMessage` item — that last pair, matched by
+`clientUserMessageId`, is the actual "entered the transcript, about to be sent" signal. Not yet
+exercised by the driver or captured live — the earlier "not observed" note in
 <../native/docs/protocol_roster.md> reflected that the probe only ever tried the implicit
 second-`turn/start` path, never the explicit `thread/queue/*` methods.
 
