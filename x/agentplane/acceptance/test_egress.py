@@ -8,9 +8,10 @@ is equally consistent with a request the proxy admitted, one that never reached 
 model that ran nothing.
 
 The reported username is the load-bearing assertion. `agentydragon-agent` can only come back if the
-sandbox sent a placeholder it cannot resolve, the sidecar carried the Pod's token, the proxy
-admitted the request and swapped the real PAT in, and GitHub authenticated it. No part of that can
-be faked by a model being agreeable.
+sandbox asked the proxy what it may present and was told, sent a placeholder it cannot itself
+resolve, the sidecar carried the Pod's token, the proxy admitted the request and swapped the real
+PAT in, and GitHub authenticated it. No part of that can be faked by a model being agreeable, and
+the placeholder appears nowhere in the prompt -- the agent has to go and find it.
 
 E3's acceptance in x/agentplane/plans/egress_proxy.md is what these encode. They exist because the
 last gap of this kind -- a runner that dropped the proxy variables, so every call bypassed the proxy
@@ -39,10 +40,9 @@ GITHUB_PUBLIC = "github-public"
 GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
-# What the sandbox sends in Authorization; the proxy swaps the PAT in. Nothing puts it in the
-# sandbox's environment yet, so the prompt has to name it -- that is what the agent-facing API in
-# x/agentplane/plans/task_dag.md is for.
-PLACEHOLDER = "agentplane-credential:github-pat"
+# Where a sandbox asks what it may reach (C11). The prompt names this and not the placeholder: the
+# agent is expected to discover the credential it may present, which is the property under test.
+RULES_URL = "https://egress.agentplane.internal/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
@@ -56,21 +56,24 @@ BINDING_SECONDS = 60.0
 Sandboxes = Callable[..., Awaitable[SandboxView]]
 
 PROBE = textwrap.dedent(f"""\
-    You are inside a sandbox whose outbound network goes through a proxy. Find out what it lets you
-    do, then report. Do all three steps, and do not stop early if one fails -- a failure is a
-    result.
+    You are inside a sandbox whose outbound network goes through a proxy. Work out what it lets you
+    do, then report. Do all four steps, and do not stop early if one fails -- a failure is a result.
 
-    1. Fetch the refs of the public repository {PUBLIC_REPO} (git ls-remote is enough; do not clone).
-    2. Ask the GitHub API which account you are authenticated as: GET https://{GITHUB_API_HOST}/user
-       with the header `Authorization: Bearer {PLACEHOLDER}`. That string is a placeholder, not a
-       secret, and it is the whole credential you have; send it exactly as written.
-    3. Try to fetch https://{UNLISTED_HOST}/ and see whether you are allowed to.
+    1. Ask the proxy what you are allowed to reach: GET {RULES_URL}. It answers with the policies
+       that apply to you. Some rules name a credential you do not hold: a header, and a placeholder
+       to put in it that the proxy swaps for the real value on its way out.
+    2. Fetch the refs of the public repository {PUBLIC_REPO} (git ls-remote is enough; no clone).
+    3. Ask the GitHub API which account you are authenticated as: GET https://{GITHUB_API_HOST}/user,
+       presenting the credential exactly as step 1 described it. Send the placeholder verbatim; it is
+       not a secret and it is the whole credential you have.
+    4. Try to fetch https://{UNLISTED_HOST}/ and see whether you are allowed to.
 
     End your final message with exactly one JSON object and nothing after it:
 
-    {{"refs_ok": true or false,
+    {{"placeholder": "the placeholder string step 1 gave you, or null",
+      "refs_ok": true or false,
       "username": "the login the API reported, or null",
-      "unlisted_refused": true if step 3 was refused or failed, false if it succeeded}}
+      "unlisted_refused": true if step 4 was refused or failed, false if it succeeded}}
     """)
 
 
@@ -79,6 +82,7 @@ class Probe(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    placeholder: str | None = Field(description="What the agent learned to present, from the rules endpoint.")
     refs_ok: bool = Field(description="Whether the public repository's refs came back.")
     username: str | None = Field(description="The login GitHub reported for the substituted credential.")
     unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
@@ -118,17 +122,22 @@ async def _active(client: Client, sandbox: str, binding: str) -> None:
 async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     client: Client, sandbox: Sandboxes, provider: Provider, model: str
 ) -> None:
-    """E3's acceptance, in one turn: the agent reaches GitHub, is authenticated as the bot without
-    ever holding its credential, and is refused everywhere the policy does not name -- and the proxy
-    agrees on every count."""
+    """E3 and C11's acceptance in one turn: the agent asks what it may reach, uses the credential it
+    is told about without ever holding it, is authenticated as the bot, and is refused everywhere the
+    policy does not name -- and the proxy agrees on every count.
+
+    Nothing here tells the agent the placeholder. If it comes back as the bot, discovery worked.
+    """
     view = await sandbox(f"accept-probe-{provider}", policies=[GITHUB_PUBLIC])
     agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
     turn = await agent.run(PROBE)
     probe = turn.report(Probe)
 
+    assert probe.placeholder, f"the sandbox could not learn what credential to present:\n{turn.transcript}"
     assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
     assert probe.username == BOT_LOGIN, (
-        f"GitHub reported {probe.username!r}, so the proxy did not substitute the PAT:\n{turn.transcript}"
+        f"GitHub reported {probe.username!r}, so the credential the sandbox discovered did not "
+        f"resolve to the bot:\n{turn.transcript}"
     )
     assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
 
