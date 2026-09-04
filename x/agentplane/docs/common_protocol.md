@@ -33,10 +33,15 @@ API, and silent on Thread naming, archive presentation, timeline design, and HTT
   queued item never touches the active turn and only starts a new one once the thread goes idle,
   and `delete` is race-free (mutex-serialized against dispatch, returns whether it actually still
   removed something) up to that point — evidence in <../plans/provider_protocols.md>. That is a
-  materially different shape from join/steer's all-or-nothing `turn/interrupt`. Once Claude's
-  equivalent input-during-a-turn semantics are understood, revisit "one `Input` verb and no steer
-  verb" above against it — Codex may turn out to support a real enqueued/dequeued state that join
-  alone cannot express.
+  materially different shape from join/steer's all-or-nothing `turn/interrupt`.
+- Claude's side of that question is now written up in
+  [`../plans/claude_input_queue.md`](../plans/claude_input_queue.md): it too has a real
+  enqueued/dequeued state — inputs are queued under a caller-supplied uuid, withdrawn by
+  `cancel_async_message`, and reported via `command_lifecycle` frames — so "one `Input` verb and
+  no steer verb" is due a revisit against both providers, not just Codex. The two queues are not
+  the same object, though: Codex's sits beside the turn and deletes race-free, while Claude's
+  feeds the turn and **coalesces**, which silently moves the unit of withdrawal from the input to
+  the batch. Any common enqueue/withdraw verb has to survive that asymmetry.
 - Steering, queued input, interruption, and resume use provider-native mechanisms and outcomes.
   A related operation on both sides is not evidence that the two are equivalent.
 

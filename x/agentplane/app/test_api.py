@@ -121,6 +121,20 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     )
 
 
+@pytest.mark.parametrize("default_policies", [["github"]])
+def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: TestClient) -> None:
+    """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
+    so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
+    parameter overrides the `default_policies` fixture the client is built from."""
+    unpicked = client.post("/sandboxes", json={"slug": "plain"}).json()
+    (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["github"]
+
+    picked = client.post("/sandboxes", json={"slug": "asked", "policies": ["github", "pypi"]}).json()
+    (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
+
+
 @pytest.mark.parametrize(
     "body",
     [

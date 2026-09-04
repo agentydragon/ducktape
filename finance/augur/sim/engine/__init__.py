@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
-from finance.augur.sim.engine.jax_engine import ProductMetricArrays, run_jax_scan, run_jax_scan_with_product_metrics
+from finance.augur.sim.engine.jax_engine import run_jax_scan, run_jax_scan_with_product_metrics
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.output import DenseSimulationOutput
+from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import Scenario
 

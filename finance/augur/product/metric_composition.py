@@ -44,6 +44,23 @@ class MetricValue(Protocol):
     def __sub__(self, other: Self, /) -> Self: ...
 
 
+class MetricSeries(Protocol):
+    """What a metric's `(snapshot, rollout)` series has to support to be reduced to its
+    terminal samples. Like `MetricValue`, this is a Protocol because the two backends'
+    array types — `numpy` host arrays and `jnp` device arrays — cannot be named together
+    without importing JAX into the backend-neutral reduction.
+    """
+
+    def sum(self, axis: int) -> Self: ...
+    def __getitem__(self, index: int, /) -> Self: ...
+
+
+def terminal_series[T: MetricSeries](metric: str, series: T) -> T:
+    """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
+
+    return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
+
+
 def compose_metric[T: MetricValue](name: str, base: Callable[[str], T]) -> T:
     """One product metric, in terms of the base series `base` supplies.
 

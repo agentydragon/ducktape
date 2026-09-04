@@ -56,15 +56,26 @@ function InputView({ input }: { input: InputState }): JSX.Element {
   );
 }
 
+/** The reasoning blocks showing their text, comma-separated by item id. */
+const REASONING_PARAM = "reasoning";
+
 /**
- * Reasoning stays folded, so an answer is not buried under the thinking that led to it. The header
- * switch sets every block at once; a block can still be opened or closed on its own afterwards.
+ * Reasoning stays folded, so an answer is not buried under the thinking that led to it, and each
+ * block is opened on its own: which ones are open is recorded in the URL, by item id, so a reading
+ * can be linked to and survives a reload.
  */
-function ReasoningView({ item, expanded }: { item: Item; expanded: boolean }): JSX.Element {
-  const [value, setValue] = useState<string | null>(expanded ? item.id : null);
-  useEffect(() => setValue(expanded ? item.id : null), [expanded, item.id]);
+function ReasoningView({ item }: { item: Item }): JSX.Element {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const open = new Set((searchParams.get(REASONING_PARAM) ?? "").split(",").filter((id) => id));
+  function toggle(): void {
+    if (!open.delete(item.id)) open.add(item.id);
+    const next = new URLSearchParams(searchParams);
+    if (open.size === 0) next.delete(REASONING_PARAM);
+    else next.set(REASONING_PARAM, [...open].join(","));
+    setSearchParams(next, { replace: true });
+  }
   return (
-    <Accordion variant="contained" chevronPosition="left" value={value} onChange={setValue}>
+    <Accordion variant="contained" chevronPosition="left" value={open.has(item.id) ? item.id : null} onChange={toggle}>
       <Accordion.Item value={item.id}>
         <Accordion.Control>
           <Group gap="xs">
@@ -80,8 +91,8 @@ function ReasoningView({ item, expanded }: { item: Item; expanded: boolean }): J
   );
 }
 
-function ItemView({ item, expandReasoning }: { item: Item; expandReasoning: boolean }): JSX.Element {
-  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} expanded={expandReasoning} />;
+function ItemView({ item }: { item: Item }): JSX.Element {
+  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
   return (
     <Paper withBorder p="sm">
@@ -117,14 +128,14 @@ function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
   );
 }
 
-function RowView({ row, expandReasoning }: { row: Row; expandReasoning: boolean }): JSX.Element {
+function RowView({ row }: { row: Row }): JSX.Element {
   switch (row.kind) {
     case "turn":
       return <TurnHeader turn={row.turn} />;
     case "input":
       return <InputView input={row.input} />;
     case "item":
-      return <ItemView item={row.item} expandReasoning={expandReasoning} />;
+      return <ItemView item={row.item} />;
   }
 }
 
@@ -212,13 +223,12 @@ export function SessionView({
   const [draft, setDraft] = useState("");
   const [thread, setThread] = useState<ThreadView | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
-  // Both switches are in the URL, like the sandbox page's tab, so a reading — the thinking shown,
-  // the frames shown, either or both — can be linked to and survives a reload.
+  // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
+  // so a reading can be linked to and survives a reload.
   const [searchParams, setSearchParams] = useSearchParams();
-  const expandReasoning = searchParams.get("reasoning") === "open";
   const showRaw = searchParams.get("raw") === "1";
 
-  /** Sets one switch's parameter, leaving the other's where it is. */
+  /** Sets a switch's parameter, leaving every other one where it is. */
   function setFlag(name: string, value: string, on: boolean): void {
     const next = new URLSearchParams(searchParams);
     if (on) next.set(name, value);
@@ -315,11 +325,6 @@ export function SessionView({
         >
           <IconPower size={16} />
         </ActionIcon>
-        <Switch
-          label="Reasoning"
-          checked={expandReasoning}
-          onChange={(e) => setFlag("reasoning", "open", e.currentTarget.checked)}
-        />
         <Switch label="Raw frames" checked={showRaw} onChange={(e) => setFlag("raw", "1", e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
@@ -331,7 +336,7 @@ export function SessionView({
           {showRaw ? (
             timeline(state).map(({ event, row }) => (
               <Fragment key={String(event.sequence)}>
-                {row && <RowView row={row} expandReasoning={expandReasoning} />}
+                {row && <RowView row={row} />}
                 <FrameView event={event} />
               </Fragment>
             ))
@@ -345,10 +350,7 @@ export function SessionView({
                     .map((input) => (
                       <InputView key={input.id} input={input} />
                     ))}
-                  {turn.itemIds.map(
-                    (id) =>
-                      state.items[id] && <ItemView key={id} item={state.items[id]} expandReasoning={expandReasoning} />
-                  )}
+                  {turn.itemIds.map((id) => state.items[id] && <ItemView key={id} item={state.items[id]} />)}
                 </Stack>
               ))}
               {state.inputs

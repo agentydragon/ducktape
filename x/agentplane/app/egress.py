@@ -11,11 +11,12 @@ proxy's `Active` condition is shown as written, never recomputed.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
+from more_itertools import unique_everseen
 from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
@@ -149,9 +150,15 @@ class BindingView(BaseModel):
 class EgressInventory:
     """The namespace's policies and bindings, read and written through the API server."""
 
-    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient):
+    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient, default_policies: Sequence[str] = ()):
         self._namespace = namespace
         self._custom_objects = custom_objects
+        self._default_policies = default_policies
+
+    def launch_policies(self, picked: Sequence[str]) -> list[str]:
+        """What a new sandbox is granted: the policies no sandbox works without, then what the caller
+        picked. Picking a default again is not an error and does not name it twice."""
+        return list(unique_everseen([*self._default_policies, *picked]))
 
     async def list_policies(self) -> list[PolicyView]:
         policies, credentials = await asyncio.gather(self._list(POLICIES_PLURAL), self._list(CREDENTIALS_PLURAL))

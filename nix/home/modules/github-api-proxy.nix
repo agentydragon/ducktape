@@ -17,9 +17,14 @@
 # that for a diagnostic. Run the wrapper for a measurement session, read the flows,
 # go back to the normal binary.
 #
-# Only api.github.com is decrypted. Everything else — the Anthropic API above all —
-# is blind-tunnelled by `--allow-hosts`, so conversations never pass through a MITM
-# to debug GitHub calls.
+# Everything is decrypted, deliberately. Earlier versions decrypted only
+# api.github.com; that narrowness blinded this instrument and the connection
+# recorder in the same place at the same time, and hours of "nothing else touches
+# the API" turned out to mean "nothing else touches the four addresses we happened
+# to list". Operator's call, on the operator's own machine: capture everything and
+# filter at analysis time. Note this does mean Anthropic API traffic from a proxied
+# session passes through the MITM and lands in the flow file, so run the wrappers
+# for measurement sessions rather than leaving them on.
 #
 # The point is to exonerate as much as to attribute. GraphQL responses carry
 # `data.rateLimit.cost`, and the exporter records the account-wide `used` delta over
@@ -87,9 +92,8 @@ in
       Service = {
         Type = "simple";
         ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p ${stateDir} ${confDir}";
-        # --allow-hosts is an allowlist of what to *decrypt*; everything else is
-        # tunnelled without inspection. Flows land in a file rather than stdout so
-        # `mitmdump -nr` can replay and aggregate them afterwards.
+        # No --allow-hosts: everything is decrypted. Flows land in a file rather
+        # than stdout so `mitmdump -nr` can replay and aggregate them afterwards.
         ExecStart = lib.escapeShellArgs [
           "${pkgs.mitmproxy}/bin/mitmdump"
           "--listen-host"
@@ -98,8 +102,6 @@ in
           (toString cfg.port)
           "--set"
           "confdir=${confDir}"
-          "--allow-hosts"
-          "^api\\.github\\.com:443$"
           "-w"
           "${stateDir}/github.flows"
           "--set"

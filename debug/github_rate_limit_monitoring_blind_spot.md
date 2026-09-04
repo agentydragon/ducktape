@@ -1,12 +1,10 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **the burn requires wyrm2 to be up, and nothing measured on wyrm2 accounts for
-it.** With every Claude Code session proxied, the account spent 6758 points in three
-minutes while the proxy captured 14, and nothing bypassed the proxy to `api.github.com`.
-Both instruments filter on that one hostname, so the leading explanation is that they
-share a blind spot rather than that the traffic does not exist. Widen the filters before
-concluding anything further. The monitoring blind spot that started this is closed; the
-consumer is not identified.
+Status: **every candidate anyone proposed has been eliminated by measurement, and the
+burn continues.** It requires wyrm2 to be up, yet nothing observed on wyrm2 accounts for
+it. The single untested lead is that both instruments filtered on a subset of GitHub's
+API addresses, so the traffic was invisible to each of them for the same reason. Fix the
+filters before trusting any elimination below.
 
 ## The blind spot, and why it existed
 
@@ -782,6 +780,54 @@ a blind spot with the same shape as the `/rate_limit` one this note opens with.
 
 Derive both filters from `api.github.com/meta` before trusting any further "nothing else
 touches the API" statement, including the ones already written above.
+
+## The tf roots are cleared
+
+`github-branch-protection`, `github-secrets-sync` and `flux-webhook-token` were
+suspended at 11:37:20Z (`spec.suspend: true` on the `kind: Terraform` resources, no
+runner pods). The next full window, with the suspension in force throughout:
+
+```text
+12:03Z  used=10638   previous hour, exhausted
+12:05Z  used= 2181   reset
+12:07Z  used= 6489   (+4308)
+12:09Z  used=10468   (+3979)
+```
+
+Same shape, same 2x budget, same five-minute drain. **Not the tf roots.** The
+suspension is reverted; there is no outcome in which it should persist.
+
+Two operational notes from arming it, both of which cost a detour:
+
+- `cluster/k8s/<root>/flux-kustomization.yaml` holds a **Flux Kustomization** whose
+  `metadata.name` matches the root. Patching "the file named after the root" suspends
+  the Kustomization that _deploys_ the directory, not the Terraform CR the
+  tofu-controller drives — and a suspended Kustomization then blocks the correction from
+  applying. The Terraform CR lives in `terraform.yaml`.
+- The child Kustomizations in `ducktape-flux` apply those CRs, so reconciling
+  `flux-system` alone is not enough and reading `.spec.suspend` too early shows a stale
+  `<none>`.
+
+## Where this leaves it
+
+Eliminated by measurement, in order: Claude Desktop (burn reproduces without it), the
+Claude Code CLI (6758 points spent while a full-coverage proxy captured 14), Refined
+GitHub (PAT deleted, burn continued), `workspace-gc` and Chrome (arithmetic and socket
+volume), every off-machine candidate (quiet whenever wyrm2 is down), and now the
+GitHub-provider tf roots.
+
+The burn requires wyrm2 up and nothing observed on wyrm2 accounts for it. Those cannot
+both be true of a process making ordinary requests to the addresses being watched — so
+the addresses being watched are the thing to doubt. `/meta` lists `140.82.116.4` and
+`20.29.134.0/24` under `api`; the proxy decrypted only `api.github.com` and every
+recorder analysis matched `140.82.116.5/.6` plus one Azure address. One hand-picked list,
+used by two instruments, blinding both in the same place.
+
+**The next step is not another candidate.** Derive `--allow-hosts` and the analysis
+filter from `api.github.com/meta`, then re-run the residual measurement. Every
+elimination above is scoped to the addresses that were watched, and the residual that
+cleared the CLI is the only one that compared against the account-wide counter rather
+than a filtered capture.
 
 ## Knobs not yet turned
 

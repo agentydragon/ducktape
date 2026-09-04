@@ -61,7 +61,13 @@ import numpy as np
 from jaxtyping import Array, Bool, Float64, Int, Int64
 
 from finance.augur.model.series import PrivateEquityRegimeCode
-from finance.augur.product.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_metric, terminal_series
+from finance.augur.sim.product_metrics import (
+    ProductMetricArrays,
+    ProductMetricFanSummary,
+    ProductProjectionSummaries,
+    ProductTerminalSummary,
+)
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.quantiles import (
     CurrencyQuantileInterpolation,
@@ -118,7 +124,7 @@ from finance.augur.sim.enums import (
 )
 from finance.augur.sim.payment_policy import PayActions, PaymentView, decide as decide_payments
 from finance.augur.sim.target_allocation import SleeveUniverse, decide
-from finance.augur.sim.tlh_harvest import harvest_fraction_curve
+from finance.augur.sim.tlh_harvest import PPB, harvest_fraction_curve_ppb
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
 # survive across processes so the ~6400-instruction scan program need not recompile each run. A no-op
@@ -658,37 +664,6 @@ def _check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.n
     )
 
 
-@dataclass(frozen=True)
-class ProductMetricFanSummary:
-    """Exact percentile reductions for one product metric."""
-
-    month_index: Int64[np.ndarray, " snapshot"]
-    failed_count: int
-    currency_code: str
-    currency_quantum: str
-    percentiles: tuple[float, ...]
-    terminal_percentiles: Int64[np.ndarray, " percentile"]
-    monthly_percentiles: Int64[np.ndarray, " snapshot percentile"]
-
-
-@dataclass(frozen=True)
-class ProductTerminalSummary:
-    """Per-rollout terminal samples for one product metric."""
-
-    failed_month: Int64[np.ndarray, " rollout"]
-    currency_code: str
-    currency_quantum: str
-    terminal_samples: Int64[np.ndarray, " rollout"]
-
-
-@dataclass(frozen=True)
-class ProductProjectionSummaries:
-    """Metric-fan and terminal-distribution summaries from one product scan."""
-
-    metric_fan: ProductMetricFanSummary
-    terminal_distribution: ProductTerminalSummary
-
-
 class _ProductMetricFanDeviceSummary(NamedTuple):
     """Device-side order statistics needed to build one exact metric fan."""
 
@@ -697,25 +672,6 @@ class _ProductMetricFanDeviceSummary(NamedTuple):
     monthly_upper: Int64[Array, " snapshot percentile"]
     terminal_lower: Int64[Array, " percentile"]
     terminal_upper: Int64[Array, " percentile"]
-
-
-@dataclass(frozen=True)
-class ProductMetricArrays:
-    """Base product series emitted by JAX for selected-rollout detail."""
-
-    month_index: Int64[np.ndarray, " snapshot"]
-    failed_month: Int64[np.ndarray, " rollout"]
-    currency_code: str
-    currency_quantum: str
-    base_series: tuple[Int64[np.ndarray, " snapshot rollout"], ...]
-
-    def metric_arrays(self) -> dict[str, Int64[np.ndarray, " snapshot rollout"]]:
-        base = dict(zip(_PRODUCT_BASE_METRICS, self.base_series, strict=True))
-        return {
-            "month_index": self.month_index,
-            **base,
-            **{name: compose_metric(name, base.__getitem__) for name in DERIVED_METRIC_NAMES},
-        }
 
 
 # The base metrics the scan emits per month, in the order `product_metrics` returns them.
@@ -791,11 +747,6 @@ def _run_jax_product_series(
     product_ys, product_tail = _program_impl(program)
     initial_ys, monthly_ys = product_ys
     return _product_metric_series(metric, initial_ys, monthly_ys), product_tail
-
-
-def _product_terminal_series(metric: str, series: Int64[Array, " snapshot rollout"]) -> Int64[Array, " rollout"]:
-    """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
-    return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
 
 
 def _product_metric_fan_device_summary(
@@ -880,7 +831,7 @@ def run_jax_product_summary(
     request transfers only the per-rollout terminal vector.
     """
     series, product_tail = _run_jax_product_series(plan, primary_agent_id=primary_agent_id, metric=metric)
-    terminal = _product_terminal_series(metric, series)
+    terminal = terminal_series(metric, series)
     if percentiles is None:
         oversell_host, failed_host, buy_count_host, terminal_host = jax.device_get(
             (product_tail.sale_oversell, product_tail.failed_month, product_tail.target_allocation_buy_count, terminal)
@@ -920,7 +871,7 @@ def run_jax_product_summaries(
     once; only the requested order statistics and terminal sample vector cross the device boundary.
     """
     series, product_tail = _run_jax_product_series(plan, primary_agent_id=primary_agent_id, metric=metric)
-    terminal = _product_terminal_series(metric, series)
+    terminal = terminal_series(metric, series)
     quantile_plan, fan_device = _product_metric_fan_device_summary(
         plan,
         metric=metric,
@@ -1281,10 +1232,10 @@ def _build_program(
                 policy_idx=policy_idx,
                 gain_profile=gain_profile,
                 lot_indices=tuple(int(lot) for lot in lot_indices),
-                peak_annual_yield=float(params.peak_annual_yield),
-                floor_annual_yield=float(params.floor_annual_yield),
-                maturity_decay_exponent=float(params.maturity_decay_exponent),
-                drawdown_sensitivity=float(params.drawdown_sensitivity),
+                peak_annual_yield_ppb=params.peak_annual_yield_ppb,
+                floor_annual_yield_ppb=params.floor_annual_yield_ppb,
+                maturity_decay_half_exponent=params.maturity_decay_half_exponent,
+                drawdown_sensitivity_ppb=params.drawdown_sensitivity_ppb,
                 short_term_fraction=float(harvest.short_term_fraction[policy_idx]),
             )
         )
@@ -2301,30 +2252,27 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         for hi, fh in enumerate(folded_harvest):
             hp_policy = fh.policy_idx
             hp_lots = np.asarray(fh.lot_indices, dtype=np.int64)
-            # The float level remains only for the return-shaping curve. The
-            # tax basis / market-value calculation below uses the parallel
-            # integer money cube, exactly like every other asset valuation.
-            hp_level_row = external_values[harvest_series[hi]]  # (rollouts, H+1) dynamic gather
-            hp_price_quanta = external_money_values[harvest_series[hi], :, month]
-            hp_level = hp_level_row[:, month]
-            hp_prior_level = hp_level_row[:, jnp.maximum(0, month - 1)]
+            # The return-shaping curve reads the same integer money cube as the tax basis
+            # and market-value calculation below, so no float level is gathered here at all.
+            hp_price_row = external_money_values[harvest_series[hi]]  # (rollouts, H+1) dynamic gather
+            hp_price_quanta = hp_price_row[:, month]
+            hp_prior_price_quanta = hp_price_row[:, jnp.maximum(0, month - 1)]
             cg_ytd, cg_active, hp_cumulative = _tlh_harvest_policy_jit(
                 lot_remaining[hp_lots, :],
                 cost_basis_per_unit[hp_lots],
                 lot_quantity_scale[hp_lots],
                 hp_price_quanta,
-                hp_level,
-                hp_prior_level,
+                hp_prior_price_quanta,
                 tlh[hp_policy],
                 cg_ytd,
                 cg_active,
                 active,
                 gain_profile=fh.gain_profile,
                 has_prior=True,
-                peak=fh.peak_annual_yield,
-                floor=fh.floor_annual_yield,
-                gamma=fh.maturity_decay_exponent,
-                drawdown_sensitivity=fh.drawdown_sensitivity,
+                peak_ppb=fh.peak_annual_yield_ppb,
+                floor_ppb=fh.floor_annual_yield_ppb,
+                half_exponent=fh.maturity_decay_half_exponent,
+                sensitivity_ppb=fh.drawdown_sensitivity_ppb,
                 short_term_fraction=fh.short_term_fraction,
             )
             tlh = tlh.at[hp_policy].set(hp_cumulative)
@@ -3419,10 +3367,10 @@ def _compute_liquid_net_worth(
     static_argnames=(
         "gain_profile",
         "has_prior",
-        "peak",
-        "floor",
-        "gamma",
-        "drawdown_sensitivity",
+        "peak_ppb",
+        "floor_ppb",
+        "half_exponent",
+        "sensitivity_ppb",
         "short_term_fraction",
     ),
 )
@@ -3431,8 +3379,7 @@ def _tlh_harvest_policy_jit(
     cost_basis_lots: Int64[Array, " policy_lot rollout"],
     quantity_scale_lots: Int64[Array, " policy_lot"],
     price_quanta: Int64[Array, " rollout"],
-    price_level: Float64[Array, " rollout"],
-    prior_price_level: Float64[Array, " rollout"],
+    prior_price_quanta: Int64[Array, " rollout"],
     cumulative: Int64[Array, " rollout"],
     capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
     capital_gain_active: Bool[Array, " capital_gain_profile gain_class rollout"],
@@ -3440,10 +3387,10 @@ def _tlh_harvest_policy_jit(
     *,
     gain_profile: int,
     has_prior: bool,
-    peak: float,
-    floor: float,
-    gamma: float,
-    drawdown_sensitivity: float,
+    peak_ppb: int,
+    floor_ppb: int,
+    half_exponent: int,
+    sensitivity_ppb: int,
     short_term_fraction: float,
 ) -> tuple[
     Int64[Array, " capital_gain_profile gain_class rollout"],
@@ -3461,26 +3408,34 @@ def _tlh_harvest_policy_jit(
         axis=0
     )
     adjusted_basis = jnp.maximum(0, original_basis - cumulative)
-    safe_mv = jnp.where(market_value > 0, market_value, 1)
-    embedded_gain = jnp.clip(jnp.where(market_value > 0, (market_value - adjusted_basis) / safe_mv, 0.0), 0.0, 1.0)
+    safe_market_value = jnp.where(market_value > 0, market_value, 1)
+    embedded_gain_ppb = jnp.clip(
+        _scale_quanta_by_ratio(market_value - adjusted_basis, jnp.int64(PPB), safe_market_value), 0, PPB
+    )
     if has_prior:
-        safe_prior = jnp.where(prior_price_level > 0.0, prior_price_level, 1.0)
-        period_return = jnp.where(prior_price_level > 0.0, (price_level - prior_price_level) / safe_prior, 0.0)
+        safe_prior = jnp.where(prior_price_quanta > 0, prior_price_quanta, 1)
+        drawdown_ppb = jnp.maximum(
+            0, _scale_quanta_by_ratio(prior_price_quanta - price_quanta, jnp.int64(PPB), safe_prior)
+        )
     else:
-        period_return = jnp.zeros_like(price_level)  # month 0: no prior price, treat as flat
-    fraction = cast(
-        Float64[Array, " rollout"],
-        harvest_fraction_curve(
-            embedded_gain,
-            jnp.maximum(0.0, -period_return),
-            peak_annual_yield=peak,
-            floor_annual_yield=floor,
-            maturity_decay_exponent=gamma,
-            drawdown_sensitivity=drawdown_sensitivity,
+        drawdown_ppb = jnp.zeros_like(price_quanta)  # month 0: no prior price, treat as flat
+    # The curve is written to run eager and traced alike, so its return type is the union
+    # of both array libraries; here it is always the traced one.
+    fraction_ppb = cast(
+        Int64[Array, " rollout"],
+        harvest_fraction_curve_ppb(
+            embedded_gain_ppb,
+            drawdown_ppb,
+            peak_annual_yield_ppb=peak_ppb,
+            floor_annual_yield_ppb=floor_ppb,
+            maturity_decay_half_exponent=half_exponent,
+            drawdown_sensitivity_ppb=sensitivity_ppb,
         ),
     )
     ceiling = jnp.maximum(0, original_basis - cumulative)  # never harvest past available below-basis room
-    gross = jnp.where(active, jnp.minimum(_scale_money(market_value, fraction), ceiling), 0)
+    gross = jnp.where(
+        active, jnp.minimum(_scale_quanta_by_ratio(market_value, fraction_ppb, jnp.int64(PPB)), ceiling), 0
+    )
     stf = min(max(short_term_fraction, 0.0), 1.0)
     short_term = int(CapitalGainClassification.SHORT_TERM)
     long_term = int(CapitalGainClassification.LONG_TERM)

@@ -310,6 +310,7 @@ py_library(
         "//util:kubernetes",
         "//x/agentplane/egress:resources",
         "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )

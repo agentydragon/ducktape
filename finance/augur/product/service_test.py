@@ -73,8 +73,8 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
-from finance.augur.sim.engine.jax_engine import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
 from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics
 
