@@ -39,9 +39,9 @@ from finance.augur.product.wire import (
     TaxPaymentEvent,
 )
 from finance.augur.sim.compiler.plan import CompiledSimulation
-from finance.augur.sim.engine.jax_engine import ProductMetricArrays
 from finance.augur.sim.enums import LifecycleKind, PrivateEquityOpportunityOutcome, TaxBreakdownChannel
 from finance.augur.sim.output import DenseSimulationOutput
+from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = frozenset((ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP))

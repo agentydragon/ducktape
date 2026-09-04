@@ -9,10 +9,13 @@ pub mod engine;
 pub mod fixture;
 pub mod ledger;
 pub mod money;
+pub mod product;
 pub mod tax;
 
 pub use engine::{
     SimulationError, ValidatedFixture, simulate, simulate_dense, simulate_dense_validated,
-    simulate_summaries, simulate_summaries_validated, simulate_validated,
+    simulate_product_metrics, simulate_product_metrics_validated, simulate_summaries,
+    simulate_summaries_validated, simulate_validated,
 };
 pub use fixture::{Fixture, PopulationOutput, SimulationOutput};
+pub use product::{BASE_METRIC_NAMES, ProductMetricSeries};

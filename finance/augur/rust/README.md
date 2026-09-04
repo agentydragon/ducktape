@@ -167,25 +167,47 @@ Sleeve quantity scales are explicit fixture integers and the adapter verifies
 that each one matches the canonical Python asset scale before differential
 execution.
 
+## Product read model
+
+`simulate_product_metrics(fixture, primary_agent_id)` emits the seven base product metric
+series plus the per-rollout failure month, under the compact capture mode — no monthly
+snapshot, journal, or event trace. `backend.py` wraps it as the product API's
+`ProductMetricArrays` and `ProductProjectionSummaries`, composing the derived metrics and
+the percentile fan with `product/metric_composition.py` and `product/quantiles.py`, the
+same code the JAX backend runs. Design, and the two JAX behaviours the Rust engine matches
+deliberately rather than corrects: [docs/product_metrics.md](docs/product_metrics.md).
+
+## Python extension
+
+`simulator.so` is a `rust_shared_library` built from `python.rs`, imported as
+`finance.augur.rust.simulator` and typed by the hand-written `simulator.pyi`. Fixtures
+cross as JSON text because that is the simulator's input contract; results cross as Python
+integers, so the fan workload never pays for a dense JSON round trip. `simulator_cli`
+remains for out-of-process forensic runs.
+
 Still missing before replacement is plausible:
 
+- a `Scenario` + sampled-series → fixture encoder, which is what would let
+  `product/service.py` dispatch to this engine at all; it is blocked on a decision, not on
+  transcription (docs/product_metrics.md § Where the boundary is not yet closed);
+- selected-rollout event projection (`product/projection.py` reads dense plan+output);
 - broader modeled tax facts and complete deduction policy;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax policy beyond purchase-price assessment and fixed location
   special assessments;
 - broader liquidity policy;
-- complete selected-rollout causal trace parity for those domains;
-- Python extension/Arrow output integration.
+- complete selected-rollout causal trace parity for those domains.
 
 ## Targets
 
 ```text
 //finance/augur/rust:simulator_cli
+//finance/augur/rust:simulator_ext
 //finance/augur/rust:simulator_test
 //finance/augur/rust:differential_test
-//finance/augur/rust:benchmark_fixture
-//finance/augur/rust:benchmark_driver
-//finance/augur/rust:jax_benchmark_driver
+//finance/augur/rust:benchmark_fixture_bin
+//finance/augur/rust:benchmark_driver_bin
+//finance/augur/rust:jax_benchmark_driver_bin
 ```
 
 `simulator_cli FIXTURE.json OUTPUT.json` retains full forensic traces. The Rust

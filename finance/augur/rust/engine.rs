@@ -21,6 +21,10 @@ use crate::{
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
+    product::{
+        BaseMetrics, LotView, ProductError, ProductInputs, ProductMetricSeries, SnapshotState,
+        snapshot_metrics,
+    },
     tax::{
         JurisdictionLevel, RATE_SCALE, TaxError, TaxFacts, assess, net_capital_gains,
         validate_rules,
@@ -39,6 +43,8 @@ const PE_ASSET_PREFIX: &str = "private_equity:";
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
+    #[error(transparent)]
+    Product(#[from] ProductError),
     #[error("unsupported fixture schema version {actual}; expected {expected}")]
     SchemaVersion { actual: u32, expected: u32 },
     #[error("fixture must contain at least one rollout")]
@@ -784,6 +790,8 @@ struct RolloutComputation {
     ending_tlh_cumulative_harvest: Vec<Money>,
     recorder: Recorder,
     failed_month: Option<u32>,
+    /// One row per snapshot (`horizon_months + 1`), empty when no product agent was selected.
+    product_metrics: Vec<BaseMetrics>,
 }
 
 impl RolloutComputation {
@@ -889,7 +897,7 @@ fn simulate_with_capture(
     let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.fixture, rollout_id, capture_mode)
+            simulate_rollout(fixture.fixture, rollout_id, capture_mode, None)
                 .map(RolloutComputation::into_output)
         })
         .collect();
@@ -914,7 +922,7 @@ pub fn simulate_summaries_validated(
     let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.fixture, rollout_id, CaptureMode::Summary)
+            simulate_rollout(fixture.fixture, rollout_id, CaptureMode::Summary, None)
                 .map(RolloutComputation::into_summary)
         })
         .collect();
@@ -922,6 +930,41 @@ pub fn simulate_summaries_validated(
         schema_version: FIXTURE_SCHEMA_VERSION,
         rollouts: rollouts?,
     })
+}
+
+/// Run every rollout and retain only the seven base product metric series.
+///
+/// This is the percentile-fan workload: it allocates no monthly snapshot, journal, or
+/// event trace, so a 100,000-rollout population costs `snapshots × rollouts` integers per
+/// metric rather than a dense output tree.
+pub fn simulate_product_metrics(
+    fixture: &Fixture,
+    primary_agent_id: &str,
+) -> Result<ProductMetricSeries, SimulationError> {
+    simulate_product_metrics_validated(ValidatedFixture::new(fixture)?, primary_agent_id)
+}
+
+pub fn simulate_product_metrics_validated(
+    fixture: ValidatedFixture<'_>,
+    primary_agent_id: &str,
+) -> Result<ProductMetricSeries, SimulationError> {
+    let inputs = ProductInputs::resolve(fixture.fixture, primary_agent_id)?;
+    let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
+        .into_par_iter()
+        .map(|rollout_id| {
+            simulate_rollout(
+                fixture.fixture,
+                rollout_id,
+                CaptureMode::Summary,
+                Some(&inputs),
+            )
+            .map(|computation| (computation.product_metrics, computation.failed_month))
+        })
+        .collect();
+    Ok(ProductMetricSeries::from_rollouts(
+        fixture.fixture.scenario.horizon_months + 1,
+        &rollouts?,
+    )?)
 }
 
 fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
@@ -2328,6 +2371,7 @@ fn simulate_rollout(
     fixture: &Fixture,
     rollout_id: u32,
     capture_mode: CaptureMode,
+    product: Option<&ProductInputs>,
 ) -> Result<RolloutComputation, SimulationError> {
     let mut accounts: Vec<AccountRef> = fixture
         .scenario
@@ -2594,6 +2638,7 @@ fn simulate_rollout(
         .collect();
 
     let mut failed_month = None;
+    let mut product_metrics = Vec::new();
     if recorder.capture_mode.captures_output() {
         recorder.record_month(month_output(
             fixture,
@@ -2606,6 +2651,20 @@ fn simulate_rollout(
             &tax_liabilities,
             &tax_facts,
             &tlh_cumulative_harvest,
+            false,
+        )?);
+    }
+    if let Some(inputs) = product {
+        product_metrics.push(product_snapshot(
+            fixture,
+            inputs,
+            rollout_id,
+            0,
+            &ledger,
+            &lots,
+            &properties,
+            &mortgages,
+            Money(0),
             false,
         )?);
     }
@@ -2623,6 +2682,20 @@ fn simulate_rollout(
                     &tax_liabilities,
                     &tax_facts,
                     &tlh_cumulative_harvest,
+                    true,
+                )?);
+            }
+            if let Some(inputs) = product {
+                product_metrics.push(product_snapshot(
+                    fixture,
+                    inputs,
+                    rollout_id,
+                    month + 1,
+                    &ledger,
+                    &lots,
+                    &properties,
+                    &mortgages,
+                    Money(0),
                     true,
                 )?);
             }
@@ -2751,7 +2824,7 @@ fn simulate_rollout(
             month,
             &active_obligations,
         )?;
-        let settlement_failed = settle_obligations(
+        let (settlement_failed, product_shortfall) = settle_obligations(
             fixture,
             &mut ledger,
             &mut recorder,
@@ -2761,6 +2834,7 @@ fn simulate_rollout(
             &mut tax_liabilities,
             month,
             &active_obligations,
+            product.map(|inputs| inputs.primary_agent_id()),
         )?;
         if settlement_failed {
             failed_month = Some(month);
@@ -2828,6 +2902,20 @@ fn simulate_rollout(
                 failed_month.is_some(),
             )?);
         }
+        if let Some(inputs) = product {
+            product_metrics.push(product_snapshot(
+                fixture,
+                inputs,
+                rollout_id,
+                month + 1,
+                &ledger,
+                &lots,
+                &properties,
+                &mortgages,
+                product_shortfall,
+                failed_month.is_some(),
+            )?);
+        }
     }
     debug_assert_eq!(ledger.trial_balance(), 0);
     Ok(RolloutComputation {
@@ -2849,7 +2937,51 @@ fn simulate_rollout(
         },
         recorder,
         failed_month,
+        product_metrics,
     })
+}
+
+/// Reduce the live rollout state to one snapshot's base product metrics.
+///
+/// Dollar state is zeroed for a frozen rollout by the same `failed` flag the dense
+/// snapshot serializers use, so the two output channels never disagree about a failure.
+#[allow(clippy::too_many_arguments)]
+fn product_snapshot(
+    fixture: &Fixture,
+    inputs: &ProductInputs,
+    rollout_id: u32,
+    snapshot: u32,
+    ledger: &Ledger,
+    lots: &[LotState],
+    properties: &[PropertyState],
+    mortgages: &[MortgageState],
+    shortfall: Money,
+    failed: bool,
+) -> Result<BaseMetrics, SimulationError> {
+    let lot_views: Vec<LotView<'_>> = lots
+        .iter()
+        .map(|lot| LotView {
+            agent_id: &lot.spec.agent_id,
+            asset_id: &lot.spec.asset_id,
+            units_remaining: if failed { 0 } else { lot.units_remaining.0 },
+            quantity_scale: lot.spec.quantity_scale,
+        })
+        .collect();
+    let bonds = bond_states(fixture, rollout_id, snapshot, failed)?;
+    let mortgage_states = mortgage_states(mortgages, failed);
+    let empty_ledger = Ledger::default();
+    let state = SnapshotState {
+        ledger: if failed { &empty_ledger } else { ledger },
+        lots: &lot_views,
+        properties,
+        mortgages: &mortgage_states,
+        bonds: &bonds,
+        shortfall,
+        failed,
+    };
+    Ok(snapshot_metrics(
+        fixture, inputs, &state, rollout_id, snapshot,
+    )?)
 }
 
 fn execute_primary_residence_events(
@@ -4289,7 +4421,8 @@ fn settle_obligations(
     tax_liabilities: &mut [TaxLiabilityState],
     month: u32,
     obligations: &[ActiveObligation],
-) -> Result<bool, SimulationError> {
+    product_agent_id: Option<&str>,
+) -> Result<(bool, Money), SimulationError> {
     let mut due_by_source = BTreeMap::<AccountRef, Money>::new();
     for obligation in obligations {
         let due = due_by_source
@@ -4310,6 +4443,7 @@ fn settle_obligations(
         .collect::<Result<_, LedgerError>>()?;
 
     let mut any_failure = false;
+    let mut product_shortfall = Money(0);
     for obligation in obligations {
         let funded = funded_by_source[&obligation.from];
         let firing_id = obligation.cause_id.clone();
@@ -4540,8 +4674,11 @@ fn settle_obligations(
             attempted_funding_sources,
             failure_active: !funded,
         });
+        if product_agent_id.is_some_and(|agent_id| agent_id == obligation.from.agent_id) {
+            product_shortfall = product_shortfall.checked_add(shortfall)?;
+        }
     }
-    Ok(any_failure)
+    Ok((any_failure, product_shortfall))
 }
 
 fn target_allocation_attempted_sources(fixture: &Fixture, account: &AccountRef) -> String {

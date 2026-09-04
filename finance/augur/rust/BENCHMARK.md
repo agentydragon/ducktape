@@ -87,7 +87,7 @@ and the same seven-logical-CPU BuildBuddy runner class.
 ### Rust dense state and compatibility events
 
 ```text
-bbr run -c opt //finance/augur/rust:benchmark_driver -- \
+bbr run -c opt //finance/augur/rust:benchmark_driver_bin -- \
   --output-mode dense --rollouts 10000 --horizon-months 60 --repeats 5
 ```
 
@@ -106,7 +106,7 @@ bbr run -c opt //finance/augur/rust:benchmark_driver -- \
 ### JAX dense state and canonical events
 
 ```text
-bbr run -c opt //finance/augur/rust:jax_benchmark_driver -- \
+bbr run -c opt //finance/augur/rust:jax_benchmark_driver_bin -- \
   --rollouts 10000 --horizon-months 60 --repeats 5
 ```
 
@@ -142,7 +142,7 @@ performance gates.
 Command:
 
 ```text
-bbr run -c opt //finance/augur/rust:benchmark_driver -- \
+bbr run -c opt //finance/augur/rust:benchmark_driver_bin -- \
   --rollouts 100000 --horizon-months 60 --repeats 5
 ```
 
@@ -180,7 +180,7 @@ The 100,000-rollout workload was then executed as ten 10,000-rollout batches,
 which is an execution detail rather than a domain-model distinction:
 
 ```text
-bbr run -c opt //finance/augur/rust:jax_benchmark_driver -- \
+bbr run -c opt //finance/augur/rust:jax_benchmark_driver_bin -- \
   --rollouts 100000 --batch-size 10000 --horizon-months 60 --repeats 5
 ```
 
