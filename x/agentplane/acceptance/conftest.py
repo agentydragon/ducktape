@@ -32,6 +32,10 @@ AUDIENCE = "agentplane"
 SANDBOX_READY_SECONDS = 300.0
 
 
+class TokenNotMintedError(Exception):
+    """`kubectl create token` refused; its own message says why."""
+
+
 class SandboxNotReadyError(Exception):
     """The sandbox did not reach Running with a Pod address in time."""
 
@@ -41,22 +45,25 @@ def mint_token(*, namespace: str, service_account: str, audience: str, lifetime:
 
     RBAC on `serviceaccounts/token` is what gates this. The audience is chosen freely by whoever
     asks and so proves nothing on its own, which is why the app checks the subject as well.
+
+    Bazel scrubs the environment, so the target inherits HOME and KUBECONFIG: without either,
+    kubectl finds no kubeconfig and quietly falls back to `http://localhost:8080`.
     """
-    minted = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            namespace,
-            "create",
-            "token",
-            service_account,
-            f"--audience={audience}",
-            f"--duration={lifetime}",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    command = [
+        "kubectl",
+        "-n",
+        namespace,
+        "create",
+        "token",
+        service_account,
+        f"--audience={audience}",
+        f"--duration={lifetime}",
+    ]
+    minted = subprocess.run(command, capture_output=True, text=True, check=False)
+    if minted.returncode != 0:
+        # kubectl says what is wrong -- no kubeconfig, no RBAC, no such ServiceAccount -- and
+        # CalledProcessError would hide all of it behind an exit status.
+        raise TokenNotMintedError(f"`{' '.join(command)}` failed with {minted.returncode}: {minted.stderr.strip()}")
     return minted.stdout.strip()
 
 

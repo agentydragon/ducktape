@@ -37,6 +37,12 @@ py_test(
     name = "test_egress",
     timeout = "eternal",
     srcs = ["test_egress.py"],
+    # kubectl reads the caller's own kubeconfig to mint the app's token; with neither of these it
+    # falls back to http://localhost:8080 and fails for a reason that looks nothing like the cause.
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
     tags = [
         "manual",
         "no-remote-exec",
