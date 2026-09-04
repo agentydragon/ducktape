@@ -14,7 +14,7 @@
 tracepoint:sock:inet_sock_set_state
 / args->protocol == 6 && args->newstate == 2 && args->family == 2 /
 {
-	printf("%s pid=%d ppid=%d uid=%d comm=%s daddr=%s dport=%d\n",
+	printf("%s pid=%d ppid=%d uid=%d comm=\"%s\" daddr=%s dport=%d\n",
 	    strftime("%Y-%m-%dT%H:%M:%S%z", nsecs), pid, curtask->real_parent->pid,
 	    uid, comm, ntop(args->family, args->daddr), args->dport);
 }
@@ -22,7 +22,7 @@ tracepoint:sock:inet_sock_set_state
 tracepoint:sock:inet_sock_set_state
 / args->protocol == 6 && args->newstate == 2 && args->family == 10 /
 {
-	printf("%s pid=%d ppid=%d uid=%d comm=%s daddr=%s dport=%d\n",
+	printf("%s pid=%d ppid=%d uid=%d comm=\"%s\" daddr=%s dport=%d\n",
 	    strftime("%Y-%m-%dT%H:%M:%S%z", nsecs), pid, curtask->real_parent->pid,
 	    uid, comm, ntop(args->family, args->daddr_v6), args->dport);
 }
