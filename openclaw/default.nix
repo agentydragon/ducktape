@@ -192,7 +192,18 @@ pkgs.dockerTools.buildLayeredImage {
       # Keep the matching Nix JDK explicit so the wrapped Bazel ELF can start.
       "JAVA_HOME=${pkgs.jdk_headless}"
       "NODE_ENV=production"
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs"
+      # --report-on-signal makes a wedged gateway diagnosable: `kill -USR2 1` writes
+      # a diagnostic report (JS stack, native stack per thread, libuv handles) to
+      # /tmp. Node generates it from a dedicated thread, which is the point --
+      # public-coder hung with its main thread blocked in synchronous node:sqlite
+      # work, so the event loop never turned, SIGUSR1 never opened the inspector,
+      # and /proc/<pid>/{syscall,stack} were refused by PodSecurity baseline.
+      # There was no way to ask the process what it was doing.
+      #
+      # Deliberately not --inspect: these containers execute agent-authored
+      # commands, and an always-listening inspector on loopback would let any of
+      # them attach to the gateway process and read its credentials.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "BB_USE_BAZEL_VERSION=${bazelExecutable}"
