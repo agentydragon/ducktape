@@ -4,14 +4,6 @@ metadata:
   name: github-secrets-sync
   namespace: ducktape-flux
 spec:
-  # EXPERIMENT(added 2026-09-04): suspended to test whether the GitHub-provider
-  # tf roots are spending the account's GraphQL quota. Something drains the whole
-  # 5000-point budget hourly and every other candidate has been eliminated by
-  # measurement; these three are what remains that both authenticates as the user
-  # and calls the GitHub API. Unsuspend once the next reset window has been read
-  # either way -- this is a diagnostic, not a decision.
-  # See <debug/github_rate_limit_monitoring_blind_spot.md>.
-  suspend: true
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/github-secrets-sync
