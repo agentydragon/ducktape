@@ -1666,9 +1666,13 @@ class TestRentalIncomeTaxation:
         recapture = 14_545.45
         assert federal_y2["ordinary_income_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         assert federal_y2["ordinary_taxable_quanta"] / 100 == pytest.approx(0, abs=1e-6)
-        # Federal LTCG: ordinary_taxable=0, LTCG=$205k → 0% slice 0..47025, 15% slice
-        # 47025..205000 = 0.15 × 157975 = 23,696.25.
-        ltcg_tax_federal = 0.15 * (205_000 - 47_025)
+        # Federal LTCG: ordinary income is zero in year 2, so the standard deduction is
+        # unused against it and shelters that much of the gain instead (§63 nets it against
+        # taxable income, which includes the gain, before §1(h) rates what is left).
+        # Taxable income is $205,000 - $14,600 = $190,400, all net capital gain:
+        # 0% slice 0..47,025, 15% slice 47,025..190,400 = 0.15 × 143,375 = 21,506.25.
+        standard_deduction = 14_600
+        ltcg_tax_federal = 0.15 * (205_000 - standard_deduction - 47_025)
         # §1250 implied marginal walk: 10% × 11600 + 12% × (14545.45 - 11600) = 1160 + 353.45 = 1513.45.
         # That's well below the 25% × 14545.45 = 3636.36 cap → marginal wins.
         section_1250_marginal = 0.10 * 11_600 + 0.12 * (recapture - 11_600)
