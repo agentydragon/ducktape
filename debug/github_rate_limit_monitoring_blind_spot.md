@@ -488,6 +488,35 @@ down. Nothing here explains it. The earlier "seven points in seven minutes" resu
 real but partial: the app dominated that particular window rather than being the whole
 of the problem.
 
+## The second consumer is the CLI
+
+The connection recorder answers it. Across 09:11–09:15 UTC — the ~2337 points with the
+desktop app down — roughly 49 connections to `api.github.com` from wyrm2:
+
+| Source                                          | Connections |
+| ----------------------------------------------- | ----------- |
+| `claude` CLI direct (4 distinct pids)           | ~22         |
+| `gh` / `.gh-wrapped` spawned by claude sessions | ~9          |
+| Chrome                                          | ~11         |
+| `main`, uid 65532, a pod under containerd       | 4           |
+| `terraform-provi`                               | 3           |
+
+The CLI processes connect **directly**, not through `gh`: `comm="HTTP Client"` is the
+Node/undici thread name inside the claude binary. Four separate sessions doing it at
+once, clustered in the minutes the quota drained. That is
+<https://github.com/anthropics/claude-code/issues/63222>, `area:core`, closed as _stale_
+rather than fixed.
+
+This also corrects the claim made earlier in this note that the CLI was cleared. That
+rested on twelve sessions producing 7 points in 7 minutes — but that window was
+09:00–09:07 and the CLI's burst came at 09:11. The CLI was not clear; it had not fired
+yet.
+
+**So the answer is both Claude products, independently**, each spending the user's
+personal GraphQL budget, each scaling with session count, against an operator running
+eleven CLI sessions. That is why nine hours of exhaustion never matched any single
+candidate costed here: it was never one thing at machine rate.
+
 ## Remaining work
 
 1. **Report upstream.** #88320 is closed as completed but reproduces on 1.40609.1 on

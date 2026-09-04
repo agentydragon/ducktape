@@ -49,8 +49,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Readable by the operator's primary group, not world: the log is a complete
+    # record of every peer this machine dials, so it stays off other accounts,
+    # but analysing it should not need root. `z` adjusts the file systemd creates
+    # through `StandardOutput=append:`, which would otherwise be 0644 root:root.
     systemd.tmpfiles.rules = [
-      "d ${logDir} 0750 root root -"
+      "d ${logDir} 0750 root users -"
+      "z ${logFile} 0640 root users -"
     ];
 
     systemd.services.github-api-recorder = {
