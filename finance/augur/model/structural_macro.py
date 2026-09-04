@@ -51,7 +51,6 @@ from __future__ import annotations
 import math
 from collections import Counter
 from datetime import date
-from functools import cache
 from typing import Literal
 
 import numpy as np
@@ -202,13 +201,10 @@ class StructuralMacroFittedDefaults(FrozenModel):
     rate_beta_r_squared: float
 
 
-# Runfile location of the checked-in fit — see `StructuralMacroFittedDefaults`. `@cache`d
-# because Pydantic calls each field's `default_factory` on every construction that omits it,
-# and re-reading + re-parsing the YAML that often would be wasteful.
+# Runfile location of the checked-in fit — see `StructuralMacroFittedDefaults`.
 _BUNDLED_STRUCTURAL_MACRO_RUNFILE = "_main/finance/augur/fit/calibrated/trained_structural_macro.yaml"
 
 
-@cache
 def _fitted_defaults() -> StructuralMacroFittedDefaults:
     path = get_required_path(_BUNDLED_STRUCTURAL_MACRO_RUNFILE)
     return StructuralMacroFittedDefaults.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
