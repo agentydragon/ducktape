@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack
 from dataclasses import dataclass, field
@@ -47,8 +46,6 @@ from x.agentplane.app.inventory import (
     sandbox_views,
 )
 from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
-
-logger = logging.getLogger(__name__)
 
 PODS_PLURAL = "pods"
 
