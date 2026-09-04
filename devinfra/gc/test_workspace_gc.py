@@ -2,6 +2,7 @@ import json
 import pathlib
 import re
 import subprocess
+from collections.abc import Callable
 
 import httpx
 import pytest
@@ -43,6 +44,25 @@ def github_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> path
     return repo
 
 
+def _in_turn(*payloads: Callable[[httpx.Request], dict]) -> Callable[[httpx.Request], httpx.Response]:
+    """Answer successive requests from `payloads`, so each batch gets its own outcome."""
+    remaining = iter(payloads)
+    return lambda request: httpx.Response(200, json=next(remaining)(request))
+
+
+def _always_merged(request: httpx.Request) -> httpx.Response:
+    """Every batch resolves — the quota never runs out."""
+    return httpx.Response(200, json=_merged_nodes_for(request))
+
+
+def _rate_limited(_request: httpx.Request) -> dict:
+    return {"data": None, "errors": [{"type": "RATE_LIMIT", "message": "exceeded"}]}
+
+
+def _not_found(_request: httpx.Request) -> dict:
+    return {"data": None, "errors": [{"type": "NOT_FOUND"}]}
+
+
 def _merged_nodes_for(request: httpx.Request) -> dict:
     """Answer every alias the query actually asked for, with one merged PR each."""
     aliases = _ALIAS_RE.findall(json.loads(request.content)["query"])
@@ -63,13 +83,7 @@ def test_pr_states_keeps_batches_resolved_before_a_rate_limit(github_repo: pathl
     condition rather than a repo problem: the branches already answered stay answered and the
     rest fall back to git signals.
     """
-    responses = [
-        lambda request: httpx.Response(200, json=_merged_nodes_for(request)),
-        lambda _request: httpx.Response(
-            200, json={"data": None, "errors": [{"type": "RATE_LIMIT", "message": "exceeded"}]}
-        ),
-    ]
-    respx.post(_GRAPHQL_URL).mock(side_effect=responses)
+    respx.post(_GRAPHQL_URL).mock(side_effect=_in_turn(_merged_nodes_for, _rate_limited))
 
     states = workspace_gc.pr_states(github_repo, _BRANCHES)
 
@@ -81,11 +95,7 @@ def test_pr_states_keeps_batches_resolved_before_a_rate_limit(github_repo: pathl
 @respx.mock
 def test_pr_states_still_reports_other_graphql_errors(github_repo: pathlib.Path) -> None:
     """A non-quota GraphQL failure is not the resilient case and must not be silently kept."""
-    responses = [
-        lambda request: httpx.Response(200, json=_merged_nodes_for(request)),
-        lambda _request: httpx.Response(200, json={"data": None, "errors": [{"type": "NOT_FOUND"}]}),
-    ]
-    respx.post(_GRAPHQL_URL).mock(side_effect=responses)
+    respx.post(_GRAPHQL_URL).mock(side_effect=_in_turn(_merged_nodes_for, _not_found))
 
     assert workspace_gc.pr_states(github_repo, _BRANCHES) == {}
 
@@ -93,7 +103,7 @@ def test_pr_states_still_reports_other_graphql_errors(github_repo: pathlib.Path)
 @respx.mock
 def test_pr_states_resolves_every_branch_when_the_quota_holds(github_repo: pathlib.Path) -> None:
     """The happy path still sweeps every batch — the anchor for the two failure cases."""
-    respx.post(_GRAPHQL_URL).mock(side_effect=lambda request: httpx.Response(200, json=_merged_nodes_for(request)))
+    respx.post(_GRAPHQL_URL).mock(side_effect=_always_merged)
 
     assert workspace_gc.pr_states(github_repo, _BRANCHES).keys() == _BRANCHES
 
