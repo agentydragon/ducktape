@@ -64,40 +64,65 @@ earlier. So the consumer is not GraphQL-only; whatever it is also does REST.
 `agentydragon-agent` is flat at 5000/5000 on both buckets for the entire window. Every
 consumer wired to that account is exonerated.
 
-## What consumes a GitHub credential in this repo
+## Every known GitHub API consumer
 
 Rate limits are per **account**, so anything authenticating as `agentydragon` — PAT,
-fine-grained PAT, or user OAuth — draws on the same exhausted bucket. Not all of these
-speak GraphQL; the third column is what could plausibly land in the GraphQL bucket.
+fine-grained PAT, user OAuth, or a GitHub App making _user-to-server_ requests — draws
+on the same 5,000 points/hr GraphQL bucket. A GitHub App acting on an **installation**
+has its own bucket, and git transport (clone, fetch, push over HTTPS or SSH) is not
+API traffic at all and spends nothing.
 
-### Authenticates as `agentydragon` (shares the bucket)
+### Workstations
 
-| Consumer                                                        | Credential                                                         | GraphQL?                                    |
-| --------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------- |
-| Workstation `gh` / agent sessions                               | personal PAT from home-manager + `gh auth` OAuth                   | **yes, heavily** — `gh pr`/`gh issue`       |
-| `devinfra/gc/workspace_gc.py`                                   | `GITHUB_TOKEN` or `gh auth token`                                  | **yes** — explicit `api.github.com/graphql` |
-| haku-console GitHub MCP (`api.githubcopilot.com/mcp`)           | user OAuth, `haku-console-github-mcp-client-credentials`           | **yes** — several tools are GraphQL         |
-| Claude Code web sessions (cihealth etc.)                        | `DUCKTAPE_CI_READ_GITHUB_TOKEN`, `secrets/github-ci-read-pat.yaml` | possible via `gh`                           |
-| `tf/github` Terraform root                                      | `secrets/shared/github-pat-ssh-keys.yaml` via `.envrc`             | some provider resources; manual runs only   |
-| `github-secrets-sync` (flux-system)                             | `external-creds/github-agentydragon`                               | REST                                        |
-| `attic-jwt-rotation` CronJob :30 (nix-cache)                    | same                                                               | REST                                        |
-| `authentik-jwt-rotation` CronJob :15 (agents-infra)             | same                                                               | REST                                        |
-| `github-exporter` + `github-graphql-rate-exporter` (monitoring) | same                                                               | 0-point probe by design                     |
-| `release.yml` / `release-artifact`                              | `GH_RELEASE_PAT`, `secrets/ci/gh-release-pat.sops.yaml`            | REST                                        |
-| `devinfra/nixos_bazel_test/run.sh`                              | `GITHUB_TOKEN` into nix `access-tokens`                            | REST                                        |
+| Consumer                           | Credential                                           | Bucket | Evidence                                                   |
+| ---------------------------------- | ---------------------------------------------------- | ------ | ---------------------------------------------------------- |
+| `claude` CLI, direct               | unclear; `GITHUB_TOKEN` is unset, so `gh auth token` | user   | recorder: 4 pids to `api.github.com`, `comm="HTTP Client"` |
+| Claude Desktop `GhRestClient`      | user OAuth                                           | user   | its own `main.log` logs GraphQL 403s naming user 714892    |
+| `gh` CLI                           | `gh auth login` OAuth (GitHub CLI app)               | user   | transcripts: REST polling; 5 `gh api graphql` in 24h       |
+| Chrome + extensions                | per-extension PATs                                   | user   | `ss -tnpi`: tens of requests per socket                    |
+| Refined GitHub extension           | classic PAT, `repo, workflow, read:project`          | user   | PAT deleted 2026-09-04; burn continued                     |
+| `devinfra/gc/workspace_gc.py`      | `GITHUB_TOKEN` or `gh auth token`                    | user   | ~3 points/request, ~15 per 209-branch sweep                |
+| `tf/github` Terraform root         | `secrets/shared/github-pat-ssh-keys.yaml`            | user   | 4 `github_user_ssh_key`; PAT since deleted                 |
+| `devinfra/nixos_bazel_test/run.sh` | `GITHUB_TOKEN` into nix `access-tokens`              | user   | REST                                                       |
 
-### Separate bucket
+### In-cluster
 
-- **`agentydragon-agent` PAT** (`secrets/github-pat-agentydragon-agent.yaml`,
-  `external-creds/github-agentydragon-agent`): Claude Code web `GITHUB_TOKEN`,
-  public-coder-agent, openclaw-spike, haku-egress-proxy, agentplane-egress, and the
-  second exporter pair. Different user, measured idle.
-- **`ducktape-automation` GitHub App**: `sync-pins.yml` (\*/30), `prune-releases.yml`,
-  `.github/actions/mint-automation-token`. Bills the App installation.
-- **`secrets.GITHUB_TOKEN` / `github.token` in Actions** (pr-visuals, GHCR pushes):
-  per-run installation token.
-- **Git transport, not the API**: Flux `GitRepository` (public HTTPS clone),
-  `flux-deploy-key`, `gaffer-private-fetch-pat`.
+| Consumer                                                | Credential                           | Bucket | Notes                                            |
+| ------------------------------------------------------- | ------------------------------------ | ------ | ------------------------------------------------ |
+| `github-secrets-sync` tf-runner                         | `external-creds/github-agentydragon` | user   | GitHub TF provider → `api.github.com`            |
+| `github-branch-protection` tf-runner                    | same                                 | user   | branch protection is GraphQL                     |
+| `flux-webhook-token` tf-runner                          | same                                 | user   | seen on `api.github.com` via Hubble              |
+| `attic-jwt-rotation` CronJob :30 (nix-cache)            | same                                 | user   | REST                                             |
+| `authentik-jwt-rotation` CronJob :15                    | same                                 | user   | REST                                             |
+| `github-exporter` ×2 (monitoring)                       | both accounts                        | user   | REST `/rate_limit`                               |
+| `github-graphql-rate-exporter` ×2                       | both accounts                        | user   | 0-point `rateLimit` probe                        |
+| unidentified pod, `comm="main"` uid 65532               | unknown                              | user?  | **open** — recurs on `api.github.com` every ~60s |
+| `haku-indexer-chunk-ducktape-public`                    | none                                 | —      | git clone of the public repo, not API            |
+| Flux `source-controller`, `image-automation-controller` | deploy key / registry                | —      | git and registry, not API                        |
+
+Measured contribution of the tf-runners together: ~560 points/h during an hour they were
+visibly reconciling. They reconcile on a 15-minute interval, and their API traffic lasts
+seconds — which is why short Hubble captures kept missing them.
+
+### CI
+
+| Consumer                                           | Credential                | Bucket       |
+| -------------------------------------------------- | ------------------------- | ------------ |
+| GitHub Actions workflows generally                 | `secrets.GITHUB_TOKEN`    | installation |
+| `sync-pins` (\*/30), `prune-releases`              | `ducktape-automation` App | installation |
+| `release.yml`, `release-artifact`                  | `GH_RELEASE_PAT`          | **user**     |
+| gaffer-private CI image push/pull                  | Gaffer GHCR classic PATs  | user         |
+| BuildBuddy runners fetching `http_archive` sources | usually unauthenticated   | anonymous    |
+
+Only `GH_RELEASE_PAT` and the gaffer PATs put CI on the user's bucket; the rest bills the
+App installation or the per-run token.
+
+### Separate account entirely
+
+`agentydragon-agent` (`secrets/github-pat-agentydragon-agent.yaml`,
+`external-creds/github-agentydragon-agent`): Claude Code web `GITHUB_TOKEN`,
+public-coder-agent, openclaw-spike, haku-egress-proxy, agentplane-egress, and the second
+exporter pair. Measured flat at 5000/5000 on both buckets across the whole window.
 
 ## The episode ended at 06:00 UTC
 

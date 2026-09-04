@@ -94,6 +94,7 @@ in
     ./modules/attic.nix
     ./modules/atuin.nix
     ./modules/buildbuddy.nix
+    ./modules/github-api-proxy.nix
     ./modules/sops-env.nix
     ./services/activitywatch.nix
     ./opencode
