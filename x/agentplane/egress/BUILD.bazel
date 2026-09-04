@@ -60,8 +60,8 @@ py_library(
         ":policy",
         ":resources",
         "//util:kubernetes",
+        "//x/agentplane:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
-        "@pypi//tenacity",
     ],
 )
 

@@ -17,6 +17,7 @@ from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.trajectory import TrajectoryStore
 
 
@@ -38,6 +39,7 @@ def openapi_document() -> dict[str, Any]:
         {provider: ["schema-model"] for provider in Provider},
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
+        LiveIndex(stale_after_seconds=900),
     ).openapi()
     return document
 

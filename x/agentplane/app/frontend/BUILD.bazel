@@ -51,6 +51,19 @@ ts_library(
 )
 
 ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "events",
     srcs = ["events.ts"],
     tsconfig = TSCONFIG,
@@ -101,6 +114,7 @@ ts_library(
     deps = [
         ":client",
         ":lifecycle",
+        ":live",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -128,6 +142,7 @@ ts_library(
         ":client",
         ":egress",
         ":lifecycle",
+        ":live",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -265,6 +280,7 @@ ts_library(
     deps = [
         ":app",
         ":client",
+        ":live",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -330,6 +346,7 @@ VISUAL_DATA = [
     )
     for scenario in [
         "sandboxes",
+        "sandboxes_stale",
         "sandbox",
         "sandbox_egress",
         "session",

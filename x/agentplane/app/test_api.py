@@ -17,6 +17,7 @@ from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
+from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
@@ -45,6 +46,7 @@ def client(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
@@ -65,7 +67,7 @@ def client(
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
         "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], from_git=False
     )
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, reviewer=reviewer)
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
 
@@ -176,6 +178,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
@@ -199,6 +202,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
             TEST_MODELS,
             egress,
             decisions,
+            live_index,
             reviewer=reviewer,
         )
         with TestClient(app, headers=AGENT_AUTH) as client:
@@ -291,6 +295,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     reviewer: TokenReviewer,
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
@@ -298,7 +303,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     await store.thread("live", "s-2", spec)
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, reviewer=reviewer)
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
@@ -346,6 +351,8 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/threads",
         "/threads/{thread_id}",
         "/threads/{thread_id}/events",
+        "/live/sandboxes",
+        "/live/sandboxes/{name}",
     }
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}

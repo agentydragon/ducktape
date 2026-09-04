@@ -1,0 +1,14 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+# Scoped to the two callers under this tree: the egress proxy's informer and the app's live index.
+# This is x/ code with no stable API, not repo-wide infrastructure.
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "kubernetes_watch",
+    srcs = ["kubernetes_watch.py"],
+    deps = [
+        "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
+    ],
+)
