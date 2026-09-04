@@ -28,6 +28,15 @@ API, and silent on Thread naming, archive presentation, timeline design, and HTT
   text as a non-streaming request; Codex emits retry notices and eventually fails the turn.
 - Codex `turn/steer` requires `expectedTurnId` and joins the running turn; the runner does not
   use it, since a plain `turn/start` during a turn joins it too.
+- Codex also exposes a separate durable per-thread queue the runner does not use
+  (`thread/queue/{add,list,update,delete,reorder,start}`, `codex-rs/ext/queue`): unlike join, a
+  queued item never touches the active turn and only starts a new one once the thread goes idle,
+  and `delete` is race-free (mutex-serialized against dispatch, returns whether it actually still
+  removed something) up to that point — evidence in <../plans/provider_protocols.md>. That is a
+  materially different shape from join/steer's all-or-nothing `turn/interrupt`. Once Claude's
+  equivalent input-during-a-turn semantics are understood, revisit "one `Input` verb and no steer
+  verb" above against it — Codex may turn out to support a real enqueued/dequeued state that join
+  alone cannot express.
 - Steering, queued input, interruption, and resume use provider-native mechanisms and outcomes.
   A related operation on both sides is not evidence that the two are equivalent.
 

@@ -168,8 +168,33 @@ running turn) and `turn/interrupt` for interruption. Test the native request and
 item/turn evidence. A request acknowledgement is not itself a
 terminal outcome.
 
-A second `turn/start` while a turn is active is a separate experiment from `turn/steer`. Queue
-ownership and dequeue behavior are deferred until the basic driver works.
+A second `turn/start` while a turn is active is a separate experiment from `turn/steer`. Both join
+the active turn: Core appends the input to that turn's in-memory pending-input list
+(`core/src/session/input_queue.rs`), drained only after the current model response and every tool
+call it requested have finished (`core/src/session/turn.rs`), never mid-stream. Joining is
+recorded into history (and echoed as `item/started`/`item/completed` for a `userMessage` item
+carrying back `clientUserMessageId`) at the moment it drains, immediately before the next model
+request goes out — there is no separate "now sending to the model" signal. `turn/interrupt` is the
+only cancellation primitive for joined input, and it is not selective: aborting the turn also
+clears whatever was pending for it (`InputQueue::clear_pending`), so there is no way to pull back
+one joined message without killing the turn it joined.
+
+Codex additionally ships a **separate, durable queue** unrelated to steering/joining
+(`codex-rs/ext/queue`, present in the `rust-v0.152.0` pin): `thread/queue/{add,list,update,delete,
+reorder,start}` plus a `thread/queue/changed {threadId}` notification (all `#[experimental(...)]`
+on the wire — opt-in requirements against the pinned binary are unconfirmed). Unlike joining, a
+queued item does not affect the active turn at all; it is SQLite-backed
+(`codex-thread-store`'s `QueueStore`) and only turns into a new turn once the thread goes fully
+idle (`QueuedItemService::dispatch_if_idle`, wired off the `on_thread_idle` lifecycle hook, which
+explicitly skips dispatch when the idle cause was `Interrupted`). Every mutating call
+(`add`/`update`/`delete`/`reorder`) and the idle-triggered dispatch itself take the same per-thread
+lock, so `thread/queue/delete` cannot race the moment a queued item gets promoted to a turn:
+`ThreadQueueDeleteResponse.deleted` tells the caller definitively whether the item was actually
+still in the queue to remove. This is the shape that supports a clean
+enqueued-but-not-yet-turn/dequeued-before-turn state machine; joining does not. Not yet exercised
+by the driver or captured live — the earlier "not observed" note in
+<../native/docs/protocol_roster.md> reflected that the probe only ever tried the implicit
+second-`turn/start` path, never the explicit `thread/queue/*` methods.
 
 ### Resume
 
