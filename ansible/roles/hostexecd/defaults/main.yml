@@ -1,0 +1,13 @@
+---
+# Required per-host overrides — this host's short name (audience/daemon id is `hostexec-<host>`)
+# and its routing-bearer SOPS file (cluster/k8s/haku/console/node-daemon-<host>.sops.yaml).
+hostexecd_host: ""
+hostexecd_daemon_token_sops_file: ""
+
+# Matches the defaults in nix/nixos/modules/hostexecd.nix.
+hostexecd_auth_domain: "auth.allegedly.works"
+hostexecd_console_url: "https://haku.allegedly.works"
+
+# Nix release-artifact pin shared with the NixOS hosts (nix/packages/default.nix `hostexecd`),
+# so this Debian install tracks the exact same build as wyrm2/rugged.
+hostexecd_pins_file: "{{ playbook_dir }}/../nix/artifact-pins.json"

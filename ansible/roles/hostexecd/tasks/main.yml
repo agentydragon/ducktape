@@ -1,0 +1,128 @@
+---
+# Installs hostexecd as a plain systemd unit on a Debian (non-NixOS) host. Mirrors
+# nix/nixos/modules/hostexecd.nix's systemd.services.hostexecd — see that file's header for the
+# daemon's trust model. Every fact this role hardcodes about that trust model (env var names, no
+# systemd sandboxing, per-host issuer/audience shape) must stay in lockstep with it by hand, since
+# this is a second, independent rendering of the same unit rather than a shared module.
+
+- name: Apply sops tools role
+  ansible.builtin.import_role:
+    name: sops_tools
+  tags: [hostexecd, sops]
+
+- name: Install OpenSSL runtime library (hostexecd links libssl/libcrypto via reqwest native-tls)
+  ansible.builtin.apt:
+    name: libssl3
+    state: present
+  tags: [hostexecd, install]
+
+- name: Resolve pinned hostexecd artifact
+  ansible.builtin.set_fact:
+    hostexecd_pin: "{{ (lookup('file', hostexecd_pins_file) | from_json).pins.hostexecd }}"
+  tags: [hostexecd, install]
+
+- name: Convert pinned hostexecd sha256 (base64) to hex
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "import base64, sys; print(base64.b64decode(sys.argv[1]).hex())"
+      - "{{ hostexecd_pin.sha256 }}"
+  register: hostexecd_sha256_hex
+  changed_when: false
+  tags: [hostexecd, install]
+
+# The pinned artifact is the same plain x86_64-linux ELF that nix/packages/default.nix's
+# mkBinaryArtifact autoPatchelfHook-patches for NixOS's non-FHS store layout. Debian is a normal
+# FHS distro (standard dynamic linker path, system OpenSSL), so the unpatched binary runs as-is.
+- name: Install hostexecd binary from the pinned ducktape release
+  ansible.builtin.get_url:
+    url: "{{ hostexecd_pin.url }}"
+    dest: /usr/local/bin/hostexecd
+    checksum: "sha256:{{ hostexecd_sha256_hex.stdout }}"
+    mode: "0755"
+  notify: Restart hostexecd
+  tags: [hostexecd, install]
+
+- name: Convert host SSH key to age key for sops decryption
+  ansible.builtin.shell: |
+    ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key
+  register: hostexecd_age_key
+  changed_when: false
+  no_log: true
+  tags: [hostexecd, secrets]
+
+- name: Decrypt hostexecd daemon token with sops
+  ansible.builtin.shell: |
+    SOPS_AGE_KEY={{ hostexecd_age_key.stdout }} sops decrypt --extract '["stringData"]["token"]' {{ hostexecd_daemon_token_sops_file }}
+  register: hostexecd_daemon_token_raw
+  changed_when: false
+  no_log: true
+  tags: [hostexecd, secrets]
+
+- name: Create /etc/hostexecd directory
+  ansible.builtin.file:
+    path: /etc/hostexecd
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  tags: [hostexecd, config]
+
+- name: Deploy hostexecd daemon token
+  ansible.builtin.copy:
+    content: "{{ hostexecd_daemon_token_raw.stdout }}"
+    dest: /etc/hostexecd/daemon-token
+    owner: root
+    group: root
+    mode: "0400"
+  notify: Restart hostexecd
+  tags: [hostexecd, config]
+
+- name: Deploy hostexecd systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/hostexecd.service
+    content: |
+      [Unit]
+      Description=hostexecd — verified per-host remote command execution for haku-console
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/bin/hostexecd
+      Restart=always
+      RestartSec=5
+      Environment=HOSTEXEC_HOST={{ hostexecd_host }}
+      Environment=HOSTEXEC_ISSUER=https://{{ hostexecd_auth_domain }}/application/o/hostexec-{{ hostexecd_host }}/
+      Environment=HOSTEXEC_JWKS_URL=https://{{ hostexecd_auth_domain }}/application/o/hostexec-{{ hostexecd_host }}/jwks/
+      Environment=HOSTEXEC_CONSOLE_URL={{ hostexecd_console_url }}
+      Environment=HOSTEXEC_DAEMON_TOKEN_FILE=/etc/hostexecd/daemon-token
+      Environment=RUST_LOG=info
+      # {{ hostexecd_host }} is Debian, not NixOS: there's no /run/current-system/sw/bin system
+      # profile. Best-effort PATH covering both run_as accounts' Nix profiles (classic and
+      # `nix profile` home-manager layouts) plus the standard Debian dirs, so operator commands
+      # resolve the same tools a login shell would find. Unverified against the live host — check
+      # this once hostexecd is actually running here, and adjust if a command an operator expects
+      # to resolve doesn't.
+      Environment=PATH=/root/.nix-profile/bin:/home/agentydragon/.nix-profile/bin:/home/agentydragon/.local/state/nix/profiles/home-manager/home-path/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+      # Runs as root (it setuids to the token's run_as, which may be root or an unprivileged
+      # user), so this unit deliberately applies NO systemd sandboxing / capability restriction —
+      # that would defeat the per-call privilege drop. See nix/nixos/modules/hostexecd.nix.
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: "0644"
+  notify: Restart hostexecd
+  tags: [hostexecd, install]
+
+- name: Enable and start hostexecd service
+  ansible.builtin.systemd:
+    name: hostexecd
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [hostexecd, service]

@@ -9,6 +9,8 @@
     nebula_ca_cert_file: "{{ playbook_dir }}/../secrets/nebula/ca.crt"
     nebula_host_cert_file: "{{ playbook_dir }}/../secrets/nebula/atlas.crt"
     nebula_host_key_sops_file: "{{ playbook_dir }}/../secrets/nebula/atlas.sops.key"
+    hostexecd_host: atlas
+    hostexecd_daemon_token_sops_file: "{{ playbook_dir }}/../cluster/k8s/haku/console/node-daemon-atlas.sops.yaml"
   remote_user: root
 
   tasks:
@@ -182,6 +184,11 @@
       ansible.builtin.import_role:
         name: nebula
       tags: [nebula]
+
+    - name: Apply hostexecd role
+      ansible.builtin.import_role:
+        name: hostexecd
+      tags: [hostexecd]
 
     - name: Apply Nix role
       ansible.builtin.import_role:

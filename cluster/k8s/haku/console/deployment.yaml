@@ -262,6 +262,11 @@ spec:
                 secretKeyRef:
                   name: haku-console-node-daemon-rugged
                   key: token
+            - name: HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__ATLAS__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-node-daemon-atlas
+                  key: token
             # Two in-process MCP servers execute as the acting Operator's own Google account:
             # `gmail` (Gmail reads mirroring the REST API, draft creation, thread-label changes,
             # label CRUD — haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware

@@ -89,9 +89,11 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
 - `cluster/k8s/haku/console/config.yaml` owns daemon ids, display names, allowed backends,
   token environment slots, and host-to-daemon routing.
 - `cluster/k8s/haku/console/node-daemon-*.sops.yaml` owns one encrypted routing bearer per
-  node. Each file is decryptable by both the cluster secret controller and that NixOS host.
-- `nix/nixos/modules/hostexecd.nix` owns the outbound daemon service and reads the same SOPS
-  file through sops-nix.
+  node. Each file is decryptable by both the cluster secret controller and that node.
+- `nix/nixos/modules/hostexecd.nix` owns the outbound daemon service on a NixOS host and reads
+  the same SOPS file through sops-nix. `ansible/roles/hostexecd` owns it on a non-NixOS host
+  (`atlas`), decrypting the same file with `sops`+`ssh-to-age` against the host's own SSH host
+  key instead — see "Bringing up a node" below.
 - `tf/gitops/agent-machine-access/hostexec.tf` owns the per-host Authentik provider and
   execution-authority groups. Routing bearer provisioning does not replace this authority.
 
@@ -117,8 +119,10 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
    `node-daemon-*.sops.yaml` beside it.
 2. Add the per-host Authentik provider and execution-authority groups in
    `tf/gitops/agent-machine-access/hostexec.tf`.
-3. Rebuild the host; `hostexecd` (via `nix/nixos/modules/hostexecd.nix`) begins outbound
-   heartbeats.
+3. Rebuild the host; `hostexecd` begins outbound heartbeats. On a NixOS host this is
+   `nix/nixos/modules/hostexecd.nix`. `atlas` runs Proxmox VE (Debian, not NixOS), so it instead
+   gets a plain systemd unit from the `ansible/roles/hostexecd` role (`ansible-playbook atlas.yaml`)
+   — a second, independently maintained rendering of the same unit; keep both in sync by hand.
 4. Confirm the node is `connected` in Settings before approving a hostexec call.
 
 Order between console and daemon does not matter: a configured node with no daemon appears
