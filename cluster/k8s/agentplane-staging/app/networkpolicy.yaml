@@ -37,14 +37,6 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: litellm
-            k8s:app.kubernetes.io/name: litellm
-      toPorts:
-        - ports:
-            - port: "4000"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
             app.kubernetes.io/name: agentplane-egress
       toPorts:
