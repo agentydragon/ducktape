@@ -102,6 +102,8 @@ flowchart TB
     P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
     K["Conditional access controller<br/>allow / deny / user approval required"]:::future
     R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
+    E5["E5 The model endpoint through the proxy<br/>the harness holds a placeholder, not the LiteLLM key;<br/>model traffic takes the sidecar like everything else"]:::ready
+    PR["The proxy endures its own rollout<br/>E5 makes it a dependency of every turn, and its<br/>decision ring is per-process, so scaling out is not free"]:::next
     L["Credentialed production readiness<br/>runner port auth, freshness, replay, rotation"]:::future
     V["Stronger runtime evaluation<br/>gVisor, Kata, Firecracker, or equivalent"]:::future
 
@@ -157,6 +159,7 @@ flowchart TB
     F0 --> G -->|yes| R1
     F0 --> J --> P
     J --> H
+    H --> E5 --> PR
     P -->|yes| K --> R
     P -->|no| R
     R -->|yes| V --> L

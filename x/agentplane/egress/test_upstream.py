@@ -53,6 +53,33 @@ async def test_name_resolving_into_a_forbidden_range_is_refused() -> None:
     assert (await UpstreamResolver(exempt=LOOPBACK).pin("LocalHost", 443)).address == ip_address("127.0.0.1")
 
 
+@pytest.mark.parametrize("address", ["10.1.2.3", "172.16.0.1", "192.168.1.1", "fd00::1"])
+def test_a_rule_declaring_its_host_internal_reaches_a_private_address(address: str) -> None:
+    """What lets an in-cluster Service be reached through the proxy at all."""
+    assert not reachable(ip_address(address), frozenset())
+    assert reachable(ip_address(address), frozenset(), internal=True)
+
+
+@pytest.mark.parametrize("address", ["127.0.0.1", "169.254.169.254", "224.0.0.1", "0.0.0.0", "::1"])
+def test_declaring_a_host_internal_never_reaches_the_sandbox_s_own_interfaces(address: str) -> None:
+    """`internal` means the cluster network. Loopback is the sidecar and the runner's own listeners,
+    and link-local is whatever the node's metadata service is; neither is a Service."""
+    assert not reachable(ip_address(address), frozenset(), internal=True)
+
+
+async def test_a_private_address_pinned_for_an_internal_rule_is_not_served_to_another() -> None:
+    """The pin cache is keyed by host and port, not by who admitted it. Without re-checking the
+    address it holds, one rule declaring a host internal would lift the guard for every rule that
+    names it while the pin stays fresh."""
+    resolver = UpstreamResolver()
+    pinned = await resolver.pin("10.1.2.3", 443, internal=True)
+
+    assert pinned.address == ip_address("10.1.2.3")
+    with pytest.raises(UpstreamRefusedError) as refused:
+        await resolver.pin("10.1.2.3", 443)
+    assert refused.value.reason is DenyReason.ADDRESS_FORBIDDEN
+
+
 async def test_unresolvable_name_is_refused() -> None:
     with pytest.raises(UpstreamRefusedError) as refused:
         await UpstreamResolver().pin("nonexistent.invalid", 443)

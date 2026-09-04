@@ -82,7 +82,13 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;
-  a literal address in place of a host is held to the same rule. A host that does not resolve is
+  a literal address in place of a host is held to the same rule.
+- **A rule may declare its hosts cluster-internal**, which lifts that refusal for private unicast
+  addresses — and only for the rules that say so, never for loopback or link-local, which are the
+  sandbox's own interfaces rather than the cluster. It is how an in-cluster service is reached
+  through the proxy at all; without it the guard refuses every Service address. A pin is keyed by
+  host and port alone, so the check runs again on a cached address: one pinned for a rule that
+  declared its host internal is not served to a rule that did not. A host that does not resolve is
   refused with `host-unresolved` (`502`).
 - The connection is made to the address that was checked: a name is resolved once per admission
   window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed

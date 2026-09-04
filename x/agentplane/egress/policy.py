@@ -102,6 +102,9 @@ class Allowed:
     policy: str
     rule: int
     rewrites: tuple[HeaderRewrite, ...] = ()
+    cluster_internal: bool = False
+    """Whether the deciding rule declared its hosts cluster-internal, which the dial needs: the
+    address check happens where the connection is made, not here."""
 
 
 @dataclass(frozen=True)
@@ -274,7 +277,9 @@ def evaluate(index: Index, sandbox: Sandbox, request: EgressRequest, now: dateti
     presented = {} if request.is_connect else presented_credentials(index, request)
     if not presented:
         first = matches[0]
-        return Allowed(binding=first.binding, policy=first.policy, rule=first.number)
+        return Allowed(
+            binding=first.binding, policy=first.policy, rule=first.number, cluster_internal=first.rule.cluster_internal
+        )
     resolving = [match for match in matches if _resolves(match.rule, presented)]
     if not resolving:
         return Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
@@ -291,4 +296,5 @@ def evaluate(index: Index, sandbox: Sandbox, request: EgressRequest, now: dateti
         policy=match.policy,
         rule=match.number,
         rewrites=presented[credential.metadata.name].rewrites(value),
+        cluster_internal=match.rule.cluster_internal,
     )

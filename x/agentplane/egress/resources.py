@@ -149,6 +149,13 @@ class Rule(_Wire):
         default=None, description="Path globs: `*` within one segment, `**` across segments; absent admits any."
     )
     credential_ref: CredentialRef | None = Field(default=None, alias="credentialRef")
+    cluster_internal: bool = Field(
+        default=False,
+        alias="clusterInternal",
+        description="This rule's hosts are inside the cluster and meant to be, so the proxy's refusal "
+        "of private addresses does not apply to them. Off by default: that refusal is what stops an "
+        "admitted name from resolving into the cluster, DNS rebinding included.",
+    )
 
 
 class PolicySpec(_Wire):

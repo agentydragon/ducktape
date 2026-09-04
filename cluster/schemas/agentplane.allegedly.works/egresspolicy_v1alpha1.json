@@ -41,6 +41,11 @@
                   "minLength": 1
                 }
               },
+              "clusterInternal": {
+                "description": "Whether this rule's hosts are inside the cluster and meant to be. The proxy resolves every admitted host and refuses one that points at a private address, which is what stops an allowed name from reaching a Service, a Pod or a node \u2014 DNS rebinding included. Setting this lifts that refusal for this rule's hosts only, and never for loopback or link-local, which are the sandbox's own interfaces rather than the cluster.",
+                "type": "boolean",
+                "default": false
+              },
               "credentialRef": {
                 "description": "The EgressCredential this rule lets a subject present, in the same namespace. The credential declares where it is substituted; this rule decides where it may go. A request that presents no placeholder is admitted by the rule and forwarded untouched.",
                 "type": "object",

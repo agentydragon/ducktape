@@ -139,9 +139,15 @@ Open questions to answer before it is worth doing:
 - **Whose budget.** The key is a per-instance budget cap and kill switch. Once the proxy
   substitutes it, a rule decides which sandbox spends which key -- finer-grained than one key per
   deployment, and possibly its own resource shape.
-- **What a proxy outage costs.** Model traffic bypassing the proxy is why a sandbox keeps working
-  across a proxy restart. Routing it through makes the proxy a hard dependency of every turn,
-  which the "the proxy depends on the API server only" decision above avoided everywhere else.
+- **What a proxy outage costs.** Decided: accept it, and put the proxy's own availability on the
+  board rather than in this package. Model traffic bypassing the proxy is why a sandbox keeps
+  working across a proxy restart, so routing it through makes the proxy a hard dependency of every
+  turn. What makes that more than a shrug is that the proxy is single-replica _by design_: the
+  decision ring is per-process in-memory state and the app reads `/decisions` through a Service
+  selecting every pod, so raising replicas splits the view the app and the acceptance suite assert
+  on. Availability and the decision view are one problem, and it is node `PR` in
+  [the DAG](task_dag.md), not a line in this one. Staging tolerates it: sandboxes are ephemeral and
+  a turn spanning an egress roll is a broken turn, not lost state.
 
 ## Left out on purpose
 
