@@ -27,6 +27,10 @@ spec:
       labels:
         app.kubernetes.io/name: agentplane-app
     spec:
+      # With the database (cnpg_conventions R5); it had no pin at all while the database was
+      # Proxmox-single, which is the rule already unmet rather than a new constraint.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       serviceAccountName: agentplane-app
       automountServiceAccountToken: true
       imagePullSecrets:

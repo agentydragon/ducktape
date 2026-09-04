@@ -1,15 +1,20 @@
 # The trajectory store: every runner event of every session, copied out of the sandbox by the
-# integration app as it arrives, so a thread outlives its sandbox. One instance on wyrm2 beside
-# the runner Pods; staging's database is disposable (the app creates its schema at startup),
-# so there is no migration Job and no backup here. CNPG generates the app credential in the
-# Secret agentplane-db-app, which the Deployment composes into AGENTPLANE_DATABASE_URL.
+# integration app as it arrives, so a thread outlives its sandbox. Staging's database is
+# disposable (the app creates its schema at startup), so there is no migration Job and no backup
+# here. CNPG generates the app credential in the Secret agentplane-db-app, which the Deployment
+# composes into AGENTPLANE_DATABASE_URL.
+#
+# OVH-HA rather than Proxmox-single (cnpg_conventions R2). It was the latter, one instance on
+# wyrm2 beside the runner Pods, until stopping that node took the whole namespace down with it:
+# a single instance on a machine that is legitimately powered off is not a tier anything can be
+# served from. The SSD tier because a write lands here for every event of every turn (R3).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: agentplane-db
   namespace: agentplane-staging
 spec:
-  instances: 1
+  instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
 
   probes:
@@ -19,10 +24,25 @@ spec:
 
   affinity:
     nodeSelector:
-      topology.kubernetes.io/region: proxmox
+      topology.kubernetes.io/zone: hil-ovh
+    # One instance per node, so losing a node costs a replica rather than the cluster.
+    topologyKey: kubernetes.io/hostname
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # Soft anti-affinity off control-plane nodes (their etcd is on a rotational HDD; co-located
+    # I/O starves etcd fsync -- 2026-06-28 outage).
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
 
   storage:
-    storageClass: local-path-proxmox
+    storageClass: local-path-ovh-ssd
     size: 5Gi
 
   monitoring:
