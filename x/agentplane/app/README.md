@@ -28,7 +28,7 @@ bbr test //x/agentplane/app/...
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
 - `live.py`: one list-and-watch over Sandboxes, their Pods, and the egress objects
-  (`util/kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open tab.
+  (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open tab.
 - `identity.py`: who a request is, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.

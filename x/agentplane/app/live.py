@@ -34,7 +34,6 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
-from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.egress import BINDINGS_PLURAL, EGRESS_API, POLICIES_PLURAL, BindingView, matching_bindings
 from x.agentplane.app.inventory import (
@@ -46,6 +45,7 @@ from x.agentplane.app.inventory import (
     sandbox_views,
 )
 from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
+from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 PODS_PLURAL = "pods"
 

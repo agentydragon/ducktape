@@ -401,7 +401,7 @@ py_library(
         ":inventory",
         ":trajectory",
         "//util:kubernetes",
-        "//util:kubernetes_watch",
+        "//x/agentplane:kubernetes_watch",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",

@@ -1,6 +1,6 @@
 """List-and-watch over the four kinds the decision reads, into one `Index`, plus binding status.
 
-The loop itself is `util.kubernetes_watch`; this names the kinds and folds each into the `Index`.
+The loop itself is `x.agentplane.kubernetes_watch`; this names the kinds and folds each into the `Index`.
 Three namespaces, and the split is the point: policies and bindings are read from the operator's
 namespace, Sandboxes from the one their Pods run in, Secrets from the credentials namespace.
 
@@ -22,7 +22,6 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
-from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from x.agentplane.egress.policy import Index, binding_status
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
@@ -37,6 +36,7 @@ from x.agentplane.egress.resources import (
     Sandbox,
     Secret,
 )
+from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 logger = logging.getLogger(__name__)
 
