@@ -136,8 +136,14 @@ Hubble capture found only the four exporters talking to `api.github.com`
 window, not an exoneration. Within ten seconds of first running the connection recorder
 on wyrm2, `terraform-provi` (uid 65532, the tofu-controller runners) opened three
 connections to 140.82.116.5. The GitHub Terraform provider authenticates with the
-personal PAT via `github-secrets-sync-pat`, and the runners reconcile periodically, so a
-four-minute sample lands between reconciles more often than not.
+personal PAT via `github-secrets-sync-pat`.
+
+Hubble is not blind to these pods. Repeating the capture across a reconcile confirmed
+that afterwards — `github-{secrets-sync,branch-protection}` and `flux-webhook-token`
+tf-runners all appear, connecting to 140.82.116.5/.6. The roots reconcile on a
+15-minute interval and their API traffic lasts seconds, so the duty cycle is a few
+seconds in 900; the earlier two- and four-minute captures simply fell between
+reconciles.
 
 Measured contribution: over an hour when the runners were visibly working, GraphQL
 `used` reached 537 in 57 minutes (~560/h) — real, previously unaccounted for, roughly a
