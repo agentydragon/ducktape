@@ -19,6 +19,7 @@ from finance.augur.rust.differential.fixtures import (
     property_depreciation_fixture,
     tax_fixture,
 )
+from finance.augur.rust.fixture_spec import account_ref
 
 
 def property_cashflow_gating_fixture() -> dict[str, Any]:
@@ -27,10 +28,10 @@ def property_cashflow_gating_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 4
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 1_000},
-        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "vendor", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "creditor", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 1_000},
+        {"account": account_ref("seller", "checking"), "opening_balance": 0},
+        {"account": account_ref("vendor", "checking"), "opening_balance": 0},
+        {"account": account_ref("creditor", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_transfers"] = []
     scenario["recurring_transfers"] = []
@@ -38,8 +39,8 @@ def property_cashflow_gating_fixture() -> dict[str, Any]:
         {
             "month": 2,
             "obligation_id": "unaffordable",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "creditor", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("creditor", "checking"),
             "amount_due": 876,
         }
     ]
@@ -75,16 +76,16 @@ def property_cashflow_gating_fixture() -> dict[str, Any]:
             "month": 0,
             "property_id": "home",
             "cause_id": "before-purchase",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("vendor", "checking"),
             "amount": 3,
         },
         {
             "month": 1,
             "property_id": "home",
             "cause_id": "purchase-month",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("vendor", "checking"),
             "amount": 5,
         },
     ]
@@ -94,8 +95,8 @@ def property_cashflow_gating_fixture() -> dict[str, Any]:
             "end_month": 3,
             "property_id": "home",
             "cause_id": "property-carry",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("vendor", "checking"),
             "amount": 10,
         }
     ]
@@ -114,16 +115,16 @@ def property_sale_fixture() -> dict[str, Any]:
     scenario["horizon_months"] = 4
     scenario["accounts"].extend(
         [
-            {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 10_000},
-            {"account": {"agent_id": "gift", "account_id": "checking"}, "opening_balance": 1_000},
+            {"account": account_ref("tenant", "checking"), "opening_balance": 10_000},
+            {"account": account_ref("gift", "checking"), "opening_balance": 1_000},
         ]
     )
     scenario["scheduled_transfers"] = [
         {
             "month": 2,
             "cause_id": "sale-month-generic-transfer",
-            "from": {"agent_id": "gift", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("gift", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": 7,
         }
     ]
@@ -133,8 +134,8 @@ def property_sale_fixture() -> dict[str, Any]:
             "end_month": 3,
             "property_id": "home",
             "cause_id": "rent",
-            "from": {"agent_id": "tenant", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("tenant", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": 1_000,
         }
     ]
@@ -173,7 +174,7 @@ def section_121_fixture() -> dict[str, Any]:
             {"account": {"agent_id": seller_id, "account_id": "checking"}, "opening_balance": 0}
             for seller_id in ("seller-a", "seller-b", "seller-c", "seller-d")
         ],
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_property_purchases"] = [
         {
@@ -245,13 +246,13 @@ def mortgage_interest_policy_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 12
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 30_000_000},
-        {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 30_000_000},
-        {"account": {"agent_id": "seller-a", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "seller-b", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "bank-a", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "bank-b", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 30_000_000},
+        {"account": account_ref("bob", "checking"), "opening_balance": 30_000_000},
+        {"account": account_ref("seller-a", "checking"), "opening_balance": 0},
+        {"account": account_ref("seller-b", "checking"), "opening_balance": 0},
+        {"account": account_ref("bank-a", "checking"), "opening_balance": 0},
+        {"account": account_ref("bank-b", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_property_purchases"] = [
         {
