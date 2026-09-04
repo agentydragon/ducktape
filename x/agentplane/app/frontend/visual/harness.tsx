@@ -466,7 +466,10 @@ const PAGES: Record<string, string> = {
   // The same list under a watch that has stopped: the banner is the page saying so.
   sandboxes_stale: "/",
   sandbox: "/sandboxes/demo-a1b2",
-  sandbox_egress: "/sandboxes/demo-a1b2?tab=egress",
+  // With the github-public binding's rules open, so the shot carries the credential detail — its
+  // description, where the proxy puts it, and which secret it comes from — and the other
+  // binding, still folded, shows the row the button starts as.
+  sandbox_egress: "/sandboxes/demo-a1b2?tab=egress&rules=demo-a1b2-github-public",
   session: "/sandboxes/demo-a1b2/sessions/s-1",
   session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=open",
   // The two switches are independent parameters, and the raw scenario turns both on: a reader
