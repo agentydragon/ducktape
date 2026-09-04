@@ -3,10 +3,11 @@
 #
 # Something authenticating as the `agentydragon` GitHub account drains the entire
 # 5000-point GraphQL budget within three minutes of every hourly reset, then keeps
-# calling through the 403s. Cilium Hubble covers cluster pods only: with
-# `enable-host-firewall` false there is no host endpoint, so host-namespace egress
-# produces no flows at all — verified, not assumed. That leaves the workstations
-# as the largest blind spot. See <debug/github_rate_limit_monitoring_blind_spot.md>.
+# calling through the 403s. Cilium Hubble cannot see it: with `enable-host-firewall`
+# false there is no host endpoint, so host-namespace egress produces no flows at all
+# — verified, not assumed. A kernel probe has neither limitation, and sees container
+# processes on the node as readily as host ones.
+# See <debug/github_rate_limit_monitoring_blind_spot.md>.
 #
 # CLEANUP(added 2026-09-04): remove this module and its host opt-ins once that note
 # names the consumer.

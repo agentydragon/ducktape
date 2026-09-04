@@ -130,11 +130,24 @@ fits the observed volume.
 
 ## What has been ruled out
 
-**Cluster pods.** Four minutes of Hubble capture across every ready node: the only pods
-that talked to `api.github.com` (140.82.116.5/.6) were the four exporters themselves.
-Nothing reached `api.githubcopilot.com` at all. Hubble reports `rugged` and `iguana`
-unavailable, but both nodes are `NotReady` and run only DaemonSets, so there is no
-blind spot there.
+**Cluster pods — not ruled out, and the earlier claim here was wrong.** Four minutes of
+Hubble capture found only the four exporters talking to `api.github.com`
+(140.82.116.5/.6), and nothing reaching `api.githubcopilot.com`. That was a quiet
+window, not an exoneration. Within ten seconds of first running the connection recorder
+on wyrm2, `terraform-provi` (uid 65532, the tofu-controller runners) opened three
+connections to 140.82.116.5. The GitHub Terraform provider authenticates with the
+personal PAT via `github-secrets-sync-pat`, and the runners reconcile periodically, so a
+four-minute sample lands between reconciles more often than not.
+
+Measured contribution: over an hour when the runners were visibly working, GraphQL
+`used` reached 537 in 57 minutes (~560/h) — real, previously unaccounted for, roughly a
+tenth of budget, and nowhere near the 8400–10300/h episode.
+
+The general lesson: a short capture taken while the symptom is absent proves nothing
+about the symptom. Sample under load or not at all.
+
+Hubble reports `rugged` and `iguana` unavailable, but both nodes are `NotReady` and run
+only DaemonSets.
 
 **Gotcha: Hubble sees pods, not the host namespace.** `enable-host-firewall` is `false`,
 so there is no host endpoint and the datapath emits no trace notifications for
