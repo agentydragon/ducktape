@@ -1,0 +1,56 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "agent",
+    srcs = ["agent.py"],
+    deps = [":client"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        "//x/agentplane/app:decisions",
+        "//x/agentplane/app:egress",
+        "//x/agentplane/app:inventory",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":client",
+        "//x/agentplane/app:inventory",
+        "@pypi//pytest",
+        "@pypi//tenacity",
+    ],
+)
+
+# Live: creates real sandboxes on a deployed instance and runs real model turns, so it needs a
+# kubeconfig and a route to the cluster. `manual` keeps //... from selecting it, which is how CI
+# picks targets; no-remote-exec keeps it off RBE, whose workers have neither. Run it by name:
+# bazelisk test //x/agentplane/acceptance:test_egress --test_output=streamed
+py_test(
+    name = "test_egress",
+    timeout = "eternal",
+    srcs = ["test_egress.py"],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":client",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/app:decisions",
+        "//x/agentplane/app:inventory",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
