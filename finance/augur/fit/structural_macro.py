@@ -319,7 +319,7 @@ class MacroVarFit:
         """`(I - A)^-1 c` — where the state settles absent shocks."""
 
         transition = np.asarray(self.transition)
-        return tuple(np.linalg.solve(np.eye(MACRO_STATE_DIM) - transition, np.asarray(self.intercept)).tolist())
+        return _as_vector3(np.linalg.solve(np.eye(MACRO_STATE_DIM) - transition, np.asarray(self.intercept)).tolist())
 
     @property
     def inflation_pass_through(self) -> float:
@@ -332,6 +332,18 @@ class MacroVarFit:
 
         own_lag = self.transition[0][0]
         return self.transition[0][2] / (1.0 - own_lag)
+
+
+def _as_vector3(values: Sequence[float]) -> MacroStateVector:
+    """A numpy row as a genuine 3-tuple: unpacking (rather than `tuple(values)`) is what
+    gives mypy a fixed-arity result, and raises immediately on a malformed row."""
+    a, b, c = values
+    return (a, b, c)
+
+
+def _as_matrix3(rows: Sequence[Sequence[float]]) -> MacroStateMatrix:
+    row0, row1, row2 = rows
+    return (_as_vector3(row0), _as_vector3(row1), _as_vector3(row2))
 
 
 def fit_macro_var(
@@ -383,10 +395,10 @@ def fit_macro_var(
     covariance = residuals.T @ residuals / (len(residuals) - design.shape[1])
 
     return MacroVarFit(
-        intercept=tuple(coefficients[0].tolist()),
-        transition=tuple(tuple(row) for row in coefficients[1:].T.tolist()),
-        shock_cholesky=tuple(tuple(row) for row in np.linalg.cholesky(covariance).tolist()),
-        latest_state=tuple(states[-1].tolist()),
+        intercept=_as_vector3(coefficients[0].tolist()),
+        transition=_as_matrix3(coefficients[1:].T.tolist()),
+        shock_cholesky=_as_matrix3(np.linalg.cholesky(covariance).tolist()),
+        latest_state=_as_vector3(states[-1].tolist()),
         first_month=usable[0],
         latest_month=usable[-1],
         sample_months=len(usable),
