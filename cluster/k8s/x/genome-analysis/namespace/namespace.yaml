@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: genome-analysis
+  labels:
+    name: genome-analysis
+    goldilocks.fairwinds.com/enabled: "false"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+  annotations:
+    description: >-
+      Storage and (eventually) analysis jobs for the operator's own whole-genome
+      sequencing data. See cluster/k8s/x/genome-analysis/README.md.
