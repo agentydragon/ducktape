@@ -1,8 +1,24 @@
 # The trajectory store: every runner event of every session, copied out of the sandbox by the
-# integration app as it arrives, so a thread outlives its sandbox. One instance on wyrm2 beside
-# the runner Pods; staging's database is disposable (the app creates its schema at startup),
-# so there is no migration Job and no backup here. CNPG generates the app credential in the
-# Secret agentplane-db-app, which the Deployment composes into AGENTPLANE_DATABASE_URL.
+# integration app as it arrives, so a thread outlives its sandbox. Staging's database is
+# disposable (the app creates its schema at startup), so there is no migration Job and no backup
+# here. CNPG generates the app credential in the Secret agentplane-db-app, which the Deployment
+# composes into AGENTPLANE_DATABASE_URL.
+#
+# One instance on the OVH tier: a deliberate deviation from both profiles R2 permits, and the
+# record of it, as study-casino-db's manifest is for its own (cnpg_conventions R2 inventory).
+#
+# It was Proxmox-single, one instance on wyrm2 beside the runner Pods, until stopping that node
+# took the whole namespace with it. The move is to a tier that is always on; the second instance
+# is not, because staging is experimental and its trajectories are expendable (Rai).
+#
+# What that costs, stated rather than assumed: this has neither replication CNPG gives (one
+# instance) nor the storage-level replication Proxmox-single leans on (ZFS under
+# local-path-proxmox; local-path-ovh-ssd is plain node-local NVMe). It survives a node reboot,
+# because the volume is on that node's disk, and not a node loss. R2's own reasoning does not
+# bite here -- it forbids clusters that span regions, because a failover can promote the remote
+# replica and send every write across the mesh, and a single instance cannot fail over at all.
+#
+# The SSD tier because a write lands here for every event of every turn (R3).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -19,10 +35,23 @@ spec:
 
   affinity:
     nodeSelector:
-      topology.kubernetes.io/region: proxmox
+      topology.kubernetes.io/zone: hil-ovh
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # Soft anti-affinity off control-plane nodes (their etcd is on a rotational HDD; co-located
+    # I/O starves etcd fsync -- 2026-06-28 outage).
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
 
   storage:
-    storageClass: local-path-proxmox
+    storageClass: local-path-ovh-ssd
     size: 5Gi
 
   monitoring:

@@ -45,8 +45,8 @@ spec:
               - matchPattern: "*"
     - toEntities:
         - kube-apiserver
-    # LiteLLM, which the litellm policy admits as a cluster-internal host. Open ahead of the
-    # traffic: the runners still reach LiteLLM directly, and this is the path they move onto.
+    # LiteLLM, which the litellm policy admits as a cluster-internal host. This is the runners'
+    # only path to a model: their own policy admits nothing but DNS and this proxy.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: litellm
