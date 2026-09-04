@@ -32,6 +32,31 @@ Override any of it through the environment:
 | `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-staging`                         |
 | `AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT` | `agentplane-agent`                           |
 
+### Where an agent can run it
+
+An agent in a Claude Code session usually cannot: this suite needs a kubeconfig, a route to the
+cluster, and a Bazel that can fetch the module graph, and a web session typically has none of the
+three. A Haku sandbox has all of them, and it mints its own token, so no credential has to be
+handed to it.
+
+```bash
+# in a Haku sandbox (sandbox__provision_sandbox, then sandbox__exec_sandbox)
+git clone --depth 1 --branch <branch> https://github.com/agentydragon/ducktape.git
+cd ducktape && bazel test //x/agentplane/acceptance:test_egress \
+  --remote_executor= --remote_cache= --bes_backend= --bes_results_url= \
+  --spawn_strategy=local --genrule_strategy=local --config=nolint \
+  --test_output=streamed --nocache_test_results
+```
+
+**Deviation:** those flags turn off remote execution and caching, which
+[AGENTS.md](../../../AGENTS.md) otherwise forbids. A Haku sandbox can reach neither
+`remote.buildbuddy.io` nor an API key for it, and this target is `no-remote-exec` regardless; the
+repo-wide rule is about machines that have BuildBuddy, and that one does not. Run it with `nohup`
+into a log and poll — a full run is two to four minutes, longer than one `exec_sandbox` call.
+
+Afterwards, check that nothing leaked: `kubectl -n agentplane-staging get sandboxes.agents.x-k8s.io`
+should show no `accept-*`.
+
 ## What it costs
 
 Each scenario provisions a Pod and runs turns on the cheap-experiments LiteLLM key with Haiku, so a
