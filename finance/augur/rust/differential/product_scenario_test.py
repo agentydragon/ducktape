@@ -21,12 +21,13 @@ from finance.augur.api.config import Config
 from finance.augur.api.product_service import build_product_service
 from finance.augur.product.service import ProductService, SummaryBackend
 from finance.augur.product.wire import (
-    CashFinancing,
     FundingPolicy,
+    MortgageFinancing,
     PrivateEquityTenderPolicyWire,
     ProductProjectionRequest,
     ProductProjectionResponse,
     PropertyPurchase,
+    PropertySaleEventWire,
     RentalIncomePlan,
     ScenarioKey,
     SleeveWeight,
@@ -165,46 +166,65 @@ def test_rust_and_jax_agree_on_a_projection_that_runs_out_of_money(augur_config:
     assert any(_quanta(expected.terminal_distribution.terminal_metric_samples["value_quanta"]))
 
 
-# Each purchase shape and the first obligation field it needs that `ObligationSpec` lacks.
-# An owner-occupied property gates its expenses on still owning it; renting one out also makes
-# them a Schedule E deduction.
-UNENCODABLE_PROPERTY_PURCHASES = [
+_MORTGAGE = MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=6.0)
+
+# A purchased property's recurring HOA, insurance and maintenance dues are obligations gated on
+# the property, and once it is rented they are a Schedule E deduction as well. Both shapes below
+# reach `ObligationSpec.property_id`; only the rental reaches `deduction_category`. The owner
+# stops paying rent; the landlord goes on renting somewhere else.
+PROPERTY_SCENARIOS = [
     pytest.param(
-        PropertyPurchase(property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True),
-        "carry no property gate",
+        _renting_owner(
+            monthly_rent=Decimal(0),
+            rental_location_id=None,
+            property_purchase=PropertyPurchase(
+                property_id="location_a_property", financing=_MORTGAGE, is_primary_residence=True
+            ),
+        ),
         id="owner_occupied",
     ),
     pytest.param(
-        PropertyPurchase(
-            property_id="location_a_property",
-            financing=CashFinancing(),
-            is_primary_residence=False,
-            initial_rental=RentalIncomePlan(),
+        _renting_owner(
+            property_purchase=PropertyPurchase(
+                property_id="location_a_property",
+                financing=_MORTGAGE,
+                is_primary_residence=False,
+                initial_rental=RentalIncomePlan(),
+            )
         ),
-        "carry no deduction",
         id="rented_out",
     ),
 ]
 
 
-@pytest.mark.parametrize(("purchase", "reason"), UNENCODABLE_PROPERTY_PURCHASES)
-def test_a_property_purchase_is_refused_rather_than_encoded_without_its_expense_wiring(
-    augur_config: Config, purchase: PropertyPurchase, reason: str
-) -> None:
+@pytest.mark.parametrize("scenario", PROPERTY_SCENARIOS)
+def test_rust_and_jax_agree_on_a_projection_that_buys_a_property(augur_config: Config, scenario: ScenarioKey) -> None:
+    """The homeowner request, end to end through the encoder on the Rust side."""
+
+    expected = _projections_agree(augur_config, _request(scenario, "net_worth"))
+    assert expected.metric_fan.failed_count == 0
+    assert len(set(expected.metric_fan.monthly_metric_fan["value_quanta"])) > 1
+
+
+def test_a_scenario_the_fixture_cannot_express_is_refused_rather_than_encoded(augur_config: Config) -> None:
     """The boundary the encoder is not allowed to paper over.
 
-    A purchased property's recurring HOA, insurance and maintenance obligations are gated on the
-    property, and on a rental they are also a Schedule E deduction. `ObligationSpec` has neither
-    field, so encoding them anyway would accrue a sold property's bills or drop a year-end
-    deduction and quietly change the fan. The request fails instead, which is the standing
-    statement of what the Rust engine has to grow before it can serve a homeowner.
+    Rust scales sale proceeds by whole basis points and JAX by a rounded percentage, so a closing
+    cost between two basis points is not the same number on the two sides. Encoding it anyway
+    would quietly change the fan, so the request fails instead.
 
-    It doubles as the proof that `SummaryBackend.RUST` really routes through the encoder:
-    nothing on the JAX path can raise this.
+    It doubles as the proof that `SummaryBackend.RUST` really routes through the encoder: nothing
+    on the JAX path can raise this.
     """
 
+    purchase = PropertyPurchase(
+        property_id="location_a_property",
+        financing=_MORTGAGE,
+        is_primary_residence=True,
+        lifecycle_events=(PropertySaleEventWire(month=24, closing_cost_pct=1.234),),
+    )
     service = _service(augur_config, SummaryBackend.RUST)
-    with pytest.raises(UnsupportedScenarioError, match=reason):
+    with pytest.raises(UnsupportedScenarioError, match="whole number of basis points"):
         service.projection_summary(_request(_renting_owner(property_purchase=purchase), "net_worth"))
 
 

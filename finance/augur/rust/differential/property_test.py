@@ -9,9 +9,10 @@ import json
 from typing import Any
 
 import polars as pl
+import pytest
 import pytest_bazel
 
-from finance.augur.rust.differential.backend import assert_backends_agree
+from finance.augur.rust.differential.backend import BACKENDS, Backend, assert_backends_agree
 from finance.augur.rust.differential.fixtures import (
     failure_fixture,
     financed_property_fixture,
@@ -19,7 +20,7 @@ from finance.augur.rust.differential.fixtures import (
     property_depreciation_fixture,
     tax_fixture,
 )
-from finance.augur.rust.fixture_spec import account_ref
+from finance.augur.rust.fixture_spec import account_ref, shared_series
 
 
 def property_cashflow_gating_fixture() -> dict[str, Any]:
@@ -105,6 +106,76 @@ def property_cashflow_gating_fixture() -> dict[str, Any]:
     scenario["tax_profiles"] = []
     scenario["distributions"] = []
     fixture["series"] = []
+    return fixture
+
+
+SALE_MONTH = 8
+HOA_DUES = 45_001
+RENTED_FRACTION_PPB = 600_000_000
+MONTHLY_RENT = 800_000
+
+
+def property_obligation_fixture() -> dict[str, Any]:
+    """A rented home whose HOA dues are a property-gated, Schedule E deductible obligation.
+
+    Alice buys the home outright in month 0, rents 60% of it, and sells it in month 8. The dues
+    name the property and tag themselves deductible, so they must accrue only while she owns it
+    and take the rented share of each payment off her ordinary income for the year.
+
+    Nothing else about the sale is under test: the home value never moves, and an all-land basis
+    with no capitalized closing costs leaves nothing to depreciate, so the sale realizes no gain,
+    no loss, and no recapture to trip the §1250-rate gap in README § Fixture gotchas. `HOA_DUES`
+    is odd against a 60% share on purpose: the share has to round the same way on each side.
+    """
+
+    fixture = financed_property_fixture()
+    fixture["rollout_count"] = 1
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 12
+    scenario["accounts"] = [
+        {"account": account_ref("alice", "checking"), "opening_balance": 60_000_000},
+        {"account": account_ref("seller", "checking"), "opening_balance": 0},
+        {"account": account_ref("tenant", "checking"), "opening_balance": 12_000_000},
+        {"account": account_ref("hoa", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
+    ]
+    purchase = scenario["scheduled_property_purchases"][0]
+    purchase["mortgage"] = None
+    purchase["down_payment"] = purchase["purchase_price"]
+    purchase["buyer_closing_cost"] = 0
+    purchase["rented_fraction_ppb"] = RENTED_FRACTION_PPB
+    purchase["land_value_fraction_ppb"] = 1_000_000_000
+    scenario["property_tax_policies"] = []
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 11,
+            "property_id": "home",
+            "cause_id": "rent",
+            "from": account_ref("tenant", "checking"),
+            "to": account_ref("alice", "checking"),
+            "amount": MONTHLY_RENT,
+            "income_category": "ordinary",
+        }
+    ]
+    scenario["recurring_obligations"] = [
+        {
+            "start_month": 0,
+            "end_month": 11,
+            "obligation_id": "hoa-dues",
+            "obligation_type": "hoa_dues",
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("hoa", "checking"),
+            "amount_due": HOA_DUES,
+            "property_id": "home",
+            "deduction_category": "ordinary",
+        }
+    ]
+    scenario["property_sales"] = [{"month": SALE_MONTH, "property_id": "home", "closing_cost_bps": 0}]
+    federal_profile = tax_fixture()["scenario"]["tax_profiles"][0]
+    federal_profile["jurisdictions"] = federal_profile["jurisdictions"][:1]
+    scenario["tax_profiles"] = [federal_profile]
+    fixture["series"] = [shared_series("home_value:sf", rollout_count=1, path=[50_000_000] * 13)]
     return fixture
 
 
@@ -349,6 +420,31 @@ def test_backends_agree_that_property_cashflows_are_gated_on_ownership() -> None
     result = assert_backends_agree(property_cashflow_gating_fixture())
 
     assert result.rollout_status.get_column("failed_month").to_list() == [2]
+
+
+def test_backends_agree_on_property_gated_deductible_obligations() -> None:
+    """The dues accrue while the home is owned, stop at the sale, and shelter that year's income."""
+
+    result = assert_backends_agree(property_obligation_fixture())
+    dues = result.events.obligation_settlements.filter(pl.col("obligation_type") == "hoa_dues")
+    owned_months = list(range(SALE_MONTH))
+
+    assert dues.sort("month_index").get_column("month_index").to_list() == owned_months
+    assert dues.get_column("amount_paid_quanta").to_list() == [HOA_DUES] * len(owned_months)
+    # The rent stops with the dues, so the year's income is what the months of ownership earned,
+    # less the rented share of every payment the property obligated her to make.
+    deducted = len(owned_months) * round(HOA_DUES * RENTED_FRACTION_PPB / 1_000_000_000)
+    [federal] = result.events.tax_breakdowns.to_dicts()
+    assert federal["ordinary_income_quanta"] == len(owned_months) * MONTHLY_RENT - deducted
+
+
+@pytest.mark.parametrize("backend", BACKENDS, ids=lambda run: run.__name__)
+def test_every_backend_rejects_an_obligation_naming_an_unknown_property(backend: Backend) -> None:
+    fixture = property_obligation_fixture()
+    fixture["scenario"]["recurring_obligations"][0]["property_id"] = "not-a-property"
+
+    with pytest.raises(ValueError, match="unknown property"):
+        backend(fixture)
 
 
 def test_backends_agree_on_the_property_sale_lifecycle() -> None:

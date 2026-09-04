@@ -317,6 +317,8 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
                 amount_due=_amount(spec["amount_due"], quantum),
+                property_id=spec.get("property_id"),
+                deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
             for spec in scenario_spec["obligations"]
         ],
@@ -331,6 +333,8 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
                 amount_due=_amount(spec["amount_due"], quantum),
+                property_id=spec.get("property_id"),
+                deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
             for spec in scenario_spec.get("recurring_obligations", [])
         ],

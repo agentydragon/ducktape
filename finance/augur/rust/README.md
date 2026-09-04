@@ -64,7 +64,9 @@ The differential suite currently proves exact integer agreement for:
   treatment;
 - fixed-payment mortgage origination, monthly interest/principal splitting,
   same-source funding-group settlement, and property-tax carrying costs;
-- grouped scheduled and recurring obligations;
+- grouped scheduled and recurring obligations, including property-gated ones
+  that stop accruing at the sale and deduct their property's runtime rented
+  share of every payment from the payer's ordinary income;
 - target-allocation cash-band raises before obligation funding, including
   projected end-of-month demand, exact integer water-filling, source-account
   order, FIFO lot dispositions, immutable sleeve weights, realized gains,

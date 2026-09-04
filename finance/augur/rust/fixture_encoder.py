@@ -15,8 +15,8 @@ before dividing integers — so pre-quantizing here hands Rust the very integers
 formed, and the two engines divide the same rational.
 
 A scenario feature the fixture cannot express raises instead of being dropped. The Rust engine
-models a subset of the Python one, and a silently discarded deduction or property gate is how a
-fan that looks right is wrong.
+models a subset of the Python one, and a silently discarded feature is how a fan that looks
+right is wrong.
 """
 
 from __future__ import annotations
@@ -78,8 +78,8 @@ class UnsupportedScenarioError(ValueError):
     """A scenario the Rust engine has no representation for.
 
     Raised rather than encoded: the fixture schema is `deny_unknown_fields`, so a feature with
-    no field would have to be dropped, and a dropped deduction or property gate changes the
-    answer without changing the shape of it.
+    no field would have to be dropped, and dropping one changes the answer without changing the
+    shape of it.
     """
 
 
@@ -161,26 +161,23 @@ def _income_category(category: OrdinaryIncome | InterestIncome | None, *, contex
 
 
 def _reject_unsupported_obligation(obligation: ScheduledObligation | RecurringObligation) -> None:
-    """Obligation fields the fixture's `ObligationSpec` has nowhere to put.
+    """The obligation shape the fixture's `ObligationSpec` still has nowhere to put.
 
-    A deductible obligation decrements its payer's ordinary income at settlement, and a
-    property-tied one both gates the accrual on the property still being owned and resizes that
-    deduction from its runtime rented fraction. The Rust engine models neither, so encoding one
-    would drop a year-end deduction — or accrue a sold property's bills — silently.
-
-    `deductible_fraction` needs no check of its own: the compiler only reads it under a
-    deduction category, so without one it is inert.
+    `property_id` and `deduction_category` cross as themselves; `deductible_fraction` does not,
+    and only has to when no property is named. A property-tied obligation takes its Schedule E
+    share from that property's runtime rented fraction on both sides, which leaves the
+    compile-time fraction inert. With no property the fixture deducts the whole payment, so a
+    partial fraction is refused rather than silently widened to all of it.
     """
 
-    if obligation.deduction_category is not None:
+    if (
+        obligation.deduction_category is not None
+        and obligation.property_id is None
+        and obligation.deductible_fraction != 1.0
+    ):
         raise UnsupportedScenarioError(
-            f"obligation {obligation.obligation_id!r} is tagged deductible "
-            f"({obligation.deduction_category!r}); the Rust fixture's obligations carry no deduction"
-        )
-    if obligation.property_id is not None:
-        raise UnsupportedScenarioError(
-            f"obligation {obligation.obligation_id!r} is tied to property {obligation.property_id!r}; "
-            "the Rust fixture's obligations carry no property gate"
+            f"obligation {obligation.obligation_id!r} deducts {obligation.deductible_fraction} of what it "
+            "pays; the Rust fixture's obligations deduct all of it unless a property supplies the fraction"
         )
 
 
@@ -641,6 +638,8 @@ def encode_fixture(
                     "amount_due": _amount(
                         obligation.amount_due, quantum=quantum, context=f"obligation {obligation.obligation_id!r}"
                     ),
+                    "property_id": obligation.property_id,
+                    "deduction_category": obligation.deduction_category,
                 }
                 for obligation in scenario.scheduled_obligations
             ],
@@ -655,6 +654,8 @@ def encode_fixture(
                     "amount_due": _amount(
                         obligation.amount_due, quantum=quantum, context=f"obligation {obligation.obligation_id!r}"
                     ),
+                    "property_id": obligation.property_id,
+                    "deduction_category": obligation.deduction_category,
                 }
                 for obligation in scenario.recurring_obligations
             ],

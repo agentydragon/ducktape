@@ -164,6 +164,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             &obligation.amount_due,
             std::iter::once(obligation.month),
         )?;
+        validate_income_category(obligation.deduction_category.as_deref())?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
     }
@@ -197,6 +198,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                     .unwrap_or(fixture.scenario.horizon_months - 1)
                     .min(fixture.scenario.horizon_months - 1),
         )?;
+        validate_income_category(obligation.deduction_category.as_deref())?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
     }
@@ -1033,12 +1035,12 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
         validate_income_category(cashflow.deduction_category.as_deref())?;
         validate_account(&accounts, &cashflow.from, &cashflow.cause_id)?;
         validate_account(&accounts, &cashflow.to, &cashflow.cause_id)?;
-        if !properties.contains_key(&cashflow.property_id) {
-            return Err(SimulationError::UnknownPropertyCashflow {
-                cause_id: cashflow.cause_id.clone(),
-                property_id: cashflow.property_id.clone(),
-            });
-        }
+        validate_property_reference(
+            &properties,
+            "property cashflow",
+            &cashflow.cause_id,
+            &cashflow.property_id,
+        )?;
     }
     for cashflow in &fixture.scenario.recurring_property_cashflows {
         validate_identifier("recurring property cashflow", &cashflow.cause_id)?;
@@ -1073,14 +1075,50 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
         validate_income_category(cashflow.deduction_category.as_deref())?;
         validate_account(&accounts, &cashflow.from, &cashflow.cause_id)?;
         validate_account(&accounts, &cashflow.to, &cashflow.cause_id)?;
-        if !properties.contains_key(&cashflow.property_id) {
-            return Err(SimulationError::UnknownPropertyCashflow {
-                cause_id: cashflow.cause_id.clone(),
-                property_id: cashflow.property_id.clone(),
-            });
+        validate_property_reference(
+            &properties,
+            "property cashflow",
+            &cashflow.cause_id,
+            &cashflow.property_id,
+        )?;
+    }
+    for obligation in &fixture.scenario.obligations {
+        if let Some(property_id) = obligation.property_id.as_deref() {
+            validate_property_reference(
+                &properties,
+                "obligation",
+                &obligation.obligation_id,
+                property_id,
+            )?;
+        }
+    }
+    for obligation in &fixture.scenario.recurring_obligations {
+        if let Some(property_id) = obligation.property_id.as_deref() {
+            validate_property_reference(
+                &properties,
+                "recurring obligation",
+                &obligation.obligation_id,
+                property_id,
+            )?;
         }
     }
     Ok(())
+}
+
+fn validate_property_reference(
+    properties: &BTreeMap<String, &crate::fixture::ScheduledPropertyPurchaseSpec>,
+    kind: &'static str,
+    cause_id: &str,
+    property_id: &str,
+) -> Result<(), SimulationError> {
+    if properties.contains_key(property_id) {
+        return Ok(());
+    }
+    Err(SimulationError::UnknownPropertyReference {
+        kind,
+        cause_id: cause_id.into(),
+        property_id: property_id.into(),
+    })
 }
 
 fn validate_event_month(

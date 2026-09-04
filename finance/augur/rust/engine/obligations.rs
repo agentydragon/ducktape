@@ -7,6 +7,12 @@ use super::*;
 #[derive(Clone, Debug)]
 pub(super) enum ObligationEffect {
     None,
+    /// Paying it writes this share of the amount off the payer's ordinary income. A
+    /// property-tied obligation carries the property's rented fraction, which is the
+    /// Schedule E share a mid-horizon rental transition resizes.
+    OrdinaryDeduction {
+        deductible_fraction_ppb: i64,
+    },
     TaxPayment {
         profile_index: usize,
     },
@@ -33,6 +39,35 @@ pub(super) struct ActiveObligation {
     pub(super) to: AccountRef,
     pub(super) amount_due: Money,
     pub(super) effect: ObligationEffect,
+}
+
+/// What settling one configured obligation does, or `None` when it does not accrue at all
+/// this month because the property it is tied to is no longer on the books.
+///
+/// A property-tied obligation reads its deductible share off that property's rented fraction
+/// at accrual time, which is the same fraction settlement would see: property lifecycle
+/// events and purchases both run earlier in the month than obligation assembly.
+pub(super) fn configured_obligation_effect(
+    properties: &[PropertyState],
+    property_id: Option<&str>,
+    deduction_category: Option<&str>,
+) -> Option<ObligationEffect> {
+    let deductible_fraction_ppb = match property_id {
+        None => RATE_SCALE_PPB,
+        Some(property_id) => {
+            properties
+                .iter()
+                .find(|property| property.property_id == property_id && property.active)?
+                .rented_fraction_ppb
+        }
+    };
+    Some(if deduction_category == Some("ordinary") {
+        ObligationEffect::OrdinaryDeduction {
+            deductible_fraction_ppb,
+        }
+    } else {
+        ObligationEffect::None
+    })
 }
 
 pub(super) fn property_obligations(
@@ -354,6 +389,25 @@ pub(super) fn settle_obligations(
                     &obligation.to,
                     obligation.amount_due,
                 )?,
+                ObligationEffect::OrdinaryDeduction {
+                    deductible_fraction_ppb,
+                } => {
+                    transfer_money(
+                        ledger,
+                        recorder,
+                        month,
+                        &firing_id,
+                        &obligation.from,
+                        &obligation.to,
+                        obligation.amount_due,
+                    )?;
+                    record_ordinary_deduction(
+                        tax_facts,
+                        &obligation.from.agent_id,
+                        obligation.amount_due,
+                        deductible_fraction_ppb,
+                    )?;
+                }
                 ObligationEffect::PropertyTax {
                     ref owner_agent_id,
                     rented_fraction_ppb,
