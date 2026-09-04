@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from finance.augur.model.series import PrivateEquityEventKindCode
 from finance.augur.rust.differential.rounding_boundary import half_way_operand
 
 # Millionths of a unit: the quantity scale every asset here uses.
@@ -264,7 +265,20 @@ def _obligations(build: _Build) -> None:
     )
 
 
-def _lot(build: _Build, *, lot_id: str, agent_id: str, account_id: str, asset_id: str, units: int) -> None:
+def _pool_months(build: _Build, count: int) -> list[int]:
+    """Distinct purchase months for one FIFO pool's lots, newest last.
+
+    Distinct because a pool needs a total order: two lots bought in the same month leave FIFO
+    with no answer for which sells first, and the legacy surface refuses the scenario. They
+    are structural, since the compiler folds each pool's resolved order into the program.
+    """
+
+    return sorted((-month for month in build.draw.structure.sample(range(1, 48), count)), reverse=False)
+
+
+def _lot(
+    build: _Build, *, lot_id: str, agent_id: str, account_id: str, asset_id: str, units: int, purchase_month: int
+) -> None:
     """One lot whose per-unit basis is odd, and whose total basis is therefore exact.
 
     Whole units keep `basis_per_unit * units / scale` integral, which the validator demands;
@@ -279,8 +293,7 @@ def _lot(build: _Build, *, lot_id: str, agent_id: str, account_id: str, asset_id
             "agent_id": agent_id,
             "account_id": account_id,
             "asset_id": asset_id,
-            # Structural: the compiler folds each pool's FIFO order into the program.
-            "purchase_month": -build.draw.structure.randrange(1, 48),
+            "purchase_month": purchase_month,
             "quantity_scale": QUANTITY_SCALE,
             "units": units,
             "basis": basis_per_unit * units // QUANTITY_SCALE,
@@ -292,9 +305,15 @@ def _securities(build: _Build) -> None:
     build.account("trader", "checking", build.draw.money(100_000, 5_000_000))
     build.account("trader", "brokerage", 0)
     whole_units = [build.draw.value.randrange(2, 40) * QUANTITY_SCALE for _ in range(build.shape.lots)]
-    for index, units in enumerate(whole_units):
+    for index, (units, month) in enumerate(zip(whole_units, _pool_months(build, len(whole_units)), strict=True)):
         _lot(
-            build, lot_id=f"trader-vti-{index}", agent_id="trader", account_id="brokerage", asset_id="vti", units=units
+            build,
+            lot_id=f"trader-vti-{index}",
+            agent_id="trader",
+            account_id="brokerage",
+            asset_id="vti",
+            units=units,
+            purchase_month=month,
         )
     prices = build.path(low=1, high=60_000)
     remaining = sum(whole_units)
@@ -365,6 +384,7 @@ def _distributions(build: _Build) -> None:
         account_id="brokerage",
         asset_id="bnd",
         units=build.draw.value.randrange(2, 30) * QUANTITY_SCALE,
+        purchase_month=_pool_months(build, 1)[0],
     )
     build.add_series("security:bnd", build.path(low=1, high=20_000))
     build.add_series("security_distribution:bnd", build.path(low=1, high=400))
@@ -395,6 +415,7 @@ def _target_allocation(build: _Build) -> None:
             account_id=account,
             asset_id=asset,
             units=build.draw.value.randrange(1, 50) * QUANTITY_SCALE,
+            purchase_month=_pool_months(build, 1)[0],
         )
     for asset in ("vti", "bnd"):
         build.series.setdefault(f"security:{asset}", build.path(low=1, high=30_000))
@@ -430,6 +451,7 @@ def _harvest(build: _Build) -> None:
         account_id="brokerage",
         asset_id="sp500",
         units=build.draw.value.randrange(1, 40) * QUANTITY_SCALE,
+        purchase_month=_pool_months(build, 1)[0],
     )
     build.add_series("security:sp500", build.path(low=1, high=1_000))
     peak = build.draw.structure.randrange(1, 300) * 1_000_000
@@ -450,7 +472,7 @@ def _harvest(build: _Build) -> None:
 def _private_equity(build: _Build) -> None:
     build.account("pe_owner", "checking", build.draw.money(0, 2_000_000))
     build.account("pe_owner", "private", 0)
-    for index in range(2):
+    for index, month in enumerate(_pool_months(build, 2)):
         _lot(
             build,
             lot_id=f"pe-acme-{index}",
@@ -458,6 +480,7 @@ def _private_equity(build: _Build) -> None:
             account_id="private",
             asset_id="private_equity:acme",
             units=build.draw.value.randrange(1, 60) * QUANTITY_SCALE,
+            purchase_month=month,
         )
     build.add_series("private_equity_mark:acme", build.path(low=1, high=30_000))
     for channel, low, high in (
@@ -478,6 +501,16 @@ def _private_equity(build: _Build) -> None:
                 for _ in range(build.shape.rollout_count)
             ],
         )
+    # A tender IS the opportunity being taken, so the two channels are one fact told twice
+    # and a producer may not desync them. Drawing them independently mostly does.
+    for kinds, opportunities in zip(
+        build.series["private_equity_event_kind:acme"],
+        build.series["private_equity_sale_opportunity:acme"],
+        strict=True,
+    ):
+        for month, kind in enumerate(kinds):
+            if kind == PrivateEquityEventKindCode.TENDER:
+                opportunities[month] = 1
     build.entries("private_equity_tender_policies").append(
         {
             "owner_agent_id": "pe_owner",
@@ -593,7 +626,9 @@ def _property(build: _Build) -> None:
         build.entries("mortgage_interest_deduction_policies").append(
             {"liability_id": "home-mortgage", "owner_agent_id": "homeowner", "debt_class": "acquisition"}
         )
-    if build.draw.structure.random() < 0.5:
+    # Only when the home is already owned at month 0: an initial assignment names a property
+    # the agent has yet to buy otherwise, which neither engine accepts.
+    if purchase_month == 0 and build.draw.structure.random() < 0.5:
         build.entries("initial_primary_residences").append({"agent_id": "homeowner", "property_id": "home"})
 
 
