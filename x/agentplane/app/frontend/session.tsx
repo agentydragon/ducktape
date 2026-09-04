@@ -12,7 +12,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
@@ -31,6 +30,8 @@ import {
   shutdownSession,
   type ThreadView,
 } from "./client";
+import "./session.css";
+
 import { EMPTY, reduce, timeline, type InputState, type Item, type Row, type SessionState, type Turn } from "./events";
 import { FrameView } from "./frame";
 import { Markdown } from "./markdown";
@@ -129,8 +130,13 @@ function RowView({ row, expandReasoning }: { row: Row; expandReasoning: boolean 
 }
 
 /**
- * The session's title: the thread's name, or the session id while unnamed, with the name editable
- * in place. Enter or Save submits, Escape cancels; a blank clears the name.
+ * The session's title, edited where it is read: the field is the title, styled as one, and a hover
+ * is the only hint that it takes typing. Enter commits and Escape puts the stored name back; moving
+ * away commits too, so a rename is never lost by clicking elsewhere -- renaming again is one edit,
+ * where losing what was typed is not recoverable at all.
+ *
+ * The placeholder is the session id, which is what an unnamed thread is called; a blank name clears
+ * it back to that.
  */
 function ThreadTitle({
   sessionId,
@@ -144,54 +150,46 @@ function ThreadTitle({
   onError: (message: string) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null);
+  // The stored name while nothing is being typed, so a rename that arrives from elsewhere shows.
+  const shown = draft ?? thread?.name ?? "";
 
-  async function save(): Promise<void> {
+  async function commit(): Promise<void> {
     if (draft === null || thread === null) return;
+    const name = draft.trim() || null;
+    setDraft(null);
+    if (name === (thread.name ?? null)) return;
     try {
-      onRenamed(await renameThread(thread.id, draft.trim() || null));
-      setDraft(null);
+      onRenamed(await renameThread(thread.id, name));
     } catch (reason: unknown) {
       onError(displayableError(reason));
     }
   }
 
-  if (draft !== null) {
-    return (
-      <Group gap="xs">
-        <TextInput
-          aria-label="Thread name"
-          value={draft}
-          placeholder={sessionId}
-          maxLength={200}
-          autoFocus
-          onChange={(e) => setDraft(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void save();
-            if (e.key === "Escape") setDraft(null);
-          }}
-        />
-        <Button size="compact-sm" onClick={() => void save()}>
-          Save
-        </Button>
-        <Button size="compact-sm" variant="subtle" onClick={() => setDraft(null)}>
-          Cancel
-        </Button>
-      </Group>
-    );
-  }
   return (
-    <Group gap="xs">
-      <Title order={3}>{thread?.name ?? sessionId}</Title>
+    // The title and the session id beside it; on a phone the pair takes a row of its own.
+    <Group gap="xs" className="agentplane-thread-name">
+      <TextInput
+        aria-label="Thread name"
+        // The thread exists once the bridge has opened the session; nothing to name before that.
+        disabled={thread === null}
+        variant="unstyled"
+        size="xl"
+        value={shown}
+        placeholder={sessionId}
+        maxLength={200}
+        classNames={{ input: "agentplane-thread-name-input" }}
+        style={{ flex: 1 }}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") setDraft(null);
+        }}
+      />
       {thread?.name && (
         <Text size="sm" c="dimmed">
           {sessionId}
         </Text>
-      )}
-      {/* The thread exists once the bridge has opened the session; nothing to name before that. */}
-      {thread && (
-        <Button size="compact-sm" variant="subtle" onClick={() => setDraft(thread.name ?? "")}>
-          Rename
-        </Button>
       )}
     </Group>
   );
