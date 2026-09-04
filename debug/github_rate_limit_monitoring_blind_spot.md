@@ -1,9 +1,11 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **identified**. The consumer is the Claude Desktop app (upstream
-anthropics/claude-code#88320), pinned here at a version predating the fix. Remaining
-work is the version bump and a confirming window. The monitoring blind spot that hid
-this for weeks is closed.
+Status: **one heavy consumer identified, not the only one, and not fixed by upgrading.**
+The Claude Desktop app spends the user's GraphQL budget from its internal `GhRestClient`
+(upstream anthropics/claude-code#88320) — proven from the app's own log. Bumping to the
+current release does not stop it, and a second unidentified consumer spends thousands of
+points with the app provably down. The monitoring blind spot that hid all of this is
+closed.
 
 ## The blind spot, and why it existed
 
@@ -418,7 +420,7 @@ and `DISABLE_INSTALLATION_CHECKS`.
 zero. That also apportions blame between the two products, which decides whether the CLI
 issue needs re-reporting with the better measurements collected here.
 
-## Result: Claude Desktop, confirmed by control
+## Claude Desktop is a heavy consumer — the control, and its limits
 
 Quitting the desktop app at 08:47 UTC, leaving all twelve `claude` CLI sessions running
 and one actively driven, changed consumption by roughly two orders of magnitude across
@@ -443,20 +445,60 @@ Two things fall out of it:
   last command at 22:57: an idle app with no session switches, which upstream measures
   at ~2 points/min. That hour peaked at 523.
 
-Single trial, single variable. The positive control — reopen the app, switch between a
-few sessions, watch ~570 points per switch — would make it A-B-A, at the cost of a
-window's quota.
+Single trial, single variable. Read at the time as identifying _the_ consumer; the next
+section shows that was an overreach. The app is a heavy consumer — the strongest
+evidence being its own log, below — but the quiet window it produced was partial, not
+total.
+
+## Proof from the app's own log
+
+`~/.config/Claude/logs/main.log` on wyrm2 carries the same line as the upstream report,
+naming this account:
+
+```text
+2026-09-04 01:23:22 [warn] [GhRestClient] GraphQL errors { '0': { type: 'RATE_LIMIT',
+  code: 'graphql_rate_limit', message: 'API rate limit already exceeded for user ID 714892.' } }
+```
+
+Dozens of these across 2026-09-03 12:49 → 2026-09-04 01:23 local. This is not inference
+from connection counts: the app logs that it is issuing GraphQL and being refused. It is
+also the fastest available diagnostic — faster than any probe built here — and worth
+reaching for first next time.
+
+## The upgrade does not fix it, and something else is also burning
+
+The confirming window, 2026-09-04, one-minute resolution. The desktop app was down from
+08:47 (log shows its shutdown burst at 01:47 local, then nothing until 02:16) and the new
+build ran 09:16:06–09:17:15 UTC, sixty-nine seconds:
+
+```text
+09:00–09:10Z   +12      app down            quiet, as expected
+09:11–09:15Z   +2337    app down            unexplained
+09:16–09:17Z   +3560    1.40609.1 running   69 seconds
+```
+
+**The bump does not fix it.** `claude-desktop` 1.40609.1 spent ~3560 points in
+sixty-nine seconds, in the same quanta as 1.18286.0 (~1550 on a turn start, ~630 on a
+session switch). Upstream closed #88320 with `state_reason=completed` on 2026-08-24, and
+that close reason was taken here as evidence the fix had shipped — it is not. Whether the
+fix never landed, never reached the Linux build, or regressed is unknown.
+
+**A second consumer exists.** ~2337 points went in 09:11–09:15 with the app provably
+down. Nothing here explains it. The earlier "seven points in seven minutes" result was
+real but partial: the app dominated that particular window rather than being the whole
+of the problem.
 
 ## Remaining work
 
-1. **Bump the pin.** <nix/packages/claude-desktop.nix> holds `1.18286.0`; the apt repo
-   is at `1.40609.1`, and upstream closed #88320 on 2026-08-24 against a reporter on
-   `1.32885.1`. The file documents the bump-and-rehash procedure.
-2. **Confirm after the bump** — one clean hourly window with the app running and in use.
-3. **Then delete this note**, promoting only what outlives the incident: the
-   `/rate_limit` blind spot (already a comment in
-   <cluster/k8s/github-exporter/graphql-deployments.yaml>), and the connection recorder's
-   own tombstone in <nix/nixos/modules/github-api-recorder.nix>, which comes out with it.
+1. **Report upstream.** #88320 is closed as completed but reproduces on 1.40609.1 on
+   Linux. The 69-second run above is a cleaner repro than the original report's.
+2. **Find the second consumer.** It spent ~2337 points across five minutes with the
+   desktop app down, during a `nixos-rebuild switch` and a PR merge. The connection
+   recorder covers wyrm2 and the log covers the app; neither covered this.
+3. **Mitigate meanwhile**: not running the desktop app is the only measure known to work,
+   and it only recovers most of the budget, not all.
+4. Keep this note until the second consumer is named. The recorder module's tombstone
+   condition ("once that note names the consumer") is _not_ yet satisfied.
 
 ## Knobs not yet turned
 
