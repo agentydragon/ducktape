@@ -1,12 +1,12 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **the consumer is a metronomic 1 Hz poller, and it is not on wyrm2.** With
-kubelet and containerd stopped for six hours — no pods on the node — the account still
-spent exactly 60 points a minute, hour after hour, while the unfiltered connection
-recorder on wyrm2 saw no GitHub traffic at all. That baseline is ~3600/h, below the 5000
-budget, so the symptom that started this has gone even though the cause has not been
-found. Bursts of 600–1600 ride on top of the baseline and are what used to push the
-account to 2x budget.
+Status: **two consumers, and the big one stops when wyrm2 leaves the cluster.** The
+consumer that broke the account runs at **~2200 points/minute** and exhausts the 5000
+budget about four minutes after each reset. Underneath it sits a metronomic **60
+points/minute** floor, ~1/36th the rate, present before and after and never the problem.
+Stopping kubelet and containerd on wyrm2 removed the fast consumer and left the floor —
+though the operator was also asleep for that window, so pods and operator activity were
+removed together.
 
 ## The blind spot, and why it existed
 
@@ -831,31 +831,44 @@ elimination above is scoped to the addresses that were watched, and the residual
 cleared the CLI is the only one that compared against the account-wide counter rather
 than a filtered capture.
 
-## The 1 Hz poller
+## Two consumers, finally separated
 
-kubelet and containerd were stopped on wyrm2 at 13:23 UTC and left down until 19:14 —
-six hours with no pods on the node, host processes untouched, recorder running
-unfiltered throughout. The 14:00 window, per minute:
+The minutes after the 13:03 reset, wyrm2 fully up:
 
 ```text
-14:04Z  used=10309   previous hour, exhausted
-14:05Z  used= 1629   reset, and 1629 points already gone
+13:05Z    255
+13:06Z   +62      the floor, alone
+13:07Z  +1135
+13:08Z  +2250
+13:09Z  +1739
+13:10Z  +2200
+13:11Z  +2231     exhausted, ~4 min after reset
+```
+
+**~2200 points/minute** is what broke the account. The `+62` at 13:06 is the floor
+visible beside it before the fast consumer starts, so the floor was always there and is
+1/36th of the rate that mattered.
+
+kubelet and containerd were then stopped at 13:23 and left down until 19:14 — six hours,
+no pods on the node, host processes untouched, recorder running unfiltered. The 14:00
+window:
+
+```text
+14:05Z  used= 1629   reset, 1629 already gone
 14:06Z  +60
-14:07Z  +30
-14:08Z  +60   ... +60 every minute ...
+14:08Z  +60   ... +60 every minute, for hours ...
 14:20Z  +600
 ```
 
-Two consumers, separable for the first time:
+The fast consumer is gone; the floor continues at exactly 60/minute, giving the
+15:00–19:00 plateau (3590, 3561, 3861, 3830, 3830) — under the 5000 budget, which is why
+`gh` works again.
 
-- **A metronomic +60/minute** — one point per second, sustained for hours. 3600/h, which
-  is exactly the 15:00–19:00 plateau (3590, 3561, 3861, 3830, 3830).
-- **Bursts** of 600–1600 on top. Those are what used to take the account to 2x budget.
+**So the finding is that taking wyrm2 off the cluster removed the fast consumer.** The
+floor is a separate, minor, always-present thing that this note earlier mistook for the
+answer because it was what remained moving.
 
-The 1 Hz stream is the thing to chase. It is not a human, an agent turn, or a
-reconcile loop; it is a one-second sleep in a loop.
-
-### It is not on wyrm2
+### The floor is not on wyrm2
 
 Over the same six hours, with every pod gone, the recorder's public destinations were
 `147.135.*` (this cluster's own OVH nodes) and Google. **No `140.82.*`, no `20.29.*`, no
