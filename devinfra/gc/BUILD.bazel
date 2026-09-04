@@ -147,8 +147,10 @@ py_test(
     deps = [
         ":workspace_gc",
         "//:conftest",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//respx",
     ],
 )
 
