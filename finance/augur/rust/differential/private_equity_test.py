@@ -4,176 +4,187 @@ One target per domain so Bazel runs them concurrently: each case compiles its ow
 JAX program, and those compiles are the suite's whole wall clock and peak memory.
 """
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
+
+from decimal import Decimal
 from typing import Any
 
+import numpy as np
 import polars as pl
 import pytest_bazel
+from jaxtyping import Float64, Int64
 
-from finance.augur.rust.differential.backend import assert_backends_agree
-from finance.augur.rust.differential.fixtures import tax_fixture
-from finance.augur.rust.fixture_spec import account_ref
+from finance.augur.model.private_equity_bundle import PrivateEquityBundle
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.product.asset_key import PrivateEquityAssetKey
+from finance.augur.rust.differential.backend import SimulationResult, assert_backends_agree
+from finance.augur.rust.differential.case import Case, scenario
+from finance.augur.rust.differential.fixtures import checking, taxed
+from finance.augur.sim.scenario import FixedAmount, InitialLot, PrivateEquityTenderPolicy
 
-
-def private_equity_fixture() -> dict[str, Any]:
-    rollout_count = 4
-    horizon = 3
-    snapshots = horizon + 1
-
-    def channel(default: int) -> list[int]:
-        return [default] * (rollout_count * snapshots)
-
-    def set_value(values: list[int], rollout: int, month: int, value: int) -> None:
-        values[rollout * snapshots + month] = value
-
-    mark = channel(10_000)
-    regime = channel(1)
-    event_kind = channel(0)
-    opportunity = channel(0)
-    capacity = channel(1_000_000_000)
-    eligible = channel(1_000_000_000)
-    forced_sale = channel(0)
-    blocked = channel(0)
-    recovery = channel(0)
-    valuation = channel(0)
-
-    set_value(event_kind, 0, 1, 1)
-    set_value(opportunity, 0, 1, 1)
-    set_value(capacity, 0, 1, 250_000_000)
-    set_value(event_kind, 0, 2, 1)
-    set_value(opportunity, 0, 2, 1)
-    set_value(blocked, 0, 2, 1)
-
-    set_value(regime, 1, 1, 2)
-    set_value(event_kind, 1, 1, 3)
-
-    set_value(event_kind, 2, 1, 5)
-    set_value(forced_sale, 2, 1, 300_000_000)
-
-    set_value(event_kind, 3, 1, 6)
-    set_value(recovery, 3, 1, 10_000)
-
-    series = []
-    for name, values in {
-        "mark": mark,
-        "regime": regime,
-        "event_kind": event_kind,
-        "sale_opportunity": opportunity,
-        "sale_capacity": capacity,
-        "eligible": eligible,
-        "forced_sale": forced_sale,
-        "liquidity_blocked": blocked,
-        "forced_recovery": recovery,
-        "company_valuation": valuation,
-    }.items():
-        series.append({"series_id": f"private_equity_{name}:acme", "snapshots": snapshots, "values": values})
-    return {
-        "schema_version": 8,
-        "currency_code": "USD",
-        "currency_quantum": "0.01",
-        "rollout_count": rollout_count,
-        "scenario": {
-            "horizon_months": horizon,
-            "accounts": [{"account": account_ref("alice", "checking"), "opening_balance": 0}],
-            "scheduled_transfers": [],
-            "recurring_transfers": [],
-            "obligations": [],
-            "recurring_obligations": [],
-            "initial_lots": [
-                {
-                    "lot_id": "acme_lot_a",
-                    "agent_id": "alice",
-                    "account_id": "checking",
-                    "asset_id": "private_equity:acme",
-                    "purchase_month": -36,
-                    "quantity_scale": 1_000_000,
-                    "units": 40_000_000,
-                    "basis": 40_000,
-                },
-                {
-                    "lot_id": "acme_lot_b",
-                    "agent_id": "alice",
-                    "account_id": "checking",
-                    "asset_id": "private_equity:acme",
-                    "purchase_month": -12,
-                    "quantity_scale": 1_000_000,
-                    "units": 60_000_000,
-                    "basis": 120_000,
-                },
-            ],
-            "initial_bonds": [],
-            "scheduled_sales": [],
-            "tax_profiles": [],
-            "distributions": [],
-            "target_allocation_policies": [],
-            "private_equity_tender_policies": [
-                {"owner_agent_id": "alice", "proceeds_account_id": "checking", "liquid_net_worth_floor": 500_000}
-            ],
-            "scheduled_property_purchases": [],
-            "initial_primary_residences": [],
-            "primary_residence_events": [],
-            "property_rented_fraction_events": [],
-            "capital_improvement_events": [],
-            "property_sales": [],
-            "mortgage_interest_deduction_policies": [],
-            "property_tax_policies": [],
-            "federal_salt_deduction_policies": [],
-        },
-        "series": series,
-    }
+ACME = PrivateEquityAssetKey(issuer_id=IssuerId("acme"))
+HORIZON_MONTHS = 3
 
 
-def private_equity_tax_fixture() -> dict[str, Any]:
-    fixture = private_equity_fixture()
-    fixture["rollout_count"] = 1
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 12
-    scenario["accounts"].append({"account": account_ref("irs", "checking"), "opening_balance": 0})
-    scenario["private_equity_tender_policies"][0]["liquid_net_worth_floor"] = 10_000_000
-    scenario["tax_profiles"] = [
-        {
-            "agent_id": "alice",
-            "tax_authority_agent_id": "irs",
-            "jurisdictions": [tax_fixture()["scenario"]["tax_profiles"][0]["jurisdictions"][0]],
-        }
+def _acme_lots() -> list[InitialLot]:
+    """Two lots, one held past a year and one not, so a tender's holding period is decided."""
+
+    return [
+        InitialLot(
+            lot_id="acme_lot_a",
+            agent_id="alice",
+            account_id="checking",
+            asset=ACME,
+            purchase_month_index=-36,
+            quantity=40.0,
+            cost_basis_per_unit=Decimal(10),
+        ),
+        InitialLot(
+            lot_id="acme_lot_b",
+            agent_id="alice",
+            account_id="checking",
+            asset=ACME,
+            purchase_month_index=-12,
+            quantity=60.0,
+            cost_basis_per_unit=Decimal(20),
+        ),
     ]
-    defaults = {
-        "mark": 100_000,
-        "regime": 1,
-        "event_kind": 0,
-        "sale_opportunity": 0,
-        "sale_capacity": 1_000_000_000,
-        "eligible": 1_000_000_000,
-        "forced_sale": 0,
-        "liquidity_blocked": 0,
-        "forced_recovery": 0,
-        "company_valuation": 0,
-    }
-    for series in fixture["series"]:
-        channel = series["series_id"].removeprefix("private_equity_").partition(":")[0]
-        series["snapshots"] = 13
-        series["values"] = [defaults[channel]] * 13
-        if channel in {"event_kind", "sale_opportunity"}:
-            series["values"][1] = 1
-    return fixture
 
 
-def _final_cash(result) -> dict[int, int]:
+def _bundle(
+    *,
+    rollout_count: int,
+    horizon_months: int,
+    mark: Decimal,
+    regime: Int64[np.ndarray, " rollout snapshot"] | None = None,
+    event_kind: Int64[np.ndarray, " rollout snapshot"] | None = None,
+    sale_capacity: Float64[np.ndarray, " rollout snapshot"] | None = None,
+    forced_sale: Float64[np.ndarray, " rollout snapshot"] | None = None,
+    liquidity_blocked: np.ndarray | None = None,
+    forced_recovery: Float64[np.ndarray, " rollout snapshot"] | None = None,
+) -> PrivateEquityBundle:
+    """The issuer's ten channels, defaulted to a quiet path the overrides punch holes in."""
+
+    shape = (rollout_count, horizon_months + 1)
+    kinds = np.full(shape, int(PrivateEquityEventKindCode.NONE)) if event_kind is None else event_kind
+    return PrivateEquityBundle.from_issuer_arrays(
+        ACME.issuer_id,
+        mark_usd_per_unit=np.full(shape, float(mark)),
+        regime_code=np.full(shape, int(PrivateEquityRegimeCode.PRIVATE_OPERATING)) if regime is None else regime,
+        event_kind_code=kinds,
+        # A tender opportunity is the TENDER event kind; the bundle refuses any producer that
+        # desyncs the two, so it is derived rather than stated twice.
+        sale_opportunity_active=kinds == int(PrivateEquityEventKindCode.TENDER),
+        sale_capacity_fraction=np.ones(shape) if sale_capacity is None else sale_capacity,
+        eligible_fraction=np.ones(shape),
+        forced_sale_fraction=np.zeros(shape) if forced_sale is None else forced_sale,
+        liquidity_blocked=np.zeros(shape, dtype=np.bool_) if liquidity_blocked is None else liquidity_blocked,
+        forced_recovery_cashout_usd=np.zeros(shape) if forced_recovery is None else forced_recovery,
+        company_valuation_usd=np.zeros(shape),
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+    )
+
+
+def private_equity_case(*, opening_cash: Decimal = Decimal(0), tendering: bool = True) -> Case:
+    """Four rollouts, each taking one branch of the tender protocol.
+
+    Rollout 0 gets a capacity-limited tender then a blocked one, rollout 1 a regime change,
+    rollout 2 a forced sale, and rollout 3 a forced recovery cashout.
+    """
+
+    shape = (4, HORIZON_MONTHS + 1)
+    regime = np.full(shape, int(PrivateEquityRegimeCode.PRIVATE_OPERATING))
+    regime[1, 1] = int(PrivateEquityRegimeCode.PUBLIC_MARKET)
+    event_kind = np.full(shape, int(PrivateEquityEventKindCode.NONE))
+    event_kind[0, 1] = event_kind[0, 2] = int(PrivateEquityEventKindCode.TENDER)
+    event_kind[1, 1] = int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
+    event_kind[2, 1] = int(PrivateEquityEventKindCode.LEGAL_IMPAIRMENT)
+    event_kind[3, 1] = int(PrivateEquityEventKindCode.FORCED_RECOVERY)
+    capacity = np.ones(shape)
+    capacity[0, 1] = 0.25
+    blocked = np.zeros(shape, dtype=np.bool_)
+    blocked[0, 2] = True
+    forced_sale = np.zeros(shape)
+    forced_sale[2, 1] = 0.3
+    recovery = np.zeros(shape)
+    recovery[3, 1] = 100.0
+    return Case(
+        scenario=scenario(
+            checking(("alice", opening_cash)),
+            horizon_months=HORIZON_MONTHS,
+            tax_profiles=[],
+            initial_lots=_acme_lots(),
+            private_equity_tender_policies=(
+                [
+                    PrivateEquityTenderPolicy(
+                        owner_agent_id="alice",
+                        proceeds_account_id="checking",
+                        liquid_net_worth_floor=FixedAmount(amount=Decimal(5_000)),
+                    )
+                ]
+                if tendering
+                else []
+            ),
+        ),
+        rollout_count=4,
+        private_equity=_bundle(
+            rollout_count=4,
+            horizon_months=HORIZON_MONTHS,
+            mark=Decimal(100),
+            regime=regime,
+            event_kind=event_kind,
+            sale_capacity=capacity,
+            forced_sale=forced_sale,
+            liquidity_blocked=blocked,
+            forced_recovery=recovery,
+        ),
+    )
+
+
+def private_equity_tax_case() -> Case:
+    """One tender of a long-held lot, and the year-end tax it produces."""
+
+    horizon_months = 12
+    event_kind = np.full((1, horizon_months + 1), int(PrivateEquityEventKindCode.NONE))
+    event_kind[0, 1] = int(PrivateEquityEventKindCode.TENDER)
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0)), ("irs", Decimal(0))),
+            horizon_months=horizon_months,
+            initial_lots=_acme_lots(),
+            private_equity_tender_policies=[
+                PrivateEquityTenderPolicy(
+                    owner_agent_id="alice",
+                    proceeds_account_id="checking",
+                    liquid_net_worth_floor=FixedAmount(amount=Decimal(100_000)),
+                )
+            ],
+            tax_profiles=[taxed("alice", "federal_us")],
+        ),
+        rollout_count=1,
+        private_equity=_bundle(
+            rollout_count=1, horizon_months=horizon_months, mark=Decimal(1_000), event_kind=event_kind
+        ),
+    )
+
+
+def _final_cash(result: SimulationResult) -> dict[int, Any]:
     return {
-        row["rollout_index"]: row["balance_quanta"] for row in result.cash.filter(pl.col("month_index") == 3).to_dicts()
+        row["rollout_index"]: row["balance_quanta"]
+        for row in result.cash.filter(pl.col("month_index") == HORIZON_MONTHS).to_dicts()
     }
 
 
 def test_backends_agree_on_tender_sales_and_opportunities() -> None:
-    result = assert_backends_agree(private_equity_fixture())
+    result = assert_backends_agree(private_equity_case())
 
     assert _final_cash(result) == {0: 250_000, 1: 500_000, 2: 300_000, 3: 10_000}
     assert result.journal.get_column("imbalance_quanta").unique().to_list() == [0]
 
 
 def test_backends_agree_that_an_issuer_without_an_owner_policy_never_tenders() -> None:
-    fixture = private_equity_fixture()
-    fixture["scenario"]["private_equity_tender_policies"] = []
-    result = assert_backends_agree(fixture)
+    result = assert_backends_agree(private_equity_case(tendering=False))
 
     assert result.events.lot_dispositions.is_empty()
     assert set(result.events.private_equity_opportunities.get_column("outcome")) == {"no_policy"}
@@ -181,9 +192,7 @@ def test_backends_agree_that_an_issuer_without_an_owner_policy_never_tenders() -
 
 
 def test_backends_agree_that_a_satisfied_floor_suppresses_voluntary_sales() -> None:
-    fixture = private_equity_fixture()
-    fixture["scenario"]["accounts"][0]["opening_balance"] = 600_000
-    result = assert_backends_agree(fixture)
+    result = assert_backends_agree(private_equity_case(opening_cash=Decimal(6_000)))
 
     causes = result.events.lot_dispositions.get_column("cause_id")
     assert not any(cause.startswith(("pe_tender_", "pe_public_market_")) for cause in causes)
@@ -191,7 +200,7 @@ def test_backends_agree_that_a_satisfied_floor_suppresses_voluntary_sales() -> N
 
 
 def test_backends_agree_on_the_tax_facts_a_tender_disposition_produces() -> None:
-    result = assert_backends_agree(private_equity_tax_fixture())
+    result = assert_backends_agree(private_equity_tax_case())
     breakdown = result.events.tax_breakdowns.filter(pl.col("rollout_index") == 0)
 
     # A tender sale of a lot held past a year is long-term, and nothing else realizes.

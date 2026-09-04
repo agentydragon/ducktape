@@ -1,8 +1,8 @@
 """One result shape for both engines.
 
 A differential test should not know which engine produced the rows it compares. Each
-backend runs the same fixture and answers in the canonical schemas
-`sim/testing/state_helpers.py` defines, so a comparison is `assert_backends_agree(fixture)`
+backend runs the same `Case` and answers in the canonical schemas
+`sim/testing/state_helpers.py` defines, so a comparison is `assert_backends_agree(case)`
 rather than a select/sort/rename written out per test — which is what the suites did
 before, and what let a reader's filter (`account_id == "checking"`) hide inside one side's
 accessor.
@@ -21,9 +21,12 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 from finance.augur.rust import simulator
-from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
+from finance.augur.rust.differential.case import Case
 from finance.augur.rust.differential.output_adapter import decode_rust_event_log
+from finance.augur.sim.codec.plan import SimulationRun
+from finance.augur.sim.engine.jax_engine import run_jax_scan
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
+from finance.augur.sim.scenario import Scenario
 from finance.augur.sim.testing.state_helpers import (
     asset_lots,
     capital_gains_ytd,
@@ -225,7 +228,7 @@ def _realized_gains(frame: pl.DataFrame, taxed: set[str]) -> pl.DataFrame:
 
     Scoped to taxed agents because that is what both engines model: JAX also tracks gains
     for any agent holding lots or selling, taxed or not, while Rust surfaces none for an
-    untaxed agent (docs/differential.md § Capital gains without a tax profile).
+    untaxed agent (README.md § Scope Rust does not cover).
 
     Zeroes are dropped because a zero gain and an absent row say the same thing, and the two
     engines disagree only on which they emit — JAX masks by a per-tax-year active flag, Rust
@@ -256,15 +259,11 @@ def _held_lots(frame: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _taxed_agents(fixture: dict[str, Any]) -> set[str]:
-    return {profile["agent_id"] for profile in fixture["scenario"].get("tax_profiles", [])}
+def run_jax(case: Case) -> SimulationResult:
+    """Run the case on the Python/JAX engine, off the plan the Rust fixture is encoded from."""
 
-
-def run_jax(fixture: dict[str, Any]) -> SimulationResult:
-    """Run the fixture on the Python/JAX engine."""
-
-    run = run_legacy_fixture(fixture)
-    taxed = _taxed_agents(fixture)
+    run = SimulationRun(plan=case.plan, output=run_jax_scan(case.plan), external_series=case.external_series)
+    taxed = {profile.agent_id for profile in case.scenario.tax_profiles}
     return SimulationResult(
         backend="jax",
         events=run.events_log,
@@ -290,27 +289,25 @@ def _rust_rows(rust: dict[str, Any], channel: str) -> list[tuple[int, int, dict[
     ]
 
 
-def run_rust(fixture: dict[str, Any]) -> RustResult:
-    """Run the fixture on the Rust engine, in-process through the extension module."""
+def run_rust(case: Case) -> RustResult:
+    """Run the case on the Rust engine, in-process through the extension module."""
 
     # Forensic rather than dense: the harness wants the balanced journal, which is the
     # double-entry invariant made checkable and has no JAX counterpart to compare against.
-    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(fixture))))
-    return rust_result(rust, fixture)
+    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(case.fixture))))
+    return rust_result(rust, case.scenario)
 
 
-def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
+def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     """Project a raw Rust output document into the canonical schemas.
 
-    The fixture is needed to know which accounts the scenario declared: the Rust ledger also
-    carries the internal accounts a double-entry engine needs (opening equity, asset basis,
-    realized gain, tax expense and liability, the external boundary), and none of those are
-    cash the JAX engine models.
+    The scenario is needed to know which accounts it declared: the Rust ledger also carries
+    the internal accounts a double-entry engine needs (opening equity, asset basis, realized
+    gain, tax expense and liability, the external boundary), and none of those are cash the
+    JAX engine models.
     """
 
-    declared_accounts = {
-        (spec["account"]["agent_id"], spec["account"]["account_id"]) for spec in fixture["scenario"]["accounts"]
-    }
+    declared_accounts = {(balance.agent_id, balance.account_id) for balance in scenario.initial_cash}
     cash = CHANNEL["cash"].build(
         [
             {
@@ -613,7 +610,7 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
 
 # What a suite parameterizes over when the property under test should hold for either
 # engine, rather than being a comparison between them.
-type Backend = Callable[[dict[str, Any]], SimulationResult]
+type Backend = Callable[[Case], SimulationResult]
 
 BACKENDS: tuple[Backend, ...] = (run_jax, run_rust)
 
@@ -633,14 +630,14 @@ def assert_results_agree(expected: SimulationResult, actual: SimulationResult) -
             raise AssertionError(f"event frame {spec.name!r} differs between backends") from error
 
 
-def assert_backends_agree(fixture: dict[str, Any]) -> RustResult:
-    """Run the fixture on both engines and return the Rust result.
+def assert_backends_agree(case: Case) -> RustResult:
+    """Run the case on both engines and return the Rust result.
 
     Returning the Rust one is not a preference: it carries the same values in every shared
     channel by the time this returns, plus the journal and ledgers JAX has no counterpart
-    for, so a caller needing those does not run the fixture twice.
+    for, so a caller needing those does not run the case twice.
     """
 
-    jax_result, rust = run_jax(fixture), run_rust(fixture)
+    jax_result, rust = run_jax(case), run_rust(case)
     assert_results_agree(jax_result, rust)
     return rust

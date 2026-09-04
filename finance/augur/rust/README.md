@@ -134,9 +134,9 @@ and target-allocation sale give-back.
 
 Initial lots store total basis, but that total must imply an exact
 integer-currency-quantum basis per whole unit:
-`basis × quantity_scale` must divide evenly by `units`. Both the Rust validator
-and Python adapter reject an inexact lot rather than letting the legacy adapter
-floor a different basis.
+`basis × quantity_scale` must divide evenly by `units`. The Rust validator and
+`fixture_encoder` both refuse an inexact lot rather than letting one engine hold
+the per-unit basis and the other a floored total.
 
 Bond coupon rates use the same parts-per-billion contract and must round-trip
 exactly through the legacy Python/JAX `float64` boundary. Nominal coupons round
@@ -164,9 +164,9 @@ expose the source and proceeds accounts on every lot disposition and the ordered
 sleeve identities attempted for every matching obligation. Optional quiet-band
 drift rebalancing is all-or-nothing, returns every sleeve to its floored target,
 and suppresses itself whenever the cash band is already raising or investing.
-Sleeve quantity scales are explicit fixture integers and the adapter verifies
-that each one matches the canonical Python asset scale before differential
-execution.
+Sleeve quantity scales are explicit fixture integers, taken by `fixture_encoder`
+from the sleeve's own asset, so the fixture cannot state a scale the Python side
+does not use.
 
 ## Product read model
 

@@ -1,518 +1,567 @@
-"""Shared fixtures and readers for the Rust/JAX differential suites.
+"""Cases and scenario pieces the differential suites share.
 
-Every fixture here is an exact-integer document both engines consume unchanged; the
-conversion to the legacy float surface happens inside `fixture_adapter`, not here.
+Every case is a `Scenario` and the sampled paths it runs over, which is the one form both
+engines consume — `case.py` says why the authoring happens at that level.
 """
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-from pathlib import Path
-from typing import Any, cast
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
+from collections.abc import Sequence
+from decimal import Decimal
 
-import polars as pl
+import numpy as np
+from jaxtyping import Float64
 
-from finance.augur.rust.benchmark.fixture import write_fixture
-from finance.augur.rust.differential.fixture_adapter import build_legacy_fixture
-from finance.augur.rust.fixture_spec import account_ref, rollout_series, shared_series
-from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
-from finance.augur.sim.runtime import load_jurisdictions_for
+from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, SecurityKey, SecuritySymbol
+from finance.augur.rust.differential.case import Case, flat, levels, scenario
+from finance.augur.sim.locations import Location
+from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
+    AmountSpec,
+    CapitalImprovementEvent,
+    InitialAccountBalance,
+    InitialLot,
+    MortgageFinancing,
+    MortgageInterestDeductionPolicy,
+    ObligationType,
+    PropertyLifecycleEvent,
+    PropertySaleEvent,
+    PropertyTaxPolicy,
+    RecurringObligation,
+    RecurringPropertyCashflow,
+    RecurringTransfer,
+    ScheduledAssetSale,
+    ScheduledObligation,
+    ScheduledPropertyCashflow,
+    ScheduledPropertyPurchase,
+    ScheduledTransfer,
+    SecurityDistribution,
+    SetRentedFractionEvent,
+    SleeveTarget,
+    TargetAllocationPolicy,
+    TaxProfile,
+)
+
+VTI = SecurityKey(symbol=SecuritySymbol("vti"))
+BND = SecurityKey(symbol=SecuritySymbol("bnd"))
+SF_HOME = HomeValueKey(location_id=LocationId("sf"))
+
+SF = Location(
+    location_id="sf",
+    display_name="San Francisco",
+    jurisdiction_ids=[],
+    annual_property_tax_rate=0.0118,
+    annual_special_assessment=Decimal(0),
+)
+
+type SeriesPaths = dict[LevelSeriesKey, Float64[np.ndarray, " rollout snapshot"]]
 
 
-def simulator_binary() -> Path:
-    runfiles = Path(os.environ["TEST_SRCDIR"])
-    workspace = os.environ["TEST_WORKSPACE"]
-    return runfiles / workspace / "finance/augur/rust/simulator_cli"
+def checking(*balances: tuple[str, Decimal]) -> list[InitialAccountBalance]:
+    """Opening balances for agents holding one `checking` account each."""
+
+    return [
+        InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=balance)
+        for agent_id, balance in balances
+    ]
 
 
-def shared_integer_fixture() -> dict[str, Any]:
-    # Prices are cents per whole unit and quantities are millionths of a unit.
-    # The two rollouts deliberately use different paths before the scheduled
-    # sale, while sharing the sale-month value supported by the legacy fixed
-    # sale-price surface.
-    return {
-        "schema_version": 8,
-        "currency_code": "USD",
-        "currency_quantum": "0.01",
-        "rollout_count": 2,
-        "scenario": {
-            "horizon_months": 3,
-            "accounts": [
-                {"account": account_ref("alice", "checking"), "opening_balance": 1_000},
-                {"account": account_ref("bob", "checking"), "opening_balance": 2_000},
+def taxed(agent_id: str, *jurisdiction_ids: str, prior_year_tax: Decimal = Decimal(0)) -> TaxProfile:
+    """One single filer, paying from `checking` to the `irs` agent.
+
+    The jurisdiction ids are all a profile says about tax law: rates, brackets, deductions
+    and exemptions reach both engines through the compiled plan, which resolves them from the
+    deployment's own jurisdiction records.
+    """
+
+    return TaxProfile(
+        agent_id=agent_id,
+        jurisdiction_ids=list(jurisdiction_ids),
+        tax_authority_agent_id="irs",
+        prior_year_tax=prior_year_tax,
+    )
+
+
+def cash_spend(
+    obligation_id: str, *, month: int, agent_id: str, to_agent_id: str, amount_due: AmountSpec
+) -> ScheduledObligation:
+    """A one-off required payment between two `checking` accounts."""
+
+    return ScheduledObligation(
+        month=month,
+        obligation_id=obligation_id,
+        obligation_type=ObligationType.CASH_SPEND,
+        agent_id=agent_id,
+        from_account_id="checking",
+        to_agent_id=to_agent_id,
+        to_account_id="checking",
+        amount_due=amount_due,
+    )
+
+
+def transfer(
+    cause_id: str, *, month: int, from_agent_id: str, to_agent_id: str, amount: AmountSpec
+) -> ScheduledTransfer:
+    """A one-off untagged movement between two `checking` accounts."""
+
+    return ScheduledTransfer(
+        month=month,
+        cause_id=cause_id,
+        from_agent_id=from_agent_id,
+        from_account_id="checking",
+        to_agent_id=to_agent_id,
+        to_account_id="checking",
+        amount=amount,
+    )
+
+
+def shared_case(*, alice_opening: Decimal = Decimal(10)) -> Case:
+    """Opening balances, transfers, a FIFO sale, and the events each produces.
+
+    The rollouts follow different price paths and meet at the sale month, so the sale's
+    proceeds match while the path to them does not.
+    """
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", alice_opening), ("bob", Decimal(20))),
+            horizon_months=3,
+            tax_profiles=[],
+            scheduled_transfers=[
+                transfer("bob_gives_alice_5", month=0, from_agent_id="bob", to_agent_id="alice", amount=Decimal(5))
             ],
-            "scheduled_transfers": [
-                {
-                    "month": 0,
-                    "cause_id": "bob_gives_alice_5",
-                    "from": account_ref("bob", "checking"),
-                    "to": account_ref("alice", "checking"),
-                    "amount": 500,
-                }
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=1,
+                    end_month=2,
+                    cause_id="paycheck",
+                    from_agent_id="bob",
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount=Decimal(1),
+                    income_category=ORDINARY_INCOME,
+                )
             ],
-            "recurring_transfers": [
-                {
-                    "start_month": 1,
-                    "end_month": 2,
-                    "cause_id": "paycheck",
-                    "from": account_ref("bob", "checking"),
-                    "to": account_ref("alice", "checking"),
-                    "amount": 100,
-                    "income_category": "ordinary",
-                }
+            scheduled_obligations=[
+                cash_spend("required-payment", month=2, agent_id="alice", to_agent_id="bob", amount_due=Decimal("0.50"))
             ],
-            "obligations": [
-                {
-                    "month": 2,
-                    "obligation_id": "required-payment",
-                    "from": account_ref("alice", "checking"),
-                    "to": account_ref("bob", "checking"),
-                    "amount_due": 50,
-                }
+            initial_lots=[
+                InitialLot(
+                    lot_id="alice-vti",
+                    agent_id="alice",
+                    account_id="checking",
+                    asset=VTI,
+                    purchase_month_index=-12,
+                    quantity=2.0,
+                    cost_basis_per_unit=Decimal(100),
+                )
             ],
-            "initial_lots": [
-                {
-                    "lot_id": "alice-vti",
-                    "agent_id": "alice",
-                    "account_id": "checking",
-                    "asset_id": "vti",
-                    "purchase_month": -12,
-                    "quantity_scale": 1_000_000,
-                    "units": 2_000_000,
-                    "basis": 20_000,
-                }
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=1,
+                    cause_id="sell-vti",
+                    agent_id="alice",
+                    source_account_id="checking",
+                    asset=VTI,
+                    quantity=1.0,
+                    proceeds_account_id="checking",
+                )
             ],
-            "scheduled_sales": [
-                {
-                    "month": 1,
-                    "cause_id": "sell-vti",
-                    "agent_id": "alice",
-                    "account_id": "checking",
-                    "asset_id": "vti",
-                    "units": 1_000_000,
-                    "proceeds_account_id": "checking",
-                }
-            ],
-        },
-        "series": [
-            rollout_series("security:vti", paths=[[10_000, 15_000, 15_000, 15_000], [20_000, 15_000, 15_000, 15_000]])
-        ],
-    }
-
-
-def failure_fixture() -> dict[str, Any]:
-    fixture = shared_integer_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 2
-    scenario["accounts"] = [
-        {"account": account_ref("alice", "checking"), "opening_balance": 100},
-        {"account": account_ref("bob", "checking"), "opening_balance": 0},
-    ]
-    scenario["scheduled_transfers"] = [
-        {
-            "month": 1,
-            "cause_id": "must-not-run",
-            "from": account_ref("alice", "checking"),
-            "to": account_ref("bob", "checking"),
-            "amount": 1,
-        }
-    ]
-    scenario["recurring_transfers"] = []
-    scenario["obligations"] = [
-        {
-            "month": 0,
-            "obligation_id": "too-large",
-            "from": account_ref("alice", "checking"),
-            "to": account_ref("bob", "checking"),
-            "amount_due": 101,
-        }
-    ]
-    scenario["initial_lots"] = []
-    scenario["scheduled_sales"] = []
-    fixture["series"] = []
-    return fixture
-
-
-def tax_fixture() -> dict[str, Any]:
-    fixture = failure_fixture()
-    fixture["rollout_count"] = 1
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 12
-    scenario["accounts"] = [
-        {"account": account_ref("alice", "checking"), "opening_balance": 0},
-        {"account": account_ref("payroll", "checking"), "opening_balance": 0},
-        {"account": account_ref("irs", "checking"), "opening_balance": 0},
-    ]
-    scenario["scheduled_transfers"] = []
-    scenario["recurring_transfers"] = [
-        {
-            "start_month": 0,
-            "end_month": 11,
-            "cause_id": "alice-paycheck",
-            "from": account_ref("payroll", "checking"),
-            "to": account_ref("alice", "checking"),
-            "amount": 1_666_667,
-            "income_category": "ordinary",
-        }
-    ]
-    scenario["obligations"] = []
-    scenario["recurring_obligations"] = []
-    scenario["tax_profiles"] = [
-        {
-            "agent_id": "alice",
-            "tax_authority_agent_id": "irs",
-            "jurisdictions": [
-                {
-                    "jurisdiction_id": "federal_us",
-                    "ordinary_brackets": [
-                        {"upper": 1_160_000, "rate_ppb": 100_000_000},
-                        {"upper": 4_715_000, "rate_ppb": 120_000_000},
-                        {"upper": 10_052_500, "rate_ppb": 220_000_000},
-                        {"upper": 19_195_000, "rate_ppb": 240_000_000},
-                        {"upper": None, "rate_ppb": 320_000_000},
-                    ],
-                    "long_term_capital_gain_brackets": [
-                        {"upper": 4_702_500, "rate_ppb": 0},
-                        {"upper": None, "rate_ppb": 150_000_000},
-                    ],
-                    "standard_deduction": 1_460_000,
-                    "max_capital_loss_ordinary_offset": 300_000,
-                },
-                {
-                    "jurisdiction_id": "california",
-                    "ordinary_brackets": [
-                        {"upper": 1_041_200, "rate_ppb": 10_000_000},
-                        {"upper": 2_468_400, "rate_ppb": 20_000_000},
-                        {"upper": 3_895_900, "rate_ppb": 40_000_000},
-                        {"upper": 5_408_100, "rate_ppb": 60_000_000},
-                        {"upper": 6_835_000, "rate_ppb": 80_000_000},
-                        {"upper": None, "rate_ppb": 93_000_000},
-                    ],
-                    "long_term_capital_gain_brackets": [],
-                    "standard_deduction": 536_300,
-                    "max_capital_loss_ordinary_offset": 300_000,
-                },
-            ],
-        }
-    ]
-    return fixture
-
-
-def target_allocation_fixture() -> dict[str, Any]:
-    tax_profile = tax_fixture()["scenario"]["tax_profiles"][0]
-    return {
-        "schema_version": 8,
-        "currency_code": "USD",
-        "currency_quantum": "0.01",
-        "rollout_count": 1,
-        "scenario": {
-            "horizon_months": 12,
-            "accounts": [
-                {"account": account_ref("alice", "checking"), "opening_balance": 1_200_000},
-                {"account": account_ref("landlord", "checking"), "opening_balance": 0},
-                {"account": account_ref("irs", "checking"), "opening_balance": 0},
-            ],
-            "scheduled_transfers": [],
-            "recurring_transfers": [],
-            "obligations": [],
-            "recurring_obligations": [
-                {
-                    "start_month": 1,
-                    "end_month": 3,
-                    "obligation_id": "rent",
-                    "obligation_type": "rent",
-                    "from": account_ref("alice", "checking"),
-                    "to": account_ref("landlord", "checking"),
-                    "amount_due": 500_000,
-                }
-            ],
-            "initial_lots": [
-                {
-                    "lot_id": "a-source-second",
-                    "agent_id": "alice",
-                    "account_id": "brokerage-b",
-                    "asset_id": "vti",
-                    "purchase_month": 0,
-                    "quantity_scale": 1_000_000,
-                    "units": 800_000_000,
-                    "basis": 6_400_000,
-                },
-                {
-                    "lot_id": "z-source-first",
-                    "agent_id": "alice",
-                    "account_id": "brokerage-a",
-                    "asset_id": "vti",
-                    "purchase_month": -24,
-                    "quantity_scale": 1_000_000,
-                    "units": 100_000_000,
-                    "basis": 500_000,
-                },
-                {
-                    "lot_id": "bond",
-                    "agent_id": "alice",
-                    "account_id": "brokerage-b",
-                    "asset_id": "bnd",
-                    "purchase_month": -24,
-                    "quantity_scale": 1_000_000,
-                    "units": 100_000_000,
-                    "basis": 1_000_000,
-                },
-            ],
-            "scheduled_sales": [],
-            "tax_profiles": [tax_profile],
-            "distributions": [],
-            "target_allocation_policies": [
-                {
-                    "agent_id": "alice",
-                    "account_id": "checking",
-                    "source_account_ids": ["brokerage-a", "brokerage-b"],
-                    "sleeves": [
-                        {"asset_id": "vti", "weight": 1, "quantity_scale": 1_000_000},
-                        {"asset_id": "bnd", "weight": 1, "quantity_scale": 1_000_000},
-                    ],
-                    "cash_floor": 1_000_000,
-                    "cash_ceiling": 3_000_000,
-                }
-            ],
-        },
-        "series": [
-            shared_series("security:vti", rollout_count=1, path=[10_000] * 13),
-            shared_series("security:bnd", rollout_count=1, path=[10_000] * 13),
-        ],
-    }
-
-
-def target_allocation_purchase_fixture(*, purchase_slots: int = 1) -> dict[str, Any]:
-    fixture = target_allocation_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 2
-    scenario["accounts"][0]["opening_balance"] = 10_000_000
-    scenario["recurring_obligations"] = []
-    policy = scenario["target_allocation_policies"][0]
-    policy["cash_floor"] = 1_000_000
-    policy["cash_ceiling"] = 2_000_000
-    policy["purchase_slots_per_sleeve"] = purchase_slots
-    for series in fixture["series"]:
-        series["snapshots"] = 3
-        series["values"] = series["values"][:3]
-    return fixture
-
-
-def financed_property_fixture() -> dict[str, Any]:
-    fixture = failure_fixture()
-    fixture["rollout_count"] = 1
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 2
-    scenario["accounts"] = [
-        {"account": account_ref("alice", "checking"), "opening_balance": 12_000_000},
-        {"account": account_ref("seller", "checking"), "opening_balance": 0},
-        {"account": account_ref("bank", "checking"), "opening_balance": 0},
-        {"account": account_ref("county", "checking"), "opening_balance": 0},
-    ]
-    scenario["scheduled_transfers"] = []
-    scenario["recurring_transfers"] = []
-    scenario["obligations"] = []
-    scenario["recurring_obligations"] = []
-    scenario["initial_lots"] = []
-    scenario["scheduled_sales"] = []
-    scenario["locations"] = [
-        {
-            "location_id": "sf",
-            "display_name": "San Francisco",
-            "jurisdiction_ids": [],
-            "annual_property_tax_rate_ppb": 11_800_000,
-            "annual_special_assessment": 0,
-        }
-    ]
-    scenario["scheduled_property_purchases"] = [
-        {
-            "month": 0,
-            "cause_id": "alice-buys-home",
-            "property_id": "home",
-            "location_id": "sf",
-            "buyer_agent_id": "alice",
-            "buyer_account_id": "checking",
-            "seller_agent_id": "seller",
-            "seller_account_id": "checking",
-            "purchase_price": 50_000_000,
-            "down_payment": 10_000_000,
-            "buyer_closing_cost": 1_000_000,
-            "mortgage": {
-                "liability_id": "home-mortgage",
-                "lender_agent_id": "bank",
-                "lender_account_id": "checking",
-                "principal": 40_000_000,
-                "annual_interest_rate_ppb": 60_000_000,
-                "term_months": 360,
-            },
-        }
-    ]
-    scenario["property_tax_policies"] = [
-        {
-            "property_id": "home",
-            "owner_agent_id": "alice",
-            "from_account_id": "checking",
-            "tax_authority_agent_id": "county",
-            "tax_authority_account_id": "checking",
-            "annual_tax_rate_ppb": 12_000_000,
-            "start_month": 0,
-            "end_month": None,
-        }
-    ]
-    fixture["series"] = []
-    return fixture
-
-
-def property_cashflow_fixture() -> dict[str, Any]:
-    fixture = financed_property_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 12
-    scenario["accounts"] = [
-        {"account": account_ref("alice", "checking"), "opening_balance": 30_000_000},
-        {"account": account_ref("seller", "checking"), "opening_balance": 0},
-        {"account": account_ref("bank", "checking"), "opening_balance": 0},
-        {"account": account_ref("county", "checking"), "opening_balance": 0},
-        {"account": account_ref("tenant", "checking"), "opening_balance": 6_000_000},
-        {"account": account_ref("manager", "checking"), "opening_balance": 0},
-        {"account": account_ref("irs", "checking"), "opening_balance": 0},
-    ]
-    scenario["scheduled_property_cashflows"] = [
-        {
-            "month": 0,
-            "property_id": "home",
-            "cause_id": "leasing-fee",
-            "from": account_ref("alice", "checking"),
-            "to": account_ref("manager", "checking"),
-            "amount": 100_000,
-            "deduction_category": "ordinary",
-        }
-    ]
-    scenario["recurring_property_cashflows"] = [
-        {
-            "start_month": 0,
-            "end_month": 11,
-            "property_id": "home",
-            "cause_id": "rent",
-            "from": account_ref("tenant", "checking"),
-            "to": account_ref("alice", "checking"),
-            "amount": 500_000,
-            "income_category": "ordinary",
-        },
-        {
-            "start_month": 0,
-            "end_month": 11,
-            "property_id": "home",
-            "cause_id": "management-fee",
-            "from": account_ref("alice", "checking"),
-            "to": account_ref("manager", "checking"),
-            "amount": 50_000,
-            "deduction_category": "ordinary",
-        },
-    ]
-    federal_profile = tax_fixture()["scenario"]["tax_profiles"][0]
-    federal_profile["jurisdictions"] = federal_profile["jurisdictions"][:1]
-    scenario["tax_profiles"] = [federal_profile]
-    return fixture
-
-
-def property_depreciation_fixture(*, sale: bool) -> dict[str, Any]:
-    fixture = property_cashflow_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 24 if sale else 12
-    purchase = scenario["scheduled_property_purchases"][0]
-    purchase["rented_fraction_ppb"] = 0
-    purchase["land_value_fraction_ppb"] = 200_000_000
-    purchase["mortgage"]["annual_interest_rate_ppb"] = 120_000_000
-    scenario["property_tax_policies"] = []
-    scenario["property_rented_fraction_events"] = [
-        {"month": 6, "property_id": "home", "rented_fraction_ppb": 500_000_000}
-    ]
-    scenario["capital_improvement_events"] = [
-        {"month": 6, "property_id": "home", "amount": 1_000_000, "description": "new roof"}
-    ]
-    scenario["mortgage_interest_deduction_policies"] = [{"liability_id": "home-mortgage", "owner_agent_id": "alice"}]
-    if sale:
-        scenario["recurring_property_cashflows"][0]["end_month"] = 23
-        scenario["recurring_property_cashflows"][1]["end_month"] = 23
-        scenario["property_sales"] = [{"month": 12, "property_id": "home", "closing_cost_bps": 600}]
-        tax_profile = tax_fixture()["scenario"]["tax_profiles"][0]
-        tax_profile["jurisdictions"][0]["section_1250_rate_ppb"] = 250_000_000
-        tax_profile["jurisdictions"][1]["section_1250_rate_ppb"] = 0
-        scenario["tax_profiles"] = [tax_profile]
-        fixture["series"] = [
-            shared_series("home_value:sf", rollout_count=1, path=[50_000_000] * 12 + [75_000_000] * 13)
-        ]
-    return fixture
-
-
-def rust_run(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
-    fixture_path = tmp_path / "fixture.json"
-    output_path = tmp_path / "rust-output.json"
-    fixture_path.write_text(json.dumps(fixture, separators=(",", ":")))
-    subprocess.run([simulator_binary(), fixture_path, output_path], check=True)
-    return cast(dict[str, Any], json.loads(output_path.read_text()))
-
-
-def rust_cash_frame(rust: dict[str, Any]) -> pl.DataFrame:
-    rows = []
-    for rollout in rust["rollouts"]:
-        for snapshot in rollout["months"]:
-            for balance in snapshot["balances"]:
-                account = balance["account"]
-                if account["account_id"] == "checking":
-                    rows.append(
-                        {
-                            "rollout_index": rollout["rollout_id"],
-                            "month_index": snapshot["month"],
-                            "agent_id": account["agent_id"],
-                            "account_id": account["account_id"],
-                            "balance_quanta": balance["balance"],
-                        }
-                    )
-    return pl.DataFrame(rows).sort("rollout_index", "month_index", "agent_id", "account_id")
-
-
-def rust_lot_frame(rust: dict[str, Any]) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for rollout in rust["rollouts"]:
-        for snapshot in rollout["months"]:
-            rows.extend(
-                {
-                    "rollout_index": rollout["rollout_id"],
-                    "month_index": snapshot["month"],
-                    "lot_id": lot["lot_id"],
-                    "agent_id": lot["agent_id"],
-                    "account_id": lot["account_id"],
-                    "asset_id": lot["asset_id"],
-                    "purchase_month_index": lot["purchase_month"],
-                    "cost_basis_per_unit_quanta": lot["cost_basis_per_unit"],
-                    "remaining_quantity_quanta": lot["units_remaining"],
-                    "quantity_scale": lot["quantity_scale"],
-                }
-                for lot in snapshot["lots"]
+        ),
+        rollout_count=2,
+        series={
+            VTI: levels(
+                [
+                    [Decimal(100), Decimal(150), Decimal(150), Decimal(150)],
+                    [Decimal(200), Decimal(150), Decimal(150), Decimal(150)],
+                ]
             )
-    return pl.DataFrame(rows).sort("rollout_index", "month_index", "lot_id")
+        },
+    )
 
 
-MIN_FEATURE_HORIZON_MONTHS = 60
+def failure_case() -> Case:
+    """A rollout that cannot fund its first obligation and freezes there."""
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(1)), ("bob", Decimal(0))),
+            horizon_months=2,
+            tax_profiles=[],
+            scheduled_transfers=[
+                transfer("must-not-run", month=1, from_agent_id="alice", to_agent_id="bob", amount=Decimal("0.01"))
+            ],
+            scheduled_obligations=[
+                cash_spend("too-large", month=0, agent_id="alice", to_agent_id="bob", amount_due=Decimal("1.01"))
+            ],
+        ),
+        rollout_count=2,
+    )
 
 
-def feature_rich_fixture(tmp_path: Path, *, rollout_count: int = 4) -> dict[str, Any]:
-    fixture_path = tmp_path / f"benchmark-fixture-{rollout_count}.json"
-    write_fixture(fixture_path, rollout_count=rollout_count, horizon_months=MIN_FEATURE_HORIZON_MONTHS)
-    return cast(dict[str, Any], json.loads(fixture_path.read_text()))
+# A year of this salary lands a single filer in the 24% federal and 9.3% California
+# brackets, on both jurisdictions' real ladders.
+MONTHLY_SALARY = Decimal("16666.67")
 
 
-def legacy_plan(fixture: dict[str, Any]) -> CompiledSimulation:
-    """Compile the same fixture the Rust binding consumes, for the JAX product entry points."""
+def salary(cause_id: str = "alice-paycheck", *, amount: Decimal = MONTHLY_SALARY) -> RecurringTransfer:
+    """Twelve months of ordinary income from `payroll` to Alice."""
 
-    scenario, external, locations = build_legacy_fixture(fixture)
-    return compile_simulation(
-        scenario,
-        rollout_count=cast(int, fixture["rollout_count"]),
-        external_series=external,
-        jurisdictions=load_jurisdictions_for(scenario),
-        locations=locations,
+    return RecurringTransfer(
+        start_month=0,
+        end_month=11,
+        cause_id=cause_id,
+        from_agent_id="payroll",
+        from_account_id="checking",
+        to_agent_id="alice",
+        to_account_id="checking",
+        amount=amount,
+        income_category=ORDINARY_INCOME,
+    )
+
+
+def salary_case(
+    *,
+    horizon_months: int = 12,
+    prior_year_tax: Decimal = Decimal(0),
+    recurring_transfers: Sequence[RecurringTransfer] | None = None,
+) -> Case:
+    """A year of salary assessed federally and by California."""
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0)), ("payroll", Decimal(0)), ("irs", Decimal(0))),
+            horizon_months=horizon_months,
+            recurring_transfers=[salary()] if recurring_transfers is None else list(recurring_transfers),
+            tax_profiles=[taxed("alice", "federal_us", "california", prior_year_tax=prior_year_tax)],
+        ),
+        rollout_count=1,
+    )
+
+
+ALLOCATION_ACCOUNTS = (("alice", Decimal(12_000)), ("landlord", Decimal(0)), ("irs", Decimal(0)))
+
+
+def allocation_lots(
+    *, bulk_lot_id: str = "a-source-second", older_lot_account_id: str = "brokerage-a"
+) -> list[InitialLot]:
+    """Two VTI lots in different source accounts plus a BND lot.
+
+    The lot ids sort against source-account order on purpose: which lots a liquidity sale
+    reaches has to be decided by the account it draws from, not by lot id.
+    """
+
+    return [
+        InitialLot(
+            lot_id=bulk_lot_id,
+            agent_id="alice",
+            account_id="brokerage-b",
+            asset=VTI,
+            purchase_month_index=0,
+            quantity=800.0,
+            cost_basis_per_unit=Decimal(80),
+        ),
+        InitialLot(
+            lot_id="z-source-first",
+            agent_id="alice",
+            account_id=older_lot_account_id,
+            asset=VTI,
+            purchase_month_index=-24,
+            quantity=100.0,
+            cost_basis_per_unit=Decimal(50),
+        ),
+        InitialLot(
+            lot_id="bond",
+            agent_id="alice",
+            account_id="brokerage-b",
+            asset=BND,
+            purchase_month_index=-24,
+            quantity=100.0,
+            cost_basis_per_unit=Decimal(100),
+        ),
+    ]
+
+
+def allocation_policy(
+    *,
+    source_account_ids: tuple[str, ...] = ("brokerage-a", "brokerage-b"),
+    cash_floor: AmountSpec = Decimal(10_000),
+    cash_ceiling: AmountSpec = Decimal(30_000),
+    purchase_slots_per_sleeve: int = 0,
+    rebalance_tolerance: float | None = None,
+) -> TargetAllocationPolicy:
+    """An equal-weight VTI/BND band on Alice's `checking` account."""
+
+    return TargetAllocationPolicy(
+        agent_id="alice",
+        account_id="checking",
+        source_account_ids=source_account_ids,
+        sleeves=[SleeveTarget(asset=VTI, weight=1), SleeveTarget(asset=BND, weight=1)],
+        cash_floor=cash_floor,
+        cash_ceiling=cash_ceiling,
+        purchase_slots_per_sleeve=purchase_slots_per_sleeve,
+        rebalance_tolerance=rebalance_tolerance,
+    )
+
+
+def flat_sleeve_prices(*, horizon_months: int) -> SeriesPaths:
+    """Both sleeve assets holding at $100 for the whole horizon, in one rollout."""
+
+    return {
+        VTI: flat(Decimal(100), rollout_count=1, horizon_months=horizon_months),
+        BND: flat(Decimal(100), rollout_count=1, horizon_months=horizon_months),
+    }
+
+
+def allocation_case(
+    *,
+    horizon_months: int = 12,
+    initial_cash: Sequence[InitialAccountBalance] | None = None,
+    initial_lots: Sequence[InitialLot] | None = None,
+    policy: TargetAllocationPolicy | None = None,
+    scheduled_obligations: Sequence[ScheduledObligation] = (),
+    recurring_obligations: Sequence[RecurringObligation] = (),
+    security_distributions: Sequence[SecurityDistribution] = (),
+    tax_profiles: Sequence[TaxProfile] | None = None,
+    series: SeriesPaths | None = None,
+) -> Case:
+    """One target-allocation policy over a VTI/BND sleeve pair, and what it is asked to fund."""
+
+    return Case(
+        scenario=scenario(
+            list(checking(*ALLOCATION_ACCOUNTS) if initial_cash is None else initial_cash),
+            horizon_months=horizon_months,
+            initial_lots=allocation_lots() if initial_lots is None else list(initial_lots),
+            scheduled_obligations=list(scheduled_obligations),
+            recurring_obligations=list(recurring_obligations),
+            security_distributions=list(security_distributions),
+            tax_profiles=([taxed("alice", "federal_us", "california")] if tax_profiles is None else list(tax_profiles)),
+            target_allocation_policies=[allocation_policy() if policy is None else policy],
+        ),
+        rollout_count=1,
+        series=flat_sleeve_prices(horizon_months=horizon_months) if series is None else series,
+    )
+
+
+def target_allocation_case() -> Case:
+    """The band raising cash across two source accounts to fund a rent obligation."""
+
+    return allocation_case(
+        recurring_obligations=[
+            RecurringObligation(
+                start_month=1,
+                end_month=3,
+                obligation_id="rent",
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due=Decimal(5_000),
+            )
+        ]
+    )
+
+
+def target_allocation_purchase_case(*, purchase_slots: int = 1) -> Case:
+    """The same band with cash above its ceiling, so the policy buys rather than sells."""
+
+    return allocation_case(
+        horizon_months=2,
+        initial_cash=checking(("alice", Decimal(100_000)), ("landlord", Decimal(0)), ("irs", Decimal(0))),
+        policy=allocation_policy(cash_ceiling=Decimal(20_000), purchase_slots_per_sleeve=purchase_slots),
+    )
+
+
+def home_mortgage(*, annual_interest_rate: float = 0.06, principal: Decimal = Decimal(400_000)) -> MortgageFinancing:
+    return MortgageFinancing(
+        liability_id="home-mortgage",
+        lender_agent_id="bank",
+        lender_account_id="checking",
+        principal=principal,
+        annual_interest_rate=annual_interest_rate,
+        term_months=360,
+    )
+
+
+def home_purchase(
+    *,
+    mortgage: MortgageFinancing | None,
+    purchase_price: Decimal = Decimal(500_000),
+    down_payment: Decimal = Decimal(100_000),
+    buyer_closing_cost: Decimal = Decimal(10_000),
+    rented_fraction: float = 0.0,
+    land_value_fraction: float = 0.2,
+) -> ScheduledPropertyPurchase:
+    """Alice buys `home` in San Francisco. `mortgage` is stated because `None` buys it outright."""
+
+    return ScheduledPropertyPurchase(
+        month=0,
+        cause_id="alice-buys-home",
+        property_id="home",
+        location_id="sf",
+        buyer_agent_id="alice",
+        buyer_account_id="checking",
+        seller_agent_id="seller",
+        seller_account_id="checking",
+        purchase_price=purchase_price,
+        down_payment=down_payment,
+        buyer_closing_cost=buyer_closing_cost,
+        rented_fraction=rented_fraction,
+        land_value_fraction=land_value_fraction,
+        mortgage=mortgage,
+    )
+
+
+def county_property_tax() -> PropertyTaxPolicy:
+    """A rate the policy states itself, overriding San Francisco's own ad-valorem rate."""
+
+    return PropertyTaxPolicy(
+        property_id="home",
+        owner_agent_id="alice",
+        from_account_id="checking",
+        tax_authority_agent_id="county",
+        tax_authority_account_id="checking",
+        annual_tax_rate=0.012,
+        start_month=0,
+    )
+
+
+FINANCED_PROPERTY_ACCOUNTS = (
+    ("alice", Decimal(120_000)),
+    ("seller", Decimal(0)),
+    ("bank", Decimal(0)),
+    ("county", Decimal(0)),
+)
+
+
+def financed_property_case() -> Case:
+    """A mortgaged purchase and its first carry month."""
+
+    return Case(
+        scenario=scenario(
+            checking(*FINANCED_PROPERTY_ACCOUNTS),
+            horizon_months=2,
+            tax_profiles=[],
+            scheduled_property_purchases=[home_purchase(mortgage=home_mortgage())],
+            property_tax_policies=[county_property_tax()],
+        ),
+        rollout_count=1,
+        locations={"sf": SF},
+    )
+
+
+PROPERTY_CASHFLOW_ACCOUNTS = (
+    ("alice", Decimal(300_000)),
+    ("seller", Decimal(0)),
+    ("bank", Decimal(0)),
+    ("county", Decimal(0)),
+    ("tenant", Decimal(60_000)),
+    ("manager", Decimal(0)),
+    ("irs", Decimal(0)),
+)
+
+LEASING_FEE = ScheduledPropertyCashflow(
+    month=0,
+    property_id="home",
+    cause_id="leasing-fee",
+    from_agent_id="alice",
+    from_account_id="checking",
+    to_agent_id="manager",
+    to_account_id="checking",
+    amount=Decimal(1_000),
+    deduction_category="ordinary",
+)
+
+
+def rent_and_management_fee(*, end_month: int) -> list[RecurringPropertyCashflow]:
+    return [
+        RecurringPropertyCashflow(
+            start_month=0,
+            end_month=end_month,
+            property_id="home",
+            cause_id="rent",
+            from_agent_id="tenant",
+            from_account_id="checking",
+            to_agent_id="alice",
+            to_account_id="checking",
+            amount=Decimal(5_000),
+            income_category=ORDINARY_INCOME,
+        ),
+        RecurringPropertyCashflow(
+            start_month=0,
+            end_month=end_month,
+            property_id="home",
+            cause_id="management-fee",
+            from_agent_id="alice",
+            from_account_id="checking",
+            to_agent_id="manager",
+            to_account_id="checking",
+            amount=Decimal(500),
+            deduction_category="ordinary",
+        ),
+    ]
+
+
+def property_cashflow_case(
+    *,
+    purchase: ScheduledPropertyPurchase | None = None,
+    property_tax_policies: Sequence[PropertyTaxPolicy] | None = None,
+    mortgage_interest_deduction_policies: Sequence[MortgageInterestDeductionPolicy] = (),
+) -> Case:
+    """A rented home: a one-off leasing fee, a monthly management fee, and monthly rent."""
+
+    return Case(
+        scenario=scenario(
+            checking(*PROPERTY_CASHFLOW_ACCOUNTS),
+            horizon_months=12,
+            scheduled_property_purchases=[home_purchase(mortgage=home_mortgage()) if purchase is None else purchase],
+            property_tax_policies=(
+                [county_property_tax()] if property_tax_policies is None else list(property_tax_policies)
+            ),
+            scheduled_property_cashflows=[LEASING_FEE],
+            recurring_property_cashflows=rent_and_management_fee(end_month=11),
+            mortgage_interest_deduction_policies=list(mortgage_interest_deduction_policies),
+            tax_profiles=[taxed("alice", "federal_us")],
+        ),
+        rollout_count=1,
+        locations={"sf": SF},
+    )
+
+
+def property_depreciation_case(*, sale: bool) -> Case:
+    """A home that becomes half-rented mid-year, takes a capital improvement, and depreciates.
+
+    With `sale`, it is sold in month 12 into a risen market, so the gain carries depreciation
+    recapture — which federal caps at the §1250 rate and California runs through its ordinary
+    brackets, both read off the same compiled tables.
+    """
+
+    horizon_months = 24 if sale else 12
+    lifecycle: list[PropertyLifecycleEvent] = [
+        SetRentedFractionEvent(month=6, property_id="home", rented_fraction=0.5),
+        CapitalImprovementEvent(month=6, property_id="home", amount=Decimal(10_000), description="new roof"),
+    ]
+    if sale:
+        lifecycle.append(PropertySaleEvent(month=12, property_id="home", closing_cost_pct=6.0))
+    return Case(
+        scenario=scenario(
+            checking(*PROPERTY_CASHFLOW_ACCOUNTS),
+            horizon_months=horizon_months,
+            scheduled_property_purchases=[home_purchase(mortgage=home_mortgage(annual_interest_rate=0.12))],
+            scheduled_property_cashflows=[LEASING_FEE],
+            recurring_property_cashflows=rent_and_management_fee(end_month=horizon_months - 1),
+            property_lifecycle_events=lifecycle,
+            mortgage_interest_deduction_policies=[
+                MortgageInterestDeductionPolicy(liability_id="home-mortgage", owner_agent_id="alice")
+            ],
+            tax_profiles=[taxed("alice", "federal_us", "california") if sale else taxed("alice", "federal_us")],
+        ),
+        rollout_count=1,
+        locations={"sf": SF},
+        # The home is valued only where it is sold: with no sale nothing reads the level, and
+        # the case that does sell needs the market it rose into.
+        series={SF_HOME: levels([[Decimal(500_000)] * 12 + [Decimal(750_000)] * 13])} if sale else {},
     )
