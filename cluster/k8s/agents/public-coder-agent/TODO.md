@@ -3,7 +3,7 @@
 Open items left over from the OpenClaw 2026.8.1 bump (#5369). The four failures
 that took the agent down are resolved; these are the recurring errors and loose
 ends it left behind. Diagnosis and the recovery runbook:
-<../../../../openclaw/debug/openclaw_2026_8_1_recovery/README.md>.
+<../../../../openclaw/debug/2026_8_1_recovery/README.md>.
 
 ## No system agent, so two subsystems fail every minute
 
