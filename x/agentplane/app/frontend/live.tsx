@@ -65,13 +65,22 @@ export function useLive<T extends { watch: WatchHealth }>(url: string): Live<T> 
   return state;
 }
 
+const AGE = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+
+/** An age a reader takes in at a glance: "40 minutes ago", not the 2417 seconds behind it. */
+function humanAge(seconds: number): string {
+  const [amount, unit]: [number, Intl.RelativeTimeFormatUnit] =
+    seconds < 90 ? [seconds, "second"] : seconds < 5400 ? [seconds / 60, "minute"] : [seconds / 3600, "hour"];
+  return AGE.format(-Math.round(amount), unit);
+}
+
 /** The oldest watched kind and how far behind it is, as the server last reported. */
 function stalest(health: WatchHealth): string {
   const [kind, age] = Object.entries(health.refreshed_seconds_ago).reduce(
     (oldest, entry) => (entry[1] > oldest[1] ? entry : oldest),
     ["nothing", 0]
   );
-  return `${kind} last updated ${Math.round(age)}s ago`;
+  return `${kind} last updated ${humanAge(age)}`;
 }
 
 /** Nothing while the stream is live and the server's watch is moving; otherwise why it is not. */
