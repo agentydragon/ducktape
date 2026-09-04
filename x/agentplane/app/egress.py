@@ -46,6 +46,20 @@ class FluxOwnedBindingError(InventoryError):
         self.name = name
 
 
+class UnknownPolicyError(InventoryError):
+    """A grant naming a policy the namespace does not hold, which would grant nothing.
+
+    The CRD admits any string in `spec.policies` and the proxy answers a name that resolves to
+    nothing with `MissingPolicy`, so a dangling name is a state the system already handles. This
+    refuses one at the moment it would be written; one the operator deletes afterwards still lands
+    there, and the proxy's condition stays the answer to it.
+    """
+
+    def __init__(self, names: list[str]) -> None:
+        super().__init__(f"no EgressPolicy in the namespace is named {', '.join(names)}")
+        self.names = names
+
+
 # Kubernetes-boundary models: the subset of each resource the app reads, parsed once off the wire.
 
 
@@ -165,6 +179,10 @@ class EgressInventory:
     async def list_policies(self) -> list[PolicyView]:
         return policy_views(_ResourceList.model_validate(await self._list(POLICIES_PLURAL)).items)
 
+    async def require_policies(self, names: list[str]) -> None:
+        """Every name must resolve to a policy the namespace holds, or nothing is written."""
+        _require_known(names, await self._policies_by_name())
+
     async def bindings_for(self, sandbox: str) -> list[BindingView]:
         """Every binding with a subject naming the sandbox, in name order."""
         policies, bindings = await asyncio.gather(self._list(POLICIES_PLURAL), self._list(BINDINGS_PLURAL))
@@ -181,30 +199,48 @@ class EgressInventory:
             *EGRESS_API, self._namespace, BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
-    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str]) -> None:
-        """The launch-time pick: one binding of the sandbox to the policies, owned by the Sandbox so
-        its deletion garbage-collects it. Creating it is the grant."""
-        body = {
-            "apiVersion": "/".join(EGRESS_API),
-            "kind": "EgressBinding",
-            "metadata": {
-                "name": f"{sandbox}-picked",
-                # Not the controller: the Sandbox controller owns the Pod and PVC, and this reference is
-                # for cascading deletion only.
-                "ownerReferences": [
-                    {
-                        "apiVersion": _SANDBOX_API_VERSION,
-                        "kind": "Sandbox",
-                        "name": sandbox,
-                        "uid": str(sandbox_uid),
-                        "controller": False,
-                        "blockOwnerDeletion": False,
-                    }
-                ],
+    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str]) -> BindingView:
+        """One binding of the sandbox to the policies, owned by the Sandbox so its deletion
+        garbage-collects it. Creating it is the grant, at launch and afterwards alike: granting an
+        already-running sandbox adds another binding rather than editing one it has, so each grant's
+        `expiresAt` is its own.
+        """
+        known = await self._policies_by_name()
+        _require_known(policies, known)
+        created = await self._custom_objects.create_namespaced_custom_object(
+            *EGRESS_API,
+            self._namespace,
+            BINDINGS_PLURAL,
+            {
+                "apiVersion": "/".join(EGRESS_API),
+                "kind": "EgressBinding",
+                "metadata": {
+                    # The API server names it. A sandbox may be granted more than once, and a name
+                    # derived from the sandbox alone would make every grant after the first a 409.
+                    "generateName": f"{sandbox}-",
+                    # Not the controller: the Sandbox controller owns the Pod and PVC, and this
+                    # reference is for cascading deletion only. It cascades only while bindings and
+                    # Sandboxes share a namespace — Kubernetes treats a namespaced owner in another
+                    # namespace as absent and collects the dependent — so splitting
+                    # `--sandbox-namespace` off `--namespace` has to replace this with a sweep.
+                    "ownerReferences": [
+                        {
+                            "apiVersion": _SANDBOX_API_VERSION,
+                            "kind": "Sandbox",
+                            "name": sandbox,
+                            "uid": str(sandbox_uid),
+                            "controller": False,
+                            "blockOwnerDeletion": False,
+                        }
+                    ],
+                },
+                "spec": {"subjects": [{"sandbox": {"name": sandbox}}], "policies": policies},
             },
-            "spec": {"subjects": [{"sandbox": {"name": sandbox}}], "policies": policies},
-        }
-        await self._custom_objects.create_namespaced_custom_object(*EGRESS_API, self._namespace, BINDINGS_PLURAL, body)
+        )
+        return _binding_view(_EgressBinding.model_validate(created), known)
+
+    async def _policies_by_name(self) -> dict[str, PolicyView]:
+        return {view.name: view for view in await self.list_policies()}
 
     async def _list(self, plural: str) -> dict[str, object]:
         return await self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, plural)
@@ -219,6 +255,11 @@ class EgressInventory:
                 raise BindingNotFoundError(name) from error
             raise
         return _EgressBinding.model_validate(raw)
+
+
+def _require_known(names: list[str], policies: dict[str, PolicyView]) -> None:
+    if unknown := [name for name in names if name not in policies]:
+        raise UnknownPolicyError(unknown)
 
 
 # The projections, over objects however they were obtained: one request's list, or the copy

@@ -19,11 +19,13 @@ bbr test //x/agentplane/app/...
   `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
   namespace with neither the app, its database, nor the rules below.
 - `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
-  edits them. A binding is desired state, so creating one at launch is the whole grant and deleting
-  it the whole revocation; there is no decision recorded on the rule afterwards. A binding Flux
-  applied is the repository's to remove, so revoking one is refused with 409 rather than deleting an
-  object the next reconcile re-creates. `decisions.py` reads the proxy's recent decisions off its
-  admin port, and an unreachable proxy leaves the rules readable.
+  edits them. A binding is desired state, so creating one is the whole grant and deleting it the
+  whole revocation; there is no decision recorded on the rule afterwards. A sandbox may be granted
+  after it is running, and each grant is a binding of its own so its expiry and revocation are its
+  own ([the composition doc](../docs/egress_composition.md)). A binding Flux applied is the
+  repository's to remove, so revoking one is refused with 409 rather than deleting an object the
+  next reconcile re-creates. `decisions.py` reads the proxy's recent decisions off its admin port,
+  and an unreachable proxy leaves the rules readable.
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.

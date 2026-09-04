@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from x.agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError
+from x.agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
 from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_policy
 
 GITHUB_RULE = {
@@ -115,13 +115,15 @@ async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
 async def test_grant_creates_a_binding_the_sandbox_owns(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    """Creating the binding is the grant: nothing has to answer it afterwards."""
+    """Creating the binding is the grant: nothing has to answer it afterwards. The API server names
+    it, so the app learns the name from what it gets back."""
     _seed(custom_objects)
     uid = uuid4()
 
-    await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"])
+    granted = await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"])
 
-    created = custom_objects.objects[("egressbindings", "live-picked")]
+    assert granted.name.startswith("live-")
+    created = custom_objects.objects[("egressbindings", granted.name)]
     (owner,) = created["metadata"]["ownerReferences"]
     assert owner == {
         "apiVersion": "agents.x-k8s.io/v1beta1",
@@ -133,8 +135,44 @@ async def test_grant_creates_a_binding_the_sandbox_owns(
     }
     assert created["spec"] == {"subjects": [{"sandbox": {"name": "live"}}], "policies": ["pypi", "github"]}
     # And the app reads its own grant back like any other binding, not from git.
-    (picked,) = [view for view in await egress.bindings_for("live") if view.name == "live-picked"]
-    assert (picked.from_git, [policy.name for policy in picked.policies]) == (False, ["pypi", "github"])
+    (read_back,) = [view for view in await egress.bindings_for("live") if view.name == granted.name]
+    assert (read_back.from_git, [policy.name for policy in read_back.policies]) == (False, ["pypi", "github"])
+
+
+async def test_a_second_grant_is_another_binding_and_not_an_edit_of_the_first(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """`expiresAt` is per binding, so granting a running sandbox cannot append to a binding that
+    carries other policies: at the deadline it would take those away too."""
+    _seed(custom_objects)
+    uid = uuid4()
+
+    first = await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi"])
+    second = await egress.grant(sandbox="live", sandbox_uid=uid, policies=["github"])
+
+    assert first.name != second.name
+    assert custom_objects.objects[("egressbindings", first.name)]["spec"]["policies"] == ["pypi"]
+    assert custom_objects.objects[("egressbindings", second.name)]["spec"]["policies"] == ["github"]
+    assert custom_objects.patches == []
+    # Both name the sandbox, so the proxy's union over its bindings is what composes them.
+    assert {first.name, second.name} <= {view.name for view in await egress.bindings_for("live")}
+
+
+async def test_a_grant_naming_a_policy_the_namespace_lacks_writes_nothing(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """A binding may carry a name nothing answers to — the proxy reports that as `MissingPolicy` —
+    but the app will not mint one, so a mistyped grant leaves no rule behind to puzzle over."""
+    _seed(custom_objects)
+    before = set(custom_objects.objects)
+
+    with pytest.raises(UnknownPolicyError) as refused:
+        await egress.grant(sandbox="live", sandbox_uid=uuid4(), policies=["pypi", "vanished"])
+
+    assert refused.value.names == ["vanished"]
+    assert set(custom_objects.objects) == before
+    with pytest.raises(UnknownPolicyError):
+        await egress.require_policies(["vanished"])
 
 
 async def test_list_policies_summarises_every_rule(

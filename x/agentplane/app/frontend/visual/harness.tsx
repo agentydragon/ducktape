@@ -127,7 +127,7 @@ const POLICIES: PolicyView[] = [
 /** One seed binding from git, which only git removes; one the app granted at launch, now expired. */
 const BINDINGS: BindingView[] = [
   {
-    name: "demo-a1b2-picked",
+    name: "demo-a1b2-7q4xk",
     from_git: false,
     subjects: ["demo-a1b2"],
     expires_at: ago(2 * HOUR),

@@ -34,5 +34,6 @@ to a doc under `x/agentplane/docs/`, and this file goes.
 
 ## Meanwhile
 
-A sandbox's egress is exactly the policies picked for it at creation, as one binding it owns.
-Presets are approximated by picking the same policies again; nothing infers a class of sandboxes.
+A sandbox's egress is exactly the policies picked for it, at creation or granted afterwards, one
+binding it owns per grant. Presets are approximated by picking the same policies again; nothing
+infers a class of sandboxes.

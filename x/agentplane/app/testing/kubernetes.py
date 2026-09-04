@@ -73,12 +73,16 @@ class FakeCustomObjectsApi:
     ) -> dict[str, Any]:
         del group, version
         assert namespace == NAMESPACE
-        key = (plural, body["metadata"]["name"])
+        metadata = body["metadata"]
+        # As the API server does: a `generateName` base is the server's to complete, so only a body
+        # that named itself can collide.
+        name = metadata["name"] if "name" in metadata else metadata["generateName"] + uuid4().hex[:5]
+        key = (plural, name)
         if key in self.objects:
             raise k8s_client.ApiException(status=409)
         stored = {
             **body,
-            "metadata": {**body["metadata"], "uid": str(uuid4()), "creationTimestamp": "2026-09-02T10:00:00Z"},
+            "metadata": {**metadata, "name": name, "uid": str(uuid4()), "creationTimestamp": "2026-09-02T10:00:00Z"},
         }
         self.objects[key] = stored
         return stored

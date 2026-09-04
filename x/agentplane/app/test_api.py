@@ -100,7 +100,8 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert row["name"].startswith("demo-")
     assert row["state"] == "waiting_for_pod"
     assert ("sandboxes", row["name"]) in custom_objects.objects
-    assert not any(kind == "egressbindings" and name.endswith("-picked") for kind, name in custom_objects.objects)
+    # Nothing was picked, so nothing may leave it.
+    assert client.get(f"/sandboxes/{row['name']}/egress").json() == []
 
 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
@@ -110,13 +111,14 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
 
     assert response.status_code == 201, response.text
     row = response.json()
-    created = custom_objects.objects[("sandboxes", row["name"])]
-    picked = custom_objects.objects[("egressbindings", f"{row['name']}-picked")]
-    assert picked["metadata"]["ownerReferences"][0]["uid"] == created["metadata"]["uid"]
-    assert picked["spec"]["policies"] == ["pypi"]
     # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
-    names = [binding["name"] for binding in client.get(f"/sandboxes/{row['name']}/egress").json()]
-    assert names == [f"{row['name']}-picked"]
+    (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
+    picked = custom_objects.objects[("egressbindings", binding["name"])]
+    assert (
+        picked["metadata"]["ownerReferences"][0]["uid"]
+        == custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -224,6 +226,51 @@ def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> Non
     # Nothing names `fresh`, so nothing may leave it.
     assert client.get("/sandboxes/fresh/egress").json() == []
     assert client.get("/sandboxes/nope/egress").status_code == 404
+
+
+def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """A sandbox's egress is not frozen at creation: the grant is one more binding naming it, and
+    revoking that one leaves the rest of its egress standing."""
+    granted = client.post("/sandboxes/live/egress", json={"policies": ["pypi", "github"]})
+
+    assert granted.status_code == 201, granted.text
+    binding = granted.json()
+    assert (binding["subjects"], binding["from_git"]) == (["live"], False)
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
+    # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
+    (owner,) = custom_objects.objects[("egressbindings", binding["name"])]["metadata"]["ownerReferences"]
+    assert (owner["kind"], owner["name"], owner["uid"]) == (
+        "Sandbox",
+        "live",
+        custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"],
+    )
+    assert sorted(b["name"] for b in client.get("/sandboxes/live/egress").json()) == sorted(
+        ["live-granted", "live-seeded", binding["name"]]
+    )
+
+    assert client.delete(f"/egress/bindings/{binding['name']}").status_code == 204
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
+
+
+def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """422 and not 404: the sandbox in the path is there, and 404 on this route already says it is
+    not. The CRD would admit the dangling name and the proxy would report `MissingPolicy`, so what
+    the operator would otherwise get is a grant that grants nothing."""
+    refused = client.post("/sandboxes/live/egress", json={"policies": ["github", "vanished"]})
+
+    assert refused.status_code == 422
+    assert "vanished" in refused.json()["detail"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
+    assert client.post("/sandboxes/nope/egress", json={"policies": ["github"]}).status_code == 404
+    # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
+    assert client.post("/sandboxes/live/egress", json={"policies": []}).status_code == 422
+    # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
+    assert client.post("/sandboxes", json={"slug": "demo", "policies": ["vanished"]}).status_code == 422
+    assert all(kind != "sandboxes" or name in {"live", "fresh", "shelved"} for kind, name in custom_objects.objects)
 
 
 def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
@@ -356,6 +403,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
     }
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
+    assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}
     assert set(paths["/threads/{thread_id}"]) == {"get", "patch"}
     assert set(paths["/egress/bindings/{name}"]) == {"delete"}
 

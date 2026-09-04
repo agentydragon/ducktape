@@ -21,6 +21,7 @@ from x.agentplane.app.egress import (
     EgressInventory,
     FluxOwnedBindingError,
     PolicyView,
+    UnknownPolicyError,
 )
 from x.agentplane.app.identity import TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
@@ -110,7 +111,9 @@ async def list_sandboxes(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox) -> SandboxView:
-    """Create the Sandbox; picked policies become one binding it owns."""
+    """Create the Sandbox; picked policies become one binding it owns. The names are resolved
+    first, so a policy that does not exist refuses the request before there is a sandbox."""
+    await egress.require_policies(spec.policies)
     view = await inventory.create(spec)
     if spec.policies:
         await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies)
@@ -153,11 +156,27 @@ async def delete_sandbox(inventory: Inventory, name: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+class EgressGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policies: list[str] = Field(
+        min_length=1, description="EgressPolicy names to grant, as one new binding naming this sandbox."
+    )
+
+
 @router.get("/{name}/egress")
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming it, with their policies as they resolve."""
     await inventory.require_known(name)
     return await egress.bindings_for(name)
+
+
+@router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
+async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, body: EgressGrant) -> BindingView:
+    """Grant policies to a sandbox already running: a new binding naming it, never an edit of one it
+    has, so this grant's expiry and revocation are its own."""
+    view = await inventory.get(name)
+    return await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=body.policies)
 
 
 @router.get("/{name}/egress/decisions")
@@ -318,6 +337,12 @@ def create_app(
     @app.exception_handler(FluxOwnedBindingError)
     async def _flux_owned(_request: Request, error: FluxOwnedBindingError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownPolicyError)
+    async def _unknown_policy(_request: Request, error: UnknownPolicyError) -> JSONResponse:
+        # 422 rather than 404: the sandbox in the path is there, and 404 on these routes already
+        # says it is not. The body parsed and named something that does not resolve.
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.SandboxNotReachableError)
     async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:
