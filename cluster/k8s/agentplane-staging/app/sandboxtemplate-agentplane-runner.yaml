@@ -1,9 +1,9 @@
 # Agentplane runner sandbox: the Pod and volume every Sandbox the integration
 # app stamps is copied from (the app reads this template at creation; no claim
-# or warm pool references it), driven over port 7000. The Pod is pinned to wyrm2
-# (region proxmox) so the local-path-proxmox state PVC binds where it runs; a
-# suspended Sandbox (operatingMode: Suspended) drops the Pod and keeps the PVC,
-# so it resumes only there. Both harnesses reach models through the cluster
+# or warm pool references it), driven over port 7000. The Pod is pinned to
+# hil-ovh, where its state PVC binds; a suspended Sandbox (operatingMode:
+# Suspended) drops the Pod and keeps the PVC, so it resumes on the node holding
+# it. Both harnesses reach models through the cluster
 # LiteLLM with the cheap-experiments key, directly: the credentialless egress
 # design governs external systems, not the model endpoint (x/agentplane/app/README.md).
 # Everything else outside the cluster goes through the egress sidecar: the harness
@@ -183,12 +183,14 @@ spec:
     - metadata:
         name: state
       spec:
-        # The NVMe tier: this is the agent's working directory, where it clones and builds, and
-        # the bulk tier is spinning disk shared with SeaweedFS. R3 reserves `-ssd` for
-        # fsync-critical databases, but it is a rule about CNPG clusters and does not reach a
-        # Pod's volume. Node-local, so a sandbox does not outlive its node -- which is what a
-        # sandbox is for; `seaweedfs-ovh` is the swap if they should survive one.
-        storageClassName: local-path-ovh-ssd
+        # The bulk tier, and the only one a sandbox can have: on OVH both `tier=ssd` nodes are
+        # control-plane (cluster/terraform/main/ovh-nodes.tf -- stage 2 of the storage tiering
+        # promoted them to put etcd on NVMe), so a Pod without a control-plane toleration never
+        # binds a `-ssd` volume and stays Pending. A sandbox is not getting that toleration: an
+        # agent clones and builds, and that is the I/O the tiering moved etcd away from.
+        # Node-local, so a sandbox does not outlive its node -- which is what a sandbox is for;
+        # `seaweedfs-ovh` is the swap if they should survive one.
+        storageClassName: local-path-ovh-hdd
         accessModes:
           - ReadWriteOnce
         resources:
