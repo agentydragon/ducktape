@@ -97,6 +97,7 @@ flowchart TB
     R1["Read-only follower attachments"]:::future
 
     J["Secure egress integration<br/>per-Pod sidecar wraps traffic with the Pod's SA token;<br/>central proxy holds credentials and egress policy;<br/>first credential: the agentydragon-agent GitHub PAT"]:::ready
+    H["Declared substitution rules<br/>the policy names the parse and the location;<br/>the placeholder matches a whole component exactly"]:::next
     P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
     K["Conditional access controller<br/>allow / deny / user approval required"]:::future
     R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
@@ -152,6 +153,7 @@ flowchart TB
     T3 --> F
     F0 --> G -->|yes| R1
     F0 --> J --> P
+    J --> H
     P -->|yes| K --> R
     P -->|no| R
     R -->|yes| V --> L
@@ -219,6 +221,16 @@ ones still open.
   landed — a profile label the app stamped and an `EgressBinding` selector that matched it — is
   removed rather than left in place. Grounds and what would revive this work:
   [`profiles.md`](profiles.md).
+- **H declared substitution rules:** an `EgressPolicy` says which parse and which location a
+  credential is substituted into, and the placeholder equals a whole component of that parse — no
+  substring replace, no undeclared `Basic` fallback, and one shared parse behind both detection and
+  substitution. Acceptance: a policy declares each target it substitutes into; a placeholder that
+  is a substring of a header value rather than a whole component is not substituted and not
+  detected; a request presenting a granted placeholder at a declared target is substituted at every
+  declared target it presents it in; one that presents a placeholder nothing bound to it resolves
+  is still refused `placeholder-unresolved`; and the staging policy is expressed in the new shape
+  with the old one gone from the CRD. Design and open questions:
+  [`egress_substitution_rules.md`](egress_substitution_rules.md).
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
