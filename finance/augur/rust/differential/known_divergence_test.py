@@ -5,7 +5,7 @@ its fixture with it. Each pins what each engine answers today, so a change to ei
 fails here and whoever made it decides which answer was meant — rather than the disagreement
 quietly moving to a new number.
 
-`fuzz_test.py` also fails on everything recorded here, and deliberately: nothing below is
+The fuzz targets also fail on everything recorded here, and deliberately: nothing below is
 excused, canonicalized away, or generated around.
 """
 

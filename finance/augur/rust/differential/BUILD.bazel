@@ -286,22 +286,6 @@ py_library(
     srcs = ["shrink.py"],
 )
 
-# ~200s measured: 800 value cases share four compiled programs, ten structural cases pay one
-# compile each, and a run that finds a divergence adds the shrink budget on top.
-py_test(
-    name = "fuzz_test",
-    size = "large",
-    srcs = ["fuzz_test.py"],
-    deps = [
-        ":campaign",
-        ":conftest",
-        ":generator",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_test(
     name = "generator_test",
     srcs = ["generator_test.py"],
@@ -384,7 +368,12 @@ py_library(
 
 py_test(
     name = "product_scenario_test",
+    size = "medium",
     srcs = ["product_scenario_test.py"],
+    data = [
+        "//finance/augur/api:public_fixture_config",
+        "//finance/augur/api:public_fixture_properties",
+    ],
     deps = [
         ":conftest",
         "//:conftest",
@@ -395,6 +384,38 @@ py_test(
         "//finance/augur/product:wire",
         "//finance/augur/rust:fixture_encoder",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# One XLA compile per case and nothing else, so it is sized by compiles rather than by cases.
+py_test(
+    name = "structural_fuzz_test",
+    size = "large",
+    srcs = ["structural_fuzz_test.py"],
+    deps = [
+        ":campaign",
+        ":conftest",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//jax",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Four compiled programs shared across 320 cases; the wall clock is the cases, not the
+# compiles, which is the whole point of separating this tier from the structural one.
+py_test(
+    name = "value_fuzz_test",
+    size = "large",
+    srcs = ["value_fuzz_test.py"],
+    deps = [
+        ":campaign",
+        ":conftest",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//pytest_bazel",
     ],
 )

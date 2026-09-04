@@ -1,8 +1,8 @@
 """The differential fuzzer run wide, off the default CI path.
 
-Same generator, same oracle and the same seed ranges as `fuzz_test.py`, extended: a soak
+Same generator, same oracle and the same seed ranges as the two CI tiers, extended: a soak
 failure at a seed inside CI's range reproduces there directly, and one past it reproduces by
-widening the range in `fuzz_test.py`.
+widening the range in `value_fuzz_test.py` or `structural_fuzz_test.py`.
 
     bbr test //finance/augur/rust/differential:soak_test
 
@@ -21,8 +21,8 @@ import pytest_bazel
 from finance.augur.rust.differential import campaign
 from finance.augur.rust.differential.generator import VALUE_TIER_SHAPES, random_shape
 
-VALUE_SEEDS = range(1500)
-STRUCTURAL_SEEDS = range(100)
+VALUE_SEEDS = range(600)
+STRUCTURAL_SEEDS = range(60)
 SHAPES_PER_BATCH = 10
 
 

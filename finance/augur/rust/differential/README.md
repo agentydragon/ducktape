@@ -68,7 +68,7 @@ means a fixture's untaxed realizations go unchecked on the Rust side.
 ## Fuzzing the pair
 
 The suites above are fixtures someone thought of. `generator.py` writes them at random, and
-`fuzz_test.py` runs them past the same oracle.
+`value_fuzz_test.py` and `structural_fuzz_test.py` run them past the same oracle.
 
 The cost model decides the design. JAX bakes the plan structure into the compiled program,
 so what a fixture varies decides what it costs, and the generator splits its randomness to
@@ -82,7 +82,9 @@ match:
   tax brackets, and every external series. A new value draw over a fixed shape costs a run.
 
 So the value tier runs many cases over a few fixed shapes and the structural tier runs few
-cases over many shapes. `generator_test.py` pins the split: every fixture of one shape must
+cases over many shapes, and they are separate targets: they compile concurrently, and neither
+process is left holding the other tier's executables, which JAX keeps for the life of a
+process. `generator_test.py` pins the split: every fixture of one shape must
 present the same entry counts, series axis and folded scalars, because a value draw that
 moved one of those would silently turn the cheap tier into the expensive one.
 
@@ -113,7 +115,7 @@ the cases that were compared, and the compared count is what the test asserts. T
 only number that is evidence of anything.
 
 `known_divergence_test.py` holds what the fuzzer has found and nobody has resolved yet, one
-pinned minimal fixture each. Nothing there is excused in the fuzzer: `fuzz_test.py` fails on
+pinned minimal fixture each. Nothing there is excused in the fuzzer: the fuzz targets fail on
 those cases too, and an entry leaves the file when the engines are made to agree.
 
 ### Running it wider
