@@ -48,17 +48,16 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.engine.jax_engine import (
+from finance.augur.sim.engine.jax_engine import run_jax_product_summaries, run_jax_product_summary
+from finance.augur.sim.external_series import materialize_sampled_exogenous
+from finance.augur.sim.locations import Location
+from finance.augur.sim.output import DenseSimulationOutput
+from finance.augur.sim.product_metrics import (
     ProductMetricArrays,
     ProductMetricFanSummary,
     ProductProjectionSummaries,
     ProductTerminalSummary,
-    run_jax_product_summaries,
-    run_jax_product_summary,
 )
-from finance.augur.sim.external_series import materialize_sampled_exogenous
-from finance.augur.sim.locations import Location
-from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import HarvestPolicy, Scenario
 from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics

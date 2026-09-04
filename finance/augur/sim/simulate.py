@@ -10,14 +10,11 @@ from __future__ import annotations
 
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.compiler.plan import CompiledSimulation
-from finance.augur.sim.engine import (
-    ProductMetricArrays,
-    run_dense_simulation,
-    run_dense_simulation_with_product_metrics,
-)
+from finance.augur.sim.engine import run_dense_simulation, run_dense_simulation_with_product_metrics
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.locations import Location
 from finance.augur.sim.output import DenseSimulationOutput
+from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.scenario import Scenario
 
 

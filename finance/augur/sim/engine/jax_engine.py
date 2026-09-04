@@ -61,7 +61,13 @@ import numpy as np
 from jaxtyping import Array, Bool, Float64, Int, Int64
 
 from finance.augur.model.series import PrivateEquityRegimeCode
-from finance.augur.product.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_metric, terminal_series
+from finance.augur.sim.product_metrics import (
+    ProductMetricArrays,
+    ProductMetricFanSummary,
+    ProductProjectionSummaries,
+    ProductTerminalSummary,
+)
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.quantiles import (
     CurrencyQuantileInterpolation,
@@ -658,37 +664,6 @@ def _check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.n
     )
 
 
-@dataclass(frozen=True)
-class ProductMetricFanSummary:
-    """Exact percentile reductions for one product metric."""
-
-    month_index: Int64[np.ndarray, " snapshot"]
-    failed_count: int
-    currency_code: str
-    currency_quantum: str
-    percentiles: tuple[float, ...]
-    terminal_percentiles: Int64[np.ndarray, " percentile"]
-    monthly_percentiles: Int64[np.ndarray, " snapshot percentile"]
-
-
-@dataclass(frozen=True)
-class ProductTerminalSummary:
-    """Per-rollout terminal samples for one product metric."""
-
-    failed_month: Int64[np.ndarray, " rollout"]
-    currency_code: str
-    currency_quantum: str
-    terminal_samples: Int64[np.ndarray, " rollout"]
-
-
-@dataclass(frozen=True)
-class ProductProjectionSummaries:
-    """Metric-fan and terminal-distribution summaries from one product scan."""
-
-    metric_fan: ProductMetricFanSummary
-    terminal_distribution: ProductTerminalSummary
-
-
 class _ProductMetricFanDeviceSummary(NamedTuple):
     """Device-side order statistics needed to build one exact metric fan."""
 
@@ -697,25 +672,6 @@ class _ProductMetricFanDeviceSummary(NamedTuple):
     monthly_upper: Int64[Array, " snapshot percentile"]
     terminal_lower: Int64[Array, " percentile"]
     terminal_upper: Int64[Array, " percentile"]
-
-
-@dataclass(frozen=True)
-class ProductMetricArrays:
-    """Base product series emitted by JAX for selected-rollout detail."""
-
-    month_index: Int64[np.ndarray, " snapshot"]
-    failed_month: Int64[np.ndarray, " rollout"]
-    currency_code: str
-    currency_quantum: str
-    base_series: tuple[Int64[np.ndarray, " snapshot rollout"], ...]
-
-    def metric_arrays(self) -> dict[str, Int64[np.ndarray, " snapshot rollout"]]:
-        base = dict(zip(_PRODUCT_BASE_METRICS, self.base_series, strict=True))
-        return {
-            "month_index": self.month_index,
-            **base,
-            **{name: compose_metric(name, base.__getitem__) for name in DERIVED_METRIC_NAMES},
-        }
 
 
 # The base metrics the scan emits per month, in the order `product_metrics` returns them.
@@ -791,11 +747,6 @@ def _run_jax_product_series(
     product_ys, product_tail = _program_impl(program)
     initial_ys, monthly_ys = product_ys
     return _product_metric_series(metric, initial_ys, monthly_ys), product_tail
-
-
-def _product_terminal_series(metric: str, series: Int64[Array, " snapshot rollout"]) -> Int64[Array, " rollout"]:
-    """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
-    return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
 
 
 def _product_metric_fan_device_summary(
@@ -880,7 +831,7 @@ def run_jax_product_summary(
     request transfers only the per-rollout terminal vector.
     """
     series, product_tail = _run_jax_product_series(plan, primary_agent_id=primary_agent_id, metric=metric)
-    terminal = _product_terminal_series(metric, series)
+    terminal = terminal_series(metric, series)
     if percentiles is None:
         oversell_host, failed_host, buy_count_host, terminal_host = jax.device_get(
             (product_tail.sale_oversell, product_tail.failed_month, product_tail.target_allocation_buy_count, terminal)
@@ -920,7 +871,7 @@ def run_jax_product_summaries(
     once; only the requested order statistics and terminal sample vector cross the device boundary.
     """
     series, product_tail = _run_jax_product_series(plan, primary_agent_id=primary_agent_id, metric=metric)
-    terminal = _product_terminal_series(metric, series)
+    terminal = terminal_series(metric, series)
     quantile_plan, fan_device = _product_metric_fan_device_summary(
         plan,
         metric=metric,

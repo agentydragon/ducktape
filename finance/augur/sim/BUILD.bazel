@@ -456,6 +456,7 @@ py_library(
         ":external_series",
         ":locations",
         ":output",
+        ":product_metrics",
         ":scenario",
         "//finance/augur/sim/codec:plan",
         "//finance/augur/sim/compiler:plan",
@@ -752,5 +753,15 @@ py_test(
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "product_metrics",
+    srcs = ["product_metrics.py"],
+    deps = [
+        "//finance/augur/product:metric_composition",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
     ],
 )
