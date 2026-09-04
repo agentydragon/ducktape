@@ -33,6 +33,11 @@ py_library(
 # kubeconfig and a route to the cluster. `manual` keeps //... from selecting it, which is how CI
 # picks targets; no-remote-exec keeps it off RBE, whose workers have neither. Run it by name:
 # bazelisk test //x/agentplane/acceptance:test_egress --test_output=streamed
+#
+# Bazel warns that `eternal` is too big, having measured a warm run at ~120s. The size matches the
+# suite's own bounds rather than that run: four sandboxes each wait up to SANDBOX_READY_SECONDS for
+# a Pod to be scheduled and pull the image, and up to six turns each wait TURN_SECONDS. A cold run
+# is most of an hour, and shrinking this to fit a warm one buys a timeout on the first slow day.
 py_test(
     name = "test_egress",
     timeout = "eternal",
