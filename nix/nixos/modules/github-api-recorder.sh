@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Runs the connection probe and drops records for destinations inside the machine
-# or the cluster.
+# Runs the connection probe and records every outbound TCP connection.
 #
-# The filter is here rather than in the probe's predicate because a tracepoint's
-# array field can only be referenced once per BPF program: the second reference
-# makes bpftrace materialise a pointer into the context, and the verifier rejects
-# that with "dereference of modified ctx ptr". Comparing address bytes needs
-# several references, and ntop() needs one more to print. So the probe emits
-# every connection and the noise is dropped a pipe later.
+# Nothing is filtered. An earlier version dropped private destinations to cut
+# kubelet-probe noise (~10/s on this node), and every analysis on top of it then
+# filtered again to a hand-picked list of GitHub API addresses. That second filter
+# was wrong -- GitHub's /meta lists 140.82.116.4 and 20.29.134.0/24 under `api`,
+# neither of which was matched -- and it blinded the analysis for hours while
+# reading as "nothing else touches the API". Filtering at capture time makes that
+# class of mistake unrecoverable, because the data to correct it was never kept.
+# Volume is roughly 10 records/s, ~90MB/day, which logrotate handles.
+#
+# Filter at analysis time, from api.github.com/meta, never here.
 set -uo pipefail
 
-exec bpftrace -B line "$1" \
-  | grep --line-buffered -Ev \
-    ' daddr=(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|f[cd]|fe80:|::1 )'
+exec bpftrace -B line "$1"

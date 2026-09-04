@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     models: ModelCatalog = Field(
         description='The models each provider may run, as JSON: {"claude": ["..."], "codex": ["..."]}.'
     )
+    default_policies: list[str] = Field(
+        default_factory=list,
+        description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
+        "what no sandbox works without, the model endpoint above all.",
+    )
     egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
@@ -154,7 +159,9 @@ async def async_main(settings: Settings) -> None:
             custom_objects=custom_objects,
             core_v1=CoreV1Api(api),
         )
-        egress = EgressInventory(namespace=settings.namespace, custom_objects=custom_objects)
+        egress = EgressInventory(
+            namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
+        )
         live = LiveIndex(stale_after_seconds=float(settings.resync_seconds * STALE_AFTER_CYCLES))
         watch = watch_for(
             live,

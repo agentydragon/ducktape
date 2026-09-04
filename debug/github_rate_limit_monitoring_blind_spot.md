@@ -1,11 +1,10 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **one heavy consumer identified, not the only one, and not fixed by upgrading.**
-The Claude Desktop app spends the user's GraphQL budget from its internal `GhRestClient`
-(upstream anthropics/claude-code#88320) — proven from the app's own log. Bumping to the
-current release does not stop it, and a second unidentified consumer spends thousands of
-points with the app provably down. The monitoring blind spot that hid all of this is
-closed.
+Status: **every candidate anyone proposed has been eliminated by measurement, and the
+burn continues.** It requires wyrm2 to be up, yet nothing observed on wyrm2 accounts for
+it. The single untested lead is that both instruments filtered on a subset of GitHub's
+API addresses, so the traffic was invisible to each of them for the same reason. Fix the
+filters before trusting any elimination below.
 
 ## The blind spot, and why it existed
 
@@ -553,6 +552,282 @@ candidate costed here: it was never one thing at machine rate.
    and it only recovers most of the budget, not all.
 4. Keep this note until the second consumer is named. The recorder module's tombstone
    condition ("once that note names the consumer") is _not_ yet satisfied.
+
+## The partition test: it is wyrm2
+
+Every attribution before this came from correlating a spike against whichever process
+happened to be visible, and two of them were wrong. The test that partitions instead of
+guessing had never been run: **take the machine away and see if the account still
+drains.**
+
+wyrm2 was offline from 09:59:58 to 10:12 UTC, across the 10:01 reset. The exporter and
+Mimir are in-cluster, so the measurement survived the machine going away.
+
+```text
+09:59Z  used=10852        wyrm2 down
+10:02Z  used=    0        reset
+10:03Z  used=   63
+10:07Z  used=   70
+10:12Z  used=   70        wyrm2 back
+10:27Z  used=   72        still idle
+```
+
+**70 points in that hour**, against 5000-gone-in-three-minutes in nine of the previous
+ten. The off-machine candidates this note had been building a case for — the Claude,
+Codex Connector and Copilot GitHub Apps acting as the user from third-party
+infrastructure, `GH_RELEASE_PAT` on GitHub-hosted runners, autonomously running cloud
+sessions — are all cleared: none spent anything meaningful while the machine was gone.
+
+The lesson is method, not result. A partition test costs twelve minutes of downtime and
+one bit; the instrumentation that preceded it cost a night and produced two wrong
+answers. Partition before attributing.
+
+### The confound, raised and dissolved
+
+Taking wyrm2 offline also removed every pod scheduled on it, so "wyrm2 offline → quiet"
+did not by itself isolate the operator's local processes. One pod was a live suspect:
+a process named `main`, uid 65532, under containerd, connecting to `api.github.com`
+**every 60 seconds**, 158 recorded connections, last seen 09:57:57 UTC — two minutes
+before the node went down, and never again after the reboot.
+
+It is `github-exporter`, this repo's own REST `/rate_limit` scraper. Its pod was
+`…-qvrsw` on wyrm2 and is now `…-wp2dc` on optiplex, started 09:59:03 UTC, fifty-five
+seconds before wyrm2's journal stopped. Everything matches: the deployment sets
+`runAsUser: 65532`, the upstream image is a Go binary so `comm` is `main`, and the
+ServiceMonitor interval is `1m`.
+
+That **dissolves** the confound rather than confirming it. The pod did not stop; it
+moved, and kept scraping from optiplex throughout the quiet hour. Had it been the
+consumer, the drain would have continued after the reschedule. It did not. It also costs
+~60 REST points/hour and no GraphQL at all.
+
+So the partition result stands: the burn stopped because wyrm2 went away.
+
+## The CLI reproduces it; Desktop is not required
+
+Immediately afterwards, with Claude Desktop not running and nothing else changed:
+
+| Condition                                | Consumption               |
+| ---------------------------------------- | ------------------------- |
+| wyrm2 offline                            | 70 points/hour            |
+| wyrm2 up, no Desktop, no CLI sessions    | +2 points in 15 min       |
+| wyrm2 up, no Desktop, **3 CLI sessions** | **~5700 points in 4 min** |
+
+That retires the Claude Desktop hypothesis this note was built on, and explains why the
+version bump changed nothing: the desktop app was never necessary to reproduce the burn.
+Its `GhRestClient` GraphQL 403s are real and remain in its log, so it is _a_ consumer —
+but not the one that matters here.
+
+Consumption is also **bursty rather than continuous**: 540, 1688, 2066, 1555, 4144
+points in single minutes, separated by minutes of nothing.
+
+## What the proxy actually captured
+
+Two Claude Code sessions, fully proxied, ~7 minutes, 22 requests total:
+
+| Requests | Endpoint                                  |
+| -------- | ----------------------------------------- |
+| 9        | `GET /repos/agentydragon/ducktape/pulls…` |
+| 8        | `POST /graphql`                           |
+| 3        | `GET /repos/agentydragon/ducktape`        |
+| 2        | `GET /repos/agentydragon/gaffer-private…` |
+
+All eight GraphQL posts are the same query, sent by the CLI's own client rather than by
+`gh`, and driven by the statusline's PR indicator:
+
+```graphql
+query ($o: String!, $r: String!, $n: Int!) {
+  repository(owner: $o, name: $r) {
+    pullRequest(number: $n) {
+      reviewDecision
+    }
+  }
+}
+```
+
+One node, so **1 point**. Roughly 50 points/hour per session. Reaching 5000 points in
+four minutes this way would take on the order of 200 sessions.
+
+So this is a real mechanism, identified at request level for the first time, and it is
+**not** the mechanism: it explains about 0.1% of the burn. Finding it felt like the
+answer, which is the third time tonight a plausible mechanism has proven too small. The
+residual comparison — captured cost against the account-wide delta — is the only reason
+that was caught rather than written up as a conclusion.
+
+The residual to close is:
+
+```text
+account delta = captured GraphQL cost + ~560/h tf-runners + UNKNOWN
+```
+
+The tf-runner term is in-cluster and can never be captured by a user-level proxy; it is
+bounded and measured, not unknown. Everything else is `UNKNOWN`, and it is currently
+almost the whole of it.
+
+## Proxying these two products: what does not work
+
+- **Claude Desktop strips proxy and cert environment variables.** Its bundle carries a
+  `Set` of `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`,
+  `CLAUDE_CODE_CERT_STORE` and similar, alongside seven `delete process.env` sites, and
+  logs `[CCD] Resolved system proxy for Code sessions`. It resolves the _system_ proxy
+  itself. Env-based proxying cannot work on it.
+- **It also refuses Chromium network-override switches**: `refusing to start — a
+debugging or network-override switch is present on the command line`. Both doors are
+  closed deliberately. The remaining route is the GNOME system proxy plus the CA in the
+  NSS store, which routes the whole machine through mitmdump.
+- **Electron hands off to an existing instance and exits.** Launching a proxied wrapper
+  while an unproxied app runs captures nothing while appearing to work: the window
+  opens, the flow file stays empty. This produced two false starts before it was noticed.
+- **`gh` inside a proxied session fails TLS without `SSL_CERT_FILE`.** Go reads neither
+  `NODE_EXTRA_CA_CERTS` nor the Nix cert path, so `gh` made no request and spent no
+  quota — the proxy suppressing the behaviour under measurement and reporting a false
+  negative. Caught by the operator before the first run, not after. Fixed by exporting a
+  system-store-plus-mitm-CA bundle to `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and
+  `GIT_SSL_CAINFO`.
+
+**Verifying capture completeness by outcome, not by environment**: the connection
+recorder shows every process reaching `api.github.com`. While each line reads
+`.mitmdump-wrapp`, the capture is complete; a `comm="HTTP Client"` line means a session
+slipped out. Checking environments finds only what you thought to look at.
+
+## The measurement that clears the CLI, and breaks the story
+
+At the 11:02:36 reset, with **every** Claude Code session on wyrm2 proxied and the
+connection recorder confirming nothing bypassed the proxy:
+
+```text
+11:03:19  used=2076    ~2000 points in the first ~40s
+11:05:49  used=6758    +4682 over the next 150s
+```
+
+The proxy's capture over that period, and indeed over its whole lifetime:
+
+| Requests | Endpoint                                  |
+| -------- | ----------------------------------------- |
+| 20       | `GET /repos/agentydragon/ducktape/pulls…` |
+| 14       | `POST /graphql`                           |
+| 9        | `GET /repos/agentydragon/gaffer-private…` |
+| 3        | `GET /repos/agentydragon/ducktape`        |
+
+46 requests, 14 of them GraphQL, every one the same 1-point
+`pullRequest(number){reviewDecision}` query.
+
+```text
+account delta     ~6758 points
+captured GraphQL     14 points
+residual          ~6744 points   (99.8%)
+```
+
+**The CLI sessions are cleared.** Whatever spends this quota is not a proxied session's
+traffic, and it did not reach `api.github.com` from any process on wyrm2 that the
+connection recorder could see — a non-mitmdump connection would have appeared, and none
+did.
+
+### Four facts that cannot all be true of the assumed mechanism
+
+1. The burn requires wyrm2 to be up (partition test).
+2. It correlates with starting CLI sessions (~5700 points in four minutes).
+3. With every session proxied, the account spent 6758 points while the proxy captured 14.
+4. Nothing bypassed the proxy to `api.github.com`.
+
+No process making ordinary HTTPS requests to `api.github.com` from this machine
+satisfies all four. An assumption is wrong, and the most likely one is that the traffic
+goes to `api.github.com` at all: `--allow-hosts` decrypts only that hostname, and the
+recorder's analysis has filtered on those addresses throughout, so traffic to any other
+GitHub API host is invisible to **both** instruments simultaneously — a blind spot
+built by using the same assumption twice.
+
+**Next step**: widen both filters beyond `api.github.com` before running anything else.
+Every conclusion above about "nothing else on this machine touches the API" is scoped to
+that one hostname.
+
+## Which tofu, specifically
+
+A 150-second cluster-wide Hubble sweep of GitHub API ranges names twelve roots, all
+reconciling on a 15-minute interval:
+
+```text
+16  haku-state          12  sso-providers       12  cpap-data
+14  flux-webhook-token  12  augur-evidence      12  forgejo-agentydragon-repos
+12  agent-machine-access 12 litellm-keys        12  budget-ledger
+12  forgejo-claude      10  github-branch-protection
+                        10  github-secrets-sync
+```
+
+Most of that is `tofu init` pulling modules and providers from `github.com` and
+`registry.terraform.io` — each root shows `init`, `plan`, `show`, `output` in sequence,
+and git transport spends no API quota. The three that use the **GitHub provider**, and
+so reach the API proper, are `github-branch-protection`, `github-secrets-sync` and
+`flux-webhook-token`. `github-branch-protection` is the most interesting: branch
+protection resources are GraphQL, against a repo with 74 open PRs and 209 branches.
+
+The runner pods are extremely short-lived — they exit between `pgrep` and reading
+`/proc`, and the pod is gone before `kubectl` can resolve its container id. Catching
+them needs a tight poll loop; Hubble's pod-level attribution is the practical route.
+
+**Counter-evidence, not to be skipped**: `tofu` made _more_ connections during a quiet
+window (237) than during a burning one (193). Connection volume does not track the burn,
+and connection counting has now misled this investigation four times. These three roots
+are what remains after elimination, not what the evidence positively implicates.
+
+## The filters were wrong all along
+
+GitHub's `/meta` lists `140.82.116.4` and `20.29.134.0/24` under `api`. Every filter used
+here — the proxy's `--allow-hosts` and every recorder analysis — matched only
+`140.82.116.5/.6` and `172.182.252.137`. So traffic to the rest of GitHub's API estate was
+invisible to **both** instruments at once: one hand-picked IP list, used twice, producing
+a blind spot with the same shape as the `/rate_limit` one this note opens with.
+
+Derive both filters from `api.github.com/meta` before trusting any further "nothing else
+touches the API" statement, including the ones already written above.
+
+## The tf roots are cleared
+
+`github-branch-protection`, `github-secrets-sync` and `flux-webhook-token` were
+suspended at 11:37:20Z (`spec.suspend: true` on the `kind: Terraform` resources, no
+runner pods). The next full window, with the suspension in force throughout:
+
+```text
+12:03Z  used=10638   previous hour, exhausted
+12:05Z  used= 2181   reset
+12:07Z  used= 6489   (+4308)
+12:09Z  used=10468   (+3979)
+```
+
+Same shape, same 2x budget, same five-minute drain. **Not the tf roots.** The
+suspension is reverted; there is no outcome in which it should persist.
+
+Two operational notes from arming it, both of which cost a detour:
+
+- `cluster/k8s/<root>/flux-kustomization.yaml` holds a **Flux Kustomization** whose
+  `metadata.name` matches the root. Patching "the file named after the root" suspends
+  the Kustomization that _deploys_ the directory, not the Terraform CR the
+  tofu-controller drives — and a suspended Kustomization then blocks the correction from
+  applying. The Terraform CR lives in `terraform.yaml`.
+- The child Kustomizations in `ducktape-flux` apply those CRs, so reconciling
+  `flux-system` alone is not enough and reading `.spec.suspend` too early shows a stale
+  `<none>`.
+
+## Where this leaves it
+
+Eliminated by measurement, in order: Claude Desktop (burn reproduces without it), the
+Claude Code CLI (6758 points spent while a full-coverage proxy captured 14), Refined
+GitHub (PAT deleted, burn continued), `workspace-gc` and Chrome (arithmetic and socket
+volume), every off-machine candidate (quiet whenever wyrm2 is down), and now the
+GitHub-provider tf roots.
+
+The burn requires wyrm2 up and nothing observed on wyrm2 accounts for it. Those cannot
+both be true of a process making ordinary requests to the addresses being watched — so
+the addresses being watched are the thing to doubt. `/meta` lists `140.82.116.4` and
+`20.29.134.0/24` under `api`; the proxy decrypted only `api.github.com` and every
+recorder analysis matched `140.82.116.5/.6` plus one Azure address. One hand-picked list,
+used by two instruments, blinding both in the same place.
+
+**The next step is not another candidate.** Derive `--allow-hosts` and the analysis
+filter from `api.github.com/meta`, then re-run the residual measurement. Every
+elimination above is scoped to the addresses that were watched, and the residual that
+cleared the CLI is the only one that compared against the account-wide counter rather
+than a filtered capture.
 
 ## Knobs not yet turned
 

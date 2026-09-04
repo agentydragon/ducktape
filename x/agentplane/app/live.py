@@ -35,7 +35,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.changes import Changes
-from x.agentplane.app.egress import BINDINGS_PLURAL, EGRESS_API, POLICIES_PLURAL, BindingView, matching_bindings
+from x.agentplane.app.egress import (
+    BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
+    EGRESS_API,
+    POLICIES_PLURAL,
+    BindingView,
+    matching_bindings,
+)
 from x.agentplane.app.inventory import (
     MANAGED_LABEL,
     SANDBOX_API,
@@ -103,6 +110,7 @@ class LiveIndex:
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
     policies: dict[str, object] = field(default_factory=dict)
+    credentials: dict[str, object] = field(default_factory=dict)
     refreshed: dict[str, datetime] = field(default_factory=dict)
     changes: Changes = field(default_factory=Changes)
 
@@ -114,7 +122,9 @@ class LiveIndex:
         return None if raw is None else sandbox_view(raw, self.pods.get(name))
 
     def bindings_for(self, name: str) -> list[BindingView]:
-        return matching_bindings(self.bindings.values(), self.policies.values(), sandbox=name)
+        return matching_bindings(
+            self.bindings.values(), self.policies.values(), self.credentials.values(), sandbox=name
+        )
 
     def health(self, now: datetime) -> WatchHealth:
         ages = {kind: (now - at).total_seconds() for kind, at in self.refreshed.items()}
@@ -192,6 +202,14 @@ def watch_for(
                 parse=_named,
                 names=lambda: set(index.policies),
                 apply=lambda name, obj: apply_to(index.policies, name, obj),
+            ),
+            WatchedKind(
+                name=CREDENTIALS_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=(*EGRESS_API, namespace, CREDENTIALS_PLURAL),
+                parse=_named,
+                names=lambda: set(index.credentials),
+                apply=lambda name, obj: apply_to(index.credentials, name, obj),
             ),
         ),
         resync_seconds=resync_seconds,

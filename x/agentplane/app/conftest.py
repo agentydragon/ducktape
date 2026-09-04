@@ -119,8 +119,16 @@ def live_index() -> LiveIndex:
 
 
 @pytest.fixture
-def egress(custom_objects: FakeCustomObjectsApi) -> EgressInventory:
-    return EgressInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects))
+def default_policies() -> list[str]:
+    """What the deployment grants every sandbox; overridden by the tests about that."""
+    return []
+
+
+@pytest.fixture
+def egress(custom_objects: FakeCustomObjectsApi, default_policies: list[str]) -> EgressInventory:
+    return EgressInventory(
+        namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), default_policies=default_policies
+    )
 
 
 @pytest.fixture

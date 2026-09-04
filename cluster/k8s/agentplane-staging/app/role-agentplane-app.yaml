@@ -19,7 +19,7 @@ rules:
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["agentplane.allegedly.works"]
-    resources: ["egresspolicies", "egressbindings"]
+    resources: ["egresspolicies", "egressbindings", "egresscredentials"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["agentplane.allegedly.works"]
     resources: ["egressbindings"]

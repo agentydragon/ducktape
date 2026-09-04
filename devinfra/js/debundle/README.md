@@ -80,6 +80,11 @@ debundle_pipeline(
     },
     spec_tree_inputs = [":spec_data"],
     tree_config = "spec/spec_config.yaml",
+    # Target holding the chunk the spec reads. Its files' own root becomes
+    # the root `inputs.root` / `inputs.js_list_path` resolve against, so a
+    # committed chunk resolves against the execroot and a build-extracted
+    # one against bazel-bin -- no need to vendor the chunk into git.
+    tree_source_root = "//path/to:bundle_inputs",
     tree_modules = "spec/modules",
     tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
 )

@@ -178,7 +178,7 @@ class EgressAddon:
             sandbox_name = sandbox.metadata.name
             decision = evaluate(self._index, sandbox, egress, self._clock())
             if isinstance(decision, Allowed):
-                pin = await self._resolver.pin(egress.host, egress.port)
+                pin = await self._resolver.pin(egress.host, egress.port, internal=decision.cluster_internal)
         except IdentityRejectedError as error:
             logger.info("identity rejected for %s %s:%d: %s", egress.method, egress.host, egress.port, error)
             decision = Denied(error.reason)

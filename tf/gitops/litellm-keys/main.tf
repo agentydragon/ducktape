@@ -220,6 +220,26 @@ resource "kubernetes_secret" "cheap_experiments_agentplane_staging" {
   }
 }
 
+# Copy for the Agentplane egress proxy (cluster/k8s/agentplane-staging/egress): the
+# litellm-cheap-experiments EgressCredential names this Secret, and the proxy substitutes it into
+# the requests that carry its placeholder. Written into the credentials namespace, which is where a
+# credential's secretRef resolves and which nothing but the proxy may read -- so once the runners
+# hold the placeholder instead, this is the only copy an agent's traffic can spend. Flux owns that
+# Namespace, so it must exist before this applies.
+resource "kubernetes_secret" "cheap_experiments_agentplane_egress_credentials" {
+  metadata {
+    name      = "litellm-key-cheap-experiments"
+    namespace = "agentplane-egress-credentials"
+    annotations = {
+      description = "The cheap-experiments LiteLLM virtual key as the Agentplane egress proxy substitutes it; sandboxes send agentplane-credential-litellm-cheap-experiments and never hold this"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.cheap_experiments.key
+  }
+}
+
 # ============================================================================
 # codex-pod — OpenAI/ChatGPT-backend key for the interactive codex agent pod
 # ============================================================================

@@ -9,16 +9,24 @@ import pytest
 import pytest_bazel
 
 from x.agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
-from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_policy
+from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_credential, egress_policy
 
 GITHUB_RULE = {
     "hosts": ["api.github.com", "*.githubusercontent.com"],
     "methods": ["GET", "POST"],
     "credentialRef": {"name": "test-github-pat"},
 }
+CREDENTIAL_DESCRIPTION = "a token for the test bot account"
 
 
 def _seed(custom_objects: FakeCustomObjectsApi) -> None:
+    custom_objects.objects[("egresscredentials", "test-github-pat")] = egress_credential(
+        "test-github-pat",
+        secret="test-github-pat-secret",
+        key="token",
+        description=CREDENTIAL_DESCRIPTION,
+        targets=[{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
+    )
     custom_objects.objects[("egresspolicies", "github")] = egress_policy("github", [GITHUB_RULE])
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
     custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
@@ -74,7 +82,13 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
         ["GET", "POST"],
         None,
     )
-    assert rule.credential == "test-github-pat"
+    assert rule.credential is not None
+    assert (rule.credential.name, rule.credential.description) == ("test-github-pat", CREDENTIAL_DESCRIPTION)
+    assert (rule.credential.secret, rule.credential.key) == ("test-github-pat-secret", "token")
+    assert [(t.header, t.method, t.scheme) for t in rule.credential.targets] == [
+        ("Authorization", "schemeToken", "Bearer")
+    ]
+    assert rule.missing_credential is None
 
     expiring = by_name["live-expiring"]
     assert expiring.expires_at == datetime(2026, 12, 1, tzinfo=UTC)
@@ -176,6 +190,20 @@ async def test_list_policies_summarises_every_rule(
     assert set(policies) == {"github", "pypi"}
     (open_rule,) = policies["pypi"].rules
     assert (open_rule.hosts, open_rule.methods, open_rule.credential) == (["pypi.org"], None, None)
+
+
+async def test_a_rule_naming_a_credential_the_namespace_does_not_hold_says_which_name_dangles(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """The proxy substitutes nothing for it, so the page must not read as a rule that wanted none."""
+    custom_objects.objects[("egresspolicies", "orphan")] = egress_policy(
+        "orphan", [{"hosts": ["api.github.com"], "credentialRef": {"name": "gone"}}]
+    )
+
+    (rule,) = {policy.name: policy for policy in await egress.list_policies()}["orphan"].rules
+
+    assert rule.credential is None
+    assert rule.missing_credential == "gone"
 
 
 if __name__ == "__main__":

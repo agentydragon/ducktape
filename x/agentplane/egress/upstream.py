@@ -32,14 +32,29 @@ class UpstreamRefusedError(Exception):
         self.reason = reason
 
 
-def reachable(address: Address, exempt: frozenset[Network]) -> bool:
-    """Globally reachable unicast by the IANA special-purpose registries, or inside an exempt network.
+def cluster_internal(address: Address) -> bool:
+    """A private unicast address of the kind a cluster hands out: RFC1918 and ULA.
+
+    Never loopback, link-local, multicast or unspecified. A rule declaring its host internal means
+    the cluster network, and the Pod's own interfaces are not that: `127.0.0.1` is the sidecar and
+    the runner's own listeners, and `169.254.169.254` is whatever the node's metadata service is.
+    """
+    return address.is_private and not (
+        address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified
+    )
+
+
+def reachable(address: Address, exempt: frozenset[Network], *, internal: bool = False) -> bool:
+    """Globally reachable unicast by the IANA special-purpose registries, inside an exempt network,
+    or -- when the deciding rule declared its host cluster-internal -- a private unicast address.
 
     An IPv4-mapped IPv6 address is judged as the IPv4 address it wraps, so `::ffff:10.0.0.1` is as
     private as `10.0.0.1` and an exemption of `127.0.0.0/8` covers `::ffff:127.0.0.1`.
     """
     unwrapped = (address.ipv4_mapped or address) if isinstance(address, IPv6Address) else address
     if any(unwrapped in network for network in exempt):
+        return True
+    if internal and cluster_internal(unwrapped):
         return True
     return unwrapped.is_global and not unwrapped.is_multicast
 
@@ -88,19 +103,25 @@ class UpstreamResolver:
         pin = self._pins.get((host.lower(), port))
         return pin if pin is not None and self._fresh(pin, self._clock()) else None
 
-    async def pin(self, host: str, port: int) -> Pin:
+    async def pin(self, host: str, port: int, *, internal: bool = False) -> Pin:
         """The fresh pin for the host, resolving it when there is none.
 
         A host with any address that is not reachable is refused whole, rather than served from
         its reachable addresses: a name that points into the cluster at all is not one a policy
-        meant to admit. Among the reachable ones an IPv4 address is pinned before an IPv6 one:
-        the Pod network the proxy dials from has no IPv6 route.
+        meant to admit -- unless the rule that admitted it says so, which is what `internal`
+        carries. Among the reachable ones an IPv4 address is pinned before an IPv6 one: the Pod
+        network the proxy dials from has no IPv6 route.
         """
         pin = self.pinned(host, port)
         if pin is not None:
+            # The cache is keyed by host and port, not by who admitted it, so a private address
+            # pinned for a rule that declared its host internal must not be served to one that did
+            # not: the check runs again against the address already held.
+            if not reachable(pin.address, self._exempt, internal=internal):
+                raise UpstreamRefusedError(DenyReason.ADDRESS_FORBIDDEN, f"{host} is pinned to {pin.address}")
             return pin
         addresses = await self._resolve(host, port)
-        forbidden = [address for address in addresses if not reachable(address, self._exempt)]
+        forbidden = [address for address in addresses if not reachable(address, self._exempt, internal=internal)]
         if forbidden:
             raise UpstreamRefusedError(DenyReason.ADDRESS_FORBIDDEN, f"{host} resolves to {forbidden[0]}")
         now = self._clock()

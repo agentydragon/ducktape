@@ -151,9 +151,9 @@ def _debundle_pipeline_plan(ctx, out_root):
             "--tree-vendor-marks",
             _shell_source_path(paths.join(pkg, ctx.attr.tree_vendor_marks)),
             # Source-relative paths embedded in the tree config YAML
-            # (e.g. `inputs.js_list_path`) resolve against the execroot.
+            # (e.g. `inputs.js_list_path`) resolve against this root.
             "--tree-source-root",
-            _shell_source_path("."),
+            _tree_source_root_arg(ctx),
             "--out-root",
             shell.quote(out_root),
         ]
@@ -176,7 +176,8 @@ def _debundle_pipeline_plan(ctx, out_root):
         direct = [ctx.file.spec] if ctx.file.spec else [],
         transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
                      [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
-                     [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()],
+                     [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()] +
+                     [ctx.attr.tree_source_root[DefaultInfo].files],
     )
 
     return struct(
@@ -184,6 +185,38 @@ def _debundle_pipeline_plan(ctx, out_root):
         command = "\"${{OLDPWD}}/{}\" {}".format(ctx.executable.debundler.path, " ".join(argv)),
         inputs = inputs,
     )
+
+def _tree_source_root_arg(ctx):
+    """`--tree-source-root`: the root the tree config's source-relative
+    paths (`inputs.root`, `inputs.js_list_path`) resolve against.
+
+    Always a target — the one holding the chunk the spec reads. The root
+    comes from that target's own files via `File.root.path`: empty for
+    source files, so a committed chunk resolves against the execroot, and
+    `bazel-out/<cfg>/bin` for generated ones, so a chunk *extracted from a
+    pinned upstream artifact by a build action* resolves against bazel-bin.
+    One form covers both, which is why this is not derived from
+    `input_data`: that attr legitimately mixes roots (a source chunk
+    alongside generated vendor bundles), and the chunk root has to be
+    named unambiguously.
+    """
+    dep = ctx.attr.tree_source_root
+    files = dep[DefaultInfo].files.to_list()
+    if not files:
+        fail("tree_source_root target {} produced no files".format(dep.label))
+
+    roots = {f.root.path: None for f in files}
+    if len(roots) != 1:
+        fail("tree_source_root target {} spans multiple roots: {}".format(
+            dep.label,
+            sorted(roots),
+        ))
+
+    root = files[0].root.path
+    if not root:
+        # Source file: its root *is* the execroot.
+        return _shell_source_path(".")
+    return _shell_execroot_path(root)
 
 def _shell_source_path(workspace_relative):
     """Shell expression referencing a workspace-root-relative source path.
@@ -231,7 +264,18 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     ),
     "input_data": attr.label_list(
         allow_files = True,
-        doc = "Source-tree inputs the spec references (extracted/, snapshots/).",
+        doc = "Inputs the spec references (extracted/, snapshots/, vendor bundles). Source-tree files, generated outputs, or a mix.",
+    ),
+    "tree_source_root": attr.label(
+        mandatory = True,
+        doc = (
+            "Target holding the chunk the spec reads. Its files' own root " +
+            "becomes the root that the tree config's source-relative paths " +
+            "(`inputs.root`, `inputs.js_list_path`) resolve against: the " +
+            "execroot for a committed chunk, bazel-bin for one produced by " +
+            "a build action. One form covers both, so a corpus never has to " +
+            "vendor its chunk into git to be buildable."
+        ),
     ),
     "package_roots": attr.label_keyed_string_dict(
         allow_files = True,

@@ -38,6 +38,11 @@ class ObjectMeta(_Wire):
     name: str
     uid: str | None = Field(default=None, description="Set by the API server; absent on objects built by hand.")
     generation: int | None = Field(default=None, description="Bumped by the API server on every spec change.")
+    labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="Read by the app to tell a Flux-applied binding, which git owns, from a runtime "
+        "grant it may revoke; the proxy decides nothing from them.",
+    )
 
 
 class SecretKeyRef(_Wire):
@@ -149,6 +154,13 @@ class Rule(_Wire):
         default=None, description="Path globs: `*` within one segment, `**` across segments; absent admits any."
     )
     credential_ref: CredentialRef | None = Field(default=None, alias="credentialRef")
+    cluster_internal: bool = Field(
+        default=False,
+        alias="clusterInternal",
+        description="This rule's hosts are inside the cluster and meant to be, so the proxy's refusal "
+        "of private addresses does not apply to them. Off by default: that refusal is what stops an "
+        "admitted name from resolving into the cluster, DNS rebinding included.",
+    )
 
 
 class PolicySpec(_Wire):

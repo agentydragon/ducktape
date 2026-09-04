@@ -111,12 +111,14 @@ async def list_sandboxes(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox) -> SandboxView:
-    """Create the Sandbox; picked policies become one binding it owns. The names are resolved
-    first, so a policy that does not exist refuses the request before there is a sandbox."""
-    await egress.require_policies(spec.policies)
+    """Create the Sandbox; the deployment's default policies and the picked ones become one binding
+    it owns. The names are resolved first, so a policy that does not exist refuses the request
+    before there is a sandbox."""
+    policies = egress.launch_policies(spec.policies)
+    await egress.require_policies(policies)
     view = await inventory.create(spec)
-    if spec.policies:
-        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies)
+    if policies:
+        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=policies)
     return view
 
 

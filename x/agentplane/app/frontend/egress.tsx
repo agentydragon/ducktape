@@ -1,5 +1,6 @@
 import { Badge, Button, Group, MultiSelect, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 
@@ -45,7 +46,13 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
             <Text key={index} size="sm" style={{ overflowWrap: "anywhere" }}>
               {rule.hosts.join(", ")} · {rule.methods ? rule.methods.join(" ") : "any method"} ·{" "}
               {rule.paths ? rule.paths.join(", ") : "any path"}
-              {rule.credential ? ` · credential ${rule.credential}` : " · no credential"}
+              {rule.credential
+                ? ` · ${rule.credential.name}: ${rule.credential.description} (${rule.credential.targets
+                    .map((t) => (t.scheme ? `${t.header}: ${t.scheme} <credential>` : `${t.header} ${t.method}`))
+                    .join(", ")}, from ${rule.credential.secret}/${rule.credential.key})`
+                : rule.missing_credential
+                  ? ` · credential ${rule.missing_credential}: no such EgressCredential`
+                  : " · no credential"}
             </Text>
           ))}
         </Stack>
@@ -58,6 +65,9 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
     </Stack>
   );
 }
+
+/** The bindings whose rules are open, comma-separated; a binding name has no comma in it. */
+const RULES_PARAM = "rules";
 
 const REVOKE_EXPLAINS =
   "Deletes the rule, which is what takes the access away. There is no undo; a new binding has to be made.";
@@ -95,13 +105,17 @@ function BindingsTable({
   bindings: BindingView[];
   onRevoke: (name: string) => void;
 }): JSX.Element {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Which bindings show their rules is in the URL, like the tab and the session page's switches, so
+  // a reading of what a sandbox may reach can be linked to and survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const expanded = new Set((searchParams.get(RULES_PARAM) ?? "").split(",").filter((name) => name));
   function toggle(name: string): void {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (!next.delete(name)) next.add(name);
-      return next;
-    });
+    const next = new Set(expanded);
+    if (!next.delete(name)) next.add(name);
+    const params = new URLSearchParams(searchParams);
+    if (next.size === 0) params.delete(RULES_PARAM);
+    else params.set(RULES_PARAM, [...next].join(","));
+    setSearchParams(params, { replace: true });
   }
   return (
     <Table>
