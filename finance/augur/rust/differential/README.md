@@ -64,3 +64,11 @@ JAX tracks capital gains for any agent holding lots or selling; Rust surfaces th
 an agent with a tax profile. The comparison is scoped to taxed agents. An untaxed agent's
 gain has no tax consequence, so this is output coverage rather than a wrong number — but it
 means a fixture's untaxed realizations go unchecked on the Rust side.
+
+## Fixture gotchas
+
+`section_1250_rate_ppb` reaches only Rust. The JAX compiler derives the §1250 rate from the
+jurisdiction id — `federal_us` gets the 25% cap, everything else zero — so a fixture with any
+depreciation recapture and an unset federal rate splits the same total tax differently across
+`ordinary_tax_quanta` and `capital_gain_tax_quanta`. Set it explicitly on the federal
+jurisdiction, or give the property nothing to depreciate.

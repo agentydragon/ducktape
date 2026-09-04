@@ -233,6 +233,12 @@ pub struct ObligationSpec {
     pub from: AccountRef,
     pub to: AccountRef,
     pub amount_due: AmountSpec,
+    /// Ties the obligation to a property: it stops accruing once that property leaves the
+    /// books, and a deduction it carries is sized by the property's runtime rented fraction.
+    #[serde(default)]
+    pub property_id: Option<String>,
+    #[serde(default)]
+    pub deduction_category: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -246,6 +252,10 @@ pub struct RecurringObligationSpec {
     pub from: AccountRef,
     pub to: AccountRef,
     pub amount_due: AmountSpec,
+    #[serde(default)]
+    pub property_id: Option<String>,
+    #[serde(default)]
+    pub deduction_category: Option<String>,
 }
 
 fn default_obligation_type() -> String {
