@@ -6,6 +6,10 @@ models:
     - anthropic-api/ant-messages/claude-haiku-4-5-20251001
   codex:
     - chatgpt/oai-responses/gpt-5.6-luna
+# Granted to every sandbox before whatever the operator picks: without the model endpoint a
+# sandbox has no agent, so it is not a choice (cluster/k8s/agentplane-staging/egress).
+default_policies:
+  - litellm
 # The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked for each
 # sandbox's recent decisions; until the proxy Deployment lands the page shows the rules alone.
 egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081

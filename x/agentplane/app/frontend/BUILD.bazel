@@ -195,10 +195,18 @@ ts_library(
     ],
 )
 
+# session.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "session_css",
+    srcs = ["session.css"],
+)
+
 ts_library(
     name = "session",
     srcs = [
         "session.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
         # The ambient declaration for the @tabler/icons-react subpaths session.tsx imports; see the
         # note in the file itself.
         "tabler_icons.d.ts",
@@ -210,6 +218,7 @@ ts_library(
         ":frame",
         ":markdown",
         ":protocol_pb",
+        ":session_css",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",

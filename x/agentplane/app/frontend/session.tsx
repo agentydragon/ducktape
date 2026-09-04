@@ -12,7 +12,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
@@ -31,6 +30,8 @@ import {
   shutdownSession,
   type ThreadView,
 } from "./client";
+import "./session.css";
+
 import { EMPTY, reduce, timeline, type InputState, type Item, type Row, type SessionState, type Turn } from "./events";
 import { FrameView } from "./frame";
 import { Markdown } from "./markdown";
@@ -56,15 +57,26 @@ function InputView({ input }: { input: InputState }): JSX.Element {
   );
 }
 
+/** The reasoning blocks showing their text, comma-separated by item id. */
+const REASONING_PARAM = "reasoning";
+
 /**
- * Reasoning stays folded, so an answer is not buried under the thinking that led to it. The header
- * switch sets every block at once; a block can still be opened or closed on its own afterwards.
+ * Reasoning stays folded, so an answer is not buried under the thinking that led to it, and each
+ * block is opened on its own: which ones are open is recorded in the URL, by item id, so a reading
+ * can be linked to and survives a reload.
  */
-function ReasoningView({ item, expanded }: { item: Item; expanded: boolean }): JSX.Element {
-  const [value, setValue] = useState<string | null>(expanded ? item.id : null);
-  useEffect(() => setValue(expanded ? item.id : null), [expanded, item.id]);
+function ReasoningView({ item }: { item: Item }): JSX.Element {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const open = new Set((searchParams.get(REASONING_PARAM) ?? "").split(",").filter((id) => id));
+  function toggle(): void {
+    if (!open.delete(item.id)) open.add(item.id);
+    const next = new URLSearchParams(searchParams);
+    if (open.size === 0) next.delete(REASONING_PARAM);
+    else next.set(REASONING_PARAM, [...open].join(","));
+    setSearchParams(next, { replace: true });
+  }
   return (
-    <Accordion variant="contained" chevronPosition="left" value={value} onChange={setValue}>
+    <Accordion variant="contained" chevronPosition="left" value={open.has(item.id) ? item.id : null} onChange={toggle}>
       <Accordion.Item value={item.id}>
         <Accordion.Control>
           <Group gap="xs">
@@ -80,8 +92,8 @@ function ReasoningView({ item, expanded }: { item: Item; expanded: boolean }): J
   );
 }
 
-function ItemView({ item, expandReasoning }: { item: Item; expandReasoning: boolean }): JSX.Element {
-  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} expanded={expandReasoning} />;
+function ItemView({ item }: { item: Item }): JSX.Element {
+  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
   return (
     <Paper withBorder p="sm">
@@ -117,20 +129,25 @@ function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
   );
 }
 
-function RowView({ row, expandReasoning }: { row: Row; expandReasoning: boolean }): JSX.Element {
+function RowView({ row }: { row: Row }): JSX.Element {
   switch (row.kind) {
     case "turn":
       return <TurnHeader turn={row.turn} />;
     case "input":
       return <InputView input={row.input} />;
     case "item":
-      return <ItemView item={row.item} expandReasoning={expandReasoning} />;
+      return <ItemView item={row.item} />;
   }
 }
 
 /**
- * The session's title: the thread's name, or the session id while unnamed, with the name editable
- * in place. Enter or Save submits, Escape cancels; a blank clears the name.
+ * The session's title, edited where it is read: the field is the title, styled as one, and a hover
+ * is the only hint that it takes typing. Enter commits and Escape puts the stored name back; moving
+ * away commits too, so a rename is never lost by clicking elsewhere -- renaming again is one edit,
+ * where losing what was typed is not recoverable at all.
+ *
+ * The placeholder is the session id, which is what an unnamed thread is called; a blank name clears
+ * it back to that.
  */
 function ThreadTitle({
   sessionId,
@@ -144,54 +161,46 @@ function ThreadTitle({
   onError: (message: string) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null);
+  // The stored name while nothing is being typed, so a rename that arrives from elsewhere shows.
+  const shown = draft ?? thread?.name ?? "";
 
-  async function save(): Promise<void> {
+  async function commit(): Promise<void> {
     if (draft === null || thread === null) return;
+    const name = draft.trim() || null;
+    setDraft(null);
+    if (name === (thread.name ?? null)) return;
     try {
-      onRenamed(await renameThread(thread.id, draft.trim() || null));
-      setDraft(null);
+      onRenamed(await renameThread(thread.id, name));
     } catch (reason: unknown) {
       onError(displayableError(reason));
     }
   }
 
-  if (draft !== null) {
-    return (
-      <Group gap="xs">
-        <TextInput
-          aria-label="Thread name"
-          value={draft}
-          placeholder={sessionId}
-          maxLength={200}
-          autoFocus
-          onChange={(e) => setDraft(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void save();
-            if (e.key === "Escape") setDraft(null);
-          }}
-        />
-        <Button size="compact-sm" onClick={() => void save()}>
-          Save
-        </Button>
-        <Button size="compact-sm" variant="subtle" onClick={() => setDraft(null)}>
-          Cancel
-        </Button>
-      </Group>
-    );
-  }
   return (
-    <Group gap="xs">
-      <Title order={3}>{thread?.name ?? sessionId}</Title>
+    // The title and the session id beside it; on a phone the pair takes a row of its own.
+    <Group gap="xs" className="agentplane-thread-name">
+      <TextInput
+        aria-label="Thread name"
+        // The thread exists once the bridge has opened the session; nothing to name before that.
+        disabled={thread === null}
+        variant="unstyled"
+        size="xl"
+        value={shown}
+        placeholder={sessionId}
+        maxLength={200}
+        classNames={{ input: "agentplane-thread-name-input" }}
+        style={{ flex: 1 }}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") setDraft(null);
+        }}
+      />
       {thread?.name && (
         <Text size="sm" c="dimmed">
           {sessionId}
         </Text>
-      )}
-      {/* The thread exists once the bridge has opened the session; nothing to name before that. */}
-      {thread && (
-        <Button size="compact-sm" variant="subtle" onClick={() => setDraft(thread.name ?? "")}>
-          Rename
-        </Button>
       )}
     </Group>
   );
@@ -212,13 +221,12 @@ export function SessionView({
   const [draft, setDraft] = useState("");
   const [thread, setThread] = useState<ThreadView | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
-  // Both switches are in the URL, like the sandbox page's tab, so a reading — the thinking shown,
-  // the frames shown, either or both — can be linked to and survives a reload.
+  // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
+  // so a reading can be linked to and survives a reload.
   const [searchParams, setSearchParams] = useSearchParams();
-  const expandReasoning = searchParams.get("reasoning") === "open";
   const showRaw = searchParams.get("raw") === "1";
 
-  /** Sets one switch's parameter, leaving the other's where it is. */
+  /** Sets a switch's parameter, leaving every other one where it is. */
   function setFlag(name: string, value: string, on: boolean): void {
     const next = new URLSearchParams(searchParams);
     if (on) next.set(name, value);
@@ -298,7 +306,11 @@ export function SessionView({
 
   const activeTurn = state.turns.find((turn) => turn.status === null);
   return (
-    <Stack>
+    // The session fills the window and the composer sits at its foot, rather than the page growing
+    // past the fold and the composer going with it. `dvh` so a phone's collapsing URL bar does not
+    // leave the composer under it; the subtraction is App's own `py="md"` on the Container, top and
+    // bottom (app.tsx).
+    <Stack h="calc(100dvh - 2 * var(--mantine-spacing-md))">
       <Group>
         <Button variant="subtle" onClick={onBack}>
           ← {sandbox}
@@ -315,15 +327,12 @@ export function SessionView({
         >
           <IconPower size={16} />
         </ActionIcon>
-        <Switch
-          label="Reasoning"
-          checked={expandReasoning}
-          onChange={(e) => setFlag("reasoning", "open", e.currentTarget.checked)}
-        />
         <Switch label="Raw frames" checked={showRaw} onChange={(e) => setFlag("raw", "1", e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
-      <ScrollArea h="60vh">
+      {/* `minHeight: 0` so this shrinks instead of pushing the composer off: a flex child
+          defaults to its content's height as its floor. */}
+      <ScrollArea style={{ flex: 1, minHeight: 0 }}>
         <Stack>
           {/* Raw: the whole session in sequence order, so what happened between two items — a
               stderr line, the harness starting — reads where it happened. Otherwise the turns,
@@ -331,7 +340,7 @@ export function SessionView({
           {showRaw ? (
             timeline(state).map(({ event, row }) => (
               <Fragment key={String(event.sequence)}>
-                {row && <RowView row={row} expandReasoning={expandReasoning} />}
+                {row && <RowView row={row} />}
                 <FrameView event={event} />
               </Fragment>
             ))
@@ -345,10 +354,7 @@ export function SessionView({
                     .map((input) => (
                       <InputView key={input.id} input={input} />
                     ))}
-                  {turn.itemIds.map(
-                    (id) =>
-                      state.items[id] && <ItemView key={id} item={state.items[id]} expandReasoning={expandReasoning} />
-                  )}
+                  {turn.itemIds.map((id) => state.items[id] && <ItemView key={id} item={state.items[id]} />)}
                 </Stack>
               ))}
               {state.inputs

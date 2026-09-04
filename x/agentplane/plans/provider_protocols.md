@@ -100,6 +100,12 @@ A second user frame during an active turn may be queued until a tool boundary, t
 prompt, or ignored until completion. Test a controlled active case and record what actually happens.
 Do not call it steering in a neutral API until the wire proves that distinction.
 
+Claude does have a real enqueued state, with a withdraw operation and terminal acknowledgements
+on a per-input handle — including a coalescing rule that changes the unit of withdrawal. See
+[`claude_input_queue.md`](claude_input_queue.md) for the frames, the capability negotiation, and
+what a common facade with Codex's `thread/queue/*` could and could not promise. Nothing there is
+capture-pinned yet; that page ends with the probes to run.
+
 ### Resume
 
 Use the provider's native session-resume mechanism after killing only an idle child. Assert recovery
