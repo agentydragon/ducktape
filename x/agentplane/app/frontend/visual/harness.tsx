@@ -112,14 +112,28 @@ const POLICIES: PolicyView[] = [
         hosts: ["api.github.com", "github.com", "*.githubusercontent.com"],
         methods: ["GET", "POST"],
         paths: null,
-        credential: "harness-github-pat",
+        credential: {
+          name: "harness-github-pat",
+          description: "A token for the demo bot account; requests carrying it act as that account.",
+          placeholder: "agentplane-credential-harness-github-pat",
+          secret: "harness-github-pat",
+          key: "token",
+          targets: [{ header: "Authorization", method: "schemeToken", scheme: "Bearer" }],
+        },
+        missing_credential: null,
       },
     ],
   },
   {
     name: "pypi",
     rules: [
-      { hosts: ["pypi.org", "files.pythonhosted.org"], methods: ["GET"], paths: ["/simple/**"], credential: null },
+      {
+        hosts: ["pypi.org", "files.pythonhosted.org"],
+        methods: ["GET"],
+        paths: ["/simple/**"],
+        credential: null,
+        missing_credential: null,
+      },
     ],
   },
 ];

@@ -45,7 +45,13 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
             <Text key={index} size="sm" style={{ overflowWrap: "anywhere" }}>
               {rule.hosts.join(", ")} · {rule.methods ? rule.methods.join(" ") : "any method"} ·{" "}
               {rule.paths ? rule.paths.join(", ") : "any path"}
-              {rule.credential ? ` · credential ${rule.credential}` : " · no credential"}
+              {rule.credential
+                ? ` · ${rule.credential.name}: ${rule.credential.description} (${rule.credential.targets
+                    .map((t) => (t.scheme ? `${t.header}: ${t.scheme} <credential>` : `${t.header} ${t.method}`))
+                    .join(", ")}, from ${rule.credential.secret}/${rule.credential.key})`
+                : rule.missing_credential
+                  ? ` · credential ${rule.missing_credential}: no such EgressCredential`
+                  : " · no credential"}
             </Text>
           ))}
         </Stack>

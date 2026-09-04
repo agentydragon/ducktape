@@ -162,6 +162,15 @@ def egress_policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def egress_credential(
+    name: str, *, secret: str, key: str, description: str, targets: list[dict[str, Any]]
+) -> dict[str, Any]:
+    return {
+        "metadata": {"name": name, "uid": str(uuid4()), "creationTimestamp": "2026-09-01T11:30:00Z"},
+        "spec": {"source": {"secretRef": {"name": secret, "key": key}}, "description": description, "targets": targets},
+    }
+
+
 def egress_binding(
     name: str,
     *,

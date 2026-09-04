@@ -38,6 +38,11 @@ class ObjectMeta(_Wire):
     name: str
     uid: str | None = Field(default=None, description="Set by the API server; absent on objects built by hand.")
     generation: int | None = Field(default=None, description="Bumped by the API server on every spec change.")
+    labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="Read by the app to tell a Flux-applied binding, which git owns, from a runtime "
+        "grant it may revoke; the proxy decides nothing from them.",
+    )
 
 
 class SecretKeyRef(_Wire):
