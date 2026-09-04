@@ -23,12 +23,16 @@ A policy on its own grants nothing; a binding grants by existing and being unexp
 
 ### The app writes only 1×N
 
-`EgressInventory.grant()` (<../app/egress.py>) hardcodes a single subject: it names the object
-`{sandbox}-picked`, writes one `subjects` entry, and hangs an `ownerReference` on that one Sandbox
-so deleting the sandbox garbage-collects the grant. Every binding created at runtime is therefore
-one subject by N policies, and the schema's multi-subject side is reachable only by a hand-written
-or Flux-applied binding. Multi-subject is a seed-time shape, and nothing in the runtime path
-produces or exercises one.
+`EgressInventory.grant()` (<../app/egress.py>) hardcodes a single subject: it writes one `subjects`
+entry and hangs an `ownerReference` on that one Sandbox so deleting the sandbox garbage-collects
+the grant. Every binding created at runtime is therefore one subject by N policies, and the
+schema's multi-subject side is reachable only by a hand-written or Flux-applied binding.
+Multi-subject is a seed-time shape, and nothing in the runtime path produces or exercises one.
+
+The object's name comes from `metadata.generateName` with the prefix `{sandbox}-`, so the API
+server assigns it and a sandbox can be granted any number of times; a name derived from the
+sandbox alone would make every grant after the first a 409. Nothing reads a binding back by name:
+the app selects by subject and revokes whatever name it was given.
 
 ## Worked examples
 
@@ -36,9 +40,9 @@ Several sandboxes run agents; some need GitHub with a token placeholder, some ne
 Each gets one binding:
 
 ```text
-docs-writer-picked   subjects: [docs-writer]   policies: [pypi-readonly]
-pr-bot-picked        subjects: [pr-bot]        policies: [github-public]
-researcher-picked    subjects: [researcher]    policies: [github-public, open-internet]
+docs-writer-h2n4q   subjects: [docs-writer]   policies: [pypi-readonly]
+pr-bot-8fj3d        subjects: [pr-bot]        policies: [github-public]
+researcher-4m9tz    subjects: [researcher]    policies: [github-public, open-internet]
 ```
 
 "Extra on top" is a longer policy list, not a second mechanism:
@@ -47,7 +51,7 @@ researcher-picked    subjects: [researcher]    policies: [github-public, open-in
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressBinding
 metadata:
-  name: researcher-picked
+  generateName: researcher-
 spec:
   subjects:
     - sandbox:
@@ -105,7 +109,7 @@ Granting more makes GitHub start failing.
 
 Inside one binding the author chooses that order. Across bindings nobody does: `subject_bindings`
 walks `sorted(index.bindings)`, so the **binding name** decides. A seed named `all-sandboxes-open`
-is consulted before `researcher-picked` and produces exactly the refusal above; the same binding
+is consulted before `researcher-4m9tz` and produces exactly the refusal above; the same binding
 named `zz-open` is consulted after it and the request succeeds. The alphabet is not a policy
 decision.
 
@@ -155,9 +159,16 @@ The field remains available later if a real case needs one. Nothing here depends
 ## A grant after launch is a new binding
 
 Granting a policy to an already-running sandbox creates a new binding naming just that sandbox,
-rather than appending the policy to its `{sandbox}-picked` binding.
+rather than appending the policy to a binding the sandbox already has.
 
 `expiresAt` is per binding. A time-limited grant appended to a binding that also carries the
 launch-time picks would put its expiry on all of them, so at the deadline the sandbox would lose
 the policies it was created with. One binding per grant keeps each lifetime its own, and the union
-over a subject's bindings composes them.
+over a subject's bindings composes them. Revocation follows the same seam: deleting one grant's
+binding takes back that grant and nothing else.
+
+The app writes it at `POST /sandboxes/{name}/egress`, which refuses a policy name the namespace
+does not hold. A dangling name is not corruption — the CRD admits any string and the proxy answers
+one that resolves to nothing with `MissingPolicy` — so the refusal is a guard on the typo at the
+moment of writing, not a guarantee: a policy deleted after the grant produces the same dangling
+name, and the proxy's condition stays the answer to it.

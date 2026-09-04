@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import { Badge, Button, Group, MultiSelect, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
@@ -194,6 +194,35 @@ function BindingsTable({
   );
 }
 
+/** Grants to a sandbox that is already running; each grant is its own binding, revoked on its own. */
+function GrantPolicies({
+  policies,
+  picked,
+  onPick,
+  onGrant,
+}: {
+  policies: string[];
+  picked: string[];
+  onPick: (names: string[]) => void;
+  onGrant: () => void;
+}): JSX.Element {
+  return (
+    <Group align="flex-end">
+      <MultiSelect
+        label="Grant policies"
+        description="Added as a binding of its own; what this sandbox already has is untouched"
+        data={policies}
+        value={picked}
+        onChange={onPick}
+        style={{ flex: "1 1 12rem" }}
+      />
+      <Button onClick={onGrant} disabled={picked.length === 0}>
+        Grant
+      </Button>
+    </Group>
+  );
+}
+
 function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
   // Newest first: the ring is served oldest first.
   const rows = [...decisions].reverse();
@@ -275,6 +304,12 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What a grant, a revoke, or the one-shot policy list was refused with. The poll below clears
+  // `error` on every successful read, so these would flash and vanish if they shared it.
+  const [actionError, setActionError] = useState<string | null>(null);
+  // The namespace's policies, and the ones picked to grant this sandbox next.
+  const [policies, setPolicies] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     const params = { params: { path: { name } } };
@@ -302,17 +337,37 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
     return () => clearInterval(timer);
   }, [refresh]);
 
+  useEffect(() => {
+    void (async () => {
+      const { data, error: failure } = await api.GET("/egress/policies");
+      setActionError(failure ? displayableError(failure) : null);
+      if (!failure) setPolicies(data.map((policy) => policy.name));
+    })();
+  }, []);
+
   async function revoke(binding: string): Promise<void> {
     const { error: failure } = await api.DELETE("/egress/bindings/{name}", {
       params: { path: { name: binding } },
     });
-    if (failure) setError(displayableError(failure));
+    setActionError(failure ? displayableError(failure) : null);
+    await refresh();
+  }
+
+  async function grant(): Promise<void> {
+    const { error: failure } = await api.POST("/sandboxes/{name}/egress", {
+      params: { path: { name } },
+      body: { policies: picked },
+    });
+    setActionError(failure ? displayableError(failure) : null);
+    if (!failure) setPicked([]);
     await refresh();
   }
 
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
+      {actionError && <Text c="red">{actionError}</Text>}
+      <GrantPolicies policies={policies} picked={picked} onPick={setPicked} onGrant={() => void grant()} />
       {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
       {decisions && <DecisionsTable decisions={decisions} />}
