@@ -230,6 +230,14 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /home/openclaw/.openclaw
+            # Bazel's output base and disk cache, kept off the state PVC. The rc
+            # file below is what points Bazel here; see ./bazelrc.
+            - name: bazel-cache
+              mountPath: /bazel-cache
+            - name: bazelrc
+              mountPath: /home/openclaw/.bazelrc
+              subPath: bazelrc
+              readOnly: true
             # Kubeconfig with a non-secret placeholder. iron-proxy substitutes the Agent's Haku
             # bearer only for haku-kubeapi.allegedly.works; no Kubernetes credential is mounted.
             - name: kubeconfig
@@ -266,6 +274,15 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: public-coder-agent-state-v2
+        # Regenerable Bazel state. emptyDir, so it is re-fetched per pod start
+        # rather than accumulating on the claim; sizeLimit bounds it so a runaway
+        # build evicts the pod instead of filling the node disk.
+        - name: bazel-cache
+          emptyDir:
+            sizeLimit: 30Gi
+        - name: bazelrc
+          configMap:
+            name: public-coder-agent-bazelrc
         - name: kubeconfig
           configMap:
             name: public-coder-agent-kubeconfig
