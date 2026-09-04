@@ -76,5 +76,34 @@ hubble:
   ui:
     enabled: true
 
+  # Flow metrics. Without these, flows exist only in hubble-relay's in-memory
+  # ring buffer: visible live in the UI, gone afterwards. Every egress question
+  # then has to be asked while the traffic is happening, which is why short
+  # captures here have repeatedly "cleared" callers that were merely idle at the
+  # time (debug/github_rate_limit_monitoring_blind_spot.md). These are scraped
+  # into Mimir, so a window can be queried after the fact.
+  #
+  # Observability plane only: no datapath, MTU, or routing change, so the
+  # Nebula-compatibility warning at the top of this file does not apply.
+  #
+  # Cardinality is the cost here, and `destinationContext` is where it bites:
+  # pod IPs churn on every restart and each new value is a new Mimir series
+  # forever. Resolving to a workload name first keeps intra-cluster traffic on
+  # stable labels and leaves the IP fallback for external destinations only.
+  #
+  # `dns` stays empty until an L7 DNS policy routes queries through Cilium's DNS
+  # proxy; it is enabled here so that turning one on needs no Helm upgrade.
+  # `drop` is what shows a namespace being black-holed by such a policy.
+  metrics:
+    enabled:
+      - "flow:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|ip"
+      - "drop:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|ip"
+      - "dns:query;ignoreAAAA"
+    # As with `prometheus` above: the ServiceMonitor is declared under
+    # cluster/k8s/monitoring/cilium so this bootstrap-time install does not
+    # depend on monitoring CRDs.
+    serviceMonitor:
+      enabled: false
+
 operator:
   dnsPolicy: ClusterFirstWithHostNet

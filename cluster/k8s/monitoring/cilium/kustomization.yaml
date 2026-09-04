@@ -3,3 +3,4 @@ kind: Kustomization
 namespace: monitoring
 resources:
   - servicemonitor.yaml
+  - hubble-servicemonitor.yaml

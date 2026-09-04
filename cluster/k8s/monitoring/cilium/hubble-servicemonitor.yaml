@@ -1,0 +1,27 @@
+# Hubble flow metrics, enabled by `hubble.metrics` in
+# cluster/terraform/main/cilium-values.yaml. The Cilium chart creates the
+# headless `hubble-metrics` Service only when that list is non-empty, so this
+# produces no targets until the corresponding Helm upgrade has been applied.
+#
+# `k8s-app: hubble` also matches hubble-peer/relay/ui; the `hubble-metrics` port
+# name is what narrows the targets to the metrics Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hubble
+  labels:
+    app.kubernetes.io/name: hubble
+    app.kubernetes.io/part-of: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      k8s-app: hubble
+  endpoints:
+    - port: hubble-metrics
+      path: /metrics
+      scheme: http
+      interval: 30s
+      scrapeTimeout: 10s
