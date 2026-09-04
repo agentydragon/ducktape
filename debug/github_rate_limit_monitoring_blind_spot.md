@@ -1,7 +1,9 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: the monitoring blind spot is closed. The open question is which consumer.
-First 7h of real data: 2026-09-03 23:00 – 2026-09-04 06:00 UTC.
+Status: **identified**. The consumer is the Claude Desktop app (upstream
+anthropics/claude-code#88320), pinned here at a version predating the fix. Remaining
+work is the version bump and a confirming window. The monitoring blind spot that hid
+this for weeks is closed.
 
 ## The blind spot, and why it existed
 
@@ -415,6 +417,46 @@ and `DISABLE_INSTALLATION_CHECKS`.
 **The decisive test is cheap**: quit the desktop app and watch `used`. Upstream measured
 zero. That also apportions blame between the two products, which decides whether the CLI
 issue needs re-reporting with the better measurements collected here.
+
+## Result: Claude Desktop, confirmed by control
+
+Quitting the desktop app at 08:47 UTC, leaving all twelve `claude` CLI sessions running
+and one actively driven, changed consumption by roughly two orders of magnitude across
+the 09:00 reset:
+
+```text
+09:00:33  used=0     remaining=5000   reset; desktop quit since 08:47
+09:02:34  used=1
+09:04:35  used=5
+09:07:06  used=7     remaining=4993
+```
+
+Seven points in seven minutes, against 5000 gone in under three minutes in every
+previous window and ~10,500 by end of hour. That is the same control, and the same
+result, as upstream #88320.
+
+Two things fall out of it:
+
+- **The CLI is not a meaningful contributor here.** #63222 remains theoretically live,
+  but twelve running sessions produced 7 points in 7 minutes.
+- **The one unexplained quiet hour explains itself.** 23:00 PDT followed the operator's
+  last command at 22:57: an idle app with no session switches, which upstream measures
+  at ~2 points/min. That hour peaked at 523.
+
+Single trial, single variable. The positive control — reopen the app, switch between a
+few sessions, watch ~570 points per switch — would make it A-B-A, at the cost of a
+window's quota.
+
+## Remaining work
+
+1. **Bump the pin.** <nix/packages/claude-desktop.nix> holds `1.18286.0`; the apt repo
+   is at `1.40609.1`, and upstream closed #88320 on 2026-08-24 against a reporter on
+   `1.32885.1`. The file documents the bump-and-rehash procedure.
+2. **Confirm after the bump** — one clean hourly window with the app running and in use.
+3. **Then delete this note**, promoting only what outlives the incident: the
+   `/rate_limit` blind spot (already a comment in
+   <cluster/k8s/github-exporter/graphql-deployments.yaml>), and the connection recorder's
+   own tombstone in <nix/nixos/modules/github-api-recorder.nix>, which comes out with it.
 
 ## Knobs not yet turned
 
