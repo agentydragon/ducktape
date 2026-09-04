@@ -297,37 +297,76 @@ for four `github_user_ssh_key` resources, so retiring it (a non-expiring
 `admin:public_key` token is worth retiring) requires minting a replacement into the same
 SOPS path or dropping that root.
 
-## Leading hypothesis: Refined GitHub
+## Refined GitHub: hypothesized, then falsified
 
-The browser extension holds a classic PAT with `repo, workflow, read:project`, used
-within the last week, and drives GitHub's GraphQL API from the browser on every GitHub
-page load. It is the first candidate that accounts for every observation rather than
-most:
+The browser extension held a classic PAT (`repo, workflow, read:project`, used within
+the last week) and drives GitHub's GraphQL API from the browser on every page load. It
+fitted every observation: Chrome held keep-alive connections to `api.github.com`
+throughout; PR #5526 was merged from the web UI inside the 07:10–07:22 burst; it runs
+only while GitHub pages are open, which matches a burn that tracks operator activity
+without being `gh`, the cluster, or cloud sessions; it would not back off on 403; and
+one branches page against 209 branches is the right shape to spend thousands of points.
+A connection-counting recorder structurally cannot see it, which explained the silence.
 
-- Chrome held open connections to `api.github.com` throughout. Connection counting could
-  never have caught it — one keep-alive HTTP/2 socket carries thousands of requests.
-- PR #5526 was merged at 07:18:09Z, inside the 07:10–07:22 burst: the operator was in
-  the GitHub web UI at that moment.
-- It runs only while GitHub pages are open, which is the "tracks operator activity but
-  is neither `gh`, the cluster, nor cloud sessions" shape that survived every
-  elimination.
-- It does not back off on 403; it simply retries on the next page load.
-- The repo has 209 branches and the recent work has been branch pruning. Refined GitHub
-  resolves PR state per branch, so one branches page is exactly the shape that spends
-  thousands of points in a single load.
+**The operator deleted that PAT before the 08:00:15 UTC reset, and the burn recurred
+anyway** — see below. Unless the extension has a second credential path, it is not the
+consumer. Recorded because the reasoning was sound and the elimination is what makes it
+useful: the next candidate has to explain the same set of facts without it.
 
-Unconfirmed. The test is causal rather than correlational: after a reset, with the
-bucket at 5000, load a heavy GitHub page and watch `used`.
+## The 08:00 reset, watched live
+
+The first burn captured while instrumented. 30-second quota sampling:
+
+```text
+08:00:20  used=10710  remaining=0        (pre-reset, exhausted)
+08:00:51  used=10     remaining=4990     reset landed
+08:01:21  used=10     remaining=4990     ~30s of nothing
+08:01:51  used=2056   remaining=2944     2046 points in 30s
+08:02:21  used=4073   remaining=927      2017 more
+08:02:51  used=4073   remaining=927      stopped
+```
+
+About 4060 points in ninety seconds, then flat — not a sustained hammer but a burst,
+and not instantaneous with the reset either: a ~30s pause first.
+
+What the wyrm2 recorder shows across those same minutes: **five GitHub-API connections
+per minute**, steady before, during and after. So ~15 connections carried ~4000 points,
+around 270 points each. Either the caller is off this machine, or it is on it and each
+connection carries several expensive queries.
+
+Connections to `api.github.com` over the whole log, by process:
+
+| Connections | Process                                           |
+| ----------- | ------------------------------------------------- |
+| 51          | Chrome (pid 452999)                               |
+| 44          | `claude` CLI (pid 447911) — 11 such processes run |
+| 28          | `main`, uid 65532, under containerd               |
+| 24          | `claude` CLI (pid 2435149)                        |
+| 6           | tofu-controller `terraform-provi` runners         |
+| 1           | `gh`, spawned by a `claude` session               |
+
+Two `claude` processes connected at 01:01:46 and 01:01:52 PDT, inside the exact 30-second
+window that spent 2046 points. That is the CLI itself, not `gh` and not a Bash tool call.
+Suggestive, not conclusive: connection counts cannot tell how many requests each carried,
+and Chrome leads the table while its measured sockets stayed light.
 
 ## Interventions, in order (2026-09-04)
 
-Each lands before the 08:00:15 UTC reset, so the following hour is a before/after test.
-A quiet hour is weak evidence on its own — the burn was already intermittent, with
-06:00–07:10 quiet — but a burn that recurs would positively exonerate all of them.
+Each landed before the 08:00:15 UTC reset, so the following hour was a before/after test.
+The burn recurred, which positively exonerates all of them.
 
-1. `Rai's tests` OAuth app and several stale authorizations deleted (~07:32 UTC).
-2. Expired `Claude Code new-VM PAT` and dormant `BuildBuddy GHCR package push` deleted.
-3. **`Refined GitHub` PAT deleted** — the one the hypothesis rests on.
+1. `Rai's tests` OAuth app and several stale OAuth authorizations deleted (~07:32 UTC).
+2. Expired `Claude Code new-VM PAT` deleted; dormant `BuildBuddy GHCR package push` PAT
+   deleted (superseded by `secrets.GITHUB_TOKEN`, see `devinfra/secrets/ci_env.sh`).
+3. `Terraform PAT for SSH keys` deleted. It is wired into `tf/github` via
+   `secrets/shared/github-pat-ssh-keys.yaml`; whether the deleted token is the one in
+   that file is unverified (decrypt it and call `/user`: 401 means it was). Either way
+   that root needs a replacement minted into the same SOPS path, or removing.
+4. **The Refined GitHub browser extension's PAT deleted** — the credential the
+   hypothesis above rested on.
+
+Coverage caveat for everything measured tonight: `rugged` is down, so the connection
+recorder covers wyrm2 only.
 
 ## Catching it next time
 
