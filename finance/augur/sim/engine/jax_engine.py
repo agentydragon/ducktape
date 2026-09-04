@@ -83,6 +83,7 @@ from finance.augur.sim.compiler.private_equity import PEExecutionChannels
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
+from finance.augur.sim.compiler.tax import MAX_CAPITAL_LOSS_ORDINARY_OFFSET_QUANTA
 from finance.augur.sim.engine.jax_types import (
     _AssetSaleProgram,
     _CapitalGainTarget,
@@ -3493,7 +3494,7 @@ def _net_capital_gains_jnp(
     long_term: Int64[Array, " rollout"],
     carryforward_in: Int64[Array, " rollout"],
     *,
-    max_ordinary_offset_quanta: int = 300_000,
+    max_ordinary_offset_quanta: int = MAX_CAPITAL_LOSS_ORDINARY_OFFSET_QUANTA,
 ) -> tuple[Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"]]:
     """Branch-free §1211/§1212 capital-loss netting for one tax year: cross-net ST against LT, consume
     the prior-year carryforward (short-term first, taxpayer-favorable), then split any residual loss

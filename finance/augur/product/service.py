@@ -7,7 +7,9 @@ agent, initial cash); does not know about properties, locations, or bootstrap.
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any, overload
 
 import numpy as np
@@ -46,10 +48,13 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
     TerminalMetrics,
 )
+from finance.augur.rust.backend import run_rust_product_summaries, run_rust_product_summary
+from finance.augur.rust.fixture_encoder import encode_fixture
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import run_jax_product_summaries, run_jax_product_summary
-from finance.augur.sim.external_series import materialize_sampled_exogenous
+from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
+from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.product_metrics import (
@@ -61,6 +66,31 @@ from finance.augur.sim.product_metrics import (
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import HarvestPolicy, Scenario
 from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics
+
+
+class SummaryBackend(StrEnum):
+    """Which simulator answers the percentile-fan and terminal-distribution endpoints.
+
+    Both reduce the same seven base metric series with the same shared Python
+    (`metric_composition`, `quantiles`), so the choice is which engine produces those series.
+    It is explicit rather than a rollout, because the point is to run both on one scenario and
+    compare. The single-rollout endpoint stays on JAX either way: it renders a causal event
+    trace out of dense output the Rust engine does not yet emit.
+    """
+
+    JAX = "jax"
+    RUST = "rust"
+
+
+@dataclass(frozen=True)
+class _CompiledProductRun:
+    """One compiled product simulation, plus what encoding it as a Rust fixture needs."""
+
+    plan: CompiledSimulation
+    scenario: Scenario
+    external_series: ExternalSeriesContext
+    jurisdictions: dict[str, Jurisdiction]
+    model_id: str
 
 
 class ProductService:
@@ -78,6 +108,7 @@ class ProductService:
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
+        summary_backend: SummaryBackend = SummaryBackend.JAX,
     ) -> None:
         if max_horizon_months <= 0:
             raise ValueError("max_horizon_months must be positive")
@@ -92,6 +123,7 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
+        self._summary_backend = summary_backend
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._security_distributions = security_distributions_from_portfolio(
@@ -201,19 +233,33 @@ class ProductService:
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
 
-    def _compile_product_plan(
-        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
-    ) -> tuple[CompiledSimulation, str]:
+    def _compile_product_run(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> _CompiledProductRun:
         self._validate_scenario_key(scenario_key)
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        plan = compile_simulation(
-            scenario,
-            rollout_count=len(seeds),
-            external_series=materialize_sampled_exogenous(sampled),
-            jurisdictions=load_jurisdictions_for(scenario),
+        external_series = materialize_sampled_exogenous(sampled)
+        jurisdictions = load_jurisdictions_for(scenario)
+        return _CompiledProductRun(
+            plan=compile_simulation(
+                scenario,
+                rollout_count=len(seeds),
+                external_series=external_series,
+                jurisdictions=jurisdictions,
+                locations=self._locations,
+            ),
+            scenario=scenario,
+            external_series=external_series,
+            jurisdictions=jurisdictions,
+            model_id=model_id,
+        )
+
+    def _rust_fixture(self, run: _CompiledProductRun) -> dict[str, Any]:
+        return encode_fixture(
+            run.scenario,
+            run.plan,
+            external_series=run.external_series,
+            jurisdictions=run.jurisdictions,
             locations=self._locations,
         )
-        return plan, model_id
 
     @overload
     def _simulate_product_summary(
@@ -228,26 +274,38 @@ class ProductService:
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
     ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
-        plan, model_id = self._compile_product_plan(scenario_key, seeds)
-        summary = run_jax_product_summary(
-            plan,
-            primary_agent_id=self._primary_agent_id,
-            metric=metric if metric.endswith("_quanta") else f"{metric}_quanta",
-            percentiles=percentiles,
-        )
-        return summary, model_id
+        run = self._compile_product_run(scenario_key, seeds)
+        metric_name = _quanta_metric(metric)
+        if self._summary_backend is SummaryBackend.RUST:
+            summary = run_rust_product_summary(
+                self._rust_fixture(run),
+                primary_agent_id=self._primary_agent_id,
+                metric=metric_name,
+                percentiles=percentiles,
+            )
+        else:
+            summary = run_jax_product_summary(
+                run.plan, primary_agent_id=self._primary_agent_id, metric=metric_name, percentiles=percentiles
+            )
+        return summary, run.model_id
 
     def _simulate_product_summaries(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
     ) -> tuple[ProductProjectionSummaries, str]:
-        plan, model_id = self._compile_product_plan(scenario_key, seeds)
-        summaries = run_jax_product_summaries(
-            plan,
-            primary_agent_id=self._primary_agent_id,
-            metric=metric if metric.endswith("_quanta") else f"{metric}_quanta",
-            percentiles=percentiles,
-        )
-        return summaries, model_id
+        run = self._compile_product_run(scenario_key, seeds)
+        metric_name = _quanta_metric(metric)
+        if self._summary_backend is SummaryBackend.RUST:
+            summaries = run_rust_product_summaries(
+                self._rust_fixture(run),
+                primary_agent_id=self._primary_agent_id,
+                metric=metric_name,
+                percentiles=percentiles,
+            )
+        else:
+            summaries = run_jax_product_summaries(
+                run.plan, primary_agent_id=self._primary_agent_id, metric=metric_name, percentiles=percentiles
+            )
+        return summaries, run.model_id
 
     def _simulate_dense(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
@@ -293,6 +351,12 @@ class ProductService:
         )
         model_id = sampled.model_id or scenario_key.model_id
         return scenario, sampled, model_id
+
+
+def _quanta_metric(metric: str) -> str:
+    """The wire metric name as the reducers spell it, which is always quantum-denominated."""
+
+    return metric if metric.endswith("_quanta") else f"{metric}_quanta"
 
 
 def _monthly_fan_frame(summary: ProductMetricFanSummary) -> Frame:

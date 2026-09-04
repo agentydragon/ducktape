@@ -13,7 +13,7 @@ numpy, so the 100,000-rollout fan never pays for a dense JSON round trip.
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 import json
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any, cast, overload
 
 import numpy as np
 from jaxtyping import Int64
@@ -52,18 +52,26 @@ def run_rust_product_metric_arrays(fixture: Mapping[str, Any], *, primary_agent_
     )
 
 
-def run_rust_product_summaries(
-    fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
-) -> ProductProjectionSummaries:
-    """Fan and terminal summaries for one metric, from one Rust execution."""
+def _metric_series(
+    fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str
+) -> tuple[ProductMetricArrays, Int64[np.ndarray, " snapshot rollout"], Int64[np.ndarray, " rollout"]]:
+    """One Rust execution, composed into the requested metric and its terminal reduction."""
 
     arrays = run_rust_product_metric_arrays(fixture, primary_agent_id=primary_agent_id)
     base = dict(zip(BASE_METRIC_NAMES, arrays.base_series, strict=True))
     series = compose_metric(metric, base.__getitem__)
-    terminal = terminal_series(metric, series)
+    return arrays, series, terminal_series(metric, series)
 
-    rollout_count = int(series.shape[1])
-    quantile_plan = currency_quantile_plan(rollout_count, percentiles)
+
+def _metric_fan(
+    arrays: ProductMetricArrays,
+    *,
+    metric: str,
+    percentiles: tuple[float, ...],
+    series: Int64[np.ndarray, " snapshot rollout"],
+    terminal: Int64[np.ndarray, " rollout"],
+) -> ProductMetricFanSummary:
+    quantile_plan = currency_quantile_plan(int(series.shape[1]), percentiles)
     lower_indices = np.asarray([item.lower_index for item in quantile_plan], dtype=np.int64)
     upper_indices = np.asarray([item.upper_index for item in quantile_plan], dtype=np.int64)
     ordered = np.sort(series, axis=1)
@@ -77,8 +85,7 @@ def run_rust_product_summaries(
     else:
         terminal_lower = monthly_lower[-1]
         terminal_upper = monthly_upper[-1]
-
-    metric_fan = ProductMetricFanSummary(
+    return ProductMetricFanSummary(
         month_index=arrays.month_index,
         failed_count=int((arrays.failed_month >= 0).sum()),
         currency_code=arrays.currency_code,
@@ -87,10 +94,51 @@ def run_rust_product_summaries(
         terminal_percentiles=interpolate_currency_quantiles(terminal_lower, terminal_upper, quantile_plan),
         monthly_percentiles=interpolate_currency_quantiles(monthly_lower, monthly_upper, quantile_plan),
     )
-    terminal_distribution = ProductTerminalSummary(
+
+
+def _terminal_summary(arrays: ProductMetricArrays, terminal: Int64[np.ndarray, " rollout"]) -> ProductTerminalSummary:
+    return ProductTerminalSummary(
         failed_month=arrays.failed_month,
         currency_code=arrays.currency_code,
         currency_quantum=arrays.currency_quantum,
         terminal_samples=np.asarray(terminal, dtype=np.int64),
     )
-    return ProductProjectionSummaries(metric_fan=metric_fan, terminal_distribution=terminal_distribution)
+
+
+@overload
+def run_rust_product_summary(
+    fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
+) -> ProductMetricFanSummary: ...
+
+
+@overload
+def run_rust_product_summary(
+    fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str, percentiles: None
+) -> ProductTerminalSummary: ...
+
+
+def run_rust_product_summary(
+    fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...] | None
+) -> ProductMetricFanSummary | ProductTerminalSummary:
+    """Either projection for one metric, from one Rust execution.
+
+    The `percentiles`-shaped overload pair mirrors `run_jax_product_summary`, so the product
+    service dispatches to a backend without a second call shape to keep aligned.
+    """
+
+    arrays, series, terminal = _metric_series(fixture, primary_agent_id=primary_agent_id, metric=metric)
+    if percentiles is None:
+        return _terminal_summary(arrays, terminal)
+    return _metric_fan(arrays, metric=metric, percentiles=percentiles, series=series, terminal=terminal)
+
+
+def run_rust_product_summaries(
+    fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
+) -> ProductProjectionSummaries:
+    """Fan and terminal summaries for one metric, from one Rust execution."""
+
+    arrays, series, terminal = _metric_series(fixture, primary_agent_id=primary_agent_id, metric=metric)
+    return ProductProjectionSummaries(
+        metric_fan=_metric_fan(arrays, metric=metric, percentiles=percentiles, series=series, terminal=terminal),
+        terminal_distribution=_terminal_summary(arrays, terminal),
+    )

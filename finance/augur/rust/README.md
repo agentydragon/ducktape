@@ -176,6 +176,22 @@ the percentile fan with `product/metric_composition.py` and `product/quantiles.p
 same code the JAX backend runs. Design, and the two JAX behaviours the Rust engine matches
 deliberately rather than corrects: [docs/product_metrics.md](docs/product_metrics.md).
 
+`fixture_encoder.py` is what connects that to a live request: a `Scenario` and its
+`CompiledSimulation` become the strict integer fixture, taking money straight out of
+`external_money_values` and quantizing index levels to the same parts per billion JAX rounds
+them to before any multiplication. `ProductService` takes a `summary_backend`, defaulting to
+JAX, so a deployment runs both on one scenario and compares rather than switching.
+`differential/product_scenario_test.py` is that comparison as a test: one `ScenarioKey`
+against the fixture deployment's own portfolio and sampled model, answered identically by
+both backends, funded and after ruin.
+
+The single-rollout endpoint stays on JAX whichever backend is selected — it renders a causal
+event trace out of dense output this engine does not emit.
+
+A scenario the fixture cannot express is refused rather than encoded without it. The live
+case is a purchased property: its recurring HOA, insurance and maintenance obligations carry
+a Schedule E deduction category and a property gate, and `ObligationSpec` has neither field.
+
 ## Python extension
 
 `simulator.so` is a `rust_shared_library` built from `python.rs`, imported as
@@ -186,10 +202,9 @@ remains for out-of-process forensic runs.
 
 Still missing before replacement is plausible:
 
-- a `Scenario` + sampled-series → fixture encoder, which is what would let
-  `product/service.py` dispatch to this engine at all; it is blocked on a decision, not on
-  transcription (docs/product_metrics.md § Where the boundary is not yet closed);
 - selected-rollout event projection (`product/projection.py` reads dense plan+output);
+- deductible and property-gated obligations, which is what a purchased property's expenses
+  need and what `fixture_encoder` refuses today;
 - broader modeled tax facts and complete deduction policy;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax policy beyond purchase-price assessment and fixed location

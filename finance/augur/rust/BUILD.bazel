@@ -105,3 +105,23 @@ py_library(
         "@pypi//numpy",
     ],
 )
+
+py_library(
+    name = "fixture_encoder",
+    srcs = ["fixture_encoder.py"],
+    deps = [
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:bonds",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:plan",
+        "//finance/augur/sim/compiler:tax",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)

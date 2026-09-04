@@ -55,26 +55,37 @@ one basis in the metric series and another at sale.
 Nothing here changes that; it is recorded because the differential suite would otherwise
 look like it had blessed the pair as consistent.
 
-## Where the boundary is not yet closed
+## What the encoder has to preserve
 
-`rust/backend.py` takes an integer fixture. Driving the Rust engine from
-`product/service.py` additionally needs the inverse of `fixture_adapter.py`: a
-`Scenario` + sampled series → fixture encoder. The fixture's series are exact integers while
-the product's sampled series are float64, so what the encoder costs depends on where those
-floats are still read:
+`rust/backend.py` takes an integer fixture, and `rust/fixture_encoder.py` builds one from a
+`Scenario` and its `CompiledSimulation`. The fixture's series are exact integers while the
+product's sampled series are float64, so the encoder's whole job is where those floats are
+read:
 
 - money series (security prices, distributions, home values, PE marks) are already integer
   quanta in `CompiledSimulation.external_money_values`, so they transfer exactly;
 - index series (inflation, rent) arrive as float64, and every site that turns one into money
-  quantizes it to parts per billion first (`_scale_money_by_float_ratio`, `_scale_money`).
-  A PPB-quantizing encoder is therefore exact for them.
+  quantizes it to parts per billion first (`_scale_money_by_float_ratio`, `_scale_money`),
+  so pre-quantizing to PPB in the encoder hands Rust the integers JAX would have formed.
 
-No engine arithmetic reads an index level raw any more: the TLH harvest curve was the last
-one, and it now evaluates in integers on both sides (`sim/tlh_harvest.py`,
-`rust/engine/tlh.rs`). What remains is a sampling question rather than an arithmetic one —
-whether a level the product sampled as float64 is the same number after PPB quantization,
-which `fixed_point.py` already owns for money and the Rust validator already checks for
-series it is handed.
+No engine arithmetic reads an index level raw: the TLH harvest curve was the last one, and it
+now evaluates in integers on both sides (`sim/tlh_harvest.py`, `rust/engine/tlh.rs`).
+
+Rates are the same story with one wrinkle. Where JAX also quantizes with
+`_round_int64(rate * 1e9)` the encoder's PPB integer is that same number by construction. Two
+rates reach their engine by a different route and are checked rather than assumed: a bond's
+coupon, which the compiler reads as the exact rational `Fraction(str(rate))`, and a property
+sale's closing cost, which the fixture spells in basis points. Both refuse a value whose two
+routes disagree.
+
+The property-sale market value is the one place a **money** level is read off the float cube
+(`_scan_property_sale` scales the purchase price by `external_values`, not
+`external_money_values`), so its ratio is PPB-quantized dollars where Rust's is currency
+quanta. Those agree only while the sampled home value is already a whole quantum, which a
+hand-written fixture's is and a sampled path's is not. Nothing exercises it yet — a purchased
+property is refused by the encoder for an unrelated reason (its expense obligations are
+deductible and property-gated, which `ObligationSpec` cannot express) — but it is what to fix
+first when that refusal lifts.
 
 ## Test cost
 
@@ -86,9 +97,9 @@ reused across runs either.
 
 As one target the suite ran ~400s and then began exhausting the runner's memory, because
 every compiled executable stays resident in the one process. It is split by domain instead
-— one target per policy family, plus three for the product read model — which both
-parallelizes the compiles and caps each process's resident set. Measured cold: 24-140s for
-every target except `product_metrics_differential_test` at 308s, which compiles once per
+— one target per policy family, and separately for each product read-model concern — which
+both parallelizes the compiles and caps each process's resident set. Measured cold: 24-140s
+for every target except `product_metrics_differential_test` at 308s, which compiles once per
 agent in `PRODUCT_METRIC_AGENTS`.
 
 Bazel's own `shard_count` would be the better lever, and `pytest_bazel` already translates
