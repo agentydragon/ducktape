@@ -12,28 +12,33 @@ RUNNER_ENV = {
 
 
 def test_a_child_starts_with_what_the_deployment_declares_and_nothing_else() -> None:
-    """Nothing is inherited implicitly: the runner holds both provider keys, and a key it was not
-    asked to pass on stays with it. Each adapter adds its own provider key on top, which is what
+    """Nothing is inherited implicitly: the runner holds both provider keys, and a variable it was
+    not asked to pass on stays with it. Each adapter adds its own provider key on top, which is what
     keeps a Codex child from seeing the Anthropic token and a Claude child the OpenAI one."""
-    child = harness_environment(RUNNER_ENV, declared=["HTTPS_PROXY=http://127.0.0.1:3128"], inherit=["PATH", "HOME"])
-    assert child == {"HOME": "/home/runner", "PATH": "/usr/bin", "HTTPS_PROXY": "http://127.0.0.1:3128"}
+    child = harness_environment(RUNNER_ENV, declared=["PATH", "TEST_TOOL_ENDPOINT=https://tools.test"])
+    assert child == {"PATH": "/usr/bin", "TEST_TOOL_ENDPOINT": "https://tools.test"}
 
 
-def test_a_declared_value_wins_over_the_inherited_one() -> None:
-    child = harness_environment(RUNNER_ENV, declared=["HOME=/state/work"], inherit=["HOME"])
-    assert child["HOME"] == "/state/work"
-
-
-def test_an_inherited_name_the_runner_does_not_have_is_simply_absent() -> None:
-    child = harness_environment(RUNNER_ENV, declared=[], inherit=["HTTPS_PROXY"])
+def test_a_bare_name_the_runner_does_not_have_is_simply_absent() -> None:
+    child = harness_environment(RUNNER_ENV, declared=["TEST_ABSENT"])
     assert child == {}
 
 
-@pytest.mark.parametrize("entry", ["HTTPS_PROXY", "=value"])
-def test_an_entry_that_is_not_key_value_is_refused(entry: str) -> None:
+def test_a_later_entry_wins() -> None:
+    child = harness_environment(RUNNER_ENV, declared=["HOME", "HOME=/state/work"])
+    assert child["HOME"] == "/state/work"
+
+
+def test_an_entry_with_no_name_is_refused() -> None:
     """A typo must not silently give the child an environment the deployment did not mean."""
-    with pytest.raises(ValueError, match="expects KEY=VALUE"):
-        harness_environment(RUNNER_ENV, declared=[entry], inherit=[])
+    with pytest.raises(ValueError, match="expects NAME or NAME=value"):
+        harness_environment(RUNNER_ENV, declared=["=value"])
+
+
+def test_an_empty_value_is_a_set_variable_not_an_inherited_one() -> None:
+    """`NAME=` is how a deployment blanks a variable, so it must not fall through to the runner's."""
+    child = harness_environment({"TEST_SET": "from-runner"}, declared=["TEST_SET="])
+    assert child == {"TEST_SET": ""}
 
 
 if __name__ == "__main__":

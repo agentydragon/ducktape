@@ -2,10 +2,9 @@
 
 Credentials come from the runner's own environment, never from flags or the protocol:
 ANTHROPIC_AUTH_TOKEN for Claude sessions, OPENAI_API_KEY for Codex sessions. A harness child
-inherits nothing implicitly: its environment is what --harness-env declares and what
---harness-env-inherit names, so a variable the deployment sets on the runner container reaches the
-child only when it says so, and everything else the runner holds -- those two keys above all --
-stays with the runner.
+inherits nothing implicitly: its environment is what --harness-env declares, so a variable the
+runner holds reaches the child only when the deployment names it -- those two keys above all stay
+with the runner.
 """
 
 from __future__ import annotations
@@ -28,17 +27,20 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
 
 
-def harness_environment(
-    environ: Mapping[str, str], *, declared: Sequence[str], inherit: Sequence[str]
-) -> dict[str, str]:
-    """The environment every harness child starts from: the names taken from the runner's own
-    environment, then the KEY=VALUE entries the deployment declares, which win on a collision."""
-    child = {name: environ[name] for name in inherit if name in environ}
+def harness_environment(environ: Mapping[str, str], *, declared: Sequence[str]) -> dict[str, str]:
+    """The environment every harness child starts from, as --harness-env gave it: `NAME=value` sets
+    the variable, a bare `NAME` takes the runner's own value and is absent when the runner has none
+    (`docker run -e` and Bazel's --action_env read the two forms the same way). Entries apply in
+    order, so a later one wins."""
+    child: dict[str, str] = {}
     for entry in declared:
-        key, separator, value = entry.partition("=")
-        if not separator or not key:
-            raise ValueError(f"--harness-env expects KEY=VALUE, got {entry!r}")
-        child[key] = value
+        name, separator, value = entry.partition("=")
+        if not name:
+            raise ValueError(f"--harness-env expects NAME or NAME=value, got {entry!r}")
+        if separator:
+            child[name] = value
+        elif name in environ:
+            child[name] = environ[name]
     return child
 
 
@@ -54,13 +56,10 @@ def main(
     ] = None,
     harness_env: Annotated[
         list[str] | None,
-        typer.Option("--harness-env", help="KEY=VALUE a harness child starts with; repeat per variable."),
-    ] = None,
-    harness_env_inherit: Annotated[
-        list[str] | None,
         typer.Option(
-            "--harness-env-inherit",
-            help="Name copied from the runner's own environment into a harness child; repeat per variable.",
+            "--harness-env",
+            help="NAME=value a harness child starts with, or a bare NAME to take the runner's own "
+            "value; repeat per variable.",
         ),
     ] = None,
 ) -> None:
@@ -79,7 +78,7 @@ def main(
         codex = CodexLaunch(binary=codex_binary, base_url=openai_base_url, api_key=os.environ["OPENAI_API_KEY"])
     config = RunnerConfig(
         state_dir=state_dir,
-        environment=harness_environment(os.environ, declared=harness_env or [], inherit=harness_env_inherit or []),
+        environment=harness_environment(os.environ, declared=harness_env or []),
         claude=claude,
         codex=codex,
     )

@@ -77,9 +77,9 @@ async def container(provider: str, upstream: ScriptedUpstream) -> AsyncIterator[
         f"0.0.0.0:{port}",
         # A harness child inherits nothing the runner is not told to pass on, and both harnesses
         # need the image's PATH and HOME to start at all.
-        "--harness-env-inherit",
+        "--harness-env",
         "PATH",
-        "--harness-env-inherit",
+        "--harness-env",
         "HOME",
     ]
     if provider == "claude":

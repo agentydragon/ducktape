@@ -60,13 +60,13 @@ spec:
             - /opt/codex/bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
-            # The environment a harness child starts from. The runner inherits nothing implicitly,
-            # so what is not named here does not reach the agent -- the LiteLLM key above all.
-            # HOME and PATH come from the image, which is what keeps a PATH change there from
-            # needing an edit here.
-            - --harness-env-inherit
+            # The environment a harness child starts from: a bare NAME takes the runner's value,
+            # NAME=value sets one. The runner inherits nothing implicitly, so what is not named
+            # here does not reach the agent -- the LiteLLM key above all. HOME and PATH come from
+            # the image, which keeps a change there from needing an edit here.
+            - --harness-env
             - HOME
-            - --harness-env-inherit
+            - --harness-env
             - PATH
             # Both spellings of each, since clients disagree on case. NO_PROXY: loopback (the
             # sidecar itself and the runner's own listeners), the LiteLLM host, and in-cluster
