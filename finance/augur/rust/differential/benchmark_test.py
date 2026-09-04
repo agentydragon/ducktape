@@ -15,9 +15,9 @@ import pytest_bazel
 from polars.testing import assert_frame_equal
 
 from finance.augur.rust.benchmark_fixture import write_fixture
-from finance.augur.rust.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.output_adapter import decode_rust_event_log
-from finance.augur.rust.testing.fixtures import rust_cash_frame, rust_run
+from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
+from finance.augur.rust.differential.fixtures import rust_cash_frame, rust_run
+from finance.augur.rust.differential.output_adapter import decode_rust_event_log
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.testing.state_helpers import cash_balances, rollout_status
 

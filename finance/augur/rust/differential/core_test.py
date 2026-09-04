@@ -15,19 +15,215 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.output_adapter import decode_rust_event_log
-from finance.augur.rust.testing.fixtures import (
+from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
+from finance.augur.rust.differential.fixtures import (
     failure_fixture,
-    recurring_obligation_fixture,
     rust_cash_frame,
     rust_run,
-    series_indexed_amount_fixture,
     shared_integer_fixture,
     simulator_binary,
     target_allocation_purchase_fixture,
 )
+from finance.augur.rust.differential.output_adapter import decode_rust_event_log
 from finance.augur.sim.testing.state_helpers import asset_lots, cash_balances, rollout_status
+
+
+def recurring_obligation_fixture() -> dict[str, Any]:
+    fixture = failure_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 3
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 100_000},
+        {"account": {"agent_id": "landlord", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "utility", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_transfers"] = []
+    scenario["obligations"] = []
+    scenario["recurring_obligations"] = [
+        {
+            "start_month": 0,
+            "end_month": 2,
+            "obligation_id": "rent",
+            "obligation_type": "cash_spend",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "amount_due": 60_000,
+        },
+        {
+            "start_month": 1,
+            "end_month": 2,
+            "obligation_id": "utility",
+            "obligation_type": "cash_spend",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "utility", "account_id": "checking"},
+            "amount_due": 1,
+        },
+    ]
+    return fixture
+
+
+def series_indexed_amount_fixture() -> dict[str, Any]:
+    fixture = failure_fixture()
+    fixture["rollout_count"] = 2
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 14
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 20_000_000},
+        {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 20_000_000},
+        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 20_000_000},
+        {"account": {"agent_id": "landlord", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "manager", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    indexed_inflation = {
+        "kind": "series_indexed",
+        "base_amount": 101,
+        "series_id": "inflation",
+        "base_month_index": 0,
+        "adjustment_period_months": 1,
+    }
+    indexed_annual_rent = {
+        "kind": "series_indexed",
+        "base_amount": 1_001,
+        "series_id": "rent:test",
+        "base_month_index": 0,
+        "adjustment_period_months": 12,
+    }
+    scenario["scheduled_transfers"] = [
+        {
+            "month": 2,
+            "cause_id": "indexed-gift",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": indexed_inflation,
+        },
+        {
+            "month": 3,
+            "cause_id": "tagged-fixed-gift",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": {"kind": "fixed", "amount": -17},
+        },
+        {
+            "month": 4,
+            "cause_id": "zero-gift",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 0,
+        },
+    ]
+    scenario["recurring_transfers"] = [
+        {
+            "start_month": 0,
+            "end_month": 13,
+            "cause_id": "annual-indexed-paycheck",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": indexed_annual_rent,
+        }
+    ]
+    scenario["obligations"] = [
+        {
+            "month": 2,
+            "obligation_id": "indexed-bill",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "amount_due": indexed_inflation,
+        }
+    ]
+    scenario["recurring_obligations"] = [
+        {
+            "start_month": 0,
+            "end_month": 13,
+            "obligation_id": "indexed-rent",
+            "obligation_type": "cash_spend",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "amount_due": indexed_annual_rent,
+        }
+    ]
+    scenario["locations"] = [
+        {
+            "location_id": "test",
+            "display_name": "Test",
+            "jurisdiction_ids": [],
+            "annual_property_tax_rate_ppb": 0,
+            "annual_special_assessment": 0,
+        }
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 0,
+            "cause_id": "buy-test-home",
+            "property_id": "home",
+            "location_id": "test",
+            "buyer_agent_id": "alice",
+            "buyer_account_id": "checking",
+            "seller_agent_id": "seller",
+            "seller_account_id": "checking",
+            "purchase_price": 100,
+            "down_payment": 100,
+            "buyer_closing_cost": 0,
+            "mortgage": None,
+        }
+    ]
+    scenario["scheduled_property_cashflows"] = [
+        {
+            "month": 2,
+            "property_id": "home",
+            "cause_id": "indexed-repair",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "manager", "account_id": "checking"},
+            "amount": indexed_inflation,
+        }
+    ]
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 13,
+            "property_id": "home",
+            "cause_id": "indexed-property-rent",
+            "from": {"agent_id": "tenant", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": indexed_annual_rent,
+        }
+    ]
+    scenario["initial_lots"] = []
+    scenario["scheduled_sales"] = []
+    scenario["tax_profiles"] = []
+    scenario["distributions"] = []
+    scenario["property_tax_policies"] = []
+    fixture["series"] = [
+        {
+            "series_id": "inflation",
+            "snapshots": 15,
+            "values": [
+                1_000_000_000,
+                1_250_000_000,
+                1_500_000_000,
+                *([1_500_000_000] * 12),
+                1_000_000_000,
+                1_500_000_000,
+                1_250_000_000,
+                *([1_250_000_000] * 12),
+            ],
+        },
+        {
+            "series_id": "rent:test",
+            "snapshots": 15,
+            "values": [
+                *([1_000_000_000] * 12),
+                1_100_000_000,
+                1_100_000_000,
+                1_100_000_000,
+                *([1_000_000_000] * 12),
+                1_250_000_000,
+                1_250_000_000,
+                1_250_000_000,
+            ],
+        },
+    ]
+    return fixture
 
 
 def test_rust_and_jax_match_on_shared_integer_fixture(tmp_path: Path) -> None:

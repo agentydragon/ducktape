@@ -6,7 +6,7 @@ import pytest_bazel
 
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.rust.backend import run_rust_product_summaries
-from finance.augur.rust.testing.fixtures import feature_rich_fixture, legacy_plan
+from finance.augur.rust.differential.fixtures import feature_rich_fixture, legacy_plan
 from finance.augur.sim.engine.jax_engine import run_jax_product_summaries
 
 

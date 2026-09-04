@@ -1,12 +1,34 @@
 """Rust/JAX differential coverage for product metrics across a frozen rollout."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest_bazel
 
 from finance.augur.rust.backend import run_rust_product_metric_arrays
-from finance.augur.rust.testing.fixtures import feature_rich_failure_fixture, legacy_plan
+from finance.augur.rust.differential.fixtures import feature_rich_fixture, legacy_plan
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
+
+
+def feature_rich_failure_fixture(tmp_path: Path) -> dict[str, Any]:
+    """The feature-rich fixture with one obligation nobody can fund.
+
+    Building the failure case from the full fixture rather than a bare one keeps the
+    exogenous series every metric reads, so the comparison still covers holdings, property
+    and bonds on the frozen side of the failure.
+    """
+
+    fixture = feature_rich_fixture(tmp_path)
+    fixture["scenario"]["obligations"].append(
+        {
+            "month": 30,
+            "obligation_id": "unfundable-differential-probe",
+            "from": {"agent_id": "cashflow", "account_id": "checking"},
+            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "amount_due": 10_000_000_000,
+        }
+    )
+    return fixture
 
 
 def test_rust_and_jax_match_product_metrics_across_a_rollout_failure(tmp_path: Path) -> None:

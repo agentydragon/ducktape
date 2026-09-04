@@ -7,24 +7,181 @@ JAX program, and those compiles are the suite's whole wall clock and peak memory
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest_bazel
 
-from finance.augur.rust.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.output_adapter import decode_rust_event_log
-from finance.augur.rust.testing.fixtures import (
-    capital_loss_carryforward_fixture,
-    long_term_gain_tax_fixture,
+from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
+from finance.augur.rust.differential.fixtures import (
+    financed_property_fixture,
     property_depreciation_fixture,
     rust_cash_frame,
     rust_run,
-    rust_tax_liability_frame,
-    salt_deduction_fixture,
     tax_fixture,
-    tax_payment_fixture,
 )
+from finance.augur.rust.differential.output_adapter import decode_rust_event_log
 from finance.augur.sim.testing.state_helpers import cash_balances, rollout_status, tax_liabilities
+
+
+def tax_payment_fixture(*, funded: bool = True) -> dict[str, Any]:
+    fixture = tax_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 13
+    scenario["tax_profiles"][0]["prior_year_tax"] = 400_000
+    if not funded:
+        scenario["tax_profiles"][0]["prior_year_tax"] = 0
+        scenario["recurring_transfers"].append(
+            {
+                "start_month": 0,
+                "end_month": 11,
+                "cause_id": "alice-spends-paycheck",
+                "from": {"agent_id": "alice", "account_id": "checking"},
+                "to": {"agent_id": "payroll", "account_id": "checking"},
+                "amount": 1_666_667,
+            }
+        )
+    return fixture
+
+
+def long_term_gain_tax_fixture() -> dict[str, Any]:
+    fixture = tax_fixture()
+    scenario = fixture["scenario"]
+    scenario["recurring_transfers"][0]["amount"] = 416_667
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "alice-vti",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 100_000_000,
+            "basis": 1_000_000,
+        }
+    ]
+    scenario["scheduled_sales"] = [
+        {
+            "month": 6,
+            "cause_id": "sell-vti",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "units": 100_000_000,
+            "proceeds_account_id": "checking",
+        }
+    ]
+    scenario["tax_profiles"][0]["jurisdictions"] = scenario["tax_profiles"][0]["jurisdictions"][:1]
+    fixture["series"] = [{"series_id": "security:vti", "snapshots": 13, "values": [30_000] * 13}]
+    return fixture
+
+
+def capital_loss_carryforward_fixture() -> dict[str, Any]:
+    fixture = tax_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 24
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["recurring_transfers"] = []
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "loss-lot",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 1_000_000,
+            "basis": 1_000_000,
+        },
+        {
+            "lot_id": "gain-lot",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "purchase_month": -12,
+            "quantity_scale": 1_000_000,
+            "units": 1_000_000,
+            "basis": 100_000,
+        },
+    ]
+    scenario["scheduled_sales"] = [
+        {
+            "month": 0,
+            "cause_id": "harvest-loss",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "units": 1_000_000,
+            "proceeds_account_id": "checking",
+        },
+        {
+            "month": 12,
+            "cause_id": "realize-gain",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "units": 1_000_000,
+            "proceeds_account_id": "checking",
+        },
+    ]
+    fixture["series"] = [{"series_id": "security:vti", "snapshots": 25, "values": [200_000] * 12 + [600_000] * 13}]
+    return fixture
+
+
+def salt_deduction_fixture() -> dict[str, Any]:
+    fixture = financed_property_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 24
+    scenario["accounts"].extend(
+        [
+            {"account": {"agent_id": "payroll", "account_id": "checking"}, "opening_balance": 0},
+            {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        ]
+    )
+    scenario["recurring_transfers"] = [
+        {
+            "start_month": 0,
+            "end_month": 23,
+            "cause_id": "alice-paycheck",
+            "from": {"agent_id": "payroll", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 2_000_000,
+            "income_category": "ordinary",
+        }
+    ]
+    scenario["tax_profiles"] = [tax_fixture()["scenario"]["tax_profiles"][0]]
+    scenario["federal_salt_deduction_policies"] = [
+        {
+            "profile_id": "alice",
+            "federal_jurisdiction_id": "federal_us",
+            "cap_schedule": [
+                {"effective_year_index": 0, "cap": 4_000_000},
+                {"effective_year_index": 1, "cap": 1_000_000},
+            ],
+        }
+    ]
+    return fixture
+
+
+def rust_tax_liability_frame(rust: dict[str, Any]) -> pl.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for rollout in rust["rollouts"]:
+        for snapshot in rollout["months"]:
+            rows.extend(
+                {
+                    "rollout_index": rollout["rollout_id"],
+                    "month_index": snapshot["month"],
+                    "agent_id": liability["agent_id"],
+                    "jurisdiction_id": liability["jurisdiction_id"],
+                    "tax_year_end_month": liability["tax_year_end_month"],
+                    "amount_owed_quanta": liability["amount_owed"],
+                }
+                for liability in snapshot["tax_liabilities"]
+            )
+    return pl.DataFrame(rows).sort("rollout_index", "month_index", "agent_id", "jurisdiction_id", "tax_year_end_month")
 
 
 def test_rust_and_jax_match_federal_and_california_tax_accruals(tmp_path: Path) -> None:

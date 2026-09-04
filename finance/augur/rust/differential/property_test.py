@@ -6,25 +6,24 @@ JAX program, and those compiles are the suite's whole wall clock and peak memory
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest_bazel
 
-from finance.augur.rust.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.output_adapter import decode_rust_event_log
-from finance.augur.rust.testing.fixtures import (
+from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
+from finance.augur.rust.differential.fixtures import (
+    failure_fixture,
     financed_property_fixture,
-    mortgage_interest_policy_fixture,
     property_cashflow_fixture,
-    property_cashflow_gating_fixture,
     property_depreciation_fixture,
-    property_sale_fixture,
     rust_cash_frame,
     rust_run,
-    section_121_fixture,
-    uncapped_mortgage_interest_fixture,
+    tax_fixture,
 )
+from finance.augur.rust.differential.output_adapter import decode_rust_event_log
 from finance.augur.sim.testing.state_helpers import (
     cash_balances,
     liabilities,
@@ -32,6 +31,291 @@ from finance.augur.sim.testing.state_helpers import (
     property_state,
     rollout_status,
 )
+
+
+def property_cashflow_gating_fixture() -> dict[str, Any]:
+    fixture = failure_fixture()
+    fixture["rollout_count"] = 1
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 4
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 1_000},
+        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "vendor", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "creditor", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_transfers"] = []
+    scenario["recurring_transfers"] = []
+    scenario["obligations"] = [
+        {
+            "month": 2,
+            "obligation_id": "unaffordable",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "creditor", "account_id": "checking"},
+            "amount_due": 876,
+        }
+    ]
+    scenario["recurring_obligations"] = []
+    scenario["locations"] = [
+        {
+            "location_id": "test",
+            "display_name": "Test",
+            "jurisdiction_ids": [],
+            "annual_property_tax_rate_ppb": 0,
+            "annual_special_assessment": 0,
+        }
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 1,
+            "cause_id": "buy-home",
+            "property_id": "home",
+            "location_id": "test",
+            "buyer_agent_id": "alice",
+            "buyer_account_id": "checking",
+            "seller_agent_id": "seller",
+            "seller_account_id": "checking",
+            "purchase_price": 100,
+            "down_payment": 100,
+            "buyer_closing_cost": 0,
+            "mortgage": None,
+        }
+    ]
+    scenario["property_tax_policies"] = []
+    scenario["scheduled_property_cashflows"] = [
+        {
+            "month": 0,
+            "property_id": "home",
+            "cause_id": "before-purchase",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "amount": 3,
+        },
+        {
+            "month": 1,
+            "property_id": "home",
+            "cause_id": "purchase-month",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "amount": 5,
+        },
+    ]
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 3,
+            "property_id": "home",
+            "cause_id": "property-carry",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "amount": 10,
+        }
+    ]
+    scenario["initial_lots"] = []
+    scenario["scheduled_sales"] = []
+    scenario["tax_profiles"] = []
+    scenario["distributions"] = []
+    fixture["series"] = []
+    return fixture
+
+
+def property_sale_fixture() -> dict[str, Any]:
+    fixture = financed_property_fixture()
+    fixture["rollout_count"] = 2
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 4
+    scenario["accounts"].extend(
+        [
+            {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 10_000},
+            {"account": {"agent_id": "gift", "account_id": "checking"}, "opening_balance": 1_000},
+        ]
+    )
+    scenario["scheduled_transfers"] = [
+        {
+            "month": 2,
+            "cause_id": "sale-month-generic-transfer",
+            "from": {"agent_id": "gift", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 7,
+        }
+    ]
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 3,
+            "property_id": "home",
+            "cause_id": "rent",
+            "from": {"agent_id": "tenant", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 1_000,
+        }
+    ]
+    scenario["property_sales"] = [{"month": 2, "property_id": "home", "closing_cost_bps": 600}]
+    fixture["series"] = [
+        {
+            "series_id": "home_value:sf",
+            "snapshots": 5,
+            "values": [
+                50_000_000,
+                50_000_000,
+                60_000_000,
+                60_000_000,
+                60_000_000,
+                50_000_000,
+                50_000_000,
+                55_000_000,
+                55_000_000,
+                55_000_000,
+            ],
+        }
+    ]
+    return fixture
+
+
+def section_121_fixture() -> dict[str, Any]:
+    fixture = financed_property_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 86
+    scenario["accounts"] = [
+        *[
+            {"account": {"agent_id": agent_id, "account_id": "checking"}, "opening_balance": 60_000_000}
+            for agent_id in ("alice", "bob", "carol", "dave")
+        ],
+        *[
+            {"account": {"agent_id": seller_id, "account_id": "checking"}, "opening_balance": 0}
+            for seller_id in ("seller-a", "seller-b", "seller-c", "seller-d")
+        ],
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 0,
+            "cause_id": f"{agent_id}-buys-home",
+            "property_id": property_id,
+            "location_id": "sf",
+            "buyer_agent_id": agent_id,
+            "buyer_account_id": "checking",
+            "seller_agent_id": seller_id,
+            "seller_account_id": "checking",
+            "purchase_price": 50_000_000,
+            "down_payment": 50_000_000,
+            "buyer_closing_cost": 0,
+            "rented_fraction_ppb": 0,
+            "mortgage": None,
+        }
+        for agent_id, property_id, seller_id in (
+            ("alice", "alice-home", "seller-a"),
+            ("bob", "bob-home", "seller-b"),
+            ("carol", "carol-home", "seller-c"),
+            ("dave", "dave-home", "seller-d"),
+        )
+    ]
+    scenario["initial_primary_residences"] = [
+        {"agent_id": "alice", "property_id": "alice-home"},
+        {"agent_id": "dave", "property_id": "dave-home"},
+    ]
+    scenario["primary_residence_events"] = [
+        {"month": 7, "agent_id": "bob", "property_id": "bob-home"},
+        {"month": 24, "agent_id": "dave", "property_id": None},
+        {"month": 30, "agent_id": "carol", "property_id": "carol-home"},
+    ]
+    scenario["property_sales"] = [
+        {"month": 30, "property_id": property_id, "closing_cost_bps": 0}
+        for property_id in ("alice-home", "bob-home", "carol-home")
+    ] + [{"month": 84, "property_id": "dave-home", "closing_cost_bps": 0}]
+    scenario["property_tax_policies"] = []
+    federal_profile = tax_fixture()["scenario"]["tax_profiles"][0]
+    federal_profile["jurisdictions"] = federal_profile["jurisdictions"][:1]
+    scenario["tax_profiles"] = []
+    for agent_id in ("alice", "bob", "carol", "dave"):
+        profile = json.loads(json.dumps(federal_profile))
+        profile["agent_id"] = agent_id
+        profile["section_121_exclusion"] = 25_000_000
+        scenario["tax_profiles"].append(profile)
+    fixture["series"] = [
+        {"series_id": "home_value:sf", "snapshots": 87, "values": [50_000_000] * 30 + [75_000_000] * 57}
+    ]
+    return fixture
+
+
+def uncapped_mortgage_interest_fixture() -> dict[str, Any]:
+    fixture = property_cashflow_fixture()
+    scenario = fixture["scenario"]
+    purchase = scenario["scheduled_property_purchases"][0]
+    purchase["purchase_price"] = 100_000_000
+    purchase["down_payment"] = 20_000_000
+    purchase["buyer_closing_cost"] = 1_000_000
+    purchase["mortgage"]["principal"] = 80_000_000
+    purchase["rented_fraction_ppb"] = 0
+    scenario["property_tax_policies"] = []
+    scenario["mortgage_interest_deduction_policies"] = [{"liability_id": "home-mortgage", "owner_agent_id": "alice"}]
+    return fixture
+
+
+def mortgage_interest_policy_fixture() -> dict[str, Any]:
+    fixture = financed_property_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 12
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 30_000_000},
+        {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 30_000_000},
+        {"account": {"agent_id": "seller-a", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "seller-b", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "bank-a", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "bank-b", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 0,
+            "cause_id": f"{agent_id}-buys-home",
+            "property_id": f"{agent_id}-home",
+            "location_id": "sf",
+            "buyer_agent_id": agent_id,
+            "buyer_account_id": "checking",
+            "seller_agent_id": seller_id,
+            "seller_account_id": "checking",
+            "purchase_price": 100_000_000,
+            "down_payment": 20_000_000,
+            "buyer_closing_cost": 0,
+            "rented_fraction_ppb": 0,
+            "land_value_fraction_ppb": 1_000_000_000,
+            "mortgage": {
+                "liability_id": f"{agent_id}-mortgage",
+                "lender_agent_id": bank_id,
+                "lender_account_id": "checking",
+                "principal": 80_000_000,
+                "annual_interest_rate_ppb": 60_000_000,
+                "term_months": 360,
+            },
+        }
+        for agent_id, seller_id, bank_id in (("alice", "seller-a", "bank-a"), ("bob", "seller-b", "bank-b"))
+    ]
+    scenario["mortgage_interest_deduction_policies"] = [
+        {
+            "liability_id": "alice-mortgage",
+            "owner_agent_id": "alice",
+            "debt_class": "acquisition",
+            "per_jurisdiction_principal_cap": {"federal_us": 75_000_000, "california": 100_000_000},
+        },
+        {
+            "liability_id": "bob-mortgage",
+            "owner_agent_id": "bob",
+            "debt_class": "home_equity",
+            "per_jurisdiction_principal_cap": {"federal_us": 75_000_000, "california": 100_000_000},
+        },
+    ]
+    scenario["property_tax_policies"] = []
+    scenario["scheduled_property_cashflows"] = []
+    scenario["recurring_property_cashflows"] = []
+    base_profile = tax_fixture()["scenario"]["tax_profiles"][0]
+    scenario["tax_profiles"] = []
+    for agent_id in ("alice", "bob"):
+        profile = json.loads(json.dumps(base_profile))
+        profile["agent_id"] = agent_id
+        scenario["tax_profiles"].append(profile)
+    fixture["series"] = []
+    return fixture
 
 
 def test_rust_and_jax_match_financed_property_purchase_and_first_carry_month(tmp_path: Path) -> None:

@@ -9,25 +9,102 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.testing.fixtures import (
+from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
+from finance.augur.rust.differential.fixtures import (
     rust_cash_frame,
     rust_lot_frame,
     rust_run,
     simulator_binary,
-    target_allocation_failure_fixture,
     target_allocation_fixture,
-    target_allocation_purchase_distribution_fixture,
     target_allocation_purchase_fixture,
-    target_allocation_purchase_then_sale_fixture,
-    target_allocation_rebalance_fixture,
 )
 from finance.augur.sim.testing.state_helpers import asset_lots, cash_balances, rollout_status
+
+
+def target_allocation_failure_fixture() -> dict[str, Any]:
+    fixture = target_allocation_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 2
+    scenario["accounts"][0]["opening_balance"] = 0
+    scenario["recurring_obligations"][0]["end_month"] = 1
+    scenario["recurring_obligations"][0]["amount_due"] = 5_000_000
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "vti",
+            "agent_id": "alice",
+            "account_id": "brokerage-a",
+            "asset_id": "vti",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 100_000_000,
+            "basis": 500_000,
+        },
+        {
+            "lot_id": "bnd",
+            "agent_id": "alice",
+            "account_id": "brokerage-b",
+            "asset_id": "bnd",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 100_000_000,
+            "basis": 1_000_000,
+        },
+    ]
+    scenario["tax_profiles"] = []
+    fixture["series"] = [
+        {"series_id": "security:vti", "snapshots": 3, "values": [10_000] * 3},
+        {"series_id": "security:bnd", "snapshots": 3, "values": [10_000] * 3},
+    ]
+    return fixture
+
+
+def target_allocation_purchase_then_sale_fixture() -> dict[str, Any]:
+    fixture = target_allocation_purchase_fixture()
+    scenario = fixture["scenario"]
+    policy = scenario["target_allocation_policies"][0]
+    policy["source_account_ids"] = ["brokerage-b"]
+    scenario["initial_lots"][0]["lot_id"] = "zz-real-same-month"
+    scenario["initial_lots"][1]["account_id"] = "brokerage-b"
+    scenario["recurring_obligations"] = [
+        {
+            "start_month": 1,
+            "end_month": 1,
+            "obligation_id": "rent",
+            "obligation_type": "rent",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "amount_due": 17_500_000,
+        }
+    ]
+    return fixture
+
+
+def target_allocation_purchase_distribution_fixture() -> dict[str, Any]:
+    fixture = target_allocation_purchase_fixture()
+    scenario = fixture["scenario"]
+    scenario["initial_lots"][1]["account_id"] = "brokerage-b"
+    scenario["distributions"] = [
+        {"agent_id": "alice", "holding_account_id": "brokerage-a", "asset_id": "vti", "to_account_id": "checking"}
+    ]
+    fixture["series"].append({"series_id": "security_distribution:vti", "snapshots": 3, "values": [100, 100, 100]})
+    return fixture
+
+
+def target_allocation_rebalance_fixture(*, tolerance_ppb: int = 250_000_000) -> dict[str, Any]:
+    fixture = target_allocation_purchase_fixture()
+    scenario = fixture["scenario"]
+    scenario["accounts"][0]["opening_balance"] = 5_000_000
+    policy = scenario["target_allocation_policies"][0]
+    policy["cash_floor"] = 1_000_000
+    policy["cash_ceiling"] = 9_000_000
+    policy["rebalance_tolerance_ppb"] = tolerance_ppb
+    return fixture
 
 
 def test_rust_and_jax_match_liquidity_sales_before_obligation_funding(tmp_path: Path) -> None:

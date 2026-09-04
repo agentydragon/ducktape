@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_shared_library", "rust_test")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -98,23 +98,6 @@ py_binary(
 )
 
 py_library(
-    name = "fixture_adapter",
-    srcs = ["fixture_adapter.py"],
-    deps = [
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:simulate",
-        "//finance/augur/sim:tlh_harvest",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "backend",
     srcs = ["backend.py"],
     deps = [
@@ -124,16 +107,6 @@ py_library(
         "//finance/augur/sim:product_metrics",
         "@pypi//jaxtyping",
         "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "output_adapter",
-    srcs = ["output_adapter.py"],
-    deps = [
-        "//finance/augur:frames",
-        "//finance/augur/sim:events",
-        "@pypi//polars",
     ],
 )
 
@@ -171,184 +144,10 @@ py_library(
     srcs = ["jax_benchmark_driver.py"],
     deps = [
         ":benchmark_fixture",
-        ":fixture_adapter",
+        "//finance/augur/rust/differential:fixture_adapter",
         "//finance/augur/sim:events",
         "//finance/augur/sim:simulate",
         "@pypi//jax",
         "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "product_metrics_differential_test",
-    # 308s measured: one XLA compile of the 60-month scenario per agent in
-    # PRODUCT_METRIC_AGENTS. Over the 300s `medium` cap, so it alone stays large.
-    size = "large",
-    srcs = ["product_metrics_differential_test.py"],
-    deps = [
-        ":backend",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/product:metric_composition",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/engine:jax_engine",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "allocation_differential_test",
-    size = "medium",
-    srcs = ["allocation_differential_test.py"],
-    deps = [
-        ":fixture_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "benchmark_differential_test",
-    size = "medium",
-    srcs = ["benchmark_differential_test.py"],
-    deps = [
-        ":benchmark_fixture",
-        ":fixture_adapter",
-        ":output_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim:events",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "core_differential_test",
-    size = "medium",
-    srcs = ["core_differential_test.py"],
-    deps = [
-        ":fixture_adapter",
-        ":output_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "private_equity_differential_test",
-    size = "medium",
-    srcs = ["private_equity_differential_test.py"],
-    deps = [
-        ":output_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "property_differential_test",
-    size = "medium",
-    srcs = ["property_differential_test.py"],
-    deps = [
-        ":fixture_adapter",
-        ":output_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "securities_differential_test",
-    size = "medium",
-    srcs = ["securities_differential_test.py"],
-    deps = [
-        ":fixture_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/engine:jax_engine",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "tax_differential_test",
-    size = "medium",
-    srcs = ["tax_differential_test.py"],
-    deps = [
-        ":fixture_adapter",
-        ":output_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "tlh_differential_test",
-    size = "medium",
-    srcs = ["tlh_differential_test.py"],
-    deps = [
-        ":output_adapter",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "product_failure_differential_test",
-    size = "medium",
-    srcs = ["product_failure_differential_test.py"],
-    deps = [
-        ":backend",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/engine:jax_engine",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "product_fan_differential_test",
-    size = "medium",
-    srcs = ["product_fan_differential_test.py"],
-    deps = [
-        ":backend",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/product:metric_composition",
-        "//finance/augur/rust/testing:fixtures",
-        "//finance/augur/sim/engine:jax_engine",
-        "@pypi//pytest_bazel",
     ],
 )

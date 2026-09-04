@@ -11,8 +11,15 @@ import pytest_bazel
 
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.rust.backend import run_rust_product_metric_arrays
-from finance.augur.rust.testing.fixtures import PRODUCT_METRIC_AGENTS, feature_rich_fixture, legacy_plan
+from finance.augur.rust.differential.fixtures import feature_rich_fixture, legacy_plan
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
+
+# One agent per policy family the benchmark fixture separates. JAX bakes the selected agent
+# into the compiled program, so each name here costs a full compile of the 60-month
+# scenario — hence a covering set rather than every account holder. The metric-coverage
+# assertion below is what keeps the set honest: drop an agent that uniquely carries a
+# metric and the test fails rather than quietly narrowing.
+PRODUCT_METRIC_AGENTS = ("allocator", "bondholder", "cashflow", "homeowner", "pe_owner")
 
 
 def test_rust_and_jax_match_every_product_metric_for_every_agent(tmp_path: Path) -> None:

@@ -17,7 +17,7 @@ import jax
 import numpy as np
 
 from finance.augur.rust.benchmark_fixture import write_fixture
-from finance.augur.rust.fixture_adapter import build_legacy_fixture
+from finance.augur.rust.differential.fixture_adapter import build_legacy_fixture
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.simulate import simulate_with_external_series
 
