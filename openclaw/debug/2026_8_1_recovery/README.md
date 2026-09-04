@@ -2,8 +2,10 @@
 
 The 2026.8.1 bump (#5369) took `public-coder-agent` down for ~5 hours through
 four independent failures, each hidden behind the previous one. All four are
-resolved for public-coder. `haku-openclaw-spike` has the same vintage state and
-was still failing at (1) when this was written, so this doubles as its runbook.
+resolved for public-coder, and the runbook below has since recovered
+`haku-openclaw-spike` as well — only failure (1) applied there, in six seconds,
+because Flux had already rolled it onto an image carrying the (2) fix and its
+state had no legacy session store.
 
 Remaining public-coder cleanup:
 <../../../cluster/k8s/agents/public-coder-agent/TODO.md>.
@@ -138,9 +140,14 @@ Replaced by `gateway.auth.trustedProxy.deviceAutoApprove.enabled` in #5514.
    reconciled by `flux-system`, which clears `spec.suspend` and restores
    `replicas: 1`. Work promptly or expect the pod back.
 2. Run `maintenance-job.yaml` (agent identity migration, one lease per database).
+   Both jobs here are shaped for public-coder; copy the target Deployment's own
+   `imagePullSecrets`, PVC name, mount path and node placement rather than
+   assuming these. `haku-openclaw-spike` differs on all four, and a missing
+   `forgejo-images-creds` shows up only as a ten-minute `ImagePullBackOff`.
 3. Run `doctor-job.yaml` (chown the PVC root, then `doctor --fix` with
    `OPENCLAW_NIX_MODE=0`). Add `agents.defaults.sessionStore.agentId` to the
-   config in the PVC first if doctor reports unresolved legacy main rows.
+   config in the PVC first if doctor reports unresolved legacy main rows. Skip
+   this step if the instance has no legacy `sessions.json` — the spike did not.
 4. Scale back up. **Health is a listener on 18789 answering HTTP, not `Running`** —
    there are no probes on this Deployment, so a crash-looping gateway reads as
    `1/1 Running`, and a gateway that starts but never binds also reads as healthy.

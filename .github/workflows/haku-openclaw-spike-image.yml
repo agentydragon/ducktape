@@ -8,6 +8,11 @@ on:
   pull_request:
     paths:
       - "haku/openclaw_spike/**"
+      # This image builds the gateway from openclaw/gateway.nix, shared with
+      # public-coder, so a change there must rebuild here too. Listed file by
+      # file rather than openclaw/** on purpose: the rest of that directory is
+      # public-coder's image and does not belong in this trigger.
+      - "openclaw/gateway.nix"
       - "openclaw/npm_wrapper/**"
       - "openclaw/patch-openclaw-npm-dist.mjs"
       - "openclaw/proxy-setup.mjs"
@@ -18,6 +23,11 @@ on:
     branches: [devel]
     paths:
       - "haku/openclaw_spike/**"
+      # This image builds the gateway from openclaw/gateway.nix, shared with
+      # public-coder, so a change there must rebuild here too. Listed file by
+      # file rather than openclaw/** on purpose: the rest of that directory is
+      # public-coder's image and does not belong in this trigger.
+      - "openclaw/gateway.nix"
       - "openclaw/npm_wrapper/**"
       - "openclaw/patch-openclaw-npm-dist.mjs"
       - "openclaw/proxy-setup.mjs"
