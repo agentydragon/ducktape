@@ -32,6 +32,9 @@ the runner that serves both harnesses behind one gRPC contract ([`../runner/`](.
 - [Scripted harness tests README](../harness_tests/README.md)
 - [Runner README](../runner/README.md) and [runner SPEC](../runner/SPEC.md)
 - [Common protocol: what the seam owns and the vocabulary above it](../docs/common_protocol.md)
+- [Tools the driver provides](../docs/driver_tools.md)
+- [Background work](../docs/background_work.md)
+- [Driver-provided tools and background work on the seam](driver_tools_and_background.md)
 
 ## v0 scope
 
