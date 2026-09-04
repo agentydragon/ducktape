@@ -104,8 +104,11 @@ do with a changed value.
 - **Codex** takes them as `developerInstructions` on `thread/start`, which the runner sends only for
   a _fresh_ thread. The app-server stores them as a `developer` message at the head of the thread's
   history, and a resumed thread replays that message out of its rollout, so they survive a resume
-  the runner never restates. What a resume cannot do is change them: the stored message belongs to
-  the thread, for as long as the thread exists.
+  the runner never restates. What a resume cannot do is change them, and the wire looks like it can:
+  `thread/resume` takes a `developerInstructions` override, the app-server accepts it without an
+  error or a warning, and the model still sees only the message the thread was started with — never
+  the new text, and never both. The measurement is the resume row of the
+  [roster](../native/docs/protocol_roster.md).
 
 So the protocol's "instructions are fixed for the session's life" is not a stylistic choice: it is
 the strongest promise both harnesses can keep. Editing a live session's standing instructions is

@@ -149,3 +149,28 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_instructions",
+    size = "medium",
+    srcs = ["test_instructions.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":harness",
+        ":requests",
+        ":responses_sse",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/native:process",
+        "//x/agentplane/native/codex:driver",
+        "//x/agentplane/native/codex:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)

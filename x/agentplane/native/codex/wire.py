@@ -324,8 +324,10 @@ class ThreadStartRequest(Wire):
     params: ThreadStartParams
 
 
-class ThreadResumeParams(Wire):
+class ThreadResumeParams(Wire, OmitNone):
     thread_id: str
+    base_instructions: str | None = None
+    developer_instructions: str | None = None
 
 
 class ThreadResumeRequest(Wire):

@@ -54,9 +54,23 @@ def thread_start(
     )
 
 
-def thread_resume(request_id: str, *, thread_id: str) -> wire.ThreadResumeRequest:
-    """Load a persisted thread after a new app-server process starts."""
-    return wire.ThreadResumeRequest(id=request_id, params=wire.ThreadResumeParams(thread_id=thread_id))
+def thread_resume(
+    request_id: str, *, thread_id: str, base_instructions: str = "", instructions: str = ""
+) -> wire.ThreadResumeRequest:
+    """Load a persisted thread after a new app-server process starts.
+
+    `base_instructions` and `instructions` are the resume's overrides for the thread's coding-agent
+    policy and its developer instructions. Empty sends no key for either. The two do not behave
+    alike, and `//x/agentplane/harness_tests/codex:test_instructions` pins the difference.
+    """
+    return wire.ThreadResumeRequest(
+        id=request_id,
+        params=wire.ThreadResumeParams(
+            thread_id=thread_id,
+            base_instructions=base_instructions or None,
+            developer_instructions=instructions or None,
+        ),
+    )
 
 
 def turn_start(request_id: str, *, thread_id: str, text: str) -> wire.TurnStartRequest:

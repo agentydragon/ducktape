@@ -68,8 +68,10 @@ class CodexAdapter(HarnessAdapter):
                 next(self._request_ids), thread_id=self._thread_id
             )
         else:
-            # A thread takes the session's standing instructions once, when it is created; the
-            # resume branch above reaches an app-server that already has them.
+            # A thread takes the session's standing instructions once, when it is created. The
+            # resume branch above cannot restate them: `ensure_running` only handshakes a process
+            # it just spawned, so the resumed thread replays them out of its rollout, and a
+            # `developerInstructions` override on the resume would be accepted and ignored.
             frame = driver.thread_start(
                 next(self._request_ids),
                 cwd=record.cwd,
