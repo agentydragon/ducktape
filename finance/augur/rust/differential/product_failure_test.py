@@ -51,5 +51,29 @@ def test_rust_and_jax_match_product_metrics_across_a_rollout_failure(tmp_path: P
     assert saw_shortfall
 
 
+def test_a_frozen_rollout_reports_its_property_value_as_net_worth(tmp_path: Path) -> None:
+    """Pins the uneven failure semantics both engines share.
+
+    Failure drains dollar-valued state, and the bond term is zeroed explicitly so that "a
+    failed rollout's net worth is zero like every other term". A property's metric value is
+    `purchase_price x home_value[now] / home_value[purchase_month]` — both terms static or
+    exogenous — and the property's active flag survives the freeze, so that term is not
+    zeroed and net worth ends up equal to it.
+
+    This looks like an oversight rather than a rule, but it is what the product reports
+    today and what the Rust engine matches. If the property term is zeroed on failure, this
+    test fails, which is the signal to update it rather than a regression.
+    """
+
+    fixture = feature_rich_failure_fixture(tmp_path)
+    metrics = run_jax_product_metric_arrays(legacy_plan(fixture), primary_agent_id="homeowner").metric_arrays()
+    final = {name: values[-1] for name, values in metrics.items() if name != "month_index"}
+
+    for drained in ("cash_quanta", "holding_value_quanta", "mortgage_balance_quanta", "bond_value_quanta"):
+        assert not final[drained].any(), f"{drained} should be drained by the freeze"
+    assert final["property_value_quanta"].any(), "the property term survives the freeze"
+    assert final["net_worth_quanta"].tolist() == final["property_value_quanta"].tolist()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
