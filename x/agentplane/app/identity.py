@@ -1,8 +1,9 @@
-"""Whether a request proved itself, by whichever of the two credentials it carried.
+"""Whether a request proved itself, and whether the identity it proved is one this app admits.
 
 A browser proves itself with the OIDC session cookie the app issued (`oidc.py`); anything else
 proves itself with a Kubernetes token, which TokenReview turns into a username the API server
-vouches for and which has to be one of the identities this app was told to accept. Both are
+vouches for. Authenticating is the API server's; admitting that identity is this module's, which is
+why a token for a subject outside `token_subjects` is refused 403 and not 401. Both are
 cryptographic. Nothing is inferred from a header a caller can simply set, which is what this
 replaces: `x-authentik-username` was trusted because a forward-auth proxy was believed to be the
 only way in, and the API server's service proxy forwards caller headers, so it was not.

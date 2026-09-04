@@ -55,7 +55,7 @@ nothing is happening -- so every frame carries how long ago each kind last compl
 against the same three-cycle bound the egress proxy's `/healthz` uses, and a page whose data has
 stopped moving says so rather than showing it as live.
 
-## Authentication
+## Authentication and authorization
 
 Every route needs a caller; only `/healthz` and the `/auth/*` endpoints answer without one. There
 are two credentials, and both are cryptographic:
