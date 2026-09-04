@@ -29,8 +29,6 @@ from x.agentplane.egress.resources import (
     Credential,
     EgressBinding,
     EgressPolicy,
-    LabelSelector,
-    NamedSubject,
     ObjectMeta,
     PolicySpec,
     Rule,
@@ -38,14 +36,13 @@ from x.agentplane.egress.resources import (
     SandboxRef,
     Secret,
     SecretKeyRef,
-    SelectedSubjects,
     Subject,
 )
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 PLACEHOLDER = "PLACEHOLDER-TOKEN"
 SECRET_VALUE = "real-value"
-SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid", labels={"team": "alpha"}))
+SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
 CREDENTIAL = Credential(
     secret_ref=SecretKeyRef(name="pat", key="token"), header="Authorization", placeholder=PLACEHOLDER
 )
@@ -63,7 +60,7 @@ def binding(
     return EgressBinding(
         metadata=ObjectMeta(name=name, generation=3),
         spec=BindingSpec(
-            subjects=subjects if subjects is not None else [NamedSubject(sandbox=SandboxRef(name="sb"))],
+            subjects=subjects if subjects is not None else [Subject(sandbox=SandboxRef(name="sb"))],
             policies=policies,
             expires_at=expires_at,
         ),
@@ -155,37 +152,7 @@ CASES = [
         "binding for another sandbox",
         index(
             policies=[policy("github", GITHUB_RULE)],
-            bindings=[binding("b", policies=["github"], subjects=[NamedSubject(sandbox=SandboxRef(name="other"))])],
-        ),
-        request(),
-        Denied(DenyReason.NO_BINDING),
-    ),
-    Case(
-        "selector binding matches labels",
-        index(
-            policies=[policy("github", GITHUB_RULE)],
-            bindings=[
-                binding(
-                    "b",
-                    policies=["github"],
-                    subjects=[SelectedSubjects(sandbox_selector=LabelSelector(match_labels={"team": "alpha"}))],
-                )
-            ],
-        ),
-        request(),
-        Allowed("b", "github", 0),
-    ),
-    Case(
-        "selector binding misses labels",
-        index(
-            policies=[policy("github", GITHUB_RULE)],
-            bindings=[
-                binding(
-                    "b",
-                    policies=["github"],
-                    subjects=[SelectedSubjects(sandbox_selector=LabelSelector(match_labels={"team": "beta"}))],
-                )
-            ],
+            bindings=[binding("b", policies=["github"], subjects=[Subject(sandbox=SandboxRef(name="other"))])],
         ),
         request(),
         Denied(DenyReason.NO_BINDING),

@@ -17,13 +17,7 @@ from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
-from x.agentplane.app.inventory import (
-    ARCHIVED_LABEL,
-    PROFILE_LABEL,
-    SANDBOXES_PLURAL,
-    ProvisioningState,
-    SandboxInventory,
-)
+from x.agentplane.app.inventory import ARCHIVED_LABEL, SANDBOXES_PLURAL, ProvisioningState, SandboxInventory
 from x.agentplane.app.live import PODS_PLURAL, LiveIndex, SandboxesSnapshot, WatchHealth, frames
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
@@ -45,7 +39,7 @@ MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-m
 @pytest.fixture
 def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_index: LiveIndex) -> LiveIndex:
     """The same objects in the fake API server and in the index, so the two paths can be compared."""
-    custom_objects.objects[(SANDBOXES_PLURAL, "runner-1")] = sandbox("runner-1", labels={PROFILE_LABEL: "coder"})
+    custom_objects.objects[(SANDBOXES_PLURAL, "runner-1")] = sandbox("runner-1")
     custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox(
         "shelved", labels={ARCHIVED_LABEL: "true"}, operating_mode="Suspended"
     )
@@ -53,8 +47,8 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
     custom_objects.objects[("egresspolicies", "github")] = egress_policy(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
-    custom_objects.objects[("egressbindings", "coders")] = egress_binding(
-        "coders", subjects=[{"sandboxSelector": {"matchLabels": {PROFILE_LABEL: "coder"}}}], policies=["github"]
+    custom_objects.objects[("egressbindings", "runner-1-picked")] = egress_binding(
+        "runner-1-picked", subjects=[{"sandbox": {"name": "runner-1"}}], policies=["github"]
     )
     custom_objects.objects[("egressbindings", "elsewhere")] = egress_binding(
         "elsewhere", subjects=[{"sandbox": {"name": "shelved"}}], policies=["github"]
@@ -80,18 +74,15 @@ async def test_the_index_projects_the_rows_a_listing_would_return(
     assert seeded.sandbox_view("runner-1") == await inventory.get("runner-1")
 
 
-async def test_the_index_selects_the_bindings_a_request_would(
-    seeded: LiveIndex, inventory: SandboxInventory, egress: EgressInventory
-) -> None:
-    assert seeded.bindings_for("runner-1") == await egress.bindings_for("runner-1", await inventory.labels("runner-1"))
-    assert [binding.name for binding in seeded.bindings_for("runner-1")] == ["coders"]
+async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressInventory) -> None:
+    assert seeded.bindings_for("runner-1") == await egress.bindings_for("runner-1")
+    assert [binding.name for binding in seeded.bindings_for("runner-1")] == ["runner-1-picked"]
 
 
 def test_a_sandbox_the_watch_has_dropped_is_gone_rather_than_missing(seeded: LiveIndex) -> None:
     del seeded.sandboxes["runner-1"]
 
     assert seeded.sandbox_view("runner-1") is None
-    assert seeded.bindings_for("runner-1") == []
 
 
 def test_nothing_watched_yet_reads_as_stale(live_index: LiveIndex) -> None:

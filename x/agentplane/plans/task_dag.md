@@ -56,6 +56,7 @@ flowchart TB
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
+    classDef withdrawn fill:#fee2e2,stroke:#b91c1c,color:#7f1d1d,stroke-width:2px,stroke-dasharray:4 3
 
     S0["Sandbox proxy/identity<br/>completed evidence"]:::completed
     A["Native drivers + scripted harness tests"]:::completed
@@ -74,10 +75,10 @@ flowchart TB
         C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::completed
         C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
-        C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button"]:::ready
+        C6["C6 Session view legibility<br/>the input's own text, over the protocol"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::completed
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::completed
-        C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
+        C9["C9 The profile a sandbox runs under<br/>withdrawn: profiles deferred pending design"]:::withdrawn
         C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
     end
 
@@ -177,10 +178,10 @@ flowchart TB
 Legend: green is landed; yellow is in flight, with a PR open; the bold blue nodes are ready to
 start now, in parallel; light blue is next work blocked only on a node in this slice; purple is a
 milestone;
-orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
-conditional or stretch work.
+orange diamonds are unresolved decisions requiring Rai's product or design input; red dashed is
+withdrawn — the package will not be built as specified; gray is conditional or stretch work.
 
-Ready now: **J**, **C6**, **C8**, and **C9**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J**, **C6**, and **C8**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -207,29 +208,17 @@ personal context.
 Landed packages are described where they live (§ Current status); what follows is the bar for the
 ones still open.
 
-- **C6 session view legibility:** what still makes a real transcript hard to read, and not all of
-  it is UI work.
-  - **Markdown for assistant text**, which currently renders as literal `**` and backticks.
-  - **Reasoning folded** into a disclosure widget, closed by default, so the answer is not buried
-    under the thinking.
-  - **Enter sends, Ctrl+Enter takes a newline**, and the Send button goes away entirely: the
-    textarea's placeholder carries the binding, so the composer is one control instead of two.
-    Interrupt stays, as an icon rather than a text button — the same move the sandbox list already
-    made for Suspend and Resume, so `@tabler/icons-react` via per-icon subpath imports (the barrel
-    OOMs esbuild on RBE).
-  - **A user input shows what was typed.** Today it shows only its opaque `input_id`, because
-    `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto)).
-    Decided (Rai): the protocol changes, so the text arrives with the event and a client that
-    joined later or replayed from the log sees it too — which is the case an app-side echo of what
-    this tab sent cannot cover.
-- **C9 the profile a sandbox runs under:** a profile decides what the sandbox may reach — a
-  Flux-managed `EgressBinding` selects on the label it stamps — and it is nearly invisible. It
-  appears as one badge on the sandbox page, and at creation as a free-text box whose help text
-  ("a label the profile bindings select on") assumes you already know which profiles exist. The
-  list page does not show it although the API already returns it on every row, nothing can be
-  filtered by it, and a typo silently yields a sandbox that matches no binding. Make it a pick
-  from the profiles that actually exist, show it wherever a sandbox is shown, and say what the one
-  you picked grants.
+- **C6 a user input shows what was typed.** It shows only its opaque `input_id` today, because
+  `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto));
+  the client half already renders `input.text`. Decided (Rai): the protocol changes, so the text
+  arrives with the event and a client that joined later or replayed from the log sees it too —
+  which is the case an app-side echo of what this tab sent cannot cover.
+- **C9 the profile a sandbox runs under: withdrawn** (Rai). Making profiles visible and pickable
+  presumed the concept, and the concept has no design yet: a profile is expected to span more than
+  egress, so nothing about it may be settled by its first consumer. The half of it that had
+  landed — a profile label the app stamped and an `EgressBinding` selector that matched it — is
+  removed rather than left in place. Grounds and what would revive this work:
+  [`profiles.md`](profiles.md).
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what

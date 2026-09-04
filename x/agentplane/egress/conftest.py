@@ -50,8 +50,8 @@ GRANTED_BY = "seed"
 
 def seed(fake: FakeApiServer) -> None:
     """Two Sandboxes with Pods and tokens; A bound to a credentialed GitHub-shaped policy, B unbound."""
-    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_A, labels={"team": "alpha"}))
-    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_B, labels={"team": "beta"}))
+    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_A))
+    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_B))
     fake.pods[SANDBOX_A] = pod_for(fake, SANDBOX_A, pod_uid=POD_A_UID, ip=POD_A_IP)
     fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_B_IP)
     for token, name, uid in ((TOKEN_A, SANDBOX_A, POD_A_UID), (TOKEN_B, SANDBOX_B, POD_B_UID)):

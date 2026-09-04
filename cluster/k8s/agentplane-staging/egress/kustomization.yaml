@@ -6,7 +6,6 @@ resources:
   - rolebinding-agentplane-egress.yaml
   - clusterrole-agentplane-staging-egress-token-reviewer.yaml
   - egresspolicy-github-public.yaml
-  - egressbinding-sandboxes-github-public.yaml
   - certificate-agentplane-egress-ca.yaml
   - trust-bundle.yaml
   - deployment-agentplane-egress.yaml

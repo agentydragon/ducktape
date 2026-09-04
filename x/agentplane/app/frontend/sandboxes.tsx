@@ -21,7 +21,7 @@ import { api, displayableError, type Condition, type NewSandbox, type SandboxVie
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 
-const EMPTY_FORM: NewSandbox = { slug: "", profile: null, policies: [] };
+const EMPTY_FORM: NewSandbox = { slug: "", policies: [] };
 
 const STATE_COLORS: Record<string, string> = {
   running: "green",
@@ -71,7 +71,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
-  // The namespace's individual policies; ticking some grants them on top of the profile's binding.
+  // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   async function create(): Promise<void> {
     const { error: failure } = await api.POST("/sandboxes", {
-      body: { ...form, profile: form.profile || null },
+      body: form,
     });
     if (failure) setError(displayableError(failure));
     else {
@@ -130,16 +130,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
         />
-        <TextInput
-          label="Profile"
-          description="A label the profile bindings select on"
-          value={form.profile ?? ""}
-          onChange={(e) => setForm({ ...form, profile: e.currentTarget.value })}
-          style={{ flex: "1 1 8rem" }}
-        />
         <MultiSelect
           label="Policies"
-          description="Granted to this sandbox alone"
+          description="What this sandbox may reach"
           data={policies}
           value={form.policies ?? []}
           onChange={(picked) => setForm({ ...form, policies: picked })}

@@ -43,7 +43,6 @@ from x.agentplane.app.inventory import (
     SANDBOX_API,
     SANDBOXES_PLURAL,
     SandboxView,
-    sandbox_labels,
     sandbox_view,
     sandbox_views,
 )
@@ -118,12 +117,7 @@ class LiveIndex:
         return None if raw is None else sandbox_view(raw, self.pods.get(name))
 
     def bindings_for(self, name: str) -> list[BindingView]:
-        raw = self.sandboxes.get(name)
-        if raw is None:
-            return []
-        return matching_bindings(
-            self.bindings.values(), self.policies.values(), sandbox=name, labels=sandbox_labels(raw)
-        )
+        return matching_bindings(self.bindings.values(), self.policies.values(), sandbox=name)
 
     def health(self, now: datetime) -> WatchHealth:
         ages = {kind: (now - at).total_seconds() for kind, at in self.refreshed.items()}

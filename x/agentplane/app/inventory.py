@@ -26,8 +26,6 @@ from util.kubernetes import CustomObjectsClient
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 ARCHIVED_LABEL = "agentplane.allegedly.works/archived"
-# The profile a sandbox was launched with; a Flux-managed EgressBinding selects on it (egress.py).
-PROFILE_LABEL = "agentplane.allegedly.works/profile"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
 _TEMPLATES_PLURAL = "sandboxtemplates"
@@ -43,8 +41,6 @@ _SLUG_MAX_LENGTH = 63 - 1 - _SUFFIX_LENGTH
 Slug = Annotated[
     str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=_SLUG_MAX_LENGTH)
 ]
-# A Kubernetes label value, since the profile is stamped as one.
-LabelValue = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z0-9]([-a-zA-Z0-9_.]*[a-zA-Z0-9])?$", max_length=63)]
 
 
 class OperatingMode(StrEnum):
@@ -83,13 +79,8 @@ class NewSandbox(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
-    profile: LabelValue | None = Field(
-        default=None,
-        description="Stamped as the profile label; a Flux-managed EgressBinding selecting on it then applies.",
-    )
     policies: list[str] = Field(
-        default_factory=list,
-        description="EgressPolicy names to grant this sandbox on top of its profile, as one sandbox-owned binding.",
+        default_factory=list, description="EgressPolicy names to grant this sandbox, as one sandbox-owned binding."
     )
 
 
@@ -138,7 +129,6 @@ class SandboxView(BaseModel):
 
     name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
     uid: UUID = Field(description="The API server's identity of this Sandbox; what an owned binding references.")
-    profile: str | None = Field(default=None, description="The profile label, when the sandbox was launched with one.")
     archived: bool
     state: ProvisioningState
     created_at: datetime
@@ -232,13 +222,10 @@ class SandboxInventory:
             )
         )
         suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
-        labels = {MANAGED_LABEL: "true"}
-        if spec.profile is not None:
-            labels[PROFILE_LABEL] = spec.profile
         body = {
             "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
             "kind": "Sandbox",
-            "metadata": {"name": f"{spec.slug}-{suffix}", "labels": labels},
+            "metadata": {"name": f"{spec.slug}-{suffix}", "labels": {MANAGED_LABEL: "true"}},
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
                 "podTemplate": template.spec.pod_template,
@@ -268,9 +255,10 @@ class SandboxInventory:
         await self._sandbox(name)
         await self._patch(name, {"metadata": {"labels": {ARCHIVED_LABEL: None}}})
 
-    async def labels(self, name: str) -> dict[str, str]:
-        """The Sandbox's labels: what an EgressBinding's selector subject is matched against."""
-        return (await self._sandbox(name)).metadata.labels
+    async def require_known(self, name: str) -> None:
+        """Raise `SandboxNotFoundError` unless the name is one of Agentplane's sandboxes; the
+        existence check behind routes that answer from the name alone."""
+        await self._sandbox(name)
 
     async def delete(self, name: str) -> None:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
@@ -339,18 +327,12 @@ def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
     return _view(_Sandbox.model_validate(sandbox), pod)
 
 
-def sandbox_labels(sandbox: object) -> dict[str, str]:
-    """The Sandbox's labels: what an EgressBinding's selector subject is matched against."""
-    return _Sandbox.model_validate(sandbox).metadata.labels
-
-
 def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
     labels = sandbox.metadata.labels
     archived = labels.get(ARCHIVED_LABEL) == "true"
     return SandboxView(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
-        profile=labels.get(PROFILE_LABEL),
         archived=archived,
         state=_state(sandbox, pod, archived=archived),
         created_at=sandbox.metadata.creation_timestamp,
