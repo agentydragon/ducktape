@@ -24,7 +24,6 @@ SANDBOX_GROUP = "agents.x-k8s.io"
 SANDBOX_VERSION = "v1beta1"
 SANDBOXES_PLURAL = "sandboxes"
 SANDBOX_KIND = "Sandbox"
-GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
 
 
 class _Wire(BaseModel):
@@ -37,7 +36,6 @@ class ObjectMeta(_Wire):
     name: str
     uid: str | None = Field(default=None, description="Set by the API server; absent on objects built by hand.")
     generation: int | None = Field(default=None, description="Bumped by the API server on every spec change.")
-    labels: dict[str, str] = Field(default_factory=dict)
 
 
 class SecretKeyRef(_Wire):

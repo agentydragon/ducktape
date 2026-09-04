@@ -3,7 +3,7 @@
 The central proxy of the [secure egress integration](../plans/egress_proxy.md): a mitmproxy
 addon that proves each caller's Pod-bound token, decides the request from `EgressPolicy` and
 `EgressBinding` resources, and substitutes the real credential. What it guarantees is in
-<SPEC.md>.
+<SPEC.md>. How the two kinds compose into one decision is in <../docs/egress_composition.md>.
 
 ```sh
 bbr test //x/agentplane/egress/...

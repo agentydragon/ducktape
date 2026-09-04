@@ -20,7 +20,6 @@ from mitmproxy.proxy import server_hooks
 from x.agentplane.egress.decisions import DecisionRecord, DecisionRing, Outcome
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.policy import CONNECT, Allowed, Decision, Denied, DenyReason, EgressRequest, Index, evaluate
-from x.agentplane.egress.resources import GRANTED_BY_LABEL
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
 
 logger = logging.getLogger(__name__)
@@ -146,13 +145,11 @@ class EgressAddon:
         }
         match decision:
             case Allowed():
-                binding = self._index.bindings.get(decision.binding)
                 self._ring.record(
                     DecisionRecord(
                         **common,
                         outcome=Outcome.ALLOW,
                         binding=decision.binding,
-                        granted_by=binding.metadata.labels.get(GRANTED_BY_LABEL) if binding is not None else None,
                         policy=decision.policy,
                         rule=decision.rule,
                         substituted=decision.substitution is not None,

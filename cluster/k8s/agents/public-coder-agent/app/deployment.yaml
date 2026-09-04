@@ -52,7 +52,7 @@ spec:
         # gateway's own config backups so the ConfigMap remains authoritative;
         # see docs/personal_agents/findings/harness_behaviour.md F19.
         - name: seed-config
-          image: ghcr.io/agentydragon/openclaw:devel-20260903200156-312bb2d # {"$imagepolicy": "flux-system:openclaw"}
+          image: ghcr.io/agentydragon/openclaw:devel-20260904000643-36581b3 # {"$imagepolicy": "flux-system:openclaw"}
           command:
             - sh
             - -c
@@ -66,7 +66,7 @@ spec:
               mountPath: /state
       containers:
         - name: openclaw
-          image: ghcr.io/agentydragon/openclaw:devel-20260903200156-312bb2d # {"$imagepolicy": "flux-system:openclaw"}
+          image: ghcr.io/agentydragon/openclaw:devel-20260904000643-36581b3 # {"$imagepolicy": "flux-system:openclaw"}
           env:
             # The image does not set HOME to the state dir; without it the
             # gateway looks under the wrong home directory and exits "Missing config".

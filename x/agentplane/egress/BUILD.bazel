@@ -18,7 +18,6 @@ py_library(
         ":decisions",
         ":identity",
         ":policy",
-        ":resources",
         ":upstream",
         "@pypi//mitmproxy",
     ],
@@ -113,7 +112,6 @@ py_library(
     deps = [
         ":informer",
         ":policy",
-        ":resources",
         "//util:kubernetes",
         "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",

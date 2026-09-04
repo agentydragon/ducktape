@@ -65,10 +65,9 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 
 ## Decisions
 
-- Every decision is logged as one JSON line naming the subject, method, host, port, path,
-  outcome, reason, and the binding (with its `agentplane.allegedly.works/granted-by` label),
-  policy, and rule that decided it. Credential values and
-  placeholders never appear in logs, decisions, or responses.
+- Every decision is logged as one JSON line naming the subject, method, host, port, path, outcome,
+  reason, and the binding, policy, and rule that decided it. Credential values and placeholders
+  never appear in logs, decisions, or responses.
 - The last decisions per subject (a configured ring, 200 by default) are served on the admin port
   at `GET /decisions?sandbox=<name>`; decisions with no proven subject at `GET /decisions`.
   `GET /healthz` is `200` while the index is both complete and moving: every kind listed at least

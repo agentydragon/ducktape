@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 
-from x.agentplane.app.egress import GRANTED_BY_LABEL
+from x.agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
 from x.agentplane.app.inventory import MANAGED_LABEL
 
 NAMESPACE = "agentplane-test"
@@ -163,16 +163,17 @@ def egress_binding(
     *,
     subjects: list[dict[str, Any]],
     policies: list[str],
-    granted_by: str | None = "flux",
+    from_git: bool = True,
     expires_at: str | None = None,
     active: tuple[str, str, str] | None = None,
 ) -> dict[str, Any]:
-    """A binding as the API server holds it; `active` is (status, reason, message) of the proxy's condition."""
+    """A binding as the API server holds it; `from_git` stamps Flux's inventory label, and `active`
+    is (status, reason, message) of the proxy's condition."""
     return {
         "metadata": {
             "name": name,
             "uid": str(uuid4()),
-            "labels": {GRANTED_BY_LABEL: granted_by} if granted_by is not None else {},
+            "labels": {FLUX_KUSTOMIZATION_LABEL: "agentplane-test-egress"} if from_git else {},
             "creationTimestamp": "2026-09-01T11:45:00Z",
         },
         "spec": {
