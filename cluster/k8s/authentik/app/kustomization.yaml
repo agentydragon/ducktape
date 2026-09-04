@@ -15,13 +15,11 @@ configMapGenerator:
       - blueprints/hubble-sso.yaml
       - blueprints/public-coder-agent-sso.yaml
       - blueprints/haku-openclaw-spike-sso.yaml
-      - blueprints/filebrowser-sso-retire.yaml
       - blueprints/agents-mitmproxy-sso.yaml
       - blueprints/proxmox-sso.yaml
       - blueprints/goldilocks-sso.yaml
       - blueprints/google-workspace-mcp-sso.yaml
       - blueprints/plaid-link-sso.yaml
-      - blueprints/browsertrix-sso-retire.yaml
       - blueprints/embedded-outpost.yaml
       - blueprints/airlock-sso.yaml
       - blueprints/sdr-sso.yaml
@@ -30,5 +28,4 @@ configMapGenerator:
       - blueprints/fava-sso.yaml
       - blueprints/activitywatch-sso.yaml
       - blueprints/haku-ui-sso.yaml
-      - blueprints/agentplane-staging-sso.yaml
     namespace: authentik
