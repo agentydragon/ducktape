@@ -38,18 +38,133 @@ from finance.augur.sim.testing.state_helpers import (
 # Parts per billion, the fixture's scale for a dimensionless rate.
 RATE_SCALE_PPB = 1_000_000_000
 
-# The state both engines answer in. Listed rather than derived from the dataclass, so
-# adding a field to `SimulationResult` is not silently also adding a compared channel.
-CANONICAL_STATE_CHANNELS = (
-    "cash",
-    "lots",
-    "capital_gains",
-    "tax_liabilities",
-    "properties",
-    "property_stakes",
-    "liabilities",
-    "rollout_status",
+
+@dataclass(frozen=True)
+class StateChannel:
+    """One channel both engines answer in: its columns, and the key that orders it.
+
+    The schema is declared here rather than inferred from whatever each engine happened to
+    build, because neither engine declares one. The JAX readers assemble frames from numpy
+    arrays, so their identifier columns arrive as `Object` and an all-null month column as
+    `Null` — carrier accidents, not differences between the engines. Conforming both sides
+    to one declaration turns that from a repair into a contract, and a channel that lost a
+    column fails here by name instead of comparing as absent.
+    """
+
+    name: str
+    schema: pl.Schema
+    key: tuple[str, ...]
+
+    def build(self, rows: list[dict[str, Any]]) -> pl.DataFrame:
+        """The channel, from rows already keyed by its column names."""
+
+        return pl.DataFrame(rows, schema=self.schema).sort(self.key)
+
+    def conform(self, frame: pl.DataFrame) -> pl.DataFrame:
+        """The channel, from an engine's own frame: its declared columns, in order."""
+
+        return frame.select(pl.col(name).cast(dtype) for name, dtype in self.schema.items()).sort(self.key)
+
+
+_ROLLOUT_MONTH = {"rollout_index": pl.Int64, "month_index": pl.Int64}
+
+STATE_CHANNELS = (
+    StateChannel(
+        "cash",
+        pl.Schema({**_ROLLOUT_MONTH, "agent_id": pl.String, "account_id": pl.String, "balance_quanta": pl.Int64}),
+        ("rollout_index", "month_index", "agent_id", "account_id"),
+    ),
+    StateChannel(
+        "lots",
+        pl.Schema(
+            {
+                **_ROLLOUT_MONTH,
+                "lot_id": pl.String,
+                "agent_id": pl.String,
+                "account_id": pl.String,
+                "asset_id": pl.String,
+                "purchase_month_index": pl.Int64,
+                "cost_basis_per_unit_quanta": pl.Int64,
+                "remaining_quantity_quanta": pl.Int64,
+                "quantity_scale": pl.Int64,
+            }
+        ),
+        ("rollout_index", "month_index", "lot_id"),
+    ),
+    StateChannel(
+        "capital_gains",
+        pl.Schema({**_ROLLOUT_MONTH, "agent_id": pl.String, "classification": pl.String, "gain_quanta": pl.Int64}),
+        ("rollout_index", "month_index", "agent_id", "classification"),
+    ),
+    StateChannel(
+        "tax_liabilities",
+        pl.Schema(
+            {
+                **_ROLLOUT_MONTH,
+                "agent_id": pl.String,
+                "jurisdiction_id": pl.String,
+                "tax_year_end_month": pl.Int64,
+                "amount_owed_quanta": pl.Int64,
+            }
+        ),
+        ("rollout_index", "month_index", "agent_id", "jurisdiction_id"),
+    ),
+    StateChannel(
+        "properties",
+        pl.Schema(
+            {
+                **_ROLLOUT_MONTH,
+                "property_id": pl.String,
+                "location_id": pl.String,
+                "purchase_month_index": pl.Int64,
+                "adjusted_basis_quanta": pl.Int64,
+            }
+        ),
+        ("rollout_index", "month_index", "property_id"),
+    ),
+    StateChannel(
+        "property_stakes",
+        pl.Schema(
+            {
+                **_ROLLOUT_MONTH,
+                "property_id": pl.String,
+                "agent_id": pl.String,
+                "contribution_used_quanta": pl.Int64,
+                "equity_ledger_quanta": pl.Int64,
+            }
+        ),
+        ("rollout_index", "month_index", "property_id", "agent_id"),
+    ),
+    StateChannel(
+        "liabilities",
+        pl.Schema(
+            {
+                **_ROLLOUT_MONTH,
+                "liability_id": pl.String,
+                "agent_id": pl.String,
+                "payment_account_id": pl.String,
+                "counterparty_agent_id": pl.String,
+                "counterparty_account_id": pl.String,
+                "property_id": pl.String,
+                "principal_quanta": pl.Int64,
+                "annual_interest_rate": pl.Float64,
+                "term_months": pl.Int64,
+                "origination_month_index": pl.Int64,
+                "monthly_payment_quanta": pl.Int64,
+                "interest_paid_ytd_quanta": pl.Int64,
+            }
+        ),
+        ("rollout_index", "month_index", "liability_id"),
+    ),
+    StateChannel(
+        "rollout_status",
+        pl.Schema({"rollout_index": pl.Int64, "status": pl.String, "failed_month": pl.Int64}),
+        ("rollout_index",),
+    ),
 )
+
+CANONICAL_STATE_CHANNELS = tuple(channel.name for channel in STATE_CHANNELS)
+CHANNEL = {channel.name: channel for channel in STATE_CHANNELS}
 
 
 @dataclass(frozen=True)
@@ -100,22 +215,9 @@ class RustResult(SimulationResult):
 
 
 def _sorted(rows: list[dict[str, Any]], schema: dict[str, Any], by: list[str]) -> pl.DataFrame:
+    """A frame only Rust produces, so its schema is declared at its one use."""
+
     return pl.DataFrame(rows, schema=schema).sort(by)
-
-
-def _canonical(frame: pl.DataFrame, by: list[str]) -> pl.DataFrame:
-    """Sort, and give string columns a string dtype.
-
-    The JAX readers build their identifier columns from numpy object arrays, so polars types
-    them `Object`. That is a carrier detail, not a difference between the engines.
-    """
-
-    casts = [pl.col(name).cast(pl.String) for name, dtype in frame.schema.items() if dtype == pl.Object]
-    # An all-null column has dtype Null, which says nothing about what it holds. Every
-    # nullable column in these schemas is a month index, so give it the integer type the
-    # Rust side declares rather than comparing Null against Int64.
-    casts += [pl.col(name).cast(pl.Int64) for name, dtype in frame.schema.items() if dtype == pl.Null]
-    return (frame.with_columns(casts) if casts else frame).sort(by)
 
 
 def _realized_gains(frame: pl.DataFrame, taxed: set[str]) -> pl.DataFrame:
@@ -162,24 +264,18 @@ def run_jax(fixture: dict[str, Any]) -> SimulationResult:
     """Run the fixture on the Python/JAX engine."""
 
     run = run_legacy_fixture(fixture)
-    lots = asset_lots(run)
     taxed = _taxed_agents(fixture)
     return SimulationResult(
         backend="jax",
         events=run.events_log,
-        cash=_canonical(cash_balances(run), ["rollout_index", "month_index", "agent_id", "account_id"]),
-        lots=_canonical(_held_lots(lots.drop("remaining_quantity")), ["rollout_index", "month_index", "lot_id"]),
-        capital_gains=_canonical(
-            _realized_gains(capital_gains_ytd(run), taxed),
-            ["rollout_index", "month_index", "agent_id", "classification"],
-        ),
-        tax_liabilities=_canonical(
-            tax_liabilities(run), ["rollout_index", "month_index", "agent_id", "jurisdiction_id"]
-        ),
-        properties=_canonical(property_state(run), ["rollout_index", "month_index", "property_id"]),
-        property_stakes=_canonical(property_stakes(run), ["rollout_index", "month_index", "property_id", "agent_id"]),
-        liabilities=_canonical(liabilities(run), ["rollout_index", "month_index", "liability_id"]),
-        rollout_status=_canonical(rollout_status(run), ["rollout_index"]),
+        cash=CHANNEL["cash"].conform(cash_balances(run)),
+        lots=CHANNEL["lots"].conform(_held_lots(asset_lots(run))),
+        capital_gains=CHANNEL["capital_gains"].conform(_realized_gains(capital_gains_ytd(run), taxed)),
+        tax_liabilities=CHANNEL["tax_liabilities"].conform(tax_liabilities(run)),
+        properties=CHANNEL["properties"].conform(property_state(run)),
+        property_stakes=CHANNEL["property_stakes"].conform(property_stakes(run)),
+        liabilities=CHANNEL["liabilities"].conform(liabilities(run)),
+        rollout_status=CHANNEL["rollout_status"].conform(rollout_status(run)),
     )
 
 
@@ -215,7 +311,7 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
     declared_accounts = {
         (spec["account"]["agent_id"], spec["account"]["account_id"]) for spec in fixture["scenario"]["accounts"]
     }
-    cash = _sorted(
+    cash = CHANNEL["cash"].build(
         [
             {
                 "rollout_index": rollout,
@@ -226,17 +322,9 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
             }
             for rollout, month, record in _rust_rows(rust, "balances")
             if (record["account"]["agent_id"], record["account"]["account_id"]) in declared_accounts
-        ],
-        {
-            "rollout_index": pl.Int64,
-            "month_index": pl.Int64,
-            "agent_id": pl.String,
-            "account_id": pl.String,
-            "balance_quanta": pl.Int64,
-        },
-        ["rollout_index", "month_index", "agent_id", "account_id"],
+        ]
     )
-    lots = _sorted(
+    lots = CHANNEL["lots"].build(
         [
             {
                 "rollout_index": rollout,
@@ -251,23 +339,10 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
                 "quantity_scale": record["quantity_scale"],
             }
             for rollout, month, record in _rust_rows(rust, "lots")
-        ],
-        {
-            "rollout_index": pl.Int64,
-            "month_index": pl.Int64,
-            "lot_id": pl.String,
-            "agent_id": pl.String,
-            "account_id": pl.String,
-            "asset_id": pl.String,
-            "purchase_month_index": pl.Int64,
-            "cost_basis_per_unit_quanta": pl.Int64,
-            "remaining_quantity_quanta": pl.Int64,
-            "quantity_scale": pl.Int64,
-        },
-        ["rollout_index", "month_index", "lot_id"],
+        ]
     )
     lots = _held_lots(lots)
-    capital_gains = _sorted(
+    capital_gains = CHANNEL["capital_gains"].build(
         [
             {
                 "rollout_index": rollout,
@@ -279,15 +354,7 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
             for rollout, month, record in _rust_rows(rust, "capital_gains")
             for classification, key in (("ltcg", "long_term_gain"), ("stcg", "short_term_gain"))
             if record[key] != 0
-        ],
-        {
-            "rollout_index": pl.Int64,
-            "month_index": pl.Int64,
-            "agent_id": pl.String,
-            "classification": pl.String,
-            "gain_quanta": pl.Int64,
-        },
-        ["rollout_index", "month_index", "agent_id", "classification"],
+        ]
     )
     # JAX emits a tax liability row only where the amount or the active flag changed, so the
     # Rust projection has to take the same differences rather than every snapshot's state.
@@ -310,19 +377,8 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
                         }
                     )
                 previous[key] = current
-    tax_liability_frame = _sorted(
-        liability_rows,
-        {
-            "rollout_index": pl.Int64,
-            "month_index": pl.Int64,
-            "agent_id": pl.String,
-            "jurisdiction_id": pl.String,
-            "tax_year_end_month": pl.Int64,
-            "amount_owed_quanta": pl.Int64,
-        },
-        ["rollout_index", "month_index", "agent_id", "jurisdiction_id"],
-    )
-    properties = _sorted(
+    tax_liability_frame = CHANNEL["tax_liabilities"].build(liability_rows)
+    properties = CHANNEL["properties"].build(
         [
             {
                 "rollout_index": rollout,
@@ -334,18 +390,9 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
             }
             for rollout, month, record in _rust_rows(rust, "properties")
             if record["active"]
-        ],
-        {
-            "rollout_index": pl.Int64,
-            "month_index": pl.Int64,
-            "property_id": pl.String,
-            "location_id": pl.String,
-            "purchase_month_index": pl.Int64,
-            "adjusted_basis_quanta": pl.Int64,
-        },
-        ["rollout_index", "month_index", "property_id"],
+        ]
     )
-    stakes = _sorted(
+    stakes = CHANNEL["property_stakes"].build(
         [
             {
                 "rollout_index": rollout,
@@ -357,18 +404,9 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
             }
             for rollout, month, record in _rust_rows(rust, "properties")
             if record["active"]
-        ],
-        {
-            "rollout_index": pl.Int64,
-            "month_index": pl.Int64,
-            "property_id": pl.String,
-            "agent_id": pl.String,
-            "contribution_used_quanta": pl.Int64,
-            "equity_ledger_quanta": pl.Int64,
-        },
-        ["rollout_index", "month_index", "property_id", "agent_id"],
+        ]
     )
-    liability_state = _sorted(
+    liability_state = CHANNEL["liabilities"].build(
         [
             {
                 "rollout_index": rollout,
@@ -388,26 +426,9 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
             }
             for rollout, month, record in _rust_rows(rust, "mortgages")
             if record["active"]
-        ],
-        {
-            "rollout_index": pl.Int64,
-            "month_index": pl.Int64,
-            "liability_id": pl.String,
-            "agent_id": pl.String,
-            "payment_account_id": pl.String,
-            "counterparty_agent_id": pl.String,
-            "counterparty_account_id": pl.String,
-            "property_id": pl.String,
-            "principal_quanta": pl.Int64,
-            "annual_interest_rate": pl.Float64,
-            "term_months": pl.Int64,
-            "origination_month_index": pl.Int64,
-            "monthly_payment_quanta": pl.Int64,
-            "interest_paid_ytd_quanta": pl.Int64,
-        },
-        ["rollout_index", "month_index", "liability_id"],
+        ]
     )
-    status = _sorted(
+    status = CHANNEL["rollout_status"].build(
         [
             {
                 "rollout_index": rollout["rollout_id"],
@@ -415,9 +436,7 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
                 "failed_month": rollout["failed_month"],
             }
             for rollout in rust["rollouts"]
-        ],
-        {"rollout_index": pl.Int64, "status": pl.String, "failed_month": pl.Int64},
-        ["rollout_index"],
+        ]
     )
     journal = _sorted(
         [

@@ -16,6 +16,7 @@ import polars as pl
 
 from finance.augur.rust.benchmark.fixture import write_fixture
 from finance.augur.rust.differential.fixture_adapter import build_legacy_fixture
+from finance.augur.rust.fixture_spec import account_ref, rollout_series, shared_series
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.runtime import load_jurisdictions_for
 
@@ -39,15 +40,15 @@ def shared_integer_fixture() -> dict[str, Any]:
         "scenario": {
             "horizon_months": 3,
             "accounts": [
-                {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 1_000},
-                {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 2_000},
+                {"account": account_ref("alice", "checking"), "opening_balance": 1_000},
+                {"account": account_ref("bob", "checking"), "opening_balance": 2_000},
             ],
             "scheduled_transfers": [
                 {
                     "month": 0,
                     "cause_id": "bob_gives_alice_5",
-                    "from": {"agent_id": "bob", "account_id": "checking"},
-                    "to": {"agent_id": "alice", "account_id": "checking"},
+                    "from": account_ref("bob", "checking"),
+                    "to": account_ref("alice", "checking"),
                     "amount": 500,
                 }
             ],
@@ -56,8 +57,8 @@ def shared_integer_fixture() -> dict[str, Any]:
                     "start_month": 1,
                     "end_month": 2,
                     "cause_id": "paycheck",
-                    "from": {"agent_id": "bob", "account_id": "checking"},
-                    "to": {"agent_id": "alice", "account_id": "checking"},
+                    "from": account_ref("bob", "checking"),
+                    "to": account_ref("alice", "checking"),
                     "amount": 100,
                     "income_category": "ordinary",
                 }
@@ -66,8 +67,8 @@ def shared_integer_fixture() -> dict[str, Any]:
                 {
                     "month": 2,
                     "obligation_id": "required-payment",
-                    "from": {"agent_id": "alice", "account_id": "checking"},
-                    "to": {"agent_id": "bob", "account_id": "checking"},
+                    "from": account_ref("alice", "checking"),
+                    "to": account_ref("bob", "checking"),
                     "amount_due": 50,
                 }
             ],
@@ -96,11 +97,7 @@ def shared_integer_fixture() -> dict[str, Any]:
             ],
         },
         "series": [
-            {
-                "series_id": "security:vti",
-                "snapshots": 4,
-                "values": [10_000, 15_000, 15_000, 15_000, 20_000, 15_000, 15_000, 15_000],
-            }
+            rollout_series("security:vti", paths=[[10_000, 15_000, 15_000, 15_000], [20_000, 15_000, 15_000, 15_000]])
         ],
     }
 
@@ -110,15 +107,15 @@ def failure_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 2
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 100},
-        {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 100},
+        {"account": account_ref("bob", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_transfers"] = [
         {
             "month": 1,
             "cause_id": "must-not-run",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "bob", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("bob", "checking"),
             "amount": 1,
         }
     ]
@@ -127,8 +124,8 @@ def failure_fixture() -> dict[str, Any]:
         {
             "month": 0,
             "obligation_id": "too-large",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "bob", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("bob", "checking"),
             "amount_due": 101,
         }
     ]
@@ -144,9 +141,9 @@ def tax_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 12
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "payroll", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 0},
+        {"account": account_ref("payroll", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_transfers"] = []
     scenario["recurring_transfers"] = [
@@ -154,8 +151,8 @@ def tax_fixture() -> dict[str, Any]:
             "start_month": 0,
             "end_month": 11,
             "cause_id": "alice-paycheck",
-            "from": {"agent_id": "payroll", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("payroll", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": 1_666_667,
             "income_category": "ordinary",
         }
@@ -213,9 +210,9 @@ def target_allocation_fixture() -> dict[str, Any]:
         "scenario": {
             "horizon_months": 12,
             "accounts": [
-                {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 1_200_000},
-                {"account": {"agent_id": "landlord", "account_id": "checking"}, "opening_balance": 0},
-                {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+                {"account": account_ref("alice", "checking"), "opening_balance": 1_200_000},
+                {"account": account_ref("landlord", "checking"), "opening_balance": 0},
+                {"account": account_ref("irs", "checking"), "opening_balance": 0},
             ],
             "scheduled_transfers": [],
             "recurring_transfers": [],
@@ -226,8 +223,8 @@ def target_allocation_fixture() -> dict[str, Any]:
                     "end_month": 3,
                     "obligation_id": "rent",
                     "obligation_type": "rent",
-                    "from": {"agent_id": "alice", "account_id": "checking"},
-                    "to": {"agent_id": "landlord", "account_id": "checking"},
+                    "from": account_ref("alice", "checking"),
+                    "to": account_ref("landlord", "checking"),
                     "amount_due": 500_000,
                 }
             ],
@@ -281,8 +278,8 @@ def target_allocation_fixture() -> dict[str, Any]:
             ],
         },
         "series": [
-            {"series_id": "security:vti", "snapshots": 13, "values": [10_000] * 13},
-            {"series_id": "security:bnd", "snapshots": 13, "values": [10_000] * 13},
+            shared_series("security:vti", rollout_count=1, path=[10_000] * 13),
+            shared_series("security:bnd", rollout_count=1, path=[10_000] * 13),
         ],
     }
 
@@ -309,10 +306,10 @@ def financed_property_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 2
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 12_000_000},
-        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "bank", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "county", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 12_000_000},
+        {"account": account_ref("seller", "checking"), "opening_balance": 0},
+        {"account": account_ref("bank", "checking"), "opening_balance": 0},
+        {"account": account_ref("county", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_transfers"] = []
     scenario["recurring_transfers"] = []
@@ -373,21 +370,21 @@ def property_cashflow_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 12
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 30_000_000},
-        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "bank", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "county", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 6_000_000},
-        {"account": {"agent_id": "manager", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 30_000_000},
+        {"account": account_ref("seller", "checking"), "opening_balance": 0},
+        {"account": account_ref("bank", "checking"), "opening_balance": 0},
+        {"account": account_ref("county", "checking"), "opening_balance": 0},
+        {"account": account_ref("tenant", "checking"), "opening_balance": 6_000_000},
+        {"account": account_ref("manager", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_property_cashflows"] = [
         {
             "month": 0,
             "property_id": "home",
             "cause_id": "leasing-fee",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "manager", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("manager", "checking"),
             "amount": 100_000,
             "deduction_category": "ordinary",
         }
@@ -398,8 +395,8 @@ def property_cashflow_fixture() -> dict[str, Any]:
             "end_month": 11,
             "property_id": "home",
             "cause_id": "rent",
-            "from": {"agent_id": "tenant", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("tenant", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": 500_000,
             "income_category": "ordinary",
         },
@@ -408,8 +405,8 @@ def property_cashflow_fixture() -> dict[str, Any]:
             "end_month": 11,
             "property_id": "home",
             "cause_id": "management-fee",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "manager", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("manager", "checking"),
             "amount": 50_000,
             "deduction_category": "ordinary",
         },
@@ -445,7 +442,7 @@ def property_depreciation_fixture(*, sale: bool) -> dict[str, Any]:
         tax_profile["jurisdictions"][1]["section_1250_rate_ppb"] = 0
         scenario["tax_profiles"] = [tax_profile]
         fixture["series"] = [
-            {"series_id": "home_value:sf", "snapshots": 25, "values": [50_000_000] * 12 + [75_000_000] * 13}
+            shared_series("home_value:sf", rollout_count=1, path=[50_000_000] * 12 + [75_000_000] * 13)
         ]
     return fixture
 

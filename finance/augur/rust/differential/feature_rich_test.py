@@ -8,7 +8,6 @@ JAX program, and those compiles are the suite's whole wall clock and peak memory
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import assert_backends_agree
-from finance.augur.rust.differential.fixtures import feature_rich_fixture
 
 # Every policy family the fixture is built to exercise, named by a record channel that is
 # empty unless that family actually ran. Comparing two engines that both did nothing would
@@ -32,10 +31,10 @@ EXERCISED_EVENT_FRAMES = (
 )
 
 
-def test_backends_agree_on_the_feature_rich_scenario(tmp_path) -> None:
+def test_backends_agree_on_the_feature_rich_scenario(feature_rich) -> None:
     """The whole fixture, every state channel and every canonical event frame."""
 
-    result = assert_backends_agree(feature_rich_fixture(tmp_path))
+    result = assert_backends_agree(feature_rich)
 
     assert result.rollout_status.get_column("status").unique().to_list() == ["active"]
     for name in EXERCISED_EVENT_FRAMES:

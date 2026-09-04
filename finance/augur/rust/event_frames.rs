@@ -8,14 +8,19 @@
 //! the engine that defines those units, and a field renamed in `fixture.rs` fails the build
 //! here rather than surfacing later as a `KeyError` in a Python decoder.
 //!
-//! Every struct field name below is an Augur column name, and `EventFrames`' field names are
+//! Each frame below is one table: the Augur column on the left, the engine field it reads on
+//! the right, and a word for how to carry it across. `event_frames!` generates both the
+//! struct and the conversion from that one spec, so a column cannot be declared in one place
+//! and filled in from another.
+//!
+//! Every struct field name is an Augur column name, and `EventFrames`' field names are
 //! Augur's frame names: `finance/augur/sim/events.py` declares both, and
 //! `differential/output_adapter.py` checks a decoded document against those declarations.
 
 use serde::Serialize;
 
 use crate::fixture;
-use crate::money::Quantity;
+use crate::money::{Money, Quantity};
 
 /// A forensic run beside the event frames derived from it.
 ///
@@ -49,541 +54,271 @@ fn units(quantity: Quantity, quantity_scale: i64) -> f64 {
     quantity.0 as f64 / quantity_scale as f64
 }
 
-#[derive(Debug, Serialize)]
-pub struct Transfer {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub from_agent_id: String,
-    pub from_account_id: String,
-    pub to_agent_id: String,
-    pub to_account_id: String,
-    pub amount_quanta: i64,
-    pub income_category: Option<String>,
+/// The Augur column type each carry-word produces.
+///
+/// `Money` serializes as the bare integer it wraps, so a `_quanta` column keeps the engine's
+/// own type rather than being unwrapped to `i64` at every field.
+macro_rules! frame_type {
+    (text) => { String };
+    (maybe) => { Option<String> };
+    (money) => { Money };
+    (flag) => { bool };
+    (count) => { u32 };
+    (month) => { i32 };
+    (rate) => { f64 };
+    (units) => { f64 };
 }
 
-#[derive(Debug, Serialize)]
-pub struct LotDisposition {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub agent_id: String,
-    pub source_account_id: String,
-    pub asset_id: String,
-    pub lot_id: String,
-    pub purchase_month_index: i32,
-    pub units_sold: f64,
-    pub cost_basis_consumed_quanta: i64,
-    pub proceeds_quanta: i64,
-    pub proceeds_account_id: String,
+/// How each carry-word reads its engine field. The only two that do arithmetic are the two
+/// that change units.
+macro_rules! frame_value {
+    (text $row:ident, $($path:ident).+) => { $row.$($path).+.clone() };
+    (maybe $row:ident, $($path:ident).+) => { $row.$($path).+.clone() };
+    (money $row:ident, $($path:ident).+) => { $row.$($path).+ };
+    (flag $row:ident, $($path:ident).+) => { $row.$($path).+ };
+    (count $row:ident, $($path:ident).+) => { $row.$($path).+ };
+    (month $row:ident, $($path:ident).+) => { $row.$($path).+ };
+    (rate $row:ident, $($path:ident).+) => { rate($row.$($path).+) };
+    (units $row:ident, $($path:ident).+) => { units($row.$($path).+, $row.quantity_scale) };
 }
 
-#[derive(Debug, Serialize)]
-pub struct PrivateEquityEvent {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub issuer_id: String,
-    pub asset_id: String,
-    pub event_kind: String,
-    pub regime: String,
-    pub mark_quanta: i64,
-    pub sale_capacity_fraction: f64,
-    pub eligible_fraction: f64,
-    pub forced_sale_fraction: f64,
-    pub liquidity_blocked: bool,
-    pub forced_recovery_cashout_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PrivateEquityOpportunity {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub issuer_id: String,
-    pub asset_id: String,
-    pub event_kind: String,
-    pub regime: String,
-    pub outcome: String,
-    pub mark_quanta: i64,
-    pub sale_capacity_fraction: f64,
-    pub eligible_fraction: f64,
-    pub liquidity_blocked: bool,
-    pub floor_quanta: i64,
-    pub liquid_net_worth_quanta: i64,
-    pub shortfall_quanta: i64,
-    pub units_held: f64,
-    pub sellable_units: f64,
-    pub target_units: f64,
-    pub proceeds_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ObligationAccrual {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub obligation_id: String,
-    pub obligation_type: String,
-    pub agent_id: String,
-    pub from_account_id: String,
-    pub to_agent_id: String,
-    pub to_account_id: String,
-    pub amount_due_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ObligationSettlement {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub obligation_id: String,
-    pub obligation_type: String,
-    pub agent_id: String,
-    pub from_account_id: String,
-    pub amount_due_quanta: i64,
-    pub amount_paid_quanta: i64,
-    pub shortfall_quanta: i64,
-    pub attempted_funding_sources: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RolloutFailure {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub agent_id: String,
-    pub deficit_quanta: i64,
-    pub obligation_id: String,
-    pub obligation_type: String,
-    pub amount_due_quanta: i64,
-    pub amount_paid_quanta: i64,
-    pub shortfall_quanta: i64,
-    pub attempted_funding_sources: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PropertyPurchase {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub property_id: String,
-    pub location_id: String,
-    pub buyer_agent_id: String,
-    pub purchase_price_quanta: i64,
-    pub closing_cost_quanta: i64,
-    pub adjusted_basis_quanta: i64,
-    pub stake_contribution_quanta: i64,
-    pub equity_ledger_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MortgageOrigination {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub liability_id: String,
-    pub agent_id: String,
-    pub payment_account_id: String,
-    pub counterparty_agent_id: String,
-    pub counterparty_account_id: String,
-    pub property_id: String,
-    pub principal_quanta: i64,
-    pub annual_interest_rate: f64,
-    pub term_months: u32,
-    pub monthly_payment_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MortgagePayment {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub liability_id: String,
-    pub agent_id: String,
-    pub counterparty_agent_id: String,
-    pub property_id: String,
-    pub from_account_id: String,
-    pub to_account_id: String,
-    pub interest_quanta: i64,
-    pub principal_quanta: i64,
-    pub total_payment_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SetPrimaryResidence {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub agent_id: String,
-    pub property_id: Option<String>,
-    pub is_primary_residence: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SetRentedFraction {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub property_id: String,
-    pub rented_fraction: f64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CapitalImprovement {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub property_id: String,
-    pub amount_quanta: i64,
-    pub description: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PropertySale {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub property_id: String,
-    pub gross_proceeds_quanta: i64,
-    pub mortgage_payoff_quanta: i64,
-    pub net_cash_to_owner_quanta: i64,
-    pub realized_gain_quanta: i64,
-    pub depreciation_recapture_quanta: i64,
-    pub section_121_exclusion_quanta: i64,
-    pub long_term_capital_gain_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct TaxAccrual {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub agent_id: String,
-    pub jurisdiction_id: String,
-    pub tax_year_end_month: u32,
-    pub amount_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct TaxBreakdown {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub agent_id: String,
-    pub jurisdiction_id: String,
-    pub tax_year_end_month: u32,
-    pub ordinary_income_quanta: i64,
-    pub ltcg_quanta: i64,
-    pub stcg_quanta: i64,
-    pub standard_deduction_quanta: i64,
-    pub mortgage_interest_deduction_quanta: i64,
-    pub salt_deduction_quanta: i64,
-    pub itemized_deduction_quanta: i64,
-    pub ordinary_taxable_quanta: i64,
-    pub capital_gain_taxable_quanta: i64,
-    pub ordinary_tax_quanta: i64,
-    pub capital_gain_tax_quanta: i64,
-    pub total_tax_quanta: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct TaxSettlement {
-    pub rollout_index: u32,
-    pub month_index: u32,
-    pub cause_id: String,
-    pub agent_id: String,
-    pub tax_year_end_month: u32,
-    pub amount_quanta: i64,
-}
-
-/// Every canonical frame, keyed by the name Augur's `EventLog` knows it as.
-#[derive(Debug, Default, Serialize)]
-pub struct EventFrames {
-    pub transfers: Vec<Transfer>,
-    pub lot_dispositions: Vec<LotDisposition>,
-    pub private_equity_events: Vec<PrivateEquityEvent>,
-    pub private_equity_opportunities: Vec<PrivateEquityOpportunity>,
-    pub obligation_accruals: Vec<ObligationAccrual>,
-    pub obligation_settlements: Vec<ObligationSettlement>,
-    pub rollout_failures: Vec<RolloutFailure>,
-    pub property_purchases: Vec<PropertyPurchase>,
-    pub mortgage_originations: Vec<MortgageOrigination>,
-    pub mortgage_payments: Vec<MortgagePayment>,
-    pub set_primary_residence_events: Vec<SetPrimaryResidence>,
-    pub set_rented_fraction_events: Vec<SetRentedFraction>,
-    pub capital_improvement_events: Vec<CapitalImprovement>,
-    pub property_sale_events: Vec<PropertySale>,
-    pub tax_accruals: Vec<TaxAccrual>,
-    pub tax_breakdowns: Vec<TaxBreakdown>,
-    pub tax_settlements: Vec<TaxSettlement>,
-}
-
-impl EventFrames {
-    pub fn from_output(output: &fixture::SimulationOutput) -> Self {
-        let mut frames = Self::default();
-        for rollout in &output.rollouts {
-            frames.extend_from_rollout(rollout);
+/// Declare the canonical frames: `<frame name>: <row type> from <engine field> { columns }`.
+///
+/// `rollout_index` and `month_index` are on every frame and come from the enclosing rollout
+/// and the row's own month, so they are not repeated per frame.
+macro_rules! event_frames {
+    ($(
+        $(#[$meta:meta])*
+        $target:ident : $name:ident from $source:ident {
+            $( $kind:ident $field:ident = $($path:ident).+ ),* $(,)?
         }
-        frames
+    )*) => {
+        $(
+            $(#[$meta])*
+            #[derive(Debug, Serialize)]
+            pub struct $name {
+                pub rollout_index: u32,
+                pub month_index: u32,
+                $( pub $field: frame_type!($kind), )*
+            }
+        )*
+
+        /// Every canonical frame, keyed by the name Augur's `EventLog` knows it as.
+        #[derive(Debug, Default, Serialize)]
+        pub struct EventFrames {
+            $( pub $target: Vec<$name>, )*
+        }
+
+        impl EventFrames {
+            pub fn from_output(output: &fixture::SimulationOutput) -> Self {
+                let mut frames = Self::default();
+                for rollout in &output.rollouts {
+                    $(
+                        frames.$target.extend(rollout.$source.iter().map(|row| $name {
+                            rollout_index: rollout.rollout_id,
+                            month_index: row.month,
+                            $( $field: frame_value!($kind row, $($path).+), )*
+                        }));
+                    )*
+                }
+                frames
+            }
+        }
+    };
+}
+
+event_frames! {
+    transfers: Transfer from transfers {
+        text cause_id = cause_id,
+        text from_agent_id = from.agent_id,
+        text from_account_id = from.account_id,
+        text to_agent_id = to.agent_id,
+        text to_account_id = to.account_id,
+        money amount_quanta = amount,
+        maybe income_category = income_category,
     }
 
-    fn extend_from_rollout(&mut self, rollout: &fixture::RolloutOutput) {
-        let index = rollout.rollout_id;
-        self.transfers
-            .extend(rollout.transfers.iter().map(|row| Transfer {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                from_agent_id: row.from.agent_id.clone(),
-                from_account_id: row.from.account_id.clone(),
-                to_agent_id: row.to.agent_id.clone(),
-                to_account_id: row.to.account_id.clone(),
-                amount_quanta: row.amount.0,
-                income_category: row.income_category.clone(),
-            }));
-        self.lot_dispositions
-            .extend(rollout.dispositions.iter().map(|row| LotDisposition {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                agent_id: row.agent_id.clone(),
-                source_account_id: row.source_account_id.clone(),
-                asset_id: row.asset_id.clone(),
-                lot_id: row.lot_id.clone(),
-                purchase_month_index: row.purchase_month,
-                units_sold: units(row.units, row.quantity_scale),
-                cost_basis_consumed_quanta: row.basis.0,
-                proceeds_quanta: row.proceeds.0,
-                proceeds_account_id: row.proceeds_account_id.clone(),
-            }));
-        self.private_equity_events
-            .extend(
-                rollout
-                    .private_equity_events
-                    .iter()
-                    .map(|row| PrivateEquityEvent {
-                        rollout_index: index,
-                        month_index: row.month,
-                        issuer_id: row.issuer_id.clone(),
-                        asset_id: row.asset_id.clone(),
-                        event_kind: row.event_kind.clone(),
-                        regime: row.regime.clone(),
-                        mark_quanta: row.mark.0,
-                        sale_capacity_fraction: rate(row.sale_capacity_fraction_ppb),
-                        eligible_fraction: rate(row.eligible_fraction_ppb),
-                        forced_sale_fraction: rate(row.forced_sale_fraction_ppb),
-                        liquidity_blocked: row.liquidity_blocked,
-                        forced_recovery_cashout_quanta: row.forced_recovery_cashout.0,
-                    }),
-            );
-        self.private_equity_opportunities
-            .extend(rollout.private_equity_opportunities.iter().map(|row| {
-                PrivateEquityOpportunity {
-                    rollout_index: index,
-                    month_index: row.month,
-                    cause_id: row.cause_id.clone(),
-                    issuer_id: row.issuer_id.clone(),
-                    asset_id: row.asset_id.clone(),
-                    event_kind: row.event_kind.clone(),
-                    regime: row.regime.clone(),
-                    outcome: row.outcome.clone(),
-                    mark_quanta: row.mark.0,
-                    sale_capacity_fraction: rate(row.sale_capacity_fraction_ppb),
-                    eligible_fraction: rate(row.eligible_fraction_ppb),
-                    liquidity_blocked: row.liquidity_blocked,
-                    floor_quanta: row.floor.0,
-                    liquid_net_worth_quanta: row.liquid_net_worth.0,
-                    shortfall_quanta: row.shortfall.0,
-                    units_held: units(row.units_held, row.quantity_scale),
-                    sellable_units: units(row.sellable_units, row.quantity_scale),
-                    target_units: units(row.target_units, row.quantity_scale),
-                    proceeds_quanta: row.proceeds.0,
-                }
-            }));
-        // One engine outcome, two Augur frames: what was owed, and what was actually paid.
-        self.obligation_accruals
-            .extend(rollout.obligations.iter().map(|row| ObligationAccrual {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                obligation_id: row.obligation_id.clone(),
-                obligation_type: row.obligation_type.clone(),
-                agent_id: row.from.agent_id.clone(),
-                from_account_id: row.from.account_id.clone(),
-                to_agent_id: row.to.agent_id.clone(),
-                to_account_id: row.to.account_id.clone(),
-                amount_due_quanta: row.amount_due.0,
-            }));
-        self.obligation_settlements
-            .extend(rollout.obligations.iter().map(|row| ObligationSettlement {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                obligation_id: row.obligation_id.clone(),
-                obligation_type: row.obligation_type.clone(),
-                agent_id: row.from.agent_id.clone(),
-                from_account_id: row.from.account_id.clone(),
-                amount_due_quanta: row.amount_due.0,
-                amount_paid_quanta: row.amount_paid.0,
-                shortfall_quanta: row.shortfall.0,
-                attempted_funding_sources: row.attempted_funding_sources.clone(),
-            }));
-        self.rollout_failures
-            .extend(rollout.rollout_failures.iter().map(|row| RolloutFailure {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                agent_id: row.agent_id.clone(),
-                deficit_quanta: row.deficit.0,
-                obligation_id: row.obligation_id.clone(),
-                obligation_type: row.obligation_type.clone(),
-                amount_due_quanta: row.amount_due.0,
-                amount_paid_quanta: row.amount_paid.0,
-                shortfall_quanta: row.shortfall.0,
-                attempted_funding_sources: row.attempted_funding_sources.clone(),
-            }));
-        self.property_purchases
-            .extend(
-                rollout
-                    .property_purchases
-                    .iter()
-                    .map(|row| PropertyPurchase {
-                        rollout_index: index,
-                        month_index: row.month,
-                        cause_id: row.cause_id.clone(),
-                        property_id: row.property_id.clone(),
-                        location_id: row.location_id.clone(),
-                        buyer_agent_id: row.buyer_agent_id.clone(),
-                        purchase_price_quanta: row.purchase_price.0,
-                        closing_cost_quanta: row.closing_cost.0,
-                        adjusted_basis_quanta: row.adjusted_basis.0,
-                        stake_contribution_quanta: row.stake_contribution.0,
-                        equity_ledger_quanta: row.equity_ledger.0,
-                    }),
-            );
-        self.mortgage_originations
-            .extend(
-                rollout
-                    .mortgage_originations
-                    .iter()
-                    .map(|row| MortgageOrigination {
-                        rollout_index: index,
-                        month_index: row.month,
-                        cause_id: row.cause_id.clone(),
-                        liability_id: row.liability_id.clone(),
-                        agent_id: row.agent_id.clone(),
-                        payment_account_id: row.payment_account_id.clone(),
-                        counterparty_agent_id: row.counterparty_agent_id.clone(),
-                        counterparty_account_id: row.counterparty_account_id.clone(),
-                        property_id: row.property_id.clone(),
-                        principal_quanta: row.principal.0,
-                        annual_interest_rate: rate(row.annual_interest_rate_ppb),
-                        term_months: row.term_months,
-                        monthly_payment_quanta: row.monthly_payment.0,
-                    }),
-            );
-        self.mortgage_payments
-            .extend(rollout.mortgage_payments.iter().map(|row| MortgagePayment {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                liability_id: row.liability_id.clone(),
-                agent_id: row.agent_id.clone(),
-                counterparty_agent_id: row.counterparty_agent_id.clone(),
-                property_id: row.property_id.clone(),
-                from_account_id: row.from_account_id.clone(),
-                to_account_id: row.to_account_id.clone(),
-                interest_quanta: row.interest.0,
-                principal_quanta: row.principal.0,
-                total_payment_quanta: row.total_payment.0,
-            }));
-        self.set_primary_residence_events
-            .extend(
-                rollout
-                    .primary_residence_events
-                    .iter()
-                    .map(|row| SetPrimaryResidence {
-                        rollout_index: index,
-                        month_index: row.month,
-                        agent_id: row.agent_id.clone(),
-                        property_id: row.property_id.clone(),
-                        is_primary_residence: row.is_primary_residence,
-                    }),
-            );
-        self.set_rented_fraction_events
-            .extend(
-                rollout
-                    .property_rented_fraction_events
-                    .iter()
-                    .map(|row| SetRentedFraction {
-                        rollout_index: index,
-                        month_index: row.month,
-                        property_id: row.property_id.clone(),
-                        rented_fraction: rate(row.rented_fraction_ppb),
-                    }),
-            );
-        self.capital_improvement_events
-            .extend(
-                rollout
-                    .capital_improvements
-                    .iter()
-                    .map(|row| CapitalImprovement {
-                        rollout_index: index,
-                        month_index: row.month,
-                        property_id: row.property_id.clone(),
-                        amount_quanta: row.amount.0,
-                        description: row.description.clone(),
-                    }),
-            );
-        self.property_sale_events
-            .extend(rollout.property_sales.iter().map(|row| PropertySale {
-                rollout_index: index,
-                month_index: row.month,
-                property_id: row.property_id.clone(),
-                gross_proceeds_quanta: row.gross_proceeds.0,
-                mortgage_payoff_quanta: row.mortgage_payoff.0,
-                net_cash_to_owner_quanta: row.net_cash_to_owner.0,
-                realized_gain_quanta: row.realized_gain.0,
-                depreciation_recapture_quanta: row.depreciation_recapture.0,
-                section_121_exclusion_quanta: row.section_121_exclusion.0,
-                long_term_capital_gain_quanta: row.long_term_capital_gain.0,
-            }));
-        // One engine outcome again: the amount owed, and the audit trail behind it.
-        self.tax_accruals
-            .extend(rollout.tax_accruals.iter().map(|row| TaxAccrual {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                agent_id: row.agent_id.clone(),
-                jurisdiction_id: row.jurisdiction_id.clone(),
-                tax_year_end_month: row.tax_year_end_month,
-                amount_quanta: row.total_tax.0,
-            }));
-        self.tax_breakdowns
-            .extend(rollout.tax_accruals.iter().map(|row| TaxBreakdown {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                agent_id: row.agent_id.clone(),
-                jurisdiction_id: row.jurisdiction_id.clone(),
-                tax_year_end_month: row.tax_year_end_month,
-                ordinary_income_quanta: row.ordinary_income.0,
-                ltcg_quanta: row.long_term_gain.0,
-                stcg_quanta: row.short_term_gain.0,
-                standard_deduction_quanta: row.standard_deduction.0,
-                mortgage_interest_deduction_quanta: row.mortgage_interest_deduction.0,
-                salt_deduction_quanta: row.salt_deduction.0,
-                itemized_deduction_quanta: row.itemized_deduction.0,
-                ordinary_taxable_quanta: row.ordinary_taxable.0,
-                capital_gain_taxable_quanta: row.long_term_capital_gain_taxable.0,
-                ordinary_tax_quanta: row.ordinary_tax.0,
-                capital_gain_tax_quanta: row.capital_gain_tax.0,
-                total_tax_quanta: row.total_tax.0,
-            }));
-        self.tax_settlements
-            .extend(rollout.tax_settlements.iter().map(|row| TaxSettlement {
-                rollout_index: index,
-                month_index: row.month,
-                cause_id: row.cause_id.clone(),
-                agent_id: row.agent_id.clone(),
-                tax_year_end_month: row.tax_year_end_month,
-                amount_quanta: row.amount.0,
-            }));
+    lot_dispositions: LotDisposition from dispositions {
+        text cause_id = cause_id,
+        text agent_id = agent_id,
+        text source_account_id = source_account_id,
+        text asset_id = asset_id,
+        text lot_id = lot_id,
+        month purchase_month_index = purchase_month,
+        units units_sold = units,
+        money cost_basis_consumed_quanta = basis,
+        money proceeds_quanta = proceeds,
+        text proceeds_account_id = proceeds_account_id,
+    }
+
+    private_equity_events: PrivateEquityEvent from private_equity_events {
+        text issuer_id = issuer_id,
+        text asset_id = asset_id,
+        text event_kind = event_kind,
+        text regime = regime,
+        money mark_quanta = mark,
+        rate sale_capacity_fraction = sale_capacity_fraction_ppb,
+        rate eligible_fraction = eligible_fraction_ppb,
+        rate forced_sale_fraction = forced_sale_fraction_ppb,
+        flag liquidity_blocked = liquidity_blocked,
+        money forced_recovery_cashout_quanta = forced_recovery_cashout,
+    }
+
+    private_equity_opportunities: PrivateEquityOpportunity from private_equity_opportunities {
+        text cause_id = cause_id,
+        text issuer_id = issuer_id,
+        text asset_id = asset_id,
+        text event_kind = event_kind,
+        text regime = regime,
+        text outcome = outcome,
+        money mark_quanta = mark,
+        rate sale_capacity_fraction = sale_capacity_fraction_ppb,
+        rate eligible_fraction = eligible_fraction_ppb,
+        flag liquidity_blocked = liquidity_blocked,
+        money floor_quanta = floor,
+        money liquid_net_worth_quanta = liquid_net_worth,
+        money shortfall_quanta = shortfall,
+        units units_held = units_held,
+        units sellable_units = sellable_units,
+        units target_units = target_units,
+        money proceeds_quanta = proceeds,
+    }
+
+    /// One engine outcome, two Augur frames: what was owed, and what was actually paid.
+    obligation_accruals: ObligationAccrual from obligations {
+        text cause_id = cause_id,
+        text obligation_id = obligation_id,
+        text obligation_type = obligation_type,
+        text agent_id = from.agent_id,
+        text from_account_id = from.account_id,
+        text to_agent_id = to.agent_id,
+        text to_account_id = to.account_id,
+        money amount_due_quanta = amount_due,
+    }
+
+    obligation_settlements: ObligationSettlement from obligations {
+        text cause_id = cause_id,
+        text obligation_id = obligation_id,
+        text obligation_type = obligation_type,
+        text agent_id = from.agent_id,
+        text from_account_id = from.account_id,
+        money amount_due_quanta = amount_due,
+        money amount_paid_quanta = amount_paid,
+        money shortfall_quanta = shortfall,
+        text attempted_funding_sources = attempted_funding_sources,
+    }
+
+    rollout_failures: RolloutFailure from rollout_failures {
+        text cause_id = cause_id,
+        text agent_id = agent_id,
+        money deficit_quanta = deficit,
+        text obligation_id = obligation_id,
+        text obligation_type = obligation_type,
+        money amount_due_quanta = amount_due,
+        money amount_paid_quanta = amount_paid,
+        money shortfall_quanta = shortfall,
+        text attempted_funding_sources = attempted_funding_sources,
+    }
+
+    property_purchases: PropertyPurchase from property_purchases {
+        text cause_id = cause_id,
+        text property_id = property_id,
+        text location_id = location_id,
+        text buyer_agent_id = buyer_agent_id,
+        money purchase_price_quanta = purchase_price,
+        money closing_cost_quanta = closing_cost,
+        money adjusted_basis_quanta = adjusted_basis,
+        money stake_contribution_quanta = stake_contribution,
+        money equity_ledger_quanta = equity_ledger,
+    }
+
+    mortgage_originations: MortgageOrigination from mortgage_originations {
+        text cause_id = cause_id,
+        text liability_id = liability_id,
+        text agent_id = agent_id,
+        text payment_account_id = payment_account_id,
+        text counterparty_agent_id = counterparty_agent_id,
+        text counterparty_account_id = counterparty_account_id,
+        text property_id = property_id,
+        money principal_quanta = principal,
+        rate annual_interest_rate = annual_interest_rate_ppb,
+        count term_months = term_months,
+        money monthly_payment_quanta = monthly_payment,
+    }
+
+    mortgage_payments: MortgagePayment from mortgage_payments {
+        text cause_id = cause_id,
+        text liability_id = liability_id,
+        text agent_id = agent_id,
+        text counterparty_agent_id = counterparty_agent_id,
+        text property_id = property_id,
+        text from_account_id = from_account_id,
+        text to_account_id = to_account_id,
+        money interest_quanta = interest,
+        money principal_quanta = principal,
+        money total_payment_quanta = total_payment,
+    }
+
+    set_primary_residence_events: SetPrimaryResidence from primary_residence_events {
+        text agent_id = agent_id,
+        maybe property_id = property_id,
+        flag is_primary_residence = is_primary_residence,
+    }
+
+    set_rented_fraction_events: SetRentedFraction from property_rented_fraction_events {
+        text property_id = property_id,
+        rate rented_fraction = rented_fraction_ppb,
+    }
+
+    capital_improvement_events: CapitalImprovement from capital_improvements {
+        text property_id = property_id,
+        money amount_quanta = amount,
+        text description = description,
+    }
+
+    property_sale_events: PropertySale from property_sales {
+        text property_id = property_id,
+        money gross_proceeds_quanta = gross_proceeds,
+        money mortgage_payoff_quanta = mortgage_payoff,
+        money net_cash_to_owner_quanta = net_cash_to_owner,
+        money realized_gain_quanta = realized_gain,
+        money depreciation_recapture_quanta = depreciation_recapture,
+        money section_121_exclusion_quanta = section_121_exclusion,
+        money long_term_capital_gain_quanta = long_term_capital_gain,
+    }
+
+    /// One engine outcome again: the amount owed, and the audit trail behind it.
+    tax_accruals: TaxAccrual from tax_accruals {
+        text cause_id = cause_id,
+        text agent_id = agent_id,
+        text jurisdiction_id = jurisdiction_id,
+        count tax_year_end_month = tax_year_end_month,
+        money amount_quanta = total_tax,
+    }
+
+    tax_breakdowns: TaxBreakdown from tax_accruals {
+        text cause_id = cause_id,
+        text agent_id = agent_id,
+        text jurisdiction_id = jurisdiction_id,
+        count tax_year_end_month = tax_year_end_month,
+        money ordinary_income_quanta = ordinary_income,
+        money ltcg_quanta = long_term_gain,
+        money stcg_quanta = short_term_gain,
+        money standard_deduction_quanta = standard_deduction,
+        money mortgage_interest_deduction_quanta = mortgage_interest_deduction,
+        money salt_deduction_quanta = salt_deduction,
+        money itemized_deduction_quanta = itemized_deduction,
+        money ordinary_taxable_quanta = ordinary_taxable,
+        money capital_gain_taxable_quanta = long_term_capital_gain_taxable,
+        money ordinary_tax_quanta = ordinary_tax,
+        money capital_gain_tax_quanta = capital_gain_tax,
+        money total_tax_quanta = total_tax,
+    }
+
+    tax_settlements: TaxSettlement from tax_settlements {
+        text cause_id = cause_id,
+        text agent_id = agent_id,
+        count tax_year_end_month = tax_year_end_month,
+        money amount_quanta = amount,
     }
 }

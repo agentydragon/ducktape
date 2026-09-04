@@ -17,6 +17,7 @@ from finance.augur.rust.differential.fixtures import (
     shared_integer_fixture,
     target_allocation_purchase_fixture,
 )
+from finance.augur.rust.fixture_spec import account_ref
 
 
 def recurring_obligation_fixture() -> dict[str, Any]:
@@ -24,9 +25,9 @@ def recurring_obligation_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 3
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 100_000},
-        {"account": {"agent_id": "landlord", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "utility", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 100_000},
+        {"account": account_ref("landlord", "checking"), "opening_balance": 0},
+        {"account": account_ref("utility", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_transfers"] = []
     scenario["obligations"] = []
@@ -36,8 +37,8 @@ def recurring_obligation_fixture() -> dict[str, Any]:
             "end_month": 2,
             "obligation_id": "rent",
             "obligation_type": "cash_spend",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("landlord", "checking"),
             "amount_due": 60_000,
         },
         {
@@ -45,8 +46,8 @@ def recurring_obligation_fixture() -> dict[str, Any]:
             "end_month": 2,
             "obligation_id": "utility",
             "obligation_type": "cash_spend",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "utility", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("utility", "checking"),
             "amount_due": 1,
         },
     ]
@@ -59,12 +60,12 @@ def series_indexed_amount_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 14
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 20_000_000},
-        {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 20_000_000},
-        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 20_000_000},
-        {"account": {"agent_id": "landlord", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "manager", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 20_000_000},
+        {"account": account_ref("bob", "checking"), "opening_balance": 20_000_000},
+        {"account": account_ref("seller", "checking"), "opening_balance": 0},
+        {"account": account_ref("tenant", "checking"), "opening_balance": 20_000_000},
+        {"account": account_ref("landlord", "checking"), "opening_balance": 0},
+        {"account": account_ref("manager", "checking"), "opening_balance": 0},
     ]
     indexed_inflation = {
         "kind": "series_indexed",
@@ -84,22 +85,22 @@ def series_indexed_amount_fixture() -> dict[str, Any]:
         {
             "month": 2,
             "cause_id": "indexed-gift",
-            "from": {"agent_id": "bob", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("bob", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": indexed_inflation,
         },
         {
             "month": 3,
             "cause_id": "tagged-fixed-gift",
-            "from": {"agent_id": "bob", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("bob", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": {"kind": "fixed", "amount": -17},
         },
         {
             "month": 4,
             "cause_id": "zero-gift",
-            "from": {"agent_id": "bob", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("bob", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": 0,
         },
     ]
@@ -108,8 +109,8 @@ def series_indexed_amount_fixture() -> dict[str, Any]:
             "start_month": 0,
             "end_month": 13,
             "cause_id": "annual-indexed-paycheck",
-            "from": {"agent_id": "bob", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("bob", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": indexed_annual_rent,
         }
     ]
@@ -117,8 +118,8 @@ def series_indexed_amount_fixture() -> dict[str, Any]:
         {
             "month": 2,
             "obligation_id": "indexed-bill",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("landlord", "checking"),
             "amount_due": indexed_inflation,
         }
     ]
@@ -128,8 +129,8 @@ def series_indexed_amount_fixture() -> dict[str, Any]:
             "end_month": 13,
             "obligation_id": "indexed-rent",
             "obligation_type": "cash_spend",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("landlord", "checking"),
             "amount_due": indexed_annual_rent,
         }
     ]
@@ -163,8 +164,8 @@ def series_indexed_amount_fixture() -> dict[str, Any]:
             "month": 2,
             "property_id": "home",
             "cause_id": "indexed-repair",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "manager", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("manager", "checking"),
             "amount": indexed_inflation,
         }
     ]
@@ -174,8 +175,8 @@ def series_indexed_amount_fixture() -> dict[str, Any]:
             "end_month": 13,
             "property_id": "home",
             "cause_id": "indexed-property-rent",
-            "from": {"agent_id": "tenant", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("tenant", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": indexed_annual_rent,
         }
     ]

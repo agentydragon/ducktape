@@ -125,3 +125,9 @@ py_library(
         "@pypi//numpy",
     ],
 )
+
+py_library(
+    name = "fixture_spec",
+    srcs = ["fixture_spec.py"],
+    deps = ["@pypi//more_itertools"],
+)

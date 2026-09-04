@@ -29,6 +29,7 @@ py_library(
     data = ["//finance/augur/rust:simulator_cli"],
     deps = [
         ":fixture_adapter",
+        "//finance/augur/rust:fixture_spec",
         "//finance/augur/rust/benchmark:fixture",
         "//finance/augur/sim:runtime",
         "//finance/augur/sim/compiler:plan",
@@ -52,9 +53,11 @@ py_test(
     srcs = ["allocation_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -67,7 +70,7 @@ py_test(
     srcs = ["feature_rich_test.py"],
     deps = [
         ":backend",
-        ":fixtures",
+        ":conftest",
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest_bazel",
@@ -80,9 +83,11 @@ py_test(
     srcs = ["core_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -95,9 +100,11 @@ py_test(
     srcs = ["private_equity_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -108,11 +115,14 @@ py_test(
     size = "medium",
     srcs = ["product_failure_test.py"],
     deps = [
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/rust:backend",
+        "//finance/augur/rust:fixture_spec",
         "//finance/augur/sim/engine:jax_engine",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -122,6 +132,7 @@ py_test(
     size = "medium",
     srcs = ["product_fan_test.py"],
     deps = [
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
@@ -139,6 +150,7 @@ py_test(
     size = "large",
     srcs = ["product_metrics_test.py"],
     deps = [
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
@@ -156,9 +168,11 @@ py_test(
     srcs = ["property_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -170,9 +184,11 @@ py_test(
     srcs = ["securities_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -184,9 +200,11 @@ py_test(
     srcs = ["tax_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -198,9 +216,11 @@ py_test(
     srcs = ["tlh_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -228,6 +248,7 @@ py_test(
     srcs = ["backend_test.py"],
     deps = [
         ":backend",
+        ":conftest",
         ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
@@ -245,6 +266,7 @@ py_test(
         "//finance/augur/api:public_fixture_properties",
     ],
     deps = [
+        ":conftest",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/api:config",
@@ -254,5 +276,15 @@ py_test(
         "//finance/augur/rust:fixture_encoder",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":fixtures",
+        "@pypi//pytest",
     ],
 )

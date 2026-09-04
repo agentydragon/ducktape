@@ -11,6 +11,7 @@ import pytest_bazel
 
 from finance.augur.rust.differential.backend import assert_backends_agree
 from finance.augur.rust.differential.fixtures import tax_fixture
+from finance.augur.rust.fixture_spec import account_ref
 
 
 def private_equity_fixture() -> dict[str, Any]:
@@ -72,7 +73,7 @@ def private_equity_fixture() -> dict[str, Any]:
         "rollout_count": rollout_count,
         "scenario": {
             "horizon_months": horizon,
-            "accounts": [{"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0}],
+            "accounts": [{"account": account_ref("alice", "checking"), "opening_balance": 0}],
             "scheduled_transfers": [],
             "recurring_transfers": [],
             "obligations": [],
@@ -126,7 +127,7 @@ def private_equity_tax_fixture() -> dict[str, Any]:
     fixture["rollout_count"] = 1
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 12
-    scenario["accounts"].append({"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0})
+    scenario["accounts"].append({"account": account_ref("irs", "checking"), "opening_balance": 0})
     scenario["private_equity_tender_policies"][0]["liquid_net_worth_floor"] = 10_000_000
     scenario["tax_profiles"] = [
         {
