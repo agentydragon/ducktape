@@ -326,8 +326,18 @@ The first burn captured while instrumented. 30-second quota sampling:
 08:02:51  used=4073   remaining=927      stopped
 ```
 
-About 4060 points in ninety seconds, then flat — not a sustained hammer but a burst,
-and not instantaneous with the reset either: a ~30s pause first.
+About 4060 points in the first ninety seconds. **That was a plateau, not the end**: the
+08:00 hour went on to peak at 10561, 2x budget like every other. An early reading of
+"burst, then stopped" was wrong, and so was the same reading of the 07:10 episode —
+both were the same continuous burn seen through too short a window.
+
+**Coverage is the binding limit on every conclusion here.** The exporter went live at
+22:59 UTC on 2026-09-03, so the entire dataset is 9.1 hours, 16:00–01:00 PDT. Nine of
+those ten hours burned fully; only 23:00 PDT was quiet. No daytime hour has ever been
+observed. The "the burn tracks operator activity" reading elsewhere in this note is
+therefore under-determined: it is equally consistent with something running
+unconditionally that the exporter has not yet watched through a quiet period. One idle
+night settles it and costs nothing.
 
 What the wyrm2 recorder shows across those same minutes: **five GitHub-API connections
 per minute**, steady before, during and after. So ~15 connections carried ~4000 points,
