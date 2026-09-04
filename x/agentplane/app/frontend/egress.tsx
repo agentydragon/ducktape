@@ -17,8 +17,7 @@ function ActiveBadge({ binding }: { binding: BindingView }): JSX.Element {
 }
 
 function provenance(binding: BindingView): string {
-  if (binding.from_git) return "from git";
-  return binding.granted_by ? `granted by ${binding.granted_by}` : "unlabelled";
+  return binding.from_git ? "from git" : "runtime";
 }
 
 function expiry(binding: BindingView): JSX.Element {

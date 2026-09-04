@@ -17,13 +17,11 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.app.identity import Caller
 from x.agentplane.app.inventory import Condition, InventoryError
 
-GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
-# The provenance a Flux-applied binding carries (cluster/k8s/agentplane-staging/egress); nothing at
-# runtime deletes such a binding, since the next reconcile would apply it again.
-FLUX_PROVENANCE = "flux"
+# Flux stamps its inventory labels on everything it applies (cluster/k8s/agentplane-staging/egress);
+# nothing at runtime deletes such a binding, since the next reconcile would apply it again.
+FLUX_KUSTOMIZATION_LABEL = "kustomize.toolkit.fluxcd.io/name"
 ACTIVE_CONDITION = "Active"
 
 _EGRESS_API = ("agentplane.allegedly.works", "v1alpha1")
@@ -145,9 +143,6 @@ class BindingView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    granted_by: str | None = Field(
-        description="The provenance label, which is who allowed this: flux, or the caller who granted it."
-    )
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
     subjects: list[str] = Field(description="The Sandboxes this binding names.")
     expires_at: datetime | None = None
@@ -185,21 +180,20 @@ class EgressInventory:
     async def revoke(self, name: str) -> None:
         """Delete a runtime binding, which is how a grant is taken back; a Flux-applied one is
         refused, git being its owner."""
-        if (await self._binding(name)).metadata.labels.get(GRANTED_BY_LABEL) == FLUX_PROVENANCE:
+        if FLUX_KUSTOMIZATION_LABEL in (await self._binding(name)).metadata.labels:
             raise FluxOwnedBindingError(name)
         await self._custom_objects.delete_namespaced_custom_object(
             *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
-    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str], by: Caller) -> None:
-        """The launch-time pick: one binding of the sandbox to the policies, labelled as granted by
-        `by`, owned by the Sandbox so its deletion garbage-collects it. Creating it is the grant."""
+    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str]) -> None:
+        """The launch-time pick: one binding of the sandbox to the policies, owned by the Sandbox so
+        its deletion garbage-collects it. Creating it is the grant."""
         body = {
             "apiVersion": "/".join(_EGRESS_API),
             "kind": "EgressBinding",
             "metadata": {
                 "name": f"{sandbox}-picked",
-                "labels": {GRANTED_BY_LABEL: by.label},
                 # Not the controller: the Sandbox controller owns the Pod and PVC, and this reference is
                 # for cascading deletion only.
                 "ownerReferences": [
@@ -257,12 +251,10 @@ def _policy_view(policy: _EgressPolicy) -> PolicyView:
 
 
 def _binding_view(binding: _EgressBinding, policies: dict[str, PolicyView]) -> BindingView:
-    granted_by = binding.metadata.labels.get(GRANTED_BY_LABEL)
     active = next((c for c in binding.status.conditions if c.type == ACTIVE_CONDITION), None)
     return BindingView(
         name=binding.metadata.name,
-        granted_by=granted_by,
-        from_git=granted_by == FLUX_PROVENANCE,
+        from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
         subjects=[subject.sandbox.name for subject in binding.spec.subjects],
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],

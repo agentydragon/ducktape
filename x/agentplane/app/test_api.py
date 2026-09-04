@@ -12,9 +12,9 @@ from fastapi.testclient import TestClient
 
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.conftest import AGENT, AGENT_AUTH
+from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
-from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
+from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
@@ -63,7 +63,7 @@ def client(
         "live-seeded", subjects=[{"sandbox": {"name": "live"}}], policies=["github"], active=("True", "Resolved", "")
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], granted_by="agent"
+        "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], from_git=False
     )
     app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, reviewer=reviewer)
     with TestClient(app, headers=AGENT_AUTH) as test_client:
@@ -110,7 +110,6 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     row = response.json()
     created = custom_objects.objects[("sandboxes", row["name"])]
     picked = custom_objects.objects[("egressbindings", f"{row['name']}-picked")]
-    assert picked["metadata"]["labels"] == {GRANTED_BY_LABEL: AGENT.label}
     assert picked["metadata"]["ownerReferences"][0]["uid"] == created["metadata"]["uid"]
     assert picked["spec"]["policies"] == ["pypi"]
     # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
@@ -213,9 +212,9 @@ def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> Non
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [(b["name"], b["granted_by"], b["from_git"], b["active"]) for b in body] == [
-        ("live-granted", "agent", False, None),
-        ("live-seeded", "flux", True, True),
+    assert [(b["name"], b["from_git"], b["active"]) for b in body] == [
+        ("live-granted", False, None),
+        ("live-seeded", True, True),
     ]
     assert body[1]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
     # Nothing names `fresh`, so nothing may leave it.

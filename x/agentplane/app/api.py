@@ -22,7 +22,7 @@ from x.agentplane.app.egress import (
     FluxOwnedBindingError,
     PolicyView,
 )
-from x.agentplane.app.identity import Caller, TokenReviewer, require_caller
+from x.agentplane.app.identity import TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
     NewSandbox,
     SandboxInventory,
@@ -99,10 +99,6 @@ def _decisions(request: Request) -> DecisionsClient:
 
 Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
-# The identity a grant is labelled with. Two credentials, both cryptographic: the operator's OIDC
-# session, or a Kubernetes token TokenReview vouches for.
-Operator = Annotated[Caller, Depends(require_caller)]
-
 
 @router.get("")
 async def list_sandboxes(
@@ -112,11 +108,11 @@ async def list_sandboxes(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox, operator: Operator) -> SandboxView:
-    """Create the Sandbox; picked policies become one binding it owns, granted by the caller."""
+async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox) -> SandboxView:
+    """Create the Sandbox; picked policies become one binding it owns."""
     view = await inventory.create(spec)
     if spec.policies:
-        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies, by=operator)
+        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies)
     return view
 
 

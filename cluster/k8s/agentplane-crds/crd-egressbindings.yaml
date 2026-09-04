@@ -1,11 +1,9 @@
 # Attaches EgressPolicies to subjects: named Sandboxes in this slice. The
 # binding's existence is the grant: creating one allows, deleting one takes that back, and it
 # contributes nothing after it expires; the proxy writes back whether it is active and how many
-# referenced policies resolved. Every binding carries the label
-# agentplane.allegedly.works/granted-by naming who allowed it (flux for a seed, the requester for
-# a runtime one; cluster/validation checks the rendered ones). Shared contract with
-# the proxy (x/agentplane/plans/egress_proxy.md); the kubeconform schema under cluster/schemas/
-# is this file's openAPIV3Schema, pinned by cluster/validation/test_agentplane_crd_schemas.py.
+# referenced policies resolved. Shared contract with the proxy (x/agentplane/plans/egress_proxy.md);
+# the kubeconform schema under cluster/schemas/ is this file's openAPIV3Schema, pinned by
+# cluster/validation/test_agentplane_crd_schemas.py.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:

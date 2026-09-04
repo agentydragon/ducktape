@@ -16,7 +16,7 @@ from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
-from x.agentplane.app.identity import Caller, TokenReviewer
+from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from x.agentplane.app.testing.kubernetes import (
@@ -85,16 +85,15 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
     )
 
 
-# The operator a session names, and the agent a reviewed token names: the two credentials the app
-# accepts, and the two shapes of identity a grant can be labelled with.
-GRANTER = Caller.operator("test-operator")
-AGENT = Caller.kubernetes(f"system:serviceaccount:{NAMESPACE}:test-agent")
+# The agent's credential, and what a test client carries: the app's other one is an OIDC session
+# only an authorization-code round trip produces (`test_auth_routes.py`).
+AUDIENCE = "agentplane-test"
+AGENT = f"system:serviceaccount:{NAMESPACE}:test-agent"
+AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential
+AGENT_AUTH = {"Authorization": f"Bearer {AGENT_TOKEN}"}
 # A second ServiceAccount, whose tokens are every bit as valid as the agent's and which the app
 # accepts nothing from: what naming the subjects it does accept is for.
 STRANGER = f"system:serviceaccount:{NAMESPACE}:test-stranger"
-AUDIENCE = "agentplane-test"
-AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential
-AGENT_AUTH = {"Authorization": f"Bearer {AGENT_TOKEN}"}
 STRANGER_TOKEN = "test-stranger-token"  # a test literal, not a real credential
 STRANGER_AUTH = {"Authorization": f"Bearer {STRANGER_TOKEN}"}
 
@@ -102,14 +101,14 @@ STRANGER_AUTH = {"Authorization": f"Bearer {STRANGER_TOKEN}"}
 @pytest.fixture
 def authentication() -> FakeAuthenticationV1Api:
     api = FakeAuthenticationV1Api()
-    api.issue(AGENT_TOKEN, username=AGENT.name, audiences=[AUDIENCE])
+    api.issue(AGENT_TOKEN, username=AGENT, audiences=[AUDIENCE])
     api.issue(STRANGER_TOKEN, username=STRANGER, audiences=[AUDIENCE])
     return api
 
 
 @pytest.fixture
 def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
-    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=frozenset({AGENT.name}))
+    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=frozenset({AGENT}))
 
 
 @pytest.fixture

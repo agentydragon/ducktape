@@ -9,7 +9,6 @@ import pytest_bazel
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
-    check_egress_bindings_name_granter,
     check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
@@ -193,12 +192,11 @@ def _egress_policy(namespace: str, name: str) -> dict:
     }
 
 
-def _egress_binding(namespace: str, policies: list[str], granted_by: str | None = "flux") -> dict:
-    labels = {"agentplane.allegedly.works/granted-by": granted_by} if granted_by else {}
+def _egress_binding(namespace: str, policies: list[str]) -> dict:
     return {
         "apiVersion": "agentplane.allegedly.works/v1alpha1",
         "kind": "EgressBinding",
-        "metadata": {"name": "binding", "namespace": namespace, "labels": labels},
+        "metadata": {"name": "binding", "namespace": namespace},
         "spec": {"subjects": [{"sandbox": {"name": "box"}}], "policies": policies},
     }
 
@@ -225,14 +223,6 @@ def test_egress_binding_policy_missing_or_in_other_namespace_is_flagged() -> Non
     )
     errors = check_egress_bindings_resolve_policies(cluster)
     assert [error.split("'")[3] for error in errors] == ["github", "gitlab"]
-
-
-def test_egress_binding_names_its_granter() -> None:
-    assert check_egress_bindings_name_granter(_egress_cluster([_egress_binding("staging", ["github"])])) == []
-    errors = check_egress_bindings_name_granter(
-        _egress_cluster([_egress_binding("staging", ["github"], granted_by=None)])
-    )
-    assert len(errors) == 1
 
 
 def test_forgejo_image_namespace_must_be_reflected() -> None:

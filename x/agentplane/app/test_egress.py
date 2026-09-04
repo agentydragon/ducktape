@@ -8,8 +8,7 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from x.agentplane.app.conftest import GRANTER
-from x.agentplane.app.egress import GRANTED_BY_LABEL, BindingNotFoundError, EgressInventory, FluxOwnedBindingError
+from x.agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError
 from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_policy
 
 GITHUB_RULE = {
@@ -36,14 +35,14 @@ def _seed(custom_objects: FakeCustomObjectsApi) -> None:
         "live-expiring",
         subjects=[{"sandbox": {"name": "live"}}],
         policies=["pypi", "vanished"],
-        granted_by="agent",
+        from_git=False,
         expires_at="2026-12-01T00:00:00Z",
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
         "live-granted",
         subjects=[{"sandbox": {"name": "live"}}],
         policies=["pypi"],
-        granted_by="agent",
+        from_git=False,
         active=("False", "Expired", "1 of 1 policies resolved"),
     )
     custom_objects.objects[("egressbindings", "other-only")] = egress_binding(
@@ -68,7 +67,7 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
     by_name = {view.name: view for view in await egress.bindings_for("live")}
 
     seed = by_name["live-seeded"]
-    assert (seed.granted_by, seed.from_git) == ("flux", True)
+    assert seed.from_git
     assert (seed.active, seed.active_reason, seed.active_message) == (True, "Resolved", "1 of 1 policies resolved")
     assert seed.subjects == ["live"]
     (policy,) = seed.policies
@@ -92,12 +91,7 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
     assert expiring.active is None
 
     granted = by_name["live-granted"]
-    assert (granted.granted_by, granted.from_git, granted.active, granted.active_reason) == (
-        "agent",
-        False,
-        False,
-        "Expired",
-    )
+    assert (granted.from_git, granted.active, granted.active_reason) == (False, False, "Expired")
     assert granted.subjects == ["live"]
 
 
@@ -121,14 +115,13 @@ async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
 async def test_grant_creates_a_binding_the_sandbox_owns(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    """Creating the binding is the grant: it carries who made it, and nothing has to answer it."""
+    """Creating the binding is the grant: nothing has to answer it afterwards."""
     _seed(custom_objects)
     uid = uuid4()
 
-    await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"], by=GRANTER)
+    await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"])
 
     created = custom_objects.objects[("egressbindings", "live-picked")]
-    assert created["metadata"]["labels"] == {GRANTED_BY_LABEL: GRANTER.label}
     (owner,) = created["metadata"]["ownerReferences"]
     assert owner == {
         "apiVersion": "agents.x-k8s.io/v1beta1",
