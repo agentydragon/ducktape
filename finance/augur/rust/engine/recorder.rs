@@ -502,7 +502,6 @@ pub(super) fn mortgage_states(mortgages: &[MortgageState], failed: bool) -> Vec<
                 mortgage.monthly_payment = Money(0);
                 mortgage.principal = Money(0);
                 mortgage.interest_paid_ytd = Money(0);
-                mortgage.principal_paid_ytd = Money(0);
             }
             mortgage
         })

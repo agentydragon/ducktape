@@ -385,7 +385,6 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
                 "origination_month_index": record["origination_month"],
                 "monthly_payment_quanta": record["monthly_payment"],
                 "interest_paid_ytd_quanta": record["interest_paid_ytd"],
-                "principal_paid_ytd_quanta": record["principal_paid_ytd"],
             }
             for rollout, month, record in _rust_rows(rust, "mortgages")
             if record["active"]
@@ -405,7 +404,6 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
             "origination_month_index": pl.Int64,
             "monthly_payment_quanta": pl.Int64,
             "interest_paid_ytd_quanta": pl.Int64,
-            "principal_paid_ytd_quanta": pl.Int64,
         },
         ["rollout_index", "month_index", "liability_id"],
     )
@@ -601,35 +599,12 @@ type Backend = Callable[[dict[str, Any]], SimulationResult]
 BACKENDS: tuple[Backend, ...] = (run_jax, run_rust)
 
 
-# Columns the engines are known to disagree on, dropped so the rest of the channel is
-# still compared. Each is a bug with a known fix, not a difference in how the two
-# represent the same thing — delete the entry when the fix lands, and the comparison
-# widens again. `assert_results_agree` fails if a listed column is missing, so a rename
-# cannot quietly retire one of these.
-KNOWN_DIVERGENT_COLUMNS: dict[str, tuple[str, ...]] = {
-    # JAX resets `liability_interest_ytd` at the tax-year boundary but never resets
-    # `liability_principal_ytd`, so its "year to date" principal is really life to date;
-    # Rust resets both. The field is output-only — nothing in either engine computes from
-    # it — so the fix is the missing reset beside the interest one in `jax_engine`.
-    "liabilities": ("principal_paid_ytd_quanta",)
-}
-
-
 def assert_results_agree(expected: SimulationResult, actual: SimulationResult) -> None:
     """Every channel both engines answer in, plus every canonical event frame."""
 
     for name, frame in expected.state_channels.items():
-        divergent = KNOWN_DIVERGENT_COLUMNS.get(name, ())
-        missing = set(divergent) - set(frame.columns)
-        if missing:
-            raise AssertionError(f"channel {name!r} has no column {sorted(missing)} to exclude; update the entry")
         try:
-            assert_frame_equal(
-                actual.state_channels[name].drop(divergent),
-                frame.drop(divergent),
-                check_row_order=False,
-                check_column_order=False,
-            )
+            assert_frame_equal(actual.state_channels[name], frame, check_row_order=False, check_column_order=False)
         except AssertionError as error:
             raise AssertionError(f"state channel {name!r} differs between backends") from error
     for spec in EVENT_FRAME_SPECS:

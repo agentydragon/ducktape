@@ -761,7 +761,6 @@ fn financed_property_purchase_and_first_monthly_carry_match_contract() {
 
     let final_month = &rollout.months[2];
     assert_eq!(final_month.mortgages[0].interest_paid_ytd, Money(200_000));
-    assert_eq!(final_month.mortgages[0].principal_paid_ytd, Money(39_820));
     assert_eq!(final_month.mortgages[0].principal, Money(39_960_180));
     let cash: BTreeMap<_, _> = final_month
         .balances

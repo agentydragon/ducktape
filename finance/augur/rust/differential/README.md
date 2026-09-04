@@ -51,17 +51,6 @@ person would not find it:
   emits every snapshot, so only nonzero gains are compared — a zero row and an absent row
   say the same thing.
 
-## Known divergences
-
-`KNOWN_DIVERGENT_COLUMNS` lists what the engines genuinely disagree about. An entry is a
-bug with a known fix, not a difference in representation, and it excludes one column so the
-rest of the channel is still compared. Each is pinned by a test in `backend_test.py` that
-fails when the bug is fixed, which is the signal to delete the entry.
-
-Today that is one column: JAX resets `liability_interest_ytd` at the tax-year boundary but
-never resets `liability_principal_ytd`, so its "year to date" principal is really life to
-date. Rust resets both. The field is output-only in both engines.
-
 ## Scope Rust does not cover
 
 JAX tracks capital gains for any agent holding lots or selling; Rust surfaces them only for

@@ -466,7 +466,6 @@ pub(super) fn execute_property_purchases(
                 principal: mortgage.principal,
                 interest_paid_ytd: Money(0),
                 rental_interest_paid_ytd: Money(0),
-                principal_paid_ytd: Money(0),
                 active: true,
             });
             origination = Some(MortgageOriginationOutcome {
@@ -590,6 +589,5 @@ pub(super) fn reset_property_tax_year_state(
     for mortgage in mortgages {
         mortgage.interest_paid_ytd = Money(0);
         mortgage.rental_interest_paid_ytd = Money(0);
-        mortgage.principal_paid_ytd = Money(0);
     }
 }

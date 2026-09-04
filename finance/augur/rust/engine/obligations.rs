@@ -491,8 +491,6 @@ pub(super) fn settle_obligations(
                         &mortgage.agent_id,
                         rental_interest,
                     )?;
-                    mortgage.principal_paid_ytd =
-                        mortgage.principal_paid_ytd.checked_add(principal)?;
                     if mortgage.principal == Money(0) {
                         mortgage.active = false;
                     }

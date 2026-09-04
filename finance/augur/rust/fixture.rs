@@ -669,7 +669,6 @@ pub struct MortgageState {
     pub principal: Money,
     pub interest_paid_ytd: Money,
     pub rental_interest_paid_ytd: Money,
-    pub principal_paid_ytd: Money,
     pub active: bool,
 }
 
