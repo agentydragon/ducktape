@@ -671,13 +671,20 @@ fn simulate_rollout(
             .iter()
             .filter(|obligation| obligation.month == month)
         {
+            let Some(effect) = configured_obligation_effect(
+                &properties,
+                obligation.property_id.as_deref(),
+                obligation.deduction_category.as_deref(),
+            ) else {
+                continue;
+            };
             active_obligations.push(ActiveObligation {
                 cause_id: format!("{}_m{month}", obligation.obligation_id),
                 obligation_type: obligation.obligation_type.clone(),
                 from: obligation.from.clone(),
                 to: obligation.to.clone(),
                 amount_due: amount_value(fixture, rollout_id, month, &obligation.amount_due)?,
-                effect: ObligationEffect::None,
+                effect,
             });
         }
         for obligation in fixture
@@ -689,13 +696,20 @@ fn simulate_rollout(
                     && obligation.end_month.is_none_or(|end| month <= end)
             })
         {
+            let Some(effect) = configured_obligation_effect(
+                &properties,
+                obligation.property_id.as_deref(),
+                obligation.deduction_category.as_deref(),
+            ) else {
+                continue;
+            };
             active_obligations.push(ActiveObligation {
                 cause_id: format!("{}_m{month}", obligation.obligation_id),
                 obligation_type: obligation.obligation_type.clone(),
                 from: obligation.from.clone(),
                 to: obligation.to.clone(),
                 amount_due: amount_value(fixture, rollout_id, month, &obligation.amount_due)?,
-                effect: ObligationEffect::None,
+                effect,
             });
         }
         active_obligations.extend(property_obligations(

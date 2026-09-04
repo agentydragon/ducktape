@@ -29,9 +29,24 @@ pub(super) fn record_transfer_deduction(
     if deduction_category != Some("ordinary") {
         return Ok(());
     }
+    record_ordinary_deduction(tax_facts, payer_agent_id, amount, RATE_SCALE_PPB)
+}
+
+pub(super) fn record_ordinary_deduction(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    payer_agent_id: &str,
+    amount: Money,
+    deductible_fraction_ppb: i64,
+) -> Result<(), SimulationError> {
+    let deduction = Money(mul_div_round_half_up(
+        amount.0,
+        deductible_fraction_ppb,
+        RATE_SCALE_PPB,
+        "ordinary deduction",
+    )?);
     for ((agent_id, _), facts) in tax_facts {
         if agent_id == payer_agent_id {
-            facts.ordinary_income = facts.ordinary_income.checked_sub(amount)?;
+            facts.ordinary_income = facts.ordinary_income.checked_sub(deduction)?;
         }
     }
     Ok(())

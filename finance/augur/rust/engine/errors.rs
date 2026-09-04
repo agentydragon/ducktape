@@ -230,8 +230,9 @@ pub enum SimulationError {
     InvalidMortgageTerms { liability_id: String },
     #[error("property tax policy references unknown property {property_id:?}")]
     UnknownPropertyTaxProperty { property_id: String },
-    #[error("property cashflow {cause_id:?} references unknown property {property_id:?}")]
-    UnknownPropertyCashflow {
+    #[error("{kind} {cause_id:?} references unknown property {property_id:?}")]
+    UnknownPropertyReference {
+        kind: &'static str,
         cause_id: String,
         property_id: String,
     },
