@@ -151,9 +151,9 @@ def _debundle_pipeline_plan(ctx, out_root):
             "--tree-vendor-marks",
             _shell_source_path(paths.join(pkg, ctx.attr.tree_vendor_marks)),
             # Source-relative paths embedded in the tree config YAML
-            # (e.g. `inputs.js_list_path`) resolve against the execroot.
+            # (e.g. `inputs.js_list_path`) resolve against this root.
             "--tree-source-root",
-            _shell_source_path("."),
+            _tree_source_root_arg(ctx),
             "--out-root",
             shell.quote(out_root),
         ]
@@ -176,7 +176,8 @@ def _debundle_pipeline_plan(ctx, out_root):
         direct = [ctx.file.spec] if ctx.file.spec else [],
         transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
                      [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
-                     [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()],
+                     [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()] +
+                     ([ctx.attr.tree_source_root[DefaultInfo].files] if ctx.attr.tree_source_root else []),
     )
 
     return struct(
@@ -184,6 +185,40 @@ def _debundle_pipeline_plan(ctx, out_root):
         command = "\"${{OLDPWD}}/{}\" {}".format(ctx.executable.debundler.path, " ".join(argv)),
         inputs = inputs,
     )
+
+def _tree_source_root_arg(ctx):
+    """`--tree-source-root`: the root the tree config's source-relative
+    paths (`inputs.root`, `inputs.js_list_path`) resolve against.
+
+    Defaults to the execroot, i.e. the checked-in source tree. Setting
+    `tree_source_root` to any target instead resolves them against the root
+    that target's files live in, derived from `File.root.path` — empty for
+    source files (execroot) and `bazel-out/<cfg>/bin` for generated ones.
+    One label therefore covers both cases, and a corpus whose chunk is
+    *generated* — extracted from a pinned upstream artifact by a build
+    action rather than committed — can feed the pipeline directly, with no
+    `write_source_files` round-trip and nothing vendored into git.
+    """
+    dep = ctx.attr.tree_source_root
+    if not dep:
+        return _shell_source_path(".")
+
+    files = dep[DefaultInfo].files.to_list()
+    if not files:
+        fail("tree_source_root target {} produced no files".format(dep.label))
+
+    roots = {f.root.path: None for f in files}
+    if len(roots) != 1:
+        fail("tree_source_root target {} spans multiple roots: {}".format(
+            dep.label,
+            sorted(roots),
+        ))
+
+    root = files[0].root.path
+    if not root:
+        # Source file: its root *is* the execroot.
+        return _shell_source_path(".")
+    return _shell_execroot_path(root)
 
 def _shell_source_path(workspace_relative):
     """Shell expression referencing a workspace-root-relative source path.
@@ -231,7 +266,18 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     ),
     "input_data": attr.label_list(
         allow_files = True,
-        doc = "Source-tree inputs the spec references (extracted/, snapshots/).",
+        doc = "Inputs the spec references (extracted/, snapshots/). Either source-tree files or, with tree_source_root = \"bindir\", generated outputs.",
+    ),
+    "tree_source_root": attr.label(
+        doc = (
+            "Optional target whose output root the tree config's " +
+            "source-relative paths (`inputs.root`, `inputs.js_list_path`) " +
+            "resolve against. Unset (default) means the execroot, i.e. the " +
+            "checked-in source tree. Point it at a generated target to read " +
+            "a chunk produced by a build action instead of a committed one; " +
+            "the root is derived from the files' own root, so the same " +
+            "attribute works for source and generated targets alike."
+        ),
     ),
     "package_roots": attr.label_keyed_string_dict(
         allow_files = True,
