@@ -119,6 +119,11 @@ class CredentialSource(_Wire):
 
 class CredentialSpec(_Wire):
     source: CredentialSource
+    description: str = Field(
+        min_length=1,
+        description="What this credential is and what it can do, in prose, for the sandbox that will "
+        "present it without ever seeing it. Read by agents, so it is not a place for anything secret.",
+    )
     targets: list[Target] = Field(min_length=1, description="Every exact location this credential may be presented in.")
 
 

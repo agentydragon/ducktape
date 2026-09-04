@@ -69,9 +69,11 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 - **A sandbox can read the rules that apply to it**, at
   `https://egress.agentplane.internal/v1/rules` through the same proxy it sends everything else
   through. The answer names the sandbox and the policies an active binding grants it: each rule's
-  hosts, methods, paths, and where a credential is substituted, its placeholder and every target —
-  which is what a client needs to build the value, since a header name and a placeholder leave open
-  whether the value reads `Bearer <placeholder>` or the placeholder bare. Never the Secret, its key,
+  hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
+  `description`, and every target — which is what a client needs to build the value and to know whose
+  credential it is spending, since a header name and a placeholder leave open both whether the value
+  reads `Bearer <placeholder>` or the placeholder bare, and what the token behind it can do. Never
+  the Secret, its key,
   or its value — the projection is built from its own field list, so a field added to a resource
   does not appear here until someone writes it in.
   The name is reserved and resolves nowhere: nothing is dialled for it, no rule can admit it, and

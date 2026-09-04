@@ -277,12 +277,18 @@ def policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def credential(name: str, *, secret_name: str, key: str, targets: list[dict[str, Any]]) -> dict[str, Any]:
+def credential(
+    name: str, *, secret_name: str, key: str, targets: list[dict[str, Any]], description: str = "a test credential"
+) -> dict[str, Any]:
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "EgressCredential",
         "metadata": {"name": name},
-        "spec": {"source": {"secretRef": {"name": secret_name, "key": key}}, "targets": targets},
+        "spec": {
+            "source": {"secretRef": {"name": secret_name, "key": key}},
+            "description": description,
+            "targets": targets,
+        },
     }
 
 

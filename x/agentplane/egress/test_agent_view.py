@@ -31,11 +31,13 @@ from x.agentplane.egress.resources import (
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
 SECRET_VALUE = "the-real-credential"
+DESCRIPTION = "a token for the bot account, which can write to its own repositories"
 SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
 CREDENTIAL = EgressCredential(
     metadata=ObjectMeta(name="github-pat", generation=1),
     spec=CredentialSpec(
         source=CredentialSource(secret_ref=SecretKeyRef(name="vault-entry", key="credential-key")),
+        description=DESCRIPTION,
         targets=[
             SchemeTokenTarget(header="Authorization", method=TargetMethod.SCHEME_TOKEN, scheme="Bearer"),
             BasicPasswordTarget(header="Authorization", method=TargetMethod.BASIC_PASSWORD),
@@ -87,6 +89,7 @@ def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
     assert github.methods == ["GET", "POST"]
     assert github.credential == CredentialView(
         name="github-pat",
+        description=DESCRIPTION,
         placeholder=PLACEHOLDER,
         targets=[
             TargetView(header="Authorization", method=TargetMethod.SCHEME_TOKEN, scheme="Bearer"),
@@ -94,6 +97,16 @@ def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
         ],
     )
     assert public.credential is None, "a rule that substitutes nothing offers nothing to present"
+
+
+def test_a_sandbox_is_told_whose_credential_it_is_about_to_spend() -> None:
+    """Targets say how to present it; the description says what presenting it does. An agent given
+    only an opaque placeholder can send the request but cannot weigh whether it should."""
+    (policy,) = agent_view(_index(), SANDBOX, NOW).policies
+    github, _public = policy.rules
+
+    assert github.credential is not None
+    assert github.credential.description == DESCRIPTION
 
 
 def test_the_secret_and_its_whereabouts_are_absent_from_the_whole_document() -> None:

@@ -46,7 +46,9 @@ def credential(name: str, *targets: Target) -> EgressCredential:
     return EgressCredential(
         metadata=ObjectMeta(name=name),
         spec=CredentialSpec(
-            source=CredentialSource(secret_ref=SecretKeyRef(name="pat", key="token")), targets=list(targets)
+            source=CredentialSource(secret_ref=SecretKeyRef(name="pat", key="token")),
+            description=f"the {name} test credential",
+            targets=list(targets),
         ),
     )
 

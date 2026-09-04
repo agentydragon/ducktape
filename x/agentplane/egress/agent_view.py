@@ -9,6 +9,10 @@ in: the header, the shape of the value, and the scheme where the shape has one. 
 enough to build a request the proxy will substitute into -- a placeholder plus a header name is not,
 because a client has to know whether the value reads `Bearer <placeholder>` or the placeholder bare.
 
+It is also told the credential's `description`, which is how it learns *whose* credential it is
+about to spend and what that identity can do. An agent holding an opaque placeholder can send a
+request; only one that knows the placeholder stands for a bot account's token can weigh whether to.
+
 Secretless by construction, and by construction rather than by discipline: this module builds the
 projection from its own field list and never from a resource object wholesale, so a field added to
 `EgressCredential` -- a second source, a decrypted value, anything -- does not appear here until
@@ -43,6 +47,7 @@ class CredentialView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    description: str = Field(description="What the credential is and what it can do, as its owner wrote it.")
     placeholder: str = Field(description="Inert string to send; the proxy swaps the real value in.")
     targets: list[TargetView] = Field(description="Every location the proxy substitutes at.")
 
@@ -87,6 +92,7 @@ def _target_view(target: Target) -> TargetView:
 def _credential_view(credential: EgressCredential) -> CredentialView:
     return CredentialView(
         name=credential.metadata.name,
+        description=credential.spec.description,
         placeholder=credential.placeholder,
         targets=[_target_view(target) for target in credential.spec.targets],
     )
