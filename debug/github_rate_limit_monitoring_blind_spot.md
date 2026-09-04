@@ -862,6 +862,22 @@ Over the same six hours, with every pod gone, the recorder's public destinations
 `172.182.*`, no QUIC.** So the poller is neither a pod on wyrm2 nor a host process on
 wyrm2, under instruments that now filter nothing.
 
+### What the six hours do and do not separate
+
+The operator was asleep for the whole window, so "no pods on wyrm2" and "no operator
+activity" were removed together. That splits the two consumers unevenly:
+
+- **The 1 Hz baseline is cleanly attributed.** It ran at exactly 60/minute through six
+  hours with no pods _and_ no operator, so it is neither. Nothing about the confound
+  weakens that.
+- **The bursts are not.** They stopped after 14:20 and the plateau is pure baseline, but
+  pods and operator activity vanished at the same time, so which one carried the bursts
+  is unresolved. They were plausibly the tf-runners, or agent sessions, or both.
+
+The discriminator is cheap now that kubelet is back: an hour with pods running and the
+operator idle. If bursts return, they are workload; if the hour stays flat at 3600, they
+follow the operator.
+
 ### Which reframes the partition test
 
 The account went quiet when wyrm2 was **powered off**, and stayed burning at 3600/h when
