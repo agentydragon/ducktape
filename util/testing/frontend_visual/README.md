@@ -44,6 +44,18 @@ If the single component has a real production container that owns its width
 actual container/class in the harness — not a synthetic hardcoded width — so
 the screenshot tracks the true CSS instead of a number that can drift from it.
 
+## Wait bounds
+
+Every wait `visual-test-lib.mjs` makes — both navigations, the mount wait, and
+`assertNetworkSettled` — is bounded by `remainingWaitMs()` (`deadline.mjs`),
+which derives one process-wide deadline from Bazel's `TEST_TIMEOUT`. A
+scenario-specific wait a harness adds should take the same bound rather than a
+literal: `5000` for the first mount was comfortable on an idle machine and
+expired on a loaded RBE worker while the bundle was still loading, reporting an
+arbitrary elapsed time instead of the page failing to mount. A scenario that
+genuinely needs longer raises its target's `size`, which is where the deadline
+comes from.
+
 ## Verifying determinism
 
 A harness "passing" only proves it rendered — it says nothing about whether two

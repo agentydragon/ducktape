@@ -15,6 +15,7 @@
 // Node script lints under the .mjs node-globals block.
 /* global document, window, requestAnimationFrame */
 
+import { remainingWaitMs } from "./deadline.mjs";
 import { frozenClockScript, FROZEN_NOW_MS } from "./launcher.mjs";
 
 /** Wait `ms`. Prefer `waitForStable` or a Puppeteer `waitFor*` — see STYLE.md § Waiting. */
@@ -77,7 +78,7 @@ export async function prepareDeterministicPage(page, { viewport, colorScheme, no
  * A page with no ledger passes: a harness that stubs no fetch has nothing to settle, and
  * `abortUnexpectedRequests` is the fence that keeps such a page's network empty.
  */
-export async function assertNetworkSettled(page, { context, timeoutMs = 10_000 } = {}) {
+export async function assertNetworkSettled(page, { context, timeoutMs = remainingWaitMs() ?? 10_000 } = {}) {
   const prefix = context ? `${context}: ` : "";
   if (!(await page.evaluate(() => Boolean(window.__visualNetworkLedger__)))) return;
   try {
