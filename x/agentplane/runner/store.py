@@ -22,6 +22,7 @@ class SessionRecord(BaseModel):
     cwd: str
     model: str
     reasoning_effort: str
+    instructions: str = Field(default="", description="SessionSpec.instructions; empty for a session without any")
     native_session_id: str | None = Field(
         default=None, description="Claude session id or Codex thread id, once the harness has assigned one"
     )
@@ -33,6 +34,7 @@ class SessionRecord(BaseModel):
             cwd=spec.cwd,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
+            instructions=spec.instructions,
         )
 
     def spec(self) -> pb.SessionSpec:
@@ -41,6 +43,7 @@ class SessionRecord(BaseModel):
             cwd=self.cwd,
             model=self.model,
             reasoning_effort=self.reasoning_effort,
+            instructions=self.instructions,
         )
 
 

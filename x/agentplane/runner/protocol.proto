@@ -55,6 +55,14 @@ message SessionSpec {
   string cwd = 2;
   string model = 3;
   string reasoning_effort = 4;
+  // Standing instructions for the session: what the harness is working on, and the orders that hold
+  // for every turn of it. They reach the model appended to the harness's own system prompt, which
+  // keeps each harness's coding-agent policy in place, and are fixed for the session's life, since
+  // a spec supplied on re-attach must equal the stored one. Empty is a session without any.
+  //
+  // Claude Code re-sends them at each harness start, resume included; Codex stores them in the
+  // thread when it is created and a resume never restates them. See the runner SPEC.
+  string instructions = 5;
 }
 
 message Open {

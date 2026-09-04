@@ -17,6 +17,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, TypeAdapter
 
 from x.agentplane.native.claude.blocks import Block
+from x.agentplane.native.omit_none import OmitNone
 from x.agentplane.native.tagged import UNKNOWN, tag_or_unknown
 
 
@@ -288,10 +289,6 @@ def parse_frame(frame: dict[str, Any]) -> ClaudeFrame:
 # Outbound frames.
 
 
-class InitializeBody(BaseModel):
-    subtype: Literal["initialize"] = "initialize"
-
-
 class HookMatcher(BaseModel):
     """One registration entry for a hook event, matching every tool. A firing arrives as a
     `hook_callback` carrying one of these ids; without a matcher the CLI's schema wants none sent."""
@@ -301,17 +298,25 @@ class HookMatcher(BaseModel):
     hook_callback_ids: list[str] = Field(alias="hookCallbackIds")
 
 
-class HookedInitializeBody(BaseModel):
-    """`initialize` with hooks: registration happens only here, once per session."""
+class InitializeBody(OmitNone):
+    """The options an `initialize` carries, none of them settable anywhere else in a session.
+
+    `hooks` registers the callbacks answering each hook event. `append_system_prompt` is added to
+    the harness's own system prompt for every turn, leaving its coding-agent policy in place, unlike
+    the `systemPrompt` slot beside it, which replaces the prompt outright.
+    """
+
+    model_config = ConfigDict(validate_by_name=True, serialize_by_alias=True)
 
     subtype: Literal["initialize"] = "initialize"
-    hooks: dict[str, list[HookMatcher]]
+    hooks: dict[str, list[HookMatcher]] | None = None
+    append_system_prompt: str | None = Field(default=None, alias="appendSystemPrompt")
 
 
 class InitializeRequest(BaseModel):
     type: Literal["control_request"] = "control_request"
     request_id: str = Field(default_factory=lambda: f"capture-{uuid4().hex}")
-    request: InitializeBody | HookedInitializeBody = Field(default_factory=InitializeBody)
+    request: InitializeBody = Field(default_factory=InitializeBody)
 
 
 class InterruptBody(BaseModel):

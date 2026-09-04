@@ -23,9 +23,20 @@ def initialized() -> wire.InitializedNotification:
 
 
 def thread_start(
-    request_id: str, *, cwd: str, model: str, effort: str, persist: bool = False, config: dict[str, Any] | None = None
+    request_id: str,
+    *,
+    cwd: str,
+    model: str,
+    effort: str,
+    persist: bool = False,
+    config: dict[str, Any] | None = None,
+    instructions: str = "",
 ) -> wire.ThreadStartRequest:
-    """`config` adds per-thread `config.toml` keys; app-server layers them over its own configuration."""
+    """`config` adds per-thread `config.toml` keys; app-server layers them over its own configuration.
+
+    `instructions` becomes the thread's developer instructions, which the app-server keeps with the
+    thread, so a `thread/resume` does not restate them. Empty sends no key for them.
+    """
     return wire.ThreadStartRequest(
         id=request_id,
         params=wire.ThreadStartParams(
@@ -37,6 +48,7 @@ def thread_start(
             model=model,
             # Replaces the broad default coding-agent policy in recorded model requests.
             base_instructions=BASE_INSTRUCTIONS,
+            developer_instructions=instructions or None,
             config={"model_reasoning_effort": effort, **(config or {})},
         ),
     )

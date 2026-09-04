@@ -68,12 +68,15 @@ class CodexAdapter(HarnessAdapter):
                 next(self._request_ids), thread_id=self._thread_id
             )
         else:
+            # A thread takes the session's standing instructions once, when it is created; the
+            # resume branch above reaches an app-server that already has them.
             frame = driver.thread_start(
                 next(self._request_ids),
                 cwd=record.cwd,
                 model=record.model,
                 effort=record.reasoning_effort,
                 persist=True,
+                instructions=record.instructions,
             )
         response, _ = await self._request(frame)
         if response.error is not None:

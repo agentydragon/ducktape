@@ -44,6 +44,9 @@ class ModelRequest:
     """What the harness sent upstream, as provider-neutral markers."""
 
     raw: UpstreamRequest
+    # The instruction text the model sees outside the conversation: the harness's system prompt,
+    # and any developer preamble it sends alongside.
+    system_text: str
     user_texts: list[str]
     assistant_texts: list[str]
     reasoning_texts: list[str]

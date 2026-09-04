@@ -8,13 +8,20 @@ from uuid import uuid4
 from x.agentplane.native.claude import wire
 
 
-def initialize(*, hooks: dict[str, list[str]] | None = None) -> wire.InitializeRequest:
-    """`hooks` maps a hook event to the callback ids answering it; each firing is a `hook_callback`."""
-    if hooks is None:
-        return wire.InitializeRequest()
+def initialize(*, hooks: dict[str, list[str]] | None = None, instructions: str = "") -> wire.InitializeRequest:
+    """`hooks` maps a hook event to the callback ids answering it; each firing is a `hook_callback`.
+
+    `instructions` is appended to the harness's system prompt for every turn of the session; empty
+    leaves the prompt as the harness builds it, and sends no key for it.
+    """
     return wire.InitializeRequest(
-        request=wire.HookedInitializeBody(
-            hooks={event: [wire.HookMatcher(hook_callback_ids=ids)] for event, ids in hooks.items()}
+        request=wire.InitializeBody(
+            hooks=(
+                None
+                if hooks is None
+                else {event: [wire.HookMatcher(hook_callback_ids=ids)] for event, ids in hooks.items()}
+            ),
+            append_system_prompt=instructions or None,
         )
     )
 

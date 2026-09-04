@@ -71,7 +71,8 @@ class ClaudeAdapter(HarnessAdapter):
         }
 
     async def handshake(self) -> str:
-        initialize = driver.initialize()
+        # Every start sends the session's standing instructions, so a resumed harness has them too.
+        initialize = driver.initialize(instructions=self.session.record.instructions)
         await self.session.request(
             initialize, matches=lambda frame: _control_response_for(frame, initialize.request_id)
         )

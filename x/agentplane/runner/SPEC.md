@@ -14,6 +14,10 @@ page is what the runner guarantees about it.
   supplied `spec` must equal the stored one. Open starts the harness when it is not running,
   resuming the native conversation when the session has one, and creates `spec.cwd`, which must
   be absolute, when it does not exist yet.
+- `spec.instructions` are the session's standing instructions: what the session is for, and the
+  orders that hold for every turn of it. They reach the model appended to the harness's own system
+  prompt, so each harness keeps its coding-agent policy; empty is a session without any. They are
+  fixed for the session's life, because a `spec` supplied on re-attach must equal the stored one.
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
 - `ListSessions` returns every session in the state directory with its spec, harness state,
@@ -86,6 +90,27 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   first, records `HarnessExited` with `stopped_by_runner`, then stops its server with a five-second
   grace and exits. Whatever supervises the runner must allow it at least twenty seconds before
   killing it; a harness killed outright is `HarnessLost` on the next start instead.
+
+## Standing instructions across a resume
+
+Both harnesses put the session's instructions in front of the model on every turn, a resumed
+conversation included, but by different routes, and the difference decides what a client could ever
+do with a changed value.
+
+- **Claude Code** takes them as `appendSystemPrompt` in the `initialize` control request, which the
+  runner sends at _every_ harness start. The text lands in the system prompt block after the
+  harness's own prompt, separated by a blank line, and the value in the spec is what each launch
+  sends. A different value would take effect at the next start.
+- **Codex** takes them as `developerInstructions` on `thread/start`, which the runner sends only for
+  a _fresh_ thread. The app-server stores them as a `developer` message at the head of the thread's
+  history, and a resumed thread replays that message out of its rollout, so they survive a resume
+  the runner never restates. What a resume cannot do is change them: the stored message belongs to
+  the thread, for as long as the thread exists.
+
+So the protocol's "instructions are fixed for the session's life" is not a stylistic choice: it is
+the strongest promise both harnesses can keep. Editing a live session's standing instructions is
+buildable on Claude Code and is not buildable on Codex without starting a new thread, which is a new
+session and a new transcript.
 
 ## What the harnesses do not promise
 

@@ -388,3 +388,42 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_instructions",
+    # Two harness launches per provider; 16s on an idle worker.
+    size = "medium",
+    srcs = ["test_instructions.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
+        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
+    ],
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":client",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/runner/testing:events",
+        "//x/agentplane/runner/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    srcs = ["test_store.py"],
+    deps = [
+        ":conftest",
+        ":store",
+        "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)

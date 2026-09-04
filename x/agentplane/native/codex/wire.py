@@ -15,6 +15,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, TypeAdapter
 from pydantic.alias_generators import to_camel
 
+from x.agentplane.native.omit_none import OmitNone
 from x.agentplane.native.tagged import UNKNOWN, tag_or_unknown
 
 RequestId = str | int
@@ -303,13 +304,17 @@ class InitializedNotification(Wire):
     method: Literal["initialized"] = "initialized"
 
 
-class ThreadStartParams(Wire):
+class ThreadStartParams(Wire, OmitNone):
+    """`base_instructions` replaces the app-server's coding-agent policy; `developer_instructions`
+    is carried beside it, and the thread keeps it for every turn the thread ever runs."""
+
     cwd: str
     approval_policy: str
     sandbox: str
     ephemeral: bool
     model: str
     base_instructions: str
+    developer_instructions: str | None = None
     config: dict[str, Any]
 
 

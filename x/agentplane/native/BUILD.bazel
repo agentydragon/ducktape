@@ -23,3 +23,9 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "omit_none",
+    srcs = ["omit_none.py"],
+    deps = ["@pypi//pydantic"],
+)

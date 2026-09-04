@@ -94,5 +94,17 @@ def test_outbound_requests_serialize_camel_case_except_user_input_fields() -> No
     assert json.loads(driver.initialized().model_dump_json(by_alias=True)) == {"method": "initialized"}
 
 
+def test_thread_start_names_developer_instructions_only_when_it_has_them() -> None:
+    bare = json.loads(driver.thread_start("r1", cwd="/w", model="m", effort="low").model_dump_json(by_alias=True))
+    assert "developerInstructions" not in bare["params"]
+    instructed = json.loads(
+        driver.thread_start("r1", cwd="/w", model="m", effort="low", instructions="Stand by.").model_dump_json(
+            by_alias=True
+        )
+    )
+    assert instructed["params"]["developerInstructions"] == "Stand by."
+    assert instructed["params"]["baseInstructions"] == driver.BASE_INSTRUCTIONS
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

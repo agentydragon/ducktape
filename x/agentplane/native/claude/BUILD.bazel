@@ -32,6 +32,7 @@ py_library(
     srcs = ["wire.py"],
     deps = [
         ":blocks",
+        "//x/agentplane/native:omit_none",
         "//x/agentplane/native:tagged",
         "@pypi//pydantic",
     ],

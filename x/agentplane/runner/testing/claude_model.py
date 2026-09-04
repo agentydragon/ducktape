@@ -29,6 +29,7 @@ class ClaudeModel(ScriptedModel):
         request = MessagesRequest.parse(raw)
         return ModelRequest(
             raw=raw,
+            system_text=request.system_text,
             # Claude Code adds `<system-reminder>` blocks of its own to the user turn on a resumed
             # session; they are harness context, not user input.
             user_texts=[text for text in request.texts("user") if not text.startswith("<system-reminder>")],

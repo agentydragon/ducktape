@@ -131,5 +131,16 @@ def test_outbound_frames_serialize_the_wire_shape_the_harness_reads() -> None:
     assert interrupt["request_id"].startswith("capture-")
 
 
+def test_initialize_names_only_the_options_it_was_given() -> None:
+    """An option the CLI's schema reads as `string | null` must be absent, not null, when unset."""
+    bare = json.loads(driver.initialize().model_dump_json(by_alias=True))
+    assert bare["type"] == "control_request"
+    assert bare["request"] == {"subtype": "initialize"}
+    hooked = json.loads(driver.initialize(hooks={"Stop": ["cb-1"]}).model_dump_json(by_alias=True))
+    assert hooked["request"] == {"subtype": "initialize", "hooks": {"Stop": [{"hookCallbackIds": ["cb-1"]}]}}
+    instructed = json.loads(driver.initialize(instructions="Stand by.").model_dump_json(by_alias=True))
+    assert instructed["request"] == {"subtype": "initialize", "appendSystemPrompt": "Stand by."}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
