@@ -6,7 +6,7 @@ resolved for public-coder. `haku-openclaw-spike` has the same vintage state and
 was still failing at (1) when this was written, so this doubles as its runbook.
 
 Remaining public-coder cleanup:
-<../../cluster/k8s/agents/public-coder-agent/TODO.md>.
+<../../../cluster/k8s/agents/public-coder-agent/TODO.md>.
 
 ## The shape of the trap
 

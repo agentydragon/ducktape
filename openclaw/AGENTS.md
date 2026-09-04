@@ -6,7 +6,7 @@ A bump is not just the version string: **2026.8.1 took the public-coder agent do
 for ~5 hours across four independent failures**, three of which shared one shape —
 startup detects a pending state migration and hard-fails, only `doctor` performs
 it, and `doctor` refuses to run under Nix. Full diagnosis and the recovery
-runbook: <../debug/openclaw_2026_8_1_recovery/README.md>.
+runbook: <debug/openclaw_2026_8_1_recovery/README.md>.
 
 Before bumping, read the upstream release notes for **state migrations and
 retired config keys**, and expect a maintenance window for any instance whose
