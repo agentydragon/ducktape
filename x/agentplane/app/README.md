@@ -100,7 +100,7 @@ Sandbox -> Pod, PVC               |
                   runner container <-+
                     runner process, state dir on the PVC
                     claude / codex child per session
-                    model traffic to LiteLLM with the cheap-experiments key from a Secret
+                    model traffic to LiteLLM through the egress proxy, which holds the key
 ```
 
 Kubernetes is the sandbox inventory, including the archived flag; the runner holds the live
@@ -113,10 +113,11 @@ product state beyond that until a feature needs it.
   reconnect; Pod replacement changes the address and the session log makes the cursor valid across
   it. A Service per sandbox is not needed until something outside the cluster must reach a runner.
 - **Staging first, on the cheap key:** the first instance exists for the agent to test against
-  autonomously, so its runner Pods carry the `cheap-experiments` LiteLLM key as environment, the
-  same operational convenience the `agent-workspaces` Codex lane uses. The credentialless egress
-  design in [the ADR](../plans/adr_sandbox_proxy_gateway.md) governs external systems, not the
-  model endpoint.
+  autonomously, so its sandboxes spend the `cheap-experiments` LiteLLM budget. The Pod holds no
+  key: a harness sends the placeholder the `litellm-cheap-experiments` EgressCredential derives
+  from its name, and the proxy substitutes the real one, so the model endpoint is governed by the
+  credentialless egress design in [the ADR](../plans/adr_sandbox_proxy_gateway.md) rather than
+  excepted from it.
 - **Transport security on the runner port:** Cilium policy between the app namespace and the
   sandbox Pods is the v0 control. Authentication on the port itself waits for the credentialed
   readiness gate.

@@ -70,10 +70,12 @@ spec:
             - HOME
             - --harness-env
             - PATH
-            # Both spellings of each, since clients disagree on case. NO_PROXY is loopback (the
-            # sidecar itself and the runner's own listeners) and in-cluster Service names in the
-            # forms clients build; LiteLLM is deliberately not among them, so model traffic takes
-            # the sidecar like everything else and the proxy is what holds the key.
+            # Both spellings of each, since clients disagree on case. NO_PROXY is loopback and
+            # nothing else -- the sidecar itself and the runner's own listeners. A cluster-suffix
+            # entry cannot be here: `.svc.cluster.local` covers the LiteLLM host, and with it
+            # listed a harness sent its model calls direct, where the runner's CiliumNetworkPolicy
+            # (networkpolicy.yaml) drops them, so every turn failed on ConnectionRefused. Model
+            # traffic takes the sidecar like everything else, and the proxy is what holds the key.
             - --harness-env
             - HTTP_PROXY=http://127.0.0.1:3128
             - --harness-env
@@ -83,9 +85,9 @@ spec:
             - --harness-env
             - https_proxy=http://127.0.0.1:3128
             - --harness-env
-            - NO_PROXY=127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local
+            - NO_PROXY=127.0.0.1,localhost
             - --harness-env
-            - no_proxy=127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local
+            - no_proxy=127.0.0.1,localhost
             # The trust bundle, mounted over the system store below and named explicitly for the
             # clients that read an env pointer (Node, Python, curl, requests, git's libcurl).
             - --harness-env
