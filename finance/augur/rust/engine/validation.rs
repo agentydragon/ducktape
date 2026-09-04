@@ -298,6 +298,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             && policy.floor_annual_yield_ppb >= 0
             && policy.floor_annual_yield_ppb <= policy.peak_annual_yield_ppb
             && policy.maturity_decay_exponent_ppb > 0
+            && policy.maturity_decay_exponent_ppb % (RATE_SCALE_PPB / 2) == 0
             && policy.drawdown_sensitivity_ppb >= 0
             && (0..=RATE_SCALE_PPB).contains(&policy.short_term_fraction_ppb)
             && private_equity_issuer(&policy.asset_id).is_none()

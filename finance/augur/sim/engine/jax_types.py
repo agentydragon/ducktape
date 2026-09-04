@@ -121,10 +121,10 @@ class _FoldedHarvest:
     policy_idx: int
     gain_profile: int
     lot_indices: tuple[int, ...]
-    peak_annual_yield: float
-    floor_annual_yield: float
-    maturity_decay_exponent: float
-    drawdown_sensitivity: float
+    peak_annual_yield_ppb: int
+    floor_annual_yield_ppb: int
+    maturity_decay_half_exponent: int
+    drawdown_sensitivity_ppb: int
     short_term_fraction: float
 
 

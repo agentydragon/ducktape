@@ -11,7 +11,7 @@ use crate::{
     fixture::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondSpec, BondState, CapitalGainState,
         CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
-        InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
+        HarvestPolicySpec, InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
         MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
         PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome, PrivateEquityProtocolOutcome,
         PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
@@ -63,6 +63,7 @@ use validation::*;
 const EXTERNAL_AGENT: &str = "__external__";
 const OPENING_EQUITY: &str = "equity:opening";
 const RATE_SCALE_PPB: i64 = 1_000_000_000;
+const MONTHS_PER_YEAR: i64 = 12;
 const INDEX_LEVEL_SCALE: i64 = 1_000_000_000;
 const MAX_EXACT_F64_INTEGER: i64 = 1_i64 << 53;
 const CONTRACT_SCALE: i128 = 1_000_000_000_000_000_000;

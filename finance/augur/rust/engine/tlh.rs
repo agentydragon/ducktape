@@ -57,24 +57,29 @@ pub(super) fn execute_tlh_harvest(
                 .saturating_sub(cumulative_harvest[policy_index].0)
                 .max(0),
         );
-        let embedded_gain = if market_value.0 > 0 {
-            ((market_value.0 - adjusted_basis.0) as f64 / market_value.0 as f64).clamp(0.0, 1.0)
+        let embedded_gain_ppb = if market_value.0 > 0 {
+            mul_div_round_half_up(
+                market_value.0 - adjusted_basis.0,
+                RATE_SCALE_PPB,
+                market_value.0,
+                "TLH embedded gain",
+            )?
+            .clamp(0, RATE_SCALE_PPB)
         } else {
-            0.0
+            0
         };
-        let period_return = if prior_price > 0 {
-            (price - prior_price) as f64 / prior_price as f64
+        let drawdown_ppb = if prior_price > 0 {
+            mul_div_round_half_up(
+                prior_price - price,
+                RATE_SCALE_PPB,
+                prior_price,
+                "TLH period drawdown",
+            )?
+            .max(0)
         } else {
-            0.0
+            0
         };
-        let peak = policy.peak_annual_yield_ppb as f64 / RATE_SCALE_PPB as f64;
-        let floor = policy.floor_annual_yield_ppb as f64 / RATE_SCALE_PPB as f64;
-        let gamma = policy.maturity_decay_exponent_ppb as f64 / RATE_SCALE_PPB as f64;
-        let sensitivity = policy.drawdown_sensitivity_ppb as f64 / RATE_SCALE_PPB as f64;
-        let maturity = (1.0 - embedded_gain).powf(gamma);
-        let base_monthly = (floor + (peak - floor) * maturity) / 12.0;
-        let fraction = base_monthly * (1.0 + sensitivity * (-period_return).max(0.0));
-        let fraction_ppb = f64_factor_to_ppb(fraction, "TLH harvest fraction")?;
+        let fraction_ppb = harvest_fraction_ppb(policy, embedded_gain_ppb, drawdown_ppb)?;
         let ceiling = Money(
             original_basis
                 .0
@@ -118,19 +123,63 @@ pub(super) fn execute_tlh_harvest(
     Ok(())
 }
 
-fn f64_factor_to_ppb(value: f64, operation: &'static str) -> Result<i64, SimulationError> {
-    if !value.is_finite() || value < 0.0 {
-        return Err(SimulationError::Arithmetic(ArithmeticError::Overflow {
-            operation,
-        }));
+/// One PPB factor times another, rounded half up.
+fn mul_ppb(left: i64, right: i64, operation: &'static str) -> Result<i64, SimulationError> {
+    Ok(mul_div_round_half_up(
+        left,
+        right,
+        RATE_SCALE_PPB,
+        operation,
+    )?)
+}
+
+/// `base ** (half_exponent / 2)` in PPB, exactly.
+///
+/// A half-integer exponent is a whole number of multiplications and at most one square
+/// root, and `i64::isqrt` is an exact floor — which is why `HarvestYieldParams` and the
+/// fixture validator admit only those exponents. `sim/tlh_harvest.py` evaluates the same
+/// formula for the JAX engine; two exact floors agree without mirroring each other.
+fn pow_half_ppb(base: i64, half_exponent: i64) -> Result<i64, SimulationError> {
+    let mut power = RATE_SCALE_PPB;
+    for _ in 0..half_exponent / 2 {
+        power = mul_ppb(power, base, "TLH maturity decay")?;
     }
-    let scaled = value * RATE_SCALE_PPB as f64;
-    if scaled > i64::MAX as f64 {
-        return Err(SimulationError::Arithmetic(ArithmeticError::Overflow {
-            operation,
-        }));
+    if half_exponent % 2 == 0 {
+        return Ok(power);
     }
-    Ok((scaled + 0.5).floor() as i64)
+    let root = (base * RATE_SCALE_PPB).isqrt();
+    mul_ppb(power, root, "TLH maturity decay")
+}
+
+/// The shared monthly harvest-yield curve, in parts per billion.
+///
+/// The same formula as `harvest_fraction_curve_ppb` in `sim/tlh_harvest.py`, in integers so
+/// the two engines agree exactly rather than to within a rounding of float64.
+fn harvest_fraction_ppb(
+    policy: &HarvestPolicySpec,
+    embedded_gain_ppb: i64,
+    drawdown_ppb: i64,
+) -> Result<i64, SimulationError> {
+    let maturity = pow_half_ppb(
+        RATE_SCALE_PPB - embedded_gain_ppb,
+        policy.maturity_decay_exponent_ppb / (RATE_SCALE_PPB / 2),
+    )?;
+    let annual = policy.floor_annual_yield_ppb.checked_add(mul_ppb(
+        policy.peak_annual_yield_ppb - policy.floor_annual_yield_ppb,
+        maturity,
+        "TLH annual yield",
+    )?);
+    let annual = annual.ok_or(SimulationError::Arithmetic(ArithmeticError::Overflow {
+        operation: "TLH annual yield",
+    }))?;
+    let base_monthly = (annual + MONTHS_PER_YEAR / 2) / MONTHS_PER_YEAR;
+    let kicker = RATE_SCALE_PPB
+        + mul_ppb(
+            policy.drawdown_sensitivity_ppb,
+            drawdown_ppb,
+            "TLH drawdown kicker",
+        )?;
+    mul_ppb(base_monthly, kicker, "TLH harvest fraction")
 }
 
 pub(super) fn tlh_give_back_for_pool_sale(
