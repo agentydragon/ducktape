@@ -27,7 +27,8 @@ class CodexLaunch:
 class RunnerConfig:
     # Holds `sessions/<session_id>/` with the session log and the harness's own persistence.
     state_dir: Path
-    # Base environment of every harness child (HOME, PATH); provider variables are added per launch.
+    # Base environment of every harness child, as --harness-env gave it; provider variables are
+    # added per launch.
     environment: Mapping[str, str] = field(default_factory=dict)
     claude: ClaudeLaunch | None = None
     codex: CodexLaunch | None = None

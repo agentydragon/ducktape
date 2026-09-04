@@ -1,8 +1,9 @@
 /**
  * Visual-test harness: the app mounted on canned data, nothing on the network. The `?page=` query
  * (set by visual-test-lib) picks the route; `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers the inventory and session routes from fixtures, and
- * `EventSource` replays one turn of runner events into the session view.
+ * app's client captures the stub) answers the routes a page still asks for, and `EventSource`
+ * serves both stream shapes: one snapshot per live view, and one turn of runner events into the
+ * session view.
  */
 import "./network";
 import "@mantine/core/styles.css";
@@ -13,6 +14,7 @@ import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import type { BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
+import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
 import {
   AttachedSchema,
   Direction,
@@ -42,7 +44,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-    profile: "coder",
     archived: false,
     state: "running",
     created_at: ago(3 * HOUR),
@@ -65,7 +66,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "codex-c3d4",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-    profile: null,
     archived: false,
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
@@ -94,7 +94,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "old-e5f6",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    profile: null,
     archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),
@@ -113,7 +112,7 @@ const POLICIES: PolicyView[] = [
         hosts: ["api.github.com", "github.com", "*.githubusercontent.com"],
         methods: ["GET", "POST"],
         paths: null,
-        credential: { secret: "harness-github-pat", key: "token", header: "Authorization" },
+        credential: "harness-github-pat",
       },
     ],
   },
@@ -125,31 +124,23 @@ const POLICIES: PolicyView[] = [
   },
 ];
 
-/** One seed binding from git, active; one runtime ask still pending, which the proxy has refused so far. */
+/** One seed binding from git, which only git removes; one the app granted at launch, now expired. */
 const BINDINGS: BindingView[] = [
   {
-    name: "demo-a1b2-asks",
-    granted_by: "agent",
+    name: "demo-a1b2-7q4xk",
     from_git: false,
-    subjects: [{ sandbox: "demo-a1b2", match_labels: null }],
-    approval: "pending",
-    approved_by: null,
-    approved_at: null,
-    expires_at: new Date(NOW + 6 * HOUR).toISOString(),
+    subjects: ["demo-a1b2"],
+    expires_at: ago(2 * HOUR),
     policies: [POLICIES[1]],
     missing_policies: [],
     active: false,
-    active_reason: "NotApproved",
-    active_message: "approval is pending",
+    active_reason: "Expired",
+    active_message: "1 of 1 policies resolved",
   },
   {
-    name: "sandboxes-github-public",
-    granted_by: "flux",
+    name: "demo-a1b2-github-public",
     from_git: true,
-    subjects: [{ sandbox: null, match_labels: { "agentplane.allegedly.works/managed": "true" } }],
-    approval: "approved",
-    approved_by: "harness-operator",
-    approved_at: ago(24 * HOUR),
+    subjects: ["demo-a1b2"],
     expires_at: null,
     policies: [POLICIES[0]],
     missing_policies: [],
@@ -169,7 +160,7 @@ const DECISIONS: Decision[] = [
     outcome: "allow",
     address: "140.82.116.5",
     reason: null,
-    binding: "sandboxes-github-public",
+    binding: "demo-a1b2-github-public",
     policy: "github-public",
     rule: 0,
     substituted: false,
@@ -183,7 +174,7 @@ const DECISIONS: Decision[] = [
     outcome: "allow",
     address: "140.82.116.5",
     reason: null,
-    binding: "sandboxes-github-public",
+    binding: "demo-a1b2-github-public",
     policy: "github-public",
     rule: 0,
     substituted: true,
@@ -372,12 +363,11 @@ const EVENTS: Event[] = [
   event(34, { case: "textDelta", value: { itemId: "m#1", text: "Reading `src` now" } }, [32]),
 ];
 
+// Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
+// live streams above.
 routes.push(
   ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
-  ["GET", /^\/sandboxes$/, () => SANDBOXES],
-  ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
-  ["GET", /^\/sandboxes\/([^/]+)\/egress$/, () => BINDINGS],
   ["GET", /^\/sandboxes\/([^/]+)\/egress\/decisions$/, () => egressDecisions()],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
@@ -392,8 +382,29 @@ routes.push(
   ]
 );
 
-/** One attached stream: the canned events, then silence, the way a session mid-turn looks. */
-class ReplayingEventSource extends EventTarget {
+const FRESH: WatchHealth = {
+  fresh: true,
+  stale_after_seconds: 900,
+  refreshed_seconds_ago: { sandboxes: 4.2, pods: 3.1, egressbindings: 11.7, egresspolicies: 11.7 },
+};
+
+/** A watch that has stopped cycling: what the `_stale` scenarios have to show rather than hide. */
+const WEDGED: WatchHealth = {
+  fresh: false,
+  stale_after_seconds: 900,
+  refreshed_seconds_ago: { sandboxes: 2417.4, pods: 2417.4, egressbindings: 11.7, egresspolicies: 11.7 },
+};
+
+function watch(): WatchHealth {
+  return new URLSearchParams(window.location.search).get("page")?.endsWith("_stale") ? WEDGED : FRESH;
+}
+
+/**
+ * The app's two stream shapes: a live view, which is one snapshot and then whatever changes (here,
+ * nothing), and a session, which is the canned turn and then silence, the way a session mid-turn
+ * looks.
+ */
+class HarnessEventSource extends EventTarget {
   readonly url: string;
   readyState = 1;
 
@@ -401,14 +412,32 @@ class ReplayingEventSource extends EventTarget {
     super();
     this.url = url;
     // After the view's listeners are attached, which happens right after construction.
-    setTimeout(() => {
-      this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, ATTACHED) }));
-      for (const event of EVENTS) {
-        this.dispatchEvent(
-          new MessageEvent("event", { data: toJsonString(EventSchema, event), lastEventId: String(event.sequence) })
-        );
-      }
-    }, 0);
+    setTimeout(() => this.serve(new URL(url, "http://harness")), 0);
+  }
+
+  private serve(url: URL): void {
+    if (url.pathname === "/live/sandboxes") {
+      const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
+      return;
+    }
+    const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
+    if (sandbox !== null) {
+      const snapshot: SandboxSnapshot = {
+        sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
+        bindings: BINDINGS,
+        threads: THREADS,
+        watch: watch(),
+      };
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
+      return;
+    }
+    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, ATTACHED) }));
+    for (const event of EVENTS) {
+      this.dispatchEvent(
+        new MessageEvent("event", { data: toJsonString(EventSchema, event), lastEventId: String(event.sequence) })
+      );
+    }
   }
 
   close(): void {
@@ -416,10 +445,12 @@ class ReplayingEventSource extends EventTarget {
   }
 }
 
-window.EventSource = ReplayingEventSource as unknown as typeof EventSource;
+window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
 const PAGES: Record<string, string> = {
   sandboxes: "/",
+  // The same list under a watch that has stopped: the banner is the page saying so.
+  sandboxes_stale: "/",
   sandbox: "/sandboxes/demo-a1b2",
   sandbox_egress: "/sandboxes/demo-a1b2?tab=egress",
   session: "/sandboxes/demo-a1b2/sessions/s-1",

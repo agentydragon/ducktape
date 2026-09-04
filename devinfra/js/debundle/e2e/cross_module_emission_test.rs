@@ -338,15 +338,15 @@ export { runtimeService, runtimeCache };
 #[test]
 fn duplicate_source_match_class_claims_report_exports_and_selector_origins() {
     let class_selector = r#"class K {
-  CLASS_REST;
+  ANYTHING;
   open() {
     return "open";
   }
-  CLASS_REST;
+  ANYTHING;
   close() {
     return "closed";
   }
-  CLASS_REST;
+  ANYTHING;
 }"#;
     let opts = FixtureOpts::new(
         r#"class RuntimeCatalog {
@@ -396,11 +396,11 @@ export { RuntimeCatalog };
 #[test]
 fn repeated_source_match_selectors_use_native_solver_across_modules() {
     let class_selector = r#"class K {
-  CLASS_REST;
+  ANYTHING;
   label() {
     return "catalog";
   }
-  CLASS_REST;
+  ANYTHING;
 }"#;
     let opts = FixtureOpts::new(
         r#"class RuntimeCatalog {
@@ -449,11 +449,11 @@ export { RuntimeCatalog };
 #[test]
 fn duplicate_source_match_members_in_one_module_report_member_origins() {
     let class_selector = r#"class K {
-  CLASS_REST;
+  ANYTHING;
   label() {
     return "catalog";
   }
-  CLASS_REST;
+  ANYTHING;
 }"#;
     let opts = FixtureOpts::new(
         r#"class RuntimeCatalog {

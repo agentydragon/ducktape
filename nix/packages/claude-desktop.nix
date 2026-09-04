@@ -15,7 +15,7 @@
   pkgs,
 }:
 let
-  version = "1.18286.0";
+  version = "1.40609.1";
 in
 pkgs.stdenv.mkDerivation {
   pname = "claude-desktop";
@@ -23,7 +23,7 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop/claude-desktop_${version}_amd64.deb";
-    hash = "sha256-jzFK0agKq1JxGo6qvAaq5I+zQfCt6koNcmTbXKudBTY=";
+    hash = "sha256-gBguhRHGu+5t4mx+4iX70qmroidO8UBaHYnNj+ejgNw=";
   };
 
   nativeBuildInputs = with pkgs; [
@@ -118,7 +118,12 @@ pkgs.stdenv.mkDerivation {
     # Point the desktop entry's Exec lines at our wrapper. Match the three
     # `Exec=claude-desktop <arg>` lines (main + NewChat/NewCode actions) without
     # touching StartupWMClass/Icon, which also contain the literal name.
-    substituteInPlace $out/share/applications/claude-desktop.desktop \
+    #
+    # Gotcha: the entry is named `com.anthropic.Claude.desktop`, not after the
+    # binary. It was `claude-desktop.desktop` up to 1.18286.0, so a version bump
+    # can rename it out from under `--replace-fail` and fail the install phase;
+    # the icons kept the old `claude-desktop` stem.
+    substituteInPlace $out/share/applications/com.anthropic.Claude.desktop \
       --replace-fail "Exec=claude-desktop " "Exec=$out/bin/claude-desktop "
 
     runHook postInstall

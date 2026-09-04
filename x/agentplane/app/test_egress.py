@@ -8,91 +8,64 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from x.agentplane.app.conftest import APPROVER
-from x.agentplane.app.egress import (
-    GRANTED_BY_LABEL,
-    ApprovalState,
-    BindingNotFoundError,
-    EgressInventory,
-    FluxOwnedBindingError,
-)
-from x.agentplane.app.inventory import MANAGED_LABEL, PROFILE_LABEL
+from x.agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
 from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_policy
 
 GITHUB_RULE = {
     "hosts": ["api.github.com", "*.githubusercontent.com"],
     "methods": ["GET", "POST"],
-    "credential": {
-        "secretRef": {"name": "test-github-pat", "key": "token"},
-        "header": "Authorization",
-        "placeholder": "test-placeholder",
-    },
+    "credentialRef": {"name": "test-github-pat"},
 }
-APPROVED = {"state": "approved", "by": "test-operator", "at": "2026-09-01T12:00:00Z"}
 
 
 def _seed(custom_objects: FakeCustomObjectsApi) -> None:
     custom_objects.objects[("egresspolicies", "github")] = egress_policy("github", [GITHUB_RULE])
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[("egressbindings", "all-managed")] = egress_binding(
-        "all-managed",
-        subjects=[{"sandboxSelector": {"matchLabels": {MANAGED_LABEL: "true"}}}],
+    custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
+        "live-seeded",
+        subjects=[{"sandbox": {"name": "live"}}],
         policies=["github"],
-        approval=APPROVED,
         active=("True", "Resolved", "1 of 1 policies resolved"),
     )
-    custom_objects.objects[("egressbindings", "coders")] = egress_binding(
-        "coders",
-        subjects=[{"sandboxSelector": {"matchLabels": {PROFILE_LABEL: "coder"}}}],
+    custom_objects.objects[("egressbindings", "live-expiring")] = egress_binding(
+        "live-expiring",
+        subjects=[{"sandbox": {"name": "live"}}],
         policies=["pypi", "vanished"],
-        approval=APPROVED,
+        from_git=False,
         expires_at="2026-12-01T00:00:00Z",
     )
-    custom_objects.objects[("egressbindings", "live-asks")] = egress_binding(
-        "live-asks",
+    custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
+        "live-granted",
         subjects=[{"sandbox": {"name": "live"}}],
         policies=["pypi"],
-        approval={"state": "pending"},
-        granted_by="agent",
-        active=("False", "NotApproved", "approval is pending"),
+        from_git=False,
+        active=("False", "Expired", "1 of 1 policies resolved"),
     )
     custom_objects.objects[("egressbindings", "other-only")] = egress_binding(
-        "other-only", subjects=[{"sandbox": {"name": "other"}}], policies=["pypi"], approval=APPROVED
+        "other-only", subjects=[{"sandbox": {"name": "other"}}], policies=["pypi"]
     )
 
 
-async def test_bindings_for_matches_by_name_and_by_every_selector_label(
+async def test_bindings_for_lists_the_bindings_naming_the_sandbox(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     _seed(custom_objects)
 
-    plain = await egress.bindings_for("live", {MANAGED_LABEL: "true"})
-    coder = await egress.bindings_for("live", {MANAGED_LABEL: "true", PROFILE_LABEL: "coder"})
-    unmanaged = await egress.bindings_for("other", {})
-
-    assert [view.name for view in plain] == ["all-managed", "live-asks"]
-    assert [view.name for view in coder] == ["all-managed", "coders", "live-asks"]
-    assert [view.name for view in unmanaged] == ["other-only"]
+    assert [view.name for view in await egress.bindings_for("live")] == ["live-expiring", "live-granted", "live-seeded"]
+    assert [view.name for view in await egress.bindings_for("other")] == ["other-only"]
 
 
-async def test_a_binding_view_carries_provenance_approval_expiry_policies_and_the_proxy_condition(
+async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_condition(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     _seed(custom_objects)
 
-    by_name = {
-        view.name: view for view in await egress.bindings_for("live", {MANAGED_LABEL: "true", PROFILE_LABEL: "coder"})
-    }
+    by_name = {view.name: view for view in await egress.bindings_for("live")}
 
-    seed = by_name["all-managed"]
-    assert (seed.granted_by, seed.from_git, seed.approval, seed.approved_by) == (
-        "flux",
-        True,
-        ApprovalState.APPROVED,
-        "test-operator",
-    )
+    seed = by_name["live-seeded"]
+    assert seed.from_git
     assert (seed.active, seed.active_reason, seed.active_message) == (True, "Resolved", "1 of 1 policies resolved")
-    assert seed.subjects[0].match_labels == {MANAGED_LABEL: "true"}
+    assert seed.subjects == ["live"]
     (policy,) = seed.policies
     (rule,) = policy.rules
     assert (policy.name, rule.hosts, rule.methods, rule.paths) == (
@@ -101,72 +74,47 @@ async def test_a_binding_view_carries_provenance_approval_expiry_policies_and_th
         ["GET", "POST"],
         None,
     )
-    assert rule.credential is not None
-    assert (rule.credential.secret, rule.credential.key, rule.credential.header) == (
-        "test-github-pat",
-        "token",
-        "Authorization",
-    )
+    assert rule.credential == "test-github-pat"
 
-    coders = by_name["coders"]
-    assert coders.expires_at == datetime(2026, 12, 1, tzinfo=UTC)
-    assert ([policy.name for policy in coders.policies], coders.missing_policies) == (["pypi"], ["vanished"])
-    assert coders.active is None
+    expiring = by_name["live-expiring"]
+    assert expiring.expires_at == datetime(2026, 12, 1, tzinfo=UTC)
+    assert ([policy.name for policy in expiring.policies], expiring.missing_policies) == (["pypi"], ["vanished"])
+    assert expiring.active is None
 
-    ask = by_name["live-asks"]
-    assert (ask.granted_by, ask.from_git, ask.approval, ask.active, ask.active_reason) == (
-        "agent",
-        False,
-        ApprovalState.PENDING,
-        False,
-        "NotApproved",
-    )
-    assert ask.subjects[0].sandbox == "live"
-
-
-async def test_approve_and_deny_write_the_approval_as_the_deciding_operator(
-    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
-) -> None:
-    _seed(custom_objects)
-
-    await egress.approve("live-asks", by=APPROVER)
-    approved = dict(custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"])
-    await egress.deny("live-asks", by=APPROVER)
-    denied = dict(custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"])
-
-    assert (approved["state"], approved["by"]) == ("approved", APPROVER.name)
-    assert (denied["state"], denied["by"]) == ("denied", APPROVER.name)
-    assert approved["at"].endswith("Z")
-    assert denied["at"] >= approved["at"]
-    with pytest.raises(BindingNotFoundError):
-        await egress.approve("nope", by=APPROVER)
+    granted = by_name["live-granted"]
+    assert (granted.from_git, granted.active, granted.active_reason) == (False, False, "Expired")
+    assert granted.subjects == ["live"]
 
 
 async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
+    """Deleting the rule is the whole revocation; a Flux-applied one would come straight back, so
+    the app refuses it instead of deleting an object the next reconcile re-creates."""
     _seed(custom_objects)
 
-    await egress.revoke("live-asks")
+    await egress.revoke("live-granted")
 
-    assert ("egressbindings", "live-asks") not in custom_objects.objects
+    assert ("egressbindings", "live-granted") not in custom_objects.objects
     with pytest.raises(FluxOwnedBindingError):
-        await egress.revoke("all-managed")
-    assert ("egressbindings", "all-managed") in custom_objects.objects
+        await egress.revoke("live-seeded")
+    assert ("egressbindings", "live-seeded") in custom_objects.objects
     with pytest.raises(BindingNotFoundError):
-        await egress.revoke("live-asks")
+        await egress.revoke("live-granted")
 
 
-async def test_grant_creates_an_approved_binding_the_sandbox_owns(
+async def test_grant_creates_a_binding_the_sandbox_owns(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
+    """Creating the binding is the grant: nothing has to answer it afterwards. The API server names
+    it, so the app learns the name from what it gets back."""
     _seed(custom_objects)
     uid = uuid4()
 
-    await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"], by=APPROVER)
+    granted = await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"])
 
-    created = custom_objects.objects[("egressbindings", "live-picked")]
-    assert created["metadata"]["labels"] == {GRANTED_BY_LABEL: APPROVER.label}
+    assert granted.name.startswith("live-")
+    created = custom_objects.objects[("egressbindings", granted.name)]
     (owner,) = created["metadata"]["ownerReferences"]
     assert owner == {
         "apiVersion": "agents.x-k8s.io/v1beta1",
@@ -176,12 +124,46 @@ async def test_grant_creates_an_approved_binding_the_sandbox_owns(
         "controller": False,
         "blockOwnerDeletion": False,
     }
-    assert created["spec"]["subjects"] == [{"sandbox": {"name": "live"}}]
-    assert created["spec"]["policies"] == ["pypi", "github"]
-    assert (created["spec"]["approval"]["state"], created["spec"]["approval"]["by"]) == ("approved", APPROVER.name)
+    assert created["spec"] == {"subjects": [{"sandbox": {"name": "live"}}], "policies": ["pypi", "github"]}
     # And the app reads its own grant back like any other binding, not from git.
-    (picked,) = [view for view in await egress.bindings_for("live", {}) if view.name == "live-picked"]
-    assert (picked.from_git, [policy.name for policy in picked.policies]) == (False, ["pypi", "github"])
+    (read_back,) = [view for view in await egress.bindings_for("live") if view.name == granted.name]
+    assert (read_back.from_git, [policy.name for policy in read_back.policies]) == (False, ["pypi", "github"])
+
+
+async def test_a_second_grant_is_another_binding_and_not_an_edit_of_the_first(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """`expiresAt` is per binding, so granting a running sandbox cannot append to a binding that
+    carries other policies: at the deadline it would take those away too."""
+    _seed(custom_objects)
+    uid = uuid4()
+
+    first = await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi"])
+    second = await egress.grant(sandbox="live", sandbox_uid=uid, policies=["github"])
+
+    assert first.name != second.name
+    assert custom_objects.objects[("egressbindings", first.name)]["spec"]["policies"] == ["pypi"]
+    assert custom_objects.objects[("egressbindings", second.name)]["spec"]["policies"] == ["github"]
+    assert custom_objects.patches == []
+    # Both name the sandbox, so the proxy's union over its bindings is what composes them.
+    assert {first.name, second.name} <= {view.name for view in await egress.bindings_for("live")}
+
+
+async def test_a_grant_naming_a_policy_the_namespace_lacks_writes_nothing(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """A binding may carry a name nothing answers to — the proxy reports that as `MissingPolicy` —
+    but the app will not mint one, so a mistyped grant leaves no rule behind to puzzle over."""
+    _seed(custom_objects)
+    before = set(custom_objects.objects)
+
+    with pytest.raises(UnknownPolicyError) as refused:
+        await egress.grant(sandbox="live", sandbox_uid=uuid4(), policies=["pypi", "vanished"])
+
+    assert refused.value.names == ["vanished"]
+    assert set(custom_objects.objects) == before
+    with pytest.raises(UnknownPolicyError):
+        await egress.require_policies(["vanished"])
 
 
 async def test_list_policies_summarises_every_rule(

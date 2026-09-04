@@ -15,6 +15,7 @@ py_library(
     name = "addon",
     srcs = ["addon.py"],
     deps = [
+        ":agent_view",
         ":decisions",
         ":identity",
         ":policy",
@@ -61,8 +62,8 @@ py_library(
         ":policy",
         ":resources",
         "//util:kubernetes",
+        "//x/agentplane:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
-        "@pypi//tenacity",
     ],
 )
 
@@ -88,7 +89,11 @@ py_library(
 py_library(
     name = "policy",
     srcs = ["policy.py"],
-    deps = [":resources"],
+    deps = [
+        ":presentation",
+        ":resources",
+        "@pypi//more_itertools",
+    ],
 )
 
 py_library(
@@ -160,6 +165,7 @@ py_test(
     deps = [
         ":conftest",
         ":policy",
+        ":presentation",
         ":resources",
         "//:conftest",
         "@pypi//pytest",
@@ -315,6 +321,48 @@ py_test(
         ":policy",
         "//:conftest",
         "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "agent_view",
+    srcs = ["agent_view.py"],
+    deps = [
+        ":policy",
+        ":resources",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_agent_view",
+    srcs = ["test_agent_view.py"],
+    deps = [
+        ":agent_view",
+        ":conftest",
+        ":policy",
+        ":resources",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "presentation",
+    srcs = ["presentation.py"],
+    deps = [":resources"],
+)
+
+py_test(
+    name = "test_presentation",
+    srcs = ["test_presentation.py"],
+    deps = [
+        ":conftest",
+        ":presentation",
+        ":resources",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

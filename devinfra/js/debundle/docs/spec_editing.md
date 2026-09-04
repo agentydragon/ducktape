@@ -388,7 +388,7 @@ annotations:
 
 Do not leave blocker notes for selector patterns Ducktape now supports, such
 as matching one declarator inside a multi-declarator declaration or bracketing
-object literal properties with `ANYTHING` / `OBJECT_PROPS`.
+object literal properties with `ANYTHING`.
 
 ## Renaming or disabling a module
 

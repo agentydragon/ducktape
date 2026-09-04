@@ -36,8 +36,9 @@ are evaluated at specific month indices on the paths.
 Macro history comes from the **augur-evidence checkout** (`AUGUR_EVIDENCE_DIR`) via
 `evidence_series.py` (sp500/BTC, FRED CPI/home/rent) — the daily scraper already maintains these
 series, so the backtests read them from the checkout instead of fetching live.
-`results/` holds summaries, plots, and `quota_log.jsonl` (per-run token + z.ai-quota burn).
-`transcripts/` (every request/response) is **git-ignored** — written locally, not committed.
+`results/` (summaries, plots, `quota_log.jsonl` of per-run token + z.ai-quota burn) and
+`transcripts/` (every request/response) are **git-ignored** — written locally, not committed.
+The numbers below are what those runs produced; re-run the scripts to regenerate them.
 Operational z.ai behavior (caching, rate-limit tiers, param quirks, quota API) lives in
 `docs/zai_api.md`. Market prices in the reify runs are **illustrative**, not pulled live.
 
@@ -128,7 +129,7 @@ within the kernel's options; ground truth from the date-ranged fetcher. ~0 pp we
 | tail-escape (PIT ≤.1 or ≥.9) |  31% (vs 20%) | **overconfident / thin-tailed** (home 40%, BTC 35%) |
 | mean PIT                     | 0.62 (vs .50) | **under-prediction** (under-shot the 2024–26 climb) |
 
-The formal verdict (on `results/backtest.png`): KS/χ² reject PIT uniformity at p~1e-5 _under an i.i.d.
+The formal verdict: KS/χ² reject PIT uniformity at p~1e-5 _under an i.i.d.
 null_, but the monthly PITs are strongly autocorrelated (ρ₁≈0.6 → **n_eff≈5**), so those p-values are
 anti-conservative. The serial-dependence-robust **moving-block bootstrap** gives mean PIT 0.62 CI
 `[0.50, 0.75]` and tail-escape 0.31 CI `[0.23, 0.42]` — both 95% CIs exclude their calibrated nulls →

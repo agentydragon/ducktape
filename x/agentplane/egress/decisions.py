@@ -33,7 +33,6 @@ class DecisionRecord(BaseModel):
     outcome: Outcome
     reason: DenyReason | None = None
     binding: str | None = None
-    granted_by: str | None = Field(default=None, description="The binding's provenance label, when it has one.")
     policy: str | None = None
     rule: int | None = None
     substituted: bool = Field(default=False, description="Whether a credential replaced a placeholder.")

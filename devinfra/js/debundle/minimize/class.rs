@@ -69,12 +69,8 @@ pub(crate) fn minimize_class_selector_candidates(
     )
 }
 
-/// A class-member run-absorber hole, emitted as an `ANYTHING;` no-init field. In
-/// class-member position `ANYTHING` is a run-absorber identical to the
-/// (still-accepted) `CLASS_REST` keyword — `is_class_rest_hole` matches both — so
-/// we emit the shorter, position-polymorphic `ANYTHING` (the "prefer ANYTHING
-/// where the context is unambiguous" emission rule). Hand-written input selectors
-/// may still spell it `CLASS_REST`.
+/// A class-member run-absorber hole, emitted as an `ANYTHING;` no-init field —
+/// the only spelling the matcher accepts in class-member position.
 fn class_rest_member() -> ClassMember {
     ClassMember::ClassProp(ClassProp {
         span: DUMMY_SP,

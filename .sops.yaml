@@ -229,6 +229,14 @@ creation_rules:
           - *cluster-secrets
           - *rugged-host
 
+  - path_regex: cluster/k8s/haku/console/node-daemon-atlas\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *atlas-host
+
   # AIQuota's read-only bearer is also consumed by the local CLI/GNOME clients.
   # Keep the same token as the cluster Secret, but let the configured user
   # identities decrypt it without granting them access to other cluster secrets.

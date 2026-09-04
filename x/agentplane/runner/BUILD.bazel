@@ -376,3 +376,15 @@ oci_layout_rloc(
     testonly = True,
     image = ":image",
 )
+
+py_test(
+    name = "test_main",
+    srcs = ["test_main.py"],
+    deps = [
+        ":conftest",
+        ":main",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

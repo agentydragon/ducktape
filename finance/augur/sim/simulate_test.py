@@ -3236,7 +3236,6 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
     final_liability = liabilities(result).filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_liability["principal_quanta"] / 100 == pytest.approx(400_000.0 - (mortgage_payment - 2_000.0))
     assert final_liability["interest_paid_ytd_quanta"] / 100 == pytest.approx(2_000.0)
-    assert final_liability["principal_paid_ytd_quanta"] / 100 == pytest.approx(mortgage_payment - 2_000.0)
 
     final_cash = (
         cash_balances(result)

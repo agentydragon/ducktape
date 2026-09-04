@@ -1,35 +1,35 @@
 """The namespace's egress policy as the app shows and edits it: EgressPolicies and EgressBindings.
 
 The proxy (x/agentplane/egress) enforces these resources; the app reads the same objects through the
-API server, presents the bindings that name a sandbox with their provenance, approval, expiry, and
-resolved policies, and changes approval or deletes a binding under its own RBAC. Nothing here is in
-the enforcement path: the proxy's `Active` condition is shown as written, never recomputed.
+API server, presents the bindings that name a sandbox with their provenance, expiry and resolved
+policies, and creates or deletes a runtime binding under its own RBAC. A binding is desired state,
+so creating one is the whole act of granting and deleting one is the whole act of taking it back;
+there is no decision to record on it afterwards. Nothing here is in the enforcement path: the
+proxy's `Active` condition is shown as written, never recomputed.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from enum import StrEnum
+import asyncio
+from collections.abc import Iterable
+from datetime import datetime
 from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.app.identity import Caller
 from x.agentplane.app.inventory import Condition, InventoryError
 
-GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
-# The provenance a Flux-applied binding carries (cluster/k8s/agentplane-staging/egress); nothing at
-# runtime touches such a binding, since Flux prunes only what it applied.
-FLUX_PROVENANCE = "flux"
+# Flux stamps its inventory labels on everything it applies (cluster/k8s/agentplane-staging/egress);
+# nothing at runtime deletes such a binding, since the next reconcile would apply it again.
+FLUX_KUSTOMIZATION_LABEL = "kustomize.toolkit.fluxcd.io/name"
 ACTIVE_CONDITION = "Active"
 
-_EGRESS_API = ("agentplane.allegedly.works", "v1alpha1")
-_POLICIES_PLURAL = "egresspolicies"
-_BINDINGS_PLURAL = "egressbindings"
+EGRESS_API = ("agentplane.allegedly.works", "v1alpha1")
+POLICIES_PLURAL = "egresspolicies"
+BINDINGS_PLURAL = "egressbindings"
 _SANDBOX_API_VERSION = "agents.x-k8s.io/v1beta1"
-_MERGE_PATCH = "application/merge-patch+json"
 
 
 class BindingNotFoundError(InventoryError):
@@ -46,10 +46,18 @@ class FluxOwnedBindingError(InventoryError):
         self.name = name
 
 
-class ApprovalState(StrEnum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    DENIED = "denied"
+class UnknownPolicyError(InventoryError):
+    """A grant naming a policy the namespace does not hold, which would grant nothing.
+
+    The CRD admits any string in `spec.policies` and the proxy answers a name that resolves to
+    nothing with `MissingPolicy`, so a dangling name is a state the system already handles. This
+    refuses one at the moment it would be written; one the operator deletes afterwards still lands
+    there, and the proxy's condition stays the answer to it.
+    """
+
+    def __init__(self, names: list[str]) -> None:
+        super().__init__(f"no EgressPolicy in the namespace is named {', '.join(names)}")
+        self.names = names
 
 
 # Kubernetes-boundary models: the subset of each resource the app reads, parsed once off the wire.
@@ -64,21 +72,15 @@ class _ObjectMeta(_Wire):
     labels: dict[str, str] = Field(default_factory=dict)
 
 
-class _SecretKeyRef(_Wire):
+class _CredentialRef(_Wire):
     name: str
-    key: str
-
-
-class _Credential(_Wire):
-    secret_ref: _SecretKeyRef = Field(alias="secretRef")
-    header: str
 
 
 class _Rule(_Wire):
     hosts: list[str]
     methods: list[str] | None = None
     paths: list[str] | None = None
-    credential: _Credential | None = None
+    credential_ref: _CredentialRef | None = Field(alias="credentialRef", default=None)
 
 
 class _PolicySpec(_Wire):
@@ -94,35 +96,14 @@ class _SandboxRef(_Wire):
     name: str
 
 
-class _LabelSelector(_Wire):
-    match_labels: dict[str, str] = Field(alias="matchLabels")
-
-
 class _Subject(_Wire):
-    """The CRD admits exactly one of the two; a subject is matched by whichever it carries."""
-
-    sandbox: _SandboxRef | None = None
-    sandbox_selector: _LabelSelector | None = Field(alias="sandboxSelector", default=None)
-
-    def matches(self, name: str, labels: dict[str, str]) -> bool:
-        if self.sandbox is not None:
-            return self.sandbox.name == name
-        if self.sandbox_selector is not None:
-            return all(labels.get(key) == value for key, value in self.sandbox_selector.match_labels.items())
-        return False
-
-
-class _Approval(_Wire):
-    state: ApprovalState
-    by: str | None = None
-    at: AwareDatetime | None = None
+    sandbox: _SandboxRef
 
 
 class _BindingSpec(_Wire):
     subjects: list[_Subject]
     policies: list[str]
     expires_at: AwareDatetime | None = Field(alias="expiresAt", default=None)
-    approval: _Approval
 
 
 class _BindingStatus(_Wire):
@@ -142,23 +123,17 @@ class _ResourceList(_Wire):
 # API views.
 
 
-class CredentialView(BaseModel):
-    """The credential a rule substitutes, by name: the value lives only in the proxy."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    secret: str
-    key: str
-    header: str = Field(description="The request header the proxy rewrites.")
-
-
 class RuleView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hosts: list[str]
     methods: list[str] | None = Field(default=None, description="Absent admits any method.")
     paths: list[str] | None = Field(default=None, description="Absent admits any path.")
-    credential: CredentialView | None = None
+    credential: str | None = Field(
+        default=None,
+        description="The EgressCredential this rule lets a subject present. Where it goes and what "
+        "it draws from is the credential's own object; the value only ever reaches the proxy.",
+    )
 
 
 class PolicyView(BaseModel):
@@ -168,27 +143,12 @@ class PolicyView(BaseModel):
     rules: list[RuleView]
 
 
-class SubjectView(BaseModel):
-    """How a binding names its subjects: one sandbox, or every sandbox carrying these labels."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    sandbox: str | None = None
-    match_labels: dict[str, str] | None = None
-
-
 class BindingView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    granted_by: str | None = Field(
-        description="The provenance label: flux, or the operator who granted it through the app."
-    )
-    from_git: bool = Field(description="Flux applied it; approval is editable, deletion is git's.")
-    subjects: list[SubjectView]
-    approval: ApprovalState
-    approved_by: str | None = None
-    approved_at: datetime | None = None
+    from_git: bool = Field(description="Flux applied it; removing it is git's.")
+    subjects: list[str] = Field(description="The Sandboxes this binding names.")
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
@@ -205,88 +165,78 @@ class EgressInventory:
         self._custom_objects = custom_objects
 
     async def list_policies(self) -> list[PolicyView]:
-        return [_policy_view(policy) for policy in await self._policies()]
+        return policy_views(_ResourceList.model_validate(await self._list(POLICIES_PLURAL)).items)
 
-    async def bindings_for(self, sandbox: str, labels: dict[str, str]) -> list[BindingView]:
-        """Every binding with a subject naming the sandbox or selecting its labels, in name order."""
-        policies = {policy.metadata.name: _policy_view(policy) for policy in await self._policies()}
-        page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _BINDINGS_PLURAL)
-        bindings = [_EgressBinding.model_validate(item) for item in _ResourceList.model_validate(page).items]
-        return sorted(
-            (
-                _binding_view(binding, policies)
-                for binding in bindings
-                if any(subject.matches(sandbox, labels) for subject in binding.spec.subjects)
-            ),
-            key=lambda view: view.name,
+    async def require_policies(self, names: list[str]) -> None:
+        """Every name must resolve to a policy the namespace holds, or nothing is written."""
+        _require_known(names, await self._policies_by_name())
+
+    async def bindings_for(self, sandbox: str) -> list[BindingView]:
+        """Every binding with a subject naming the sandbox, in name order."""
+        policies, bindings = await asyncio.gather(self._list(POLICIES_PLURAL), self._list(BINDINGS_PLURAL))
+        return matching_bindings(
+            _ResourceList.model_validate(bindings).items, _ResourceList.model_validate(policies).items, sandbox=sandbox
         )
-
-    async def approve(self, name: str, *, by: Caller) -> None:
-        await self._decide(name, ApprovalState.APPROVED, by)
-
-    async def deny(self, name: str, *, by: Caller) -> None:
-        await self._decide(name, ApprovalState.DENIED, by)
 
     async def revoke(self, name: str) -> None:
-        """Delete a runtime binding; a Flux-applied one is refused, git being its owner."""
-        binding = await self._binding(name)
-        if binding.metadata.labels.get(GRANTED_BY_LABEL) == FLUX_PROVENANCE:
+        """Delete a runtime binding, which is how a grant is taken back; a Flux-applied one is
+        refused, git being its owner."""
+        if FLUX_KUSTOMIZATION_LABEL in (await self._binding(name)).metadata.labels:
             raise FluxOwnedBindingError(name)
         await self._custom_objects.delete_namespaced_custom_object(
-            *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
+            *EGRESS_API, self._namespace, BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
-    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str], by: Caller) -> None:
-        """The launch-time pick: one approved binding of the sandbox to the policies, approved by
-        and labelled as granted by `by`, owned by the Sandbox so its deletion garbage-collects it."""
-        body = {
-            "apiVersion": "/".join(_EGRESS_API),
-            "kind": "EgressBinding",
-            "metadata": {
-                "name": f"{sandbox}-picked",
-                "labels": {GRANTED_BY_LABEL: by.label},
-                # Not the controller: the Sandbox controller owns the Pod and PVC, and this reference is
-                # for cascading deletion only.
-                "ownerReferences": [
-                    {
-                        "apiVersion": _SANDBOX_API_VERSION,
-                        "kind": "Sandbox",
-                        "name": sandbox,
-                        "uid": str(sandbox_uid),
-                        "controller": False,
-                        "blockOwnerDeletion": False,
-                    }
-                ],
-            },
-            "spec": {
-                "subjects": [{"sandbox": {"name": sandbox}}],
-                "policies": policies,
-                "approval": {"state": ApprovalState.APPROVED, "by": by.name, "at": _now()},
-            },
-        }
-        await self._custom_objects.create_namespaced_custom_object(
-            *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, body
-        )
-
-    async def _decide(self, name: str, state: ApprovalState, by: Caller) -> None:
-        await self._binding(name)
-        await self._custom_objects.patch_namespaced_custom_object(
-            *_EGRESS_API,
+    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str]) -> BindingView:
+        """One binding of the sandbox to the policies, owned by the Sandbox so its deletion
+        garbage-collects it. Creating it is the grant, at launch and afterwards alike: granting an
+        already-running sandbox adds another binding rather than editing one it has, so each grant's
+        `expiresAt` is its own.
+        """
+        known = await self._policies_by_name()
+        _require_known(policies, known)
+        created = await self._custom_objects.create_namespaced_custom_object(
+            *EGRESS_API,
             self._namespace,
-            _BINDINGS_PLURAL,
-            name,
-            {"spec": {"approval": {"state": state, "by": by.name, "at": _now()}}},
-            _content_type=_MERGE_PATCH,
+            BINDINGS_PLURAL,
+            {
+                "apiVersion": "/".join(EGRESS_API),
+                "kind": "EgressBinding",
+                "metadata": {
+                    # The API server names it. A sandbox may be granted more than once, and a name
+                    # derived from the sandbox alone would make every grant after the first a 409.
+                    "generateName": f"{sandbox}-",
+                    # Not the controller: the Sandbox controller owns the Pod and PVC, and this
+                    # reference is for cascading deletion only. It cascades only while bindings and
+                    # Sandboxes share a namespace — Kubernetes treats a namespaced owner in another
+                    # namespace as absent and collects the dependent — so splitting
+                    # `--sandbox-namespace` off `--namespace` has to replace this with a sweep.
+                    "ownerReferences": [
+                        {
+                            "apiVersion": _SANDBOX_API_VERSION,
+                            "kind": "Sandbox",
+                            "name": sandbox,
+                            "uid": str(sandbox_uid),
+                            "controller": False,
+                            "blockOwnerDeletion": False,
+                        }
+                    ],
+                },
+                "spec": {"subjects": [{"sandbox": {"name": sandbox}}], "policies": policies},
+            },
         )
+        return _binding_view(_EgressBinding.model_validate(created), known)
 
-    async def _policies(self) -> list[_EgressPolicy]:
-        page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _POLICIES_PLURAL)
-        return [_EgressPolicy.model_validate(item) for item in _ResourceList.model_validate(page).items]
+    async def _policies_by_name(self) -> dict[str, PolicyView]:
+        return {view.name: view for view in await self.list_policies()}
+
+    async def _list(self, plural: str) -> dict[str, object]:
+        return await self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, plural)
 
     async def _binding(self, name: str) -> _EgressBinding:
         try:
             raw = await self._custom_objects.get_namespaced_custom_object(
-                *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name
+                *EGRESS_API, self._namespace, BINDINGS_PLURAL, name
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
@@ -295,8 +245,31 @@ class EgressInventory:
         return _EgressBinding.model_validate(raw)
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+def _require_known(names: list[str], policies: dict[str, PolicyView]) -> None:
+    if unknown := [name for name in names if name not in policies]:
+        raise UnknownPolicyError(unknown)
+
+
+# The projections, over objects however they were obtained: one request's list, or the copy
+# `live.py` keeps under a watch. Both go through here, so a pushed row and a fetched one are the
+# same row.
+
+
+def matching_bindings(bindings: Iterable[object], policies: Iterable[object], *, sandbox: str) -> list[BindingView]:
+    """Every binding with a subject naming the sandbox, in name order."""
+    resolved = {policy.metadata.name: _policy_view(policy) for policy in map(_EgressPolicy.model_validate, policies)}
+    return sorted(
+        (
+            _binding_view(binding, resolved)
+            for binding in map(_EgressBinding.model_validate, bindings)
+            if any(subject.sandbox.name == sandbox for subject in binding.spec.subjects)
+        ),
+        key=lambda view: view.name,
+    )
+
+
+def policy_views(policies: Iterable[object]) -> list[PolicyView]:
+    return [_policy_view(_EgressPolicy.model_validate(policy)) for policy in policies]
 
 
 def _policy_view(policy: _EgressPolicy) -> PolicyView:
@@ -307,13 +280,7 @@ def _policy_view(policy: _EgressPolicy) -> PolicyView:
                 hosts=rule.hosts,
                 methods=rule.methods,
                 paths=rule.paths,
-                credential=CredentialView(
-                    secret=rule.credential.secret_ref.name,
-                    key=rule.credential.secret_ref.key,
-                    header=rule.credential.header,
-                )
-                if rule.credential is not None
-                else None,
+                credential=None if rule.credential_ref is None else rule.credential_ref.name,
             )
             for rule in policy.spec.rules
         ],
@@ -321,22 +288,11 @@ def _policy_view(policy: _EgressPolicy) -> PolicyView:
 
 
 def _binding_view(binding: _EgressBinding, policies: dict[str, PolicyView]) -> BindingView:
-    granted_by = binding.metadata.labels.get(GRANTED_BY_LABEL)
     active = next((c for c in binding.status.conditions if c.type == ACTIVE_CONDITION), None)
     return BindingView(
         name=binding.metadata.name,
-        granted_by=granted_by,
-        from_git=granted_by == FLUX_PROVENANCE,
-        subjects=[
-            SubjectView(
-                sandbox=subject.sandbox.name if subject.sandbox is not None else None,
-                match_labels=subject.sandbox_selector.match_labels if subject.sandbox_selector is not None else None,
-            )
-            for subject in binding.spec.subjects
-        ],
-        approval=binding.spec.approval.state,
-        approved_by=binding.spec.approval.by,
-        approved_at=binding.spec.approval.at,
+        from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
+        subjects=[subject.sandbox.name for subject in binding.spec.subjects],
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],

@@ -12,7 +12,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
-from x.agentplane.egress.resources import GRANTED_BY_LABEL
+from x.agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
@@ -24,6 +24,7 @@ from x.agentplane.egress.testing.fake_apiserver import (
     FakeApiServer,
     TokenVerdict,
     binding,
+    credential,
     fake_apiserver,
     pod_for,
     policy,
@@ -33,9 +34,11 @@ from x.agentplane.egress.testing.fake_apiserver import (
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
-PLACEHOLDER = "AGENTPLANE-PLACEHOLDER-PAT"
+CREDENTIAL_NAME = "github-pat"
+PLACEHOLDER = placeholder_of(CREDENTIAL_NAME)
+SCHEME = "Bearer"
 SECRET_VALUE = "real-secret-v1"
-SECRET_NAME = "github-pat"
+SECRET_NAME = "github-pat-secret"
 SANDBOX_A = "sb-a"
 SANDBOX_B = "sb-b"
 POD_A_UID = "pod-a-uid-1"
@@ -45,13 +48,12 @@ POD_B_IP = "10.0.0.2"
 TOKEN_A = "token-of-pod-a"
 TOKEN_B = "token-of-pod-b"
 GITHUB_POLICY = "github"
-GRANTED_BY = "seed"
 
 
 def seed(fake: FakeApiServer) -> None:
     """Two Sandboxes with Pods and tokens; A bound to a credentialed GitHub-shaped policy, B unbound."""
-    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_A, labels={"team": "alpha"}))
-    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_B, labels={"team": "beta"}))
+    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_A))
+    fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_B))
     fake.pods[SANDBOX_A] = pod_for(fake, SANDBOX_A, pod_uid=POD_A_UID, ip=POD_A_IP)
     fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_B_IP)
     for token, name, uid in ((TOKEN_A, SANDBOX_A, POD_A_UID), (TOKEN_B, SANDBOX_B, POD_B_UID)):
@@ -63,6 +65,18 @@ def seed(fake: FakeApiServer) -> None:
         )
     fake.put(SECRETS_PLURAL, secret(SECRET_NAME, {"token": SECRET_VALUE}))
     fake.put(
+        CREDENTIALS_PLURAL,
+        credential(
+            CREDENTIAL_NAME,
+            secret_name=SECRET_NAME,
+            key="token",
+            targets=[
+                {"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": SCHEME},
+                {"header": "Authorization", "method": TargetMethod.BASIC_PASSWORD},
+            ],
+        ),
+    )
+    fake.put(
         POLICIES_PLURAL,
         policy(
             GITHUB_POLICY,
@@ -71,11 +85,7 @@ def seed(fake: FakeApiServer) -> None:
                     "hosts": [UPSTREAM_HOST],
                     "methods": ["GET"],
                     "paths": ["/repos/**"],
-                    "credential": {
-                        "secretRef": {"name": SECRET_NAME, "key": "token"},
-                        "header": "Authorization",
-                        "placeholder": PLACEHOLDER,
-                    },
+                    "credentialRef": {"name": CREDENTIAL_NAME},
                 },
                 {"hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
             ],
@@ -83,12 +93,7 @@ def seed(fake: FakeApiServer) -> None:
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(
-            f"{SANDBOX_A}-{GITHUB_POLICY}",
-            subjects=[{"sandbox": {"name": SANDBOX_A}}],
-            policies=[GITHUB_POLICY],
-            labels={GRANTED_BY_LABEL: GRANTED_BY},
-        ),
+        binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY]),
     )
 
 

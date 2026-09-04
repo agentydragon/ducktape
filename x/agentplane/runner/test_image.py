@@ -75,6 +75,12 @@ async def container(provider: str, upstream: ScriptedUpstream) -> AsyncIterator[
         STATE_DIR,
         "--listen",
         f"0.0.0.0:{port}",
+        # A harness child inherits nothing the runner is not told to pass on, and both harnesses
+        # need the image's PATH and HOME to start at all.
+        "--harness-env",
+        "PATH",
+        "--harness-env",
+        "HOME",
     ]
     if provider == "claude":
         command += ["--claude-binary", "/usr/local/bin/claude", "--anthropic-base-url", upstream.origin]

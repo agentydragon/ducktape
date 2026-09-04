@@ -56,6 +56,7 @@ flowchart TB
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
+    classDef withdrawn fill:#fee2e2,stroke:#b91c1c,color:#7f1d1d,stroke-width:2px,stroke-dasharray:4 3
 
     S0["Sandbox proxy/identity<br/>completed evidence"]:::completed
     A["Native drivers + scripted harness tests"]:::completed
@@ -74,11 +75,12 @@ flowchart TB
         C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::completed
         C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
-        C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button"]:::ready
-        C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
-        C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
-        C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
-        C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::ready
+        C6["C6 Session view legibility<br/>the input's own text, over the protocol"]:::ready
+        C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::completed
+        C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::completed
+        C9["C9 The profile a sandbox runs under<br/>withdrawn: profiles deferred pending design"]:::withdrawn
+        C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
+        C11["C11 An agent reads the egress rules that apply to it<br/>same listener, its own projection, no field a Secret could reach"]:::completed
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -96,6 +98,7 @@ flowchart TB
     R1["Read-only follower attachments"]:::future
 
     J["Secure egress integration<br/>per-Pod sidecar wraps traffic with the Pod's SA token;<br/>central proxy holds credentials and egress policy;<br/>first credential: the agentydragon-agent GitHub PAT"]:::ready
+    H["Declared substitution rules<br/>a credential names its targets and its placeholder is derived;<br/>the placeholder matches a whole component exactly"]:::completed
     P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
     K["Conditional access controller<br/>allow / deny / user approval required"]:::future
     R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
@@ -136,6 +139,8 @@ flowchart TB
     C3 --> C8
     C1 --> C9
     C4 --> C10
+    C4 --> C11
+    J --> C11
     C5 --> E
     I4 --> F0
     C3 --> F0
@@ -151,6 +156,7 @@ flowchart TB
     T3 --> F
     F0 --> G -->|yes| R1
     F0 --> J --> P
+    J --> H
     P -->|yes| K --> R
     P -->|no| R
     R -->|yes| V --> L
@@ -177,10 +183,10 @@ flowchart TB
 Legend: green is landed; yellow is in flight, with a PR open; the bold blue nodes are ready to
 start now, in parallel; light blue is next work blocked only on a node in this slice; purple is a
 milestone;
-orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
-conditional or stretch work.
+orange diamonds are unresolved decisions requiring Rai's product or design input; red dashed is
+withdrawn — the package will not be built as specified; gray is conditional or stretch work.
 
-Ready now: **J** and **C6**-**C10**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J**, **C6**, and **C11**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -207,58 +213,38 @@ personal context.
 Landed packages are described where they live (§ Current status); what follows is the bar for the
 ones still open.
 
-- **C6 session view legibility:** what still makes a real transcript hard to read, and not all of
-  it is UI work.
-  - **Markdown for assistant text**, which currently renders as literal `**` and backticks.
-  - **Reasoning folded** into a disclosure widget, closed by default, so the answer is not buried
-    under the thinking.
-  - **Enter sends, Ctrl+Enter takes a newline**, and the Send button goes away entirely: the
-    textarea's placeholder carries the binding, so the composer is one control instead of two.
-    Interrupt stays, as an icon rather than a text button — the same move the sandbox list already
-    made for Suspend and Resume, so `@tabler/icons-react` via per-icon subpath imports (the barrel
-    OOMs esbuild on RBE).
-  - **A user input shows what was typed.** Today it shows only its opaque `input_id`, because
-    `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto)).
-    Decided (Rai): the protocol changes, so the text arrives with the event and a client that
-    joined later or replayed from the log sees it too — which is the case an app-side echo of what
-    this tab sent cannot cover.
-- **C7 lifecycle controls on the sandbox page:** the page you are already looking at can suspend
-  the sandbox, and delete it once it is suspended. Today every lifecycle action lives on the list
-  page only (`sandboxes.tsx`), so acting on the sandbox in front of you means navigating away from
-  it. Deleting only a suspended sandbox is a new rule either way: `Inventory.delete` currently
-  takes any state, so the package decides whether the precondition belongs in the API — where it
-  also binds the agent driving staging — or is a UI affordance over an API that stays permissive.
-- **C8 live push for every view:** the server tells the browser what changed; no page polls.
-  Decided (Rai): a push channel, not a shorter interval. Three surfaces poll at five seconds today
-  — the sandbox list, the sandbox page, and the egress tab — each hand-rolling the same
-  `useEffect`/`setInterval` pair, and a fourth was written with no refresh at all (`listThreads`
-  runs once on mount, so a session named after you arrived keeps its old name until a reload).
-  Polling is also why a state change takes up to five seconds to appear and why every view costs a
-  request per client per interval whether or not anything happened.
-  The app already runs one push channel — the session's SSE stream — so the shape exists; what
-  does not exist is a source to push _from_. `inventory.py` and `egress.py` answer each request
-  with a fresh list against the API server and hold nothing between requests, so this package's
-  real content is server-side: a watch the app keeps over Sandboxes and EgressBindings, and a
-  stream that fans its changes out to the open tabs. The egress proxy's `Informer`
-  ([`../egress/informer.py`](../egress/informer.py)) is the shape to reuse rather than reinvent —
-  same list-and-watch, same freshness question, and its `/healthz` already answers "has this
-  stopped moving", which a UI feeding off a watch will need too.
-- **C9 the profile a sandbox runs under:** a profile decides what the sandbox may reach — a
-  Flux-managed `EgressBinding` selects on the label it stamps — and it is nearly invisible. It
-  appears as one badge on the sandbox page, and at creation as a free-text box whose help text
-  ("a label the profile bindings select on") assumes you already know which profiles exist. The
-  list page does not show it although the API already returns it on every row, nothing can be
-  filtered by it, and a typo silently yields a sandbox that matches no binding. Make it a pick
-  from the profiles that actually exist, show it wherever a sandbox is shown, and say what the one
-  you picked grants.
-- **C10 egress actions that say what they do:** the binding row offers Approve, Deny, and Revoke,
-  and nothing on screen distinguishes the last two — both read as "stop this access". They are not
-  the same: Deny sets `approval.state` and keeps the binding, so it is reversible and leaves the
-  record of who decided; Revoke deletes the object. Worse, Deny does not know what Revoke knows.
-  Revoke is disabled for a Flux-applied binding with a tooltip saying to remove it in git, but Deny
-  stays live — and `egressbinding-sandboxes-github-public.yaml` carries `approval.state: approved`
-  in git, so denying it patches the cluster and the next reconcile puts it back. A button that
-  silently un-does itself is the bug; the wording is the rest of the package.
+- **C6 a user input shows what was typed.** It shows only its opaque `input_id` today, because
+  `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto));
+  the client half already renders `input.text`. Decided (Rai): the protocol changes, so the text
+  arrives with the event and a client that joined later or replayed from the log sees it too —
+  which is the case an app-side echo of what this tab sent cannot cover.
+- **C9 the profile a sandbox runs under: withdrawn** (Rai). Making profiles visible and pickable
+  presumed the concept, and the concept has no design yet: a profile is expected to span more than
+  egress, so nothing about it may be settled by its first consumer. The half of it that had
+  landed — a profile label the app stamped and an `EgressBinding` selector that matched it — is
+  removed rather than left in place. Grounds and what would revive this work:
+  [`profiles.md`](profiles.md).
+- **C11 an agent reads the egress rules that apply to it.** On the listener the operator API
+  already answers on, a sandboxed agent asks which rules its own sandbox is bound to and gets what
+  it needs to make a call: the hosts, methods and paths a rule admits, and the `placeholder` to send
+  in the named header. The app surfaces no placeholder today; `CredentialView` (<../app/egress.py>)
+  names the Secret and key behind a rule instead, operator detail an agent has no use for. So the
+  agent view is its own projection, secretless by construction — no field that could carry a Secret
+  value — rather than `BindingView` behind a filter someone has to remember to apply. Decided: the
+  caller is identified the way the proxy identifies one, with `PodIdentityVerifier`
+  (<../egress/identity.py>) — TokenReview, the live Pod by UID and source address, the
+  controller-owner Sandbox — since every runner Pod runs as the one `agentplane-runner`
+  ServiceAccount, so a token alone does not say which sandbox is asking. That takes a second
+  projected token volume in the `SandboxTemplate`
+  (<../../../cluster/k8s/agentplane-staging/app/sandboxtemplate-agentplane-runner.yaml>): the one
+  there carries audience `agentplane-egress` and reaches the sidecar alone, and spending it at the
+  app would collapse that separation. The trap is reaching this through the operator token path —
+  the runner ServiceAccount is shared, so admitting it as an operator subject hands every sandbox
+  full operator powers over every other sandbox. The agent surface is a distinct authorization path,
+  read-only and scoped to the caller's own sandbox. Open: whether an agent also reads its own recent
+  decisions, since the proxy's ring already answers "why was I denied" and a self-diagnosable
+  failure is the practical win; and whether this surface versions separately from the operator API,
+  since agents are long-lived and roll independently of the app.
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what

@@ -130,6 +130,41 @@ spec:
       prometheus/events: "true"
       prometheus/asynchronous_metrics: "true"
       prometheus/status_info: "true"
+    files:
+      # `/etc/clickhouse-server/config.d` belongs to the operator: it mounts its own
+      # generated ConfigMap there, over-mounting whatever the podTemplate declares at the
+      # same path, so a `configMapGenerator` volume never becomes visible to the server.
+      # `spec.configuration.files` is the only route that lands a file in that directory.
+      # The key must sort after the operator's own generated
+      # `01-clickhouse-0*-{query,part,trace}_log.xml`, which set `replace="1"`.
+      zz-system-logs.xml: |
+        <clickhouse>
+          <!-- ClickHouse's own telemetry was 85% of its write volume and 94% of its
+               part-creation ops: 24h of system.part_log showed 83k inserts / 30k merges /
+               25 GiB for system.*, against 4.9k inserts / 4.4 GiB of real tenant data,
+               all on a shared 7200 RPM spindle. Server metrics already reach Prometheus
+               through the endpoint configured above, which makes the *metric_log tables
+               redundant rather than merely expensive. -->
+          <metric_log remove="1"/>
+          <asynchronous_metric_log remove="1"/>
+          <query_metric_log remove="1"/>
+          <trace_log remove="1"/>
+          <text_log remove="1"/>
+          <processors_profile_log remove="1"/>
+          <background_schedule_pool_log remove="1"/>
+          <aggregated_zookeeper_log remove="1"/>
+          <zookeeper_connection_log remove="1"/>
+          <opentelemetry_span_log remove="1"/>
+          <query_views_log remove="1"/>
+          <asynchronous_insert_log remove="1"/>
+          <!-- Kept: query_log (the langfuse user holds SELECT on it), part_log (cheap
+               once the tables above stop generating parts for it to log, and it is what
+               diagnoses merge pressure), error_log, crash_log. -->
+          <query_log>
+            <max_size_rows>8192</max_size_rows>
+            <reserved_size_rows>8192</reserved_size_rows>
+          </query_log>
+        </clickhouse>
     clusters:
       - name: default
         secret:
@@ -195,21 +230,6 @@ spec:
                 runAsGroup: 101
                 seccompProfile:
                   type: RuntimeDefault
-              volumeMounts:
-                # The operator also injects its generated common-config
-                # directory at this path. Tenant schema is owned exclusively
-                # by the versioned schema Job, not startup scripts.
-                - name: config-volume
-                  mountPath: /etc/clickhouse-server/config.d
-                  readOnly: true
-          volumes:
-            - name: config-volume
-              projected:
-                sources:
-                  - configMap:
-                      name: clickhouse-clickhouse-config
-                  - configMap:
-                      name: chi-clickhouse-common-configd
     volumeClaimTemplates:
       - name: data
         reclaimPolicy: Retain

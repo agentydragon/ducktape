@@ -14,6 +14,7 @@ from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import ActiveReason, ConditionStatus
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
     POLICIES_PLURAL,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
@@ -64,17 +65,22 @@ async def test_binding_status_written_once(fake: FakeApiServer, index: Index) ->
     fake.close_watches()
     fake.put(
         BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY], approval="denied"),
+        binding(
+            BINDING,
+            subjects=[{"sandbox": {"name": SANDBOX_A}}],
+            policies=[GITHUB_POLICY],
+            expires_at="2020-01-01T00:00:00Z",
+        ),
     )
     await index.wait_for(
         lambda: (
             (status := index.bindings[BINDING].status) is not None
-            and status.conditions[0].reason == ActiveReason.NOT_APPROVED
+            and status.conditions[0].reason == ActiveReason.EXPIRED
         )
     )
     assert [reason for _, patch in fake.status_patches for reason in [patch["conditions"][0]["reason"]]] == [
         ActiveReason.RESOLVED,
-        ActiveReason.NOT_APPROVED,
+        ActiveReason.EXPIRED,
     ]
 
 
@@ -114,7 +120,13 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
     /healthz reads these to tell a wedged informer from a quiet one; a timestamp set anywhere but
     the end of a cycle would keep advancing through exactly the failure it has to catch.
     """
-    assert set(index.refreshed) == {POLICIES_PLURAL, BINDINGS_PLURAL, SANDBOXES_PLURAL, SECRETS_PLURAL}
+    assert set(index.refreshed) == {
+        POLICIES_PLURAL,
+        BINDINGS_PLURAL,
+        CREDENTIALS_PLURAL,
+        SANDBOXES_PLURAL,
+        SECRETS_PLURAL,
+    }
     seeded = index.refreshed[POLICIES_PLURAL]
 
     async def end_watches_until_the_policies_cycle_completes() -> None:

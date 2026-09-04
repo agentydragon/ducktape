@@ -203,14 +203,12 @@ py_library(
 py_library(
     name = "vecm",
     srcs = ["vecm.py"],
-    data = ["//finance/augur/fit/calibrated:trained_vecm_blob"],
     deps = [
         ":exogenous",
         ":provenance",
         ":schemas",
         ":series",
         "//finance/augur/model/path_models:scenarios",
-        "//util/bazel:runfiles",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -312,13 +310,16 @@ py_test(
 py_library(
     name = "structural_macro",
     srcs = ["structural_macro.py"],
+    data = ["//finance/augur/fit/calibrated:trained_structural_macro_blob"],
     deps = [
         ":exogenous",
         ":schemas",
         ":series",
         ":series_model",
+        "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 

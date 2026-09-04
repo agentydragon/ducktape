@@ -8,7 +8,9 @@ the same app: one port, one guard, two credentials.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -19,13 +21,14 @@ from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.conftest import AGENT, AGENT_AUTH
+from x.agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
 from x.agentplane.app.decisions import DecisionsClient
-from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
+from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
+from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.oidc import OIDCSettings
-from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi
+from x.agentplane.app.testing.kubernetes import FakeAuthenticationV1Api
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
@@ -37,36 +40,53 @@ SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
 
+# Serves the app accepting tokens from exactly the subjects passed, yielding its base URL.
+ServeApp = Callable[[frozenset[str]], AbstractAsyncContextManager[str]]
+
 
 @pytest.fixture
-async def served(
+def serve(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
-    reviewer: TokenReviewer,
-) -> AsyncIterator[str]:
+    authentication: FakeAuthenticationV1Api,
+    live_index: LiveIndex,
+) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
-    private_key, public_key = generate_rsa_keypair()
-    idp_port, app_port = pick_free_port(), pick_free_port()
-    idp_url, app_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{app_port}"
-    idp = build_mock_oidc_app(
-        issuer_url=idp_url,
-        private_key=private_key,
-        public_key=public_key,
-        subject=SUBJECT,
-        extra_id_token_claims={"preferred_username": OPERATOR},
-    )
-    oidc = OIDCSettings(
-        issuer=idp_url,
-        client_id="agentplane",
-        client_secret="agentplane-secret",  # a test literal, not a real credential
-        session_secret=SESSION_SECRET,
-        public_base_url=app_url,
-    )
-    app = create_app(inventory, bridge, store, MODELS, egress, decisions, oidc, reviewer)
-    async with serve_app(idp, port=idp_port), serve_app(app, port=app_port):
+
+    @asynccontextmanager
+    async def serving(subjects: frozenset[str]) -> AsyncIterator[str]:
+        private_key, public_key = generate_rsa_keypair()
+        idp_port, app_port = pick_free_port(), pick_free_port()
+        idp_url, app_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{app_port}"
+        idp = build_mock_oidc_app(
+            issuer_url=idp_url,
+            private_key=private_key,
+            public_key=public_key,
+            subject=SUBJECT,
+            extra_id_token_claims={"preferred_username": OPERATOR},
+        )
+        oidc = OIDCSettings(
+            issuer=idp_url,
+            client_id="agentplane",
+            client_secret="agentplane-secret",  # a test literal, not a real credential
+            session_secret=SESSION_SECRET,
+            public_base_url=app_url,
+        )
+        reviewer = TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=subjects)
+        app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, oidc, reviewer)
+        async with serve_app(idp, port=idp_port), serve_app(app, port=app_port):
+            yield app_url
+
+    return serving
+
+
+@pytest.fixture
+async def served(serve: ServeApp) -> AsyncIterator[str]:
+    """That app, accepting a token from the one agent staging names and from nobody else."""
+    async with serve(frozenset({AGENT})) as app_url:
         yield app_url
 
 
@@ -110,7 +130,8 @@ async def test_an_unsafe_method_from_another_origin_is_refused(browser: httpx.As
 
 
 async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served: str) -> None:
-    """The agent's credential: no cookie, no login, and the identity Kubernetes vouches for."""
+    """The agent's credential: no cookie, no login, and an identity Kubernetes vouches for that
+    this app was told to accept."""
     async with httpx.AsyncClient(base_url=served, headers=AGENT_AUTH) as agent:
         assert (await agent.get("/sandboxes")).status_code == 200
         # No Origin check on this path: a token is not ambient, so no site can make a browser send it.
@@ -123,23 +144,30 @@ async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served:
         assert (await stranger.get("/sandboxes")).status_code == 401
 
 
-async def test_a_grant_names_whichever_credential_made_it(
-    browser: httpx.AsyncClient, served: str, custom_objects: FakeCustomObjectsApi
-) -> None:
-    """The point of guarding at all: an approval is attributable, and to the right one of the two."""
-    await browser.get("/auth/login")
-    pick = {"policies": ["pypi"]}
-    by_operator = await browser.post("/sandboxes", json={"slug": "byop"} | pick, headers={"Origin": served})
-    async with httpx.AsyncClient(base_url=served, headers=AGENT_AUTH) as agent:
-        by_agent = await agent.post("/sandboxes", json={"slug": "byagent"} | pick)
+async def test_a_token_for_another_service_account_is_refused(served: str) -> None:
+    """The one the audience does not catch. Minting a token picks its audience freely -- RBAC gates
+    which ServiceAccount you may mint for, never which audience you ask for -- so this token is as
+    valid as the agent's and reaches TokenReview the same way. 403 and not 401 is what says it got
+    that far: the app authenticated it and refused the identity behind it.
+    """
+    async with httpx.AsyncClient(base_url=served, headers=STRANGER_AUTH) as other_account:
+        refused = await other_account.get("/sandboxes")
+        created = await other_account.post("/sandboxes", json={"slug": "demo", "policies": []})
 
-    granted = {
-        obj["spec"]["approval"]["by"]: obj["metadata"]["labels"][GRANTED_BY_LABEL]
-        for (kind, _name), obj in custom_objects.objects.items()
-        if kind == "egressbindings"
-    }
-    assert (by_operator.status_code, by_agent.status_code) == (201, 201), by_operator.text
-    assert granted == {OPERATOR: OPERATOR, AGENT.name: AGENT.label}
+    assert (refused.status_code, created.status_code) == (403, 403), refused.text
+
+
+async def test_an_empty_allowlist_leaves_a_session_the_only_way_in(serve: ServeApp) -> None:
+    """The default an app is deployed with, and the state naming nobody has to mean: the token path
+    admits no one, and the browser's is untouched."""
+    async with serve(frozenset()) as app_url:
+        async with httpx.AsyncClient(base_url=app_url, headers=AGENT_AUTH) as agent:
+            refused = await agent.get("/sandboxes")
+        async with httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser:
+            await browser.get("/auth/login")
+            allowed = await browser.get("/sandboxes")
+
+    assert (refused.status_code, allowed.status_code) == (403, 200), refused.text
 
 
 if __name__ == "__main__":

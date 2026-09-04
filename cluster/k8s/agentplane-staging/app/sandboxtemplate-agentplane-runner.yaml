@@ -6,11 +6,13 @@
 # so it resumes only there. Both harnesses reach models through the cluster
 # LiteLLM with the cheap-experiments key, directly: the credentialless egress
 # design governs external systems, not the model endpoint (x/agentplane/app/README.md).
-# Everything else outside the cluster goes through the egress sidecar: the runner
-# container's HTTP(S)_PROXY is the sidecar on loopback, which relays to the central
-# proxy (../egress) with the Pod's projected token, and the runner trusts the
-# proxy's interception CA through the trust-manager bundle mounted over its system
-# store. The token volume is mounted into the sidecar only. networkPolicyManagement
+# Everything else outside the cluster goes through the egress sidecar: the harness
+# children's HTTP(S)_PROXY, declared in the runner's --harness-env below, is the
+# sidecar on loopback, which relays to the central proxy (../egress) with the Pod's
+# projected token, and they trust the proxy's interception CA through the
+# trust-manager bundle mounted over the system store. Those values belong here
+# because this file is what makes them true -- the sidecar's port and the bundle's
+# path are declared in it. The token volume is mounted into the sidecar only. networkPolicyManagement
 # is Unmanaged because the CiliumNetworkPolicy next to this file is the runner's fence.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -41,7 +43,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-20260903040432-c89e8a8 # {"$imagepolicy": "flux-system:agentplane-runner"}
+          image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-20260904051630-4a92451 # {"$imagepolicy": "flux-system:agentplane-runner"}
           # The image's entrypoint is the runner's Bazel launcher, which finds its runfiles next to
           # its own real path; a command override through a symlink loses them and the container
           # exits at once. Only the arguments are set here.
@@ -58,6 +60,42 @@ spec:
             - /opt/codex/bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
+            # The environment a harness child starts from: a bare NAME takes the runner's value,
+            # NAME=value sets one. The runner inherits nothing implicitly, so what is not named
+            # here does not reach the agent -- the LiteLLM key above all. HOME and PATH come from
+            # the image, which keeps a change there from needing an edit here.
+            - --harness-env
+            - HOME
+            - --harness-env
+            - PATH
+            # Both spellings of each, since clients disagree on case. NO_PROXY: loopback (the
+            # sidecar itself and the runner's own listeners), the LiteLLM host, and in-cluster
+            # Service names in the forms clients build; the Cilium fence keeps the direct path to
+            # LiteLLM alone.
+            - --harness-env
+            - HTTP_PROXY=http://127.0.0.1:3128
+            - --harness-env
+            - HTTPS_PROXY=http://127.0.0.1:3128
+            - --harness-env
+            - http_proxy=http://127.0.0.1:3128
+            - --harness-env
+            - https_proxy=http://127.0.0.1:3128
+            - --harness-env
+            - NO_PROXY=127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
+            - --harness-env
+            - no_proxy=127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
+            # The trust bundle, mounted over the system store below and named explicitly for the
+            # clients that read an env pointer (Node, Python, curl, requests, git's libcurl).
+            - --harness-env
+            - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+            - --harness-env
+            - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+            - --harness-env
+            - CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+            - --harness-env
+            - GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
+            - --harness-env
+            - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
           ports:
             - name: runner
               containerPort: 7000
@@ -83,34 +121,6 @@ spec:
                 secretKeyRef:
                   name: litellm-key-cheap-experiments
                   key: api-key
-            # Both spellings of each, since clients disagree on case. NO_PROXY: loopback (the
-            # sidecar itself and the runner's own listeners), the LiteLLM host, and in-cluster
-            # Service names in the forms clients build; the Cilium fence keeps the direct path to
-            # LiteLLM alone.
-            - name: HTTP_PROXY
-              value: http://127.0.0.1:3128
-            - name: HTTPS_PROXY
-              value: http://127.0.0.1:3128
-            - name: http_proxy
-              value: http://127.0.0.1:3128
-            - name: https_proxy
-              value: http://127.0.0.1:3128
-            - name: NO_PROXY
-              value: 127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
-            - name: no_proxy
-              value: 127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
-            # The trust bundle, mounted over the system store below and named explicitly for the
-            # clients that read an env pointer (Node, Python, curl, requests, git's libcurl).
-            - name: SSL_CERT_FILE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: NODE_EXTRA_CA_CERTS
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: CURL_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: GIT_SSL_CAINFO
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: REQUESTS_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
           resources:
             requests:
               cpu: 500m
@@ -124,7 +134,7 @@ spec:
             - name: egress-ca
               # Public roots + cluster root + the proxy's interception root (../egress/trust-bundle.yaml),
               # over the image's own bundle at the path every client falls back to, whether or not it
-              # reads the env pointers above. A subPath mount does not follow ConfigMap updates: a CA
+              # reads the env pointers the runner passes on. A subPath mount does not follow ConfigMap updates: a CA
               # rotation reaches a sandbox at its next Pod, which suspend/resume or re-creation gives.
               mountPath: /etc/ssl/certs/ca-certificates.crt
               subPath: ca-certificates.crt

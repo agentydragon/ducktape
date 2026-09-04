@@ -46,7 +46,6 @@ def decision(
         "outcome": outcome,
         "reason": reason,
         "binding": "sandboxes-github-public" if outcome == "allow" else None,
-        "granted_by": "flux" if outcome == "allow" else None,
         "policy": "github-public" if outcome == "allow" else None,
         "rule": 0 if outcome == "allow" else None,
         "substituted": outcome == "allow" and method != "CONNECT",

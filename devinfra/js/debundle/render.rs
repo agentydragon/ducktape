@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
-    DECLARATORS_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD,
 };
 use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -54,17 +54,13 @@ fn stmt_list_stmt() -> Stmt {
 }
 
 /// An object-property run-absorber hole, emitted as a bare `ANYTHING` shorthand
-/// property. In object-property position `ANYTHING` is a run-absorber identical to
-/// the (still-accepted) `OBJECT_PROPS` keyword — `object_property_list_hole_name`
-/// carries an `ANYTHING` fallback — so we emit the shorter, position-polymorphic
-/// `ANYTHING` (the "prefer ANYTHING where the context is unambiguous" emission
-/// rule). Hand-written input selectors may still spell it `OBJECT_PROPS`.
+/// property — the only spelling the matcher accepts in this position.
 fn object_props_prop() -> PropOrSpread {
     PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(ANYTHING_HOLE_KEYWORD))))
 }
 
 /// An `ARGS` argument-list hole that absorbs a run of dropped (non-anchor)
-/// call/`new` arguments (the argument analog of `OBJECT_PROPS`).
+/// call/`new` arguments (the argument analog of [`object_props_prop`]).
 fn args_hole() -> ExprOrSpread {
     ExprOrSpread {
         spread: None,
@@ -73,7 +69,7 @@ fn args_hole() -> ExprOrSpread {
 }
 
 /// A `case CASE_REST:` switch-case hole that absorbs a run of dropped
-/// `case`/`default` clauses (the switch analog of `CLASS_REST;`).
+/// `case`/`default` clauses (the switch analog of the `ANYTHING;` class field).
 fn case_rest_case() -> SwitchCase {
     SwitchCase {
         span: DUMMY_SP,
@@ -281,8 +277,8 @@ fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
 /// The `ARGS` hole matches as an ordered subsequence with gaps
 /// (`match_expr_or_spread_slice`), so the selector survives a rebuild that adds
 /// or removes a non-anchor argument — unlike a per-argument `ANYTHING`, which is
-/// an arity-exact single-node hole. Mirrors [`hole_object`]'s `OBJECT_PROPS`
-/// run-collapsing. An anchored spread is kept verbatim (its expr left intact);
+/// an arity-exact single-node hole. Mirrors [`hole_object`]'s property-run
+/// collapsing. An anchored spread is kept verbatim (its expr left intact);
 /// a non-anchor spread is absorbed into the run like any other dropped argument.
 fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSpread> {
     let mut holed = Vec::new();
@@ -335,9 +331,7 @@ fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
 
 /// A destructure-pattern run-absorber hole — a shorthand binding whose name is
 /// `ANYTHING` — absorbing a run of dropped destructured properties. The pattern
-/// analog of [`object_props_prop`]; `object_pat_prop_list_hole_name` carries the
-/// same `ANYTHING` fallback as the object-literal position, so emitting the bare
-/// keyword is equivalent to the (still-accepted) `OBJECT_PROPS` spelling.
+/// analog of [`object_props_prop`].
 fn object_props_pat_prop() -> ObjectPatProp {
     ObjectPatProp::Assign(AssignPatProp {
         span: DUMMY_SP,
@@ -363,7 +357,7 @@ fn hole_pat(pat: &Pat, kept: &BTreeSet<AnchorSpan>) -> Pat {
 
 /// Hole a destructuring object pattern: keep only the props carrying a kept
 /// anchor (the discriminating destructured key), dropping every other run into
-/// an `OBJECT_PROPS` hole. The pattern analog of [`hole_object`]; a kept prop is
+/// an `ANYTHING` hole. The pattern analog of [`hole_object`]; a kept prop is
 /// retained verbatim (its bound local is alpha-wildcarded by the matcher).
 fn hole_object_pat(object: &ObjectPat, kept: &BTreeSet<AnchorSpan>) -> ObjectPat {
     let mut props = Vec::new();
@@ -410,7 +404,7 @@ fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
 }
 
 /// Hole an object literal for the read-off object form: keep only props carrying
-/// a kept anchor, with an `OBJECT_PROPS` run hole before the first kept prop,
+/// a kept anchor, with an `ANYTHING` run hole before the first kept prop,
 /// after the last, and **between every pair** of kept props.
 ///
 /// Unlike [`hole_object`] (which only emits a list hole where a run of props was
@@ -418,9 +412,9 @@ fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
 /// Object properties are unordered enum/lookup entries: a kept key can move on a
 /// rebuild, so anchoring one to the object's edge (`anchored_right` in the
 /// matcher) or assuming two kept keys stay adjacent is fragile. Surrounding every
-/// kept prop with `OBJECT_PROPS` matches each as an independent interior
+/// kept prop with `ANYTHING` matches each as an independent interior
 /// subsequence element, so a minimal *key set* survives key reorder and arbitrary
-/// gaps. With no kept prop this is a bare `{ OBJECT_PROPS }`; with one it is the
+/// gaps. With no kept prop this is a bare `{ ANYTHING }`; with one it is the
 /// padded single-key form (unchanged from the edge-padding behavior).
 pub(crate) fn hole_object_padded(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
     let mut props = vec![object_props_prop()];
@@ -613,8 +607,6 @@ pub(crate) fn holes_present(source: &str) -> BTreeSet<String> {
     for keyword in [
         ANYTHING_HOLE_KEYWORD,
         STMT_LIST_HOLE_KEYWORD,
-        OBJECT_PROPS_HOLE_KEYWORD,
-        CLASS_REST_HOLE_KEYWORD,
         DECLARATORS_HOLE_KEYWORD,
     ] {
         if source.contains(keyword) {
@@ -698,7 +690,7 @@ mod interior_holing_tests {
         // Array elements carrying no anchor hole to ANYTHING (arity-exact, since
         // the matcher matches array elements element-wise); only the element
         // holding the anchor is recursed into. The lone-prop object keeps its one
-        // anchor prop with no OBJECT_PROPS padding (nothing was dropped). The bare
+        // anchor prop with no run-hole padding (nothing was dropped). The bare
         // `render` callee holes to ANYTHING (a minified name the matcher
         // alpha-wildcards), unlike the member-method `.run` in the sibling case.
         let holed = hole_statement_expr(
@@ -711,13 +703,9 @@ mod interior_holing_tests {
         );
     }
 
-    /// The object-property run hole is emitted as the bare `ANYTHING` keyword, not
-    /// `OBJECT_PROPS` — the run-absorber form the renderer now prefers in
-    /// object-property position (the matcher accepts both; equivalence is pinned by
-    /// `object_props_and_anything_are_interchangeable_run_absorbers` in
-    /// `syntactic_holes_test.rs`). Both the literal and destructure-pattern holes
-    /// are exercised; the padded key-set form interleaves the hole around the kept
-    /// discriminating key.
+    /// The object-property run hole is emitted as the bare `ANYTHING` keyword —
+    /// the only run-absorber spelling in object-property position. The padded
+    /// key-set form interleaves the hole around the kept discriminating key.
     #[test]
     fn object_property_run_holes_emit_anything() {
         js_ast::with_swc_globals(|| {
@@ -749,10 +737,6 @@ mod interior_holing_tests {
                 holed_decl,
             )))))
             .unwrap();
-            assert!(
-                !holed.contains("OBJECT_PROPS"),
-                "object-property run hole must not emit OBJECT_PROPS:\n{holed}"
-            );
             // The kept anchor is the `keepMe` key token; its value holes to
             // `ANYTHING`, and the dropped sibling-prop runs on both sides become
             // the object-property run hole, also emitted as `ANYTHING`.

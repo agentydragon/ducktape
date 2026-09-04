@@ -1,0 +1,28 @@
+#!/usr/bin/env bpftrace
+/*
+ * One record per outbound TCP connection attempt: when, which process, which peer.
+ *
+ * TCP_SYN_SENT is entered from the connect() syscall, so pid/comm/uid are the
+ * calling process rather than a softirq context. Inbound connections enter
+ * TCP_SYN_RECV instead and are not recorded.
+ *
+ * Numeric literals rather than kernel headers: these tracepoint fields resolve
+ * from BTF, and including <net/sock.h> would tie the script to one kernel's
+ * layout. IPPROTO_TCP = 6, TCP_SYN_SENT = 2, AF_INET = 2, AF_INET6 = 10.
+ */
+
+tracepoint:sock:inet_sock_set_state
+/ args->protocol == 6 && args->newstate == 2 && args->family == 2 /
+{
+	printf("%s pid=%d ppid=%d uid=%d comm=\"%s\" daddr=%s dport=%d\n",
+	    strftime("%Y-%m-%dT%H:%M:%S%z", nsecs), pid, curtask->real_parent->pid,
+	    uid, comm, ntop(args->family, args->daddr), args->dport);
+}
+
+tracepoint:sock:inet_sock_set_state
+/ args->protocol == 6 && args->newstate == 2 && args->family == 10 /
+{
+	printf("%s pid=%d ppid=%d uid=%d comm=\"%s\" daddr=%s dport=%d\n",
+	    strftime("%Y-%m-%dT%H:%M:%S%z", nsecs), pid, curtask->real_parent->pid,
+	    uid, comm, ntop(args->family, args->daddr_v6), args->dport);
+}

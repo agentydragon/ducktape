@@ -72,6 +72,31 @@ def main_worktree(repo: Path) -> Path:
     return Path(git_out(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).parent
 
 
+def patches_landed_in_main(repo: Path, head: str, main: str) -> bool:
+    """True when every commit `head` adds since the merge base has an equivalent on `main`.
+
+    Complements [`content_in_main`], which asks whether merging `head` would change `main`
+    *today* — a question that decays as `main` advances. A branch squash- or rebase-merged
+    long ago can conflict with a `main` that has since moved thousands of commits past the
+    merge base, and then reads as unlanded even though its work is in. This asks the
+    time-invariant question instead: did these patches land at some point after the merge
+    base? `git cherry` answers it by patch id, the same equivalence `git rebase` uses to drop
+    commits it has already applied.
+
+    Weaker than `content_in_main` on purpose: it establishes that the work landed, not that
+    it survives in `main`'s tree, so a later revert still reads as landed. For GC that is the
+    right bar — the branch contributes no patch `main` has not already seen — but it is only
+    ever an additional reason to prune, never a reason to keep.
+    """
+    outcome = git(repo, "cherry", main, head, check=False)
+    if outcome.returncode != 0:
+        return False
+    lines = [line for line in outcome.stdout.splitlines() if line.strip()]
+    # `-` marks a commit with an upstream equivalent, `+` one without. An empty listing means
+    # nothing to land, which `content_in_main` already covers; require real evidence here.
+    return bool(lines) and all(line.startswith("-") for line in lines)
+
+
 def content_in_main(pg: pygit2.Repository, head: pygit2.Oid, main: str) -> bool:
     """True when commit `head` adds nothing not already in `main`.
 

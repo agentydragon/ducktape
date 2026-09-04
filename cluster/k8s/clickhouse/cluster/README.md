@@ -25,6 +25,15 @@ Without that listener, those members cannot be local DDLWorker targets. The
 internal native cluster therefore consistently uses port 9000; TLS must be
 configured end-to-end before enabling the operator's secure-cluster setting.
 
+**Gotcha: `/etc/clickhouse-server/config.d` belongs to the operator.** It mounts its own
+generated ConfigMap at that path, over-mounting whatever the `podTemplate` declares
+there, so a `configMapGenerator` volume is silently invisible to the server — a
+`system_logs.xml` wired up that way never reached the pod and the tables it disabled kept
+growing for months. Server config additions go in `spec.configuration.files`, whose keys
+the operator renders into that same generated ConfigMap. Files merge in sorted order, and
+the operator's own `01-clickhouse-0*.xml` set `replace="1"` on `query_log`, `part_log` and
+`trace_log`, so anything overriding those must sort after them.
+
 The versioned `clickhouse-aiquota-schema-v7` Job applies idempotent tenant DDL
 once through the cluster Service with `ON CLUSTER default`. Tables remain
 ReplicatedMergeTree tables using the same Keeper paths. Tenant schema belongs

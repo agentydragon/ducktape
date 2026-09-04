@@ -478,7 +478,7 @@ pub(crate) fn minimize_var_group_selector(
 
     // W3 + key-set minimization: a single-target var whose target declarator is
     // an object literal reads its minimal selector off the shape index, then
-    // (slot-aware) covers the target object's own keys — `OBJECT_PROPS` holes
+    // (slot-aware) covers the target object's own keys — `ANYTHING` holes
     // around the discriminating key subset instead of keeping every key (the
     // `object_keys_over_pinned` / key-set group over-pin). Works whether the
     // object stands alone or sits inside a multi-declarator group. The matcher

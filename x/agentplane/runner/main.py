@@ -1,8 +1,10 @@
 """The runner process: one gRPC listener over the sessions in a state directory.
 
 Credentials come from the runner's own environment, never from flags or the protocol:
-ANTHROPIC_AUTH_TOKEN for Claude sessions, OPENAI_API_KEY for Codex sessions. The harness children
-inherit HOME and PATH from the runner.
+ANTHROPIC_AUTH_TOKEN for Claude sessions, OPENAI_API_KEY for Codex sessions. A harness child
+inherits nothing implicitly: its environment is what --harness-env declares, so a variable the
+runner holds reaches the child only when the deployment names it -- those two keys above all stay
+with the runner.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import asyncio
 import logging
 import os
 import signal
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -24,6 +27,23 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
 
 
+def harness_environment(environ: Mapping[str, str], *, declared: Sequence[str]) -> dict[str, str]:
+    """The environment every harness child starts from, as --harness-env gave it: `NAME=value` sets
+    the variable, a bare `NAME` takes the runner's own value and is absent when the runner has none
+    (`docker run -e` and Bazel's --action_env read the two forms the same way). Entries apply in
+    order, so a later one wins."""
+    child: dict[str, str] = {}
+    for entry in declared:
+        name, separator, value = entry.partition("=")
+        if not name:
+            raise ValueError(f"--harness-env expects NAME or NAME=value, got {entry!r}")
+        if separator:
+            child[name] = value
+        elif name in environ:
+            child[name] = environ[name]
+    return child
+
+
 @app.command()
 def main(
     state_dir: Annotated[Path, typer.Option(help="Session logs and harness persistence live here.")],
@@ -33,6 +53,14 @@ def main(
     codex_binary: Annotated[Path | None, typer.Option(help="Codex CLI; omit to refuse Codex sessions.")] = None,
     openai_base_url: Annotated[
         str | None, typer.Option(help="OpenAI Responses base URL, including /v1, for Codex.")
+    ] = None,
+    harness_env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--harness-env",
+            help="NAME=value a harness child starts with, or a bare NAME to take the runner's own "
+            "value; repeat per variable.",
+        ),
     ] = None,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -50,7 +78,7 @@ def main(
         codex = CodexLaunch(binary=codex_binary, base_url=openai_base_url, api_key=os.environ["OPENAI_API_KEY"])
     config = RunnerConfig(
         state_dir=state_dir,
-        environment={key: os.environ[key] for key in ("HOME", "PATH", "NO_PROXY") if key in os.environ},
+        environment=harness_environment(os.environ, declared=harness_env or []),
         claude=claude,
         codex=codex,
     )

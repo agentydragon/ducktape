@@ -69,7 +69,7 @@ use crate::{
 ///
 /// **Robustness-anchor policy.** A holed-down *value* anchor is preferred over
 /// the bare structural scaffold even when the scaffold alone would resolve. A
-/// scaffold that pins only declaration kind + arity (`class X { CLASS_REST }`,
+/// scaffold that pins only declaration kind + arity (`class X { ANYTHING; }`,
 /// `function f(ANYTHING) { STMT_LIST }`, `const X = ANYTHING`) is a degenerate
 /// selector: it pins nothing rebuild-stable and matches any same-shape sibling a
 /// rebuild adds. So the read-off keeps its chosen value anchor when it has one,
@@ -133,7 +133,7 @@ fn read_off_candidates(
     // statement the holer keeps verbatim leaves raw subtrees the matcher rejects),
     // so this is also where a whole-body class/component drills down to one anchored
     // member (e.g. `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`)
-    // instead of `class X { CLASS_REST }`.
+    // instead of `class X { ANYTHING; }`.
     let mut value_kept: Vec<BTreeSet<AnchorSpan>> = index
         .shape_index
         .unique_value_anchor_candidates(decl.body_idx)
@@ -282,7 +282,7 @@ fn render_context_neighbor(
 }
 
 /// Per-slot initializer holing for the read-off var paths: an object init holes
-/// to its key-set form ([`hole_object_padded`], interleaved `OBJECT_PROPS`),
+/// to its key-set form ([`hole_object_padded`], interleaved `ANYTHING`),
 /// every other init via [`hole_expr`]. The keep-shallow group path passes plain
 /// [`hole_expr`] instead (objects hole via [`hole_object`], not padded).
 fn hole_var_init_padded(init: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {

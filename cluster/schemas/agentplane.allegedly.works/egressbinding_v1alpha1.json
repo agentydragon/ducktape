@@ -4,22 +4,14 @@
   "properties": {
     "spec": {
       "type": "object",
-      "required": ["subjects", "policies", "approval"],
+      "required": ["subjects", "policies"],
       "properties": {
         "subjects": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "description": "Exactly one of sandbox or sandboxSelector.",
             "type": "object",
-            "oneOf": [
-              {
-                "required": ["sandbox"]
-              },
-              {
-                "required": ["sandboxSelector"]
-              }
-            ],
+            "required": ["sandbox"],
             "properties": {
               "sandbox": {
                 "description": "One Sandbox in the binding's namespace, by name.",
@@ -29,20 +21,6 @@
                   "name": {
                     "type": "string",
                     "minLength": 1
-                  }
-                }
-              },
-              "sandboxSelector": {
-                "description": "Every Sandbox in the binding's namespace carrying all of these labels.",
-                "type": "object",
-                "required": ["matchLabels"],
-                "properties": {
-                  "matchLabels": {
-                    "type": "object",
-                    "minProperties": 1,
-                    "additionalProperties": {
-                      "type": "string"
-                    }
                   }
                 }
               }
@@ -62,24 +40,6 @@
           "description": "After this instant the binding contributes nothing.",
           "type": "string",
           "format": "date-time"
-        },
-        "approval": {
-          "type": "object",
-          "required": ["state"],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": ["pending", "approved", "denied"]
-            },
-            "by": {
-              "description": "Who decided.",
-              "type": "string"
-            },
-            "at": {
-              "type": "string",
-              "format": "date-time"
-            }
-          }
         }
       }
     },

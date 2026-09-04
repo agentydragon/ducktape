@@ -272,7 +272,7 @@ alias(X, Target)      :- kind(D, VarDecl), declarator(D, X, Init),
 **Selectors lower to query bodies.** An AST-shape `source_match` compiles to a
 conjunction of `child` / `kind` / `prop_name` / `str_lit` / `resolves_to` atoms — and
 the **holes mostly vanish**, because a conjunctive query constrains only what it
-_mentions_: `CLASS_REST`, `ANYTHING`, `STMT_LIST` are just unmentioned structure.
+_mentions_: `ANYTHING`, `STMT_LIST`, `DECLARATORS` are just unmentioned structure.
 (Ordered/positional holes — "`open` before `close`", "a run of statements" — need
 recursion or sibling-order atoms, and are T-variant anyway.)
 
@@ -465,7 +465,7 @@ conjunction of atoms**:
 
 - **shape atom** — today's JS-with-holes `source_match`, lowered to
   `child`/`kind`/`str_lit`/`prop_name` atoms. Holes mostly disappear: a query constrains
-  only what it mentions, so `CLASS_REST`/`STMT_LIST`/`ANYTHING` go away (only
+  only what it mentions, so `STMT_LIST`/`ANYTHING`/`DECLARATORS` go away (only
   ordered/positional holes remain, and those are T-variant).
 - **relational atoms** — `calls`, `alias`, `reads_member`, or the raw `resolves_to`,
   tying the target to other nodes.
@@ -513,8 +513,7 @@ The current `source_match` hole vocabulary maps four ways; only the first is a t
 "hole" in the CQ:
 
 - **existential** (the majority) — `ANYTHING`, anonymous `EXPR`/`STMT`, and the run-holes
-  `STMT_LIST` / `ARGS` / `OBJECT_PROPS` / a single `CLASS_REST` / `CASE_REST` /
-  `DECLARATORS` ("ignore the rest") — **vanish**: a CQ asserts only what it requires, so
+  `STMT_LIST` / `ARGS` / a single `CASE_REST` / `DECLARATORS` ("ignore the rest") — **vanish**: a CQ asserts only what it requires, so
   you simply do not mention those children/args/members.
 - **readability labels** — `EXPR_*`, `STMT_*`, `ANYTHING_*`, and list-hole
   suffixes like `STMT_LIST_x` are comments, not equality constraints, so they
@@ -522,7 +521,7 @@ The current `source_match` hole vocabulary maps four ways; only the first is a t
 - **predicate** — `STR_LITERAL_MATCHING_RE("re")` → a **filter atom**
   `str_matches(node, "re")` (a builtin), not existence.
 - **ordered / positional** — multiple anchored runs implying a subsequence
-  (`CLASS_REST; a(){} CLASS_REST; b(){}` ⇒ `a` before `b`), `DECLARATORS_BEFORE/AFTER`,
+  (`ANYTHING; a(){} ANYTHING; b(){}` ⇒ `a` before `b`), `DECLARATORS_BEFORE/AFTER`,
   and any explicit source-order choice → **sibling-order atoms**, which are
   **T-variant**. Permitted only via the `where:` escape hatch and flagged by
   `selector-debt` — a stabilization target, not a default.
@@ -551,18 +550,18 @@ forbidden thing that triggers the error.
 Yes — every selector kind and hole the specs depend on has a faithful encoding over an AST-facts
 EDB; nothing is fundamentally inexpressible.
 
-| construct                                                                                    | faithful encoding                                     | EDB fact needed                                        |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ |
-| `binding: { name }`                                                                          | `name_owner` lookup                                   | owner graph (have it)                                  |
-| structural shape (`class` / `function` / call …)                                             | positive `kind` / `child` / `prop_name` join          | `kind(node,k)`, `child(parent,idx,child)`, `prop_name` |
-| `EXPR[_label]` / `STMT[_label]` / `ANYTHING[_label]`                                         | unmentioned position (faithful don't-care)            | —                                                      |
-| run-holes `STMT_LIST` / `ARGS` / `OBJECT_PROPS` / `CLASS_REST` / `CASE_REST` / `DECLARATORS` | absorb = don't-constrain; anchors keep relative order | `child` index column                                   |
-| `STR_LITERAL_MATCHING_RE("re")`                                                              | filter atom `str_matches(node,"re")`                  | `str_lit(node,value)`                                  |
-| internal exact identifier constraint                                                         | name filter                                           | `name(node,spelling)`                                  |
-| public `source_match` identifiers                                                            | identifier variable + scope                           | `resolves_to` (have it) + alpha-canonical ids          |
-| `target_binding`                                                                             | choice of distinguished variable                      | —                                                      |
-| `binding_groups` (adopt_names / exports)                                                     | mechanical per-target expansion (already done)        | —                                                      |
-| ordered / positional anchors                                                                 | child-index compare (`i < j`; adjacency `j == i + 1`) | `child` index column                                   |
+| construct                                                                       | faithful encoding                                     | EDB fact needed                                        |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ |
+| `binding: { name }`                                                             | `name_owner` lookup                                   | owner graph (have it)                                  |
+| structural shape (`class` / `function` / call …)                                | positive `kind` / `child` / `prop_name` join          | `kind(node,k)`, `child(parent,idx,child)`, `prop_name` |
+| `EXPR[_label]` / `STMT[_label]` / `ANYTHING[_label]`                            | unmentioned position (faithful don't-care)            | —                                                      |
+| run-holes `STMT_LIST` / `ARGS` / `ARRAY_ELEMENTS` / `CASE_REST` / `DECLARATORS` | absorb = don't-constrain; anchors keep relative order | `child` index column                                   |
+| `STR_LITERAL_MATCHING_RE("re")`                                                 | filter atom `str_matches(node,"re")`                  | `str_lit(node,value)`                                  |
+| internal exact identifier constraint                                            | name filter                                           | `name(node,spelling)`                                  |
+| public `source_match` identifiers                                               | identifier variable + scope                           | `resolves_to` (have it) + alpha-canonical ids          |
+| `target_binding`                                                                | choice of distinguished variable                      | —                                                      |
+| `binding_groups` (adopt_names / exports)                                        | mechanical per-target expansion (already done)        | —                                                      |
+| ordered / positional anchors                                                    | child-index compare (`i < j`; adjacency `j == i + 1`) | `child` index column                                   |
 
 So beyond the phase-1 owner graph the lowering needs: `kind`, `child(parent, idx, child)`,
 `prop_name`, `name`, `str_lit`, and a per-node structural-canonical id (plus the existing
@@ -598,7 +597,7 @@ solver model.
   greedy+snapshot/restore search **disappears** because placement is data, not a
   side resolver. **≥2 holes per list (interior segments with a free start) are fine, and the corpus uses them** — `infra/sentryInit.initSentry` is
   `[STMT_LIST, const s = …, STMT_LIST]`, `infra/android.serializeNodeForNativeBridge` is
-  `{OBJECT_PROPS, isTag: ANYTHING, OBJECT_PROPS}`. So the earlier "≤1 hole per list" intuition is
+  `{ANYTHING, isTag: ANYTHING, ANYTHING}`. So the earlier "≤1 hole per list" intuition is
   **empirically false**; the chain-join handles interior links regardless.
 - **(B) alpha-all is the same query, not a matcher clone.** A placement induces
   identifier-pair facts tagged with the placement id. Alpha bijection is then a
@@ -724,8 +723,8 @@ This is the detailed P0 queue; <../TODO.md> should only summarize it.
 - **G3 — retained hole and predicate lowering.** Lower today's retained
   JS-with-holes selectors and binding groups into native AST/owner IR atoms:
   simple existential holes, regex string predicates, run-hole placement
-  (`STMT_LIST`, `ARGS`, `OBJECT_PROPS`, `DECLARATORS`, `CLASS_REST`,
-  `CASE_REST`), anonymous statements as distinguished targets, exact
+  (`STMT_LIST`, `ARGS`, `DECLARATORS`, `CASE_REST`, and the `ANYTHING`
+  object-property / class-member runs), anonymous statements as distinguished targets, exact
   identifiers, target bindings, and binding groups. Prioritize shapes that
   still force the production projection fallback. Each construct either
   compiles faithfully or reports `unsupported`.

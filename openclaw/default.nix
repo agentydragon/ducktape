@@ -6,52 +6,10 @@
 }:
 
 let
-  system = pkgs.stdenv.hostPlatform.system;
-  # nix-openclaw's own source pin still tracks an older stable release. Keep
-  # its tested npm-package build path, but splice the current stable wrapper
-  # and source metadata over it so this image actually contains 2026.8.1.
-  ocPkgs = import nix-openclaw.inputs.nixpkgs {
-    inherit system;
-    overlays = [ nix-openclaw.overlays.default ];
-  };
-  stableSourceInfo = {
-    owner = "openclaw";
-    repo = "openclaw";
-    pnpmMajor = "12";
-    applyPublicSurfaceHardlinksPatch = false;
-    applySkipPluginAutoEnableNixModePatch = false;
-    # 2026.8.1 changed the hardlink-policy source shape, so the old
-    # nix-openclaw ownership patch no longer applies. Runtime plugins are
-    # copied into the gateway's bundled extension tree below instead.
-    applyNixStorePluginOwnershipPatch = false;
-    releaseTag = "v2026.8.1";
-    releaseVersion = "2026.8.1";
-    runtimePluginVersion = "2026.7.1";
-    # The npm path does not fetch the git source, but these mirror the stable
-    # sourceInfo shape for checks and future source builds.
-    rev = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
-    hash = "sha256-9mYcHVti8iV47jByNLIMTXevyamNP82ZHQldzwbt8pg=";
-    # Filled from the Nix build's fixed-output error after the wrapper lock is
-    # regenerated.
-    gatewayNpmDepsHash = "sha256-KnAPTULugA20oTb0Mkh82CajOBBC+LBg+Zx5nugwpAk=";
-  };
-  patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-stable-wrapper" { } ''
-    cp -r ${nix-openclaw} "$out"
-    chmod -R u+w "$out"
-    cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
-    cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
-    cp ${./patch-openclaw-npm-dist.mjs} "$out/nix/scripts/patch-openclaw-npm-dist.mjs"
-    # 2026.8.1 rejects an ACPX package root that is a symlink outside the
-    # bundled extension tree. Copy the generated plugin into the dist instead.
-    substituteInPlace "$out/nix/scripts/openclaw-gateway-npm-install.sh" \
-      --replace-fail 'ln -s "$OPENCLAW_BUNDLED_ACPX" "$acpx_root"' \
-      'cp -R "$OPENCLAW_BUNDLED_ACPX/." "$acpx_root"'
-  '';
-  openclawPackages = import "${patchedNixOpenclaw}/nix/packages" {
-    pkgs = ocPkgs;
-    sourceInfo = stableSourceInfo;
-  };
-  gateway = openclawPackages.openclaw-gateway;
+  # The gateway package, its source pin, and the npm-wrapper splice are shared
+  # with haku/openclaw_spike; see ./gateway.nix.
+  openclawGateway = import ./gateway.nix { inherit pkgs nix-openclaw; };
+  inherit (openclawGateway) openclawPackages gateway;
   matrixPlugin = openclawPackages.openclawRuntimePlugins.matrix;
   # Brave is an official external runtime plugin. Bundle its pinned Nix artifact
   # with the gateway rather than installing it mutably in the state PVC.
@@ -234,7 +192,18 @@ pkgs.dockerTools.buildLayeredImage {
       # Keep the matching Nix JDK explicit so the wrapped Bazel ELF can start.
       "JAVA_HOME=${pkgs.jdk_headless}"
       "NODE_ENV=production"
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs"
+      # --report-on-signal makes a wedged gateway diagnosable: `kill -USR2 1` writes
+      # a diagnostic report (JS stack, native stack per thread, libuv handles) to
+      # /tmp. Node generates it from a dedicated thread, which is the point --
+      # public-coder hung with its main thread blocked in synchronous node:sqlite
+      # work, so the event loop never turned, SIGUSR1 never opened the inspector,
+      # and /proc/<pid>/{syscall,stack} were refused by PodSecurity baseline.
+      # There was no way to ask the process what it was doing.
+      #
+      # Deliberately not --inspect: these containers execute agent-authored
+      # commands, and an always-listening inspector on loopback would let any of
+      # them attach to the gateway process and read its credentials.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "BB_USE_BAZEL_VERSION=${bazelExecutable}"

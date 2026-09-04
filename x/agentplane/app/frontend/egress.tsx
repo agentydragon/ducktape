@@ -1,26 +1,11 @@
-import { Badge, Button, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import { Badge, Button, Group, MultiSelect, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 
-const REFRESH_MS = 5000;
-
-const APPROVAL_COLORS: Record<BindingView["approval"], string> = {
-  approved: "green",
-  pending: "yellow",
-  denied: "red",
-};
-
-function ApprovalBadge({ binding }: { binding: BindingView }): JSX.Element {
-  const detail = binding.approved_by
-    ? `${binding.approval} by ${binding.approved_by}${binding.approved_at ? ` at ${new Date(binding.approved_at).toLocaleString()}` : ""}`
-    : `${binding.approval}, nobody has decided yet`;
-  return (
-    <Tooltip label={detail} withArrow>
-      <Badge color={APPROVAL_COLORS[binding.approval]}>{binding.approval}</Badge>
-    </Tooltip>
-  );
-}
+// The proxy keeps its recent decisions in memory and offers no stream, so this one view still
+// asks. Everything else on the page is pushed (live.tsx).
+const DECISIONS_REFRESH_MS = 5000;
 
 /** The proxy's Active condition as written; grey until the proxy has looked at the binding. */
 function ActiveBadge({ binding }: { binding: BindingView }): JSX.Element {
@@ -34,20 +19,7 @@ function ActiveBadge({ binding }: { binding: BindingView }): JSX.Element {
 }
 
 function provenance(binding: BindingView): string {
-  if (binding.from_git) return "from git";
-  return binding.granted_by ? `granted by ${binding.granted_by}` : "unlabelled";
-}
-
-function subjects(binding: BindingView): string {
-  return binding.subjects
-    .map((subject) =>
-      subject.sandbox
-        ? `sandbox ${subject.sandbox}`
-        : Object.entries(subject.match_labels ?? {})
-            .map(([key, value]) => `${key}=${value}`)
-            .join(", ")
-    )
-    .join("; ");
+  return binding.from_git ? "from git" : "runtime";
 }
 
 function expiry(binding: BindingView): JSX.Element {
@@ -73,9 +45,7 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
             <Text key={index} size="sm" style={{ overflowWrap: "anywhere" }}>
               {rule.hosts.join(", ")} · {rule.methods ? rule.methods.join(" ") : "any method"} ·{" "}
               {rule.paths ? rule.paths.join(", ") : "any path"}
-              {rule.credential
-                ? ` · ${rule.credential.header} from ${rule.credential.secret}/${rule.credential.key}`
-                : " · no credential"}
+              {rule.credential ? ` · credential ${rule.credential}` : " · no credential"}
             </Text>
           ))}
         </Stack>
@@ -89,48 +59,41 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
   );
 }
 
-function BindingActions({
-  binding,
-  onAct,
-}: {
-  binding: BindingView;
-  onAct: (action: BindingAction) => void;
-}): JSX.Element {
+const REVOKE_EXPLAINS =
+  "Deletes the rule, which is what takes the access away. There is no undo; a new binding has to be made.";
+const REVOKE_FROM_GIT = "Applied by Flux: remove it in the repository, or the next reconcile applies it again.";
+
+function BindingActions({ binding, onRevoke }: { binding: BindingView; onRevoke: () => void }): JSX.Element {
   return (
     <Group gap="xs" wrap="nowrap" justify="flex-end">
-      {binding.approval !== "approved" && (
-        <Button size="compact-xs" variant="light" color="green" onClick={() => onAct("approve")}>
-          Approve
-        </Button>
-      )}
-      {binding.approval !== "denied" && (
-        <Button size="compact-xs" variant="light" color="orange" onClick={() => onAct("deny")}>
-          Deny
-        </Button>
-      )}
-      {binding.from_git ? (
-        <Tooltip label="Applied by Flux; remove it in git" withArrow>
-          <Button size="compact-xs" variant="light" color="gray" disabled>
+      <Tooltip label={binding.from_git ? REVOKE_FROM_GIT : REVOKE_EXPLAINS} withArrow multiline w={280}>
+        {binding.from_git ? (
+          // `disabled` fires no pointer events, so the button would carry a tooltip nobody sees.
+          <Button
+            size="compact-xs"
+            variant="light"
+            color="gray"
+            data-disabled
+            onClick={(event) => event.preventDefault()}
+          >
             Revoke
           </Button>
-        </Tooltip>
-      ) : (
-        <Button size="compact-xs" variant="light" color="red" onClick={() => onAct("revoke")}>
-          Revoke
-        </Button>
-      )}
+        ) : (
+          <Button size="compact-xs" variant="light" color="red" onClick={onRevoke}>
+            Revoke
+          </Button>
+        )}
+      </Tooltip>
     </Group>
   );
 }
 
-type BindingAction = "approve" | "deny" | "revoke";
-
 function BindingsTable({
   bindings,
-  onAct,
+  onRevoke,
 }: {
   bindings: BindingView[];
-  onAct: (name: string, action: BindingAction) => void;
+  onRevoke: (name: string) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   function toggle(name: string): void {
@@ -146,7 +109,6 @@ function BindingsTable({
         <Table.Tr>
           <Table.Th>Binding</Table.Th>
           <Table.Th visibleFrom="sm">Provenance</Table.Th>
-          <Table.Th visibleFrom="sm">Approval</Table.Th>
           <Table.Th visibleFrom="sm">Expires</Table.Th>
           <Table.Th visibleFrom="sm">Policies</Table.Th>
           <Table.Th visibleFrom="sm">Active</Table.Th>
@@ -156,7 +118,7 @@ function BindingsTable({
       <Table.Tbody>
         {bindings.length === 0 && (
           <Table.Tr>
-            <Table.Td colSpan={7}>
+            <Table.Td colSpan={6}>
               <Text size="sm" c="dimmed">
                 No binding names this sandbox: nothing may leave it.
               </Text>
@@ -184,17 +146,14 @@ function BindingsTable({
           const rows = [
             <Table.Tr key={binding.name}>
               <Table.Td>
-                <Tooltip label={subjects(binding)} withArrow>
+                <Tooltip label={binding.subjects.join(", ")} withArrow>
                   <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
                     {binding.name}
                   </Text>
                 </Tooltip>
                 {/* On a phone the other columns fold under the name. */}
                 <Stack gap="xs" hiddenFrom="sm" mt="xs">
-                  <Group gap="xs">
-                    <ApprovalBadge binding={binding} />
-                    <ActiveBadge binding={binding} />
-                  </Group>
+                  <ActiveBadge binding={binding} />
                   <Text size="xs" c="dimmed">
                     {provenance(binding)} · expires{" "}
                     {binding.expires_at ? new Date(binding.expires_at).toLocaleString() : "never"}
@@ -205,23 +164,20 @@ function BindingsTable({
               <Table.Td visibleFrom="sm">
                 <Text size="sm">{provenance(binding)}</Text>
               </Table.Td>
-              <Table.Td visibleFrom="sm">
-                <ApprovalBadge binding={binding} />
-              </Table.Td>
               <Table.Td visibleFrom="sm">{expiry(binding)}</Table.Td>
               <Table.Td visibleFrom="sm">{policyNames}</Table.Td>
               <Table.Td visibleFrom="sm">
                 <ActiveBadge binding={binding} />
               </Table.Td>
               <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
-                <BindingActions binding={binding} onAct={(action) => onAct(binding.name, action)} />
+                <BindingActions binding={binding} onRevoke={() => onRevoke(binding.name)} />
               </Table.Td>
             </Table.Tr>,
           ];
           if (expanded.has(binding.name)) {
             rows.push(
               <Table.Tr key={`${binding.name}-rules`}>
-                <Table.Td colSpan={7}>
+                <Table.Td colSpan={6}>
                   <PolicySummary policies={binding.policies} missing={binding.missing_policies} />
                 </Table.Td>
               </Table.Tr>
@@ -230,7 +186,40 @@ function BindingsTable({
           return rows;
         })}
       </Table.Tbody>
+      <Table.Caption>
+        A binding is the permission: it allows while it exists, and revoking deletes it. One from the repository is
+        removed there.
+      </Table.Caption>
     </Table>
+  );
+}
+
+/** Grants to a sandbox that is already running; each grant is its own binding, revoked on its own. */
+function GrantPolicies({
+  policies,
+  picked,
+  onPick,
+  onGrant,
+}: {
+  policies: string[];
+  picked: string[];
+  onPick: (names: string[]) => void;
+  onGrant: () => void;
+}): JSX.Element {
+  return (
+    <Group align="flex-end">
+      <MultiSelect
+        label="Grant policies"
+        description="Added as a binding of its own; what this sandbox already has is untouched"
+        data={policies}
+        value={picked}
+        onChange={onPick}
+        style={{ flex: "1 1 12rem" }}
+      />
+      <Button onClick={onGrant} disabled={picked.length === 0}>
+        Grant
+      </Button>
+    </Group>
   );
 }
 
@@ -309,24 +298,17 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
   );
 }
 
-/** What may leave the sandbox and what recently did: its bindings and the proxy's decisions. */
-export function EgressSection({ name }: { name: string }): JSX.Element {
-  const [bindings, setBindings] = useState<BindingView[] | null>(null);
+/** What may leave the sandbox and what recently did: its pushed bindings and the proxy's decisions. */
+export function EgressSection({ name, bindings }: { name: string; bindings: BindingView[] | null }): JSX.Element {
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The namespace's policies, and the ones picked to grant this sandbox next.
+  const [policies, setPolicies] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
-    const params = { params: { path: { name } } };
-    const [rules, recent] = await Promise.all([
-      api.GET("/sandboxes/{name}/egress", params),
-      api.GET("/sandboxes/{name}/egress/decisions", params),
-    ]);
-    if (rules.error) setError(displayableError(rules.error));
-    else {
-      setBindings(rules.data);
-      setError(null);
-    }
+    const recent = await api.GET("/sandboxes/{name}/egress/decisions", { params: { path: { name } } });
     if (recent.error) {
       setDecisions(null);
       setDecisionsError(displayableError(recent.error));
@@ -338,24 +320,41 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
 
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), REFRESH_MS);
+    const timer = setInterval(() => void refresh(), DECISIONS_REFRESH_MS);
     return () => clearInterval(timer);
   }, [refresh]);
 
-  async function act(binding: string, action: BindingAction): Promise<void> {
-    const params = { params: { path: { name: binding } } };
-    const { error: failure } =
-      action === "revoke"
-        ? await api.DELETE("/egress/bindings/{name}", params)
-        : await api.POST(`/egress/bindings/{name}/${action}`, params);
-    if (failure) setError(displayableError(failure));
-    await refresh();
+  useEffect(() => {
+    void (async () => {
+      const { data, error: failure } = await api.GET("/egress/policies");
+      setError(failure ? displayableError(failure) : null);
+      if (!failure) setPolicies(data.map((policy) => policy.name));
+    })();
+  }, []);
+
+  // What the API server now holds, granted or revoked, arrives on the page's stream; nothing to
+  // re-read here.
+  async function revoke(binding: string): Promise<void> {
+    const { error: failure } = await api.DELETE("/egress/bindings/{name}", {
+      params: { path: { name: binding } },
+    });
+    setError(failure ? displayableError(failure) : null);
+  }
+
+  async function grant(): Promise<void> {
+    const { error: failure } = await api.POST("/sandboxes/{name}/egress", {
+      params: { path: { name } },
+      body: { policies: picked },
+    });
+    setError(failure ? displayableError(failure) : null);
+    if (!failure) setPicked([]);
   }
 
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {bindings && <BindingsTable bindings={bindings} onAct={(binding, action) => void act(binding, action)} />}
+      <GrantPolicies policies={policies} picked={picked} onPick={setPicked} onGrant={() => void grant()} />
+      {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
       {decisions && <DecisionsTable decisions={decisions} />}
       {decisionsError && (

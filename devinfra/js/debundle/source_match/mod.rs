@@ -35,8 +35,8 @@ pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 // fact matcher, the `selector_codemod` minimizer, and `selector_candidate_index`
 // share one spelling. See that module's docs for the hole language.
 pub(crate) use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
+    ANYTHING_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
 };
 
 /// The fact matcher's identifier mode for a selector — the single

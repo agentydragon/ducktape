@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from x.agentplane.app.changes import Changes
 from x.agentplane.runner import protocol_pb2 as pb
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -85,6 +86,10 @@ class TrajectoryStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+        # A thread appearing or being renamed is a change the live stream pushes (live.py). Stored
+        # events are not: they arrive by the hundreds per turn, and the session's own SSE carries
+        # them already.
+        self.changes = Changes()
 
     @classmethod
     def connect(cls, database_url: str) -> TrajectoryStore:
@@ -117,7 +122,10 @@ class TrajectoryStore:
             )
             session.add(row)
             await session.flush()
-            return row.id
+            created = row.id
+        # Past the commit: a subscriber woken here reads a thread the database already holds.
+        self.changes.notify()
+        return created
 
     async def last_sequence(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
@@ -184,7 +192,9 @@ class TrajectoryStore:
                 raise ThreadNotFoundError(thread_id)
             thread.name = name
             await session.flush()
-            return _view(thread, *await _last(session, thread_id))
+            renamed = _view(thread, *await _last(session, thread_id))
+        self.changes.notify()
+        return renamed
 
     async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int) -> list[pb.Event]:
         """Up to `limit` events after the cursor, in sequence order; a reader pages until a short page."""

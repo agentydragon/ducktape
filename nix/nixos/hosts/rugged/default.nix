@@ -33,6 +33,7 @@ in
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/hostexecd.nix
+    ../../modules/github-api-recorder.nix
     ./ipu7-camera.nix
     ./foxconn-wwan.nix
     ./nebula-underlay-refresh.nix
@@ -70,6 +71,9 @@ in
   # Authentik identity and outbound daemon id derive from networking.hostName.
   # See nix/nixos/modules/hostexecd.nix.
   ducktape.hostexec.enable = true;
+
+  # Attribution for the GitHub GraphQL quota drain; see the module header.
+  ducktape.githubApiRecorder.enable = true;
 
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
   ducktape.ipu7Camera.enable = true;

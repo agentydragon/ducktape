@@ -15,15 +15,13 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
-import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, displayableError, type Condition, type NewSandbox, type SandboxView } from "./client";
+import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
+import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 
-const EMPTY_FORM: NewSandbox = { slug: "", profile: null, policies: [] };
-
-const REFRESH_MS = 5000;
+const EMPTY_FORM: NewSandbox = { slug: "", policies: [] };
 
 const STATE_COLORS: Record<string, string> = {
   running: "green",
@@ -69,29 +67,16 @@ function StateBadge({ row }: { row: SandboxView }): JSX.Element {
 }
 
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
-  const [rows, setRows] = useState<SandboxView[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
+  // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
-  // The namespace's individual policies; ticking some grants them on top of the profile's binding.
+  // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
-
-  const refresh = useCallback(async () => {
-    const { data, error: failure } = await api.GET("/sandboxes", {
-      params: { query: { include_archived: includeArchived } },
-    });
-    if (failure) setError(displayableError(failure));
-    else {
-      setRows(data);
-      setError(null);
-    }
-  }, [includeArchived]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(includeArchived));
+  const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
 
   useEffect(() => {
     void (async () => {
@@ -101,28 +86,42 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     })();
   }, []);
 
+  // No refresh after an action: the change reaches the API server, and the watch behind the
+  // stream brings the new row back on its own.
   async function act(name: string, action: "suspend" | "resume" | "archive" | "unarchive" | "delete"): Promise<void> {
     const params = { params: { path: { name } } };
     const { error: failure } =
       action === "delete"
         ? await api.DELETE("/sandboxes/{name}", params)
         : await api.POST(`/sandboxes/{name}/${action}`, params);
-    if (failure) setError(displayableError(failure));
-    await refresh();
+    setError(failure ? displayableError(failure) : null);
   }
 
   async function create(): Promise<void> {
     const { error: failure } = await api.POST("/sandboxes", {
-      body: { ...form, profile: form.profile || null },
+      body: form,
     });
     if (failure) setError(displayableError(failure));
-    else setForm(EMPTY_FORM);
-    await refresh();
+    else {
+      setForm(EMPTY_FORM);
+      setError(null);
+    }
   }
 
   return (
     <Stack>
       <Title order={2}>Sandboxes</Title>
+      <LiveStatus live={live} />
+      {confirmingDelete !== null && (
+        <ConfirmDelete
+          name={confirmingDelete}
+          onCancel={() => setConfirmingDelete(null)}
+          onConfirm={() => {
+            void act(confirmingDelete, "delete");
+            setConfirmingDelete(null);
+          }}
+        />
+      )}
       {error && <Text c="red">{error}</Text>}
       <Group align="flex-end">
         <TextInput
@@ -131,16 +130,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
         />
-        <TextInput
-          label="Profile"
-          description="A label the profile bindings select on"
-          value={form.profile ?? ""}
-          onChange={(e) => setForm({ ...form, profile: e.currentTarget.value })}
-          style={{ flex: "1 1 8rem" }}
-        />
         <MultiSelect
           label="Policies"
-          description="Granted to this sandbox alone"
+          description="What this sandbox may reach"
           data={policies}
           value={form.policies ?? []}
           onChange={(picked) => setForm({ ...form, policies: picked })}
@@ -189,19 +181,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
-                    {row.state === "suspended" || row.state === "archived" ? (
-                      <Tooltip label="Resume" withArrow>
-                        <ActionIcon variant="light" aria-label="Resume" onClick={() => void act(row.name, "resume")}>
-                          <IconPlayerPlay size={16} />
-                        </ActionIcon>
-                      </Tooltip>
-                    ) : (
-                      <Tooltip label="Suspend" withArrow>
-                        <ActionIcon variant="light" aria-label="Suspend" onClick={() => void act(row.name, "suspend")}>
-                          <IconPlayerPause size={16} />
-                        </ActionIcon>
-                      </Tooltip>
-                    )}
+                    <SuspendResume sandbox={row} onAct={(action) => void act(row.name, action)} />
                     <Menu position="bottom-end">
                       <Menu.Target>
                         <ActionIcon variant="subtle" aria-label={`More actions for ${row.name}`}>
@@ -214,7 +194,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                         ) : (
                           <Menu.Item onClick={() => void act(row.name, "archive")}>Archive</Menu.Item>
                         )}
-                        <Menu.Item color="red" onClick={() => void act(row.name, "delete")}>
+                        {/* The API refuses a running sandbox (inventory.py); suspend is one click left. */}
+                        <Menu.Item color="red" disabled={!deletable(row)} onClick={() => setConfirmingDelete(row.name)}>
                           Delete
                         </Menu.Item>
                       </Menu.Dropdown>
@@ -226,6 +207,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           })}
         </Table.Tbody>
       </Table>
+      {live.snapshot === null && <Text c="dimmed">Waiting for the first update…</Text>}
     </Stack>
   );
 }

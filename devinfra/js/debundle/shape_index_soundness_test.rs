@@ -106,13 +106,13 @@ fn render_item(
                 .filter(|name| kept_keys.contains(name))
                 .map(|name| format!("  {name}() {{}}"))
                 .collect();
-            // `CLASS_REST` is matched as the bare keyword only (no suffix), so
-            // lead and trail with bare `CLASS_REST;` holes; kept members then
-            // match as an ordered subsequence with gaps on both sides.
+            // Lead and trail with `ANYTHING;` class-member run holes; kept
+            // members then match as an ordered subsequence with gaps on both
+            // sides.
             let body = if members.is_empty() {
-                "  CLASS_REST;".to_string()
+                "  ANYTHING;".to_string()
             } else {
-                format!("  CLASS_REST;\n{}\n  CLASS_REST;", members.join("\n"))
+                format!("  ANYTHING;\n{}\n  ANYTHING;", members.join("\n"))
             };
             format!("class ReadableName {{\n{body}\n}}")
         }
@@ -181,9 +181,9 @@ fn render_expr(
             // `anchored_left` false; the trailing hole leaves `anchored_right`
             // false). Named holes avoid a duplicate-shorthand-key parse error.
             if props.is_empty() {
-                "{ OBJECT_PROPS }".to_string()
+                "{ ANYTHING }".to_string()
             } else {
-                format!("{{ OBJECT_PROPS_a, {}, OBJECT_PROPS_b }}", props.join(", "))
+                format!("{{ ANYTHING_a, {}, ANYTHING_b }}", props.join(", "))
             }
         }
         _ => "EXPR".to_string(),

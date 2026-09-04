@@ -31,7 +31,6 @@ from finance.augur.model.provider_config import CompositeProviderConfig, Mirrori
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
-from finance.augur.model.vecm import VecmProviderConfig
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
@@ -303,11 +302,6 @@ def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> Provi
         if trained_model_path.is_absolute():
             return provider
         return provider.model_copy(update={"trained_model_path": (base_dir / trained_model_path).resolve()})
-    if isinstance(provider, VecmProviderConfig):
-        trained_blob = provider.trained_blob
-        if trained_blob is None or trained_blob.is_absolute():
-            return provider
-        return provider.model_copy(update={"trained_blob": (base_dir / trained_blob).resolve()})
     if isinstance(provider, StateSpaceProviderConfig):
         trained_artifact_path = provider.trained_artifact_path
         if trained_artifact_path.is_absolute():

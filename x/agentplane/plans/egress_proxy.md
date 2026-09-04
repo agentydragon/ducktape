@@ -14,21 +14,20 @@ proxy relates to the integration app, and the work packages.
   Kubernetes, verifies tokens against Kubernetes, and keeps its own decision log. The app reads the
   same custom resources and asks the proxy for recent decisions; with the app down the proxy is
   unaffected, and with the proxy down the app still shows the rules.
-- **Policy is custom resources**, editable at runtime through the API server by `kubectl`, the
-  app under its RBAC, or an agent's request that Rai approves by flipping a field, and seedable
-  from git the way the `SandboxTemplate` is. Two kinds keep the rules DRY when agents' policies
+- **Policy is custom resources**, editable at runtime through the API server by `kubectl` or the
+  app under its RBAC, and seedable from git the way the `SandboxTemplate` is. Two kinds keep the rules DRY when agents' policies
   overlap partially:
   - `EgressPolicy`: a reusable, subject-free rule set. Each rule names hosts (exact, or a `*.`
     suffix), methods, path patterns, and optionally the credential to substitute: the Secret and
     key holding it, the header it goes into, and the placeholder value the sandbox sends.
-  - `EgressBinding`: subjects to policies. A subject is a Sandbox by name or by label selector in
-    this slice; a thread or an agent identity is a later subject kind on the same resource. A
-    binding carries an optional expiry and an approval state (`pending`, `approved`, `denied`,
-    with who and when), so an agent's ask is a pending binding and Rai's answer is a field
-    change. The proxy writes status: whether the binding is active and which referenced policies
-    resolved.
-- **Fail closed.** No binding for a subject means no egress; a binding whose policy is missing,
-  expired, or not approved contributes nothing and gets a status condition saying so. A denied
+  - `EgressBinding`: subjects to policies. A subject is one Sandbox, by name; a thread or an agent
+    identity is a later subject kind on the same resource. The
+    binding's existence is the permission and its optional expiry is the only thing that ends one
+    without deleting it: creating the object is the whole act of allowing, so there is no decision
+    field to answer it with. The proxy writes status: whether the binding is active and which
+    referenced policies resolved.
+- **Fail closed.** No binding for a subject means no egress; a binding that is expired or whose
+  policy is missing contributes nothing and gets a status condition saying so. A denied
   request is answered with `403` and a short machine-readable reason header, never with upstream
   detail.
 - **Credentials stay Secrets**, managed as today (ESO or SOPS through GitOps) and mounted only
@@ -44,10 +43,12 @@ proxy relates to the integration app, and the work packages.
   proves. Threads and agents attach later as columns, not as a redesign.
 - **Runtime grants die with their subject and say where they came from.** A binding the app
   creates for one sandbox carries an `ownerReference` to that Sandbox, so deleting the sandbox
-  garbage-collects the grant; a binding from git carries Flux's inventory labels and nothing at
-  runtime touches it, since Flux prunes only what it applied. Every binding also carries a
-  provenance label (`agentplane.allegedly.works/granted-by`: `flux`, or the app on whose approval
-  it was made) so the view can say "from git" or "granted by Rai at ...". Owner references
+  garbage-collects the grant; a binding from git carries Flux's inventory labels
+  (`kustomize.toolkit.fluxcd.io/name`), which is what the view reads to say "from git" and what
+  the app refuses to revoke, since Flux prunes only what it applied and would re-apply it on the
+  next reconcile. Who created a runtime binding is not re-asserted as a label of our own: creating
+  one is the whole grant, so everyone who may create one is equally entitled, and the API server's
+  audit log and `managedFields` record the actor better than we could. Owner references
   cascade on deletion, not on liveness: nothing is owned by the app's Pod or Deployment, and the
   app going down revokes nothing, because expiry is what fails closed.
 - **Time-limited grants need no app in the loop.** `expiresAt` is enforced from the proxy's own
@@ -55,14 +56,11 @@ proxy relates to the integration app, and the work packages.
   back into the enforcement path. A per-request use counter was considered and dropped: a count of
   requests says nothing about what they did, so "this once" belongs to the webhook path when a
   rule needs it.
-- **Profiles are selector bindings; per-launch picks are per-sandbox bindings.** A preset such
-  as "public coder" or "Haku" is a binding in git whose subject is a label selector
-  (`agentplane.allegedly.works/profile: public-coder`); launching an agent with that profile
-  means stamping the label on the Sandbox, and the Flux-managed binding applies with nothing
-  created at runtime. The create form also offers the namespace's individual policies; ticking
-  some creates one sandbox-owned binding on top, since bindings are additive. The staging seed is
-  the broadest selector binding, every managed sandbox, to be narrowed to a profile once there
-  are two kinds of agent.
+- **Every grant is a per-sandbox binding.** The create form offers the namespace's policies;
+  ticking some creates one sandbox-owned binding, and a sandbox nothing names reaches nothing.
+  There is no standing rule over a class of sandboxes: presets such as "public coder" or "Haku"
+  are the deferred profile concept ([`profiles.md`](profiles.md)), which must not re-enter as a
+  selector on this CRD.
 - **Credentials live in their own namespace.** The proxy reads Secrets only from
   `agentplane-egress-credentials`, where the ExternalSecrets for substituted credentials are
   delivered; a rule's `secretRef` resolves there. RBAC cannot filter Secrets by label, and a
@@ -88,16 +86,15 @@ TokenReview of the sidecar's token; the live Pod UID and IP to Sandbox owner loo
 API server's) over `EgressPolicy`, `EgressBinding`, and the referenced Secrets; rule evaluation;
 credential substitution; the decision ring and its read endpoint; status written back to
 bindings. Tested against a fake API server and a scripted upstream: accepted, denied by rule,
-denied for want of a binding, expired binding, unapproved binding, missing policy, copied token,
-Secret rotation.
+denied for want of a binding, expired binding, missing policy, copied token, Secret rotation.
 
 ### E2. Resources, RBAC, and the staging seed
 
 The two CRDs with schema validation and printer columns; the proxy's ServiceAccount with read on
 the resources and Secrets it needs, status write on bindings, and TokenReview; the app's
 ServiceAccount with read on both kinds and write on bindings; the cluster validator covering both;
-staging's seed: one approved binding of every managed Sandbox to a policy that lets it reach
-GitHub's API and HTTPS git for public repositories with the `agentydragon-agent` PAT substituted.
+staging's `github-public` policy, which lets a sandbox bound to it reach GitHub's API and HTTPS
+git for public repositories with the `agentydragon-agent` PAT substituted.
 
 ### E3. Sandbox wiring
 
@@ -106,6 +103,45 @@ proxy environment and trusted CA; Cilium policy so only the proxy reaches outsid
 Acceptance: from inside a staging sandbox, a `git ls-remote` of a public repository succeeds
 through the proxy with no credential visible in the sandbox, and the same call without the
 sidecar's token is refused.
+
+### E5. The model endpoint through the proxy too
+
+A runner Pod carries the `cheap-experiments` LiteLLM key as environment and hands it to every
+harness child, and `NO_PROXY` names the LiteLLM host so that traffic bypasses the sidecar. That is
+the one real credential left in a sandbox, and the design does not require it there: the key opens
+an external system like any other, and holding those is what the proxy is for. The app's README
+calls it a staging-first convenience, "the same operational convenience the `agent-workspaces`
+Codex lane uses"; this package is what retires it.
+
+The end state is the shape every other credential already has. The harness gets a placeholder in
+place of the key, LiteLLM's host leaves `NO_PROXY` so model traffic takes the sidecar like
+everything else, and a rule substitutes the real key from a Secret in the credentials namespace.
+An agent that reads its own environment then finds nothing worth stealing, and a compromised
+harness cannot spend the budget except through a proxy that records every call.
+
+The runner change that enables it is a per-harness form of `--harness-env`: the provider
+credential stops being `os.environ["ANTHROPIC_AUTH_TOKEN"]` read by the runner and becomes a value
+the deployment declares for that harness, which is what lets it be a placeholder instead of a key.
+`--anthropic-base-url` can go the same way, since Claude's endpoint reaches it only as
+`ANTHROPIC_BASE_URL`. Two things do not follow:
+
+- **Codex's endpoint is not only an environment variable.** `native/codex/scenarios.command()`
+  builds `-c` config overrides from it as well as setting `OPENAI_BASE_URL`, so `--openai-base-url`
+  cannot become an env flag without generalizing those overrides too.
+- **`CLAUDE_CONFIG_DIR` and `CODEX_HOME` cannot move.** They are `session.directory / <harness>`,
+  computed per session by the runner, and no deployment can name them.
+
+Open questions to answer before it is worth doing:
+
+- **Latency and streaming.** Model traffic is long-lived streaming SSE, unlike the request-shaped
+  calls the proxy handles today. Whether interception costs anything that matters on a token
+  stream is a measurement nobody has taken.
+- **Whose budget.** The key is a per-instance budget cap and kill switch. Once the proxy
+  substitutes it, a rule decides which sandbox spends which key -- finer-grained than one key per
+  deployment, and possibly its own resource shape.
+- **What a proxy outage costs.** Model traffic bypassing the proxy is why a sandbox keeps working
+  across a proxy restart. Routing it through makes the proxy a hard dependency of every turn,
+  which the "the proxy depends on the API server only" decision above avoided everywhere else.
 
 ## Left out on purpose
 

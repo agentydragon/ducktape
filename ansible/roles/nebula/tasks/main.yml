@@ -106,26 +106,9 @@
   notify: Restart nebula
   tags: [nebula, install]
 
-- name: Install sops binary
-  github_release_install:
-    release_spec:
-      repo: "getsops/sops"
-      version: "latest"
-      asset_pattern: "sops-.*\\.linux\\.amd64$"
-    method:
-      name: binary
-      dest_path: /usr/local/bin/sops
-  tags: [nebula, sops]
-
-- name: Install ssh-to-age binary
-  github_release_install:
-    release_spec:
-      repo: "Mic92/ssh-to-age"
-      version: "latest"
-      asset_pattern: "ssh-to-age\\.linux-amd64$"
-    method:
-      name: binary
-      dest_path: /usr/local/bin/ssh-to-age
+- name: Apply sops tools role
+  ansible.builtin.import_role:
+    name: sops_tools
   tags: [nebula, sops]
 
 - name: Convert host SSH key to age key for sops decryption

@@ -36,6 +36,10 @@ spec:
         app.kubernetes.io/component: quota
         github_account: agentydragon
     spec:
+      # The upstream exporter beside this one pulls from Docker Hub; this image comes
+      # from the private Forgejo registry and needs the pull secret.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 10
       securityContext:
@@ -52,7 +56,10 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            # No readOnlyRootFilesystem, unlike the exporter beside this one: the
+            # aspect_rules_py launcher materialises its venv at startup inside the
+            # image's own runfiles directory, so the root filesystem has to be
+            # writable or the container exits before serving anything.
             capabilities:
               drop:
                 - ALL
@@ -125,6 +132,8 @@ spec:
         app.kubernetes.io/component: quota
         github_account: agentydragon-agent
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 10
       securityContext:
@@ -141,7 +150,6 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL

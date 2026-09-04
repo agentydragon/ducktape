@@ -105,8 +105,9 @@ def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
     Aliased `pullRequests(headRefName:)` fields fetch ~50 branches per request instead of a
     REST call per branch — a few round-trips rather than hundreds. `headRefName` matches PR
     records, so a branch whose remote ref was deleted after merge still resolves. Returns {}
-    when there is no token, no GitHub remote, or the API is unreachable — the caller then
-    classifies on git signals alone.
+    when there is no token, no GitHub remote, or the API is unreachable, and returns whatever
+    it resolved before a mid-sweep quota exhaustion — the caller classifies the rest on git
+    signals alone.
     """
     if not branches:
         return {}
@@ -120,15 +121,27 @@ def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
         return {}
     owner, name = slug.split("/", 1)
     headers = {"Authorization": f"bearer {token}", "User-Agent": "workspace-gc"}
+    states: dict[str, PrInfo] = {}
     try:
-        states: dict[str, PrInfo] = {}
         with httpx.Client(headers=headers, timeout=30) as client:
             for batch in itertools.batched(sorted(branches), _GRAPHQL_BATCH, strict=False):
                 query, alias_to_branch = _pr_query(owner, name, list(batch))
                 payload = client.post(_GRAPHQL_URL, json={"query": query}).raise_for_status().json()
                 data = payload.get("data")
                 if not data or data.get("repository") is None:
-                    raise RuntimeError(f"GraphQL returned no data: {payload.get('errors')}")
+                    errors = payload.get("errors") or []
+                    if any(error.get("type") == "RATE_LIMIT" for error in errors):
+                        # Quota is per-hour and shared with every other GitHub caller, so it
+                        # says nothing about this repo: keep the batches already resolved,
+                        # stop asking, and let the rest classify on git signals alone.
+                        logger.warning(
+                            "PR check incomplete: GitHub GraphQL quota exhausted; "
+                            "classified %d of %d branches with PR data",
+                            len(states),
+                            len(branches),
+                        )
+                        return states
+                    raise RuntimeError(f"GraphQL returned no data: {errors}")
                 repository = data["repository"]
                 for alias, branch in alias_to_branch.items():
                     connection = repository.get(alias)
@@ -303,15 +316,22 @@ def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool) -> i
 
 
 def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, delete: bool) -> int:
+    # Inspect the bases first: that filesystem pass alone decides every PRUNE/KEEP verdict.
+    # Only the "workspace is a prunable worktree" annotation needs git, and only for the few
+    # worktrees that are actually a base's workspace — so the PR query is scoped to their
+    # branches instead of all of them, and no branch is ever classified.
     try:
-        prs = _gather_prs(repo, no_prs=no_prs)
-        scan = _scan(repo, prs=prs, output_user_root=output_user_root)
+        bases = list(output_base_gc.scan_output_user_root(output_user_root))
+        prs = {} if no_prs else pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
+        bases = workspace_scan.annotate_bases(
+            repo, bases, main=git_repo.main_ref(repo), pr_states=prs, active_path=_active_worktree(repo)
+        )
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         return 1
-    print(output_base_gc.render_report(scan.bases, include_kept=show_all, include_sizes=sizes))
+    print(output_base_gc.render_report(bases, include_kept=show_all, include_sizes=sizes))
     if not delete:
-        if any(isinstance(item, PrunableBase) for item in scan.bases):
+        if any(isinstance(item, PrunableBase) for item in bases):
             print("Dry run only; pass --delete to remove the prunable bases.")
         return 0
     return _apply_base_deletions(output_user_root)

@@ -1,0 +1,27 @@
+---
+# Shared by any role that needs to decrypt this repo's SOPS files on a plain (non-NixOS) host:
+# `sops` itself, plus `ssh-to-age` to derive the host's age decryption identity from its existing
+# `/etc/ssh/ssh_host_ed25519_key` — the same key already registered as an age recipient in
+# .sops.yaml for this host's secrets. Idempotent — safe to import from multiple roles.
+
+- name: Install sops binary
+  github_release_install:
+    release_spec:
+      repo: "getsops/sops"
+      version: "latest"
+      asset_pattern: "sops-.*\\.linux\\.amd64$"
+    method:
+      name: binary
+      dest_path: /usr/local/bin/sops
+  tags: [sops_tools]
+
+- name: Install ssh-to-age binary
+  github_release_install:
+    release_spec:
+      repo: "Mic92/ssh-to-age"
+      version: "latest"
+      asset_pattern: "ssh-to-age\\.linux-amd64$"
+    method:
+      name: binary
+      dest_path: /usr/local/bin/ssh-to-age
+  tags: [sops_tools]

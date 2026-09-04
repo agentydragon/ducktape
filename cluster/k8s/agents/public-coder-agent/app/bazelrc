@@ -1,0 +1,19 @@
+# Bazel configuration for the agent, mounted at /home/openclaw/.bazelrc.
+#
+# Keep Bazel's output base and disk cache on the ephemeral /bazel-cache emptyDir,
+# never the persistent state PVC. Without this the agent accreted output bases
+# under .openclaw/workspace/.cache/bazel-* -- ~100GiB of regenerable build
+# artifacts on a claim whose real state is under 2GiB, which is what made the
+# gateway's SQLite reads compete with SeaweedFS compaction on a saturated HDD.
+# haku-openclaw-spike hit the same thing first (a single run left a 65G output
+# base) and fixed it the same way.
+#
+# Ephemeral means re-fetched per pod start; the volume's sizeLimit caps runaway
+# growth so a bad build evicts the pod rather than filling the node disk.
+#
+# Gotcha: this sets the *default* only. The bases found on the PVC came from the
+# agent passing an explicit --output_user_root per project, which overrides an
+# rc file. Keeping builds off the PVC also needs the agent not to redirect them
+# back; see ../TOOLING.md.
+startup --output_user_root=/bazel-cache/output
+build --disk_cache=/bazel-cache/disk

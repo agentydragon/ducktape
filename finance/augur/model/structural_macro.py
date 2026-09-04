@@ -50,9 +50,11 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from datetime import date
 from typing import Literal
 
 import numpy as np
+import yaml
 from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
@@ -66,8 +68,16 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.model.series_model import derive_stream_rollout_seeds
+from util.bazel.runfiles import get_required_path
 
 MONTHS_PER_YEAR = 12
+
+# FRED publishes both rate series in PERCENT; every rate inside augur is a decimal.
+PERCENT_TO_DECIMAL = 0.01
+
+# A fit needs enough months that its estimate is not noise. 240 (20 years) is well below the
+# ~865 the real rate series carry and well above anything that could fit a single regime.
+MINIMUM_MONTHS = 240
 
 MINIMUM_ANNUAL_YIELD = 0.0001
 """Floor on any modeled yield, as a decimal (1bp).
@@ -111,33 +121,25 @@ class EquitySpec(FrozenModel):
 
     symbol: SecuritySymbol
     initial_price_usd: PositiveFloat
-    # FITTED on the CRSP value-weighted total US market (Ken French's factors, `Mkt-RF + RF`),
-    # monthly, 1926-07 to 2026-06 — 1200 months, a full century, dividends included.
-    # 10.37%/yr nominal at 18.3% vol.
-    #
-    # A century rather than the 46 years this used before, and BOTH numbers moved:
-    #   drift       11.35% -> 10.37%   (-1.0pp)
-    #   volatility   15.4% ->  18.3%   (+2.9pp)
-    # The volatility is the larger move and the one that had been invisible, because the
-    # shorter window omits 1929-32. For a ruin probability the vol term plausibly matters more
-    # than the drift, and this is the first parameter change here that makes the answer WORSE
-    # rather than better.
-    #
-    # Validated before adoption: the series' worst nominal drawdown over the century is -83.7%,
-    # against 1929-32's actual about -84%.
-    monthly_log_return_mu: float = 0.00822
-    monthly_log_return_sigma: NonNegativeFloat = 0.05290
-    # ZERO, and this is a finding rather than a default. Regressing equity's monthly log return
-    # on the same month's change in the short rate gives, on two windows:
-    #   1993-2026 (SPY):   beta = +1.57, R^2 = 0.0041
-    #   1980-2026 (VFINX): beta = -0.62, R^2 = 0.0051
-    # The SIGN is not stable across windows and neither fit explains more than half a percent
-    # of the variance. One window could be an unlucky sample; two that disagree on the sign are
-    # the absence of a contemporaneous monthly relationship. So the model carries no coupling
-    # rather than noise dressed as structure. The consequence is load-bearing and stated in
-    # SPEC.md: equity and rates are INDEPENDENT here, so this model cannot answer a question
-    # that turns on bond/equity correlation — which is what a 60/40 study turns on.
+    # Defaults to the checked-in fit on the CRSP value-weighted total US market (Ken French's
+    # factors, `Mkt-RF + RF`, dividends included) — see `fit/calibrated/trained_structural_macro
+    # .yaml`'s `equity_fit` for the window/sample count, and SPEC.md gap 3 for why a century
+    # rather than a shorter window is the deliberate choice.
+    monthly_log_return_mu: float = Field(default_factory=lambda: _fitted_defaults().equity_monthly_log_return_mu)
+    monthly_log_return_sigma: NonNegativeFloat = Field(
+        default_factory=lambda: _fitted_defaults().equity_monthly_log_return_sigma
+    )
+    # ZERO by POLICY, not by fit — the fitted coupling's sign is not stable across windows and
+    # neither window explains half a percent of variance (SPEC.md gap 2 has the numbers; the
+    # checked-in fit's `rate_beta_fit`/`rate_beta_fitted_value`/`rate_beta_r_squared` are the
+    # same finding as data). So the model carries no bond/equity coupling rather than noise
+    # dressed as structure — load-bearing per SPEC.md: a question that turns on bond/equity
+    # correlation is not answered here.
     rate_beta: float = 0.0
+
+
+type MacroStateVector = tuple[float, float, float]
+type MacroStateMatrix = tuple[MacroStateVector, MacroStateVector, MacroStateVector]
 
 
 class MacroVarSpec(FrozenModel):
@@ -149,10 +151,10 @@ class MacroVarSpec(FrozenModel):
     together, which three separate processes cannot express at all.
     """
 
-    initial_state: tuple[float, float, float]
-    intercept: tuple[float, float, float]
-    transition: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
-    shock_cholesky: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+    initial_state: MacroStateVector
+    intercept: MacroStateVector
+    transition: MacroStateMatrix
+    shock_cholesky: MacroStateMatrix
 
     @model_validator(mode="after")
     def _reject_explosive(self) -> MacroVarSpec:
@@ -169,15 +171,51 @@ class MacroVarSpec(FrozenModel):
         return self
 
 
-# The fit, verbatim. Kept as a constant rather than inlined as field defaults because a VAR is
-# a single object — mixing a transition row from one fit with a Cholesky factor from another
-# would be silently wrong, and separate fields would let that happen one edit at a time.
-FITTED_MACRO_VAR = MacroVarSpec(
-    initial_state=(0.0363, 0.0084, 0.036588),
-    intercept=(-0.00046861, 0.00079576, 0.00124274),
-    transition=((0.989118, 0.032695, 0.019242), (-0.002894, 0.947199, -0.004301), (-0.003116, -0.038973, 0.980979)),
-    shock_cholesky=((0.00479308, 0.0, 0.0), (-0.0039163, 0.00248131, 0.0), (0.00047397, 0.00051737, 0.00353245)),
-)
+class FitWindowProvenance(FrozenModel):
+    """A fitted block's evidence window, checked in as data rather than left to a comment
+    beside the numbers: which series it came from, the window it was fitted on, and how many
+    months that window covered."""
+
+    source: str
+    first_month: date
+    last_month: date
+    sample_months: int
+
+
+class StructuralMacroFittedDefaults(FrozenModel):
+    """The structural-macro fit, checked in whole: written by `bb run
+    //finance/augur/fit:train -- --model structural_macro ...` to
+    `fit/calibrated/trained_structural_macro.yaml` and loaded (via `_fitted_defaults` below)
+    as `StructuralMacroProviderConfig`'s and `EquitySpec`'s shipped defaults.
+
+    Deployment-specific fields are deliberately absent — which equity symbol and which
+    instruments a scenario prices are not fit outputs, so they stay on
+    `StructuralMacroProviderConfig`/`InstrumentSpec`, supplied per scenario.
+    """
+
+    macro_state: MacroVarSpec
+    macro_state_fit: FitWindowProvenance
+
+    equity_monthly_log_return_mu: float
+    equity_monthly_log_return_sigma: NonNegativeFloat
+    equity_fit: FitWindowProvenance
+
+    # `EquitySpec.rate_beta` stays a policy-set 0.0 rather than this fitted value — see its
+    # field comment. Recorded here so that policy is checkable against real evidence instead
+    # of asserted, and so a future refit's rate_beta finding is a reviewable diff.
+    rate_beta_fit: FitWindowProvenance
+    rate_beta_fitted_value: float
+    rate_beta_r_squared: float
+
+
+# Runfile location of the checked-in fit — see `StructuralMacroFittedDefaults`.
+_BUNDLED_STRUCTURAL_MACRO_RUNFILE = "_main/finance/augur/fit/calibrated/trained_structural_macro.yaml"
+
+
+def _fitted_defaults() -> StructuralMacroFittedDefaults:
+    path = get_required_path(_BUNDLED_STRUCTURAL_MACRO_RUNFILE)
+    return StructuralMacroFittedDefaults.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
 
 SHORT_RATE, TERM_SPREAD, INFLATION_RATE = 0, 1, 2
 
@@ -188,21 +226,13 @@ class StructuralMacroProviderConfig(FrozenModel):
     type: Literal["structural_macro"] = "structural_macro"
 
     # --- joint macro state: a VAR(1) on (short_rate, term_spread, inflation_rate) ---------
-    # FITTED by `augur.fit.structural_macro.fit_macro_var` on FRED FEDFUNDS, GS10 and
-    # CPIAUCSL, monthly, 1955-08 to 2026-06 (850 months). Inflation is trailing-year log
-    # inflation; all three states are annualized decimals.
-    #
-    # ONE process rather than three independent ones, because they are not independent and the
-    # couplings are where the answer lives. The version this replaced had inflation as an iid
-    # shock around a fixed drift and no link to rates at all, which produced two failures that
-    # are gone here:
-    #   - a 30-year price level that was effectively deterministic (1-sigma x2.64..x3.01,
-    #     against x1.95..x4.85 realized). Inflation is now a STATE with its own 0.981 lag, so
-    #     a high-inflation decade is reachable. Simulated 30y band: x2.11..x4.78.
-    #   - no Fed reaction, so a CPI-indexed spend could outrun a bond sleeve forever. The
-    #     short-rate equation now loads +0.0192 on lagged inflation, a long-run pass-through
-    #     of 1.77 — above the Taylor principle's 1.0, which nothing here imposed.
-    macro_state: MacroVarSpec = Field(default_factory=lambda: FITTED_MACRO_VAR)
+    # Defaults to the checked-in fit (`fit/calibrated/trained_structural_macro.yaml`'s
+    # `macro_state` + `macro_state_fit` for the window/sample count) rather than a module
+    # constant, so a refit is a reviewable diff instead of a hand-transcription. Inflation is
+    # trailing-year log inflation; all three states are annualized decimals. Why one JOINT
+    # process rather than three independent ones — persistence, the Fed's inflation reaction,
+    # correlated innovations — is SPEC.md's "What is fitted, and on what" and gap 1.
+    macro_state: MacroVarSpec = Field(default_factory=lambda: _fitted_defaults().macro_state)
 
     # The CPI level's arbitrary base. Only RATIOS of it are ever read (an amount indexed from
     # month a to month b), so the value is a unit choice; it is the inflation RATE inside
@@ -220,11 +250,11 @@ class StructuralMacroProviderConfig(FrozenModel):
 class StructuralMacroModel:
     """Runtime `Sampler` for `StructuralMacroProviderConfig`.
 
-    Implements `Sampler` only. Not `Fittable`, not `Scorable`: parameters are hand-set, the
-    way the independent provider's are, so a coherent rates model exists before any
-    evidence-pipeline work. Fitting the rates block on its own long history (GS10 to 1953,
-    FEDFUNDS to 1954) is a later and separable step — it does not go through the joint fit's
-    single aligned window, which is what makes it separable.
+    Implements `Sampler` only. Not `Fittable`, not `Scorable`: fitting happens offline
+    (`fit/structural_macro.py`'s `fit_structural_macro_defaults`, run via `bb run
+    //finance/augur/fit:train -- --model structural_macro`), against each block's own
+    longest window rather than the `Fittable` protocol's shared aligned `HistoricalSeries` —
+    which is the whole reason this provider's state is two rates rather than a factor block.
     """
 
     label = "structural_macro"

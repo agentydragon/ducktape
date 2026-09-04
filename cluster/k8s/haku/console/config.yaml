@@ -1240,7 +1240,7 @@ mcp:
         credential:
           kind: none
     # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
-    # operator machine (wyrm2/rugged) under the operator's OWN Authentik identity. There
+    # operator machine (wyrm2/rugged/atlas) under the operator's OWN Authentik identity. There
     # is no standing credential: `operator_login_identity` makes each call resolve the acting
     # Operator's stored console-login token (captured via offline_access) and exchange it
     # (jwt-bearer) for a short-lived, single-use, per-host token that hostexecd verifies
@@ -1266,6 +1266,11 @@ hostexec:
     rugged:
       daemon_id: rugged
       audience_client_id: hostexec-rugged
+    # atlas: Proxmox VE (Debian), not NixOS — hostexecd is installed by the ansible/roles/hostexecd
+    # role (ansible/atlas.yaml) rather than nix/nixos/modules/hostexecd.nix.
+    atlas:
+      daemon_id: atlas
+      audience_client_id: hostexec-atlas
 node_daemons:
   daemons:
     wyrm2:
@@ -1273,4 +1278,7 @@ node_daemons:
       backends: [hostexec]
     rugged:
       display_name: rugged
+      backends: [hostexec]
+    atlas:
+      display_name: atlas
       backends: [hostexec]

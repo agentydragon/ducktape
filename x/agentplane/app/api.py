@@ -21,9 +21,17 @@ from x.agentplane.app.egress import (
     EgressInventory,
     FluxOwnedBindingError,
     PolicyView,
+    UnknownPolicyError,
 )
-from x.agentplane.app.identity import Caller, TokenReviewer, require_caller
-from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.identity import TokenReviewer, require_caller
+from x.agentplane.app.inventory import (
+    NewSandbox,
+    SandboxInventory,
+    SandboxNotFoundError,
+    SandboxRunningError,
+    SandboxView,
+)
+from x.agentplane.app.live import LiveIndex, router as live_router
 from x.agentplane.app.oidc import OIDCSettings, build_oauth
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
@@ -93,10 +101,6 @@ def _decisions(request: Request) -> DecisionsClient:
 
 Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
-# The identity an approval or grant is recorded as. Two credentials, both cryptographic: the
-# operator's OIDC session, or a Kubernetes token TokenReview vouches for.
-Operator = Annotated[Caller, Depends(require_caller)]
-
 
 @router.get("")
 async def list_sandboxes(
@@ -106,11 +110,13 @@ async def list_sandboxes(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox, operator: Operator) -> SandboxView:
-    """Create the Sandbox; picked policies become one binding it owns, granted by the caller."""
+async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox) -> SandboxView:
+    """Create the Sandbox; picked policies become one binding it owns. The names are resolved
+    first, so a policy that does not exist refuses the request before there is a sandbox."""
+    await egress.require_policies(spec.policies)
     view = await inventory.create(spec)
     if spec.policies:
-        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies, by=operator)
+        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies)
     return view
 
 
@@ -145,20 +151,38 @@ async def unarchive_sandbox(inventory: Inventory, name: str) -> Response:
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sandbox(inventory: Inventory, name: str) -> Response:
+    """Delete the sandbox and everything on its volume; 409 while it is still running."""
     await inventory.delete(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class EgressGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policies: list[str] = Field(
+        min_length=1, description="EgressPolicy names to grant, as one new binding naming this sandbox."
+    )
 
 
 @router.get("/{name}/egress")
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming it, with their policies as they resolve."""
-    return await egress.bindings_for(name, await inventory.labels(name))
+    await inventory.require_known(name)
+    return await egress.bindings_for(name)
+
+
+@router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
+async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, body: EgressGrant) -> BindingView:
+    """Grant policies to a sandbox already running: a new binding naming it, never an edit of one it
+    has, so this grant's expiry and revocation are its own."""
+    view = await inventory.get(name)
+    return await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=body.policies)
 
 
 @router.get("/{name}/egress/decisions")
 async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
-    await inventory.labels(name)  # 404 for a sandbox that does not exist
+    await inventory.require_known(name)
     return await decisions.recent(name)
 
 
@@ -171,21 +195,9 @@ async def list_policies(egress: Egress) -> list[PolicyView]:
     return await egress.list_policies()
 
 
-@egress_router.post("/bindings/{name}/approve", status_code=status.HTTP_204_NO_CONTENT)
-async def approve_binding(egress: Egress, operator: Operator, name: str) -> Response:
-    await egress.approve(name, by=operator)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@egress_router.post("/bindings/{name}/deny", status_code=status.HTTP_204_NO_CONTENT)
-async def deny_binding(egress: Egress, operator: Operator, name: str) -> Response:
-    await egress.deny(name, by=operator)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @egress_router.delete("/bindings/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_binding(egress: Egress, name: str) -> Response:
-    """Revoke a runtime binding by deleting it; a binding from git is refused with 409."""
+    """Revoke a runtime binding by deleting the rule; one from git is refused with 409."""
     await egress.revoke(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -262,6 +274,7 @@ def create_app(
     catalog: ModelCatalog,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live: LiveIndex,
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
 ) -> FastAPI:
@@ -276,11 +289,12 @@ def create_app(
     app.state.models = catalog
     app.state.egress = egress
     app.state.decisions = decisions
+    app.state.live = live
     app.state.oidc = oidc
     app.state.reviewer = reviewer
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
-    for api_router in (router, models, runner_bridge.router, threads, egress_router):
+    for api_router in (router, models, runner_bridge.router, threads, egress_router, live_router):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
@@ -308,6 +322,10 @@ def create_app(
     async def _not_found(_request: Request, error: SandboxNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
 
+    @app.exception_handler(SandboxRunningError)
+    async def _still_running(_request: Request, error: SandboxRunningError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
     @app.exception_handler(BindingNotFoundError)
     async def _binding_not_found(_request: Request, error: BindingNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
@@ -319,6 +337,12 @@ def create_app(
     @app.exception_handler(FluxOwnedBindingError)
     async def _flux_owned(_request: Request, error: FluxOwnedBindingError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownPolicyError)
+    async def _unknown_policy(_request: Request, error: UnknownPolicyError) -> JSONResponse:
+        # 422 rather than 404: the sandbox in the path is there, and 404 on these routes already
+        # says it is not. The body parsed and named something that does not resolve.
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.SandboxNotReachableError)
     async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:

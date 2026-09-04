@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import string
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
@@ -25,13 +26,11 @@ from util.kubernetes import CustomObjectsClient
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 ARCHIVED_LABEL = "agentplane.allegedly.works/archived"
-# The profile a sandbox was launched with; a Flux-managed EgressBinding selects on it (egress.py).
-PROFILE_LABEL = "agentplane.allegedly.works/profile"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
 _TEMPLATES_PLURAL = "sandboxtemplates"
-_SANDBOX_API = ("agents.x-k8s.io", "v1beta1")
-_SANDBOXES_PLURAL = "sandboxes"
+SANDBOX_API = ("agents.x-k8s.io", "v1beta1")
+SANDBOXES_PLURAL = "sandboxes"
 _MERGE_PATCH = "application/merge-patch+json"
 
 # Five lowercase alphanumerics, like `generateName`; the slug bound keeps the name a DNS label.
@@ -42,8 +41,6 @@ _SLUG_MAX_LENGTH = 63 - 1 - _SUFFIX_LENGTH
 Slug = Annotated[
     str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=_SLUG_MAX_LENGTH)
 ]
-# A Kubernetes label value, since the profile is stamped as one.
-LabelValue = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z0-9]([-a-zA-Z0-9_.]*[a-zA-Z0-9])?$", max_length=63)]
 
 
 class OperatingMode(StrEnum):
@@ -69,19 +66,21 @@ class SandboxNotFoundError(InventoryError):
         self.name = name
 
 
+class SandboxRunningError(InventoryError):
+    """Deletion is refused while the sandbox runs; the message is what the UI shows the operator."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"sandbox {name} is running; suspend it before deleting it")
+
+
 class NewSandbox(BaseModel):
     """What a caller decides about a sandbox; everything else is the namespace's template."""
 
     model_config = ConfigDict(extra="forbid")
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
-    profile: LabelValue | None = Field(
-        default=None,
-        description="Stamped as the profile label; a Flux-managed EgressBinding selecting on it then applies.",
-    )
     policies: list[str] = Field(
-        default_factory=list,
-        description="EgressPolicy names to grant this sandbox on top of its profile, as one sandbox-owned binding.",
+        default_factory=list, description="EgressPolicy names to grant this sandbox, as one sandbox-owned binding."
     )
 
 
@@ -130,7 +129,6 @@ class SandboxView(BaseModel):
 
     name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
     uid: UUID = Field(description="The API server's identity of this Sandbox; what an owned binding references.")
-    profile: str | None = Field(default=None, description="The profile label, when the sandbox was launched with one.")
     archived: bool
     state: ProvisioningState
     created_at: datetime
@@ -205,18 +203,13 @@ class SandboxInventory:
     async def list_sandboxes(self, *, include_archived: bool = False) -> list[SandboxView]:
         sandboxes_page, pods = await asyncio.gather(
             self._custom_objects.list_namespaced_custom_object(
-                *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
+                *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
             ),
             self._core_v1.list_namespaced_pod(self._namespace),
         )
-        pods_by_name = {pod.metadata.name: pod for pod in pods.items}
-        views = []
-        for item in _ResourceList.model_validate(sandboxes_page).items:
-            sandbox = _Sandbox.model_validate(item)
-            views.append(_view(sandbox, pods_by_name.get(sandbox.metadata.name)))
-        if include_archived:
-            return views
-        return [view for view in views if not view.archived]
+        return sandbox_views(
+            _ResourceList.model_validate(sandboxes_page).items, pods.items, include_archived=include_archived
+        )
 
     async def get(self, name: str) -> SandboxView:
         sandbox = await self._sandbox(name)
@@ -229,13 +222,10 @@ class SandboxInventory:
             )
         )
         suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
-        labels = {MANAGED_LABEL: "true"}
-        if spec.profile is not None:
-            labels[PROFILE_LABEL] = spec.profile
         body = {
-            "apiVersion": f"{_SANDBOX_API[0]}/{_SANDBOX_API[1]}",
+            "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
             "kind": "Sandbox",
-            "metadata": {"name": f"{spec.slug}-{suffix}", "labels": labels},
+            "metadata": {"name": f"{spec.slug}-{suffix}", "labels": {MANAGED_LABEL: "true"}},
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
                 "podTemplate": template.spec.pod_template,
@@ -244,7 +234,7 @@ class SandboxInventory:
             },
         }
         created = await self._custom_objects.create_namespaced_custom_object(
-            *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, body
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, body
         )
         return _view(_Sandbox.model_validate(created), None)
 
@@ -265,15 +255,20 @@ class SandboxInventory:
         await self._sandbox(name)
         await self._patch(name, {"metadata": {"labels": {ARCHIVED_LABEL: None}}})
 
-    async def labels(self, name: str) -> dict[str, str]:
-        """The Sandbox's labels: what an EgressBinding's selector subject is matched against."""
-        return (await self._sandbox(name)).metadata.labels
+    async def require_known(self, name: str) -> None:
+        """Raise `SandboxNotFoundError` unless the name is one of Agentplane's sandboxes; the
+        existence check behind routes that answer from the name alone."""
+        await self._sandbox(name)
 
     async def delete(self, name: str) -> None:
-        """Delete the Sandbox; the controller removes its Pod and PVC, and with them the history."""
-        await self._sandbox(name)
+        """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
+        everything on the volume. A running one is refused, so the irreversible step is a
+        deliberate second one for a browser and for an agent calling the API alike."""
+        sandbox = await self._sandbox(name)
+        if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
+            raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
-            *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions()
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
     async def _set_operating_mode(self, name: str, mode: OperatingMode) -> None:
@@ -282,14 +277,14 @@ class SandboxInventory:
 
     async def _patch(self, name: str, patch: dict[str, object]) -> None:
         await self._custom_objects.patch_namespaced_custom_object(
-            *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, name, patch, _content_type=_MERGE_PATCH
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, patch, _content_type=_MERGE_PATCH
         )
 
     async def _sandbox(self, name: str) -> _Sandbox:
         """The named Sandbox, only if it is Agentplane's: an unmanaged one is not in this inventory."""
         try:
             raw = await self._custom_objects.get_namespaced_custom_object(
-                *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, name
+                *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
@@ -309,13 +304,35 @@ class SandboxInventory:
             raise
 
 
+# The projection, over objects however they were obtained: one request's list, or the copy
+# `live.py` keeps under a watch. Both go through here, so a pushed row and a fetched one are the
+# same row.
+
+
+def sandbox_views(
+    sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod], *, include_archived: bool
+) -> list[SandboxView]:
+    """One row per Sandbox, each joined to the Pod of the same name."""
+    pods_by_name = {pod.metadata.name: pod for pod in pods}
+    views = []
+    for item in sandboxes:
+        parsed = _Sandbox.model_validate(item)
+        views.append(_view(parsed, pods_by_name.get(parsed.metadata.name)))
+    if include_archived:
+        return views
+    return [view for view in views if not view.archived]
+
+
+def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
+    return _view(_Sandbox.model_validate(sandbox), pod)
+
+
 def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
     labels = sandbox.metadata.labels
     archived = labels.get(ARCHIVED_LABEL) == "true"
     return SandboxView(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
-        profile=labels.get(PROFILE_LABEL),
         archived=archived,
         state=_state(sandbox, pod, archived=archived),
         created_at=sandbox.metadata.creation_timestamp,

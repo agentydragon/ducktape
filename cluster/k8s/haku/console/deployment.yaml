@@ -44,7 +44,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git,activitywatch-read-token,aiquota-api-bearer-haku-console
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-node-daemon-atlas,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git,activitywatch-read-token,aiquota-api-bearer-haku-console
 spec:
   replicas: 2
   strategy:
@@ -107,7 +107,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260903121413-1b6110f # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260904110545-f7af6bf # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -117,7 +117,7 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE__IMAGE_TAG
-              value: devel-20260903121413-1b6110f # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260904110545-f7af6bf # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE__AIQUOTA_URL
               value: "http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"
             - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN
@@ -261,6 +261,11 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: haku-console-node-daemon-rugged
+                  key: token
+            - name: HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__ATLAS__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-node-daemon-atlas
                   key: token
             # Two in-process MCP servers execute as the acting Operator's own Google account:
             # `gmail` (Gmail reads mirroring the REST API, draft creation, thread-label changes,

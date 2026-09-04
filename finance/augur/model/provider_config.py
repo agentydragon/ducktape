@@ -17,10 +17,10 @@ Each example below is one value in the `models` map (e.g. under `current_model:`
 type: composite
 macro:
   type: vecm
-  # /opt/augur/... is where //finance/augur/fit/calibrated:trained_vecm_image_layer
-  # bakes the blob in the augur OCI image. Leave null to fall back to the
-  # runfiles location of the same blob (used by Bazel-driven dev binaries).
-  trained_blob: /opt/augur/trained_vecm.npz
+  # Written whole by `bb run //finance/augur/fit:train -- --model vecm ...` — see
+  # fit/calibrated/trained_vecm_provider.yaml for the real shape. Not hand-authored;
+  # a deployment copies the block the fit target wrote.
+  trained_state: {factor_names: [...], train_log_levels: [[...]], params: {...}}
   latest_observations: {sp500: 5500.0, ...}
   current_mortgage30_rate_pct: 6.5
 private_equity:
@@ -63,9 +63,10 @@ private_equity_marks:
 # Small structural macro model. Two latent rates drive every instrument, so a rate move
 # prices the whole sleeve coherently: a fund's price falls and its payout climbs (slowly,
 # over its duration) off the same state. Instruments are ROWS, not extra random walks — a
-# symbol, a duration, and a spread over the curve at that duration.
+# symbol, a duration, and a spread over the curve at that duration. `macro_state` and
+# equity's `monthly_log_return_mu`/`sigma` default to the checked-in fit
+# (fit/calibrated/trained_structural_macro.yaml) when omitted, as here.
 type: structural_macro
-initial_short_rate: 0.042
 equity: {symbol: VOO, initial_price_usd: 520.0}
 instruments:
   - {symbol: VMFXX, duration_years: 0.0, initial_price_usd: 1.0} # cash, as an MMF holding

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 
-from x.agentplane.app.egress import GRANTED_BY_LABEL
+from x.agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
 from x.agentplane.app.inventory import MANAGED_LABEL
 
 NAMESPACE = "agentplane-test"
@@ -73,12 +73,16 @@ class FakeCustomObjectsApi:
     ) -> dict[str, Any]:
         del group, version
         assert namespace == NAMESPACE
-        key = (plural, body["metadata"]["name"])
+        metadata = body["metadata"]
+        # As the API server does: a `generateName` base is the server's to complete, so only a body
+        # that named itself can collide.
+        name = metadata["name"] if "name" in metadata else metadata["generateName"] + uuid4().hex[:5]
+        key = (plural, name)
         if key in self.objects:
             raise k8s_client.ApiException(status=409)
         stored = {
             **body,
-            "metadata": {**body["metadata"], "uid": str(uuid4()), "creationTimestamp": "2026-09-02T10:00:00Z"},
+            "metadata": {**metadata, "name": name, "uid": str(uuid4()), "creationTimestamp": "2026-09-02T10:00:00Z"},
         }
         self.objects[key] = stored
         return stored
@@ -163,23 +167,22 @@ def egress_binding(
     *,
     subjects: list[dict[str, Any]],
     policies: list[str],
-    approval: dict[str, Any],
-    granted_by: str | None = "flux",
+    from_git: bool = True,
     expires_at: str | None = None,
     active: tuple[str, str, str] | None = None,
 ) -> dict[str, Any]:
-    """A binding as the API server holds it; `active` is (status, reason, message) of the proxy's condition."""
+    """A binding as the API server holds it; `from_git` stamps Flux's inventory label, and `active`
+    is (status, reason, message) of the proxy's condition."""
     return {
         "metadata": {
             "name": name,
             "uid": str(uuid4()),
-            "labels": {GRANTED_BY_LABEL: granted_by} if granted_by is not None else {},
+            "labels": {FLUX_KUSTOMIZATION_LABEL: "agentplane-test-egress"} if from_git else {},
             "creationTimestamp": "2026-09-01T11:45:00Z",
         },
         "spec": {
             "subjects": subjects,
             "policies": policies,
-            "approval": approval,
             **({"expiresAt": expires_at} if expires_at is not None else {}),
         },
         **(

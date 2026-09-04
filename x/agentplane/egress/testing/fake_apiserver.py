@@ -22,6 +22,7 @@ from more_itertools import one
 from x.agentplane.egress.identity import POD_NAME_CLAIM, POD_UID_CLAIM
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
     GROUP,
     POLICIES_PLURAL,
     SANDBOX_GROUP,
@@ -43,6 +44,7 @@ _NAMESPACE_OF = {
     SANDBOXES_PLURAL: SANDBOX_NAMESPACE,
     POLICIES_PLURAL: NAMESPACE,
     BINDINGS_PLURAL: NAMESPACE,
+    CREDENTIALS_PLURAL: NAMESPACE,
 }
 
 
@@ -70,7 +72,13 @@ class FakeApiServer:
     tokens: dict[str, TokenVerdict] = field(default_factory=dict)
     pods: dict[str, dict[str, Any]] = field(default_factory=dict)
     objects: dict[str, dict[str, dict[str, Any]]] = field(
-        default_factory=lambda: {POLICIES_PLURAL: {}, BINDINGS_PLURAL: {}, SANDBOXES_PLURAL: {}, SECRETS_PLURAL: {}}
+        default_factory=lambda: {
+            POLICIES_PLURAL: {},
+            BINDINGS_PLURAL: {},
+            CREDENTIALS_PLURAL: {},
+            SANDBOXES_PLURAL: {},
+            SECRETS_PLURAL: {},
+        }
     )
     status_patches: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     token_reviews: int = 0
@@ -218,11 +226,11 @@ class FakeApiServer:
         return web.json_response(self.objects[plural][name])
 
 
-def sandbox(name: str, *, labels: dict[str, str] | None = None) -> dict[str, Any]:
+def sandbox(name: str) -> dict[str, Any]:
     return {
         "apiVersion": f"{SANDBOX_GROUP}/{SANDBOX_VERSION}",
         "kind": SANDBOX_KIND,
-        "metadata": {"name": name, "labels": labels or {}},
+        "metadata": {"name": name},
         "spec": {},
     }
 
@@ -269,24 +277,28 @@ def policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def binding(
-    name: str,
-    *,
-    subjects: list[dict[str, Any]],
-    policies: list[str],
-    approval: str = "approved",
-    expires_at: str | None = None,
-    labels: dict[str, str] | None = None,
+def credential(
+    name: str, *, secret_name: str, key: str, targets: list[dict[str, Any]], description: str = "a test credential"
 ) -> dict[str, Any]:
-    spec: dict[str, Any] = {"subjects": subjects, "policies": policies, "approval": {"state": approval}}
-    if expires_at is not None:
-        spec["expiresAt"] = expires_at
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "EgressBinding",
-        "metadata": {"name": name, "labels": labels or {}},
-        "spec": spec,
+        "kind": "EgressCredential",
+        "metadata": {"name": name},
+        "spec": {
+            "source": {"secretRef": {"name": secret_name, "key": key}},
+            "description": description,
+            "targets": targets,
+        },
     }
+
+
+def binding(
+    name: str, *, subjects: list[dict[str, Any]], policies: list[str], expires_at: str | None = None
+) -> dict[str, Any]:
+    spec: dict[str, Any] = {"subjects": subjects, "policies": policies}
+    if expires_at is not None:
+        spec["expiresAt"] = expires_at
+    return {"apiVersion": f"{GROUP}/{VERSION}", "kind": "EgressBinding", "metadata": {"name": name}, "spec": spec}
 
 
 @asynccontextmanager

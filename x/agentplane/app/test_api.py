@@ -12,11 +12,12 @@ from fastapi.testclient import TestClient
 
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.conftest import AGENT, AGENT_AUTH
+from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
-from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
+from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
-from x.agentplane.app.inventory import ARCHIVED_LABEL, MANAGED_LABEL, PROFILE_LABEL, SandboxInventory
+from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
+from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
@@ -36,7 +37,6 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 
 TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
-APPROVED = {"state": "approved", "by": "test-operator", "at": "2026-09-01T12:00:00Z"}
 
 
 @pytest.fixture
@@ -46,6 +46,7 @@ def client(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
@@ -60,21 +61,13 @@ def client(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[("egressbindings", "all-managed")] = egress_binding(
-        "all-managed",
-        subjects=[{"sandboxSelector": {"matchLabels": {MANAGED_LABEL: "true"}}}],
-        policies=["github"],
-        approval=APPROVED,
-        active=("True", "Resolved", ""),
+    custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
+        "live-seeded", subjects=[{"sandbox": {"name": "live"}}], policies=["github"], active=("True", "Resolved", "")
     )
-    custom_objects.objects[("egressbindings", "live-asks")] = egress_binding(
-        "live-asks",
-        subjects=[{"sandbox": {"name": "live"}}],
-        policies=["pypi"],
-        approval={"state": "pending"},
-        granted_by="agent",
+    custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
+        "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], from_git=False
     )
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, reviewer=reviewer)
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
 
@@ -105,28 +98,27 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert response.status_code == 201
     row = response.json()
     assert row["name"].startswith("demo-")
-    assert (row["state"], row["profile"]) == ("waiting_for_pod", None)
+    assert row["state"] == "waiting_for_pod"
     assert ("sandboxes", row["name"]) in custom_objects.objects
-    assert not any(kind == "egressbindings" and name.endswith("-picked") for kind, name in custom_objects.objects)
+    # Nothing was picked, so nothing may leave it.
+    assert client.get(f"/sandboxes/{row['name']}/egress").json() == []
 
 
-def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_one_owned_binding(
+def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]})
+    response = client.post("/sandboxes", json={"slug": "demo", "policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
-    assert row["profile"] == "coder"
-    created = custom_objects.objects[("sandboxes", row["name"])]
-    assert created["metadata"]["labels"][PROFILE_LABEL] == "coder"
-    picked = custom_objects.objects[("egressbindings", f"{row['name']}-picked")]
-    assert picked["metadata"]["labels"] == {GRANTED_BY_LABEL: AGENT.label}
-    assert picked["metadata"]["ownerReferences"][0]["uid"] == created["metadata"]["uid"]
-    assert picked["spec"]["policies"] == ["pypi"]
-    # The new sandbox sees the seed's selector binding and its own pick.
-    names = [binding["name"] for binding in client.get(f"/sandboxes/{row['name']}/egress").json()]
-    assert names == ["all-managed", f"{row['name']}-picked"]
+    # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
+    (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
+    picked = custom_objects.objects[("egressbindings", binding["name"])]
+    assert (
+        picked["metadata"]["ownerReferences"][0]["uid"]
+        == custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -137,7 +129,6 @@ def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_o
         {"slug": "a" * 58},
         {"slug": "demo", "provider": "claude"},
         {"slug": "demo", "model": "cheap"},
-        {"slug": "demo", "profile": "not a label"},
     ],
     ids=[
         "uppercase-slug",
@@ -145,7 +136,6 @@ def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_o
         "slug-too-long-for-a-dns-label",
         "provider-on-sandbox",
         "model-on-sandbox",
-        "profile-not-a-label-value",
     ],
 )
 def test_create_rejects_invalid_requests(client: TestClient, custom_objects: FakeCustomObjectsApi, body: dict) -> None:
@@ -170,7 +160,16 @@ def test_suspend_resume_archive_unarchive_apply_in_order(
     assert client.post("/sandboxes/nope/suspend").status_code == 404
 
 
-def test_delete_removes_the_sandbox(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+def test_delete_removes_the_sandbox_once_it_is_suspended(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    refused = client.delete("/sandboxes/live")
+
+    assert refused.status_code == 409
+    assert "suspend it" in refused.json()["detail"]
+    assert ("sandboxes", "live") in custom_objects.objects
+
+    assert client.post("/sandboxes/live/suspend").status_code == 204
     assert client.delete("/sandboxes/live").status_code == 204
     assert ("sandboxes", "live") not in custom_objects.objects
     assert client.delete("/sandboxes/live").status_code == 404
@@ -181,6 +180,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
@@ -204,6 +204,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
             TEST_MODELS,
             egress,
             decisions,
+            live_index,
             reviewer=reviewer,
         )
         with TestClient(app, headers=AGENT_AUTH) as client:
@@ -217,13 +218,59 @@ def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> Non
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [(b["name"], b["from_git"], b["approval"], b["active"]) for b in body] == [
-        ("all-managed", True, "approved", True),
-        ("live-asks", False, "pending", None),
+    assert [(b["name"], b["from_git"], b["active"]) for b in body] == [
+        ("live-granted", False, None),
+        ("live-seeded", True, True),
     ]
-    assert body[0]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
-    assert [b["name"] for b in client.get("/sandboxes/fresh/egress").json()] == ["all-managed"]
+    assert body[1]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
+    # Nothing names `fresh`, so nothing may leave it.
+    assert client.get("/sandboxes/fresh/egress").json() == []
     assert client.get("/sandboxes/nope/egress").status_code == 404
+
+
+def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """A sandbox's egress is not frozen at creation: the grant is one more binding naming it, and
+    revoking that one leaves the rest of its egress standing."""
+    granted = client.post("/sandboxes/live/egress", json={"policies": ["pypi", "github"]})
+
+    assert granted.status_code == 201, granted.text
+    binding = granted.json()
+    assert (binding["subjects"], binding["from_git"]) == (["live"], False)
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
+    # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
+    (owner,) = custom_objects.objects[("egressbindings", binding["name"])]["metadata"]["ownerReferences"]
+    assert (owner["kind"], owner["name"], owner["uid"]) == (
+        "Sandbox",
+        "live",
+        custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"],
+    )
+    assert sorted(b["name"] for b in client.get("/sandboxes/live/egress").json()) == sorted(
+        ["live-granted", "live-seeded", binding["name"]]
+    )
+
+    assert client.delete(f"/egress/bindings/{binding['name']}").status_code == 204
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
+
+
+def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """422 and not 404: the sandbox in the path is there, and 404 on this route already says it is
+    not. The CRD would admit the dangling name and the proxy would report `MissingPolicy`, so what
+    the operator would otherwise get is a grant that grants nothing."""
+    refused = client.post("/sandboxes/live/egress", json={"policies": ["github", "vanished"]})
+
+    assert refused.status_code == 422
+    assert "vanished" in refused.json()["detail"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
+    assert client.post("/sandboxes/nope/egress", json={"policies": ["github"]}).status_code == 404
+    # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
+    assert client.post("/sandboxes/live/egress", json={"policies": []}).status_code == 422
+    # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
+    assert client.post("/sandboxes", json={"slug": "demo", "policies": ["vanished"]}).status_code == 422
+    assert all(kind != "sandboxes" or name in {"live", "fresh", "shelved"} for kind, name in custom_objects.objects)
 
 
 def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
@@ -257,38 +304,27 @@ def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
 
     assert response.status_code == 502
     assert "did not answer" in response.json()["detail"]
-    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed", "live-asks"]
-
-
-def test_binding_approval_is_recorded_as_the_reviewed_caller(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
-) -> None:
-    assert client.post("/egress/bindings/live-asks/approve").status_code == 204
-    assert client.get("/sandboxes/live/egress").json()[1]["approval"] == "approved"
-    assert client.post("/egress/bindings/live-asks/deny").status_code == 204
-    # The username TokenReview returned, verbatim; the label is the same identity, colons stripped.
-    assert custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"]["by"] == AGENT.name
-    assert client.post("/egress/bindings/nope/approve").status_code == 404
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
 
 
 def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> None:
     """Guarded from the app, not from a proxy in front of it: no header a caller sets is trusted."""
     assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
     assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.post("/egress/bindings/live-asks/approve", headers={"Authorization": ""}).status_code == 401
+    assert client.post("/sandboxes", json={"slug": "x"}, headers={"Authorization": ""}).status_code == 401
     # The forgeable header the API server's service proxy used to forward buys nothing now.
     assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
 
 def test_binding_revocation(client: TestClient) -> None:
-
-    refused = client.delete("/egress/bindings/all-managed")
+    """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
+    refused = client.delete("/egress/bindings/live-seeded")
     assert refused.status_code == 409
     assert "git" in refused.json()["detail"]
-    assert client.delete("/egress/bindings/live-asks").status_code == 204
-    assert client.delete("/egress/bindings/live-asks").status_code == 404
-    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed"]
+    assert client.delete("/egress/bindings/live-granted").status_code == 204
+    assert client.delete("/egress/bindings/live-granted").status_code == 404
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-seeded"]
 
 
 def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) -> None:
@@ -306,6 +342,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     reviewer: TokenReviewer,
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
@@ -313,7 +350,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     await store.thread("live", "s-2", spec)
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, reviewer=reviewer)
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
@@ -353,8 +390,6 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/sandboxes/{name}/egress/decisions",
         "/egress/policies",
         "/egress/bindings/{name}",
-        "/egress/bindings/{name}/approve",
-        "/egress/bindings/{name}/deny",
         "/sandboxes/{name}/sessions",
         "/sandboxes/{name}/sessions/{session_id}/events",
         "/sandboxes/{name}/sessions/{session_id}/inputs",
@@ -363,9 +398,12 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/threads",
         "/threads/{thread_id}",
         "/threads/{thread_id}/events",
+        "/live/sandboxes",
+        "/live/sandboxes/{name}",
     }
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
+    assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}
     assert set(paths["/threads/{thread_id}"]) == {"get", "patch"}
     assert set(paths["/egress/bindings/{name}"]) == {"delete"}
 

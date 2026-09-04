@@ -26,9 +26,11 @@ rules:
     verbs: ["get"]
   # The credential the agent presents to the app's API, at
   # https://agentplane-staging.allegedly.works: a token scoped to the app's audience, which
-  # TokenReview resolves to system:serviceaccount:agentplane-staging:agentplane-agent. Minting it
-  # is not assuming that account -- it holds no RoleBinding, so the token is an identity for the
-  # app and nothing in the cluster (../app/serviceaccount-agentplane-agent.yaml).
+  # TokenReview resolves to system:serviceaccount:agentplane-staging:agentplane-agent. The app
+  # accepts that subject because its Deployment names it; the audience is no gate on its own, since
+  # a token minted for any other account would carry it just as well. Minting it is not assuming
+  # that account -- it holds no RoleBinding, so the token is an identity for the app and nothing in
+  # the cluster (../app/serviceaccount-agentplane-agent.yaml).
   #
   #   TOKEN=$(kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane)
   #   curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes

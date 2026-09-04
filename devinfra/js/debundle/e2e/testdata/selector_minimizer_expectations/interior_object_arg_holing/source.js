@@ -1,7 +1,7 @@
 // The discriminating anchor (`mode: "uniqueDiscriminatorMode"`) is one property
 // of a nested object literal passed as a call argument; every other property is
 // shared across the siblings. Today the minimizer keeps the whole object
-// verbatim; it should hole the non-anchor properties to OBJECT_PROPS (interior
+// verbatim; it should hole the non-anchor properties to ANYTHING (interior
 // holing of a nested object within a kept statement).
 function selectedMover(ctx) {
   ctx.engine.run([

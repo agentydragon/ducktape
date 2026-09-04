@@ -8,6 +8,7 @@ informer over the same fake. Every assertion is on what the client and the upstr
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -21,15 +22,15 @@ from aiohttp import web
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
 from more_itertools import one
 
-from x.agentplane.egress.addon import DENIED_HEADER, EgressAddon
+from x.agentplane.egress.addon import DENIED_HEADER, RULES_PATH, SELF_HOST, EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.conftest import (
     AUDIENCE,
     GITHUB_POLICY,
-    GRANTED_BY,
     PLACEHOLDER,
     POD_A_IP,
     SANDBOX_A,
+    SCHEME,
     SECRET_NAME,
     SECRET_VALUE,
     TOKEN_A,
@@ -115,6 +116,19 @@ class ProxyUnderTest:
 
     def url(self, path: str) -> str:
         return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
+
+    async def get_self(self, path: str, *, token: str | None = TOKEN_A) -> Response:
+        """A request to the proxy's own name: tunnelled like any other, answered without an upstream."""
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
+                f"https://{SELF_HOST}{path}",
+                proxy=f"http://127.0.0.1:{self.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
+                ssl=client_tls_context(self.interception_ca),
+            ) as response,
+        ):
+            return Response(status=response.status, headers=dict(response.headers), body=await response.read())
 
     async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
         async with (
@@ -300,14 +314,44 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
     ]
     assert [d["address"] for d in decisions] == ["127.0.0.1", "127.0.0.1", "127.0.0.1", None]
     substituted = one(d for d in decisions if d["substituted"])
-    assert (substituted["binding"], substituted["granted_by"], substituted["policy"]) == (
-        BINDING,
-        GRANTED_BY,
-        GITHUB_POLICY,
-    )
+    assert (substituted["binding"], substituted["policy"]) == (BINDING, GITHUB_POLICY)
     assert [(d["method"], d["reason"]) for d in unidentified] == [("CONNECT", "token-rejected")]
     assert all(SECRET_VALUE not in str(d) and PLACEHOLDER not in str(d) for d in decisions)
 
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
+    """C11: the placeholder a sandbox must present is knowable from inside the sandbox, over the one
+    listener it can reach, under the identity it already proves for every request."""
+    response = await proxy.get_self(RULES_PATH)
+
+    assert response.status == 200, response.body
+    view = json.loads(response.body)
+    assert view["sandbox"] == SANDBOX_A
+    credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
+    presented = one(c for c in credentials if c is not None)
+    assert presented["placeholder"] == PLACEHOLDER, view
+    # The targets, not the placeholder alone: without the scheme a sandbox sends the placeholder
+    # bare and the upstream refuses the substituted value.
+    assert {"header": "Authorization", "method": "schemeToken", "scheme": SCHEME} in presented["targets"], view
+    assert SECRET_VALUE not in response.body.decode(), "the proxy handed the sandbox the real credential"
+
+
+async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
+    """Refused at the CONNECT, before a handshake it would learn nothing from."""
+    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
+        await proxy.get_self(RULES_PATH, token=None)
+
+    assert refused.value.status == 403
+    assert refused.value.headers is not None
+    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_MISSING}"
+
+
+async def test_the_proxys_own_name_serves_nothing_else(proxy: ProxyUnderTest) -> None:
+    """One path, so the reserved name cannot become an accidental surface."""
+    response = await proxy.get_self("/")
+
+    assert response.status == 404, response.body

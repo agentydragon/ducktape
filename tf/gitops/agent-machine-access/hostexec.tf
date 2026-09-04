@@ -19,6 +19,8 @@ resource "authentik_group" "hostexec" {
     "hostexec-root-wyrm2",
     "hostexec-agentydragon-rugged",
     "hostexec-root-rugged",
+    "hostexec-agentydragon-atlas",
+    "hostexec-root-atlas",
   ])
   name  = each.key
   users = [data.authentik_user.agentydragon.pk]
@@ -42,7 +44,7 @@ resource "authentik_property_mapping_provider_scope" "hostexec_groups" {
 # client_credentials grant bypasses it) and never distributed — the console
 # presents only the client_id + the operator's token as the assertion.
 resource "authentik_provider_oauth2" "hostexec" {
-  for_each = toset(["wyrm2", "rugged"])
+  for_each = toset(["wyrm2", "rugged", "atlas"])
 
   name                  = "hostexec-${each.key}"
   client_id             = "hostexec-${each.key}"

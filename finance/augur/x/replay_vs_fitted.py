@@ -1,10 +1,10 @@
 """Run the historical replay beside the fitted structural-macro model and compare.
 
-The two samplers answer the same question from opposite directions. `FITTED_MACRO_VAR` has
-unlimited synthetic 30-year paths drawn from a VAR(1) fitted on 1955-2026; the replay has the
-actual past, with its fat tails and its equity/inflation coupling, and only ~3 INDEPENDENT
-30-year windows. Neither is trustworthy alone. Where they disagree is the finding, so this
-prints them side by side rather than picking one.
+The two samplers answer the same question from opposite directions. `structural_macro`'s
+shipped fit has unlimited synthetic 30-year paths drawn from a VAR(1) fitted on 1955-2026; the
+replay has the actual past, with its fat tails and its equity/inflation coupling, and only ~3
+INDEPENDENT 30-year windows. Neither is trustworthy alone. Where they disagree is the finding,
+so this prints them side by side rather than picking one.
 
 Deliberately no spending, no taxes, no policy: a monthly-rebalanced buy-and-hold on the raw
 exogenous paths. Everything the portfolio machinery adds is common to both arms, so leaving it

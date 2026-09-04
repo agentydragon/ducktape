@@ -1,6 +1,6 @@
 # GitHub's API and HTTPS git for public repositories, as agentydragon-agent: reads and the
-# POSTs that open pull requests and push over smart HTTP. The sandbox sends the placeholder
-# in Authorization; the proxy swaps in the PAT.
+# POSTs that open pull requests and push over smart HTTP. Where the credential goes is the
+# EgressCredential's own business; this policy decides only where it may go.
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
@@ -13,9 +13,5 @@ spec:
         - github.com
         - "*.githubusercontent.com"
       methods: [GET, POST]
-      credential:
-        secretRef:
-          name: agentplane-github-pat
-          key: token
-        header: Authorization
-        placeholder: agentplane-credential:github-pat
+      credentialRef:
+        name: github-pat

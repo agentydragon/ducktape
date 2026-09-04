@@ -1,10 +1,8 @@
 # Agentplane staging — OIDC login for the integration app (agentplane-staging.allegedly.works)
 #
-# The app is the relying party (authlib + a signed session cookie; see x/agentplane/app/oidc.py),
-# which is why the forward-auth proxy provider it used to sit behind is retired in
-# cluster/k8s/authentik/app/blueprints/agentplane-staging-sso.yaml. That retirement deletes the
-# application slugged `agentplane-staging` on every reconcile, so this one is slugged `agentplane`
-# — the slug is also the per-provider issuer path, which the app pins the id token's `iss` against.
+# The app is the relying party (authlib + a signed session cookie; see x/agentplane/app/oidc.py).
+# The application slug is the per-provider issuer path, which the app pins the id token's `iss`
+# against, so `agentplane` cannot be renamed without changing the app's configured issuer.
 
 resource "authentik_provider_oauth2" "agentplane_staging" {
   name               = "agentplane-staging-oauth2"

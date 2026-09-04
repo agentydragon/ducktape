@@ -19,7 +19,7 @@ import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
-import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
 import {
   displayableError,
@@ -32,19 +32,14 @@ import {
   type ThreadView,
 } from "./client";
 import { EMPTY, reduce, timeline, type InputState, type Item, type Row, type SessionState, type Turn } from "./events";
+import { FrameView } from "./frame";
 import { Markdown } from "./markdown";
-import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
+import { EventSchema, ItemKind, TurnStatus } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
   [ItemKind.TOOL_CALL]: "tool",
 };
-
-function frameText(event: Event): string {
-  return event.observation.case === "native"
-    ? `${event.sequence} ${Direction[event.observation.value.direction]} ${event.observation.value.line}`
-    : `${event.sequence} ${toJsonString(EventSchema, event)}`;
-}
 
 function InputView({ input }: { input: InputState }): JSX.Element {
   return (
@@ -337,7 +332,7 @@ export function SessionView({
             timeline(state).map(({ event, row }) => (
               <Fragment key={String(event.sequence)}>
                 {row && <RowView row={row} expandReasoning={expandReasoning} />}
-                <Code block>{frameText(event)}</Code>
+                <FrameView event={event} />
               </Fragment>
             ))
           ) : (

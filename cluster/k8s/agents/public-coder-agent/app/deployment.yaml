@@ -52,7 +52,7 @@ spec:
         # gateway's own config backups so the ConfigMap remains authoritative;
         # see docs/personal_agents/findings/harness_behaviour.md F19.
         - name: seed-config
-          image: ghcr.io/agentydragon/openclaw:devel-20260903200156-312bb2d # {"$imagepolicy": "flux-system:openclaw"}
+          image: ghcr.io/agentydragon/openclaw:devel-20260904102814-42adceb # {"$imagepolicy": "flux-system:openclaw"}
           command:
             - sh
             - -c
@@ -66,7 +66,7 @@ spec:
               mountPath: /state
       containers:
         - name: openclaw
-          image: ghcr.io/agentydragon/openclaw:devel-20260903200156-312bb2d # {"$imagepolicy": "flux-system:openclaw"}
+          image: ghcr.io/agentydragon/openclaw:devel-20260904102814-42adceb # {"$imagepolicy": "flux-system:openclaw"}
           env:
             # The image does not set HOME to the state dir; without it the
             # gateway looks under the wrong home directory and exits "Missing config".
@@ -205,9 +205,39 @@ spec:
           ports:
             - name: gateway
               containerPort: 18789
+          # Without this the Deployment reports 1/1 Running whenever a process
+          # exists, which hid two different outages during the 2026.8.1 recovery:
+          # a gateway crash-looping every ~4 minutes, and one that started but
+          # never bound its port. /healthz answers 200 unauthenticated on a
+          # serving gateway (/readyz and / are auth-gated at 403), so it checks
+          # that the HTTP server is really handling requests, not just that
+          # something holds the port.
+          #
+          # Readiness only, deliberately no liveness or startup probe: startup is
+          # IO-bound on the state PVC and legitimately takes many minutes -- a
+          # gateway on the OVH HDD was measured reading ~940 KB/s, hundreds of MB
+          # in, still progressing. A restarting probe would kill that and never
+          # let it finish. A failing readiness probe restarts nothing; it just
+          # makes "not serving yet" visible, which is the whole point.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: gateway
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - name: data
               mountPath: /home/openclaw/.openclaw
+            # Bazel's output base and disk cache, kept off the state PVC. The rc
+            # file below is what points Bazel here; see ./bazelrc.
+            - name: bazel-cache
+              mountPath: /bazel-cache
+            - name: bazelrc
+              mountPath: /home/openclaw/.bazelrc
+              subPath: bazelrc
+              readOnly: true
             # Kubeconfig with a non-secret placeholder. iron-proxy substitutes the Agent's Haku
             # bearer only for haku-kubeapi.allegedly.works; no Kubernetes credential is mounted.
             - name: kubeconfig
@@ -244,6 +274,15 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: public-coder-agent-state-v2
+        # Regenerable Bazel state. emptyDir, so it is re-fetched per pod start
+        # rather than accumulating on the claim; sizeLimit bounds it so a runaway
+        # build evicts the pod instead of filling the node disk.
+        - name: bazel-cache
+          emptyDir:
+            sizeLimit: 30Gi
+        - name: bazelrc
+          configMap:
+            name: public-coder-agent-bazelrc
         - name: kubeconfig
           configMap:
             name: public-coder-agent-kubeconfig

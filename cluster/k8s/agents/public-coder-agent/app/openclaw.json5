@@ -107,6 +107,22 @@
         allowUsers: ["agentydragon"],
         requiredHeaders: ["x-authentik-email", "x-forwarded-host", "x-forwarded-proto"],
         userHeader: "x-authentik-username",
+        // Authentik has already authenticated the browser, so do not demand a
+        // second, manual device pairing on top of it. 2026.8.1 retired
+        // gateway.controlUi.dangerouslyDisableDeviceAuth (silently ignored, so
+        // the Control UI started asking to pair); this is its replacement, and
+        // unlike the old flag it caps what an auto-approved device may do.
+        //
+        // What makes this safe is the same thing that makes trusted-proxy mode
+        // safe at all: app/networkpolicy-ingress.yaml admits only the outpost's
+        // pods, so nothing else can forge x-authentik-username.
+        //
+        // Scopes are left at the default (operator.read, operator.write,
+        // operator.approvals, operator.questions) -- deliberately without
+        // operator.admin, which the retired flag did not bound at all.
+        deviceAutoApprove: {
+          enabled: true,
+        },
       },
     },
     // Authentik reaches the pod over the cluster network, hence "lan" rather
@@ -115,7 +131,6 @@
     bind: "lan",
     controlUi: {
       allowedOrigins: ["https://public-coder-agent.allegedly.works"],
-      dangerouslyDisableDeviceAuth: true,
     },
     mode: "local",
     trustedProxies: ["10.0.0.0/8"],

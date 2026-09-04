@@ -25,7 +25,6 @@ class StateOutput[ArrayT](NamedTuple):
     liability_principal: ArrayT
     liability_monthly_payment: ArrayT
     liability_interest_ytd: ArrayT
-    liability_principal_ytd: ArrayT
     failed: ArrayT
     failed_month: ArrayT
 
@@ -145,7 +144,6 @@ class DenseStateOutput(NamedTuple):
     liability_principal: Int64[np.ndarray, " snapshot liability rollout"]
     liability_monthly_payment: Int64[np.ndarray, " snapshot liability rollout"]
     liability_interest_ytd: Int64[np.ndarray, " snapshot liability rollout"]
-    liability_principal_ytd: Int64[np.ndarray, " snapshot liability rollout"]
     failed: Bool[np.ndarray, " snapshot rollout"]
     failed_month: Int64[np.ndarray, " snapshot rollout"]
 

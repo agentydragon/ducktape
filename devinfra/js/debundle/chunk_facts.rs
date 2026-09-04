@@ -27,8 +27,8 @@ use swc_ecma_ast::{
     ArrayPat, AssignTarget, AssignTargetPat, BlockStmt, BlockStmtOrExpr, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
     MemberExpr, MemberProp, MetaPropKind, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp,
-    OptChainBase, ParamOrTsParamProp, Pat, Prop, PropName, PropOrSpread, SimpleAssignTarget, Stmt,
-    SuperProp, Tpl, VarDecl, VarDeclOrExpr, VarDeclarator,
+    OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop, PropName, PropOrSpread,
+    SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl, VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -558,6 +558,7 @@ impl Extractor {
     fn decl(&mut self, decl: &Decl) -> Result<NodeId, Unsupported> {
         match decl {
             Decl::Var(var) => self.var_decl(var),
+            Decl::Using(using) => self.using_decl(using),
             Decl::Fn(fn_decl) => {
                 let id = self.node(NodeKind::FnDecl);
                 let name = self.node(NodeKind::Ident);
@@ -598,6 +599,30 @@ impl Extractor {
         Ok(id)
     }
 
+    /// `using`/`await using` declarations (explicit resource management) are
+    /// their own `Decl` variant in `swc_ecma_ast`, not a `VarDeclKind`, but
+    /// share `VarDecl`'s shape exactly (a `Vec<VarDeclarator>`). Modeled as
+    /// the same `NodeKind::VarDecl` node with an `"using"` / `"await using"`
+    /// operator label, the same way `var`/`let`/`const` share one node kind
+    /// and differ only by their `operator` fact.
+    fn using_decl(&mut self, using: &UsingDecl) -> Result<NodeId, Unsupported> {
+        let id = self.node(NodeKind::VarDecl);
+        self.facts.operator.push((
+            id,
+            if using.is_await {
+                "await using"
+            } else {
+                "using"
+            }
+            .to_string(),
+        ));
+        for (index, declarator) in using.decls.iter().enumerate() {
+            let d = self.var_declarator(declarator)?;
+            self.facts.child.push((id, index as u32, d));
+        }
+        Ok(id)
+    }
+
     fn var_decl_or_expr(&mut self, init: &VarDeclOrExpr) -> Result<NodeId, Unsupported> {
         match init {
             VarDeclOrExpr::VarDecl(var) => self.var_decl(var),
@@ -608,8 +633,8 @@ impl Extractor {
     fn for_head(&mut self, head: &ForHead) -> Result<NodeId, Unsupported> {
         match head {
             ForHead::VarDecl(var) => self.var_decl(var),
+            ForHead::UsingDecl(using) => self.using_decl(using),
             ForHead::Pat(pat) => self.pat(pat),
-            _ => unsupported("for_head"),
         }
     }
 
@@ -720,7 +745,27 @@ impl Extractor {
                 Ok(id)
             }
             ClassMember::Empty(_) => Ok(self.node(NodeKind::ClassMemberEmpty)),
-            _ => unsupported("class_member"),
+            ClassMember::PrivateMethod(method) => {
+                let id = self.node(NodeKind::Method);
+                let key = self.private_name_key(&method.key);
+                self.facts.child.push((id, 0, key));
+                let function = self.function(&method.function)?;
+                self.facts.child.push((id, 1, function));
+                Ok(id)
+            }
+            ClassMember::PrivateProp(prop) => {
+                let id = self.node(NodeKind::ClassProp);
+                let key = self.private_name_key(&prop.key);
+                self.facts.child.push((id, 0, key));
+                if let Some(value) = &prop.value {
+                    let value = self.expr(value)?;
+                    self.facts.child.push((id, 1, value));
+                }
+                Ok(id)
+            }
+            ClassMember::TsIndexSignature(_) | ClassMember::AutoAccessor(_) => {
+                unsupported("class_member")
+            }
         }
     }
 
@@ -749,6 +794,19 @@ impl Extractor {
             }
             _ => unsupported("prop_key"),
         }
+    }
+
+    /// `#name` private class member keys (`PrivateMethod`/`PrivateProp`) are
+    /// not a `PropName` variant in `swc_ecma_ast` — they carry a `PrivateName`
+    /// instead. Recorded into the same `prop_name` fact table as public keys,
+    /// `#`-prefixed, matching the label convention already used elsewhere in
+    /// this crate (`readoff_render.rs`, `selector_candidate_index.rs`,
+    /// `shape_index.rs`) so a private key can never collide with a same-named
+    /// public one.
+    fn private_name_key(&mut self, key: &PrivateName) -> NodeId {
+        let id = self.node(NodeKind::PropName);
+        self.facts.prop_name.push((id, format!("#{}", key.name)));
+        id
     }
 
     fn pat(&mut self, pat: &Pat) -> Result<NodeId, Unsupported> {
@@ -1197,7 +1255,10 @@ impl Extractor {
                 let computed = self.expr(&computed.expr)?;
                 self.facts.child.push((id, 1, computed));
             }
-            MemberProp::PrivateName(_) => return unsupported("member: private name"),
+            MemberProp::PrivateName(private_name) => {
+                let prop = self.private_name_key(private_name);
+                self.facts.child.push((id, 1, prop));
+            }
         }
         Ok(id)
     }
@@ -2214,6 +2275,45 @@ mod tests {
     }
 
     #[test]
+    fn extracts_private_class_members_and_access() {
+        let facts =
+            extract("class C { #x = 1; #m() { return this.#x; } get(other) { return other.#x; } }")
+                .expect("private members extract");
+        let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
+        for expected in [NodeKind::ClassDecl, NodeKind::ClassProp, NodeKind::Method] {
+            assert!(
+                kinds.contains(&expected),
+                "kind {expected:?} present: {kinds:?}"
+            );
+        }
+        // The declaring `#x` key, the `this.#x` use, and the `other.#x` use
+        // are all recorded under the same `#`-prefixed prop_name label.
+        let x_count = facts
+            .prop_name
+            .iter()
+            .filter(|(_, name)| name == "#x")
+            .count();
+        assert_eq!(x_count, 3, "prop_name entries: {:?}", facts.prop_name);
+        assert!(
+            facts.prop_name.iter().any(|(_, name)| name == "#m"),
+            "prop_name entries: {:?}",
+            facts.prop_name
+        );
+    }
+
+    #[test]
+    fn extracts_using_declarations() {
+        let facts =
+            extract("{ using a = open(); await using b = openAsync(); }").expect("using extracts");
+        let operators: HashSet<&str> = facts.operator.iter().map(|(_, op)| op.as_str()).collect();
+        assert!(operators.contains("using"), "operators: {operators:?}");
+        assert!(
+            operators.contains("await using"),
+            "operators: {operators:?}"
+        );
+    }
+
+    #[test]
     fn extracts_for_of_destructuring_and_template() {
         let facts = extract("for (const { a, b } of items) { log(`x${a}`); }")
             .expect("covered shape extracts");
@@ -2271,12 +2371,18 @@ mod tests {
 
     #[test]
     fn coverage_report_tallies_per_statement() {
-        // One extractable statement; one blocked by an unmodeled private class
-        // member. One statement's gap does not abort the tally of the other.
+        // One extractable statement; one blocked by an unmodeled class member.
+        // `PrivateMethod`/`PrivateProp` (`#x`) are modeled now (see
+        // `class_member`/`private_name_key`) — `TsIndexSignature` is the
+        // still-unmodeled member kind used here as the canary. One
+        // statement's gap does not abort the tally of the other.
         let report = js_ast::with_swc_globals(|| {
             coverage_report(
-                &js_ast::parse_js_module_ast("<test>", "const a = \"s\";\nclass C { #x = 1; }\n")
-                    .unwrap(),
+                &js_ast::parse_js_module_ast(
+                    "<test>",
+                    "const a = \"s\";\nclass C { [k: string]: number; }\n",
+                )
+                .unwrap(),
             )
         });
         assert_eq!(report.total, 2);
@@ -2286,10 +2392,11 @@ mod tests {
 
     #[test]
     fn unmodeled_construct_errors_loudly_not_silently() {
-        // A private class member stays unmodeled. Fail-closed means a hard error
-        // here, never a silently-incomplete fact set that would let a query
-        // under-constrain.
-        let error = extract("class C { #x = 1; }").unwrap_err();
+        // A TS index signature class member stays unmodeled (TS-only syntax,
+        // not something emitted JS ever needs). Fail-closed means a hard
+        // error here, never a silently-incomplete fact set that would let a
+        // query under-constrain.
+        let error = extract("class C { [k: string]: number; }").unwrap_err();
         assert_eq!(error.context, "class_member");
     }
 

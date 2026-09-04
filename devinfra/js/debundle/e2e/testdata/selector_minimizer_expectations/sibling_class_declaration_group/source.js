@@ -4,7 +4,7 @@
 // a DRY cluster: emitting four near-identical standalone source_match selectors
 // is wasteful. The general co-occurrence grouping trigger (not function-only)
 // collapses them into ONE binding_group whose source_match is the consecutive
-// run of the four `class …Card { kind = "…"; CLASS_REST }` declarations.
+// run of the four `class …Card { kind = "…"; ANYTHING; }` declarations.
 class selectedAlphaCard {
   kind = "uniqueAlphaCard";
   render() {
