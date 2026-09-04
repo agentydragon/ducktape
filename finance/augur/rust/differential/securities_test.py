@@ -5,221 +5,176 @@ One target per domain so Bazel runs them concurrently: each case compiles its ow
 JAX program, and those compiles are the suite's whole wall clock and peak memory.
 """
 
+from decimal import Decimal
 from typing import Any
 
 import polars as pl
 import pytest_bazel
 
+from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecuritySymbol
 from finance.augur.rust.differential.backend import assert_backends_agree
-from finance.augur.rust.differential.fixtures import shared_integer_fixture, tax_fixture
-from finance.augur.rust.fixture_spec import account_ref
+from finance.augur.rust.differential.case import Case, levels, scenario
+from finance.augur.rust.differential.fixtures import BND, VTI, checking, taxed
+from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
+
+VTI_DISTRIBUTION = SecurityDistributionKey(symbol=SecuritySymbol("vti"))
+BND_DISTRIBUTION = SecurityDistributionKey(symbol=SecuritySymbol("bnd"))
+INFLATION = InflationKey()
 
 
-def distribution_fixture() -> dict[str, Any]:
-    fixture = shared_integer_fixture()
-    scenario = fixture["scenario"]
-    scenario["accounts"] = [{"account": account_ref("alice", "checking"), "opening_balance": 0}]
-    scenario["scheduled_transfers"] = []
-    scenario["recurring_transfers"] = []
-    scenario["obligations"] = []
-    scenario["recurring_obligations"] = []
-    scenario["initial_lots"] = [
-        {
-            "lot_id": "alice-vti",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "vti",
-            "purchase_month": -12,
-            "quantity_scale": 1_000_000,
-            "units": 2_000_000,
-            "basis": 20_000,
-        }
-    ]
-    scenario["scheduled_sales"] = []
-    scenario["distributions"] = [
-        {"agent_id": "alice", "holding_account_id": "brokerage", "asset_id": "vti", "to_account_id": "checking"}
-    ]
-    fixture["series"] = [
-        {"series_id": "security:vti", "snapshots": 4, "values": [10_000] * 8},
-        {"series_id": "security_distribution:vti", "snapshots": 4, "values": [100, 100, 100, 100, 200, 300, 400, 500]},
-    ]
-    return fixture
+def distribution_case() -> Case:
+    """A monthly payout on a held position, over two rollouts with different payout paths."""
 
-
-def distribution_tax_fixture() -> dict[str, Any]:
-    fixture = distribution_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 12
-    scenario["jurisdictions"] = [
-        {"jurisdiction_id": "federal_us", "level": "federal"},
-        {"jurisdiction_id": "california", "level": "state"},
-    ]
-    scenario["accounts"] = [
-        {"account": account_ref("alice", "checking"), "opening_balance": 0},
-        {"account": account_ref("irs", "checking"), "opening_balance": 0},
-    ]
-    scenario["initial_lots"] = [
-        {
-            "lot_id": "alice-bnd",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "bnd",
-            "purchase_month": -24,
-            "quantity_scale": 1_000_000,
-            "units": 10_000_000_000,
-            "basis": 73_000_000,
-        }
-    ]
-    scenario["distributions"] = [
-        {
-            "agent_id": "alice",
-            "holding_account_id": "brokerage",
-            "asset_id": "bnd",
-            "to_account_id": "checking",
-            "tax_character": [
-                {"fraction_ppb": 400_000_000, "issuer_jurisdiction_id": "federal_us"},
-                {"fraction_ppb": 600_000_000},
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0))),
+            horizon_months=3,
+            tax_profiles=[],
+            initial_lots=[
+                InitialLot(
+                    lot_id="alice-vti",
+                    agent_id="alice",
+                    account_id="brokerage",
+                    asset=VTI,
+                    purchase_month_index=-12,
+                    quantity=2.0,
+                    cost_basis_per_unit=Decimal(100),
+                )
             ],
-        }
-    ]
-    tax_profile = tax_fixture()["scenario"]["tax_profiles"][0]
-    federal, california = tax_profile["jurisdictions"]
-    federal.update({"exempt_interest_from_levels": ["state"], "exempts_own_issue": False})
-    california.update({"exempt_interest_from_levels": ["federal"], "exempts_own_issue": True})
-    scenario["tax_profiles"] = [tax_profile]
-    fixture["series"] = [
-        {"series_id": "security:bnd", "snapshots": 13, "values": [7_300] * 26},
-        {"series_id": "security_distribution:bnd", "snapshots": 13, "values": [20] * 13 + [30] * 13},
-    ]
-    return fixture
-
-
-def bond_fixture() -> dict[str, Any]:
-    fixture = tax_fixture()
-    fixture["rollout_count"] = 3
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 12
-    scenario["jurisdictions"] = [
-        {"jurisdiction_id": "federal_us", "level": "federal"},
-        {"jurisdiction_id": "california", "level": "state"},
-    ]
-    scenario["accounts"] = [
-        {"account": account_ref("alice", "checking"), "opening_balance": 0},
-        {"account": account_ref("irs", "checking"), "opening_balance": 0},
-    ]
-    scenario["scheduled_transfers"] = []
-    scenario["recurring_transfers"] = []
-    scenario["obligations"] = []
-    scenario["recurring_obligations"] = []
-    scenario["initial_lots"] = []
-    scenario["scheduled_sales"] = []
-    scenario["initial_bonds"] = [
-        {
-            "bond_id": "treasury",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "issuer_jurisdiction_id": "federal_us",
-            "face_value": 10_000_000,
-            "purchase_price": 10_000_000,
-            "annual_coupon_rate_ppb": 50_000_000,
-            "coupon_period_months": 6,
-            "purchase_month_index": -1,
-            "maturity_month_index": 11,
-        },
-        {
-            "bond_id": "california-muni",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "issuer_jurisdiction_id": "california",
-            "face_value": 10_000_000,
-            "purchase_price": 10_000_000,
-            "annual_coupon_rate_ppb": 40_000_000,
-            "coupon_period_months": 6,
-            "purchase_month_index": -1,
-            "maturity_month_index": 11,
-        },
-        {
-            "bond_id": "corporate",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "face_value": 10_000_000,
-            "purchase_price": 10_000_000,
-            "annual_coupon_rate_ppb": 30_000_000,
-            "coupon_period_months": 6,
-            "purchase_month_index": -1,
-            "maturity_month_index": 11,
-        },
-        {
-            "bond_id": "tips",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "issuer_jurisdiction_id": "federal_us",
-            "face_value": 10_000_000,
-            "purchase_price": 10_000_000,
-            "annual_coupon_rate_ppb": 40_000_000,
-            "coupon_period_months": 6,
-            "inflation_indexed": True,
-            "purchase_month_index": -1,
-            "maturity_month_index": 11,
-        },
-        {
-            "bond_id": "rounding-up",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "face_value": 600,
-            "purchase_price": 600,
-            "annual_coupon_rate_ppb": 10_000_000,
-            "coupon_period_months": 1,
-            "purchase_month_index": -1,
-            "maturity_month_index": 11,
-        },
-        {
-            "bond_id": "rounding-down",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "face_value": 180,
-            "purchase_price": 180,
-            "annual_coupon_rate_ppb": 33_333_333,
-            "coupon_period_months": 1,
-            "purchase_month_index": -1,
-            "maturity_month_index": 11,
-        },
-        {
-            "bond_id": "rounding-five-month",
-            "agent_id": "alice",
-            "account_id": "checking",
-            "face_value": 1_250_627,
-            "purchase_price": 1_250_627,
-            "annual_coupon_rate_ppb": 37_000_000,
-            "coupon_period_months": 5,
-            "purchase_month_index": -4,
-            "maturity_month_index": 11,
-        },
-    ]
-    federal, california = scenario["tax_profiles"][0]["jurisdictions"]
-    federal.update({"exempt_interest_from_levels": ["state"], "exempts_own_issue": False})
-    california.update({"exempt_interest_from_levels": ["federal"], "exempts_own_issue": True})
-    fixture["series"] = [
-        {
-            "series_id": "inflation",
-            "snapshots": 13,
-            "values": [
-                *([1_000_000_000] * 6),
-                *([2_000_000_000] * 7),
-                *([1_000_000_000] * 6),
-                *([1_500_000_000] * 7),
-                *([1_000_000_000] * 6),
-                *([800_000_000] * 7),
+            security_distributions=[
+                SecurityDistribution(
+                    asset=VTI,
+                    agent_id="alice",
+                    holding_account_id="brokerage",
+                    to_account_id="checking",
+                    tax_character=(DistributionTaxSlice(fraction=1.0),),
+                )
             ],
+        ),
+        rollout_count=2,
+        series={
+            VTI: levels([[Decimal(100)] * 4] * 2),
+            VTI_DISTRIBUTION: levels(
+                [[Decimal(1), Decimal(1), Decimal(1), Decimal(1)], [Decimal(2), Decimal(3), Decimal(4), Decimal(5)]]
+            ),
+        },
+    )
+
+
+def distribution_tax_case() -> Case:
+    """A fund payout split across issuers, each slice routed by its own exemption policy."""
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0)), ("irs", Decimal(0))),
+            horizon_months=12,
+            initial_lots=[
+                InitialLot(
+                    lot_id="alice-bnd",
+                    agent_id="alice",
+                    account_id="brokerage",
+                    asset=BND,
+                    purchase_month_index=-24,
+                    quantity=10_000.0,
+                    cost_basis_per_unit=Decimal(73),
+                )
+            ],
+            security_distributions=[
+                SecurityDistribution(
+                    asset=BND,
+                    agent_id="alice",
+                    holding_account_id="brokerage",
+                    to_account_id="checking",
+                    tax_character=(
+                        DistributionTaxSlice(fraction=0.4, issuer_jurisdiction_id="federal_us"),
+                        DistributionTaxSlice(fraction=0.6),
+                    ),
+                )
+            ],
+            tax_profiles=[taxed("alice", "federal_us", "california")],
+        ),
+        rollout_count=2,
+        series={
+            BND: levels([[Decimal(73)] * 13] * 2),
+            BND_DISTRIBUTION: levels([[Decimal("0.20")] * 13, [Decimal("0.30")] * 13]),
+        },
+    )
+
+
+def _bond(bond_id: str, *, rate: float, issuer: str | None = None, **overrides: Any) -> BondHolding:
+    """One $100,000 par bond bought a month before the horizon and held to maturity."""
+
+    return BondHolding(
+        **{
+            "bond_id": bond_id,
+            "agent_id": "alice",
+            "account_id": "checking",
+            "issuer_jurisdiction_id": issuer,
+            "face_value": Decimal(100_000),
+            "purchase_price": Decimal(100_000),
+            "annual_coupon_rate": rate,
+            "coupon_period_months": 6,
+            "purchase_month_index": -1,
+            "maturity_month_index": 11,
+            **overrides,
         }
-    ]
-    return fixture
+    )
+
+
+def bond_case() -> Case:
+    """Nominal bonds, TIPS, and the rounding edges of a once-per-period rational coupon.
+
+    The three rollouts inflate, inflate less, and deflate, so the TIPS accretes both ways and
+    its deflation floor is exercised.
+    """
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0)), ("irs", Decimal(0))),
+            horizon_months=12,
+            initial_bonds=[
+                _bond("treasury", rate=0.05, issuer="federal_us"),
+                _bond("california-muni", rate=0.04, issuer="california"),
+                _bond("corporate", rate=0.03),
+                _bond("tips", rate=0.04, issuer="federal_us", inflation_indexed=True),
+                _bond(
+                    "rounding-up", rate=0.01, face_value=Decimal(6), purchase_price=Decimal(6), coupon_period_months=1
+                ),
+                _bond(
+                    "rounding-down",
+                    rate=0.033333333,
+                    face_value=Decimal("1.80"),
+                    purchase_price=Decimal("1.80"),
+                    coupon_period_months=1,
+                ),
+                _bond(
+                    "rounding-five-month",
+                    rate=0.037,
+                    face_value=Decimal("12506.27"),
+                    purchase_price=Decimal("12506.27"),
+                    coupon_period_months=5,
+                    purchase_month_index=-4,
+                ),
+            ],
+            tax_profiles=[taxed("alice", "federal_us", "california")],
+        ),
+        rollout_count=3,
+        series={
+            INFLATION: levels(
+                [
+                    [*([Decimal(1)] * 6), *([Decimal(2)] * 7)],
+                    [*([Decimal(1)] * 6), *([Decimal("1.5")] * 7)],
+                    [*([Decimal(1)] * 6), *([Decimal("0.8")] * 7)],
+                ]
+            )
+        },
+    )
 
 
 def test_backends_agree_on_monthly_security_distributions() -> None:
     """A distribution pays on the units held that month, so a growing position grows it."""
 
-    result = assert_backends_agree(distribution_fixture())
+    result = assert_backends_agree(distribution_case())
 
     by_rollout = result.distributions.sort("rollout_index", "month_index")
     assert by_rollout.filter(pl.col("rollout_index") == 0).get_column("amount_quanta").to_list() == [200, 200, 200]
@@ -229,11 +184,11 @@ def test_backends_agree_on_monthly_security_distributions() -> None:
 def test_backends_agree_on_distribution_tax_character_slices() -> None:
     """Each issuer slice is routed through its jurisdiction's interest-exemption policy."""
 
-    assert_backends_agree(distribution_tax_fixture())
+    assert_backends_agree(distribution_tax_case())
 
 
 def test_backends_agree_on_nominal_bonds_tips_and_issuer_tax_routing() -> None:
-    result = assert_backends_agree(bond_fixture())
+    result = assert_backends_agree(bond_case())
     flows = result.bond_cashflows
 
     def flow(rollout: int, bond_id: str, month: int) -> dict[str, Any]:

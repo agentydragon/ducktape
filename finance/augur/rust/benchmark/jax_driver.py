@@ -16,10 +16,11 @@ from typing import Any
 import jax
 import numpy as np
 
-from finance.augur.rust.benchmark.fixture import write_fixture
-from finance.augur.rust.differential.fixture_adapter import build_legacy_fixture
+from finance.augur.rust.benchmark.fixture import feature_rich_case
+from finance.augur.sim.codec.plan import SimulationRun
+from finance.augur.sim.compiler.plan import compile_simulation
+from finance.augur.sim.engine.jax_engine import run_jax_scan
 from finance.augur.sim.events import EVENT_FRAME_SPECS
-from finance.augur.sim.simulate import simulate_with_external_series
 
 
 def _checksum(arrays: list[np.ndarray[Any, Any]]) -> int:
@@ -52,18 +53,27 @@ def main() -> None:
     batch_count = args.rollouts // batch_size
 
     with tempfile.TemporaryDirectory() as directory:
+        case = feature_rich_case(rollout_count=batch_size, horizon_months=args.horizon_months)
+        # The Rust engine's wire input, written only for its size: the JAX run below executes
+        # the plan the fixture encodes, so the two engines are timed on one scenario.
         fixture_path = Path(directory) / "fixture.json"
-        write_fixture(fixture_path, rollout_count=batch_size, horizon_months=args.horizon_months)
-        with fixture_path.open() as file:
-            fixture: dict[str, Any] = json.load(file)
-        scenario, external, locations = build_legacy_fixture(fixture)
-        del fixture
+        with fixture_path.open("w") as file:
+            json.dump(case.fixture, file, separators=(",", ":"))
+        external = case.external_series
         gc.collect()
 
         def run():
-            result = simulate_with_external_series(
-                scenario, rollout_count=batch_size, external_series=external, locations=locations
+            # Compiled inside the timed region, as the dense entry point this replaces did:
+            # turning the scenario into a plan is JAX's counterpart to the fixture parse the
+            # Rust driver also pays.
+            plan = compile_simulation(
+                case.scenario,
+                rollout_count=batch_size,
+                external_series=external,
+                jurisdictions=case.jurisdictions,
+                locations=dict(case.locations),
             )
+            result = SimulationRun(plan=plan, output=run_jax_scan(plan), external_series=external)
             jax.block_until_ready(result.output.state.cash)
             # Python/JAX exposes canonical events through this lazy decode. Materialize it inside
             # the timed region so the dense benchmark includes the output contract callers see.
