@@ -609,7 +609,12 @@ impl Extractor {
         let id = self.node(NodeKind::VarDecl);
         self.facts.operator.push((
             id,
-            if using.is_await { "await using" } else { "using" }.to_string(),
+            if using.is_await {
+                "await using"
+            } else {
+                "using"
+            }
+            .to_string(),
         ));
         for (index, declarator) in using.decls.iter().enumerate() {
             let d = self.var_declarator(declarator)?;
@@ -2271,10 +2276,9 @@ mod tests {
 
     #[test]
     fn extracts_private_class_members_and_access() {
-        let facts = extract(
-            "class C { #x = 1; #m() { return this.#x; } get(other) { return other.#x; } }",
-        )
-        .expect("private members extract");
+        let facts =
+            extract("class C { #x = 1; #m() { return this.#x; } get(other) { return other.#x; } }")
+                .expect("private members extract");
         let kinds: HashSet<NodeKind> = facts.node_kind.iter().map(|(_, k)| *k).collect();
         for expected in [NodeKind::ClassDecl, NodeKind::ClassProp, NodeKind::Method] {
             assert!(
@@ -2301,11 +2305,7 @@ mod tests {
     fn extracts_using_declarations() {
         let facts =
             extract("{ using a = open(); await using b = openAsync(); }").expect("using extracts");
-        let operators: HashSet<&str> = facts
-            .operator
-            .iter()
-            .map(|(_, op)| op.as_str())
-            .collect();
+        let operators: HashSet<&str> = facts.operator.iter().map(|(_, op)| op.as_str()).collect();
         assert!(operators.contains("using"), "operators: {operators:?}");
         assert!(
             operators.contains("await using"),
