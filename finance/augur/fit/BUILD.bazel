@@ -347,21 +347,97 @@ py_library(
     name = "structural_macro",
     srcs = ["structural_macro.py"],
     deps = [
+        ":equity",
+        ":macro_var",
         "//finance/augur/model:structural_macro",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
+    ],
+)
+
+py_library(
+    name = "equity",
+    srcs = ["equity.py"],
+    deps = [
+        "//finance/augur/model:structural_macro",
+        "//finance/evidence:loading",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "macro_var",
+    srcs = ["macro_var.py"],
+    deps = [
+        "//finance/augur/model:structural_macro",
+        "//finance/evidence:loading",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "ornstein_uhlenbeck",
+    srcs = ["ornstein_uhlenbeck.py"],
+    deps = [
+        "//finance/augur/model:structural_macro",
+        "//finance/evidence:loading",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "synthetic_rates",
+    testonly = True,
+    srcs = ["synthetic_rates.py"],
+    deps = [
+        "//finance/evidence:loading",
         "@pypi//numpy",
     ],
 )
 
 py_test(
-    name = "structural_macro_test",
-    srcs = ["structural_macro_test.py"],
+    name = "equity_test",
+    srcs = ["equity_test.py"],
     deps = [
         ":conftest",
-        ":structural_macro",
+        ":equity",
+        ":synthetic_rates",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/evidence:loading",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "macro_var_test",
+    srcs = ["macro_var_test.py"],
+    deps = [
+        ":conftest",
+        ":macro_var",
+        ":synthetic_rates",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:structural_macro",
+        "//finance/evidence:loading",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "ornstein_uhlenbeck_test",
+    srcs = ["ornstein_uhlenbeck_test.py"],
+    deps = [
+        ":conftest",
+        ":ornstein_uhlenbeck",
+        ":synthetic_rates",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:structural_macro",
         "//finance/evidence:loading",
         "@pypi//numpy",
         "@pypi//pytest",

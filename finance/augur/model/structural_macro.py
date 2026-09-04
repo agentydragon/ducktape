@@ -72,6 +72,13 @@ from util.bazel.runfiles import get_required_path
 
 MONTHS_PER_YEAR = 12
 
+# FRED publishes both rate series in PERCENT; every rate inside augur is a decimal.
+PERCENT_TO_DECIMAL = 0.01
+
+# A fit needs enough months that its estimate is not noise. 240 (20 years) is well below the
+# ~865 the real rate series carry and well above anything that could fit a single regime.
+MINIMUM_MONTHS = 240
+
 MINIMUM_ANNUAL_YIELD = 0.0001
 """Floor on any modeled yield, as a decimal (1bp).
 
