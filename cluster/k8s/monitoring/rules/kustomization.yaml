@@ -8,3 +8,4 @@ resources:
   - haku-console-connection-prometheus-rule.yaml
   - mcp-auth-prometheus-rule.yaml
   - roaming-node-prometheus-rule.yaml
+  - rugged-battery-prometheus-rule.yaml

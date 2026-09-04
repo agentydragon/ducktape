@@ -16,12 +16,13 @@ spec:
   interval: 30m
   timeout: 10m # Prometheus stack upgrades can be slow
   install:
-    # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
-    # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
-    # for all pods to be ready, causing timeout. disableWait is a blunt
-    # workaround — need a general solution for every HelmRelease with a
-    # DaemonSet. Options: taint roaming nodes + add tolerations to DaemonSets
-    # that should run there, or use nodeAffinity to exclude roaming entirely.
+    # Roaming nodes (iguana/rugged) are often offline, so DaemonSets
+    # (node-exporter) have perpetually Pending pods while a roaming node is
+    # away. Helm waits for all pods to be ready, causing timeout.
+    # disableWait remains the general fix for that — node-exporter now also
+    # tolerates the roaming taint (below) so it actually schedules and
+    # reports metrics while the node IS online, which disableWait alone does
+    # not get you.
     disableWait: true
     remediation:
       retries: 3
@@ -333,6 +334,24 @@ spec:
     # Node exporter configuration
     prometheus-node-exporter:
       fullnameOverride: prometheus-node-exporter
+      # Roaming laptops (iguana/rugged) carry node-role.kubernetes.io/roaming:NoSchedule
+      # (cluster/README.md § Node Types) so this DaemonSet's pod can actually schedule
+      # there while the node is online — otherwise there is no node_power_supply_*
+      # (battery/AC) data for rugged at all. `disableWait` above covers the case where
+      # the node is offline at release time.
+      tolerations:
+        - key: node-role.kubernetes.io/roaming
+          operator: Exists
+          effect: NoSchedule
+      # Must exceed the roaming-node count, or an offline laptop's undeletable
+      # pod holds the whole unavailable budget and the rollout deadlocks
+      # silently (same failure as promtail-helmrelease.yaml's comment/incident
+      # this mirrors). Enforced by
+      # //cluster/validation:test_roaming_daemonset_capacity.
+      updateStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 3
     nodeExporter:
       enabled: true
       resources:
