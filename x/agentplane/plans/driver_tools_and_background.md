@@ -6,9 +6,11 @@ Status: **decisions pending**. The provider evidence is settled and lives in
 protocol carries either surface, and in what shape.
 
 1. **Decide whether the runner exposes driver-provided tools at all.** Nothing above the seam asks
-   for them yet. If it does, the shape question is settled by Codex: either the declared tool set is
-   immutable for the life of a session, or the runner offers a replace verb that is unsupported on
-   Codex. That choice is product-visible, because a session serves one Thread.
+   for them yet. If it does, two sub-decisions follow. Carry a per-tool deferral flag on the
+   declaration and leave what the model sees each turn to the harness, since both already do it
+   through their own tool search. And pick a side on re-describing a tool: either the declared set is
+   immutable per session, or the runner offers a replace verb and names it unsupported on Codex,
+   whose schemas are fixed for the life of a thread.
 2. **Decide whether the runner exposes background work.** The floor both harnesses reach is list +
    stop by harness id, correlated to the originating tool call. Everything richer is Claude-only and
    stays native.

@@ -1,16 +1,23 @@
 # Tools the driver provides
 
 Both harnesses let the process driving the JSON protocol expose its own tools to the model. This
-page records how a call round-trips on each side, whether the tool set can change while a session
-runs, and what each harness does with an MCP server's `notifications/tools/list_changed`.
+page records how a call round-trips on each side, how much of the registry each turn actually shows
+the model, whether the registry itself can change while a session runs, and what each harness does
+with an MCP server's `notifications/tools/list_changed`.
 
 Evidence: the pinned Claude Code 2.1.252 and Codex app-server 0.152.0 binaries, driven by a
 throwaway rig against a loopback model endpoint — every claim marked **confirmed** was produced by
-running the real binary that way. Claims marked **read** come from Codex's Rust
-(`codex-rs/`, `rust-v0.152.0`), from the `@anthropic-ai/claude-agent-sdk` type declarations, which
-document the control protocol Claude Code speaks, or from the debundled `cli.js` chunks
+running the real binary that way. Claims marked **read** name their source: Codex's Rust at the
+tag `rust-v0.152.0` (the pinned release, not `main`, which has moved on), the
+`@anthropic-ai/claude-agent-sdk` type declarations, which document the control protocol Claude Code
+speaks, or the debundled `cli.js` chunks
 ([gaffer-private `claude/re`](https://github.com/agentydragon/gaffer-private/tree/devel/claude/re)).
 Background work is a separate page: [background_work.md](background_work.md).
+
+Two axes run through this page and are easy to conflate. **What the model sees on a turn** is
+dynamic on both harnesses, driven by the model itself through a tool-search tool. **What the
+registry contains** — which tools exist at all, and with what schema — is a separate question with a
+different answer on each side.
 
 ## Claude Code: the driver hosts an MCP server
 
@@ -73,6 +80,34 @@ list:
 
 `mcp_status` reports a driver-hosted server with `scope: "dynamic"` and an empty `tools` array.
 
+### Deferral and `ToolSearch`
+
+The CLI does not always put the driver's tools in the request. With tool search on, it strips them
+out and offers the model a `ToolSearch` tool that fetches a deferred tool's schema on demand. **This
+is client-side**: the CLI builds a different request body, so the difference is visible in the bytes
+it sends, with nothing server-side deciding it. Confirmed by an A/B on the same twelve driver-hosted
+tools:
+
+| `ENABLE_TOOL_SEARCH` | `tools` in the request                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| unset                | all twelve `mcp__driver__*` tools, in full, no `defer_loading` anywhere                    |
+| `tst`                | none of them; a `ToolSearch` tool and a `DeferredToolPlaceholder` carrying `defer_loading` |
+
+`ToolSearch` describes itself as fetching "full schema definitions for deferred tools so they can be
+called", takes `{query, max_results}`, accepts `select:<name>` for an exact fetch, and returns the
+matched definitions inline. Deferred tools reach the model as _names only_, in `<system-reminder>`
+messages, per that description.
+
+The mode is chosen by the CLI from `ENABLE_TOOL_SEARCH` (`auto:N` selects the auto mode with an N%
+context threshold; `auto:0` forces it on, `auto:100` off) and gated on the model supporting
+`tool_reference` blocks — Sonnet 4+, Opus 4+, Haiku 4.5+ per the CLI's own diagnostic (read, from
+the bundle).
+
+Per-server and per-tool opt-out is `alwaysLoad`, which the CLI applies as
+`_meta['anthropic/alwaysLoad']` on the MCP tool and which the API reads as `defer_loading: false`;
+the documented default is that tools are deferred whenever tool search is enabled (read, from the
+SDK type declarations).
+
 ### `notifications/tools/list_changed` from a real MCP server
 
 Honoured, end to end. A stdio server configured with `--mcp-config`, advertising
@@ -94,6 +129,11 @@ none of this is reachable — while leaving driver-hosted servers working. The s
 `--safe-mode`, so an MCP scenario has to drop it and rely on `--setting-sources=` alone. Confirmed.
 
 ## Codex: `dynamicTools` on `thread/start`
+
+"Dynamic" here means **client-supplied**: definitions the driver hands the app-server at
+`thread/start`, as against the built-in tools compiled into Codex. It does not mean the set mutates.
+Each tool separately chooses whether the model sees it up front or has to find it, which is the part
+that is dynamic in the model's view — the two sections below answer those two different questions.
 
 `thread/start.dynamicTools` is gated behind `initialize.capabilities.experimentalApi: true`.
 Without it `thread/start` fails, `-32600`, `thread/start.dynamicTools requires experimentalApi capability`.
@@ -150,13 +190,76 @@ its own message (read).
 `turn/start.toolOutput` is a different path: it supplies a tool result as the _input_ that starts a
 turn, rather than answering an `item/tool/call`.
 
-### The tool set cannot change while a thread runs
+### Deferral and `tool_search`
 
-`dynamicTools` exists only on `thread/start`. `turn/start` has no such field and a `dynamicTools`
-key passed there is silently ignored — the request after that turn still carried the original
-description and schema and never gained the added tool. Confirmed. `thread/resume` has no
-`dynamicTools` field either, and a resumed thread reuses the specs recorded in its history (read).
-Changing a driver-provided tool or its schema means starting a new thread.
+Per-tool `deferLoading: true` keeps a tool registered and callable while excluding it from the
+model-facing list sent on ordinary turns; the model finds it with `tool_search`. A deferred tool
+must sit in a namespace, which `validate_dynamic_tool` enforces
+(`codex-rs/app-server/src/request_processors/thread_processor.rs`, read at `rust-v0.152.0`). The
+whole path is confirmed:
+
+1. **Enablement.** `tool_search` is offered only when the model's catalog entry sets
+   `supports_search_tool`, the provider advertises the `namespace_tools` capability (default true),
+   and at least one registered tool is deferred (`core/src/tools/spec_plan.rs`, read). Confirmed by
+   an A/B on otherwise identical setups: with `supports_search_tool: false` the request carried only
+   the built-ins; with `true` it also carried a
+   `{"type": "tool_search", "execution": "client"}` entry taking `{query, limit}`, whose description
+   names "Dynamic tools: Tools provided by the current Codex thread".
+2. **Search.** The model invokes it with a `tool_search_call` item — a special model tool, not a
+   `function_call`. The app-server answers with a `tool_search_output` item carrying the matching
+   **full definitions**, namespace and all, each still marked `defer_loading: true`. Confirmed.
+3. **Exposure runs through the conversation, not the tool list.** The request's `tools` array is
+   unchanged after the search; the definition reaches the model as an input item. Confirmed.
+4. **Call.** A `function_call` with `namespace` and `name` set routes to the driver as an ordinary
+   `item/tool/call` with `namespace` populated, and the driver's reply becomes the
+   `function_call_output`. Confirmed.
+
+A `deferLoading: true` namespace being absent from the ordinary tool list is therefore the design,
+not a gap.
+
+### Where the registry is frozen
+
+The Responses API rebuilds the `tools` array on every request, and Codex uses that — deferral and
+code mode both vary what a given turn carries. What a client cannot do is change **which tools
+exist** or **a tool's input schema** once the thread exists.
+
+Traced at `rust-v0.152.0`. Each turn builds a fresh `ToolRegistry`, and
+`append_dynamic_tool_runtimes(&turn_context.dynamic_tools, …)` (`core/src/tools/spec_plan.rs`) feeds
+the driver's tools into it. `TurnContext.dynamic_tools` is a verbatim clone of
+`SessionConfiguration.dynamic_tools` (`core/src/session/turn_context.rs:812`), which is populated
+once in `Session::new` from `StartThreadOptions.dynamic_tools` and afterwards only ever cloned
+forward — into a derived turn context (`turn_context.rs:541`), into a review turn
+(`session/review.rs:173`), and into the thread record for persistence (`session/session.rs:853`).
+**`SessionConfiguration.dynamic_tools` is the freeze point.** No later value reaches it: the only
+dynamic-tool `Op` in the protocol is `Op::DynamicToolResponse`, which carries a call _result_, and
+no v2 method — `turn/start`, `turn/settings/update`, `thread/settings/update`, `thread/resume`,
+`thread/fork` — has a `dynamicTools` field.
+
+A schema change is therefore not expressible at all after `thread/start`. Confirmed on the wire: a
+`dynamicTools` key on `turn/start` is dropped, and the next request still carried the original
+description and schema and never gained the added tool.
+
+The only recourse is a new `thread/start`, which costs a new thread id and the transcript — the
+history does not come with it. `thread/fork` does not help: it copies history but reads its dynamic
+tools from the forked thread's own `SessionMeta` (`codex-rs/history/src/lib.rs`), so a fork inherits
+exactly the specs the client is trying to change.
+
+### A resume keeps the driver's tools
+
+The specs survive a full process restart. Confirmed end to end: a durable thread started with a
+`lookup` tool, a turn that called it, the app-server killed, a fresh process started on the same
+`CODEX_HOME`, `thread/resume` — and the next request carried `lookup` with its schema, the
+transcript intact, and a fresh call to it arriving at the new driver process as an `item/tool/call`
+whose result reached the model.
+
+This is worth stating because the signatures suggest the opposite: `resume_thread_from_rollout` and
+`resume_thread_with_history` take no `dynamic_tools` parameter and `StartThreadOptions` defaults the
+field to an empty vector, which reads like the tools are silently dropped. The empty vector is
+exactly the trigger — `Session::new` falls back to `conversation_history.get_dynamic_tools()`, which
+reads the specs back out of the rollout's `SessionMeta` line, under the comment "Dynamic tools are
+defined at thread start and persisted in rollout session metadata" (`core/src/session/mod.rs`, read
+at `rust-v0.152.0`). Two edges follow from that lookup: an **ephemeral** thread writes no rollout
+and cannot be resumed at all, and a **cleared** history returns `None`, so the specs are gone.
 
 ### `notifications/tools/list_changed` from a real MCP server
 
@@ -172,31 +275,55 @@ offering the old ones.
 
 ## What this means for the runner protocol
 
-The call round trip is the same shape on both sides and could be one abstraction: declare a name
-and a JSON schema, receive a call carrying an id and arguments, return content plus a success flag,
-and the harness puts the result in the transcript as that tool's output. Three things do not line
-up, and the first forces a choice rather than an adapter detail.
+The call round trip is the same shape on both sides and could be one abstraction: declare a name and
+a JSON schema, receive a call carrying an id and arguments, return content plus a success flag, and
+the harness puts the result in the transcript as that tool's output. Judge the rest on the two axes
+separately, because they answer differently.
 
-**Mutability is the one that picks a side.** Claude's driver-hosted tool set is per-connection and
-rebuildable while a session runs, taking effect at the next model request. Codex's is fixed for the
-life of the thread. A common "replace the tool set" verb is not implementable on Codex without
-ending the thread, and a session maps to a Thread above the seam, so this surfaces as a product
-decision: either the runner offers the verb and declares it unsupported on Codex, or the runner's
-contract makes the driver-provided tool set immutable per session and a driver that needs a change
-opens a new one.
+**What the model sees on a turn: already dynamic on both, and not the runner's to own.** Each
+harness withholds a driver-provided tool's schema and lets the model pull it in when it becomes
+relevant — Claude with `ToolSearch` and `<system-reminder>` name announcements, Codex with
+`tool_search` and a `tool_search_output` item. Both are client-side, both are driven by the model
+rather than the driver, and in both the driver's only lever is a per-tool flag: Claude's `alwaysLoad`
+(default: deferred when tool search is on) and Codex's `deferLoading` (default: eager). The runner
+should carry that one flag on the declaration and let the harness do the rest. It should not model
+"the tool list changed", because on both sides nothing changed — the registry was constant and the
+model asked for more of it.
 
-**Failure semantics do not survive a common promise.** Claude enforces a per-server wall clock and
-reports every failure to the model as `is_error: true` with a readable message. Codex has no
-deadline — a driver that never answers wedges the turn — and collapses every failure into one fixed
-string with no error marker. The runner can impose its own deadline and require the driver to
-answer, but it cannot promise the model sees an error flag on both.
+**What the registry contains: mutable on Claude, frozen per thread on Codex.** Claude rebuilds it
+mid-session (`mcp_set_servers` remove-then-re-add) and re-lists a configured MCP server on
+`tools/list_changed`, both taking effect at the next model request. Codex freezes it at
+`thread/start`; no method or `Op` carries a new spec afterwards, and a fork inherits the old one.
 
-**Naming differs.** Claude renames a driver tool to `mcp__<server>__<tool>`; Codex uses the declared
-name and reserves that prefix. Either the runner owns the name the model sees, or the name is
-provider-visible.
+That second axis is a narrower constraint than it looks, because deferral absorbs most of what a
+driver would want mutation for. A driver that declares its superset at `thread/start` and defers the
+rarely-used part gets tools appearing to the model on demand without the registry changing at all.
+Mutation is only genuinely needed when a tool the driver could not have declared at session start
+appears, or when an existing tool's **schema** changes — and that second case is the one with no
+Codex answer at all, since a schema is fixed for the life of the thread. So the runner has a real
+choice to make, but it is about a narrow case rather than a protocol fork: either the contract makes
+the declared set immutable per session and a driver that must re-describe a tool opens a new session,
+or the runner offers a replace verb and names it unsupported on Codex. Either way it is worth
+recording that a Codex client's fallback costs the transcript, since `thread/fork` does not carry a
+new declaration.
+
+Two smaller things a common contract cannot promise identically:
+
+- **Failure semantics.** Claude enforces a per-server wall clock and reports every failure to the
+  model as `is_error: true` with a readable message. Codex has no deadline — a driver that never
+  answers wedges the turn — and collapses every failure into one fixed string with no error marker.
+  The runner can impose its own deadline and require the driver to answer; it cannot promise the
+  model sees an error flag on both.
+- **Naming.** Claude renames a driver tool to `mcp__<server>__<tool>` and the model calls it under
+  that name. Codex keeps the declared name and carries the namespace as a separate field on the
+  call, reserving the `mcp` prefix. Either the runner owns the name the model sees, or the name is
+  provider-visible.
 
 On `notifications/tools/list_changed` the two diverge: Claude re-lists and uses the new set, Codex
 ignores it. So a session that keeps offering tools its MCP server has withdrawn is a live failure
-mode on Codex and not on Claude. For driver-hosted tools neither harness follows the notification,
-so a driver that wants its own tool list to change has to say so through the control protocol:
+mode on Codex and not on Claude. For driver-hosted tools neither harness follows the notification, so
+a driver that wants its own registry to change has to say so through the control protocol:
 `mcp_set_servers` remove-then-add on Claude, and a new thread on Codex.
+
+Resume is not a hazard on either side: Codex rehydrates the declared specs from the thread's rollout,
+so a runner that restarts a process and sends `thread/resume` keeps the driver's tools.
