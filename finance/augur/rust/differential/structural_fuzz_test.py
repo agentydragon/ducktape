@@ -1,12 +1,14 @@
 """The fuzzer's structural tier at CI budget: one fresh shape, and one compile, per case.
 
-Wholly compilation-bound, and the compiled executables would otherwise all stay resident for
-the life of the process, so the caches go between cases. `value_fuzz_test.py` is the other
-tier, in its own target: there the cache is the point, and mixing the two in one process
-would make each pay for the other.
+Wholly compilation-bound, where `value_fuzz_test.py` is bound by its cases. Separate targets
+so the two compile concurrently and neither process is left holding the other tier's
+executables, which JAX keeps for the life of a process.
+
+One campaign over every shape rather than one per shape: a campaign reports every distinct
+divergence it sees, and a per-shape loop would stop at the first shape that found one and
+leave the rest unrun.
 """
 
-import jax
 import pytest_bazel
 
 from finance.augur.rust.differential import campaign
@@ -16,10 +18,8 @@ STRUCTURAL_SEEDS = range(10)
 
 
 def test_engines_agree_across_structural_draws() -> None:
-    for seed in STRUCTURAL_SEEDS:
-        report = campaign.run([campaign.Case(shape=random_shape(seed), value_seed=seed)])
-        assert (report.compared, report.unrepresentable) == (1, 0)
-        jax.clear_caches()
+    report = campaign.run(campaign.Case(shape=random_shape(seed), value_seed=seed) for seed in STRUCTURAL_SEEDS)
+    assert (report.compared, report.unrepresentable) == (len(STRUCTURAL_SEEDS), 0)
 
 
 if __name__ == "__main__":

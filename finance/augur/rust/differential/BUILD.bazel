@@ -399,7 +399,6 @@ py_test(
         ":generator",
         "//:conftest",
         "//finance/augur:conftest",
-        "@pypi//jax",
         "@pypi//pytest_bazel",
     ],
 )

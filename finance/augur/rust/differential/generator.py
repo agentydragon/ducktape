@@ -411,7 +411,10 @@ def _target_allocation(build: _Build) -> None:
             "cash_floor": floor,
             "cash_ceiling": floor + build.draw.structure.randrange(1, 4_000_000),
             "cause_id_prefix": "fuzz-allocation",
-            "purchase_slots_per_sleeve": build.draw.structure.randrange(1, 4),
+            # One slot per month. JAX preallocates a lot per possible purchase, because each
+            # carries its own basis and holding period, and refuses the whole scenario when a
+            # sleeve runs out — so a policy that buys most months needs the horizon's worth.
+            "purchase_slots_per_sleeve": build.shape.horizon_months,
             "rebalance_tolerance_ppb": build.draw.structure.randrange(1, 10) * 100_000_000,
         }
     )

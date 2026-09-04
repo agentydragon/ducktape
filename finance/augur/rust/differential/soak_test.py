@@ -11,6 +11,11 @@ one XLA compile per case, and JAX holds every compiled executable for the life o
 process. Both tiers therefore drop the caches between batches: within a batch the cache is
 the whole point, but carrying one batch's executables into the next only grows the resident
 set.
+
+A batch is one campaign, so a divergence inside it stops the batches after it. That is the
+right trade at this scale: the batch still reports every distinct channel it saw, and
+spending the remaining hours collecting more copies of a finding already in hand is not what
+the runner is for.
 """
 
 from itertools import batched
