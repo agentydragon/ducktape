@@ -80,6 +80,7 @@ flowchart TB
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::completed
         C9["C9 The profile a sandbox runs under<br/>withdrawn: profiles deferred pending design"]:::withdrawn
         C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
+        C11["C11 An agent reads the egress rules that apply to it<br/>same listener, its own projection, no field a Secret could reach"]:::ready
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -137,6 +138,8 @@ flowchart TB
     C3 --> C8
     C1 --> C9
     C4 --> C10
+    C4 --> C11
+    J --> C11
     C5 --> E
     I4 --> F0
     C3 --> F0
@@ -181,7 +184,7 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; red dashed is
 withdrawn — the package will not be built as specified; gray is conditional or stretch work.
 
-Ready now: **J**, **C6**, and **C8**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J**, **C6**, and **C11**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -219,6 +222,27 @@ ones still open.
   landed — a profile label the app stamped and an `EgressBinding` selector that matched it — is
   removed rather than left in place. Grounds and what would revive this work:
   [`profiles.md`](profiles.md).
+- **C11 an agent reads the egress rules that apply to it.** On the listener the operator API
+  already answers on, a sandboxed agent asks which rules its own sandbox is bound to and gets what
+  it needs to make a call: the hosts, methods and paths a rule admits, and the `placeholder` to send
+  in the named header. The app surfaces no placeholder today; `CredentialView` (<../app/egress.py>)
+  names the Secret and key behind a rule instead, operator detail an agent has no use for. So the
+  agent view is its own projection, secretless by construction — no field that could carry a Secret
+  value — rather than `BindingView` behind a filter someone has to remember to apply. Decided: the
+  caller is identified the way the proxy identifies one, with `PodIdentityVerifier`
+  (<../egress/identity.py>) — TokenReview, the live Pod by UID and source address, the
+  controller-owner Sandbox — since every runner Pod runs as the one `agentplane-runner`
+  ServiceAccount, so a token alone does not say which sandbox is asking. That takes a second
+  projected token volume in the `SandboxTemplate`
+  (<../../../cluster/k8s/agentplane-staging/app/sandboxtemplate-agentplane-runner.yaml>): the one
+  there carries audience `agentplane-egress` and reaches the sidecar alone, and spending it at the
+  app would collapse that separation. The trap is reaching this through the operator token path —
+  the runner ServiceAccount is shared, so admitting it as an operator subject hands every sandbox
+  full operator powers over every other sandbox. The agent surface is a distinct authorization path,
+  read-only and scoped to the caller's own sandbox. Open: whether an agent also reads its own recent
+  decisions, since the proxy's ring already answers "why was I denied" and a self-diagnosable
+  failure is the practical win; and whether this surface versions separately from the operator API,
+  since agents are long-lived and roll independently of the app.
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
