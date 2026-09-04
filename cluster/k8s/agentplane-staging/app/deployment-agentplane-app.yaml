@@ -85,8 +85,9 @@ spec:
             # is the Authentik application's slug, and the app pins the id token's `iss` to it.
             # Client, secret and session key come from the Terraform-minted Secret
             # (tf/gitops/sso-providers/provider_agentplane_staging.tf), reflected into this
-            # namespace. The other way in, a Kubernetes token, needs no configuration beyond the
-            # audience `--token-audience` defaults to.
+            # namespace. The other way in, a Kubernetes token, admits only the subjects named in
+            # AGENTPLANE_TOKEN_SUBJECTS below: the audience `--token-audience` defaults to gates
+            # nothing on its own, because whoever mints a token chooses what audience it carries.
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/agentplane/
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -106,6 +107,11 @@ spec:
                 secretKeyRef:
                   name: agentplane-oidc
                   key: session-secret
+            # Every identity allowed to present a Kubernetes token to this app. RBAC gates which
+            # ServiceAccount a principal may mint a token for, so a subject left off this list is
+            # refused however its token was minted; empty would leave the OIDC login the only way in.
+            - name: AGENTPLANE_TOKEN_SUBJECTS
+              value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
           ports:
             - name: http
               containerPort: 8080

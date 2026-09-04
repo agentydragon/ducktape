@@ -97,6 +97,12 @@ class Settings(BaseSettings):
         default="agentplane",
         description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
     )
+    token_subjects: frozenset[str] = Field(
+        default=frozenset(),
+        description="The Kubernetes usernames a token caller may present, as JSON: "
+        '["system:serviceaccount:ns:sa"]. A token for any other subject is refused however it was '
+        "minted, and the default accepts none at all, leaving an OIDC session the only way in.",
+    )
 
     def __init__(self, **values: Any) -> None:
         # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
@@ -156,7 +162,7 @@ async def async_main(settings: Settings) -> None:
             egress,
             DecisionsClient(admin_http),
             oidc,
-            TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience),
+            TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
         )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")

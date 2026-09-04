@@ -2,10 +2,10 @@
 
 A browser proves itself with the OIDC session cookie the app issued (`oidc.py`); anything else
 proves itself with a Kubernetes token, which TokenReview turns into a username the API server
-vouches for. Both are cryptographic. Nothing is inferred from a header a caller can simply set,
-which is what this replaces: `x-authentik-username` was trusted because a forward-auth proxy was
-believed to be the only way in, and the API server's service proxy forwards caller headers, so it
-was not.
+vouches for and which has to be one of the identities this app was told to accept. Both are
+cryptographic. Nothing is inferred from a header a caller can simply set, which is what this
+replaces: `x-authentik-username` was trusted because a forward-auth proxy was believed to be the
+only way in, and the API server's service proxy forwards caller headers, so it was not.
 """
 
 from __future__ import annotations
@@ -57,14 +57,30 @@ def _label_safe(value: str) -> str:
 
 
 class TokenReviewer:
-    """Turns a Kubernetes token into the username the API server says it belongs to."""
+    """Turns a Kubernetes token into the username the API server says it belongs to, if that
+    username is one this app accepts.
 
-    def __init__(self, authentication: AuthenticationV1Api, *, audience: str) -> None:
+    Two gates, and the audience alone is not one. It keeps a token minted for another service from
+    being replayed here, but whoever mints a token picks its audience: RBAC gates which
+    ServiceAccount a principal may mint for, never what audience it asks for. So the identities a
+    token may present are named, and every other one the API server authenticates is refused --
+    without that, anyone who can mint a token for any ServiceAccount is a caller here.
+    """
+
+    def __init__(self, authentication: AuthenticationV1Api, *, audience: str, subjects: frozenset[str]) -> None:
         self._authentication = authentication
         # The app's own audience, so a token minted for some other service cannot be replayed here.
         self._audience = audience
+        # The usernames a token may present. Empty accepts no token caller, leaving a session the only way in.
+        self._subjects = subjects
 
     async def review(self, token: str) -> str | None:
+        """The username this token authenticates as, or None when it authenticates as nobody.
+
+        A token the API server did authenticate, for a username outside `subjects`, raises 403
+        rather than returning None: that caller holds a valid credential and is refused for who it
+        is, which no re-authentication will change.
+        """
         review = await self._authentication.create_token_review(
             k8s_client.V1TokenReview(spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[self._audience]))
         )
@@ -75,7 +91,11 @@ class TokenReviewer:
         if self._audience not in (status_.audiences or []):
             logger.info("TokenReview returned a token for another audience: %s", status_.audiences)
             return None
-        return str(status_.user.username)
+        username = str(status_.user.username)
+        if username not in self._subjects:
+            logger.warning("refusing a token for a subject this app does not accept: %s", f"{username=}")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "token subject is not accepted here")
+        return username
 
 
 def _reviewer(request: Request) -> TokenReviewer | None:

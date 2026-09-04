@@ -44,8 +44,12 @@ are two credentials, and both are cryptographic:
   no login at all, which is how the tests and a local run work.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
-  (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here.
-  On staging an agent mints one for a ServiceAccount that exists only to be an identity:
+  (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here,
+  and the username has to be one `--token-subjects` names, or the app answers 403. The audience
+  would not be a gate on its own: RBAC decides which ServiceAccount a principal may mint a token
+  for, never which audience it asks for, so an unnamed subject is refused however it minted. Empty
+  -- the default -- accepts no token caller at all. On staging the list holds one entry, and an
+  agent mints for the ServiceAccount that exists only to be that identity:
 
   ```sh
   TOKEN=$(kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane)
