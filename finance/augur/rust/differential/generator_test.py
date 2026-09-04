@@ -59,15 +59,17 @@ def _folded_scalars(fixture: dict[str, Any]) -> list[Any]:
 
 @pytest.mark.parametrize("shape", VALUE_TIER_SHAPES, ids=lambda shape: shape.name)
 def test_one_shape_is_one_compiled_program(shape: Shape) -> None:
-    fixtures = [build_fixture(shape, seed) for seed in VALUE_SEEDS]
-    assert {str(_skeleton(fixture)) for fixture in fixtures} == {str(_skeleton(fixtures[0]))}
-    assert {str(_folded_scalars(fixture)) for fixture in fixtures} == {str(_folded_scalars(fixtures[0]))}
+    first, *rest = [build_fixture(shape, seed) for seed in VALUE_SEEDS]
+    for fixture in rest:
+        assert _skeleton(fixture) == _skeleton(first)
+        assert _folded_scalars(fixture) == _folded_scalars(first)
 
 
 @pytest.mark.parametrize("shape_seed", range(12))
 def test_a_random_shape_is_one_compiled_program_too(shape_seed: int) -> None:
-    fixtures = [build_fixture(random_shape(shape_seed), seed) for seed in VALUE_SEEDS]
-    assert {str(_skeleton(fixture)) for fixture in fixtures} == {str(_skeleton(fixtures[0]))}
+    first, *rest = [build_fixture(random_shape(shape_seed), seed) for seed in VALUE_SEEDS]
+    for fixture in rest:
+        assert _skeleton(fixture) == _skeleton(first)
 
 
 @pytest.mark.parametrize("shape_seed", range(12))

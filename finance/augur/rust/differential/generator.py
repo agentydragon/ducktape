@@ -197,8 +197,8 @@ def _income_tag(build: _Build) -> dict[str, str]:
 def _index_series(build: _Build) -> None:
     """The `inflation` and `rent` levels every indexed amount reads.
 
-    Month 0 is the base every conversion divides by, and it is drawn even so that a half of
-    it exists at all: `base_amount * level / base` can only tie on an even base.
+    Month 0 is the base every conversion divides by, and it is pinned to an even level so a
+    half of it exists at all: `base_amount * level / base` can only tie on an even base.
     """
 
     for series_id in ("inflation", f"rent:{LOCATION}"):
