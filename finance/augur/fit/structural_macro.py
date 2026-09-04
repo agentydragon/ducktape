@@ -44,6 +44,8 @@ import numpy as np
 from finance.augur.model.structural_macro import (
     MONTHS_PER_YEAR,
     FitWindowProvenance,
+    MacroStateMatrix,
+    MacroStateVector,
     MacroVarSpec,
     StructuralMacroFittedDefaults,
 )
@@ -296,12 +298,12 @@ class MacroVarFit:
     matters on its own: a rate surprise and an inflation surprise arrive together.
     """
 
-    # Fixed at 3 (MACRO_STATE_DIM), matching MacroVarSpec's field shapes exactly — this is
-    # always the (short_rate, term_spread, inflation_rate) VAR, not a generic N-state fitter.
-    intercept: tuple[float, float, float]
-    transition: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
-    shock_cholesky: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
-    latest_state: tuple[float, float, float]
+    # MacroStateVector/Matrix are fixed at 3 (MACRO_STATE_DIM): this is always the
+    # (short_rate, term_spread, inflation_rate) VAR, not a generic N-state fitter.
+    intercept: MacroStateVector
+    transition: MacroStateMatrix
+    shock_cholesky: MacroStateMatrix
+    latest_state: MacroStateVector
     first_month: date
     latest_month: date
     sample_months: int
@@ -313,7 +315,7 @@ class MacroVarFit:
         return float(np.max(np.abs(np.linalg.eigvals(np.asarray(self.transition)))))
 
     @property
-    def long_run_mean(self) -> tuple[float, ...]:
+    def long_run_mean(self) -> MacroStateVector:
         """`(I - A)^-1 c` — where the state settles absent shocks."""
 
         transition = np.asarray(self.transition)

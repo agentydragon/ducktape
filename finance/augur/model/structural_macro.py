@@ -132,6 +132,10 @@ class EquitySpec(FrozenModel):
     rate_beta: float = 0.0
 
 
+type MacroStateVector = tuple[float, float, float]
+type MacroStateMatrix = tuple[MacroStateVector, MacroStateVector, MacroStateVector]
+
+
 class MacroVarSpec(FrozenModel):
     """`state[t] = intercept + transition @ state[t-1] + shock_cholesky @ z[t]`, `z ~ N(0, I)`.
 
@@ -141,10 +145,10 @@ class MacroVarSpec(FrozenModel):
     together, which three separate processes cannot express at all.
     """
 
-    initial_state: tuple[float, float, float]
-    intercept: tuple[float, float, float]
-    transition: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
-    shock_cholesky: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+    initial_state: MacroStateVector
+    intercept: MacroStateVector
+    transition: MacroStateMatrix
+    shock_cholesky: MacroStateMatrix
 
     @model_validator(mode="after")
     def _reject_explosive(self) -> MacroVarSpec:
