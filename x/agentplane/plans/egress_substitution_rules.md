@@ -58,6 +58,21 @@ treats it as a free string private to the rule that mentions it.
    namespace-global.
 6. **Fail closed is preserved.** A presented placeholder that no rule bound to the subject resolves
    still refuses, with `placeholder-unresolved`.
+7. **A target is what the sandbox is told**, so the agent-facing view (<../egress/agent_view.py>)
+   projects the targets and not the placeholder alone.
+
+### The sandbox cannot form the header from a placeholder alone
+
+The rules endpoint reports the header and the placeholder, which is what a substring replace needs
+and one component short of what a client needs. The acceptance probe found it: told the header and
+the placeholder and nothing else, both harnesses sent `Authorization: <placeholder>` bare, the
+proxy substituted correctly into it, and GitHub refused the schemeless value. Neither harness
+tried `Bearer`, and neither had grounds to — the proxy had not said so.
+
+Declaring the target answers it in the same field the substitution reads: `schemeToken` with
+`scheme: Bearer` is the value's shape, so the view can report the value to send rather than the
+token to put somewhere. Until then the probe names GitHub's scheme itself, which is the last thing
+about its own credential the sandbox is told out of band.
 
 ### Exactness narrows detection, and that is safe
 

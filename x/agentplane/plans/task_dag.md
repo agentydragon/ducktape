@@ -252,8 +252,9 @@ ones still open.
   is a substring of a header value rather than a whole component is not substituted and not
   detected; a request presenting a granted placeholder at a declared target is substituted at every
   declared target it presents it in; one that presents a placeholder nothing bound to it resolves
-  is still refused `placeholder-unresolved`; and the staging policy is expressed in the new shape
-  with the old one gone from the CRD. Design and open questions:
+  is still refused `placeholder-unresolved`; the agent-facing view reports the target, so a sandbox
+  told only what the endpoint says forms a header GitHub accepts; and the staging policy is
+  expressed in the new shape with the old one gone from the CRD. Design and open questions:
   [`egress_substitution_rules.md`](egress_substitution_rules.md).
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.

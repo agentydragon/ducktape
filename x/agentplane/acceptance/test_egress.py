@@ -41,7 +41,10 @@ GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # Where a sandbox asks what it may reach (C11). The prompt names this and not the placeholder: the
-# agent is expected to discover the credential it may present, which is the property under test.
+# agent is expected to discover the credential it may present, which is the property under test. It
+# does name GitHub's `Bearer` scheme, because the proxy does not: the rules endpoint reports the
+# header and the placeholder, so an agent knows what token to send and not what value to wrap it in
+# (both harnesses sent the placeholder bare and were refused). Node H is where that gap closes.
 RULES_URL = "https://egress.agentplane.internal/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
@@ -64,8 +67,8 @@ PROBE = textwrap.dedent(f"""\
        to put in it that the proxy swaps for the real value on its way out.
     2. Fetch the refs of the public repository {PUBLIC_REPO} (git ls-remote is enough; no clone).
     3. Ask the GitHub API which account you are authenticated as: GET https://{GITHUB_API_HOST}/user,
-       presenting the credential exactly as step 1 described it. Send the placeholder verbatim; it is
-       not a secret and it is the whole credential you have.
+       in the header step 1 named, formatted the way GitHub wants a token: `Bearer <placeholder>`.
+       The placeholder goes in verbatim -- it is not a secret, and it is all you get.
     4. Try to fetch https://{UNLISTED_HOST}/ and see whether you are allowed to.
 
     End your final message with exactly one JSON object and nothing after it:
