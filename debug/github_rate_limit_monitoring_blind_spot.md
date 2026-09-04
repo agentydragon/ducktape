@@ -1,11 +1,11 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **one heavy consumer identified, not the only one, and not fixed by upgrading.**
-The Claude Desktop app spends the user's GraphQL budget from its internal `GhRestClient`
-(upstream anthropics/claude-code#88320) — proven from the app's own log. Bumping to the
-current release does not stop it, and a second unidentified consumer spends thousands of
-points with the app provably down. The monitoring blind spot that hid all of this is
-closed.
+Status: **partitioned to wyrm2, correlated with the Claude Code CLI, mechanism still
+unexplained.** Taking the machine offline across a reset drops consumption from ~10,500
+points/hour to 70. CLI sessions alone reproduce the burn with Claude Desktop not
+running. But a fully proxied CLI session issues ~4 GraphQL requests per five minutes,
+around 0.1% of the burn, so what the CLI does _while being watched_ does not account for
+it. The monitoring blind spot is closed; the consumer is not identified.
 
 ## The blind spot, and why it existed
 
@@ -553,6 +553,122 @@ candidate costed here: it was never one thing at machine rate.
    and it only recovers most of the budget, not all.
 4. Keep this note until the second consumer is named. The recorder module's tombstone
    condition ("once that note names the consumer") is _not_ yet satisfied.
+
+## The partition test: it is wyrm2
+
+Every attribution before this came from correlating a spike against whichever process
+happened to be visible, and two of them were wrong. The test that partitions instead of
+guessing had never been run: **take the machine away and see if the account still
+drains.**
+
+wyrm2 was offline from 09:59:58 to 10:12 UTC, across the 10:01 reset. The exporter and
+Mimir are in-cluster, so the measurement survived the machine going away.
+
+```text
+09:59Z  used=10852        wyrm2 down
+10:02Z  used=    0        reset
+10:03Z  used=   63
+10:07Z  used=   70
+10:12Z  used=   70        wyrm2 back
+10:27Z  used=   72        still idle
+```
+
+**70 points in that hour**, against 5000-gone-in-three-minutes in nine of the previous
+ten. The off-machine candidates this note had been building a case for — the Claude,
+Codex Connector and Copilot GitHub Apps acting as the user from third-party
+infrastructure, `GH_RELEASE_PAT` on GitHub-hosted runners, autonomously running cloud
+sessions — are all cleared: none spent anything meaningful while the machine was gone.
+
+The lesson is method, not result. A partition test costs twelve minutes of downtime and
+one bit; the instrumentation that preceded it cost a night and produced two wrong
+answers. Partition before attributing.
+
+## The CLI reproduces it; Desktop is not required
+
+Immediately afterwards, with Claude Desktop not running and nothing else changed:
+
+| Condition                                | Consumption               |
+| ---------------------------------------- | ------------------------- |
+| wyrm2 offline                            | 70 points/hour            |
+| wyrm2 up, no Desktop, no CLI sessions    | +2 points in 15 min       |
+| wyrm2 up, no Desktop, **3 CLI sessions** | **~5700 points in 4 min** |
+
+That retires the Claude Desktop hypothesis this note was built on, and explains why the
+version bump changed nothing: the desktop app was never necessary to reproduce the burn.
+Its `GhRestClient` GraphQL 403s are real and remain in its log, so it is _a_ consumer —
+but not the one that matters here.
+
+Consumption is also **bursty rather than continuous**: 540, 1688, 2066, 1555, 4144
+points in single minutes, separated by minutes of nothing.
+
+## What the proxy actually captured
+
+Two Claude Code sessions, fully proxied, ~7 minutes, 22 requests total:
+
+| Requests | Endpoint                                  |
+| -------- | ----------------------------------------- |
+| 9        | `GET /repos/agentydragon/ducktape/pulls…` |
+| 8        | `POST /graphql`                           |
+| 3        | `GET /repos/agentydragon/ducktape`        |
+| 2        | `GET /repos/agentydragon/gaffer-private…` |
+
+All eight GraphQL posts are the same query, sent by the CLI's own client rather than by
+`gh`, and driven by the statusline's PR indicator:
+
+```graphql
+query ($o: String!, $r: String!, $n: Int!) {
+  repository(owner: $o, name: $r) {
+    pullRequest(number: $n) {
+      reviewDecision
+    }
+  }
+}
+```
+
+One node, so **1 point**. Roughly 50 points/hour per session. Reaching 5000 points in
+four minutes this way would take on the order of 200 sessions.
+
+So this is a real mechanism, identified at request level for the first time, and it is
+**not** the mechanism: it explains about 0.1% of the burn. Finding it felt like the
+answer, which is the third time tonight a plausible mechanism has proven too small. The
+residual comparison — captured cost against the account-wide delta — is the only reason
+that was caught rather than written up as a conclusion.
+
+The residual to close is:
+
+```text
+account delta = captured GraphQL cost + ~560/h tf-runners + UNKNOWN
+```
+
+The tf-runner term is in-cluster and can never be captured by a user-level proxy; it is
+bounded and measured, not unknown. Everything else is `UNKNOWN`, and it is currently
+almost the whole of it.
+
+## Proxying these two products: what does not work
+
+- **Claude Desktop strips proxy and cert environment variables.** Its bundle carries a
+  `Set` of `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`,
+  `CLAUDE_CODE_CERT_STORE` and similar, alongside seven `delete process.env` sites, and
+  logs `[CCD] Resolved system proxy for Code sessions`. It resolves the _system_ proxy
+  itself. Env-based proxying cannot work on it.
+- **It also refuses Chromium network-override switches**: `refusing to start — a
+debugging or network-override switch is present on the command line`. Both doors are
+  closed deliberately. The remaining route is the GNOME system proxy plus the CA in the
+  NSS store, which routes the whole machine through mitmdump.
+- **Electron hands off to an existing instance and exits.** Launching a proxied wrapper
+  while an unproxied app runs captures nothing while appearing to work: the window
+  opens, the flow file stays empty. This produced two false starts before it was noticed.
+- **`gh` inside a proxied session fails TLS without `SSL_CERT_FILE`.** Go reads neither
+  `NODE_EXTRA_CA_CERTS` nor the Nix cert path, so `gh` made no request and spent no
+  quota — the proxy suppressing the behaviour under measurement and reporting a false
+  negative. Caught by the operator before the first run, not after. Fixed by exporting a
+  system-store-plus-mitm-CA bundle to `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and
+  `GIT_SSL_CAINFO`.
+
+**Verifying capture completeness by outcome, not by environment**: the connection
+recorder shows every process reaching `api.github.com`. While each line reads
+`.mitmdump-wrapp`, the capture is complete; a `comm="HTTP Client"` line means a session
+slipped out. Checking environments finds only what you thought to look at.
 
 ## Knobs not yet turned
 
