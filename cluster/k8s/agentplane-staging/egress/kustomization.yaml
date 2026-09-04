@@ -13,3 +13,5 @@ resources:
   - networkpolicy.yaml
   - egresscredential-github-pat.yaml
   - egresspolicy-github-public.yaml
+  - egresscredential-litellm-cheap-experiments.yaml
+  - egresspolicy-litellm.yaml

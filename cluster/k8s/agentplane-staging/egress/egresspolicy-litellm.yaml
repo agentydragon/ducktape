@@ -1,0 +1,19 @@
+# The model endpoint. Every turn a sandbox takes goes through this rule, so a sandbox without it
+# has no agent at all — which is the point: the key is the proxy's, and a sandbox that cannot
+# reach LiteLLM cannot spend it either.
+#
+# `clusterInternal` because LiteLLM is a Service: the proxy refuses a host resolving to a private
+# address unless the rule says the host is inside the cluster and meant to be.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: litellm
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - litellm.litellm.svc.cluster.local
+      clusterInternal: true
+      methods: [GET, POST]
+      credentialRef:
+        name: litellm-cheap-experiments

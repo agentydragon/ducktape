@@ -45,6 +45,16 @@ spec:
               - matchPattern: "*"
     - toEntities:
         - kube-apiserver
+    # LiteLLM, which the litellm policy admits as a cluster-internal host. Open ahead of the
+    # traffic: the runners still reach LiteLLM directly, and this is the path they move onto.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: litellm
+            k8s:app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
     - toEntities:
         - world
         - remote-node
