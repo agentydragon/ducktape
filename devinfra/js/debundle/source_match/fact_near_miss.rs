@@ -1056,10 +1056,22 @@ mod tests {
         });
     }
 
-    /// One fact-representable input per near-miss reason variant. Variants 7 and 13
-    /// are intentionally absent — they are reachable only via TypeScript-only
-    /// constructs the fact model does not represent (see
-    /// `fact_near_miss_ts_only_variants_are_outside_the_fact_subset`). Each
+    /// One fact-representable input per near-miss reason variant. Variant 7
+    /// (originally reachable only via a same-discriminant pair of TS-only
+    /// declarations, e.g. two `TsInterface`s) and variant 13 (a `declare`
+    /// modifier mismatch) are intentionally absent — the fact model still
+    /// does not represent either construct (see
+    /// `fact_near_miss_ts_only_variants_are_outside_the_fact_subset`).
+    ///
+    /// `chunk_facts.rs` now models `Decl::Using`/`ForHead::UsingDecl` as a
+    /// `VarDecl` node with a `"using"`/`"await using"` operator label (the
+    /// same way `var`/`let`/`const` share one node kind), so a lone `using`
+    /// declaration now fact-indexes (see
+    /// `fact_near_miss_ts_only_variants_are_outside_the_fact_subset`'s
+    /// positive assertion) — but comparing it against a real `var`/`let`
+    /// pair here would additionally need `decl_var` below (and its callers)
+    /// to accept `Decl::Using`, not just `Decl::Var`; that AST-side plumbing
+    /// is separate follow-up work, so no CASES entry exercises it yet. Each
     /// `expected_reason` is the golden string the matcher produced before deletion
     /// (corpus near-miss differential proved fact == matcher byte-for-byte).
     const CASES: &[Case] = &[
@@ -1255,10 +1267,15 @@ mod tests {
     /// not represent:
     ///
     /// - Variant 7 needs two same-discriminant declarations that are neither
-    ///   class, function, nor variable — i.e. `using`, `TsInterface`,
-    ///   `TsTypeAlias`, `TsEnum`, or `TsModule`. The fact extractor
-    ///   (`chunk_facts::decl`) fails closed on every one of these, so such a needle
-    ///   never projects to facts and `fact_source_match_body_debt` returns no row.
+    ///   class, function, nor variable — e.g. two `TsInterface`s. The fact
+    ///   extractor (`chunk_facts::decl`) fails closed on `TsInterface`/
+    ///   `TsTypeAlias`/`TsEnum`/`TsModule`, so such a needle never projects to
+    ///   facts and `fact_source_match_body_debt` returns no row. `using`
+    ///   declarations used to trigger this same variant, but `chunk_facts.rs`
+    ///   now models them (as a `VarDecl` node — see the "using keyword" case
+    ///   above), so `using` no longer belongs to this unsupported set; the
+    ///   trigger below uses `TsInterface` instead, and a separate positive
+    ///   assertion below confirms `using` now fact-indexes.
     /// - Variant 13 needs a `declare` modifier mismatch (`declare let a;` vs
     ///   `let a;`). The fact extractor (`chunk_facts::var_decl`) does not project
     ///   the `declare` modifier, so the fact matcher treats the two as equal and
@@ -1281,13 +1298,24 @@ mod tests {
                  divergent row",
             );
 
-            // Variant 7 trigger: a `using` declaration. The fact extractor fails
-            // closed on `Decl::Using`, so the needle does not project to facts.
+            // Variant 7 trigger: a `TsInterface` declaration. The fact extractor
+            // still fails closed on `Decl::TsInterface`, so the needle does not
+            // project to facts.
+            let interface_needle = parse_one("interface A {}");
+            assert!(
+                item_index(&interface_needle).is_none(),
+                "fact extractor fails closed on `interface` (TS-only), so the \
+                 variant-7 trigger never enters the fact near-miss path",
+            );
+
+            // `using` used to be a variant-7 trigger too (see the doc comment
+            // above): now that `chunk_facts.rs` models it, a lone `using`
+            // declaration DOES fact-index.
             let using_needle = parse_one("using a = acquire();");
             assert!(
-                item_index(&using_needle).is_none(),
-                "fact extractor fails closed on `using` (a TS/Stage-3 decl), so the \
-                 variant-7 trigger never enters the fact near-miss path",
+                item_index(&using_needle).is_some(),
+                "fact extractor now models `Decl::Using`, so this needle should \
+                 fact-index",
             );
         });
     }
