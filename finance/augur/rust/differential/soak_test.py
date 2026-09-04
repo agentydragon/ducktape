@@ -33,13 +33,13 @@ SHAPES_PER_BATCH = 10
 
 def test_engines_agree_across_many_value_draws() -> None:
     for shape in VALUE_TIER_SHAPES:
-        campaign.run(campaign.Case(shape=shape, value_seed=seed) for seed in VALUE_SEEDS)
+        campaign.run(campaign.Trial(shape=shape, value_seed=seed) for seed in VALUE_SEEDS)
         jax.clear_caches()
 
 
 def test_engines_agree_across_many_structural_draws() -> None:
     for seeds in batched(STRUCTURAL_SEEDS, SHAPES_PER_BATCH, strict=False):
-        campaign.run(campaign.Case(shape=random_shape(seed), value_seed=seed) for seed in seeds)
+        campaign.run(campaign.Trial(shape=random_shape(seed), value_seed=seed) for seed in seeds)
         jax.clear_caches()
 
 

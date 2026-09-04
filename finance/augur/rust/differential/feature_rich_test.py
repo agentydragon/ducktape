@@ -8,8 +8,9 @@ JAX program, and those compiles are the suite's whole wall clock and peak memory
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import assert_backends_agree
+from finance.augur.rust.differential.case import Case
 
-# Every policy family the fixture is built to exercise, named by a record channel that is
+# Every policy family the scenario is built to exercise, named by a record channel that is
 # empty unless that family actually ran. Comparing two engines that both did nothing would
 # pass, so this is what makes the frame-by-frame agreement above mean something.
 EXERCISED_EVENT_FRAMES = (
@@ -31,8 +32,8 @@ EXERCISED_EVENT_FRAMES = (
 )
 
 
-def test_backends_agree_on_the_feature_rich_scenario(feature_rich) -> None:
-    """The whole fixture, every state channel and every canonical event frame."""
+def test_backends_agree_on_the_feature_rich_scenario(feature_rich: Case) -> None:
+    """The whole scenario, every state channel and every canonical event frame."""
 
     result = assert_backends_agree(feature_rich)
 

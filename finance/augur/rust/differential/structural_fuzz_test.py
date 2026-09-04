@@ -18,7 +18,7 @@ STRUCTURAL_SEEDS = range(10)
 
 
 def test_engines_agree_across_structural_draws() -> None:
-    report = campaign.run(campaign.Case(shape=random_shape(seed), value_seed=seed) for seed in STRUCTURAL_SEEDS)
+    report = campaign.run(campaign.Trial(shape=random_shape(seed), value_seed=seed) for seed in STRUCTURAL_SEEDS)
     assert (report.compared, report.unrepresentable) == (len(STRUCTURAL_SEEDS), 0)
 
 

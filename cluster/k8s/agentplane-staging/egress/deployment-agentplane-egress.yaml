@@ -25,6 +25,16 @@ spec:
       labels:
         app.kubernetes.io/name: agentplane-egress
     spec:
+      # With the sandboxes it serves. Unpinned it floats, and when wyrm2 stopped it landed on
+      # optiplex -- correct, and one mesh crossing per request away from everything it talks to.
+      # The zone has five nodes, so this still reschedules; it just does not leave.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      # Stateless and single-replica; allow control-plane nodes as overflow, as LiteLLM does.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       serviceAccountName: agentplane-egress
       automountServiceAccountToken: true
       imagePullSecrets:

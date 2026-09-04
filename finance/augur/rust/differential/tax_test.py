@@ -5,182 +5,196 @@ One target per domain so Bazel runs them concurrently: each case compiles its ow
 JAX program, and those compiles are the suite's whole wall clock and peak memory.
 """
 
-from typing import Any
+from decimal import Decimal
 
 import polars as pl
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import assert_backends_agree
+from finance.augur.rust.differential.case import Case, levels, scenario
 from finance.augur.rust.differential.fixtures import (
-    financed_property_fixture,
-    property_depreciation_fixture,
-    tax_fixture,
+    FINANCED_PROPERTY_ACCOUNTS,
+    MONTHLY_SALARY,
+    SF,
+    VTI,
+    checking,
+    county_property_tax,
+    home_mortgage,
+    home_purchase,
+    property_depreciation_case,
+    salary,
+    salary_case,
+    taxed,
 )
-from finance.augur.rust.fixture_spec import account_ref
+from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
+    FederalSaltCapEntry,
+    FederalSaltDeductionPolicy,
+    InitialLot,
+    RecurringTransfer,
+    ScheduledAssetSale,
+)
 
 
-def tax_payment_fixture(*, funded: bool = True) -> dict[str, Any]:
-    fixture = tax_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 13
-    scenario["tax_profiles"][0]["prior_year_tax"] = 400_000
-    if not funded:
-        scenario["tax_profiles"][0]["prior_year_tax"] = 0
-        scenario["recurring_transfers"].append(
-            {
-                "start_month": 0,
-                "end_month": 11,
-                "cause_id": "alice-spends-paycheck",
-                "from": account_ref("alice", "checking"),
-                "to": account_ref("payroll", "checking"),
-                "amount": 1_666_667,
-            }
-        )
-    return fixture
+def tax_payment_case(*, funded: bool = True) -> Case:
+    """A year of salary with a January true-up, sized off the prior year's safe harbour.
 
+    Unfunded, the safe harbour is gone and every dollar of the salary leaves again, so the
+    true-up in month 12 has nothing to draw on.
+    """
 
-def long_term_gain_tax_fixture() -> dict[str, Any]:
-    fixture = tax_fixture()
-    scenario = fixture["scenario"]
-    scenario["recurring_transfers"][0]["amount"] = 416_667
-    scenario["initial_lots"] = [
-        {
-            "lot_id": "alice-vti",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "vti",
-            "purchase_month": -24,
-            "quantity_scale": 1_000_000,
-            "units": 100_000_000,
-            "basis": 1_000_000,
-        }
-    ]
-    scenario["scheduled_sales"] = [
-        {
-            "month": 6,
-            "cause_id": "sell-vti",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "vti",
-            "units": 100_000_000,
-            "proceeds_account_id": "checking",
-        }
-    ]
-    scenario["tax_profiles"][0]["jurisdictions"] = scenario["tax_profiles"][0]["jurisdictions"][:1]
-    fixture["series"] = [{"series_id": "security:vti", "snapshots": 13, "values": [30_000] * 13}]
-    return fixture
-
-
-def capital_loss_carryforward_fixture() -> dict[str, Any]:
-    fixture = tax_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 24
-    scenario["accounts"] = [
-        {"account": account_ref("alice", "checking"), "opening_balance": 0},
-        {"account": account_ref("irs", "checking"), "opening_balance": 0},
-    ]
-    scenario["recurring_transfers"] = []
-    scenario["initial_lots"] = [
-        {
-            "lot_id": "loss-lot",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "vti",
-            "purchase_month": -24,
-            "quantity_scale": 1_000_000,
-            "units": 1_000_000,
-            "basis": 1_000_000,
-        },
-        {
-            "lot_id": "gain-lot",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "vti",
-            "purchase_month": -12,
-            "quantity_scale": 1_000_000,
-            "units": 1_000_000,
-            "basis": 100_000,
-        },
-    ]
-    scenario["scheduled_sales"] = [
-        {
-            "month": 0,
-            "cause_id": "harvest-loss",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "vti",
-            "units": 1_000_000,
-            "proceeds_account_id": "checking",
-        },
-        {
-            "month": 12,
-            "cause_id": "realize-gain",
-            "agent_id": "alice",
-            "account_id": "brokerage",
-            "asset_id": "vti",
-            "units": 1_000_000,
-            "proceeds_account_id": "checking",
-        },
-    ]
-    fixture["series"] = [{"series_id": "security:vti", "snapshots": 25, "values": [200_000] * 12 + [600_000] * 13}]
-    return fixture
-
-
-def salt_deduction_fixture() -> dict[str, Any]:
-    fixture = financed_property_fixture()
-    scenario = fixture["scenario"]
-    scenario["horizon_months"] = 24
-    scenario["accounts"].extend(
-        [
-            {"account": account_ref("payroll", "checking"), "opening_balance": 0},
-            {"account": account_ref("irs", "checking"), "opening_balance": 0},
-        ]
+    if funded:
+        return salary_case(horizon_months=13, prior_year_tax=Decimal(4_000))
+    return salary_case(
+        horizon_months=13,
+        recurring_transfers=[
+            salary(),
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice-spends-paycheck",
+                from_agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="payroll",
+                to_account_id="checking",
+                amount=MONTHLY_SALARY,
+            ),
+        ],
     )
-    scenario["recurring_transfers"] = [
-        {
-            "start_month": 0,
-            "end_month": 23,
-            "cause_id": "alice-paycheck",
-            "from": account_ref("payroll", "checking"),
-            "to": account_ref("alice", "checking"),
-            "amount": 2_000_000,
-            "income_category": "ordinary",
-        }
-    ]
-    scenario["tax_profiles"] = [tax_fixture()["scenario"]["tax_profiles"][0]]
-    scenario["federal_salt_deduction_policies"] = [
-        {
-            "profile_id": "alice",
-            "federal_jurisdiction_id": "federal_us",
-            "cap_schedule": [
-                {"effective_year_index": 0, "cap": 4_000_000},
-                {"effective_year_index": 1, "cap": 1_000_000},
+
+
+def long_term_gain_case() -> Case:
+    """A long-held lot sold at a gain on top of a year of ordinary income."""
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0)), ("payroll", Decimal(0)), ("irs", Decimal(0))),
+            horizon_months=12,
+            recurring_transfers=[salary(amount=Decimal("4166.67"))],
+            initial_lots=[
+                InitialLot(
+                    lot_id="alice-vti",
+                    agent_id="alice",
+                    account_id="brokerage",
+                    asset=VTI,
+                    purchase_month_index=-24,
+                    quantity=100.0,
+                    cost_basis_per_unit=Decimal(100),
+                )
             ],
-        }
-    ]
-    return fixture
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=6,
+                    cause_id="sell-vti",
+                    agent_id="alice",
+                    source_account_id="brokerage",
+                    asset=VTI,
+                    quantity=100.0,
+                    proceeds_account_id="checking",
+                )
+            ],
+            tax_profiles=[taxed("alice", "federal_us")],
+        ),
+        rollout_count=1,
+        series={VTI: levels([[Decimal(300)] * 13])},
+    )
 
 
-def rust_tax_liability_frame(rust: dict[str, Any]) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for rollout in rust["rollouts"]:
-        for snapshot in rollout["months"]:
-            rows.extend(
-                {
-                    "rollout_index": rollout["rollout_id"],
-                    "month_index": snapshot["month"],
-                    "agent_id": liability["agent_id"],
-                    "jurisdiction_id": liability["jurisdiction_id"],
-                    "tax_year_end_month": liability["tax_year_end_month"],
-                    "amount_owed_quanta": liability["amount_owed"],
-                }
-                for liability in snapshot["tax_liabilities"]
-            )
-    return pl.DataFrame(rows).sort("rollout_index", "month_index", "agent_id", "jurisdiction_id", "tax_year_end_month")
+def capital_loss_carryforward_case() -> Case:
+    """A loss harvested in year one and a gain realized in year two, with no other income."""
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0)), ("irs", Decimal(0))),
+            horizon_months=24,
+            initial_lots=[
+                InitialLot(
+                    lot_id="loss-lot",
+                    agent_id="alice",
+                    account_id="brokerage",
+                    asset=VTI,
+                    purchase_month_index=-24,
+                    quantity=1.0,
+                    cost_basis_per_unit=Decimal(10_000),
+                ),
+                InitialLot(
+                    lot_id="gain-lot",
+                    agent_id="alice",
+                    account_id="brokerage",
+                    asset=VTI,
+                    purchase_month_index=-12,
+                    quantity=1.0,
+                    cost_basis_per_unit=Decimal(1_000),
+                ),
+            ],
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=0,
+                    cause_id="harvest-loss",
+                    agent_id="alice",
+                    source_account_id="brokerage",
+                    asset=VTI,
+                    quantity=1.0,
+                    proceeds_account_id="checking",
+                ),
+                ScheduledAssetSale(
+                    month=12,
+                    cause_id="realize-gain",
+                    agent_id="alice",
+                    source_account_id="brokerage",
+                    asset=VTI,
+                    quantity=1.0,
+                    proceeds_account_id="checking",
+                ),
+            ],
+            tax_profiles=[taxed("alice", "federal_us", "california")],
+        ),
+        rollout_count=1,
+        series={VTI: levels([[Decimal(2_000)] * 12 + [Decimal(6_000)] * 13])},
+    )
+
+
+def salt_deduction_case() -> Case:
+    """Property tax and state income tax deducted federally, against a shrinking cap."""
+
+    return Case(
+        scenario=scenario(
+            [*checking(*FINANCED_PROPERTY_ACCOUNTS), *checking(("payroll", Decimal(0)), ("irs", Decimal(0)))],
+            horizon_months=24,
+            scheduled_property_purchases=[home_purchase(mortgage=home_mortgage())],
+            property_tax_policies=[county_property_tax()],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=23,
+                    cause_id="alice-paycheck",
+                    from_agent_id="payroll",
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount=Decimal(20_000),
+                    income_category=ORDINARY_INCOME,
+                )
+            ],
+            tax_profiles=[taxed("alice", "federal_us", "california")],
+            federal_salt_deduction_policies=[
+                FederalSaltDeductionPolicy(
+                    profile_id="alice",
+                    federal_jurisdiction_id="federal_us",
+                    cap_schedule=[
+                        FederalSaltCapEntry(effective_year_index=0, cap=Decimal(40_000)),
+                        FederalSaltCapEntry(effective_year_index=1, cap=Decimal(10_000)),
+                    ],
+                )
+            ],
+        ),
+        rollout_count=1,
+        locations={"sf": SF},
+    )
 
 
 def test_backends_agree_on_federal_and_california_accruals() -> None:
-    result = assert_backends_agree(tax_fixture())
+    result = assert_backends_agree(salary_case())
 
     assert result.tax_accrual_details.get_column("total_tax_quanta").to_list() == [1_475_409, 3_753_851]
     assert result.journal.get_column("imbalance_quanta").unique().to_list() == [0]
@@ -189,7 +203,7 @@ def test_backends_agree_on_federal_and_california_accruals() -> None:
 def test_backends_agree_on_estimated_payments_true_up_and_settlement() -> None:
     """Quarterly estimates size off the safe harbour, and January trues up the rest."""
 
-    result = assert_backends_agree(tax_payment_fixture())
+    result = assert_backends_agree(tax_payment_case())
 
     paid = result.events.obligation_settlements.filter(
         pl.col("obligation_type").is_in(["estimated_tax", "tax_true_up"])
@@ -201,7 +215,7 @@ def test_backends_agree_on_estimated_payments_true_up_and_settlement() -> None:
 
 
 def test_backends_agree_that_an_unfunded_true_up_fails_the_rollout() -> None:
-    result = assert_backends_agree(tax_payment_fixture(funded=False))
+    result = assert_backends_agree(tax_payment_case(funded=False))
 
     assert result.rollout_status.get_column("failed_month").to_list() == [12]
     unfunded = result.events.obligation_settlements.filter(pl.col("obligation_type") == "tax_true_up")
@@ -213,7 +227,7 @@ def test_backends_agree_that_an_unfunded_true_up_fails_the_rollout() -> None:
 def test_backends_agree_on_long_term_gain_stacking() -> None:
     """LTCG is bracketed on top of ordinary taxable income, per §1(h)."""
 
-    result = assert_backends_agree(long_term_gain_tax_fixture())
+    result = assert_backends_agree(long_term_gain_case())
     [row] = result.tax_accrual_details.to_dicts()
 
     assert row["long_term_gain_quanta"] == 2_000_000
@@ -227,7 +241,7 @@ def test_backends_agree_on_long_term_gain_stacking() -> None:
 def test_backends_agree_on_a_capital_loss_carryforward_shared_across_jurisdictions() -> None:
     """One netting per taxpayer, so the same offset and carryforward feed every link."""
 
-    result = assert_backends_agree(capital_loss_carryforward_fixture())
+    result = assert_backends_agree(capital_loss_carryforward_case())
     accruals = result.tax_accrual_details
 
     first_year = accruals.filter(pl.col("month_index") == 11)
@@ -240,7 +254,7 @@ def test_backends_agree_on_a_capital_loss_carryforward_shared_across_jurisdictio
 
 
 def test_backends_agree_on_federal_salt_from_property_and_state_tax() -> None:
-    result = assert_backends_agree(salt_deduction_fixture())
+    result = assert_backends_agree(salt_deduction_case())
     federal = {
         row["month_index"]: row
         for row in result.events.tax_breakdowns.filter(pl.col("jurisdiction_id") == "federal_us").to_dicts()
@@ -249,7 +263,7 @@ def test_backends_agree_on_federal_salt_from_property_and_state_tax() -> None:
     # Year one is under the cap; year two is capped at the schedule's 1,000,000 quanta.
     assert 1_000_000 < federal[11]["salt_deduction_quanta"] < 4_000_000
     assert federal[23]["salt_deduction_quanta"] == 1_000_000
-    # SALT is the only itemized line in this fixture, so itemizing equals it.
+    # SALT is the only itemized line in this case, so itemizing equals it.
     assert federal[11]["itemized_deduction_quanta"] == federal[11]["salt_deduction_quanta"]
     assert federal[23]["itemized_deduction_quanta"] == federal[23]["salt_deduction_quanta"]
 
@@ -257,7 +271,7 @@ def test_backends_agree_on_federal_salt_from_property_and_state_tax() -> None:
 def test_backends_agree_on_depreciation_recapture_by_jurisdiction() -> None:
     """Federal caps the §1250 rate; California runs recapture through ordinary brackets."""
 
-    result = assert_backends_agree(property_depreciation_fixture(sale=True))
+    result = assert_backends_agree(property_depreciation_case(sale=True))
 
     assert result.property_sale_details.get_column("depreciation_recapture_quanta").item() > 0
     by_jurisdiction = {row["jurisdiction_id"]: row for row in result.tax_accrual_details.to_dicts()}

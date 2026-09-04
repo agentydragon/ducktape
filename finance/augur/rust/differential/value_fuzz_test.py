@@ -18,9 +18,9 @@ VALUE_SEEDS = range(80)
 
 def test_engines_agree_across_value_draws() -> None:
     report = campaign.run(
-        campaign.Case(shape=shape, value_seed=seed) for shape in VALUE_TIER_SHAPES for seed in VALUE_SEEDS
+        campaign.Trial(shape=shape, value_seed=seed) for shape in VALUE_TIER_SHAPES for seed in VALUE_SEEDS
     )
-    # Nothing unrepresentable: a shape the legacy surface will not take runs cases that prove
+    # Nothing unrepresentable: a shape the Rust fixture will not take runs cases that prove
     # nothing, and the count would still look like coverage.
     assert (report.compared, report.unrepresentable) == (len(VALUE_TIER_SHAPES) * len(VALUE_SEEDS), 0)
 

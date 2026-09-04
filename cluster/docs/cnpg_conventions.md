@@ -77,6 +77,12 @@ most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   `region: hil`, one per OVH node, so it tolerates a node loss without
   quorum or primary impact. Deliberate deviation from the 2-instance
   profile; the manifest comment is the record.
+- `agentplane-db` (`k8s/agentplane-staging/db/`): 1 instance pinned
+  `zone: hil-ovh` on `local-path-ovh-ssd`. Deliberate deviation from both
+  profiles: the always-on pin of OVH-HA without its second instance, because
+  staging is experimental and its trajectories are expendable. It therefore has
+  neither CNPG-level nor storage-level replication; the manifest comment is the
+  record.
 
 Parked clusters (suspended Flux Kustomizations; R2/R3 bind again on revival):
 

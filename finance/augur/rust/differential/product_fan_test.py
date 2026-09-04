@@ -1,24 +1,22 @@
 """Rust/JAX differential coverage for the product percentile fan and terminal distribution."""
 
-from pathlib import Path
-
 import pytest_bazel
 
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.rust.backend import run_rust_product_summaries
-from finance.augur.rust.differential.fixtures import feature_rich_fixture, legacy_plan
+from finance.augur.rust.benchmark.fixture import MIN_FEATURE_HORIZON_MONTHS, feature_rich_case
 from finance.augur.sim.engine.jax_engine import run_jax_product_summaries
 
 
-def test_rust_and_jax_match_product_metric_fan_and_terminal_distribution(tmp_path: Path) -> None:
+def test_rust_and_jax_match_product_metric_fan_and_terminal_distribution() -> None:
     """The percentile fan matches exactly, for every metric the product API can request.
 
     This covers the shortfall metric's own terminal reduction, which is a sum over months
     rather than the final snapshot.
     """
 
-    fixture = feature_rich_fixture(tmp_path, rollout_count=8)
-    plan = legacy_plan(fixture)
+    case = feature_rich_case(rollout_count=8, horizon_months=MIN_FEATURE_HORIZON_MONTHS)
+    plan, fixture = case.plan, case.fixture
     percentiles = (5.0, 25.0, 50.0, 75.0, 95.0)
 
     # One agent, every metric. What varies by metric is `compose_metric` and the terminal

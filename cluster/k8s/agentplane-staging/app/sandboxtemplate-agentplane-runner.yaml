@@ -1,9 +1,9 @@
 # Agentplane runner sandbox: the Pod and volume every Sandbox the integration
 # app stamps is copied from (the app reads this template at creation; no claim
-# or warm pool references it), driven over port 7000. The Pod is pinned to wyrm2
-# (region proxmox) so the local-path-proxmox state PVC binds where it runs; a
-# suspended Sandbox (operatingMode: Suspended) drops the Pod and keeps the PVC,
-# so it resumes only there. Both harnesses reach models through the cluster
+# or warm pool references it), driven over port 7000. The Pod is pinned to
+# hil-ovh, where its state PVC binds; a suspended Sandbox (operatingMode:
+# Suspended) drops the Pod and keeps the PVC, so it resumes on the node holding
+# it. Both harnesses reach models through the cluster
 # LiteLLM with the cheap-experiments key, directly: the credentialless egress
 # design governs external systems, not the model endpoint (x/agentplane/app/README.md).
 # Everything else outside the cluster goes through the egress sidecar: the harness
@@ -29,8 +29,10 @@ spec:
       dnsPolicy: ClusterFirst
       imagePullSecrets:
         - name: forgejo-images-creds
+      # With the rest of the namespace and with LiteLLM, which is already here: a runner's model
+      # calls and its hop to the app both stay inside the zone instead of crossing the mesh.
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/zone: hil-ovh
       serviceAccountName: agentplane-runner
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
@@ -68,10 +70,12 @@ spec:
             - HOME
             - --harness-env
             - PATH
-            # Both spellings of each, since clients disagree on case. NO_PROXY is loopback (the
-            # sidecar itself and the runner's own listeners) and in-cluster Service names in the
-            # forms clients build; LiteLLM is deliberately not among them, so model traffic takes
-            # the sidecar like everything else and the proxy is what holds the key.
+            # Both spellings of each, since clients disagree on case. NO_PROXY is loopback and
+            # nothing else -- the sidecar itself and the runner's own listeners. A cluster-suffix
+            # entry cannot be here: `.svc.cluster.local` covers the LiteLLM host, and with it
+            # listed a harness sent its model calls direct, where the runner's CiliumNetworkPolicy
+            # (networkpolicy.yaml) drops them, so every turn failed on ConnectionRefused. Model
+            # traffic takes the sidecar like everything else, and the proxy is what holds the key.
             - --harness-env
             - HTTP_PROXY=http://127.0.0.1:3128
             - --harness-env
@@ -81,9 +85,9 @@ spec:
             - --harness-env
             - https_proxy=http://127.0.0.1:3128
             - --harness-env
-            - NO_PROXY=127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local
+            - NO_PROXY=127.0.0.1,localhost
             - --harness-env
-            - no_proxy=127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local
+            - no_proxy=127.0.0.1,localhost
             # The trust bundle, mounted over the system store below and named explicitly for the
             # clients that read an env pointer (Node, Python, curl, requests, git's libcurl).
             - --harness-env
@@ -181,7 +185,14 @@ spec:
     - metadata:
         name: state
       spec:
-        storageClassName: local-path-proxmox
+        # The bulk tier, and the only one a sandbox can have: on OVH both `tier=ssd` nodes are
+        # control-plane (cluster/terraform/main/ovh-nodes.tf -- stage 2 of the storage tiering
+        # promoted them to put etcd on NVMe), so a Pod without a control-plane toleration never
+        # binds a `-ssd` volume and stays Pending. A sandbox is not getting that toleration: an
+        # agent clones and builds, and that is the I/O the tiering moved etcd away from.
+        # Node-local, so a sandbox does not outlive its node -- which is what a sandbox is for;
+        # `seaweedfs-ovh` is the swap if they should survive one.
+        storageClassName: local-path-ovh-hdd
         accessModes:
           - ReadWriteOnce
         resources:

@@ -13,9 +13,10 @@ resolve, the sidecar carried the Pod's token, the proxy admitted the request and
 PAT in, and GitHub authenticated it. No part of that can be faked by a model being agreeable, and
 the placeholder appears nowhere in the prompt -- the agent has to go and find it.
 
-E3's acceptance in x/agentplane/plans/egress_proxy.md is what these encode. They exist because the
-last gap of this kind -- a runner that dropped the proxy variables, so every call bypassed the proxy
-and hung, leaving an empty ring behind a green unit suite -- was caught by a person noticing.
+E3's and E5's acceptance in x/agentplane/plans/egress_proxy.md are what these encode. They exist
+because the last gap of this kind -- a runner that dropped the proxy variables, so every call
+bypassed the proxy and hung, leaving an empty ring behind a green unit suite -- was caught by a
+person noticing.
 """
 
 from __future__ import annotations
@@ -50,6 +51,12 @@ RULES_URL = "https://egress.agentplane.internal/v1/rules"
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
+# The model endpoint, which E5 moved onto the same path as everything else
+# (cluster/k8s/agentplane-staging/egress/egresspolicy-litellm.yaml). Granted by the deployment's
+# `default_policies` rather than by a caller, because an agent that cannot reach it has nothing to
+# run -- so a sandbox that names no policy still has this one.
+LITELLM = "litellm"
+LITELLM_HOST = "litellm.litellm.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads the ring over a separate hop, and a
 # binding's Active condition is written by the proxy's informer rather than by the grant itself.
@@ -154,6 +161,34 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     refused = await _decision_for(client, view.name, UNLISTED_HOST)
     assert refused.outcome is Outcome.DENY, f"{refused!r}"
     assert refused.reason == "no-rule", f"{refused!r}"
+
+
+async def test_the_model_call_itself_goes_through_the_proxy(
+    client: Client, sandbox: Sandboxes, provider: Provider, model: str
+) -> None:
+    """E5's acceptance: the runner holds the placeholder, not the LiteLLM key, so a turn happens at
+    all only if the proxy admitted the model call and put the real key into it.
+
+    That makes the turn its own proof of reachability -- an agent that answers has been served -- and
+    leaves the decision to say *how*: through the proxy with a credential substituted, rather than
+    around it on a key the sandbox held. Both halves matter, because the failure this replaces was a
+    sandbox reaching LiteLLM directly with the key in its own environment, which answers just as well
+    and is what E5 exists to stop.
+
+    The sandbox names no policy. `litellm` reaching it anyway is what `default_policies` is for.
+    """
+    view = await sandbox(f"accept-model-{provider}")
+    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+
+    turn = await agent.run("Reply with the single word: ok. Do not use any tool.")
+
+    served = await _decision_for(client, view.name, LITELLM_HOST)
+    assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
+    assert served.policy == LITELLM, f"the model call was admitted by another policy: {served!r}"
+    assert served.substituted, (
+        f"the model call was admitted with no credential substituted, so the sandbox presented a key "
+        f"of its own rather than the placeholder: {served!r}"
+    )
 
 
 async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(

@@ -1,41 +1,150 @@
-"""Random fixtures for the Rust/JAX differential fuzzer, in two tiers.
+"""Random differential cases for the Rust/JAX fuzzer, in two tiers.
 
-JAX bakes the plan's structure into the compiled program, so what a fixture varies decides
-what it costs. `Shape` is everything that reaches the XLA cache key — which policy families
-are present, how many of each, the horizon, the rollout count, and the policy thresholds and
-lifecycle months JAX folds in as Python scalars. A value draw is everything the compiled
-program takes as a traced input: opening balances, transfer and obligation amounts, lot
-bases and quantities, sale months and units, tax brackets, and every external series.
+A case is a `Scenario` and the sampled paths it runs over (`case.py`), compiled once and run
+by both engines. JAX bakes the plan's structure into the compiled program, so what a case
+varies decides what it costs. `Shape` is everything that reaches the XLA cache key — which
+policy families are present, how many of each, the horizon, the rollout count, and the policy
+thresholds and lifecycle months JAX folds in as Python scalars. A value draw is everything the
+compiled program takes as a traced input: opening balances, transfer and obligation amounts,
+lot bases and quantities, sale months and units, and every external series.
 
-So `build_fixture(shape, value_seed)` splits its randomness in two. `Draw.structure` is
-seeded from the shape and produces identical constants for every fixture of that shape;
-`Draw.value` is seeded from `value_seed` and moves only what the compiled program reads at
-run time. Many value seeds over one shape therefore pay one XLA compile between them, and a
-new shape pays a fresh one.
+So `build_case(shape, value_seed)` splits its randomness in two. `Draw.structure` is seeded
+from the shape and produces identical constants for every case of that shape; `Draw.value` is
+seeded from `value_seed` and moves only what the compiled program reads at run time. Many
+value seeds over one shape therefore pay one XLA compile between them, and a new shape pays a
+fresh one.
+
+Tax law is drawn no longer. A profile names jurisdiction ids and the compiler resolves the
+brackets, deduction, §1250 rate and capital-loss cap from the deployment's own records, so
+they are constants of the id set — which is what stops a rule reaching one engine only.
 
 Values are biased toward rounding ties (`rounding_boundary.py`): with both engines integer
 throughout, a disagreement lives at a rounding site or in an ordering, and a rounding site
-only has an opinion where the exact quotient falls on the half.
+only has an opinion where the exact quotient falls on the half. Every draw is made in the
+integer units its site divides in — currency quanta, quantity quanta, parts per billion — and
+converted to the decimals the scenario states at the point it is authored.
 
 Each family brings its own agents and accounts, so enabling two of them does not make one
 consume the other's liquidity and turn every rollout into an early cash failure.
 """
 
+from __future__ import annotations
+
 import random
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import StrEnum
-from typing import Any
 
-from finance.augur.model.series import PrivateEquityEventKindCode
+import numpy as np
+
+from finance.augur.model.private_equity_bundle import PrivateEquityBundle
+from finance.augur.model.series import (
+    HomeValueKey,
+    IndexSeriesKey,
+    InflationKey,
+    IssuerId,
+    LevelSeriesKey,
+    LocationId,
+    PrivateEquityEventKindCode,
+    PrivateEquityRegimeCode,
+    RentKey,
+    SecurityDistributionKey,
+    SecurityKey,
+    SecuritySymbol,
+)
+from finance.augur.product.asset_key import PrivateEquityAssetKey
+from finance.augur.rust.differential.case import Case, levels, scenario
 from finance.augur.rust.differential.rounding_boundary import half_way_operand
+from finance.augur.sim.fixed_point import DEFAULT_UNIT_QUANTA, MONEY_FACTOR_SCALE
+from finance.augur.sim.locations import Location
+from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
+    AmountSpec,
+    BondHolding,
+    CapitalImprovementEvent,
+    Currency,
+    DistributionTaxSlice,
+    FederalSaltCapEntry,
+    FederalSaltDeductionPolicy,
+    FixedAmount,
+    HarvestPolicy,
+    InitialAccountBalance,
+    InitialLot,
+    MortgageFinancing,
+    MortgageInterestDeductionPolicy,
+    ObligationType,
+    OrdinaryIncome,
+    PrimaryResidenceAssignment,
+    PrivateEquityTenderPolicy,
+    PropertyLifecycleEvent,
+    PropertySaleEvent,
+    PropertyTaxPolicy,
+    RecurringObligation,
+    RecurringPropertyCashflow,
+    RecurringTransfer,
+    ScheduledAssetSale,
+    ScheduledObligation,
+    ScheduledPropertyPurchase,
+    ScheduledTransfer,
+    SecurityDistribution,
+    SeriesIndexedAmount,
+    SetRentedFractionEvent,
+    SleeveTarget,
+    TargetAllocationPolicy,
+    TaxProfile,
+    TransferDeductionCategory,
+)
+from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
-# Millionths of a unit: the quantity scale every asset here uses.
-QUANTITY_SCALE = 1_000_000
-RATE_SCALE_PPB = 1_000_000_000
-SCHEMA_VERSION = 8
+# The currency every case declares, and so the quantum its integer money draws count.
+QUANTUM = Currency().quantum
 FEDERAL = "federal_us"
 STATE = "california"
-LOCATION = "sf"
+LOCATION = LocationId("sf")
+
+INFLATION = InflationKey()
+RENT = RentKey(location_id=LOCATION)
+SF_HOME = HomeValueKey(location_id=LOCATION)
+VTI = SecurityKey(symbol=SecuritySymbol("vti"))
+BND = SecurityKey(symbol=SecuritySymbol("bnd"))
+BND_DISTRIBUTION = SecurityDistributionKey(symbol=SecuritySymbol("bnd"))
+SP500 = SecurityKey(symbol=SecuritySymbol("sp500"))
+ACME = IssuerId("acme")
+ACME_EQUITY = PrivateEquityAssetKey(issuer_id=ACME)
+
+# The level kinds the plan carries as money; the rest are dimensionless indices quantized to
+# parts per billion instead. The same split `fixture_encoder` makes, for the same reason.
+_MONEY_LEVELS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
+_PPB_UNIT = Decimal(1) / MONEY_FACTOR_SCALE
+
+
+def _money(quanta: int) -> Decimal:
+    """`quanta` currency quanta as the exact decimal the compiler converts back to them."""
+
+    return Decimal(quanta) * QUANTUM
+
+
+def _quantity(quanta: int) -> float:
+    """`quanta` quantity quanta as the float `quantity_to_quanta` reads back exactly."""
+
+    return float(Decimal(quanta) / DEFAULT_UNIT_QUANTA)
+
+
+def _rate(ppb: int) -> float:
+    """`ppb` parts per billion as the float rate whose decimal spelling is exactly that.
+
+    Nine places at most, which is what the encoder demands of a bond coupon and a mortgage
+    rate: the compiler reads those as an exact rational and Rust as the integer, and they are
+    the same number only for a rate that lands on a PPB boundary.
+    """
+
+    return float(Decimal(ppb) / MONEY_FACTOR_SCALE)
+
+
+def _level(key: LevelSeriesKey, value: int) -> Decimal:
+    """One stored level as the scenario states it: money in currency units, an index bare."""
+
+    return Decimal(value) * (QUANTUM if isinstance(key, _MONEY_LEVELS) else _PPB_UNIT)
 
 
 class Family(StrEnum):
@@ -55,7 +164,7 @@ class Family(StrEnum):
 
 @dataclass(frozen=True)
 class Shape:
-    """The structural knobs. Two fixtures sharing a `Shape` share one compiled program."""
+    """The structural knobs. Two cases sharing a `Shape` share one compiled program."""
 
     name: str
     families: frozenset[Family]
@@ -85,7 +194,7 @@ class Draw:
     value: random.Random
 
     def money(self, low: int, high: int) -> int:
-        """A cash amount, odd more often than not.
+        """A cash amount in currency quanta, odd more often than not.
 
         Odd matters because the per-unit money sites divide by the quantity scale after
         multiplying by a half-unit quantity: `odd * (2k+1) * scale/2 % scale` is exactly
@@ -96,14 +205,14 @@ class Draw:
         return amount | 1 if self.value.random() < 0.6 else amount
 
     def half_units(self, whole_unit_budget: int) -> int:
-        """A quantity that is an odd multiple of half a unit, so a per-unit divide can tie.
+        """A quantity in quantity quanta: an odd multiple of half a unit, so a divide can tie.
 
         Never zero and never over budget, so how many sales a shape declares cannot depend on
         the value draw — a sale dropped for want of units would move the sale count, and the
         sale count is in the compile key.
         """
 
-        return self.value.randrange(1, 2 * max(whole_unit_budget, 1), 2) * (QUANTITY_SCALE // 2)
+        return self.value.randrange(1, 2 * max(whole_unit_budget, 1), 2) * (DEFAULT_UNIT_QUANTA // 2)
 
     def tie(self, multiplier: int, denominator: int, *, near: int, minimum: int = 1) -> int:
         """`near`, or the nearest operand that puts `multiplier / denominator` exactly on the tie.
@@ -120,32 +229,56 @@ class Draw:
 
 @dataclass
 class _Build:
+    """One case under construction: the scenario's parts, and the levels they read.
+
+    The parts are the `Scenario` fields verbatim, so `scenario()` names each one once and a
+    family that forgets to hand its entries over is a type error rather than a lost policy.
+    """
+
     shape: Shape
     draw: Draw
-    scenario: dict[str, Any] = field(default_factory=dict)
-    # series id -> one row of values per rollout.
-    series: dict[str, list[list[int]]] = field(default_factory=dict)
-    agents: set[str] = field(default_factory=set)
+    initial_cash: list[InitialAccountBalance] = field(default_factory=list)
+    initial_lots: list[InitialLot] = field(default_factory=list)
+    initial_bonds: list[BondHolding] = field(default_factory=list)
+    security_distributions: list[SecurityDistribution] = field(default_factory=list)
+    scheduled_transfers: list[ScheduledTransfer] = field(default_factory=list)
+    recurring_transfers: list[RecurringTransfer] = field(default_factory=list)
+    recurring_property_cashflows: list[RecurringPropertyCashflow] = field(default_factory=list)
+    scheduled_obligations: list[ScheduledObligation] = field(default_factory=list)
+    recurring_obligations: list[RecurringObligation] = field(default_factory=list)
+    scheduled_asset_sales: list[ScheduledAssetSale] = field(default_factory=list)
+    scheduled_property_purchases: list[ScheduledPropertyPurchase] = field(default_factory=list)
+    initial_primary_residences: list[PrimaryResidenceAssignment] = field(default_factory=list)
+    property_lifecycle_events: list[PropertyLifecycleEvent] = field(default_factory=list)
+    property_tax_policies: list[PropertyTaxPolicy] = field(default_factory=list)
+    mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = field(default_factory=list)
+    federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] = field(default_factory=list)
+    private_equity_tender_policies: list[PrivateEquityTenderPolicy] = field(default_factory=list)
+    harvest_policies: list[HarvestPolicy] = field(default_factory=list)
+    target_allocation_policies: list[TargetAllocationPolicy] = field(default_factory=list)
+    tax_profiles: list[TaxProfile] = field(default_factory=list)
+    # One row of integer levels per rollout: currency quanta for a money series, parts per
+    # billion for an index one. Integer because those are the units the rounding sites divide
+    # in, so a tie is solved for here and `_level` states it back as the scenario's decimal.
+    series: dict[LevelSeriesKey, list[list[int]]] = field(default_factory=dict)
+    private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
+    locations: dict[str, Location] = field(default_factory=dict)
 
     @property
     def snapshots(self) -> int:
         return self.shape.horizon_months + 1
 
-    def account(self, agent_id: str, account_id: str, balance: int) -> None:
-        self.agents.add(agent_id)
-        self.entries("accounts").append(
-            {"account": {"agent_id": agent_id, "account_id": account_id}, "opening_balance": balance}
-        )
+    @property
+    def agents(self) -> set[str]:
+        return {balance.agent_id for balance in self.initial_cash}
 
-    def entries(self, key: str) -> list[Any]:
-        entries: list[Any] = self.scenario.setdefault(key, [])
-        return entries
+    def account(self, agent_id: str, account_id: str, balance_quanta: int) -> None:
+        self.initial_cash.append(
+            InitialAccountBalance(agent_id=agent_id, account_id=account_id, balance=_money(balance_quanta))
+        )
 
     def month(self) -> int:
         return self.draw.value.randrange(self.shape.horizon_months)
-
-    def add_series(self, series_id: str, rows: list[list[int]]) -> None:
-        self.series[series_id] = rows
 
     def path(self, *, low: int, high: int, drift: int = 0) -> list[list[int]]:
         """One positive integer path per rollout, drawn from the value source."""
@@ -155,84 +288,114 @@ class _Build:
             for _ in range(self.shape.rollout_count)
         ]
 
+    def case(self) -> Case:
+        return Case(
+            scenario=scenario(
+                self.initial_cash,
+                horizon_months=self.shape.horizon_months,
+                initial_lots=self.initial_lots,
+                initial_bonds=self.initial_bonds,
+                security_distributions=self.security_distributions,
+                scheduled_transfers=self.scheduled_transfers,
+                recurring_transfers=self.recurring_transfers,
+                recurring_property_cashflows=self.recurring_property_cashflows,
+                scheduled_obligations=self.scheduled_obligations,
+                recurring_obligations=self.recurring_obligations,
+                scheduled_asset_sales=self.scheduled_asset_sales,
+                scheduled_property_purchases=self.scheduled_property_purchases,
+                initial_primary_residences=self.initial_primary_residences,
+                property_lifecycle_events=self.property_lifecycle_events,
+                property_tax_policies=self.property_tax_policies,
+                mortgage_interest_deduction_policies=self.mortgage_interest_deduction_policies,
+                federal_salt_deduction_policies=self.federal_salt_deduction_policies,
+                private_equity_tender_policies=self.private_equity_tender_policies,
+                harvest_policies=self.harvest_policies,
+                target_allocation_policies=self.target_allocation_policies,
+                tax_profiles=self.tax_profiles,
+            ),
+            rollout_count=self.shape.rollout_count,
+            series={
+                key: levels([[_level(key, value) for value in row] for row in rows])
+                for key, rows in self.series.items()
+            },
+            private_equity=self.private_equity,
+            locations=self.locations,
+        )
 
-def _account_ref(agent_id: str, account_id: str = "checking") -> dict[str, str]:
-    return {"agent_id": agent_id, "account_id": account_id}
+
+def _income_tag(build: _Build) -> tuple[OrdinaryIncome | None, TransferDeductionCategory | None]:
+    """How a transfer is taxed: as income, as a deduction, or as neither."""
+
+    match build.draw.value.randrange(3):
+        case 0:
+            return ORDINARY_INCOME, None
+        case 1:
+            return None, "ordinary"
+        case _:
+            return None, None
 
 
-def _series_indexed(base_amount: int, series_id: str, *, base_month: int = 0, period: int = 1) -> dict[str, Any]:
-    return {
-        "kind": "series_indexed",
-        "base_amount": base_amount,
-        "series_id": series_id,
-        "base_month_index": base_month,
-        "adjustment_period_months": period,
-    }
+def _indexed_amount(build: _Build, key: IndexSeriesKey, *, near: int, month: int | None = None) -> AmountSpec:
+    """A fixed amount, or one indexed to `key` with its base solved onto the tie.
 
-
-def _indexed_amount(build: _Build, series_id: str, *, near: int) -> int | dict[str, Any]:
-    """A fixed amount, or one indexed to `series_id` with its base solved onto the tie.
-
-    The indexed conversion is `base_amount * level[reset] / level[base]`, so the base amount
-    is the free operand: solving it against one rollout's level pair puts that month's
-    conversion exactly on the half.
+    The indexed conversion is `base_amount * level[reset] / level[base]` in parts per billion,
+    so the base amount is the free operand: solving it against one rollout's level pair puts
+    that month's conversion exactly on the half. `month` is the month the payment falls in
+    where the caller knows it, and any month the amount could be read in where it does not.
     """
 
     if build.draw.value.random() < 0.5:
-        return build.draw.money(near // 2, near)
-    levels = build.series[series_id][0]
-    reset = build.draw.value.randrange(1, len(levels))
-    return _series_indexed(build.draw.tie(levels[reset], levels[0], near=near), series_id)
-
-
-def _income_tag(build: _Build) -> dict[str, str]:
-    match build.draw.value.randrange(3):
-        case 0:
-            return {"income_category": "ordinary"}
-        case 1:
-            return {"deduction_category": "ordinary"}
-        case _:
-            return {}
+        return _money(build.draw.money(near // 2, near))
+    ppb = build.series[key][0]
+    reset = build.draw.value.randrange(1, len(ppb)) if month is None else month
+    return SeriesIndexedAmount(base_amount=_money(build.draw.tie(ppb[reset], ppb[0], near=near)), series=key)
 
 
 def _index_series(build: _Build) -> None:
-    """The `inflation` and `rent` levels every indexed amount reads.
+    """The inflation and rent levels every indexed amount reads.
 
     Month 0 is the base every conversion divides by, and it is pinned to an even level so a
     half of it exists at all: `base_amount * level / base` can only tie on an even base.
     """
 
-    for series_id in ("inflation", f"rent:{LOCATION}"):
+    for key in (INFLATION, RENT):
         rows = build.path(low=800_000_000, high=1_200_000_000, drift=4_000_000)
         for row in rows:
-            row[0] = 1_000_000_000
-        build.add_series(series_id, rows)
+            row[0] = MONEY_FACTOR_SCALE
+        build.series[key] = rows
 
 
 def _transfers(build: _Build) -> None:
     build.account("earner", "checking", build.draw.money(0, 5_000_000))
-    build.entries("recurring_transfers").append(
-        {
-            "start_month": 0,
-            "end_month": build.shape.horizon_months - 1,
-            "cause_id": "salary",
-            "from": _account_ref("payroll"),
-            "to": _account_ref("earner"),
-            "amount": _indexed_amount(build, "inflation", near=400_001),
-            "income_category": "ordinary",
-        }
+    build.recurring_transfers.append(
+        RecurringTransfer(
+            start_month=0,
+            end_month=build.shape.horizon_months - 1,
+            cause_id="salary",
+            from_agent_id="payroll",
+            from_account_id="checking",
+            to_agent_id="earner",
+            to_account_id="checking",
+            amount=_indexed_amount(build, INFLATION, near=400_001),
+            income_category=ORDINARY_INCOME,
+        )
     )
     for index in range(build.shape.transfers):
         outbound = build.draw.value.random() < 0.5
-        build.entries("scheduled_transfers").append(
-            {
-                "month": build.month(),
-                "cause_id": f"transfer-{index}",
-                "from": _account_ref("earner" if outbound else "payroll"),
-                "to": _account_ref("vendor" if outbound else "earner"),
-                "amount": _indexed_amount(build, f"rent:{LOCATION}", near=250_001),
-                **_income_tag(build),
-            }
+        month = build.month()
+        income_category, deduction_category = _income_tag(build)
+        build.scheduled_transfers.append(
+            ScheduledTransfer(
+                month=month,
+                cause_id=f"transfer-{index}",
+                from_agent_id="earner" if outbound else "payroll",
+                from_account_id="checking",
+                to_agent_id="vendor" if outbound else "earner",
+                to_account_id="checking",
+                amount=_indexed_amount(build, RENT, near=250_001, month=month),
+                income_category=income_category,
+                deduction_category=deduction_category,
+            )
         )
 
 
@@ -242,26 +405,30 @@ def _obligations(build: _Build) -> None:
     build.account("payer", "checking", build.draw.money(0, 3_000_000))
     for index in range(build.shape.obligations):
         start = build.month()
-        build.entries("recurring_obligations").append(
-            {
-                "start_month": start,
-                "end_month": build.draw.value.randrange(start, build.shape.horizon_months),
-                "obligation_id": f"recurring-{index}",
-                "obligation_type": "rent" if index % 2 else "cash_spend",
-                "from": _account_ref("payer"),
-                "to": _account_ref("vendor"),
-                "amount_due": _indexed_amount(build, "inflation", near=200_001),
-            }
+        build.recurring_obligations.append(
+            RecurringObligation(
+                start_month=start,
+                end_month=build.draw.value.randrange(start, build.shape.horizon_months),
+                obligation_id=f"recurring-{index}",
+                obligation_type=ObligationType.OUTSIDE_RENT if index % 2 else ObligationType.CASH_SPEND,
+                agent_id="payer",
+                from_account_id="checking",
+                to_agent_id="vendor",
+                to_account_id="checking",
+                amount_due=_indexed_amount(build, INFLATION, near=200_001),
+            )
         )
-    build.entries("obligations").append(
-        {
-            "month": build.month(),
-            "obligation_id": "one-off",
-            "obligation_type": "cash_spend",
-            "from": _account_ref("payer"),
-            "to": _account_ref("vendor"),
-            "amount_due": build.draw.money(1, 2_000_000),
-        }
+    build.scheduled_obligations.append(
+        ScheduledObligation(
+            month=build.month(),
+            obligation_id="one-off",
+            obligation_type=ObligationType.CASH_SPEND,
+            agent_id="payer",
+            from_account_id="checking",
+            to_agent_id="vendor",
+            to_account_id="checking",
+            amount_due=_money(build.draw.money(1, 2_000_000)),
+        )
     )
 
 
@@ -269,50 +436,55 @@ def _pool_months(build: _Build, count: int) -> list[int]:
     """Distinct purchase months for one FIFO pool's lots, newest last.
 
     Distinct because a pool needs a total order: two lots bought in the same month leave FIFO
-    with no answer for which sells first, and the legacy surface refuses the scenario. They
-    are structural, since the compiler folds each pool's resolved order into the program.
+    with no answer for which sells first, and the scenario refuses them. They are structural,
+    since the compiler folds each pool's resolved order into the program.
     """
 
-    return sorted((-month for month in build.draw.structure.sample(range(1, 48), count)), reverse=False)
+    return sorted(-month for month in build.draw.structure.sample(range(1, 48), count))
 
 
 def _lot(
-    build: _Build, *, lot_id: str, agent_id: str, account_id: str, asset_id: str, units: int, purchase_month: int
+    build: _Build,
+    *,
+    lot_id: str,
+    agent_id: str,
+    account_id: str,
+    asset: SecurityKey | PrivateEquityAssetKey,
+    unit_quanta: int,
+    purchase_month: int,
 ) -> None:
     """One lot whose per-unit basis is odd, and whose total basis is therefore exact.
 
-    Whole units keep `basis_per_unit * units / scale` integral, which the validator demands;
-    an odd per-unit basis is what lets a later part-lot sale of a half-unit multiple land its
+    Whole units keep `basis_per_unit * units / scale` integral, which the encoder demands; an
+    odd per-unit basis is what lets a later part-lot sale of a half-unit multiple land its
     basis allocation exactly on the tie.
     """
 
-    basis_per_unit = build.draw.money(1, 40_000) | 1
-    build.entries("initial_lots").append(
-        {
-            "lot_id": lot_id,
-            "agent_id": agent_id,
-            "account_id": account_id,
-            "asset_id": asset_id,
-            "purchase_month": purchase_month,
-            "quantity_scale": QUANTITY_SCALE,
-            "units": units,
-            "basis": basis_per_unit * units // QUANTITY_SCALE,
-        }
+    build.initial_lots.append(
+        InitialLot(
+            lot_id=lot_id,
+            agent_id=agent_id,
+            account_id=account_id,
+            asset=asset,
+            purchase_month_index=purchase_month,
+            quantity=_quantity(unit_quanta),
+            cost_basis_per_unit=_money(build.draw.money(1, 40_000) | 1),
+        )
     )
 
 
 def _securities(build: _Build) -> None:
     build.account("trader", "checking", build.draw.money(100_000, 5_000_000))
     build.account("trader", "brokerage", 0)
-    whole_units = [build.draw.value.randrange(2, 40) * QUANTITY_SCALE for _ in range(build.shape.lots)]
-    for index, (units, month) in enumerate(zip(whole_units, _pool_months(build, len(whole_units)), strict=True)):
+    whole_units = [build.draw.value.randrange(2, 40) * DEFAULT_UNIT_QUANTA for _ in range(build.shape.lots)]
+    for index, (unit_quanta, month) in enumerate(zip(whole_units, _pool_months(build, len(whole_units)), strict=True)):
         _lot(
             build,
             lot_id=f"trader-vti-{index}",
             agent_id="trader",
             account_id="brokerage",
-            asset_id="vti",
-            units=units,
+            asset=VTI,
+            unit_quanta=unit_quanta,
             purchase_month=month,
         )
     prices = build.path(low=1, high=60_000)
@@ -322,55 +494,52 @@ def _securities(build: _Build) -> None:
         # Each sale spends at most an even share of what is left, so every later sale is still
         # fundable. A sale dropped for want of units would make the sale count — and so the
         # compiled program — a function of the value seed.
-        units = build.draw.half_units(remaining // (QUANTITY_SCALE * (build.shape.sales - index)))
-        remaining -= units
-        # The proceeds site is `price * units / scale`; units is fixed by now, so price is the
-        # free operand. The legacy adapter takes one fixed sale price per scheduled sale, so
-        # every rollout has to carry the same level in that month.
-        tie_price = build.draw.tie(units, QUANTITY_SCALE, near=prices[0][month])
+        unit_quanta = build.draw.half_units(remaining // (DEFAULT_UNIT_QUANTA * (build.shape.sales - index)))
+        remaining -= unit_quanta
+        # The proceeds site is `price * units / scale` and units is fixed by now, so price is
+        # the free operand. Every rollout prices the sale off its own path, so every rollout
+        # gets its own solved tie rather than one shared price.
         for row in prices:
-            row[month] = tie_price
-        build.entries("scheduled_sales").append(
-            {
-                "month": month,
-                "cause_id": f"sale-{index}",
-                "agent_id": "trader",
-                "account_id": "brokerage",
-                "asset_id": "vti",
-                "units": units,
-                "proceeds_account_id": "checking",
-            }
+            row[month] = build.draw.tie(unit_quanta, DEFAULT_UNIT_QUANTA, near=row[month])
+        build.scheduled_asset_sales.append(
+            ScheduledAssetSale(
+                month=month,
+                cause_id=f"sale-{index}",
+                agent_id="trader",
+                source_account_id="brokerage",
+                asset=VTI,
+                quantity=_quantity(unit_quanta),
+                proceeds_account_id="checking",
+            )
         )
-    build.add_series("security:vti", prices)
+    build.series[VTI] = prices
 
 
 def _bonds(build: _Build) -> None:
     build.account("bondholder", "checking", build.draw.money(0, 2_000_000))
     for index in range(build.shape.bonds):
         # A multiple of twelve million ppb, so the period rate `rate * period / 12` is exact
-        # for every period below and survives the float boundary the legacy adapter still has.
+        # for every period below and survives the float boundary an indexed coupon crosses.
         period = build.draw.structure.choice([1, 3, 6, 12])
         rate_ppb = build.draw.structure.randrange(1, 60) * 12 * 1_000_000
-        indexed = build.draw.structure.random() < 0.3
-        # A whole number of coupon periods: the legacy surface refuses a stub period outright,
-        # since pricing one needs a day-count convention it does not have.
+        # A whole number of coupon periods: a stub period needs a day-count convention the
+        # fixture has nowhere to put, and the encoder refuses one.
         periods = build.draw.structure.randrange(1, max(2, (build.shape.horizon_months + 1) // period + 1))
-        maturity = periods * period - 1
-        face = build.draw.tie(rate_ppb * period // 12, RATE_SCALE_PPB, near=build.draw.money(500_000, 40_000_000))
-        build.entries("initial_bonds").append(
-            {
-                "bond_id": f"bond-{index}",
-                "agent_id": "bondholder",
-                "account_id": "checking",
-                **({"issuer_jurisdiction_id": build.draw.structure.choice([FEDERAL, STATE])} if index % 2 else {}),
-                "face_value": face,
-                "purchase_price": face,
-                "annual_coupon_rate_ppb": rate_ppb,
-                "coupon_period_months": period,
-                "inflation_indexed": indexed,
-                "purchase_month_index": -1,
-                "maturity_month_index": maturity,
-            }
+        face = build.draw.tie(rate_ppb * period // 12, MONEY_FACTOR_SCALE, near=build.draw.money(500_000, 40_000_000))
+        build.initial_bonds.append(
+            BondHolding(
+                bond_id=f"bond-{index}",
+                agent_id="bondholder",
+                account_id="checking",
+                issuer_jurisdiction_id=build.draw.structure.choice([FEDERAL, STATE]) if index % 2 else None,
+                face_value=_money(face),
+                purchase_price=_money(face),
+                annual_coupon_rate=_rate(rate_ppb),
+                coupon_period_months=period,
+                inflation_indexed=build.draw.structure.random() < 0.3,
+                purchase_month_index=-1,
+                maturity_month_index=periods * period - 1,
+            )
         )
 
 
@@ -382,24 +551,26 @@ def _distributions(build: _Build) -> None:
         lot_id="fundholder-bnd",
         agent_id="fundholder",
         account_id="brokerage",
-        asset_id="bnd",
-        units=build.draw.value.randrange(2, 30) * QUANTITY_SCALE,
+        asset=BND,
+        unit_quanta=build.draw.value.randrange(2, 30) * DEFAULT_UNIT_QUANTA,
         purchase_month=_pool_months(build, 1)[0],
     )
-    build.add_series("security:bnd", build.path(low=1, high=20_000))
-    build.add_series("security_distribution:bnd", build.path(low=1, high=400))
-    federal_share = build.draw.structure.randrange(0, RATE_SCALE_PPB + 1)
-    build.entries("distributions").append(
-        {
-            "agent_id": "fundholder",
-            "holding_account_id": "brokerage",
-            "asset_id": "bnd",
-            "to_account_id": "checking",
-            "tax_character": [
-                {"fraction_ppb": federal_share, "issuer_jurisdiction_id": FEDERAL},
-                {"fraction_ppb": RATE_SCALE_PPB - federal_share},
-            ],
-        }
+    build.series.setdefault(BND, build.path(low=1, high=20_000))
+    build.series[BND_DISTRIBUTION] = build.path(low=1, high=400)
+    # Strictly inside the interval: a slice is a positive fraction, and the two have to
+    # allocate the whole payout between them.
+    federal_share = build.draw.structure.randrange(1, MONEY_FACTOR_SCALE)
+    build.security_distributions.append(
+        SecurityDistribution(
+            asset=BND,
+            agent_id="fundholder",
+            holding_account_id="brokerage",
+            to_account_id="checking",
+            tax_character=(
+                DistributionTaxSlice(fraction=_rate(federal_share), issuer_jurisdiction_id=FEDERAL),
+                DistributionTaxSlice(fraction=_rate(MONEY_FACTOR_SCALE - federal_share)),
+            ),
+        )
     )
 
 
@@ -407,37 +578,36 @@ def _target_allocation(build: _Build) -> None:
     build.account("allocator", "checking", build.draw.money(1_000_000, 30_000_000))
     build.account("allocator", "brokerage-a", 0)
     build.account("allocator", "brokerage-b", 0)
-    for asset, account in (("vti", "brokerage-a"), ("bnd", "brokerage-b")):
+    for asset, account in ((VTI, "brokerage-a"), (BND, "brokerage-b")):
         _lot(
             build,
-            lot_id=f"allocator-{asset}",
+            lot_id=f"allocator-{asset.symbol}",
             agent_id="allocator",
             account_id=account,
-            asset_id=asset,
-            units=build.draw.value.randrange(1, 50) * QUANTITY_SCALE,
+            asset=asset,
+            unit_quanta=build.draw.value.randrange(1, 50) * DEFAULT_UNIT_QUANTA,
             purchase_month=_pool_months(build, 1)[0],
         )
-    for asset in ("vti", "bnd"):
-        build.series.setdefault(f"security:{asset}", build.path(low=1, high=30_000))
+        build.series.setdefault(asset, build.path(low=1, high=30_000))
     floor = build.draw.structure.randrange(0, 4_000_000)
-    build.entries("target_allocation_policies").append(
-        {
-            "agent_id": "allocator",
-            "account_id": "checking",
-            "source_account_ids": ["brokerage-a", "brokerage-b"],
-            "sleeves": [
-                {"asset_id": "vti", "weight": build.draw.value.randrange(1, 5), "quantity_scale": QUANTITY_SCALE},
-                {"asset_id": "bnd", "weight": build.draw.value.randrange(1, 5), "quantity_scale": QUANTITY_SCALE},
+    build.target_allocation_policies.append(
+        TargetAllocationPolicy(
+            agent_id="allocator",
+            account_id="checking",
+            source_account_ids=("brokerage-a", "brokerage-b"),
+            sleeves=[
+                SleeveTarget(asset=VTI, weight=build.draw.value.randrange(1, 5)),
+                SleeveTarget(asset=BND, weight=build.draw.value.randrange(1, 5)),
             ],
-            "cash_floor": floor,
-            "cash_ceiling": floor + build.draw.structure.randrange(1, 4_000_000),
-            "cause_id_prefix": "fuzz-allocation",
+            cash_floor=_money(floor),
+            cash_ceiling=_money(floor + build.draw.structure.randrange(1, 4_000_000)),
+            cause_id_prefix="fuzz-allocation",
             # One slot per month. JAX preallocates a lot per possible purchase, because each
             # carries its own basis and holding period, and refuses the whole scenario when a
             # sleeve runs out — so a policy that buys most months needs the horizon's worth.
-            "purchase_slots_per_sleeve": build.shape.horizon_months,
-            "rebalance_tolerance_ppb": build.draw.structure.randrange(1, 10) * 100_000_000,
-        }
+            purchase_slots_per_sleeve=build.shape.horizon_months,
+            rebalance_tolerance=_rate(build.draw.structure.randrange(1, 10) * 100_000_000),
+        )
     )
 
 
@@ -449,24 +619,33 @@ def _harvest(build: _Build) -> None:
         lot_id="harvester-sp500",
         agent_id="harvester",
         account_id="brokerage",
-        asset_id="sp500",
-        units=build.draw.value.randrange(1, 40) * QUANTITY_SCALE,
+        asset=SP500,
+        unit_quanta=build.draw.value.randrange(1, 40) * DEFAULT_UNIT_QUANTA,
         purchase_month=_pool_months(build, 1)[0],
     )
-    build.add_series("security:sp500", build.path(low=1, high=1_000))
+    build.series[SP500] = build.path(low=1, high=1_000)
     peak = build.draw.structure.randrange(1, 300) * 1_000_000
-    build.entries("harvest_policies").append(
-        {
-            "owner_agent_id": "harvester",
-            "account_id": "brokerage",
-            "asset_id": "sp500",
-            "peak_annual_yield_ppb": peak,
-            "floor_annual_yield_ppb": build.draw.structure.randrange(0, peak + 1),
-            "maturity_decay_exponent_ppb": build.draw.structure.randrange(1, 6) * (RATE_SCALE_PPB // 2),
-            "drawdown_sensitivity_ppb": build.draw.structure.randrange(0, 12) * RATE_SCALE_PPB,
-            "short_term_fraction_ppb": build.draw.structure.randrange(0, RATE_SCALE_PPB + 1),
-        }
+    build.harvest_policies.append(
+        HarvestPolicy(
+            owner_agent_id="harvester",
+            account_id="brokerage",
+            asset=SP500,
+            yield_params=HarvestYieldParams(
+                peak_annual_yield=_rate(peak),
+                floor_annual_yield=_rate(build.draw.structure.randrange(0, peak + 1)),
+                # A multiple of a half, which is the only exponent the integer curve evaluates.
+                maturity_decay_exponent=_rate(build.draw.structure.randrange(1, 6) * (MONEY_FACTOR_SCALE // 2)),
+                drawdown_sensitivity=_rate(build.draw.structure.randrange(0, 12) * MONEY_FACTOR_SCALE),
+            ),
+            short_term_fraction=_rate(build.draw.structure.randrange(0, MONEY_FACTOR_SCALE + 1)),
+        )
     )
+
+
+def _private_equity_channel(build: _Build, low: int, high: int) -> list[list[int]]:
+    return [
+        [build.draw.value.randint(low, high) for _ in range(build.snapshots)] for _ in range(build.shape.rollout_count)
+    ]
 
 
 def _private_equity(build: _Build) -> None:
@@ -478,45 +657,44 @@ def _private_equity(build: _Build) -> None:
             lot_id=f"pe-acme-{index}",
             agent_id="pe_owner",
             account_id="private",
-            asset_id="private_equity:acme",
-            units=build.draw.value.randrange(1, 60) * QUANTITY_SCALE,
+            asset=ACME_EQUITY,
+            unit_quanta=build.draw.value.randrange(1, 60) * DEFAULT_UNIT_QUANTA,
             purchase_month=month,
         )
-    build.add_series("private_equity_mark:acme", build.path(low=1, high=30_000))
-    for channel, low, high in (
-        ("regime", 1, 4),
-        ("event_kind", 0, 7),
-        ("sale_opportunity", 0, 1),
-        ("sale_capacity", 0, RATE_SCALE_PPB),
-        ("eligible", 0, RATE_SCALE_PPB),
-        ("forced_sale", 0, RATE_SCALE_PPB),
-        ("liquidity_blocked", 0, 1),
-        ("forced_recovery", 0, 4_000_000),
-        ("company_valuation", 0, 0),
-    ):
-        build.add_series(
-            f"private_equity_{channel}:acme",
-            [
-                [build.draw.value.randint(low, high) for _ in range(build.snapshots)]
-                for _ in range(build.shape.rollout_count)
-            ],
+    marks = _private_equity_channel(build, 1, 30_000)
+    regimes = _private_equity_channel(build, 1, max(int(code) for code in PrivateEquityRegimeCode))
+    kinds = _private_equity_channel(build, 0, max(int(code) for code in PrivateEquityEventKindCode))
+    capacity = _private_equity_channel(build, 0, MONEY_FACTOR_SCALE)
+    eligible = _private_equity_channel(build, 0, MONEY_FACTOR_SCALE)
+    forced_sale = _private_equity_channel(build, 0, MONEY_FACTOR_SCALE)
+    blocked = _private_equity_channel(build, 0, 1)
+    recovery = _private_equity_channel(build, 0, 4_000_000)
+    # A tender IS the opportunity being taken, so the two channels are one fact told twice and
+    # the bundle rejects a producer that desyncs them. It is derived rather than drawn.
+    tender = np.asarray(kinds, dtype=np.int64) == int(PrivateEquityEventKindCode.TENDER)
+    build.private_equity = PrivateEquityBundle.from_issuer_arrays(
+        ACME,
+        mark_usd_per_unit=np.asarray([[float(_money(value)) for value in row] for row in marks], dtype=np.float64),
+        regime_code=np.asarray(regimes, dtype=np.int64),
+        event_kind_code=np.asarray(kinds, dtype=np.int64),
+        sale_opportunity_active=tender,
+        sale_capacity_fraction=np.asarray([[_rate(value) for value in row] for row in capacity], dtype=np.float64),
+        eligible_fraction=np.asarray([[_rate(value) for value in row] for row in eligible], dtype=np.float64),
+        forced_sale_fraction=np.asarray([[_rate(value) for value in row] for row in forced_sale], dtype=np.float64),
+        liquidity_blocked=np.asarray(blocked, dtype=np.int64) == 1,
+        forced_recovery_cashout_usd=np.asarray(
+            [[float(_money(value)) for value in row] for row in recovery], dtype=np.float64
+        ),
+        company_valuation_usd=np.zeros((build.shape.rollout_count, build.snapshots), dtype=np.float64),
+        rollout_count=build.shape.rollout_count,
+        horizon_months=build.shape.horizon_months,
+    )
+    build.private_equity_tender_policies.append(
+        PrivateEquityTenderPolicy(
+            owner_agent_id="pe_owner",
+            proceeds_account_id="checking",
+            liquid_net_worth_floor=FixedAmount(amount=_money(build.draw.structure.randrange(0, 8_000_000))),
         )
-    # A tender IS the opportunity being taken, so the two channels are one fact told twice
-    # and a producer may not desync them. Drawing them independently mostly does.
-    for kinds, opportunities in zip(
-        build.series["private_equity_event_kind:acme"],
-        build.series["private_equity_sale_opportunity:acme"],
-        strict=True,
-    ):
-        for month, kind in enumerate(kinds):
-            if kind == PrivateEquityEventKindCode.TENDER:
-                opportunities[month] = 1
-    build.entries("private_equity_tender_policies").append(
-        {
-            "owner_agent_id": "pe_owner",
-            "proceeds_account_id": "checking",
-            "liquid_net_worth_floor": build.draw.structure.randrange(0, 8_000_000),
-        }
     )
 
 
@@ -526,178 +704,153 @@ def _property(build: _Build) -> None:
     build.account("bank", "checking", 0)
     build.account("county", "checking", 0)
     build.account("tenant", "checking", 50_000_000)
-    build.entries("locations").append(
-        {
-            "location_id": LOCATION,
-            "display_name": "Fuzz City",
-            "jurisdiction_ids": [FEDERAL, STATE],
-            "annual_property_tax_rate_ppb": build.draw.structure.randrange(1, 20) * 1_000_000,
-            "annual_special_assessment": build.draw.structure.randrange(0, 50_000),
-        }
+    build.locations[LOCATION] = Location(
+        location_id=LOCATION,
+        display_name="Fuzz City",
+        jurisdiction_ids=[FEDERAL, STATE],
+        annual_property_tax_rate=_rate(build.draw.structure.randrange(1, 20) * 1_000_000),
+        annual_special_assessment=_money(build.draw.structure.randrange(0, 50_000)),
     )
-    build.add_series(f"home_value:{LOCATION}", build.path(low=10_000_000, high=90_000_000))
-    # Every scalar below is folded into the compiled program, so all of it is structural.
-    # The price is a whole dollar and the land share a whole percent, together keeping
-    # `price * (1 - land_share)` — the building basis JAX depreciates — on a whole quantum,
-    # which is the only form the legacy surface accepts for a configured amount.
+    build.series[SF_HOME] = build.path(low=10_000_000, high=90_000_000)
+    # Every scalar below is folded into the compiled program, so all of it is structural. The
+    # price is a whole currency unit and the land share a whole percent, together keeping
+    # `price * (1 - land_share)` — the building basis JAX depreciates — on a whole quantum.
     price = build.draw.structure.randrange(100_000, 800_000) * 100
     principal = build.draw.structure.randrange(0, price)
     purchase_month = build.draw.structure.randrange(0, max(1, build.shape.horizon_months // 2))
-    build.entries("scheduled_property_purchases").append(
-        {
-            "month": purchase_month,
-            "cause_id": "buy-home",
-            "property_id": "home",
-            "location_id": LOCATION,
-            "buyer_agent_id": "homeowner",
-            "buyer_account_id": "checking",
-            "seller_agent_id": "seller",
-            "seller_account_id": "checking",
-            "purchase_price": price,
-            "down_payment": price - principal,
-            "buyer_closing_cost": build.draw.structure.randrange(0, 2_000_000),
-            "rented_fraction_ppb": build.draw.structure.randrange(0, RATE_SCALE_PPB + 1),
-            "land_value_fraction_ppb": build.draw.structure.randrange(0, 100) * (RATE_SCALE_PPB // 100),
-            **(
-                {
-                    "mortgage": {
-                        "liability_id": "home-mortgage",
-                        "lender_agent_id": "bank",
-                        "lender_account_id": "checking",
-                        "principal": principal,
-                        "annual_interest_rate_ppb": build.draw.structure.randrange(0, 12) * 12_000_000,
-                        "term_months": build.draw.structure.randrange(12, 361),
-                    }
-                }
+    build.scheduled_property_purchases.append(
+        ScheduledPropertyPurchase(
+            month=purchase_month,
+            cause_id="buy-home",
+            property_id="home",
+            location_id=LOCATION,
+            buyer_agent_id="homeowner",
+            buyer_account_id="checking",
+            seller_agent_id="seller",
+            seller_account_id="checking",
+            purchase_price=_money(price),
+            down_payment=_money(price - principal),
+            buyer_closing_cost=_money(build.draw.structure.randrange(0, 2_000_000)),
+            rented_fraction=_rate(build.draw.structure.randrange(0, MONEY_FACTOR_SCALE + 1)),
+            land_value_fraction=_rate(build.draw.structure.randrange(0, 100) * (MONEY_FACTOR_SCALE // 100)),
+            mortgage=(
+                MortgageFinancing(
+                    liability_id="home-mortgage",
+                    lender_agent_id="bank",
+                    lender_account_id="checking",
+                    principal=_money(principal),
+                    annual_interest_rate=_rate(build.draw.structure.randrange(0, 12) * 12_000_000),
+                    term_months=build.draw.structure.randrange(12, 361),
+                )
                 if principal > 0
-                else {}
+                else None
             ),
-        }
+        )
     )
-    build.entries("property_tax_policies").append(
-        {
-            "property_id": "home",
-            "owner_agent_id": "homeowner",
-            "from_account_id": "checking",
-            "tax_authority_agent_id": "county",
-            "tax_authority_account_id": "checking",
-            "annual_tax_rate_ppb": build.draw.structure.randrange(1, 24) * 1_000_000,
-            "start_month": purchase_month,
-        }
+    build.property_tax_policies.append(
+        PropertyTaxPolicy(
+            property_id="home",
+            owner_agent_id="homeowner",
+            from_account_id="checking",
+            tax_authority_agent_id="county",
+            tax_authority_account_id="checking",
+            annual_tax_rate=_rate(build.draw.structure.randrange(1, 24) * 1_000_000),
+            start_month=purchase_month,
+        )
     )
-    build.entries("recurring_property_cashflows").append(
-        {
-            "start_month": purchase_month,
-            "end_month": build.shape.horizon_months - 1,
-            "property_id": "home",
-            "cause_id": "rent",
-            "from": _account_ref("tenant"),
-            "to": _account_ref("homeowner"),
-            "amount": _indexed_amount(build, f"rent:{LOCATION}", near=500_001),
-            "income_category": "ordinary",
-        }
+    build.recurring_property_cashflows.append(
+        RecurringPropertyCashflow(
+            start_month=purchase_month,
+            end_month=build.shape.horizon_months - 1,
+            property_id="home",
+            cause_id="rent",
+            from_agent_id="tenant",
+            from_account_id="checking",
+            to_agent_id="homeowner",
+            to_account_id="checking",
+            amount=_indexed_amount(build, RENT, near=500_001),
+            income_category=ORDINARY_INCOME,
+        )
     )
     if purchase_month + 1 < build.shape.horizon_months:
         rest = range(purchase_month + 1, build.shape.horizon_months)
-        build.entries("property_rented_fraction_events").append(
-            {
-                "month": build.draw.structure.choice(rest),
-                "property_id": "home",
-                "rented_fraction_ppb": build.draw.structure.randrange(0, RATE_SCALE_PPB + 1),
-            }
+        build.property_lifecycle_events.append(
+            SetRentedFractionEvent(
+                month=build.draw.structure.choice(rest),
+                property_id="home",
+                rented_fraction=_rate(build.draw.structure.randrange(0, MONEY_FACTOR_SCALE + 1)),
+            )
         )
-        build.entries("capital_improvement_events").append(
-            {
-                "month": build.draw.structure.choice(rest),
-                "property_id": "home",
-                "amount": build.draw.structure.randrange(1, 3_000_000),
-                "description": "improvement",
-            }
+        build.property_lifecycle_events.append(
+            CapitalImprovementEvent(
+                month=build.draw.structure.choice(rest),
+                property_id="home",
+                amount=_money(build.draw.structure.randrange(1, 3_000_000)),
+                description="improvement",
+            )
         )
         if build.draw.structure.random() < 0.6:
-            build.entries("property_sales").append(
-                {
-                    "month": build.draw.structure.choice(rest),
-                    "property_id": "home",
-                    "closing_cost_bps": build.draw.structure.randrange(0, 1_000),
-                }
+            build.property_lifecycle_events.append(
+                PropertySaleEvent(
+                    month=build.draw.structure.choice(rest),
+                    property_id="home",
+                    # Whole basis points, which is the only closing cost the two engines
+                    # retain the same fraction of.
+                    closing_cost_pct=float(Decimal(build.draw.structure.randrange(0, 1_000)) / 100),
+                )
             )
     if principal > 0:
-        build.entries("mortgage_interest_deduction_policies").append(
-            {"liability_id": "home-mortgage", "owner_agent_id": "homeowner", "debt_class": "acquisition"}
+        build.mortgage_interest_deduction_policies.append(
+            MortgageInterestDeductionPolicy(
+                liability_id="home-mortgage", owner_agent_id="homeowner", debt_class="acquisition"
+            )
         )
     # Only when the home is already owned at month 0: an initial assignment names a property
     # the agent has yet to buy otherwise, which neither engine accepts.
     if purchase_month == 0 and build.draw.structure.random() < 0.5:
-        build.entries("initial_primary_residences").append({"agent_id": "homeowner", "property_id": "home"})
+        build.initial_primary_residences.append(PrimaryResidenceAssignment(agent_id="homeowner", property_id="home"))
 
 
-def _brackets(build: _Build, count: int) -> list[dict[str, Any]]:
-    # Sampled rather than drawn independently: both engines refuse bracket edges that are not
-    # strictly increasing, and a duplicate would read as one engine refusing a fixture the
-    # other ran — a finding, and a wrong one.
-    uppers = sorted(build.draw.value.sample(range(100_000, 20_000_000), count - 1))
-    rates = sorted(build.draw.value.randrange(0, 400) * 1_000_000 for _ in range(count))
-    return [{"upper": upper, "rate_ppb": rate} for upper, rate in zip(uppers, rates[:-1], strict=True)] + [
-        {"upper": None, "rate_ppb": rates[-1]}
-    ]
+# The agents a tax profile may be attached to: every family's own earner, and nobody whose
+# only role is to be paid.
+_TAXABLE_AGENTS = frozenset({"earner", "trader", "bondholder", "fundholder", "harvester", "homeowner", "payer"})
 
 
 def _tax(build: _Build) -> None:
     build.account("irs", "checking", 0)
-    taxed = sorted(build.agents & {"earner", "trader", "bondholder", "fundholder", "harvester", "homeowner", "payer"})
+    taxed = sorted(build.agents & _TAXABLE_AGENTS)
     for agent_id in taxed:
-        jurisdictions = [
-            {
-                "jurisdiction_id": FEDERAL,
-                "ordinary_brackets": _brackets(build, build.draw.structure.randrange(1, 4)),
-                "long_term_capital_gain_brackets": _brackets(build, 2),
-                "standard_deduction": build.draw.money(0, 2_000_000),
-                "max_capital_loss_ordinary_offset": build.draw.structure.randrange(0, 500_000),
-                "exempt_interest_from_levels": ["state"],
-                "exempts_own_issue": False,
-                "section_1250_rate_ppb": build.draw.structure.randrange(0, 30) * 10_000_000,
-            }
-        ]
-        if build.draw.structure.random() < 0.5:
-            jurisdictions.append(
-                {
-                    "jurisdiction_id": STATE,
-                    "ordinary_brackets": _brackets(build, build.draw.structure.randrange(1, 4)),
-                    "long_term_capital_gain_brackets": [],
-                    "standard_deduction": build.draw.money(0, 1_000_000),
-                    "max_capital_loss_ordinary_offset": build.draw.structure.randrange(0, 500_000),
-                    "exempt_interest_from_levels": ["federal"],
-                    "exempts_own_issue": True,
-                    "section_1250_rate_ppb": 0,
-                }
-            )
+        # Which jurisdictions a profile files in is the whole of its tax law: the compiler
+        # resolves each one's brackets, deduction and rates from the deployment's records, and
+        # the fixture is encoded from those same compiled tables.
+        jurisdiction_ids = [FEDERAL, STATE] if build.draw.structure.random() < 0.5 else [FEDERAL]
         # Whether a profile owes estimated tax is structural: it decides whether the compiler
         # emits the quarterly obligation slots at all. How much is traced, and its tie is any
         # prior-year tax congruent to 2 mod 4, the quarter being `prior_year_tax / 4`.
-        build.entries("tax_profiles").append(
-            {
-                "agent_id": agent_id,
-                "tax_authority_agent_id": "irs",
-                "prior_year_tax": (
+        build.tax_profiles.append(
+            TaxProfile(
+                agent_id=agent_id,
+                jurisdiction_ids=jurisdiction_ids,
+                tax_authority_agent_id="irs",
+                prior_year_tax=_money(
                     build.draw.tie(1, 4, near=build.draw.money(1, 4_000_000))
                     if build.draw.structure.random() < 0.7
                     else 0
                 ),
-                "section_121_exclusion": build.draw.structure.randrange(0, 30_000_000),
-                "jurisdictions": jurisdictions,
-            }
+            )
         )
     if taxed and build.draw.structure.random() < 0.5:
-        build.entries("federal_salt_deduction_policies").append(
-            {
-                "profile_id": taxed[0],
-                "federal_jurisdiction_id": FEDERAL,
-                "cap_schedule": [
-                    {"effective_year_index": year, "cap": build.draw.structure.randrange(0, 5_000_000)}
+        build.federal_salt_deduction_policies.append(
+            FederalSaltDeductionPolicy(
+                profile_id=taxed[0],
+                federal_jurisdiction_id=FEDERAL,
+                cap_schedule=[
+                    FederalSaltCapEntry(
+                        effective_year_index=year, cap=_money(build.draw.structure.randrange(0, 5_000_000))
+                    )
                     for year in range(build.shape.horizon_months // 12 + 1)
                 ],
-            }
+            )
         )
 
 
@@ -717,36 +870,17 @@ _FAMILY_BUILDERS = (
 )
 
 
-def build_fixture(shape: Shape, value_seed: int) -> dict[str, Any]:
-    """One fixture: `shape` fixes the compiled program, `value_seed` moves its traced inputs."""
+def build_case(shape: Shape, value_seed: int) -> Case:
+    """One case: `shape` fixes the compiled program, `value_seed` moves its traced inputs."""
 
     build = _Build(shape=shape, draw=Draw(structure=random.Random(shape.seed), value=random.Random(value_seed)))
-    build.scenario["horizon_months"] = shape.horizon_months
-    build.scenario["jurisdictions"] = [
-        {"jurisdiction_id": FEDERAL, "level": "federal"},
-        {"jurisdiction_id": STATE, "level": "state"},
-    ]
-    # Rust defaults an absent scenario list to empty; the legacy adapter indexes these seven
-    # directly, so an empty list stands in for the omission it treats as equivalent.
-    for key in ("scheduled_transfers", "recurring_transfers", "obligations", "initial_lots", "scheduled_sales"):
-        build.entries(key)
     build.account("payroll", "checking", 0)
     build.account("vendor", "checking", 0)
     _index_series(build)
     for family, builder in _FAMILY_BUILDERS:
         if family in shape.families:
             builder(build)
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "currency_code": "USD",
-        "currency_quantum": "0.01",
-        "rollout_count": shape.rollout_count,
-        "scenario": build.scenario,
-        "series": [
-            {"series_id": series_id, "snapshots": build.snapshots, "values": [value for row in rows for value in row]}
-            for series_id, rows in sorted(build.series.items())
-        ],
-    }
+    return build.case()
 
 
 # The families a structural draw may combine. Property and private equity carry the most

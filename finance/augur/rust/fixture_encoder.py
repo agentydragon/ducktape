@@ -1,8 +1,8 @@
 """Encode a `Scenario` and its compiled sampled paths as the Rust simulator's integer fixture.
 
-`differential/fixture_adapter.py` runs the other way, for tests: an integer fixture becomes
-legacy Python/JAX inputs. This is the production direction, and it is what lets
-`product/service.py` dispatch a projection to the Rust engine at all.
+This is the only direction: what `product/service.py` dispatches to the Rust engine, and what
+the differential suites encode a case with, so nothing the JAX engine runs reaches Rust by a
+second derivation.
 
 Money crosses exactly. `CompiledSimulation.external_money_values` is already the integer
 quantum count the JAX engine itself reads, and configured amounts go through the same
