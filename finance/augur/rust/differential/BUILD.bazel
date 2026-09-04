@@ -235,3 +235,112 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Drives the testonly `backend` layer, so it is testonly too.
+py_library(
+    name = "campaign",
+    testonly = True,
+    srcs = ["campaign.py"],
+    deps = [
+        ":backend",
+        ":generator",
+        ":shrink",
+        "//util/testing:undeclared_outputs",
+    ],
+)
+
+py_library(
+    name = "generator",
+    srcs = ["generator.py"],
+    deps = [":rounding_boundary"],
+)
+
+py_library(
+    name = "rounding_boundary",
+    srcs = ["rounding_boundary.py"],
+)
+
+py_library(
+    name = "shrink",
+    srcs = ["shrink.py"],
+)
+
+# ~200s measured: 800 value cases share four compiled programs, ten structural cases pay one
+# compile each, and a run that finds a divergence adds the shrink budget on top.
+py_test(
+    name = "fuzz_test",
+    size = "large",
+    srcs = ["fuzz_test.py"],
+    deps = [
+        ":campaign",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "generator_test",
+    srcs = ["generator_test.py"],
+    deps = [
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "rounding_boundary_test",
+    srcs = ["rounding_boundary_test.py"],
+    deps = [
+        ":rounding_boundary",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "shrink_test",
+    srcs = ["shrink_test.py"],
+    deps = [
+        ":shrink",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Off the default CI path: `bazel test //...` skips a manual target, and this one costs
+# thousands of both-engine runs plus one XLA compile per structural case.
+py_test(
+    name = "soak_test",
+    size = "enormous",
+    srcs = ["soak_test.py"],
+    tags = ["manual"],
+    deps = [
+        ":campaign",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//jax",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "known_divergence_test",
+    size = "medium",
+    srcs = ["known_divergence_test.py"],
+    deps = [
+        ":backend",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:events",
+        "@pypi//pytest_bazel",
+    ],
+)

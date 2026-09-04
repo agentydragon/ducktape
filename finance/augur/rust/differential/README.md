@@ -64,3 +64,62 @@ JAX tracks capital gains for any agent holding lots or selling; Rust surfaces th
 an agent with a tax profile. The comparison is scoped to taxed agents. An untaxed agent's
 gain has no tax consequence, so this is output coverage rather than a wrong number — but it
 means a fixture's untaxed realizations go unchecked on the Rust side.
+
+## Fuzzing the pair
+
+The suites above are fixtures someone thought of. `generator.py` writes them at random, and
+`fuzz_test.py` runs them past the same oracle.
+
+The cost model decides the design. JAX bakes the plan structure into the compiled program,
+so what a fixture varies decides what it costs, and the generator splits its randomness to
+match:
+
+- a **shape** is everything reaching the XLA cache key — which policy families are present,
+  how many of each, the horizon, the rollout count, and the thresholds and lifecycle months
+  JAX folds in as Python scalars. A new shape costs a compile;
+- a **value draw** is everything the compiled program takes as a traced input — opening
+  balances, cashflow amounts and months, lot bases and quantities, sale months and units,
+  tax brackets, and every external series. A new value draw over a fixed shape costs a run.
+
+So the value tier runs many cases over a few fixed shapes and the structural tier runs few
+cases over many shapes. `generator_test.py` pins the split: every fixture of one shape must
+present the same entry counts, series axis and folded scalars, because a value draw that
+moved one of those would silently turn the cheap tier into the expensive one.
+
+### Where the values aim
+
+Both engines are integer throughout, so a disagreement is a rounding-site or an ordering
+difference, and a rounding site only has an opinion where the exact quotient falls on the
+half. Uniform money never lands there — `price * units % 1_000_000 == 500_000` has
+probability 1e-6 — so `rounding_boundary.py` solves for the operand that does, and the
+generator aims it at the sites whose other operand it already knows: FIFO basis and sale
+proceeds against the quantity scale, series-indexed amounts against their base level, bond
+coupons against the period rate, and the quarterly estimated tax against its quarter.
+
+Half the draws stay off the boundary, so the ordinary path keeps its coverage too.
+
+### A finding is a fixture
+
+`campaign.py` runs every case and then fails with one shrunk reproducer per **distinct**
+differing channel, rather than stopping at the first: while one finding is open, stopping
+there would make a second campaign say only what is already known. Shrinking drops scenario
+entries, shortens the horizon, drops rollouts and flattens series, keeping every reduction
+whose same channel still differs. Each minimal fixture goes to the test's undeclared outputs
+as JSON, so it replays directly.
+
+A case the legacy JAX surface cannot express — one fixed sale price per scheduled sale
+across rollouts, a ppb rate that does not survive the float boundary — is counted apart from
+the cases that were compared, and the compared count is what the test asserts. That is the
+only number that is evidence of anything.
+
+`known_divergence_test.py` holds what the fuzzer has found and nobody has resolved yet, one
+pinned minimal fixture each. Nothing there is excused in the fuzzer: `fuzz_test.py` fails on
+those cases too, and an entry leaves the file when the engines are made to agree.
+
+### Running it wider
+
+```bash
+bbr test //finance/augur/rust/differential:soak_test
+```
+
+Same generator, same oracle, wider seed ranges; `manual`, so `bazel test //...` skips it.
