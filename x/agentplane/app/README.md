@@ -26,7 +26,7 @@ bbr test //x/agentplane/app/...
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
-- `identity.py`: who a request is, by whichever credential it carried; `oidc.py` and
+- `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
@@ -51,8 +51,6 @@ are two credentials, and both are cryptographic:
   TOKEN=$(kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane)
   curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes
   ```
-
-Whichever credential a request carried is what a launch-time egress grant is labelled with.
 
 Nothing is inferred from a request header, and nothing in front of the app authenticates for it:
 the gateway routes straight to the Service. The app used to sit behind an Authentik forward-auth

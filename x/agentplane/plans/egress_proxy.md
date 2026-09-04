@@ -43,10 +43,12 @@ proxy relates to the integration app, and the work packages.
   proves. Threads and agents attach later as columns, not as a redesign.
 - **Runtime grants die with their subject and say where they came from.** A binding the app
   creates for one sandbox carries an `ownerReference` to that Sandbox, so deleting the sandbox
-  garbage-collects the grant; a binding from git carries Flux's inventory labels and nothing at
-  runtime touches it, since Flux prunes only what it applied. Every binding also carries a
-  provenance label (`agentplane.allegedly.works/granted-by`: `flux`, or the caller who made it) so
-  the view can say "from git" or "granted by Rai", which is also the record of who allowed it. Owner references
+  garbage-collects the grant; a binding from git carries Flux's inventory labels
+  (`kustomize.toolkit.fluxcd.io/name`), which is what the view reads to say "from git" and what
+  the app refuses to revoke, since Flux prunes only what it applied and would re-apply it on the
+  next reconcile. Who created a runtime binding is not re-asserted as a label of our own: creating
+  one is the whole grant, so everyone who may create one is equally entitled, and the API server's
+  audit log and `managedFields` record the actor better than we could. Owner references
   cascade on deletion, not on liveness: nothing is owned by the app's Pod or Deployment, and the
   app going down revokes nothing, because expiry is what fails closed.
 - **Time-limited grants need no app in the loop.** `expiresAt` is enforced from the proxy's own

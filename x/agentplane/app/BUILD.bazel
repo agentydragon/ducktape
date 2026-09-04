@@ -292,7 +292,6 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     deps = [
-        ":identity",
         ":inventory",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -352,7 +351,6 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
-        "//x/agentplane/app/testing:kubernetes",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pytest",

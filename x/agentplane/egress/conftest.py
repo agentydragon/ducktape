@@ -12,7 +12,6 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
-from x.agentplane.egress.resources import GRANTED_BY_LABEL
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
@@ -45,7 +44,6 @@ POD_B_IP = "10.0.0.2"
 TOKEN_A = "token-of-pod-a"
 TOKEN_B = "token-of-pod-b"
 GITHUB_POLICY = "github"
-GRANTED_BY = "seed"
 
 
 def seed(fake: FakeApiServer) -> None:
@@ -83,12 +81,7 @@ def seed(fake: FakeApiServer) -> None:
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(
-            f"{SANDBOX_A}-{GITHUB_POLICY}",
-            subjects=[{"sandbox": {"name": SANDBOX_A}}],
-            policies=[GITHUB_POLICY],
-            labels={GRANTED_BY_LABEL: GRANTED_BY},
-        ),
+        binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY]),
     )
 
 

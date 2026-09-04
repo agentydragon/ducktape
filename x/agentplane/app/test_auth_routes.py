@@ -19,13 +19,12 @@ from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.conftest import AGENT, AGENT_AUTH
+from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
-from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
+from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.oidc import OIDCSettings
-from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
@@ -121,29 +120,6 @@ async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served:
 
     async with httpx.AsyncClient(base_url=served, headers={"Authorization": "Bearer nonsense"}) as stranger:
         assert (await stranger.get("/sandboxes")).status_code == 401
-
-
-async def test_a_grant_names_whichever_credential_made_it(
-    browser: httpx.AsyncClient, served: str, custom_objects: FakeCustomObjectsApi
-) -> None:
-    """The point of guarding at all: a grant is attributable, and to the right one of the two."""
-    await browser.get("/auth/login")
-    pick = {"policies": ["pypi"]}
-    by_operator = await browser.post("/sandboxes", json={"slug": "byop"} | pick, headers={"Origin": served})
-    async with httpx.AsyncClient(base_url=served, headers=AGENT_AUTH) as agent:
-        by_agent = await agent.post("/sandboxes", json={"slug": "byagent"} | pick)
-
-    granted = {
-        name: obj["metadata"]["labels"][GRANTED_BY_LABEL]
-        for (kind, name), obj in custom_objects.objects.items()
-        if kind == "egressbindings"
-    }
-    assert (by_operator.status_code, by_agent.status_code) == (201, 201), by_operator.text
-    # The label is the caller's identity with anything a label value cannot hold replaced.
-    assert granted == {
-        f"{by_operator.json()['name']}-picked": OPERATOR,
-        f"{by_agent.json()['name']}-picked": AGENT.label,
-    }
 
 
 if __name__ == "__main__":

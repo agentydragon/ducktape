@@ -126,7 +126,6 @@ const POLICIES: PolicyView[] = [
 const BINDINGS: BindingView[] = [
   {
     name: "demo-a1b2-picked",
-    granted_by: "agent",
     from_git: false,
     subjects: ["demo-a1b2"],
     expires_at: ago(2 * HOUR),
@@ -138,7 +137,6 @@ const BINDINGS: BindingView[] = [
   },
   {
     name: "demo-a1b2-github-public",
-    granted_by: "flux",
     from_git: true,
     subjects: ["demo-a1b2"],
     expires_at: null,

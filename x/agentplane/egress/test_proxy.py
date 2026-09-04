@@ -26,7 +26,6 @@ from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.conftest import (
     AUDIENCE,
     GITHUB_POLICY,
-    GRANTED_BY,
     PLACEHOLDER,
     POD_A_IP,
     SANDBOX_A,
@@ -300,11 +299,7 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
     ]
     assert [d["address"] for d in decisions] == ["127.0.0.1", "127.0.0.1", "127.0.0.1", None]
     substituted = one(d for d in decisions if d["substituted"])
-    assert (substituted["binding"], substituted["granted_by"], substituted["policy"]) == (
-        BINDING,
-        GRANTED_BY,
-        GITHUB_POLICY,
-    )
+    assert (substituted["binding"], substituted["policy"]) == (BINDING, GITHUB_POLICY)
     assert [(d["method"], d["reason"]) for d in unidentified] == [("CONNECT", "token-rejected")]
     assert all(SECRET_VALUE not in str(d) and PLACEHOLDER not in str(d) for d in decisions)
 

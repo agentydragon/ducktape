@@ -270,22 +270,12 @@ def policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def binding(
-    name: str,
-    *,
-    subjects: list[dict[str, Any]],
-    policies: list[str],
-    expires_at: str | None = None,
-    labels: dict[str, str] | None = None,
+    name: str, *, subjects: list[dict[str, Any]], policies: list[str], expires_at: str | None = None
 ) -> dict[str, Any]:
     spec: dict[str, Any] = {"subjects": subjects, "policies": policies}
     if expires_at is not None:
         spec["expiresAt"] = expires_at
-    return {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "EgressBinding",
-        "metadata": {"name": name, "labels": labels or {}},
-        "spec": spec,
-    }
+    return {"apiVersion": f"{GROUP}/{VERSION}", "kind": "EgressBinding", "metadata": {"name": name}, "spec": spec}
 
 
 @asynccontextmanager
