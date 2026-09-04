@@ -1,9 +1,11 @@
 # Nix-built OCI image for Haku's isolated OpenClaw + Claude Code spike.
 #
 # The gateway package itself is shared with the public-coder image; the source
-# pin, npm-wrapper splice, and dist repairs live in openclaw/gateway.nix. This
-# file adds the spike's own proxy preload and command-line tooling -- everything
-# a Nix package in one reviewable closure, no second Node.
+# pin, npm-wrapper splice, and dist repairs live in openclaw/gateway.nix, so a
+# version bump moves both images at once -- what that costs, and how to recover an
+# instance a bump has bricked, is in openclaw/AGENTS.md. This file adds the spike's
+# own proxy preload and command-line tooling -- everything a Nix package in one
+# reviewable closure, no second Node.
 #
 # Not an upstream Docker base (the earlier approach): it shipped a second Node
 # and was the source of the original runtime compatibility failure. Building the
