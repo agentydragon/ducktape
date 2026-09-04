@@ -223,3 +223,33 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Reads the JAX engine through `sim/testing/state_helpers`, so the layer is testonly like
+# the fixtures beside it.
+py_library(
+    name = "backend",
+    testonly = True,
+    srcs = ["backend.py"],
+    deps = [
+        ":fixture_adapter",
+        ":output_adapter",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim/testing:state_helpers",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "backend_test",
+    size = "medium",
+    srcs = ["backend_test.py"],
+    deps = [
+        ":backend",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
