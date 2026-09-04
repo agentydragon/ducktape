@@ -743,6 +743,46 @@ built by using the same assumption twice.
 Every conclusion above about "nothing else on this machine touches the API" is scoped to
 that one hostname.
 
+## Which tofu, specifically
+
+A 150-second cluster-wide Hubble sweep of GitHub API ranges names twelve roots, all
+reconciling on a 15-minute interval:
+
+```text
+16  haku-state          12  sso-providers       12  cpap-data
+14  flux-webhook-token  12  augur-evidence      12  forgejo-agentydragon-repos
+12  agent-machine-access 12 litellm-keys        12  budget-ledger
+12  forgejo-claude      10  github-branch-protection
+                        10  github-secrets-sync
+```
+
+Most of that is `tofu init` pulling modules and providers from `github.com` and
+`registry.terraform.io` — each root shows `init`, `plan`, `show`, `output` in sequence,
+and git transport spends no API quota. The three that use the **GitHub provider**, and
+so reach the API proper, are `github-branch-protection`, `github-secrets-sync` and
+`flux-webhook-token`. `github-branch-protection` is the most interesting: branch
+protection resources are GraphQL, against a repo with 74 open PRs and 209 branches.
+
+The runner pods are extremely short-lived — they exit between `pgrep` and reading
+`/proc`, and the pod is gone before `kubectl` can resolve its container id. Catching
+them needs a tight poll loop; Hubble's pod-level attribution is the practical route.
+
+**Counter-evidence, not to be skipped**: `tofu` made _more_ connections during a quiet
+window (237) than during a burning one (193). Connection volume does not track the burn,
+and connection counting has now misled this investigation four times. These three roots
+are what remains after elimination, not what the evidence positively implicates.
+
+## The filters were wrong all along
+
+GitHub's `/meta` lists `140.82.116.4` and `20.29.134.0/24` under `api`. Every filter used
+here — the proxy's `--allow-hosts` and every recorder analysis — matched only
+`140.82.116.5/.6` and `172.182.252.137`. So traffic to the rest of GitHub's API estate was
+invisible to **both** instruments at once: one hand-picked IP list, used twice, producing
+a blind spot with the same shape as the `/rate_limit` one this note opens with.
+
+Derive both filters from `api.github.com/meta` before trusting any further "nothing else
+touches the API" statement, including the ones already written above.
+
 ## Knobs not yet turned
 
 Each cuts one credential or one class of caller. Turn one at a time: the burn is
