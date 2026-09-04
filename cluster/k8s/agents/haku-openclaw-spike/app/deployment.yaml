@@ -217,6 +217,28 @@ spec:
           ports:
             - name: gateway
               containerPort: 18789
+          # Without this the Deployment reports 1/1 Running whenever a process
+          # exists, which hid two different outages during the 2026.8.1 recovery:
+          # a gateway crash-looping every ~4 minutes, and one that started but
+          # never bound its port. /healthz answers 200 unauthenticated on a
+          # serving gateway (/readyz and / are auth-gated at 403), so it checks
+          # that the HTTP server is really handling requests, not just that
+          # something holds the port.
+          #
+          # Readiness only, deliberately no liveness or startup probe: startup is
+          # IO-bound on the state PVC and legitimately takes many minutes -- a
+          # gateway on the OVH HDD was measured reading ~940 KB/s, hundreds of MB
+          # in, still progressing. A restarting probe would kill that and never
+          # let it finish. A failing readiness probe restarts nothing; it just
+          # makes "not serving yet" visible, which is the whole point.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: gateway
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
