@@ -653,6 +653,10 @@ py_test(
 
 py_test(
     name = "test_flux_build",
+    # The whole cluster manifest tree below is fetched inside this test's own clock on RBE,
+    # which is minutes against the ~7s the test itself spends; see
+    # <debug/2026_08_rbe_small_test_timeouts.md>.
+    size = "medium",
     srcs = ["test_flux_build.py"],
     # validate_flux_build needs the whole tree the root kustomization references.
     # cluster_all_files' glob stops at sub-package boundaries, so the cluster/k8s
