@@ -583,6 +583,28 @@ The lesson is method, not result. A partition test costs twelve minutes of downt
 one bit; the instrumentation that preceded it cost a night and produced two wrong
 answers. Partition before attributing.
 
+### Confound: pods on wyrm2 died with the node
+
+The partition test does not isolate "the operator's local processes". Taking wyrm2
+offline also took away every pod scheduled on it, and one of those is a live suspect
+this note had already flagged and then walked past: a process named `main`, uid 65532,
+under containerd, connecting to `api.github.com` **every 60 seconds**.
+
+Its last connection was 09:57:57 UTC, two minutes before the node went down, and it has
+**not resumed since the reboot** — the same interval over which the account has been
+quiet. So "wyrm2 offline → quiet" is equally consistent with that pod being the
+consumer.
+
+Not yet identified: the process had exited by the time it was chased, no live `main`
+with that uid remains on the node, and nothing in this repo polls GitHub on a
+60-second interval. At one request a minute it is only ~60 points/hour unless its
+queries are individually expensive, which argues against it being the whole story —
+but it is unexplained, on the right machine, and it stopped at exactly the right moment.
+
+What still stands independently of this confound is the CLI reintroduction below: pods
+did not change when three CLI sessions were started and ~5700 points went in four
+minutes.
+
 ## The CLI reproduces it; Desktop is not required
 
 Immediately afterwards, with Claude Desktop not running and nothing else changed:
