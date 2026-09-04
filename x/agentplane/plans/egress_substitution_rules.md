@@ -119,15 +119,38 @@ These cover every case below:
 | `schemeToken`   | `<scheme> <token>`                  | `<token>`                       |
 | `basicUsername` | `Basic <base64(username:password)>` | `username`, up to the first `:` |
 | `basicPassword` | `Basic <base64(username:password)>` | `password`, after the first `:` |
+| `basicWhole`    | `Basic <base64(payload)>`           | the whole decoded payload       |
 
-`schemeToken` carries the scheme it accepts (`Bearer`); `basicUsername` and `basicPassword` imply
-scheme `Basic`. Schemes compare case-insensitively, because clients disagree — git's own
-documented form is a lowercase `AUTHORIZATION: bearer`. Header names already compare
+`schemeToken` carries the scheme it accepts (`Bearer`); the three `basic` methods imply scheme
+`Basic`. `basicUsername` and `basicPassword` require a `:` in the decoded payload; one without a
+colon is not of their shape, and `basicWhole` is what covers it — a client that sends the
+credential as the entire payload. Schemes compare case-insensitively, because clients disagree —
+git's own documented form is a lowercase `AUTHORIZATION: bearer`. Header names already compare
 case-insensitively. A header sent more than once is parsed per value, and every value whose
 component equals the placeholder is rewritten; the others are forwarded untouched.
 
 Adding a method is how a new presentation is supported. Adding a heuristic to an existing one is
 not.
+
+### Rejected: matching the encoded form
+
+Declaring that a placeholder may appear base64-encoded, and searching the header value for that
+encoded form rather than decoding and comparing a component.
+
+Base64 encodes three bytes to four characters, so a substring's encoding depends on its offset in
+the payload — `len(username) + 1` modulo 3 — giving three forms whose leading and trailing
+characters carry bits of the neighbouring plaintext. Matching without decoding is therefore three
+needles compared against their interiors: substring matching with fuzzy boundaries, which is what
+this document exists to remove.
+
+A literal match could not drive a literal replacement in any case. A credential and its placeholder
+differ in length, so replacing inside the payload shifts every byte after it, and decode-replace-
+re-encode is unavoidable. The search could only ever be the detection half, leaving detection and
+substitution to reach the value through different parses — the drift this document forbids.
+
+What it reaches for is already held: naming the parse is what puts the encoding in the vocabulary,
+where an operator reads it in the policy. `_basic_payload` is wrong because it is undeclared, not
+because it decodes.
 
 ### What does not change
 
@@ -274,6 +297,9 @@ change.
   `agentplane-credential:<name>` by construction and disappear from the spec, which makes
   disagreement unrepresentable rather than merely detectable. Against: the sandbox's environment
   must carry the same string, and a derived one is harder to grep for.
+- **Whether a placeholder must ever be found base64-encoded outside a `Basic` credential** — in a
+  JSON body, a query parameter, another envelope. That is a different requirement from any method
+  here, and no exact one satisfies it.
 - **Whether an intercepted gRPC request reaches `evaluate` at all**, which decides whether the
   BuildBuddy key is a matching question or a transport one.
 
