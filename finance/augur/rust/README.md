@@ -198,13 +198,27 @@ Still missing before replacement is plausible:
 - broader liquidity policy;
 - complete selected-rollout causal trace parity for those domains.
 
+## Layout
+
+`engine.rs` is the orchestrator: the rollout month loop, the public entry points, and the
+shared per-rollout state. Each policy family it drives lives in `engine/` beside it —
+`validation`, `property`, `obligations`, `taxes`, `securities`, `target_allocation`,
+`private_equity`, `tlh`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
+the shared state through `use super::*`, and expose to the root only what it calls;
+anything a module uses alone stays private to it, which the single 7.5k-line file could
+not express.
+
+The Rust/JAX differential harness and its suites live in `differential/`, one suite per
+policy family. `benchmark_fixture.py` stays here: it generates the shared feature-rich
+scenario for the benchmark drivers as well as for that harness.
+
 ## Targets
 
 ```text
 //finance/augur/rust:simulator_cli
 //finance/augur/rust:simulator_ext
 //finance/augur/rust:simulator_test
-//finance/augur/rust:differential_test
+//finance/augur/rust/differential:all
 //finance/augur/rust:benchmark_fixture_bin
 //finance/augur/rust:benchmark_driver_bin
 //finance/augur/rust:jax_benchmark_driver_bin
