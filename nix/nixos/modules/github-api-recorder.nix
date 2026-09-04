@@ -13,10 +13,15 @@
 #
 # Two deliberate choices, both from failures during the investigation:
 #
-# - Every outbound connection is recorded, not just GitHub's address ranges. The
-#   cluster and this host resolve api.github.com into entirely different ranges
-#   (140.82.116.0/24 vs Azure 172.182.252.0/22), and a prefix filter that is
-#   slightly wrong records nothing while looking like a clean result.
+# - Every outbound connection to a public address is recorded, rather than only
+#   GitHub's ranges. The cluster and this host resolve api.github.com into
+#   entirely different ranges (140.82.116.0/24 vs Azure 172.182.252.0/22), and an
+#   allowlist that is slightly wrong records nothing while looking like a clean
+#   result. Private ranges are excluded, which is safe in the other direction: a
+#   wrong denylist only over-records. These hosts are Kubernetes nodes, where
+#   kubelet probes and pod-to-pod traffic would otherwise contribute on the order
+#   of ten records a second (wyrm2: 75 pods, 102 HTTP/TCP probes, 10.6
+#   connections/s by their configured periods).
 # - The log stays on the host. It is a complete record of every peer this machine
 #   dials, and `promtail-journal` ships the journal to Loki, so writing there would
 #   put that record in cluster storage.
@@ -51,11 +56,16 @@ in
       description = "Outbound TCP connection recorder (GitHub API attribution)";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
+      # -B line inside the wrapper: bpftrace's stdout is a pipe and then a file, so
+      # without line buffering records sit in libc's block buffer instead of
+      # reaching the log.
+      path = [
+        pkgs.bpftrace
+        pkgs.gnugrep
+      ];
       serviceConfig = {
         Type = "simple";
-        # -B line: bpftrace's stdout is a file here, so without line buffering
-        # records sit in libc's block buffer instead of reaching the log.
-        ExecStart = "${lib.getExe pkgs.bpftrace} -B line ${./github-api-recorder.bt}";
+        ExecStart = "${lib.getExe pkgs.bash} ${./github-api-recorder.sh} ${./github-api-recorder.bt}";
         Restart = "on-failure";
         RestartSec = 30;
         StandardOutput = "append:${logFile}";
