@@ -26,6 +26,7 @@ rust_library(
         "engine/tests.rs",
         "engine/tlh.rs",
         "engine/validation.rs",
+        "event_frames.rs",
         "fixture.rs",
         "ledger.rs",
         "lib.rs",

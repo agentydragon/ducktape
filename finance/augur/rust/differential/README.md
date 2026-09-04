@@ -26,6 +26,13 @@ that a malformed fixture is refused, say — parameterize over `BACKENDS` instea
 and nothing else. It asks for forensic output because the harness checks the balanced
 journal, which has no JAX counterpart.
 
+Rust emits the event frames already in Augur's column names and units (`event_frames.rs`),
+so `output_adapter.py` translates nothing — it checks that the frames and columns which
+arrived are the ones `sim/events.py` declares, and fails naming the frame when they are not.
+State channels still need projecting, because how JAX chooses to report state is a fact
+about JAX rather than about the units Rust holds it in; those projections are the
+canonicalizations below.
+
 ## What is one engine's alone
 
 `RustResult` carries the channels JAX has no equivalent for: the balanced journal, the TLH

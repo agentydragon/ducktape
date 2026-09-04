@@ -24,8 +24,8 @@ existing engine.
   journal and is suitable for 100,000-rollout workloads.
 
 `simulate_dense(...)` is the Python/JAX compatibility-output path: it retains
-every monthly state snapshot and every event record consumed by
-`output_adapter.py`, but deliberately omits Rust's additional balanced journal
+every monthly state snapshot and every event record behind the canonical
+frames, but deliberately omits Rust's additional balanced journal
 because Python/JAX has no matching output channel. `simulate(...)` remains the
 strictly larger forensic path with that journal, while
 `simulate_summaries(...)` retains only fixed-size terminal summaries. Dense
@@ -97,16 +97,15 @@ tax-settlement, and issuer-attributed bond cashflow/accretion records.
 Monthly snapshots also retain taxpayer capital-gain state and each TLH policy's
 cumulative harvested-loss ledger; compact terminal summaries preserve the TLH
 ledger because it is future adjusted-basis state rather than explanatory trace.
-`output_adapter.py` lifts integer-native Rust transfer, lot-disposition,
-obligation-accrual, obligation-settlement, and rollout-failure rows into the
-same canonical `EventLog` frame schemas exposed by Python/JAX. It also
-normalizes the currently supported property-purchase, mortgage-origination,
-mortgage-payment, rented-fraction, capital-improvement, and property-sale
-frames, primary-residence assignment frames, year-end tax accrual/breakdown
-and tax-liability settlement frames, plus private-equity protocol and
-opportunity frames, including exact frame dtypes and cause identities. The
-adapter is an explanatory-output boundary only; snapshots remain authoritative
-state and events are not replayed to reconstruct them.
+`event_frames.rs` emits every canonical `EventLog` frame directly, in Augur's
+own column names and units: `Money` becomes a `_quanta` column, a rate in parts
+per billion becomes the fraction Augur reports, and a `Quantity` divides by its
+lot's scale. The knowledge of those units therefore lives beside the engine that
+defines them, and a field renamed here fails the Rust build rather than turning
+up later as a missing key in a Python decoder. `output_adapter.py` only checks
+an arriving document frame-for-frame and column-for-column against the schemas
+in `sim/events.py`. Event frames are an explanatory-output boundary; snapshots
+remain authoritative state and events are not replayed to reconstruct them.
 
 The strict fixture stores monetary series (security prices, distributions, and
 home values) as currency quanta. Inflation and rent index levels instead use a

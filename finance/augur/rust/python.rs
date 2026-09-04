@@ -13,6 +13,7 @@ use augur_rust_simulator::engine::{
     ValidatedFixture, simulate_dense_validated, simulate_product_metrics_validated,
     simulate_summaries_validated, simulate_validated,
 };
+use augur_rust_simulator::event_frames::ForensicDocument;
 use augur_rust_simulator::fixture::Fixture;
 use augur_rust_simulator::product::BASE_METRIC_NAMES;
 
@@ -79,7 +80,7 @@ fn simulate_dense_json(fixture_json: &str) -> PyResult<String> {
     serde_json::to_string(&output).map_err(to_py_err)
 }
 
-/// Run every rollout retaining dense state, compatibility events, and the balanced journal.
+/// Run every rollout retaining dense state, the balanced journal, and the event frames.
 ///
 /// The journal is the double-entry invariant made checkable: every entry's signed postings
 /// sum to zero. Python/JAX has no matching channel, which is why `simulate_dense_json`
@@ -94,7 +95,7 @@ fn simulate_forensic_json(fixture_json: &str) -> PyResult<String> {
         })
     })
     .map_err(to_py_err)?;
-    serde_json::to_string(&output).map_err(to_py_err)
+    serde_json::to_string(&ForensicDocument::new(&output)).map_err(to_py_err)
 }
 
 /// Run every rollout retaining only fixed-size terminal summaries.

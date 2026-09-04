@@ -6,6 +6,7 @@
 
 pub mod allocation;
 pub mod engine;
+pub mod event_frames;
 pub mod fixture;
 pub mod ledger;
 pub mod money;
@@ -17,5 +18,6 @@ pub use engine::{
     simulate_product_metrics, simulate_product_metrics_validated, simulate_summaries,
     simulate_summaries_validated, simulate_validated,
 };
+pub use event_frames::{EventFrames, ForensicDocument};
 pub use fixture::{Fixture, PopulationOutput, SimulationOutput};
 pub use product::{BASE_METRIC_NAMES, ProductMetricSeries};
