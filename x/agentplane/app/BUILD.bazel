@@ -429,3 +429,18 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        ":api",
+        ":bridge",
+        ":decisions",
+        ":egress",
+        ":inventory",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+    ],
+)

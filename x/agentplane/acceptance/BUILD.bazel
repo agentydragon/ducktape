@@ -2,20 +2,17 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
+# gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
+
 py_library(
     name = "agent",
     srcs = ["agent.py"],
-    deps = [":client"],
-)
-
-py_library(
-    name = "client",
-    srcs = ["client.py"],
     deps = [
-        "//x/agentplane/app:decisions",
-        "//x/agentplane/app:egress",
-        "//x/agentplane/app:inventory",
-        "@pypi//httpx",
+        "//x/agentplane/app:api",
+        "//x/agentplane/app:client",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
     ],
 )
 
@@ -24,7 +21,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":client",
+        "//x/agentplane/app:api",
+        "//x/agentplane/app:client",
         "//x/agentplane/app:inventory",
         "@pypi//pytest",
         "@pypi//tenacity",
@@ -45,11 +43,13 @@ py_test(
     ],
     deps = [
         ":agent",
-        ":client",
         ":conftest",
         "//:conftest",
+        "//x/agentplane/app:api",
+        "//x/agentplane/app:client",
         "//x/agentplane/app:decisions",
         "//x/agentplane/app:inventory",
+        "@pypi//pydantic",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],

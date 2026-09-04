@@ -1,9 +1,16 @@
 """What a sandbox may reach, checked against a deployed Agentplane by running real agents in it.
 
-Each scenario asks a harness to make a request and then reads the proxy's decision ring through the
-app. The ring is what is asserted on because it is the system's own record of what happened: an
-agent's account of its own tool call is prose, and prose saying "I fetched it" proves nothing about
-which credential went on the wire or whether the request was admitted.
+A scenario states a goal and asks the agent to end with a JSON report, rather than dictating a
+command and grepping prose: the agent chooses how, which is the behaviour worth testing, and the
+answer stays machine-checkable. Every claim in that report is then cross-checked against the proxy's
+decision ring, which is the system's own record of what it served -- an agent saying "I fetched it"
+is equally consistent with a request the proxy admitted, one that never reached the proxy, and a
+model that ran nothing.
+
+The reported username is the load-bearing assertion. `agentydragon-agent` can only come back if the
+sandbox sent a placeholder it cannot resolve, the sidecar carried the Pod's token, the proxy
+admitted the request and swapped the real PAT in, and GitHub authenticated it. No part of that can
+be faked by a model being agreeable.
 
 E3's acceptance in x/agentplane/plans/egress_proxy.md is what these encode. They exist because the
 last gap of this kind -- a runner that dropped the proxy variables, so every call bypassed the proxy
@@ -12,34 +19,73 @@ and hung, leaving an empty ring behind a green unit suite -- was caught by a per
 
 from __future__ import annotations
 
+import textwrap
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 import pytest_bazel
+from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from x.agentplane.acceptance.agent import Agent
-from x.agentplane.acceptance.client import Client
+from x.agentplane.app.api import Provider
+from x.agentplane.app.client import Client
 from x.agentplane.app.decisions import Decision, Outcome
 from x.agentplane.app.inventory import SandboxView
 
-# The policy staging seeds: GitHub's API and HTTPS git for public repositories, with a PAT the proxy
-# substitutes (cluster/k8s/agentplane-staging/egress/egresspolicy-github-public.yaml).
+# Staging's seeded policy and the credential it substitutes
+# (cluster/k8s/agentplane-staging/egress/egresspolicy-github-public.yaml).
 GITHUB_PUBLIC = "github-public"
 GITHUB_HOST = "github.com"
+GITHUB_API_HOST = "api.github.com"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
+# What the sandbox sends in Authorization; the proxy swaps the PAT in. Nothing puts it in the
+# sandbox's environment yet, so the prompt has to name it -- that is what the agent-facing API in
+# x/agentplane/plans/task_dag.md is for.
+PLACEHOLDER = "agentplane-credential:github-pat"
+# Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
+BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
 
-CLAUDE = "PROVIDER_CLAUDE"
-HAIKU = "anthropic-api/ant-messages/claude-haiku-4-5-20251001"
-
-# The proxy records a decision as it serves it; the app reads the ring over a separate hop, and the
+# The proxy records a decision as it serves it; the app reads the ring over a separate hop, and a
 # binding's Active condition is written by the proxy's informer rather than by the grant itself.
 DECISION_SECONDS = 30.0
 BINDING_SECONDS = 60.0
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
+
+PROBE = textwrap.dedent(f"""\
+    You are inside a sandbox whose outbound network goes through a proxy. Find out what it lets you
+    do, then report. Do all three steps, and do not stop early if one fails -- a failure is a
+    result.
+
+    1. Fetch the refs of the public repository {PUBLIC_REPO} (git ls-remote is enough; do not clone).
+    2. Ask the GitHub API which account you are authenticated as: GET https://{GITHUB_API_HOST}/user
+       with the header `Authorization: Bearer {PLACEHOLDER}`. That string is a placeholder, not a
+       secret, and it is the whole credential you have; send it exactly as written.
+    3. Try to fetch https://{UNLISTED_HOST}/ and see whether you are allowed to.
+
+    End your final message with exactly one JSON object and nothing after it:
+
+    {{"refs_ok": true or false,
+      "username": "the login the API reported, or null",
+      "unlisted_refused": true if step 3 was refused or failed, false if it succeeded}}
+    """)
+
+
+class Probe(BaseModel):
+    """The report the probe prompt asks for."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    refs_ok: bool = Field(description="Whether the public repository's refs came back.")
+    username: str | None = Field(description="The login GitHub reported for the substituted credential.")
+    unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
+
+
+def _verbatim(command: str) -> str:
+    return f"Run exactly this command and report its output verbatim: {command}"
 
 
 async def _decision_for(client: Client, sandbox: str, host: str, *, after: datetime | None = None) -> Decision:
@@ -69,55 +115,40 @@ async def _active(client: Client, sandbox: str, binding: str) -> None:
             raise AssertionError(f"{binding} is not among the bindings naming {sandbox}")
 
 
-async def test_a_host_its_policy_names_is_reached_through_the_proxy(client: Client, sandbox: Sandboxes) -> None:
-    """The E3 acceptance: a public-repo git call from inside a sandbox succeeds, and the proxy is what
-    served it. A sandbox dialling the internet directly hangs instead of being admitted, so this
-    fails rather than passing quietly."""
-    view = await sandbox("accept-allow", policies=[GITHUB_PUBLIC])
-    agent = await Agent.open(client, sandbox=view.name, provider=CLAUDE, model=HAIKU)
-    turn = await agent.run(f"Run exactly this command and report its output verbatim: git ls-remote {PUBLIC_REPO} HEAD")
+async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
+    client: Client, sandbox: Sandboxes, provider: Provider, model: str
+) -> None:
+    """E3's acceptance, in one turn: the agent reaches GitHub, is authenticated as the bot without
+    ever holding its credential, and is refused everywhere the policy does not name -- and the proxy
+    agrees on every count."""
+    view = await sandbox(f"accept-probe-{provider}", policies=[GITHUB_PUBLIC])
+    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    turn = await agent.run(PROBE)
+    probe = turn.report(Probe)
 
-    decision = await _decision_for(client, view.name, GITHUB_HOST)
-    assert decision.outcome is Outcome.ALLOW, f"{decision!r}\n{turn.transcript}"
-    assert decision.policy == GITHUB_PUBLIC, f"{decision!r}"
-    assert any("HEAD" in output for output in turn.tool_outputs), (
-        f"the proxy admitted the call but the agent saw no refs:\n{turn.transcript}"
+    assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
+    assert probe.username == BOT_LOGIN, (
+        f"GitHub reported {probe.username!r}, so the proxy did not substitute the PAT:\n{turn.transcript}"
     )
+    assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
+
+    admitted = await _decision_for(client, view.name, GITHUB_API_HOST)
+    assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}"
+    assert admitted.policy == GITHUB_PUBLIC, f"{admitted!r}"
+    assert admitted.substituted, f"the API call was admitted with no credential substituted: {admitted!r}"
+
+    refused = await _decision_for(client, view.name, UNLISTED_HOST)
+    assert refused.outcome is Outcome.DENY, f"{refused!r}"
+    assert refused.reason == "no-rule", f"{refused!r}"
 
 
-async def test_a_host_no_policy_names_is_refused(client: Client, sandbox: Sandboxes) -> None:
-    """Fail closed, and fail fast: the refusal is the proxy's answer, so it arrives rather than the
-    request timing out somewhere with nothing recorded."""
-    view = await sandbox("accept-deny", policies=[GITHUB_PUBLIC])
-    agent = await Agent.open(client, sandbox=view.name, provider=CLAUDE, model=HAIKU)
-    turn = await agent.run(
-        "Run exactly this command and report its output verbatim: "
-        f"curl -sS -o /dev/null -w '%{{http_code}}' https://{UNLISTED_HOST}"
-    )
-
-    decision = await _decision_for(client, view.name, UNLISTED_HOST)
-    assert decision.outcome is Outcome.DENY, f"{decision!r}\n{turn.transcript}"
-    assert decision.reason == "no-rule", f"{decision!r}"
-
-
-async def test_the_substituted_credential_never_enters_the_sandbox(client: Client, sandbox: Sandboxes) -> None:
-    """The point of the design: the sandbox reaches GitHub with a credential it cannot itself read."""
-    view = await sandbox("accept-secret", policies=[GITHUB_PUBLIC])
-    agent = await Agent.open(client, sandbox=view.name, provider=CLAUDE, model=HAIKU)
-    turn = await agent.run(
-        "Run exactly this command and report its output verbatim: env | grep -Ei 'github|_pat_|ghp_' ; echo \"rc=$?\""
-    )
-
-    assert not any("ghp_" in output or "github_pat_" in output for output in turn.tool_outputs), (
-        f"a GitHub credential is readable inside the sandbox:\n{turn.transcript}"
-    )
-
-
-async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(client: Client, sandbox: Sandboxes) -> None:
+async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
+    client: Client, sandbox: Sandboxes, provider: Provider, model: str
+) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
-    view = await sandbox("accept-bind")
-    agent = await Agent.open(client, sandbox=view.name, provider=CLAUDE, model=HAIKU)
-    command = f"Run exactly this command and report its output verbatim: git ls-remote {PUBLIC_REPO} HEAD"
+    view = await sandbox(f"accept-bind-{provider}")
+    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    command = _verbatim(f"git ls-remote {PUBLIC_REPO} HEAD")
 
     await agent.run(command)
     refused = await _decision_for(client, view.name, GITHUB_HOST)
