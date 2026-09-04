@@ -6,6 +6,12 @@
  * calling process rather than a softirq context. Inbound connections enter
  * TCP_SYN_RECV instead and are not recorded.
  *
+ * UDP is recorded too, once per peer per process rather than per datagram: a
+ * TCP-only probe cannot see HTTP/3, and a client speaking QUIC would look exactly
+ * like a client sending nothing -- quota draining while this log stays silent.
+ * That is the one remaining way for local traffic to be invisible to every
+ * instrument here.
+ *
  * Numeric literals rather than kernel headers: these tracepoint fields resolve
  * from BTF, and including <net/sock.h> would tie the script to one kernel's
  * layout. IPPROTO_TCP = 6, TCP_SYN_SENT = 2, AF_INET = 2, AF_INET6 = 10.
@@ -25,4 +31,22 @@ tracepoint:sock:inet_sock_set_state
 	printf("%s pid=%d ppid=%d uid=%d comm=\"%s\" daddr=%s dport=%d\n",
 	    strftime("%Y-%m-%dT%H:%M:%S%z", nsecs), pid, curtask->real_parent->pid,
 	    uid, comm, ntop(args->family, args->daddr_v6), args->dport);
+}
+
+/* QUIC/HTTP-3. udp_sendmsg has no connection to hook, so dedupe on
+ * (pid, peer) and emit the first datagram of each pair -- one line per
+ * conversation rather than per packet, which is what a connection record means
+ * for TCP anyway. @seen is never cleared: a long-lived flow should appear once,
+ * and the map is bounded by distinct pid/peer pairs. */
+kprobe:udp_sendmsg
+{
+	$sk = (struct sock *)arg0;
+	$dport = (($sk->__sk_common.skc_dport >> 8) | (($sk->__sk_common.skc_dport & 0xff) << 8));
+	$daddr = $sk->__sk_common.skc_daddr;
+	if ($dport == 443 && $daddr != 0 && !@seen[pid, $daddr]) {
+		@seen[pid, $daddr] = 1;
+		printf("%s pid=%d ppid=%d uid=%d comm=\"%s\" daddr=%s dport=%d proto=udp\n",
+		    strftime("%Y-%m-%dT%H:%M:%S%z", nsecs), pid, curtask->real_parent->pid,
+		    uid, comm, ntop(2, $daddr), $dport);
+	}
 }
