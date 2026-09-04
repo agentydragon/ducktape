@@ -13,7 +13,7 @@ from typing import Any
 
 from python.runfiles import runfiles
 
-from finance.augur.rust.benchmark_fixture import write_fixture
+from finance.augur.rust.benchmark.fixture import write_fixture
 
 
 def _binary() -> Path:

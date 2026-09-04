@@ -208,8 +208,9 @@ anything a module uses alone stays private to it, which the single 7.5k-line fil
 not express.
 
 The Rust/JAX differential harness and its suites live in `differential/`, one suite per
-policy family. `benchmark_fixture.py` stays here: it generates the shared feature-rich
-scenario for the benchmark drivers as well as for that harness.
+policy family; the throughput benchmark and its drivers live in `benchmark/`.
+`benchmark/fixture.py` serves both: it generates the feature-rich scenario the drivers
+measure and the harness compares the engines on.
 
 ## Targets
 
@@ -218,13 +219,14 @@ scenario for the benchmark drivers as well as for that harness.
 //finance/augur/rust:simulator_ext
 //finance/augur/rust:simulator_test
 //finance/augur/rust/differential:all
-//finance/augur/rust:benchmark_fixture_bin
-//finance/augur/rust:benchmark_driver_bin
-//finance/augur/rust:jax_benchmark_driver_bin
+//finance/augur/rust/benchmark:all
+//finance/augur/rust/benchmark:fixture_bin
+//finance/augur/rust/benchmark:driver_bin
+//finance/augur/rust/benchmark:jax_driver_bin
 ```
 
 `simulator_cli FIXTURE.json OUTPUT.json` retains full forensic traces. The Rust
 benchmark driver's default `--output-mode dense` retains monthly state and
 compatibility events; `--output-mode compact` selects the older terminal-summary
-throughput workload. See [BENCHMARK.md](BENCHMARK.md) for the measured baselines
-and their output-contract caveats.
+throughput workload. See [benchmark/README.md](benchmark/README.md) for the
+measured baselines and their output-contract caveats.

@@ -29,7 +29,7 @@ py_library(
     data = ["//finance/augur/rust:simulator_cli"],
     deps = [
         ":fixture_adapter",
-        "//finance/augur/rust:benchmark_fixture",
+        "//finance/augur/rust/benchmark:fixture",
         "//finance/augur/sim:runtime",
         "//finance/augur/sim/compiler:plan",
         "@pypi//polars",
@@ -62,9 +62,9 @@ py_test(
 )
 
 py_test(
-    name = "benchmark_test",
+    name = "feature_rich_test",
     size = "medium",
-    srcs = ["benchmark_test.py"],
+    srcs = ["feature_rich_test.py"],
     deps = [
         ":backend",
         ":fixtures",

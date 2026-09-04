@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import polars as pl
 
-from finance.augur.rust.benchmark_fixture import write_fixture
+from finance.augur.rust.benchmark.fixture import write_fixture
 from finance.augur.rust.differential.fixture_adapter import build_legacy_fixture
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.runtime import load_jurisdictions_for

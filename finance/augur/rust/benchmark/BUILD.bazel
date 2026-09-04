@@ -1,0 +1,64 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "simulator_bench",
+    srcs = ["main.rs"],
+    edition = "2024",
+    deps = [
+        "//finance/augur/rust:simulator",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+py_binary(
+    name = "fixture_bin",
+    imports = ["../../../.."],
+    main_module = "finance.augur.rust.benchmark.fixture",
+    deps = [":fixture"],
+)
+
+py_binary(
+    name = "driver_bin",
+    data = [":simulator_bench"],
+    imports = ["../../../.."],
+    main_module = "finance.augur.rust.benchmark.driver",
+    deps = [":driver"],
+)
+
+py_binary(
+    name = "jax_driver_bin",
+    imports = ["../../../.."],
+    main_module = "finance.augur.rust.benchmark.jax_driver",
+    deps = [":jax_driver"],
+)
+
+py_library(
+    name = "driver",
+    srcs = ["driver.py"],
+    deps = [
+        ":fixture",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "fixture",
+    srcs = ["fixture.py"],
+)
+
+py_library(
+    name = "jax_driver",
+    srcs = ["jax_driver.py"],
+    deps = [
+        ":fixture",
+        "//finance/augur/rust/differential:fixture_adapter",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:simulate",
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
