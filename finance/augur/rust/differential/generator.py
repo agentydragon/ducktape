@@ -14,7 +14,7 @@ seeded from `value_seed` and moves only what the compiled program reads at run t
 value seeds over one shape therefore pay one XLA compile between them, and a new shape pays a
 fresh one.
 
-Tax law is drawn no longer. A profile names jurisdiction ids and the compiler resolves the
+Tax law is not drawn at all. A profile names jurisdiction ids and the compiler resolves the
 brackets, deduction, §1250 rate and capital-loss cap from the deployment's own records, so
 they are constants of the id set — which is what stops a rule reaching one engine only.
 
