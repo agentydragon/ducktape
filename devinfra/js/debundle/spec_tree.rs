@@ -32,7 +32,11 @@ pub struct CompileSpecTreeOptions {
 struct AuthoringConfig {
     main_chunk_id: String,
     inputs: AuthoringInputs,
-    browser_harness: BrowserHarnessPolicy,
+    /// Optional: only meaningful for a browser-delivered chunk. Omit for a
+    /// target with no HTML entry point (e.g. a Node CLI bundle) to skip the
+    /// browser-harness emit step entirely.
+    #[serde(default)]
+    browser_harness: Option<BrowserHarnessPolicy>,
     /// Per-chunk `unassigned_mode` policy. Required: every chunk this
     /// authoring tree materialises must appear here. The downstream
     /// pipeline validator enforces the same invariant on the compiled
@@ -149,7 +153,6 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     let source_root = options.source_root.as_deref();
     let input_root = source_path(source_root, config.inputs.root);
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
-    let asset_summary_path = source_path(source_root, config.browser_harness.asset_summary_path);
     let layout = OutputLayout::new(options.out_root.clone());
     let module_sources = load_main_chunk_modules(&options.modules_root, &config.main_chunk_id)?;
     let binding_patch_members = load_binding_patch_members(&options.modules_root)?
@@ -183,10 +186,12 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             target_dir: String::new(),
         },
         write_js_tree: None,
-        emit_browser_harness: Some(EmitBrowserHarnessConfig {
-            asset_summary_path,
-            out_dir: layout.output_root,
-            snapshot_root: input_root,
+        emit_browser_harness: config.browser_harness.map(|browser_harness| {
+            EmitBrowserHarnessConfig {
+                asset_summary_path: source_path(source_root, browser_harness.asset_summary_path),
+                out_dir: layout.output_root,
+                snapshot_root: input_root,
+            }
         }),
     })
 }
@@ -671,6 +676,39 @@ unassigned_mode:
             spec.emit_browser_harness.unwrap().asset_summary_path,
             Path::new("/execroot/extracted/asset-summary.json")
         );
+    }
+
+    #[test]
+    fn omits_browser_harness_when_not_configured() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let config = root.join("spec_config.yaml");
+        let modules = root.join("modules");
+        let vendor_marks = root.join("sources/vendor/vendor_marks.yaml");
+        write_file(
+            &config,
+            r#"main_chunk_id: static/main
+inputs:
+  root: snapshots/test
+  js_list_path: extracted/js-files.txt
+unassigned_mode:
+  static/main:
+    kind: inline_in_entry
+"#,
+        );
+        fs::create_dir_all(&modules).unwrap();
+        write_file(&vendor_marks, "vendor_marks: []\n");
+
+        let spec = compile_spec_tree(&CompileSpecTreeOptions {
+            config_path: config,
+            modules_root: modules,
+            vendor_marks_path: vendor_marks,
+            source_root: None,
+            out_root: PathBuf::from("out/override"),
+        })
+        .unwrap();
+
+        assert!(spec.emit_browser_harness.is_none());
     }
 
     #[test]
