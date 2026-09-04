@@ -11,8 +11,10 @@ py_library(
         "//x/agentplane/app:api",
         "//x/agentplane/app:client",
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 

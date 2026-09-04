@@ -14,10 +14,13 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from typing import TypeVar
 from uuid import uuid4
 
+import httpx
 from pydantic import BaseModel
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from x.agentplane.app.api import Provider
 from x.agentplane.app.client import PROTO_PROVIDERS, Client
@@ -31,6 +34,16 @@ from x.agentplane.runner import protocol_pb2 as pb
 TURN_SECONDS = 300.0
 # The runner's writable volume; the image's workspace is not writable by the runner's user.
 WORKING_DIRECTORY = "/state/work"
+# How long a Running sandbox may still be short of a listening runner. Generous because the gap is
+# a container start, not a fixed cost, and a scenario that waits a few seconds here is cheaper than
+# one that fails a whole run.
+RUNNER_ANSWERS_SECONDS = 120.0
+
+
+def _runner_not_answering(error: BaseException) -> bool:
+    """The app's `503`, and only that: it means the runner has not answered yet. Its `409`s -- an
+    unreachable sandbox, a refused Open -- are verdicts, not delays, and must fail immediately."""
+    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
 
 
 Reported = TypeVar("Reported", bound=BaseModel)
@@ -86,13 +99,34 @@ class Agent:
 
     @classmethod
     async def open(cls, client: Client, *, sandbox: str, provider: Provider, model: str) -> Agent:
+        """Open a session, waiting out a runner that is up but not yet listening.
+
+        A sandbox reports Running once its Pod has an address, and an address is not a listening
+        runner: the app answers `503` for exactly that gap. Nothing read-only reaches the runner, so
+        the open is the only thing that can be waited on -- which is still the condition and not a
+        delay, and any other status fails on the first attempt as it should.
+        """
         spec = pb.SessionSpec(
             provider=PROTO_PROVIDERS[provider], cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low"
         )
-        attachment = await client.open_session(sandbox, f"acceptance-{uuid4().hex[:8]}", spec)
-        return cls(
-            client, sandbox=sandbox, session_id=attachment.attached.session_id, sequence=attachment.last_sequence
-        )
+        # One id across attempts: a 503 is raised before the runner is reached, so no attempt can
+        # have left a session behind under a name the next one would not reuse.
+        session_id = f"acceptance-{uuid4().hex[:8]}"
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(RUNNER_ANSWERS_SECONDS),
+            wait=wait_fixed(2),
+            retry=retry_if_exception(_runner_not_answering),
+            reraise=True,
+        ):
+            with attempt:
+                attachment = await client.open_session(sandbox, session_id, spec)
+                return cls(
+                    client,
+                    sandbox=sandbox,
+                    session_id=attachment.attached.session_id,
+                    sequence=attachment.last_sequence,
+                )
+        raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
     async def run(self, prompt: str) -> Turn:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading

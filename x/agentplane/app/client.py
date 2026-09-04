@@ -155,5 +155,9 @@ def _event(payload: str) -> pb.Event:
 
 
 def is_running(view: SandboxView) -> bool:
-    """Whether the sandbox has a Pod with an address: what a session needs to be opened on it."""
+    """Whether the sandbox has a Pod with an address.
+
+    Necessary for a session and not sufficient: the runner in that Pod may not be listening yet, and
+    the app answers `503` until it is.
+    """
     return view.state is ProvisioningState.RUNNING and view.pod is not None and view.pod.ip is not None
