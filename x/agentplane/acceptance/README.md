@@ -3,7 +3,8 @@
 Scenarios run against a **deployed** Agentplane: the suite creates real sandboxes through the app's
 HTTP API, opens sessions on the real harnesses, and asserts on what the egress proxy recorded. It is
 not a unit test with a live backend — it is the check that the deployed system does what
-`x/agentplane/plans/egress_proxy.md` says it does.
+`x/agentplane/plans/egress_proxy.md` says it does, and that a session's standing instructions reach
+the model that serves it.
 
 Every scenario runs on **both harnesses**. The runner protocol is the same for Claude and Codex, so
 one test body covers both: the `provider` fixture is parametrised over `Provider`, and `model` asks
@@ -15,7 +16,7 @@ Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, 
 kubeconfig and a route to the cluster.
 
 ```bash
-bazelisk test //x/agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s
+bazelisk test //x/agentplane/acceptance:all --test_output=streamed --test_arg=-s
 ```
 
 By default it tests `https://agentplane-staging.allegedly.works` and mints its own bearer token with
@@ -42,7 +43,7 @@ handed to it.
 ```bash
 # in a Haku sandbox (sandbox__provision_sandbox, then sandbox__exec_sandbox)
 git clone --depth 1 --branch <branch> https://github.com/agentydragon/ducktape.git
-cd ducktape && bazel test //x/agentplane/acceptance:test_egress \
+cd ducktape && bazel test //x/agentplane/acceptance:all \
   --remote_executor= --remote_cache= --bes_backend= --bes_results_url= \
   --spawn_strategy=local --genrule_strategy=local --config=nolint \
   --test_output=streamed --nocache_test_results
@@ -93,3 +94,8 @@ refusal reads as a failure rather than as an absence.
 This suite exists because the last gap of that shape — a runner that dropped the sandbox's proxy
 variables, so every call bypassed the proxy and hung with an empty ring — sat behind a fully green
 unit suite until someone drove the deployed app by hand.
+
+`test_instructions` is the one scenario that cannot follow the rule: no part of the system records
+that a system prompt arrived, so the model obeying the instruction is the only evidence there is.
+Its answer to that is a marker token no model emits on its own plus a control session, opened with
+no instructions on the same sandbox and given the same prompt, that must not produce it.

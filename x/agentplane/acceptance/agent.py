@@ -98,16 +98,25 @@ class Agent:
         self._sequence = sequence
 
     @classmethod
-    async def open(cls, client: Client, *, sandbox: str, provider: Provider, model: str) -> Agent:
+    async def open(
+        cls, client: Client, *, sandbox: str, provider: Provider, model: str, instructions: str = ""
+    ) -> Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
         A sandbox reports Running once its Pod has an address, and an address is not a listening
         runner: the app answers `503` for exactly that gap. Nothing read-only reaches the runner, so
         the open is the only thing that can be waited on -- which is still the condition and not a
         delay, and any other status fails on the first attempt as it should.
+
+        `instructions` are the session's standing orders, in front of the model on every turn; empty
+        is the proto's own default and opens the session the runner would open without the field.
         """
         spec = pb.SessionSpec(
-            provider=PROTO_PROVIDERS[provider], cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low"
+            provider=PROTO_PROVIDERS[provider],
+            cwd=WORKING_DIRECTORY,
+            model=model,
+            reasoning_effort="low",
+            instructions=instructions,
         )
         # One id across attempts: a 503 is raised before the runner is reached, so no attempt can
         # have left a session behind under a name the next one would not reuse.

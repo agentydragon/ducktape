@@ -67,3 +67,29 @@ py_test(
         "@pypi//tenacity",
     ],
 )
+
+# Live, for the same reasons as `test_egress` above and with the same flags: one sandbox and two
+# turns per harness, on the real model. `eternal` because the bound is the suite's own -- a Pod
+# scheduled and pulled, then turns that may each take TURN_SECONDS -- not the warm run's minutes.
+py_test(
+    name = "test_instructions",
+    timeout = "eternal",
+    srcs = ["test_instructions.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/app:api",
+        "//x/agentplane/app:client",
+        "//x/agentplane/app:inventory",
+        "@pypi//pytest_bazel",
+    ],
+)
