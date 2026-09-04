@@ -46,8 +46,9 @@ two turns.
 `task_notification {status: "stopped"}`. The `background_tasks` control request moves in-flight
 _foreground_ work to the background (all of it, or the one task whose `tool_use_id` is given), the
 control equivalent of Ctrl+B; each blocking tool call returns a "running in the background"
-tool_result at once and the turn continues (read; confirmed only as a success with nothing
-foreground to move). Declaring `perTaskStopAffordance` at `initialize` tells the CLI the driver
+tool_result at once and the turn continues (read). The reply is `{backgrounded: <result>}` for the
+single-task form and `{}` for the all-tasks form (read); confirmed only as a success for the
+all-tasks form, with nothing foreground to move. Declaring `perTaskStopAffordance` at `initialize` tells the CLI the driver
 renders a per-task stop, which spares running background tasks from a session interrupt; absent, an
 interrupt kills them (read).
 
