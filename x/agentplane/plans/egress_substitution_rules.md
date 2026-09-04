@@ -54,8 +54,8 @@ treats it as a free string private to the rule that mentions it.
    whose shape admits others later; none are invented here.
 4. **Several targets per credential.** One credential is presented in more than one exact location
    — a bearer token to an API and a `Basic` password to git — and both are declared.
-5. **Placeholder identity is constrained and namespace-unique**, because detection is
-   namespace-global.
+5. **The placeholder is derived from the credential's name**, so it is namespace-unique by
+   construction — which detection, being namespace-global, requires.
 6. **Fail closed is preserved.** A presented placeholder that no rule bound to the subject resolves
    still refuses, with `placeholder-unresolved`.
 7. **A target is what the sandbox is told**, so the agent-facing view (<../egress/agent_view.py>)
@@ -85,8 +85,9 @@ keep the placeholder inside the fence.
 
 ## Proposed shape
 
-A **credential** is a named object: a value source, the placeholder that stands for it, and the
-targets it may be substituted into. A rule references one by name.
+A **credential** is a named object: a value source and the targets it may be substituted into. A
+rule references one by name. The placeholder is not written anywhere — it is
+`agentplane-credential-<name>`, derived from the object's own name (below).
 
 ```yaml
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -99,7 +100,6 @@ spec:
     secretRef:
       name: agentplane-github-pat
       key: token
-  placeholder: agentplane-credential:github-pat
   targets:
     - header: Authorization
       method: schemeToken
@@ -263,10 +263,28 @@ The cost is a third kind in a design that deliberately kept rules inline (<../do
 That decision was about rules, whose N:1 relation to a policy makes the policy the unit of reuse;
 a credential is referenced by many rules across many policies and has no such relation.
 
-With identity structural, a `pattern` on `placeholder` stops being load-bearing: under exact
-matching a short placeholder is no longer a splice hazard, only a chance of colliding with a real
-credential that happens to equal it. Whether the placeholder text should then be authored at all,
-or derived from the object's name, is open below.
+The name decides the text too: **derived, never authored.** The placeholder is
+`agentplane-credential-<name>` and the field disappears from the spec. An authored one can only
+restate the name or contradict it, and a `pattern` on the field was never going to deliver
+agreement between two objects anyway; deriving makes the disagreement unrepresentable rather than
+merely detectable, and leaves whatever wires a placeholder into a sandbox one function to call
+instead of a second copy of the string to keep in step. Nothing wires one today, so there is no
+existing text to migrate.
+
+Derived from the credential's name, not the Secret's: a Secret can be repointed under a credential,
+and two credentials may share one Secret with different targets or different halves of a `Basic`
+pair, which is exactly where their placeholders must differ.
+
+The separator is `-` and not `:`, which the field's one existing value used. Object names are
+DNS-1123, so a derived placeholder cannot contain `:` unless the separator puts one there — and a
+placeholder containing `:` cannot be a `basicUsername` component at all, because that component
+ends at the first colon. `agentplane-credential:github-pat` as a username sent by
+`https://<token>@github.com` parses as `agentplane-credential`, matches nothing, and is forwarded
+inert. A colon-free derivation is what makes every method in the table expressible.
+
+Nothing stores the derived string: it is a function of the name, so a `status.placeholder` would be
+a copy that can lie. Where a reader needs it — the agent-facing view, the app's egress page, the
+sandbox's own environment — it is computed at that point.
 
 ## Out of scope: anything but a header
 
@@ -308,10 +326,6 @@ change.
   its own `EgressCredential` is what buys uniqueness structurally, and it is the part that adds a
   CRD, RBAC and validator surface. An inline `credential` with a mandatory `name` keeps the object
   count and gets agreement only from a validating admission policy.
-- **Authored or derived placeholder text.** Once a credential has a name, the placeholder could be
-  `agentplane-credential:<name>` by construction and disappear from the spec, which makes
-  disagreement unrepresentable rather than merely detectable. Against: the sandbox's environment
-  must carry the same string, and a derived one is harder to grep for.
 - **Whether a placeholder must ever be found base64-encoded outside a `Basic` credential** — in a
   JSON body, a query parameter, another envelope. That is a different requirement from any method
   here, and no exact one satisfies it.

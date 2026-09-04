@@ -246,9 +246,9 @@ ones still open.
   failure is the practical win; and whether this surface versions separately from the operator API,
   since agents are long-lived and roll independently of the app.
 - **H declared substitution rules:** an `EgressPolicy` says which parse and which location a
-  credential is substituted into, and the placeholder equals a whole component of that parse — no
-  substring replace, no undeclared `Basic` fallback, and one shared parse behind both detection and
-  substitution. Acceptance: a policy declares each target it substitutes into; a placeholder that
+  credential is substituted into, and the placeholder — derived from the credential's name, never
+  authored — equals a whole component of that parse: no substring replace, no undeclared `Basic`
+  fallback, and one shared parse behind both detection and substitution. Acceptance: a policy declares each target it substitutes into; a placeholder that
   is a substring of a header value rather than a whole component is not substituted and not
   detected; a request presenting a granted placeholder at a declared target is substituted at every
   declared target it presents it in; one that presents a placeholder nothing bound to it resolves
