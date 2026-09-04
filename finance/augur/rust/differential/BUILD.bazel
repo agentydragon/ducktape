@@ -85,12 +85,10 @@ py_test(
     size = "medium",
     srcs = ["core_test.py"],
     deps = [
-        ":fixture_adapter",
+        ":backend",
         ":fixtures",
-        ":output_adapter",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/sim/testing:state_helpers",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

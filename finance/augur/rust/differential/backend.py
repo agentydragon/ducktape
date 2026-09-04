@@ -13,6 +13,7 @@ Rust result for them by name.
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -156,7 +157,9 @@ def _rust_rows(rust: dict[str, Any], channel: str) -> list[tuple[int, int, dict[
 def run_rust(fixture: dict[str, Any]) -> RustResult:
     """Run the fixture on the Rust engine, in-process through the extension module."""
 
-    rust = cast(dict[str, Any], json.loads(simulator.simulate_dense_json(json.dumps(fixture))))
+    # Forensic rather than dense: the harness wants the balanced journal, which is the
+    # double-entry invariant made checkable and has no JAX counterpart to compare against.
+    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(fixture))))
     return rust_result(rust, fixture)
 
 
@@ -449,7 +452,11 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
     )
 
 
-BACKENDS = (run_jax, run_rust)
+# What a suite parameterizes over when the property under test should hold for either
+# engine, rather than being a comparison between them.
+type Backend = Callable[[dict[str, Any]], SimulationResult]
+
+BACKENDS: tuple[Backend, ...] = (run_jax, run_rust)
 
 
 def assert_results_agree(expected: SimulationResult, actual: SimulationResult) -> None:
