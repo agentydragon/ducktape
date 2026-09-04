@@ -15,7 +15,7 @@ from types import TracebackType
 from typing import Any, Self
 
 import httpx
-from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
 from x.agentplane.app.api import EgressGrant, ModelCatalog, Provider
 from x.agentplane.app.bridge import NewSession
@@ -111,29 +111,44 @@ class Client:
     async def events(self, name: str, session_id: str, *, after: int, read_seconds: float) -> AsyncIterator[pb.Event]:
         """The session's events from `after`. Ends when the stream does; `read_seconds` bounds how
         long a single frame may take to arrive, so a wedged session fails a caller rather than
-        hanging it."""
+        hanging it.
+
+        Server-sent events, parsed as the format actually specifies: a frame is terminated by a
+        blank line, `data:` may repeat and is joined with newlines, and a comment line (`:`) is a
+        keepalive. A frame carrying no data resets the parser like any other, so a name never
+        leaks into the frame after it.
+        """
         timeout = httpx.Timeout(REQUEST_SECONDS, read=read_seconds)
         url = f"/sandboxes/{name}/sessions/{session_id}/events"
         async with self._http.stream(
             "GET", url, params={"after": after}, headers={"Accept": "text/event-stream"}, timeout=timeout
         ) as response:
             response.raise_for_status()
-            frame, payload = "message", None
+            kind, data = "message", []
             async for line in response.aiter_lines():
                 if line.startswith(":"):
                     continue
                 if line.startswith("event:"):
-                    frame = line.removeprefix("event:").strip()
+                    kind = line.removeprefix("event:").strip()
                 elif line.startswith("data:"):
-                    payload = line.removeprefix("data:").strip()
-                elif not line and payload is not None:
-                    if frame == "error":
-                        raise SessionStreamError(f"{name}/{session_id}: {payload}")
+                    data.append(line.removeprefix("data:").strip())
+                elif not line:
+                    frame, payload = kind, "\n".join(data)
+                    kind, data = "message", []
                     if frame == "end":
                         return
-                    if frame == "event":
-                        yield ParseDict(json.loads(payload), pb.Event())
-                    frame, payload = "message", None
+                    if frame == "error":
+                        raise SessionStreamError(f"{name}/{session_id}: {payload}")
+                    if frame == "event" and payload:
+                        yield _event(payload)
+
+
+def _event(payload: str) -> pb.Event:
+    """One `event` frame's data as the protocol's own message; a payload that is not one says so."""
+    try:
+        return ParseDict(json.loads(payload), pb.Event())
+    except (ValueError, ParseError) as error:
+        raise SessionStreamError(f"not an Event: {error}: {payload[:400]!r}") from error
 
 
 def is_running(view: SandboxView) -> bool:
