@@ -1,0 +1,86 @@
+# Drift detection for the metal root (cluster/terraform/main). That root is
+# applied from a workstation by `bazel run //cluster:bootstrap`; this CR only
+# ever plans it, so the operator learns about reality/state divergence without
+# the controller being able to act on it. See README.md.
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: infra-drift
+  namespace: flux-system
+  annotations:
+    description: >-
+      Plan-only drift watch on cluster/terraform/main (the metal root). Never
+      applies; `bazel run //cluster:bootstrap` remains the apply path.
+spec:
+  planOnly: true
+  # A plan without refresh compares config to state and would report "no
+  # changes" against a reality nobody has looked at — refresh is what makes
+  # drift observable (cluster/docs/lessons_learned/2026_04_25_tofu_controller_refresh_before_apply.md).
+  refreshBeforeApply: true
+  # Without this the pending plan says only that something changed. `human`
+  # writes the diff to a ConfigMap in this namespace — README § Reading a plan.
+  storeReadablePlan: human
+
+  # Every plan takes the PG advisory lock on schema `main` — the lock
+  # `bazel run //cluster:bootstrap` also needs. README § State lock contention
+  # before shortening this.
+  interval: 6h
+
+  path: ./cluster/terraform/main
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+
+  # Metal only. The rest of the root reaches for the workstation-generated
+  # kubeconfig or for credentials that must not enter a runner pod — README
+  # § What this covers.
+  targets:
+    - ovh_dedicated_server.kimsufi
+    - ovh_dedicated_server.kimsufi_cp
+    - ovh_dedicated_server_update.kimsufi_harddisk
+    - ovh_dedicated_server_update.kimsufi_cp_harddisk
+    - proxmox_virtual_environment_vm.talos
+    - proxmox_virtual_environment_vm.wyrm2
+    - proxmox_virtual_environment_role.persistent
+    - proxmox_virtual_environment_user.persistent
+    - proxmox_virtual_environment_user_token.persistent
+
+  vars:
+    # module.wyrm2_image is a dependency of the targeted wyrm2 VM. Left at its
+    # default this is a no-op, but `true` would put an SSH-to-Proxmox check and
+    # a `nix build` in the graph — neither of which a runner pod can do.
+    - name: rebuild_image
+      value: false
+
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "main"
+      }
+
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: tofu-state-db-credentials
+              key: password
+        # root@pam!tofu. The same token cluster/.envrc pulls from
+        # secrets/shared/cluster-tokens.yaml on a workstation.
+        - name: PROXMOX_VE_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: infra-drift-proxmox-token
+              key: token
+        # Narrow age key covering secrets/ovh-credentials.sops.yaml and
+        # secrets/ovh-rescue-ssh.sops.yaml only, so the ovh provider can
+        # configure — NOT the broad cluster SOPS key.
+        - name: SOPS_AGE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: infra-drift-sops-age-key
+              key: key

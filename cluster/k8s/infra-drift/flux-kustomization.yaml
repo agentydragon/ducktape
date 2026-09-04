@@ -1,0 +1,37 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-drift
+  namespace: ducktape-flux
+spec:
+  # Suspended until the runner's Proxmox token and narrow age key exist —
+  # README § Enabling. Held here rather than on the Terraform CR: a CR that has
+  # never reconciled has no conditions for the healthCheck below to read, so
+  # suspending it instead would leave this Kustomization waiting forever.
+  suspend: true
+
+  retryInterval: 1m
+  interval: 10m
+  timeout: 10m
+  path: ./cluster/k8s/infra-drift
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  # Ready tracks the plan, so a drift finding shows up here as a NotReady
+  # Kustomization — README § Reading a plan.
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: infra-drift
+      namespace: flux-system
+  dependsOn:
+    - name: tofu-controller
+      namespace: ducktape-flux
+    - name: tofu-state-db
+      namespace: ducktape-flux
