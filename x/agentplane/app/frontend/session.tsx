@@ -298,7 +298,11 @@ export function SessionView({
 
   const activeTurn = state.turns.find((turn) => turn.status === null);
   return (
-    <Stack>
+    // The session fills the window and the composer sits at its foot, rather than the page growing
+    // past the fold and the composer going with it. `dvh` so a phone's collapsing URL bar does not
+    // leave the composer under it; the subtraction is App's own `py="md"` on the Container, top and
+    // bottom (app.tsx).
+    <Stack h="calc(100dvh - 2 * var(--mantine-spacing-md))">
       <Group>
         <Button variant="subtle" onClick={onBack}>
           ← {sandbox}
@@ -323,7 +327,9 @@ export function SessionView({
         <Switch label="Raw frames" checked={showRaw} onChange={(e) => setFlag("raw", "1", e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
-      <ScrollArea h="60vh">
+      {/* `minHeight: 0` so this shrinks instead of pushing the composer off: a flex child
+          defaults to its content's height as its floor. */}
+      <ScrollArea style={{ flex: 1, minHeight: 0 }}>
         <Stack>
           {/* Raw: the whole session in sequence order, so what happened between two items — a
               stderr line, the harness starting — reads where it happened. Otherwise the turns,
