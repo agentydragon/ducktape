@@ -98,8 +98,13 @@ in
           (toString cfg.port)
           "--set"
           "confdir=${confDir}"
+          # Every GitHub host, not just api.github.com. The narrow form blinded
+          # this instrument and the connection recorder in the same place at the
+          # same time -- see the debug note. Widening here costs only that more
+          # flows are decrypted; anything not matching is still blind-tunnelled,
+          # so Anthropic API traffic never passes through the MITM.
           "--allow-hosts"
-          "^api\\.github\\.com:443$"
+          "(^|\\.)(github\\.com|githubusercontent\\.com|githubcopilot\\.com):443$"
           "-w"
           "${stateDir}/github.flows"
           "--set"
