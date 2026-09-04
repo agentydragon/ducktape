@@ -30,6 +30,15 @@ LONG_TERM_GAIN_QUANTA = int((SALE_PRICE - LOT_BASIS) * 100)
 # tax law says and what the engines assess — not a second copy handed to one of them.
 FEDERAL_STANDARD_DEDUCTION_QUANTA = 1_460_000  # $14,600
 
+# §1211(b): a net capital loss reduces a single filer's ordinary income by at most $3,000,
+# and §1212(b) carries the rest forward. Spelled here as the statute's own number rather than
+# imported, because neither engine takes it from the scenario — JAX holds it as a default
+# argument and Rust reads the fixture field the encoder fills from that same constant — so no
+# case can configure it, and only a test stating the figure catches a change to either side
+# (issue #5586).
+CAPITAL_LOSS_ORDINARY_OFFSET_CAP_QUANTA = 300_000  # $3,000
+LOSS_SALE_PRICE = Decimal(1_000)
+
 
 def gain_below_the_deduction_case() -> Case:
     """A long-term gain, no ordinary income, and a standard deduction larger than zero."""
@@ -98,6 +107,62 @@ def test_an_unused_standard_deduction_shelters_a_long_term_gain(backend: Backend
 
     accruals = backend(gain_below_the_deduction_case()).events.tax_accruals
     assert [row["amount_quanta"] for row in accruals.to_dicts()] == [0]
+
+
+def realized_loss_case(*, loss: Decimal) -> Case:
+    """One long-term lot sold for `loss` less than it cost, and no other income."""
+
+    return Case(
+        scenario=scenario(
+            checking(("alice", Decimal(0)), ("irs", Decimal(0))),
+            horizon_months=12,
+            initial_lots=[
+                InitialLot(
+                    lot_id="alice-vti",
+                    agent_id="alice",
+                    account_id="checking",
+                    asset=VTI,
+                    purchase_month_index=-24,
+                    quantity=1.0,
+                    cost_basis_per_unit=LOSS_SALE_PRICE + loss,
+                )
+            ],
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=0,
+                    cause_id="sell-vti",
+                    agent_id="alice",
+                    source_account_id="checking",
+                    asset=VTI,
+                    quantity=1.0,
+                    proceeds_account_id="checking",
+                )
+            ],
+            tax_profiles=[taxed("alice", "federal_us")],
+        ),
+        rollout_count=1,
+        series={VTI: levels([[LOSS_SALE_PRICE] * 13])},
+    )
+
+
+@pytest.mark.parametrize("backend", BACKENDS, ids=lambda run: run.__name__)
+@pytest.mark.parametrize(
+    ("loss", "offset_quanta"),
+    [(Decimal(2_000), 200_000), (Decimal(30_000), CAPITAL_LOSS_ORDINARY_OFFSET_CAP_QUANTA)],
+    ids=["under the cap", "over it"],
+)
+def test_a_capital_loss_offsets_ordinary_income_only_up_to_the_1211_cap(
+    backend: Backend, loss: Decimal, offset_quanta: int
+) -> None:
+    """The whole loss while it fits under $3,000, and exactly $3,000 once it does not.
+
+    Both cases are needed and neither is redundant: the smaller one shows the offset tracking
+    the loss, so the larger one pinning $3,000 is the cap binding rather than a constant that
+    happens to be returned whatever the loss.
+    """
+
+    breakdown = backend(realized_loss_case(loss=loss)).events.tax_breakdowns
+    assert [row["ordinary_income_quanta"] for row in breakdown.to_dicts()] == [-offset_quanta]
 
 
 if __name__ == "__main__":
