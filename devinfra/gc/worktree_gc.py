@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pygit2
 
-from devinfra.gc.git_repo import Worktree, content_in_main, git
+from devinfra.gc.git_repo import Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 
 
@@ -130,6 +130,9 @@ def classify_worktree(
         return prune(pr_phrase(pr))
     if content_in_main(pg, pg.head.peel(pygit2.Commit).id, main):
         return prune(f"changes already in {main}")
+    # As in `branch_gc`: the shell-out only runs once the in-process test has already failed.
+    if patches_landed_in_main(path, "HEAD", main):
+        return prune(f"every commit has an equivalent already on {main}")
     if worktree.branch is None:
         return review(f"detached HEAD with commits not in {main}")
     return review(f"commits not in {main} and no merged PR")

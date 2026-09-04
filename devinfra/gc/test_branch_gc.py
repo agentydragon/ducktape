@@ -156,5 +156,37 @@ def test_delete_branch_fails_when_checked_out(repo: Path) -> None:
     assert isinstance(bg.delete_branch(repo, "feature"), bg.FailedBranch)
 
 
+def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: Path) -> None:
+    """A branch whose commit landed by cherry-pick, on a main that has since moved past it.
+
+    This is the shape the tree-equality check decays on: main took the same patch and then
+    kept editing the same file, so merging the branch in today conflicts and
+    `content_in_main` reports it unlanded. Patch equivalence still recognises it, with no PR
+    to appeal to.
+    """
+    wt = _worktree(repo, "wt", "feature")
+    _commit(wt, "f", "A\n", "feature change")
+    _git(repo, "cherry-pick", _rev(repo, "feature"))
+    _commit(repo, "f", "B\n", "main advances past the cherry-pick")
+    _commit(repo, "f", "C\n", "and again")
+
+    result = _classify(repo, "feature", pr=None)
+
+    assert isinstance(result, bg.PrunableBranch)
+    assert "equivalent already on" in result.reason
+
+
+def test_branch_with_an_unlanded_commit_stays_review(repo: Path) -> None:
+    """One equivalent commit is not enough — an unlanded sibling must still hold it back."""
+    wt = _worktree(repo, "wt", "feature")
+    _commit(wt, "f", "A\n", "landed change")
+    _git(repo, "cherry-pick", _rev(repo, "feature"))
+    _commit(wt, "g", "never\n", "change main never took")
+
+    result = _classify(repo, "feature", pr=None)
+
+    assert isinstance(result, bg.ReviewBranch)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

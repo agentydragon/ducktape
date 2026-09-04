@@ -4,7 +4,11 @@ Mirrors worktree_gc's PRUNE/KEEP/REVIEW model, one level up: a *branch* is pruna
 deleting its ref loses nothing, established by either
 
   * git — its tip adds nothing not already in the default branch (an ancestor, an empty
-    branch, or a squash/rebase-merge no-op), reusing `git_repo.content_in_main`; or
+    branch, or a squash/rebase-merge no-op), reusing `git_repo.content_in_main`;
+  * git again, by patch equivalence — every commit it adds has a twin already on the default
+    branch (`git_repo.patches_landed_in_main`). This catches the rebase-merged and
+    cherry-picked branches whose tree-equality check has decayed: the merge base is thousands
+    of commits back, so merging today conflicts even though the work landed long ago; or
   * a merged GitHub PR whose merged tip the branch has not advanced beyond — the
     squash-merge case that survives even when later default-branch divergence defeats the
     git tree-equality check.
@@ -25,7 +29,7 @@ from pathlib import Path
 import pygit2
 
 from devinfra.gc import git_repo
-from devinfra.gc.git_repo import content_in_main
+from devinfra.gc.git_repo import content_in_main, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
 
@@ -111,9 +115,14 @@ def classify_branch(
     if content_in_main(pg, branch_oid, main):
         annotation = f" ({pr_phrase(pr)})" if pr is not None and pr.state is PrState.MERGED else ""
         return PrunableBranch(branch, f"changes already in {main}{annotation}", checkout)
+    if pr is not None and pr.state is PrState.MERGED and _tip_within_merged_head(pg, branch_oid, pr):
+        return PrunableBranch(branch, f"{pr_phrase(pr)}; nothing beyond the merged head", checkout)
+    # Last, because it is the only check here that shells out: ~200ms, worth paying for the
+    # handful of branches otherwise bound for REVIEW but not for every branch in the repo.
+    # The cheaper tests above also name a more specific reason when they apply.
+    if patches_landed_in_main(Path(pg.path), name, main):
+        return PrunableBranch(branch, f"every commit has an equivalent already on {main}", checkout)
     if pr is not None and pr.state is PrState.MERGED:
-        if _tip_within_merged_head(pg, branch_oid, pr):
-            return PrunableBranch(branch, f"{pr_phrase(pr)}; nothing beyond the merged head", checkout)
         return ReviewBranch(branch, f"{pr_phrase(pr)} but branch has commits beyond it")
     return ReviewBranch(branch, f"commits not in {main}")
 

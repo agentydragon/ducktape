@@ -115,7 +115,8 @@ The joint scan (`workspace-gc`, shown in the `# Branches` section) classifies ea
 branch; interpret it literally:
 
 - `PRUNE`: its work is provably in the default branch and it is not held by a kept worktree —
-  established by git (an ancestor, an empty branch, or a squash/rebase-merge no-op) **or** by
+  established by git (an ancestor, an empty branch, a squash/rebase-merge no-op, or every
+  commit having a patch-equivalent already on the default branch) **or** by
   a merged PR whose merged head the branch has not advanced beyond. A branch checked out in a
   _prunable_ worktree is eligible too; `all --prune` removes that worktree first, then the
   branch. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges) **after
