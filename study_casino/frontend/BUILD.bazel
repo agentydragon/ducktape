@@ -270,6 +270,7 @@ filegroup(
         size = "small",
         data = [
             "tests/harness/index.html",
+            "tests/scene_ready.mjs",
             ":casino_fonts",
             ":visual_harness_js",
             "//util/testing/frontend_visual:fonts_conf",

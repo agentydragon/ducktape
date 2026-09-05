@@ -5,11 +5,10 @@
 // Run:    bazel test //study_casino/frontend:visual_main_page
 
 import { main } from "../../../util/testing/frontend_visual/visual-test-lib.mjs";
+import { SYNC_SETTLED } from "./scene_ready.mjs";
 
 await main("main_page", {
   element: "#app",
   viewport: { width: 1200, height: 1400 },
-  // Wait for fonts and the post-mount layout to settle. The harness disables
-  // CSS animations, so a short delay is enough.
-  waitMs: 250,
+  readySelectors: [SYNC_SETTLED],
 });

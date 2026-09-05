@@ -29,7 +29,6 @@ import {
   assertNetworkSettled,
   prepareDeterministicPage,
   screenshotElement,
-  settle,
   waitForStable,
   WAIT_TIMEOUT_MS,
 } from "./capture.mjs";
@@ -44,7 +43,7 @@ const __dirname = dirname(__filename);
  * Called from each per-scenario test file.
  *
  * @param {string} scenarioName - Harness page name (e.g. "ListPage").
- * @param {{ element: string, viewport?: { width: number, height: number }, outputName?: string, colorScheme?: 'light' | 'dark', waitMs?: number }} options - Overrides.
+ * @param {{ element: string, viewport?: { width: number, height: number }, outputName?: string, colorScheme?: 'light' | 'dark', readySelectors?: string[] }} options - Overrides.
  *   element is the CSS selector to screenshot. Required — there is no default — so every scenario
  *   states its choice explicitly: '#app' for a scenario that is genuinely a full page/full app, or
  *   a scenario-specific selector (conventionally '#shot') for a single component, so the crop is
@@ -52,8 +51,10 @@ const __dirname = dirname(__filename);
  *   https://github.com/agentydragon/ducktape/pull/3343 for the bug this guards against.
  *   outputName overrides the filename stem for the published PNG (defaults to scenarioName).
  *   colorScheme sets the `prefers-color-scheme` media feature (defaults to 'light').
- *   waitMs adds a blind delay after the page is stable, for a scene whose content arrives
- *   after mount and has no condition of its own yet. Prefer giving it one.
+ *   readySelectors are the scene's own readiness conditions: what must be on the page before it
+ *   is the scene at all — a fetch's result, a lazily-mounted component. Mounting is not enough
+ *   for those, and neither is `waitForStable`, which knows about fonts and paint but nothing
+ *   about a scene's content. A scene with nothing arriving after mount passes none.
  */
 export async function main(scenarioName, options) {
   if (!options?.element) {
@@ -118,10 +119,11 @@ export async function main(scenarioName, options) {
     console.log(`Testing: ${outputName} (page=${scenarioName})`);
     await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0", timeout: WAIT_TIMEOUT_MS });
     await page.waitForSelector("#app > *", { timeout: WAIT_TIMEOUT_MS });
+    for (const selector of options.readySelectors ?? []) {
+      await page.waitForSelector(selector, { timeout: WAIT_TIMEOUT_MS });
+    }
+    // Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
     await waitForStable(page);
-    // A scene whose content arrives after mount (a fetch, a lazily-built editor) still needs its
-    // own condition; waitMs is the leftover blind wait for scenes that have not got one yet.
-    if (options.waitMs) await settle(options.waitMs);
     // No-op today (this harness stubs no fetch, so no page installs the ledger); wired so a
     // future harness that does stub one is gated without touching this driver.
     await assertNetworkSettled(page, { context: outputName });

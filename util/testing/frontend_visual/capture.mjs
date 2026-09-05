@@ -34,9 +34,6 @@ import { frozenClockScript, FROZEN_NOW_MS } from "./launcher.mjs";
  */
 export const WAIT_TIMEOUT_MS = 30_000;
 
-/** Wait `ms`. Prefer `waitForStable` or a Puppeteer `waitFor*` — see STYLE.md § Waiting. */
-export const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * Wait until the page is done rendering what it has: fonts applied, images decoded, a frame
  * painted. What a fixed delay after mount was guessing at.

@@ -5,7 +5,7 @@ tests (see `visual-test-lib.mjs` for the JS/Puppeteer path used by
 `study_casino/frontend`, `props/frontend`, and `airlock/frontend`, and
 `frontend_visual.py` for the Python/Playwright path used by `study_casino/tests`
 and `finance/augur`). `capture.mjs` holds the lower-level page-prep/capture
-primitives (`prepareDeterministicPage`, `screenshotElement`, `settle`) that
+primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
 `visual-test-lib.mjs` and haku console's own multi-scene renderers
 (`haku/console/frontend/screenshots/render.mjs`,
 `haku/console/frontend/tool_rendering/screenshot/render.mjs`) build on — a
@@ -44,6 +44,21 @@ If the single component has a real production container that owns its width
 actual container/class in the harness — not a synthetic hardcoded width — so
 the screenshot tracks the true CSS instead of a number that can drift from it.
 
+## Waiting for a scene
+
+`main()` takes `readySelectors`: the scene's own readiness conditions, waited for
+before the capture. `waitForStable` (fonts applied, images decoded, a frame
+painted) knows nothing about a scene's content, so anything that arrives after
+mount — a mocked fetch's result, a lazily-mounted component — needs a selector
+that exists only once it has arrived. A scene with nothing arriving after mount
+passes none.
+
+There is no delay option to fall back on: a fixed wait is too short on a loaded
+runner and pure dead time on every run that did not need it, and it hides what is
+being awaited (STYLE.md § Waiting). A scene with nothing to wait on is an app to
+fix — give the view a `data-` attribute or class it sets when it has its data —
+not a timer to tune.
+
 ## Wait bounds
 
 Every wait takes `WAIT_TIMEOUT_MS` from `capture.mjs` — both navigations, the
@@ -65,7 +80,7 @@ between runs, showing up as a misleadingly-labeled "X% changed" diff in PR visua
 review. See <https://github.com/agentydragon/ducktape/pull/3478> and
 <https://github.com/agentydragon/ducktape/pull/3481> for three real instances
 (an unguarded Mantine CSS animation, and two mocked-fetch races against a fixed
-settle delay).
+delay).
 
 To check a harness is actually deterministic, don't just eyeball the PNGs — run
 the target twice with fresh (non-cached) execution and diff BuildBuddy's
