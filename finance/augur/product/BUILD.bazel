@@ -51,11 +51,13 @@ py_library(
         ":wire",
         "//finance/augur/model:series",
         "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
         "//finance/augur/sim:output",
         "//finance/augur/sim:product_metrics",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/compiler:plan",
         "@pypi//numpy",
+        "@pypi//polars",
     ],
 )
 

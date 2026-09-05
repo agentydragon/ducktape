@@ -28,6 +28,7 @@ from jaxtyping import Float64
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.rust.fixture_encoder import encode_fixture
+from finance.augur.sim.backend import CompiledRun
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction
@@ -109,6 +110,22 @@ class Case:
         return compile_simulation(
             self.scenario,
             rollout_count=self.rollout_count,
+            external_series=self.external_series,
+            jurisdictions=self.jurisdictions,
+            locations=dict(self.locations),
+        )
+
+    @cached_property
+    def compiled_run(self) -> CompiledRun:
+        """This case as the production engines take it.
+
+        Lets a suite drive `JaxEngine`/`RustEngine` rather than a harness-only path, so what
+        the differential tests compare is what the product service runs.
+        """
+
+        return CompiledRun(
+            scenario=self.scenario,
+            plan=self.plan,
             external_series=self.external_series,
             jurisdictions=self.jurisdictions,
             locations=dict(self.locations),

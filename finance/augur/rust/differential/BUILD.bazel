@@ -476,6 +476,7 @@ py_library(
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/rust:fixture_encoder",
+        "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:locations",
@@ -484,5 +485,23 @@ py_library(
         "//finance/augur/sim/compiler:plan",
         "@pypi//jaxtyping",
         "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "rollout_projection_test",
+    srcs = ["rollout_projection_test.py"],
+    deps = [
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/product:projection",
+        "//finance/augur/rust:backend",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/engine:jax_backend",
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//pytest_bazel",
     ],
 )
