@@ -6,6 +6,7 @@ import asyncio
 from typing import Any, cast
 
 import httpx
+import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -270,3 +271,7 @@ async def test_restart_resumes_only_provably_pending_dispatch_and_marks_inflight
         ActionState.EXECUTION_UNKNOWN,
     ]
     await after_crash.close()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

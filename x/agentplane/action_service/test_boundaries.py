@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+import pytest_bazel
 
 from x.agentplane.action_service.auth import KubernetesTokenAuthenticator
 from x.agentplane.action_service.client import ActionServiceClient, ProjectedTokenFile
@@ -91,3 +92,7 @@ async def test_projected_token_is_re_read_per_call_and_never_enters_the_body(tmp
 
     assert [request.headers["authorization"] for request in seen] == ["Bearer first-token", "Bearer rotated-token"]
     assert all(b"token" not in request.content for request in seen)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
