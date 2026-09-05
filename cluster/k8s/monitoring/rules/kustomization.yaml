@@ -4,6 +4,7 @@ resources:
   - control-plane-io-prometheus-rule.yaml
   - external-secrets-prometheus-rule.yaml
   - flux-prometheus-rule.yaml
+  - github-quota-prometheus-rule.yaml
   - grocy-mcp-prometheus-rule.yaml
   - haku-console-connection-prometheus-rule.yaml
   - mcp-auth-prometheus-rule.yaml

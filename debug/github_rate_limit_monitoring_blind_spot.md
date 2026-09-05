@@ -1056,6 +1056,13 @@ generates the event; host→world flows do not. Two nodes were unscrapable durin
 (`bpf_set_retval`; kernel floated to 7.2.0 through `linuxPackages_latest`, pinned back to
 the 7.1 series but not yet rebuilt or rebooted).
 
+One result looks like it contradicts that boundary and does not. The scan returned large
+unresolved-source flows to GitHub addresses on wyrm2, which invites reading them as host
+traffic Hubble was not supposed to see. They are not: `reserved:host` appears as its own
+source value in the same data, so host-sourced flows _are_ labelled when they appear. An
+empty source is an unresolved pod identity — the same metadata gap that leaves
+destinations as raw IPs — not the host namespace leaking into view.
+
 ## Rotating the personal PAT: the measured blast radius
 
 `cluster/k8s/external-creds/github-agentydragon-grants.yaml` binds one consumer

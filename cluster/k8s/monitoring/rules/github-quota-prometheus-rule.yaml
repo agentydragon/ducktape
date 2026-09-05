@@ -1,0 +1,46 @@
+# Alerts on the GitHub GraphQL bucket, read from real response headers by
+# `github-graphql-rate-exporter` (REST `/rate_limit` reports this bucket as
+# permanently full, so it cannot be used for this).
+#
+# The burn-rate alert is the one that matters. The account's GraphQL consumption
+# is intermittent and unattributed, and every diagnostic for it needs the burn to
+# be *happening* — once the hour resets, there is nothing left to observe but a
+# counter. Firing on rate rather than on exhaustion is what makes the window
+# actionable instead of forensic.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: github-quota-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: github-quota
+      rules:
+        - alert: GitHubGraphQLQuotaBurnRateHigh
+          # 5000 points/hour is 1.389/s; `used` resets hourly, and `deriv` on the
+          # reset goes sharply negative rather than spiking, so it does not fire.
+          expr: deriv(github_graphql_rate_used[5m]) > 1.4
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GitHub GraphQL points for {{ $labels.github_account }} burning at {{ $value | humanize }}/s"
+            description: >
+              Sustained above the 5000/hour budget, so this hour's bucket will
+              exhaust before it resets. Attribution is only possible while this is
+              firing: sample the bucket at 5s resolution to get the shape, and
+              check the connection recorder and pod flow metrics against the same
+              window.
+        - alert: GitHubGraphQLQuotaExhausted
+          expr: github_graphql_rate_remaining == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GitHub GraphQL quota for {{ $labels.github_account }} is exhausted"
+            description: >
+              Every GraphQL call for this account is failing with 403. REST is
+              unaffected and reports this bucket as full, so tooling that checks
+              `/rate_limit` will disagree.
