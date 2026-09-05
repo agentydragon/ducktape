@@ -1,0 +1,44 @@
+# Route Gatus's DNS through Cilium's DNS proxy, so its queries are observable
+# (`hubble_dns_queries_total`) and the FQDN cache populates — which is what lets
+# `destinationContext=...|dns|...` in cilium-values.yaml report hostnames instead
+# of raw IPs.
+#
+# On Cilium 1.19 there is no observation-only mode: L7 visibility comes from a
+# policy, and a policy enforces. This one is written to enforce nothing — an
+# egress rule flips the endpoint to default-deny, so the second rule has to
+# re-admit everything Gatus reaches.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gatus-dns-visibility
+  namespace: gatus
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gatus
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+
+    # Everything else, deliberately unrestricted.
+    #
+    # No `toPorts`: egress to a ClusterIP is matched on the backend `targetPort`,
+    # not the Service port, because socket-LB rewrites before policy is enforced
+    # (cluster/docs/cilium_network_policy.md). Gatus probes 13 in-cluster
+    # Services across as many namespaces, so enumerating their targetPorts would
+    # be a list that silently rots.
+    #
+    # `all`, not `world`: the nine `*.allegedly.works` endpoints Gatus checks all
+    # resolve to node ExternalIPs, which carry `reserved:remote-node` or
+    # `reserved:host` — Cilium carves those out of `world`.
+    - toEntities:
+        - all

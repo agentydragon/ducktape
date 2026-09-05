@@ -5,6 +5,7 @@ resources:
   - helmrelease.yaml
   - env-configmap.yaml
   - networkpolicy.yaml
+  - cnp-dns-visibility.yaml
   - httproute.yaml
 
 configMapGenerator:
