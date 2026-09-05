@@ -1,6 +1,0 @@
-load("//devinfra/python:defs.bzl", "py_library")
-
-py_library(
-    name = "verifier",
-    srcs = ["verifier.py"],
-)

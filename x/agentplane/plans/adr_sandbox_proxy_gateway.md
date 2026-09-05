@@ -1,20 +1,20 @@
 # ADR: credentialless Sandbox egress through a Pod-bound sidecar token and external gateway
 
-- **Status:** Accepted for the eventual secure-ish credentialed networking integration
+- **Status:** Accepted and implemented by Agentplane's secure egress integration
 - **Date:** 2026-09-01
-- **Scope:** Agentplane's future Kubernetes/Sandbox egress composition
+- **Scope:** Agentplane's Kubernetes/Sandbox egress composition
 - **Not a v0 prerequisite:** This decision does not expand the native Claude/Codex capture slice or
   require the first standalone credentialless Agentplane service to carry production credentials.
 
 ## Decision
 
-When Agentplane later needs to let an Agent use an upstream service without giving the Agent a real
-credential, use this composition:
+When Agentplane lets an Agent use an upstream service without giving the Agent a real credential, use
+this composition:
 
 ```text
 Agent / runner
     |
-    | fixed, unauthenticated local operation
+    | ordinary HTTP(S) proxy request on loopback
     v
 per-Sandbox proxy sidecar
     |
@@ -23,7 +23,7 @@ per-Sandbox proxy sidecar
 trusted external gateway
     |
     | TokenReview + live Pod/Sandbox correlation
-    | destination/method/path/payload/replay policy
+    | host/method/path/address and credential policy
     | real upstream credential substituted here only
     v
 allowlisted upstream service
@@ -33,7 +33,7 @@ The sidecar receives no real upstream credential. It receives only the short-liv
 needed to assert its Pod workload to the gateway. The gateway is the credential-bearing and final
 authorization boundary. It validates the token through Kubernetes TokenReview, checks the live Pod UID
 and (where the deployment path preserves it) source Pod IP, follows the controller owner to the live
-Sandbox, and then authorizes a narrowly defined operation before making the upstream request.
+Sandbox, and then authorizes the request against explicit rules before making the upstream request.
 
 Once Agentplane exists, its authoritative mapping can extend the gateway decision from:
 
@@ -58,8 +58,8 @@ We wanted all of the following:
 - let a downstream service identify which live Sandbox workload is calling;
 - support per-Sandbox/per-Thread provisioning without warm-pool reassignment ambiguity;
 - use native Kubernetes and Agent Sandbox authorities where possible;
-- make the local capability small enough that an Agent cannot turn it into a credential-redemption
-  oracle; and
+- keep the local relay credentialless and make the central capability narrow enough that an Agent
+  cannot turn it into a credential-redemption oracle; and
 - preserve a path to request freshness, replay control, and eventual Thread binding.
 
 The relevant network constraint is structural: a Kubernetes Pod is the usual network-policy identity.
@@ -75,7 +75,8 @@ through the sidecar.
 
 ## Evidence behind the decision
 
-The disposable proof in [`x/agentplane/sandbox-spike/`](../sandbox-spike/README.md) established on the
+The retired disposable proof, preserved as
+[sandbox egress identity evidence](../docs/sandbox_egress_identity_evidence.md), established on the
 pinned cluster:
 
 - only the proxy mounted the synthetic upstream Secret and projected audience-scoped Pod token;
@@ -112,13 +113,13 @@ NetworkPolicy is still required for route reduction and defense in depth, but it
 container-level route separation in this Pod composition and does not put authenticated workload
 identity into an application request. It is not enough as the sole control.
 
-### Not a generic local or external forward proxy
+### Not an unrestricted external forward proxy
 
-A generic proxy would let the Agent select arbitrary destinations, methods, redirects, private
-addresses, or credential-bearing operations. That becomes an exfiltration, signing, or credential
-redemption oracle. Both the local sidecar and external gateway must expose fixed or explicitly
-allowlisted operations and validate origin, method, path, request shape, redirects, and private-address
-behavior.
+The local sidecar is an ordinary HTTP(S) relay, but it holds no upstream credential and forwards only
+to the central proxy. The central proxy is not unrestricted: an Agent can select only hosts, methods,
+paths, addresses, and credential presentations admitted by its bindings. This keeps the sidecar
+general enough for unmodified tools without turning the credential-bearing boundary into an
+exfiltration, signing, or credential-redemption oracle.
 
 ### Not forwarded headers or source IP as the sole identity
 
@@ -182,16 +183,13 @@ before that threat is concrete.
 - Durable replay control and request-bound Thread assertions still need implementation if required.
 - Ordinary runc isolation is not a VM-strength boundary.
 
-## Follow-up when implementation is scheduled
+## Remaining follow-up
 
-1. Build the smallest external gateway prototype around one fixed synthetic operation.
-2. Keep the sidecar token projected with a narrow audience, short lifetime, and no environment-based
-   Secret delivery.
-3. Test gateway TokenReview, live Pod UID/Sandbox owner checks, direct unauthenticated rejection, and
-   explicit origin/method/path/payload policy.
-4. Add durable replay/request freshness only when the product path requires it; do not mistake the
+1. Add durable replay/request freshness only when the product path requires it; do not mistake the
    spike's in-memory nonce set for production protection.
-5. Once Agentplane owns Threads, bind a gateway request to the authoritative Pod/Sandbox/Thread mapping
+2. Add request-body policy only when a granted operation needs a narrower request shape than
+   host/method/path and credential-presentation rules provide.
+3. Bind a gateway request to the authoritative Pod/Sandbox/Thread mapping
    only if the downstream actually needs Thread identity.
-6. Revisit gVisor/Kata/Firecracker only if measured threat or escape evidence exceeds ordinary
+4. Revisit gVisor/Kata/Firecracker only if measured threat or escape evidence exceeds ordinary
    container/sidecar isolation.

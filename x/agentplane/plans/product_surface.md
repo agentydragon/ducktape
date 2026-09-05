@@ -169,8 +169,9 @@ proxy/service validates the proof as belonging to this Thread/sandbox
 proxy substitutes the real credential only at the egress/service boundary
 ```
 
-The sandbox egress composition is now accepted in [the ADR](adr_sandbox_proxy_gateway.md) and
-validated by the [practical spike](../sandbox-spike/README.md): the local proxy holds only an
+The sandbox egress composition is now accepted in [the ADR](adr_sandbox_proxy_gateway.md), validated
+by the [observed identity evidence](../docs/sandbox_egress_identity_evidence.md), and implemented by
+the [egress proxy](../egress/README.md): the local proxy holds only an
 audience-scoped Pod-bound token, while a trusted external gateway holds real upstream credentials.
 The following questions remain before scheduling the production implementation:
 

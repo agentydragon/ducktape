@@ -3,10 +3,9 @@
 # or warm pool references it), driven over port 7000. The Pod is pinned to
 # hil-ovh, where its state PVC binds; a suspended Sandbox (operatingMode:
 # Suspended) drops the Pod and keeps the PVC, so it resumes on the node holding
-# it. Both harnesses reach models through the cluster
-# LiteLLM with the cheap-experiments key, directly: the credentialless egress
-# design governs external systems, not the model endpoint (x/agentplane/app/README.md).
-# Everything else outside the cluster goes through the egress sidecar: the harness
+# it. Both harnesses reach the cluster LiteLLM through the egress sidecar, which
+# substitutes the cheap-experiments key; the runner holds only its placeholder.
+# Everything outside the sandbox goes through the egress sidecar: the harness
 # children's HTTP(S)_PROXY, declared in the runner's --harness-env below, is the
 # sidecar on loopback, which relays to the central proxy (../egress) with the Pod's
 # projected token, and they trust the proxy's interception CA through the

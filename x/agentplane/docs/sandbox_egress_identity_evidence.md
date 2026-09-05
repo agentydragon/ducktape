@@ -1,13 +1,16 @@
-# Sandbox proxy and workload identity evidence
+# Sandbox egress identity evidence
 
 Observed on 2026-09-01 against `admin@talos-cluster`: Kubernetes v1.35.1, Agent Sandbox controller
 v0.5.5, and the v1beta1 `Sandbox`, `SandboxClaim`, and `SandboxTemplate` CRDs. Cilium enforced the
 NetworkPolicies. Only the `nvidia` RuntimeClass was installed; no SPIFFE/SPIRE or service-mesh CRDs
 were present.
 
-The final `run_proofs.sh` run started from an absent namespace, printed `all_proofs=passed`, exited 0,
-and removed the namespace plus the experiment's TokenReview ClusterRole and binding. The identifiers
-below are disposable observations, not stable configuration.
+The disposable proof that produced this evidence was removed after Agentplane's production-shaped
+egress proxy, sidecar, Kubernetes resources, and deployed acceptance suite adopted its conclusions.
+Git commit `8e74a1184b` preserves the exact proof code and manifests. Its final run started from an
+absent namespace, printed `all_proofs=passed`, exited 0, and removed the namespace plus its
+TokenReview ClusterRole and binding. The identifiers below are observations, not stable
+configuration.
 
 ## Proven
 
@@ -108,26 +111,26 @@ Agentplane Agent or Thread.
 - A production replay check needs durable state and a request-bound protocol. mTLS alone would not add
   Thread identity or application replay protection.
 
-## Recommendation
+## Adopted design
 
-**Use a trusted external gateway instead** before treating the Agent as hostile. Keep a local sidecar
-in the Sandbox, but give it only an audience-scoped Pod token—not the real upstream credential. The
-intended request path is:
+Agentplane now uses the trusted external gateway shape this experiment recommended. The local
+sidecar has only an audience-scoped Pod token—not the real upstream credential:
 
 ```text
 Agent -> unauthenticated local operation -> token-authenticated external gateway -> upstream
 ```
 
-The external gateway uses TokenReview plus live Pod UID/source and Sandbox-owner checks, authorizes
-the requested origin/method/path, applies redirect and private-address restrictions, and then makes
-the upstream request. It adds a real upstream credential only when that origin requires one. Cilium
-policy allows the Sandbox Pod to reach DNS and this gateway; only the gateway may reach the protected
-upstream.
+The central proxy uses TokenReview plus live Pod UID/source and Sandbox-owner checks, authorizes the
+requested host/method/path, rejects forbidden addresses, and adds a real upstream credential only
+when the selected rule requires one. Cilium policy allows the Sandbox Pod to reach DNS and this
+proxy; only the proxy may reach protected upstreams. The current contract is
+[the egress specification](../egress/SPEC.md), and deployed behavior is exercised by the
+[acceptance suite](../acceptance/README.md).
 
 The exact remaining gap is that sidecar and runner share one Pod network/Cilium identity. The Agent
 can therefore open TCP directly to the gateway, but it cannot read the sidecar token, so the gateway
 rejects the direct request. This is an application-authentication boundary, not forced traffic through
 the sidecar. It is sufficient for the accepted threat model as long as the local API and gateway are
-narrow capabilities rather than an arbitrary forward proxy, `CONNECT` tunnel, or signing oracle.
-Retain explicit replay control; add a request-bound Agent/Thread assertion later only if that identity
-is required.
+narrow capabilities rather than an arbitrary credential-redemption oracle. Durable replay control
+and request-bound Agent/Thread assertions remain intentionally absent; add either only when a product
+path requires that identity or freshness guarantee.

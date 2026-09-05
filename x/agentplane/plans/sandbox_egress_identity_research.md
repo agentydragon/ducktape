@@ -11,17 +11,18 @@ Confidence labels:
 
 ## Decision update
 
-The practical prototype has now been run against the pinned cluster and its result is accepted as the
-eventual secure-ish credentialed networking setup. Use a per-Sandbox local fixed-operation proxy with
-only an audience-scoped, Pod-bound Kubernetes token; have a trusted external gateway validate that token
-through TokenReview plus live Pod/Sandbox correlation; and keep real upstream credentials only at that
-gateway. The gateway, not same-Pod NetworkPolicy, is the final application-authentication boundary.
+The practical prototype was run against the pinned cluster and its result underlies the implemented
+credentialed networking setup. A per-Sandbox local HTTP(S) relay holds only an audience-scoped,
+Pod-bound Kubernetes token; the trusted central proxy validates that token through TokenReview plus
+live Pod/Sandbox correlation and keeps real upstream credentials outside the Sandbox. The central
+proxy, not same-Pod NetworkPolicy, is the final application-authentication boundary.
 
 The prototype also confirmed the important limitation: runner and proxy share the Pod network identity,
 so the runner can reach the gateway at TCP level. It cannot make an accepted protected request without
-the sidecar-held token, provided the local and external interfaces remain narrow capabilities rather
-than generic forwarders. This is recorded in [ADR: credentialless Sandbox egress](adr_sandbox_proxy_gateway.md)
-and the [reproducible spike](../sandbox-spike/README.md).
+the sidecar-held token. The local relay is generic but credentialless; the central proxy admits only
+explicitly bound hosts, methods, paths, addresses, and credential presentations. This is recorded in
+[ADR: credentialless Sandbox egress](adr_sandbox_proxy_gateway.md)
+and the [observed identity evidence](../docs/sandbox_egress_identity_evidence.md).
 
 The decision does not claim Thread identity, durable replay protection, SPIFFE/SPIRE availability, or
 VM-strength isolation. Agentplane can later add Pod -> Sandbox -> Thread/Agent binding once it owns that

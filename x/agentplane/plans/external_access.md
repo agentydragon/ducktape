@@ -57,7 +57,8 @@ Authority in Kubernetes is the token times the bindings, and either can be cut a
 "Issued but not revocable" therefore means the reconciler is down or lagging. The guard is a third
 cut under Haku's control alone: the agent never holds the real credential, only a placeholder, and
 the proxy substitutes the real one only while the identity's RBAC objects match what the ledger
-says they should be. This is the sandbox spike's proxy-only secret delivery applied to grants.
+says they should be. This applies the
+[sandbox egress identity boundary](../docs/sandbox_egress_identity_evidence.md) to grants.
 
 The gate compares object sets, never requests, so the proxy needs no knowledge of API paths:
 

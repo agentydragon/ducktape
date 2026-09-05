@@ -299,8 +299,8 @@ ones still open.
   and the [live capture probe README](../capture/README.md).
 - The runner protocol and its tests: [runner README](../runner/README.md) and
   [runner SPEC](../runner/SPEC.md).
-- Sandbox identity and egress evidence: [sandbox spike README](../sandbox-spike/README.md) and [egress
-  ADR](adr_sandbox_proxy_gateway.md).
+- Sandbox identity and egress evidence: [observed identity evidence](../docs/sandbox_egress_identity_evidence.md)
+  and [egress ADR](adr_sandbox_proxy_gateway.md).
 - Product/API layering and deferred capabilities: [`product_surface.md`](product_surface.md) and
   [`architecture.md`](architecture.md).
 - Asynchronous approvals, decision delivery, and the notification batcher:
