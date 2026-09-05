@@ -90,11 +90,12 @@ spec:
             # Full SQLite integrity checks cross-check every index against its
             # table in O(N log N) time. On this agent's rotational state disk,
             # the already-current database took over 20 minutes and outlived
-            # OpenClaw's five-minute startup migration lease. Keep the linear
-            # structural, constraint, and foreign-key checks at startup; full
-            # integrity checks remain available through offline maintenance.
+            # OpenClaw's five-minute startup migration lease. Even quick_check
+            # exceeded that lease on the live 871 MB database, so skip startup
+            # integrity pragmas; schema and canonical-index checks still run,
+            # and full integrity checks remain available offline.
             - name: OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK
-              value: quick
+              value: none
             # Keep provider, compaction, and agent-loop debug records on
             # stdout so cluster logging captures them in Loki. OpenClaw's
             # sensitive-value redaction remains enabled at its default.
