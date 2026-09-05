@@ -303,7 +303,7 @@ async def list_actions(
     state: Annotated[list[ActionState] | None, Query(description="Only requests in these states.")] = None,
 ) -> list[ActionRequestView]:
     """Token callers see only their own requests; an OIDC operator sees the app's whole scope."""
-    return await hub.list(caller, states=state or ())
+    return await hub.list_requests(caller, states=state or ())
 
 
 @actions_router.get("/{request_id}")

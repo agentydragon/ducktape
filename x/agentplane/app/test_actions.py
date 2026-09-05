@@ -103,8 +103,8 @@ async def test_caller_reads_only_its_own_and_operator_reads_all(store: Trajector
     own = await _submit(action_hub, await _thread(store, "s-own"))
     other = await _submit(action_hub, await _thread(store, "s-other"), OTHER)
 
-    assert [view.id for view in await action_hub.list(CALLER)] == [own.id]
-    assert {view.id for view in await action_hub.list(OPERATOR)} == {own.id, other.id}
+    assert [view.id for view in await action_hub.list_requests(CALLER)] == [own.id]
+    assert {view.id for view in await action_hub.list_requests(OPERATOR)} == {own.id, other.id}
     with pytest.raises(ActionNotFoundError):
         await action_hub.get(other.id, CALLER)
 

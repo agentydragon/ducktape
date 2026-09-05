@@ -334,7 +334,9 @@ class ActionHub:
         await self._events.publish(_event(row))
         return view
 
-    async def list(self, caller: CallerIdentity, *, states: Sequence[ActionState] = ()) -> list[ActionRequestView]:
+    async def list_requests(
+        self, caller: CallerIdentity, *, states: Sequence[ActionState] = ()
+    ) -> list[ActionRequestView]:
         query = select(ActionRequestRow).order_by(ActionRequestRow.created_at.desc())
         if caller.kind is not CallerKind.OPERATOR:
             query = query.where(
