@@ -9,6 +9,11 @@ package(default_visibility = ["//visibility:public"])
 package_group(
     name = "inside_the_simulator",
     packages = [
+        # The differential harness runs JAX's scan and its product reductions directly, on
+        # purpose: it exists to compare one engine against another, and reading both through
+        # the contract would compare the contract with itself.
+        "//finance/augur/rust/benchmark/...",
+        "//finance/augur/rust/differential/...",
         "//finance/augur/sim/...",
     ],
 )

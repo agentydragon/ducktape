@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_shared_library", "rust_test")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -143,5 +143,19 @@ py_library(
         "//finance/augur:frames",
         "//finance/augur/sim:events",
         "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "backend_test",
+    srcs = ["backend_test.py"],
+    deps = [
+        ":backend",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim/testing:engine_acceptance",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
