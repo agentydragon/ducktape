@@ -135,44 +135,55 @@ directories and this root reads a repo-root **file** (`nebula-mesh.json`).
 
 ### Which files the artifact must carry
 
-`-target` prunes resources and data sources, but **not `locals`** — every
-`locals` block in the root is evaluated on every plan, however narrow
-`spec.targets` is. So the rule is not "what do the targets touch" but:
+**`-target` does not prune configuration evaluation.** It narrows which
+resources the plan reports changes for; every expression in the root is still
+evaluated, in `locals` and in resource arguments alike. So the rule is not
+"what do the targets touch" but simply:
 
-> every `file()`-family call inside a `locals` block must resolve, no matter
-> which resources are targeted.
+> every `file()`-family call in the root must resolve, however narrow
+> `spec.targets` is.
 
-In this root that is exactly two, both of which the `ignore` rules carry:
+All five call sites, and the file each needs:
 
-| Call                                    | Reads                                                         |
-| --------------------------------------- | ------------------------------------------------------------- |
-| `nebula.tf:17` `jsondecode(file(…))`    | `nebula-mesh.json` (repo root)                                |
-| `talos-ccm.tf:14` `yamldecode(file(…))` | `cluster/k8s/talos-cloud-controller-manager/helmrelease.yaml` |
+| Call                                    | Where                    | Reads                                                         |
+| --------------------------------------- | ------------------------ | ------------------------------------------------------------- |
+| `nebula.tf:17` `jsondecode(file(…))`    | `locals`                 | `nebula-mesh.json` (repo root)                                |
+| `talos-ccm.tf:14` `yamldecode(file(…))` | `locals`                 | `cluster/k8s/talos-cloud-controller-manager/helmrelease.yaml` |
+| `flux.tf:23` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux-system/gotk-components.yaml`                |
+| `flux.tf:24` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux-system/gotk-sync.yaml`                      |
+| `cilium.tf:44` `filesha256(…)`          | `null_resource` triggers | `cilium-values.yaml`, inside the root module                  |
 
-The other file reads sit in resource `triggers` and are pruned, which is why
-their files stay out: `flux.tf:23-24` `filesha256` on
-`cluster/k8s/flux-system/gotk-{components,sync}.yaml` (380 KB, the reason
-`cluster/k8s` is admitted one directory at a time rather than wholesale), and
-`cilium.tf:44` on `cilium-values.yaml`, which lives in the root module anyway.
-Move any of those into a `local` and its file needs a `!/…` line.
+The `ignore` rules carry all of them. The rest of `cluster/k8s` (10 MB) is read
+by nothing and stays out. `cluster/scripts/configure_game_mitigation.py` also
+stays out: it is interpolated into a `local-exec` command string, not read by a
+`file()` call, so nothing opens it at plan time.
+
+`${path.module}/{kubeconfig,talosconfig.yml}` are Terraform-generated and never
+in git. The `kubernetes` and `helm` providers point `config_path` at them and
+tolerate their absence as long as no resource of theirs is planned — the same
+property the first `-target` pass of `bazel run //cluster:bootstrap` relies on.
 
 **gitignore cannot re-include a path under an excluded parent.** `/*` followed
 by `!/cluster/terraform` alone silently yields nothing; each level needs its own
-`!/cluster` + `/cluster/*` pair. Verify a change to these rules against `git`
-in a scratch tree rather than reasoning about it.
+`!/cluster` + `/cluster/*` pair. Verify a change to these rules against `git` in
+a scratch tree rather than reasoning about it.
 
-## Exercised; three failures to get a plan
+## Exercised; four failures to get a plan
 
-All loud and harmless — `planOnly` means nothing can be applied whatever
-happens:
+All missing paths, all loud and harmless — `planOnly` means nothing can be
+applied whatever happens:
 
 1. `terraform path not found` — the shared `flux-system` source omits
    `cluster/terraform/`; fixed by this dedicated source.
-2. `Invalid function argument`, `nebula.tf:17` — `-target` does not prune
-   locals, and `sparseCheckout` cannot express a repo-root file; fixed by
+2. `nebula.tf:17` — `sparseCheckout` cannot express a repo-root file; fixed by
    switching to `ignore`.
-3. `Invalid function argument`, `talos-ccm.tf:14` — the second `file()` in a
-   local; fixed by admitting that one HelmRelease directory.
+3. `talos-ccm.tf:14` — second `file()` call, in a `locals` block.
+4. `flux.tf:23-24` — two more, in resource `triggers`.
+
+Rounds 3 and 4 were the same mistake twice: predicting that `-target` would
+prune a call site instead of carrying every file the root reads. It does not
+prune any of them. The table above is that enumeration, so the next `file()`
+added to this root is a lookup rather than a fifth round.
 
 Confirmed working along the way: `tofu init` reaches the registry and installs
 `ovh/ovh`, which no other `Terraform` CR in this cluster uses.

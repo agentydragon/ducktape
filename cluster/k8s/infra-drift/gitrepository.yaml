@@ -31,12 +31,14 @@ spec:
     !/cluster
     /cluster/*
     !/cluster/terraform
-    # talos-ccm.tf's locals yamldecode(file(…)) this one HelmRelease. Only the
-    # single directory: gotk-components.yaml next door is 380 KB and is read by
-    # null_resource.flux_bootstrap's triggers, which -target does prune.
+    # Every file()-family call in the root, wherever it sits: -target does not
+    # prune configuration evaluation. talos-cloud-controller-manager for
+    # talos-ccm.tf's locals, flux-system for null_resource.flux_bootstrap's
+    # triggers. The rest of cluster/k8s (10 MB) reads nothing.
     !/cluster/k8s
     /cluster/k8s/*
     !/cluster/k8s/talos-cloud-controller-manager
+    !/cluster/k8s/flux-system
     # module "wyrm2_image": `tofu init` installs every module block in the
     # config, whether or not -target keeps it in the plan graph.
     !/terraform
