@@ -50,7 +50,9 @@
       enabled: true,
       sources: ["memory"],
       provider: "openai-compatible",
-      model: "google/oai-embeddings/gemini-embedding-2",
+      // Preserve the model identity stored in the durable index. LiteLLM keeps
+      // this legacy name as an alias for the canonical prefixed route.
+      model: "gemini-embedding-2",
       remote: {
         baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
         apiKey: "${OPENCLAW_LITELLM_API_KEY}",

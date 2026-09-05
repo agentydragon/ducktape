@@ -360,6 +360,14 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       mode: embedding
+  # Compatibility alias for public-coder-agent's durable OpenClaw index.
+  # Keep until that index is deliberately rebuilt under the prefixed name.
+  - model_name: gemini-embedding-2
+    litellm_params:
+      model: gemini/gemini-embedding-2
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: embedding
   - model_name: google/oai-embeddings/gemini-embedding-001
     litellm_params:
       model: gemini/gemini-embedding-001

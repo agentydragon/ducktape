@@ -96,6 +96,8 @@ locals {
   # route to it and should not gain one just to embed. Routing embeddings through
   # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
   embedding_client_models = [
+    # Compatibility alias for public-coder-agent's existing durable index.
+    "gemini-embedding-2",
     "google/oai-embeddings/gemini-embedding-2",
     "google/oai-embeddings/gemini-embedding-001",
   ]
