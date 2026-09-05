@@ -14,69 +14,56 @@ Applying stays `bazel run //cluster:bootstrap`.
 
 ## What this covers
 
-`spec.targets` scopes the plan to resources a runner pod can actually observe:
-the OVH dedicated servers and their disk configuration, the two Proxmox VMs,
-and the persistent Proxmox role/user/token.
+`spec.targets` scopes the plan to `ovh_dedicated_server.{kimsufi,kimsufi_cp}` —
+the OVH bare-metal server resources. Their managed attributes are exactly the
+kind that get changed out of band: `rescue_ssh_key`, `display_name`, and
+`efi_bootloader_path`, whose comment in `ovh-nodes.tf` explains that losing it
+sends the node into an rEFInd boot loop. `kimsufi_cp` currently resolves to
+zero instances (`local.kimsufi_cp_servers` is empty) and is listed so a future
+Kimsufi control plane is covered without editing the CR.
 
-Everything else in the root is excluded on purpose:
+That is the one subgraph in this root whose whole dependency closure is the
+`ovh` provider plus `secrets/ovh-{credentials,rescue-ssh}.sops.yaml`.
+Everything else is excluded:
 
-| Excluded                                                                     | Why                                                                                                                                                   |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `local_file.{kubeconfig,talosconfig}`                                        | Written into the module directory on the operator's workstation. A fresh pod checkout does not have them, so every plan would report them as missing. |
-| `kubernetes_*`, `helm_*`                                                     | Both providers are configured with `config_path = "${path.module}/kubeconfig"` — the file above.                                                      |
-| `null_resource.*` bootstrap steps                                            | `local-exec` against `kubectl`, `helm` and `cilium` with that same kubeconfig.                                                                        |
-| `talos_*`                                                                    | Machine config carries the Nebula node identities, whose private keys are per-host SOPS files.                                                        |
-| `data.sops_file.cluster_secrets_age`                                         | The cluster's master age key. It does not go into a runner pod.                                                                                       |
-| `ovh_dedicated_server_update.*_rescue`, `ovh_dedicated_server_reboot_task.*` | Provisioning one-shots, not steady state.                                                                                                             |
+| Excluded                                                              | Why                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `proxmox_*` (VMs, persistent role/user/token)                         | Deferred — the provider authenticates as `root@pam!tofu`, a full-root API token, which is a much larger thing to put in a runner pod than scoped OVH credentials. `cluster/k8s/TODO.md` § Proxmox drift watch.                          |
+| `ovh_dedicated_server_update.*`, `ovh_dedicated_server_reboot_task.*` | The provisioning chain. `-target` pulls in dependencies, and `_harddisk` `depends_on` the rescue-mode `dd` step, which reaches back through both reboot tasks — so targeting the steady-state boot mode drags the one-shots in with it. |
+| `local_file.{kubeconfig,talosconfig}`                                 | Written into the module dir on the operator's workstation. A fresh pod checkout does not have them, so every plan would report them as missing.                                                                                         |
+| `kubernetes_*`, `helm_*`                                              | Both providers are configured with `config_path = "${path.module}/kubeconfig"` — the file above.                                                                                                                                        |
+| `null_resource.*` bootstrap steps                                     | `local-exec` against `kubectl`, `helm` and `cilium` with that same kubeconfig.                                                                                                                                                          |
+| `talos_*`                                                             | Machine config carries the Nebula node identities, whose private keys are per-host SOPS files.                                                                                                                                          |
+| `data.sops_file.cluster_secrets_age`                                  | The cluster's master age key. It does not go into a runner pod.                                                                                                                                                                         |
 
-So this reports drift in the metal inventory, not in the bootstrap sequence.
-Imperative `qm` edits on Atlas are the motivating case — `proxmox-vms.tf` says
-in as many words that wyrm2's PCI passthrough is applied by hand and the file
-"keeps TF in sync", which is exactly the divergence nothing currently watches.
-
-To start narrower, drop the four `ovh_*` targets: the Proxmox slice needs no
-SOPS key at all, only `infra-drift-proxmox-token`.
+Targeting is not just a scoping preference here: `cluster/k8s/TODO.md` records
+that an untargeted `tofu plan` on this root still stalls during provider
+refresh.
 
 ## Enabling
 
-The Flux Kustomization ships `suspend: true` because the runner needs two
-credentials the cluster does not have. Both steps need SOPS decryption, so they
-are the operator's.
+The Flux Kustomization ships `suspend: true` because the runner needs a
+credential the cluster does not have, and minting it requires SOPS decryption.
 
-1. **Proxmox token.** `root@pam!tofu`, the same value `cluster/.envrc` reads
-   from `secrets/shared/cluster-tokens.yaml`:
-
-   ```bash
-   cat > cluster/k8s/infra-drift/proxmox-token.sops.yaml <<EOF
-   apiVersion: v1
-   kind: Secret
-   metadata:
-     name: infra-drift-proxmox-token
-     namespace: flux-system
-   stringData:
-     token: "root@pam!tofu=<uuid>"
-   EOF
-   sops -e -i cluster/k8s/infra-drift/proxmox-token.sops.yaml
-   ```
-
-2. **Narrow age key for the OVH secrets.** The `ovh` provider is configured
-   from `secrets/ovh-credentials.sops.yaml`, and
-   `ovh_dedicated_server.kimsufi` reads `secrets/ovh-rescue-ssh.sops.yaml`.
-   Neither is encrypted to a key the cluster holds. Mint a single-purpose key
-   rather than adding `&cluster-secrets` to them — same pattern as
-   `&litellm-clients` in <../../../.sops.yaml>:
+1. **Narrow age key for the OVH secrets.** The `ovh` provider is configured
+   from `secrets/ovh-credentials.sops.yaml`, and `ovh_dedicated_server.kimsufi`
+   reads `secrets/ovh-rescue-ssh.sops.yaml`. Neither is encrypted to a key the
+   cluster holds. Mint a single-purpose key rather than adding
+   `&cluster-secrets` to them — same pattern as `&litellm-clients` in
+   <../../../.sops.yaml>:
 
    ```bash
    age-keygen -o /tmp/infra-drift-age.key   # note the public half
    ```
 
    Add the public half to `.sops.yaml` as `&infra-drift`, list it in the
-   `secrets/ovh-credentials\.sops\.yaml$` and `secrets/ovh-rescue-ssh\.sops\.yaml$`
-   rules, then `sops updatekeys` both files. Store the private half as
+   `secrets/ovh-credentials\.sops\.yaml$` and
+   `secrets/ovh-rescue-ssh\.sops\.yaml$` rules, then `sops updatekeys` both
+   files. Store the private half as
    `cluster/k8s/infra-drift/sops-age-key.sops.yaml` (Secret
    `infra-drift-sops-age-key`, key `key`).
 
-3. Add both filenames to `kustomization.yaml`, drop `suspend: true` from
+2. Add that filename to `kustomization.yaml`, drop `suspend: true` from
    `flux-kustomization.yaml`, and commit.
 
 ## Reading a plan
@@ -120,12 +107,8 @@ Two failure modes to expect:
 ## Not yet exercised
 
 The manifests have not been run: this session could not decrypt any SOPS file,
-so neither credential could be planted and no runner pod has ever planned this
-root. Two things to confirm on first unsuspend, both of which would show up as
-a failing plan rather than as anything applied:
-
-- The `proxmox` provider declares `ssh { agent = true }`. Nothing in the target
-  set needs SSH, but whether the provider tolerates a missing `SSH_AUTH_SOCK`
-  at configure time is untested here.
-- `tofu init` in the runner pulls `bpg/proxmox` and `ovh/ovh` from the
-  registry; no existing CR in this cluster uses either.
+so the age key could not be minted and no runner pod has ever planned this
+root. One thing to confirm on first unsuspend, which would show up as a failing
+plan rather than as anything applied: `tofu init` in the runner pulls
+`ovh/ovh`, which no existing `Terraform` CR in this cluster uses, so registry
+reachability for that provider is unverified.

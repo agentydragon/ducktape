@@ -69,6 +69,32 @@ since there's no first-class Forgejo provider in OpenHands.
       scale-to-zero workloads, especially queue-backed workers, scheduled jobs,
       and services whose load signals are not well represented by CPU/memory HPA.
 
+## Proxmox drift watch
+
+`cluster/k8s/infra-drift/` plans the OVH half of `cluster/terraform/main` and
+deliberately leaves the Proxmox resources out: the `proxmox` provider
+authenticates as `root@pam!tofu`, a full-root API token, and putting that in a
+tf-runner pod is a bigger step than the scoped OVH credentials the CR already
+needs.
+
+- [ ] Decide whether a narrower Proxmox principal can cover a plan-only
+      refresh. `terraform@pve` with the `TerraformAdmin` role already exists in
+      `persistent-auth.tf`; a read-only role (`VM.Audit`, `Datastore.Audit`,
+      `Sys.Audit`) would be narrower still, but it has to be able to refresh
+      `proxmox_virtual_environment_{vm,role,user,user_token}`.
+- [ ] Then extend `infra-drift`'s `spec.targets` with the two VMs and the
+      persistent role/user/token, and plant the token as
+      `infra-drift-proxmox-token`. `proxmox_virtual_environment_vm.wyrm2` is
+      the highest-value target — `proxmox-vms.tf` says its PCI passthrough is
+      applied by hand with `qm` and the file "keeps TF in sync", which is
+      precisely the divergence nothing watches.
+- [ ] Two unknowns to settle when doing it: the provider declares
+      `ssh { agent = true }`, and whether it tolerates a missing
+      `SSH_AUTH_SOCK` at configure time is untested; and pin
+      `rebuild_image = false` in the CR's `vars`, since `module.wyrm2_image` is
+      a dependency of the wyrm2 VM and `true` puts an SSH-to-Proxmox check and
+      a `nix build` in the graph.
+
 ## Missing CiliumNetworkPolicy
 
 71% of namespaces lack network policies. Tracked in `cluster/docs/plan.md`.

@@ -33,26 +33,14 @@ spec:
     namespace: flux-system
   serviceAccountName: tf-runner
 
-  # Metal only. The rest of the root reaches for the workstation-generated
-  # kubeconfig or for credentials that must not enter a runner pod — README
-  # § What this covers.
+  # The OVH server resources and nothing else — the one subgraph whose only
+  # dependencies are the ovh provider and two SOPS files. README § What this
+  # covers has the reason for each exclusion, Proxmox included.
   targets:
     - ovh_dedicated_server.kimsufi
+    # Zero instances while local.kimsufi_cp_servers is empty; listed so a
+    # future Kimsufi control plane is watched without editing this CR.
     - ovh_dedicated_server.kimsufi_cp
-    - ovh_dedicated_server_update.kimsufi_harddisk
-    - ovh_dedicated_server_update.kimsufi_cp_harddisk
-    - proxmox_virtual_environment_vm.talos
-    - proxmox_virtual_environment_vm.wyrm2
-    - proxmox_virtual_environment_role.persistent
-    - proxmox_virtual_environment_user.persistent
-    - proxmox_virtual_environment_user_token.persistent
-
-  vars:
-    # module.wyrm2_image is a dependency of the targeted wyrm2 VM. Left at its
-    # default this is a no-op, but `true` would put an SSH-to-Proxmox check and
-    # a `nix build` in the graph — neither of which a runner pod can do.
-    - name: rebuild_image
-      value: false
 
   backendConfig:
     customConfiguration: |
@@ -69,13 +57,6 @@ spec:
             secretKeyRef:
               name: tofu-state-db-credentials
               key: password
-        # root@pam!tofu. The same token cluster/.envrc pulls from
-        # secrets/shared/cluster-tokens.yaml on a workstation.
-        - name: PROXMOX_VE_API_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: infra-drift-proxmox-token
-              key: token
         # Narrow age key covering secrets/ovh-credentials.sops.yaml and
         # secrets/ovh-rescue-ssh.sops.yaml only, so the ovh provider can
         # configure — NOT the broad cluster SOPS key.

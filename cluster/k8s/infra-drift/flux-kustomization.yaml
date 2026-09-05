@@ -4,7 +4,7 @@ metadata:
   name: infra-drift
   namespace: ducktape-flux
 spec:
-  # Suspended until the runner's Proxmox token and narrow age key exist —
+  # Suspended until the runner's narrow age key for the OVH SOPS files exists —
   # README § Enabling. Held here rather than on the Terraform CR: a CR that has
   # never reconciled has no conditions for the healthCheck below to read, so
   # suspending it instead would leave this Kustomization waiting forever.
