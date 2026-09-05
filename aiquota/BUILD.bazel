@@ -102,7 +102,6 @@ py_library(
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//itsdangerous",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
