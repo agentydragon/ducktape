@@ -61,8 +61,11 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 ## Inputs
 
 - `input_id` is client-chosen and idempotent. An input is reported as `InputSubmitted`, carrying
-  its text, when the runner takes it, then `InputAccepted` once the harness has taken it into its transcript, or
-  `InputRejected`.
+  its text, when the runner takes it, then `InputAccepted` once the harness acknowledges native
+  admission, or `InputRejected`. For Claude, this acknowledgement is `command_lifecycle: queued`:
+  it proves command-queue admission, not that the input has started, entered the native transcript,
+  reached the model, or become durable. The exact provider boundary remains visible in the source
+  `Native` event.
 - An input while no turn is active starts a turn: `TurnStarted` precedes its `InputAccepted`. An
   input while a turn is active joins that turn; the harness decides where in the model's context
   it lands.
@@ -117,9 +120,13 @@ session and a new transcript.
 
 ## What the harnesses do not promise
 
-- Claude Code writes its transcript when it exits cleanly; a harness killed outright can lose the
-  conversation since its last write. The runner stops harnesses by closing stdin, and the runner's
-  own termination does the same for every session, so the pod's SIGTERM path preserves transcripts.
+- Claude Code serializes transcript appends, but enqueue acceptance is not a durability fence.
+  Explicit flush, terminal result, and orderly shutdown fence pending writes; a harness killed
+  outright can lose the conversation since its last completed fence. The runner stops harnesses by
+  closing stdin, and the runner's own termination does the same for every session, so the pod's
+  SIGTERM path gives Claude an orderly flush opportunity but does not turn an earlier
+  `InputAccepted` into proof of native persistence. See
+  [`../docs/claude_runtime_contracts.md`](../docs/claude_runtime_contracts.md).
 - Codex reports no aggregated output for a shell command that outlived its first read, and keeps a
   streamed model connection open after an interrupt; neither changes the events above.
 - Native approval prompts, user dialogs, and hook callbacks are refused with an error answer, so a

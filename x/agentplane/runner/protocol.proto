@@ -13,12 +13,13 @@
 // sequences it came from, so provider detail is one lookup away without leaking into the contract.
 //
 // Inputs. An Input is reported as InputSubmitted when the runner takes it, then InputAccepted once
-// the harness has taken it into its transcript, or InputRejected. An input while no turn is active
-// starts a turn (TurnStarted precedes its InputAccepted); an input while a turn is active joins that
-// turn, and the harness decides where in the model's context it lands. input_id is client-chosen
-// and idempotent: an Input whose id the session log already settled is not written again, and the
-// runner re-emits that input's outcome so a client that retried after a lost connection learns the
-// original result.
+// the harness acknowledges native admission, or InputRejected. Claude currently acknowledges
+// command-queue admission; that is not transcript admission or a native persistence fence. An input
+// while no turn is active starts a turn (TurnStarted precedes its InputAccepted); an input while a
+// turn is active joins that turn, and the harness decides where in the model's context it lands.
+// input_id is client-chosen and idempotent: an Input whose id the session log already settled is not
+// written again, and the runner re-emits that input's outcome so a client that retried after a lost
+// connection learns the original result.
 //
 // Harness lifecycle. Open starts the harness if it is not running, resuming the native conversation
 // when the session has one. Shutdown interrupts an active turn, stops the harness, reports
@@ -179,7 +180,8 @@ message InputSubmitted {
   string text = 2;
 }
 
-// The harness took the input into its transcript, as part of turn_id.
+// The harness acknowledged its provider-native admission boundary, as part of turn_id. For Claude
+// this currently means command-queue admission, not transcript admission or durable persistence.
 message InputAccepted {
   string input_id = 1;
   string turn_id = 2;

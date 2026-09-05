@@ -58,6 +58,12 @@ as `mcp__<server>__<tool>` with the declared `inputSchema` passed through verbat
 
 The timeout fired 3.1 s after the call for `timeout: 3000`.
 
+The current Agentplane runner does not yet implement this host role: its initialize payload cannot
+declare `sdkMcpServers`/configs and its adapter rejects `mcp_message` as an unknown control request.
+The active v2 `tools/call` path in 2.1.252 also does not wire the task/input-request helper
+scaffolding present elsewhere in the MCP runtime, so driver-hosted MCP task semantics must remain
+unsupported. See [claude_runtime_contracts.md](claude_runtime_contracts.md).
+
 ### Changing the tool set mid-session
 
 `mcp_message` flows in both directions — the driver may send one to deliver its server's own

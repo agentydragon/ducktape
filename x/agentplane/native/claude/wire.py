@@ -81,8 +81,8 @@ class ControlResponseFrame(BaseModel):
 
 
 class CommandLifecycleFrame(BaseModel):
-    """Emitted per user frame uuid under `--replay-user-messages`; `queued` is the harness's
-    admission of the input."""
+    """Emitted per user frame uuid under `--replay-user-messages`; `queued` is command-queue
+    admission, not transcript admission or durable persistence."""
 
     type: Literal["command_lifecycle"]
     command_uuid: str
