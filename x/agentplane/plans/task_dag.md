@@ -68,7 +68,7 @@ flowchart TB
     OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
     OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
-    OPI["ActionRequest vertical slice<br/>one adapter, decision UI, machine delivery<br/>to the originating Thread"]:::ready
+    OPI["Action Service vertical slice<br/>standalone API + Postgres,<br/>human Decision + single Execution"]:::ready
 
     T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
     PR["Proxy rollout survivability<br/>reproduce active-turn impact and fix/drain contract"]:::ready
@@ -159,13 +159,13 @@ A completed item leaves the active queue even when it supplies an edge.
   where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
   Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
   built before this gate.
-- **`OPI` ActionRequest vertical slice:** one real adapter from agent intent through
-  policy/Decision to the single Execution/result and later Thread delivery. V0 read scope is
-  caller-own plus operator-all within the existing operator scope; the Action Hub is the canonical
-  state store, while the integration app is the browser BFF. The operation layer may initially be
-  colocated with the integration app, but the test must keep runtime lifecycle, access authority,
-  adapter, and trajectory responsibilities separable. Push approval is a notification adapter over
-  the same Decision path, not a second authority.
+- **`OPI` Action Service vertical slice:** one independently deployable service with a versioned
+  ActionRequest API, Postgres state, caller-own/operator-all reads, human DecisionProvider, and one
+  single-shot Executor path. Haku Console and the integration app are authenticated clients/BFFs,
+  not canonical state owners. Managed sandbox agents call a local Action Relay; only the relay holds
+  the projected short-lived `agentplane-actions` Kubernetes token, while the runner holds no real
+  Action Service token. External callers use a short-lived audience-bound OIDC/JWT linkage. Push
+  approval remains a notification adapter over the same Decision path, not a second authority.
 - **`T3` trajectory search:** search persisted text and action evidence, answer “what happened,”
   “why,” and “which Thread,” and link to raw frames. Scope is the caller's already-authorized
   trajectory surface; cross-agent visibility is not silently included.
@@ -201,10 +201,11 @@ A completed item leaves the active queue even when it supplies an edge.
   The decision authority owns allow/deny/referral and grants; adapters own MCP/HTTP/
   Kubernetes/host execution; the conversation app owns operator presentation; the trajectory store
   preserves evidence.
-- The Action Hub is the canonical owner of ActionRequest lifecycle and access checks; the existing
-  trajectory store may hold detailed evidence by reference, but raw trajectory links cannot bypass
-  the hub's ACL. The integration app is the authenticated browser BFF, and push notifications are
-  delivery adapters that return through the same Decision Authority.
+- The independently deployable Action Service is the canonical owner of ActionRequest lifecycle,
+  Postgres state, and access checks; the existing trajectory store may hold detailed evidence by
+  reference, but raw trajectory links cannot bypass the service ACL. Haku Console and the integration
+  app are authenticated browser BFFs/clients, and push notifications are delivery adapters that
+  return through the same Decision Authority.
 - An Agent is a future product identity, distinct from a Sandbox (runtime infrastructure), Thread
   (interaction context), and authorization principal (policy subject). Cross-agent reads require an
   explicit mapping and data-read policy.

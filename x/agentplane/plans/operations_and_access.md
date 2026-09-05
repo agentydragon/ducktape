@@ -44,7 +44,7 @@ decision, being denied, and actually running.
 - An ActionRequest is one logical intent and may result in at most one Execution.
 - The request shape is invariant: the agent does not choose a different schema based on whether the
   request is expected to be auto-allowed or human-reviewed.
-- After a final `allow` Decision, the Action Hub automatically dispatches the request. There is no
+- After a final `allow` Decision, the Action Service automatically dispatches the request. There is no
   agent self-approval or universal `commit` step in v0.
 - An LLM judge is allowed to issue the final Decision when that provider is implemented and returns
   a decision. If it abstains or refers the request, the request remains `decision_pending` and can
@@ -144,7 +144,7 @@ reviewable operation; the agent may need less.
 The ActionRequest should be usable for an MCP server without making MCP the core abstraction:
 
 ```text
-Agent Thread -> Action Hub -> Decision Authority -> MCP Executor -> MCP server/tool
+Agent Thread -> Action Service -> Decision Authority -> MCP Executor -> MCP server/tool
                          -> Decision / result / Execution events
 ```
 
@@ -158,7 +158,7 @@ Keep the hub, decision issuers, and executors separate even if the first deploym
 
 - **Agentplane runtime**: Sandbox and Thread lifecycle, native runner protocol, and delivery to a
   Thread when a product layer asks it to deliver an event.
-- **Action Hub / Action Coordinator**: accepts and durably records ActionRequests, validates
+- **Action Service / Action Coordinator**: accepts and durably records ActionRequests, validates
   correlation/idempotency, routes them to a DecisionProvider, persists Decision artifacts, dispatches
   allowed requests to an Executor, and delivers state changes. It is the durable coordinator, not
   the policy authority. V0 artifacts carry issuer and provenance fields but do not require
@@ -204,7 +204,7 @@ full reviewable request and decision context, but still must not expose proxy-he
 reads and decisions should be auditable from the beginning; this is a small event field, not a new
 permission framework.
 
-The Action Hub is the **canonical owner of ActionRequest state**. Store there:
+The Action Service is the **canonical owner of ActionRequest state**. Store there:
 
 - the immutable request envelope and provenance;
 - Decision events and issuer metadata;
@@ -212,21 +212,85 @@ The Action Hub is the **canonical owner of ActionRequest state**. Store there:
 - references to larger trajectory or blob content when storing it inline would be inappropriate.
 
 Do not duplicate the canonical request and result in the integration app's own tables. The existing
-trajectory store may retain the detailed event/content evidence, but the Action Hub owns the access
+trajectory store may retain the detailed event/content evidence, but the Action Service owns the access
 check and returns an authorized projection or follows a reference; a raw trajectory link must not
 become an ACL bypass.
 
-This is a logical service boundary, not a requirement to deploy a microservice in v0. The Action Hub
-and its first DecisionProvider can live in the integration app process and use its PostgreSQL
-connection, behind interfaces that make a later extraction possible. Split it into a separately
-rolled service only when another writer/consumer, independent availability, or an actual rollout
-conflict makes that boundary valuable. The integration app should remain the browser-facing BFF:
-verify the existing operator identity, call the hub over an authenticated service channel, and never
-let the browser write decisions or assert an arbitrary principal.
+The Action Service is now an **independently deployable service boundary for v0**, because Haku Console
+and the integration app must be able to adopt it incrementally without importing each other's full
+runtime/frontend bundle. It owns its PostgreSQL schema, ActionRequest lifecycle, access checks,
+DecisionProvider interface, Executor dispatch, and notification outbox. It does not own Sandboxes,
+Threads, trajectories, or provider-native harness state; those remain referenced by opaque origin and
+result links.
+
+The service should have a stable versioned HTTP API and authenticate both callers and operators
+without depending on an integration-app session cookie. A client backend may present a verified
+operator identity over an authenticated service-to-service channel, or the service may verify a
+supported OIDC/JWT audience directly. The browser must not assert an arbitrary principal. Keep the
+identity adapter replaceable so Haku Console can use its current auth while the integration app uses
+its existing auth path.
+
+The integration app and Haku Console are clients/BFFs:
+
+```text
+agent/runtime -> Action Service API -> Action Service Postgres
+browser       -> client BFF        -> Action Service API
+push callback -> notification adapter -> Action Service API
+```
+
+Neither client duplicates canonical ActionRequest state. Each may render its own UI and translate
+its own authenticated user/session into the service's operator or caller identity. The first human
+DecisionProvider can live in the Action Service deployment; a later Haku Console UI, integration-app
+UI, or LLM judge can be added without changing the ActionRequest storage contract.
+
+Do not turn this into a generic platform before one service API and one end-to-end human approval
+flow work. A separate deployment is justified here by gradual adoption and independent rollout, not
+by a requirement for a fleet of microservices.
+
+## Caller linkage and authentication
+
+The service needs a linkage for callers whose harness does not run in Rai's Kubernetes cluster. This
+is an authentication concern, not a reason to make the Action Service know how every harness is hosted.
+Use one Action Service API with multiple trusted identity adapters:
+
+- **In-cluster callers:** the runner must not hold a real Action Service token. A colocated,
+  narrow action relay/gateway receives the projected, short-lived Kubernetes ServiceAccount JWT with
+  an Action-Service audience. It forwards the agent-facing request to the Action Service, attaching
+  the token without returning or logging it. The Action Service validates the token by signature or
+  TokenReview, maps the workload to a caller principal, and where origin binding matters verifies the
+  live Pod/Sandbox linkage. The request body must not be allowed to invent its owner.
+- **External callers:** short-lived audience-bound OIDC/JWT access tokens issued by Authentik or a
+  small Haku Console token broker. The token's subject/client identity establishes the caller
+  principal; optional claims can bind an agent instance or permitted origin scope. The Action Service
+  must not require a Kubernetes token merely because it is deployed in Kubernetes.
+- **Human operators:** the existing Haku Console or integration-app login remains the user-facing
+  authentication. Their backend exchanges the verified session for an authenticated service call or
+  presents a directly verifiable operator JWT; the browser never forwards an arbitrary operator name.
+
+The current Haku Claude Code Web path, where a SOPS-backed rotator refreshes tokens through a CronJob,
+can be an incremental bridge. Prefer having that rotator or a broker mint/obtain a short-lived token
+audience-bound to the Action Service, rather than placing a long-lived Action Service bearer in the
+harness. SOPS should remain a protected source for the rotator's credentials, not become the Action
+Service's caller registry or an authorization decision. If the current rotator can only deliver an
+existing token format in v0, accept it through a narrowly scoped issuer/trust adapter and make the
+migration to minted audience-bound tokens an explicit follow-up.
+
+The service should expose a stable principal abstraction without requiring the full durable Agent
+model yet: `sub`/client identity plus issuer, with optional opaque `agent_instance` and origin
+Thread/Sandbox references. Caller-owned reads are keyed by the authenticated principal, never by a
+caller-supplied owner field. This supports gradual Haku Console adoption now and leaves the eventual
+Agent identity mapping for the later cross-agent-read design.
+
+The runner-facing protocol should be local and ergonomic, for example a fixed loopback Action Relay
+endpoint or SDK client. It should return ActionRequest receipts and updates, never token material.
+The relay is a transport/capability boundary, not a second policy authority: the Action Service still
+makes the authorization decision. Same-Pod network policy cannot guarantee that the runner cannot
+reach the relay's destination directly, so the real protection is that only the relay holds the valid
+workload token and the Action Service rejects unauthenticated direct calls.
 
 ## Human UI and push approvals
 
-Push approval is a delivery channel, not a second policy authority. The Action Hub should publish a
+Push approval is a delivery channel, not a second policy authority. The Action Service should publish a
 small pending-decision notification event to a notification adapter/outbox. The notification should
 contain an opaque request reference and a redacted summary or deep link, never the full sensitive
 request by default.
@@ -246,14 +310,14 @@ and for future Haku Console push notifications.
 The first web UI can therefore be:
 
 ```text
-browser -> integration app BFF -> Action Hub -> Decision Authority
+browser -> client BFF -> Action Service -> Decision Authority
 ```
 
 and the future push path can be:
 
 ```text
-Action Hub -> notification adapter -> push provider
-push callback -> Decision Authority -> Action Hub
+Action Service -> notification adapter -> push provider
+push callback -> Decision Authority -> Action Service
 ```
 
 No approval bearer token should be a guessable request ID or an unrestricted URL. If the push provider
