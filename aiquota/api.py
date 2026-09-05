@@ -398,7 +398,8 @@ def _require_api_auth(
         and hmac.compare_digest(credentials.credentials, expected)
     ):
         return
-    if request.scope.get("session", {}).get("aiquota_user") == request.app.state.oauth_username:
+    oauth_username = request.app.state.oauth_username
+    if isinstance(oauth_username, str) and request.scope.get("session", {}).get("aiquota_user") == oauth_username:
         return
     raise HTTPException(status_code=401, detail="unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
@@ -548,7 +549,7 @@ def create_app(
             request.session["aiquota_user"] = browser_oauth.username
             return RedirectResponse(url="/", status_code=303)
 
-        @app.get("/")
+        @app.get("/", response_model=None)
         async def frontend_entry(request: Request) -> RedirectResponse | object:
             if request.session.get("aiquota_user") != browser_oauth.username:
                 return RedirectResponse(url="/auth/login", status_code=303)
