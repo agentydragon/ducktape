@@ -29,7 +29,7 @@ spec:
   path: ./cluster/terraform/main
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: infra-drift-source
     namespace: flux-system
   serviceAccountName: tf-runner
 

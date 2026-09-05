@@ -1,0 +1,29 @@
+# Dedicated source: the shared flux-system GitRepository sparse-checks-out only
+# deployment paths (cluster/k8s/, tf/gitops/, ...), so cluster/terraform/ is
+# absent from its artifact and the runner fails with "terraform path not
+# found". Its sparseCheckout cannot be extended either — gotk-sync.yaml is
+# flux-generated and marked DO NOT EDIT.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: infra-drift-source
+  namespace: flux-system
+  annotations:
+    description: >-
+      Sparse checkout of the metal tofu root, its module tree and the SOPS
+      secrets it reads, for the infra-drift plan-only Terraform CR.
+spec:
+  interval: 10m
+  ref:
+    branch: devel
+  url: https://github.com/agentydragon/ducktape.git
+  # Cone-mode sparse checkout, so repo-root files (nebula-mesh.json, consumed
+  # by nebula.tf's locals) come along with these directories.
+  sparseCheckout:
+    - cluster/terraform/
+    # module "wyrm2_image": `tofu init` installs every module block in the
+    # config, whether or not -target keeps it in the plan graph.
+    - terraform/modules/
+    # data.sops_file.ovh_{credentials,rescue_ssh}, read as
+    # ${path.module}/../../../secrets/…. Ciphertext only.
+    - secrets/

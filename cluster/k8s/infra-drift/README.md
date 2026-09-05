@@ -114,11 +114,36 @@ Two failure modes to expect:
   Blocking a `tf/gitops` root delays a reconcile — blocking this one stops
   cluster bootstrap, which is the reason the interval is hours and not minutes.
 
-## Not yet exercised
+## Source: why a dedicated GitRepository
 
-The manifests have not been run: this session could not decrypt any SOPS file,
-so `sops updatekeys` could not be run and no runner pod has ever planned this
-root. One thing to confirm on first unsuspend, which would show up as a failing
-plan rather than as anything applied: `tofu init` in the runner pulls
-`ovh/ovh`, which no existing `Terraform` CR in this cluster uses, so registry
-reachability for that provider is unverified.
+The shared `flux-system` GitRepository sparse-checks-out only deployment paths:
+
+```text
+sparseCheckout: [cluster/k8s/, loom/wayback/deploy/, props/deploy/, tf/gitops/]
+```
+
+`cluster/terraform/` is not among them, so the runner's checkout has no such
+directory and the plan dies with
+`terraform path not found: stat …/cluster/terraform/main`. That list cannot be
+extended: `cluster/k8s/flux-system/gotk-sync.yaml` is flux-generated and marked
+DO NOT EDIT. Hence `infra-drift-source`, scoped to what this plan reads and
+nothing else, which also keeps the shared artifact every other Flux consumer
+pulls from growing.
+
+Sparse checkout is cone mode, so repo-root files come along with the listed
+directories — `nebula-mesh.json`, which `nebula.tf`'s locals read, arrives that
+way rather than by being listed.
+
+## Exercised once, partially
+
+First unsuspended reconcile (2026-09-05) failed with the path error above; the
+dedicated source is the fix. Beyond that point the plan is still unverified —
+these would each surface as a failing plan, never as anything applied:
+
+- `tofu init` pulls `ovh/ovh`, which no other `Terraform` CR in this cluster
+  uses, so registry reachability for that provider is untested.
+- `-target` prunes unreferenced locals, so the `file()` and `data.local_file`
+  reads under `secrets/nebula/` and the `helm_template`/`local_file` resources
+  should stay out of the graph. If any turns out to be reachable from
+  `ovh_dedicated_server.*`, the plan will say so and the source needs another
+  path.
