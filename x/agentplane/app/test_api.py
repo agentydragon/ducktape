@@ -530,6 +530,9 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
 
     assert set(paths) == {
+        "/actions",
+        "/actions/{request_id}",
+        "/actions/{request_id}/decision",
         "/models",
         "/presets",
         "/sandboxes",
@@ -553,6 +556,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/live/sandboxes",
         "/live/sandboxes/{name}",
     }
+    assert set(paths["/actions"]) == {"get", "post"}
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
     assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}

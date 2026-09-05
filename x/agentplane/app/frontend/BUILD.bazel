@@ -51,6 +51,33 @@ ts_library(
 )
 
 ts_library(
+    name = "actions",
+    srcs = ["actions.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_test",
+    srcs = ["actions.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "live",
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
@@ -252,6 +279,7 @@ ts_library(
     srcs = ["app.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions",
         ":sandbox_page",
         ":sandboxes",
         ":session",
@@ -291,6 +319,7 @@ vitest_bin.vitest_test(
     chdir = package_name(),
     data = [
         "vitest.config.ts",
+        ":actions_test",
         ":events_test",
         ":launch_presets_test",
         "//:node_modules/vitest",
@@ -374,6 +403,7 @@ VISUAL_DATA = [
         no_copy_to_bin = VISUAL_DATA,
     )
     for scenario in [
+        "actions",
         "sandboxes",
         "sandboxes_stale",
         "sandbox",

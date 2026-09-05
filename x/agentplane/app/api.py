@@ -13,6 +13,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.middleware.sessions import SessionMiddleware
 
 from x.agentplane.app import auth_routes, bridge as runner_bridge
+from x.agentplane.app.actions import (
+    ActionConflictError,
+    ActionHub,
+    ActionNotFoundError,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+    EchoExecutor,
+    HumanDecisionProvider,
+    NewActionRequest,
+    UnknownCapabilityError,
+    UnknownOriginThreadError,
+)
 from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from x.agentplane.app.egress import (
     BindingNotFoundError,
@@ -22,7 +35,7 @@ from x.agentplane.app.egress import (
     PolicyView,
     UnknownPolicyError,
 )
-from x.agentplane.app.identity import TokenReviewer, require_caller
+from x.agentplane.app.identity import CallerIdentity, TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
     PRESET_BINDING_ANNOTATION,
     NewSandbox,
@@ -255,6 +268,57 @@ def _store(request: Request) -> TrajectoryStore:
 Store = Annotated[TrajectoryStore, Depends(_store)]
 
 
+actions_router = APIRouter(prefix="/actions", tags=["actions"])
+
+
+def _action_hub(request: Request) -> ActionHub:
+    hub = request.app.state.action_hub
+    if not isinstance(hub, ActionHub):
+        raise TypeError(f"app.state.action_hub is {type(hub).__name__}, not ActionHub")
+    return hub
+
+
+def _human_decisions(request: Request) -> HumanDecisionProvider:
+    provider = request.app.state.human_decisions
+    if not isinstance(provider, HumanDecisionProvider):
+        raise TypeError(f"app.state.human_decisions is {type(provider).__name__}, not HumanDecisionProvider")
+    return provider
+
+
+ActionHubDependency = Annotated[ActionHub, Depends(_action_hub)]
+HumanDecisions = Annotated[HumanDecisionProvider, Depends(_human_decisions)]
+Caller = Annotated[CallerIdentity, Depends(require_caller)]
+
+
+@actions_router.post("", status_code=status.HTTP_201_CREATED)
+async def submit_action(body: NewActionRequest, hub: ActionHubDependency, caller: Caller) -> ActionRequestView:
+    """Accept one immutable intent and return its durable, non-blocking receipt."""
+    return await hub.submit(body, caller)
+
+
+@actions_router.get("")
+async def list_actions(
+    hub: ActionHubDependency,
+    caller: Caller,
+    state: Annotated[list[ActionState] | None, Query(description="Only requests in these states.")] = None,
+) -> list[ActionRequestView]:
+    """Token callers see only their own requests; an OIDC operator sees the app's whole scope."""
+    return await hub.list(caller, states=state or ())
+
+
+@actions_router.get("/{request_id}")
+async def get_action(request_id: UUID, hub: ActionHubDependency, caller: Caller) -> ActionRequestView:
+    return await hub.get(request_id, caller)
+
+
+@actions_router.post("/{request_id}/decision")
+async def decide_action(
+    request_id: UUID, body: DecisionInput, provider: HumanDecisions, caller: Caller
+) -> ActionRequestView:
+    """The web and future notification callbacks share this idempotent DecisionProvider path."""
+    return await provider.decide(request_id, body, caller)
+
+
 class ThreadRename(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -318,6 +382,7 @@ def create_app(
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
+    action_hub: ActionHub | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -338,9 +403,20 @@ def create_app(
     app.state.live = live
     app.state.oidc = oidc
     app.state.reviewer = reviewer
+    app.state.action_hub = action_hub or ActionHub(store.engine, EchoExecutor())
+    app.state.human_decisions = HumanDecisionProvider(app.state.action_hub)
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
-    for api_router in (router, models, preset_router, runner_bridge.router, threads, egress_router, live_router):
+    for api_router in (
+        router,
+        models,
+        preset_router,
+        runner_bridge.router,
+        threads,
+        actions_router,
+        egress_router,
+        live_router,
+    ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
@@ -358,6 +434,22 @@ def create_app(
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(ActionNotFoundError)
+    async def _action_not_found(_request: Request, error: ActionNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownOriginThreadError)
+    async def _origin_thread_not_found(_request: Request, error: UnknownOriginThreadError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownCapabilityError)
+    async def _unknown_capability(_request: Request, error: UnknownCapabilityError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
+
+    @app.exception_handler(ActionConflictError)
+    async def _action_conflict(_request: Request, error: ActionConflictError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:

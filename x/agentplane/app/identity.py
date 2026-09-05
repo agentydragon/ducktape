@@ -12,6 +12,8 @@ only way in, and the API server's service proxy forwards caller headers, so it w
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from enum import StrEnum
 
 from fastapi import HTTPException, Request, status
 from kubernetes_asyncio import client as k8s_client
@@ -20,6 +22,17 @@ from kubernetes_asyncio.client import AuthenticationV1Api
 from x.agentplane.app.oidc import session_operator, settings
 
 logger = logging.getLogger(__name__)
+
+
+class CallerKind(StrEnum):
+    OPERATOR = "operator"
+    TOKEN = "token"
+
+
+@dataclass(frozen=True)
+class CallerIdentity:
+    kind: CallerKind
+    principal: str
 
 
 class TokenReviewer:
@@ -77,14 +90,17 @@ def _bearer(request: Request) -> str | None:
     return token.strip() if scheme.lower() == "bearer" and token.strip() else None
 
 
-async def _token_accepted(request: Request) -> bool:
-    """Whether the request carried a Kubernetes token TokenReview vouches for."""
+async def _token_caller(request: Request) -> CallerIdentity | None:
+    """The Kubernetes identity TokenReview vouches for, when the request carried one."""
     token = _bearer(request)
     reviewer = _reviewer(request)
-    return token is not None and reviewer is not None and await reviewer.review(token) is not None
+    if token is None or reviewer is None:
+        return None
+    principal = await reviewer.review(token)
+    return CallerIdentity(CallerKind.TOKEN, principal) if principal is not None else None
 
 
-async def require_caller(request: Request) -> None:
+async def require_caller(request: Request) -> CallerIdentity:
     """Every route depends on this. Unsafe methods additionally have to be same-origin.
 
     The Origin check is the CSRF defence a SameSite=lax cookie leaves open, and it applies only to
@@ -92,10 +108,12 @@ async def require_caller(request: Request) -> None:
     replaying, and cannot set Origin from a form post anyway.
     """
     operator = session_operator(request)
-    if operator is None and not await _token_accepted(request):
+    caller = CallerIdentity(CallerKind.OPERATOR, operator) if operator is not None else await _token_caller(request)
+    if caller is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no session and no accepted token")
     if operator is not None and request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin")
         expected = settings(request).public_base_url.rstrip("/")
         if origin is not None and origin.rstrip("/") != expected:
             raise HTTPException(status.HTTP_403_FORBIDDEN, f"cross-origin {request.method} from {origin!r}")
+    return caller

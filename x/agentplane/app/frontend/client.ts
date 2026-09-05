@@ -34,6 +34,31 @@ export type PolicyView = components["schemas"]["PolicyView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
 export type Decision = components["schemas"]["Decision"];
+export type ActionRequestView = components["schemas"]["ActionRequestView"];
+export type ActionState = components["schemas"]["ActionState"];
+export type Verdict = components["schemas"]["Verdict"];
+
+export interface ActionService {
+  list(): Promise<ActionRequestView[]>;
+  decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
+}
+
+export const actionService: ActionService = {
+  async list(): Promise<ActionRequestView[]> {
+    const { data, error } = await api.GET("/actions");
+    if (error) throw new Error(displayableError(error));
+    return data;
+  },
+
+  async decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
+    const { data, error } = await api.POST("/actions/{request_id}/decision", {
+      params: { path: { request_id: request.id } },
+      body: { verdict, expected_version: request.version, idempotency_key: crypto.randomUUID(), reason: null },
+    });
+    if (error) throw new Error(displayableError(error));
+    return data;
+  },
+};
 
 export function displayableError(error: unknown): string {
   if (error instanceof Error) return error.message;

@@ -26,9 +26,21 @@ py_binary(
 )
 
 py_library(
+    name = "actions",
+    srcs = ["actions.py"],
+    deps = [
+        ":identity",
+        ":trajectory",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
+        ":actions",
         ":auth_routes",
         ":bridge",
         ":decisions",
@@ -71,6 +83,7 @@ py_library(
     srcs = ["main.py"],
     data = ["//x/agentplane/app/frontend:bundle"],  # keep: the SPA the server mounts
     deps = [
+        ":actions",
         ":api",
         ":bridge",
         ":decisions",
@@ -115,6 +128,45 @@ py_library(
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_action_api",
+    size = "medium",
+    srcs = ["test_action_api.py"],
+    deps = [
+        ":actions",
+        ":api",
+        ":bridge",
+        ":conftest",
+        ":decisions",
+        ":egress",
+        ":identity",
+        ":inventory",
+        ":live",
+        ":trajectory",
+        "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_actions",
+    size = "medium",
+    srcs = ["test_actions.py"],
+    deps = [
+        ":actions",
+        ":conftest",
+        ":identity",
+        ":trajectory",
+        "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
