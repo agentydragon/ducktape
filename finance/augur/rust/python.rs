@@ -13,7 +13,7 @@ use augur_rust_simulator::engine::{
     ValidatedFixture, simulate_dense_validated, simulate_product_metrics_validated,
     simulate_summaries_validated, simulate_validated,
 };
-use augur_rust_simulator::event_frames::ForensicDocument;
+use augur_rust_simulator::event_frames::FramedOutput;
 use augur_rust_simulator::fixture::Fixture;
 use augur_rust_simulator::product::BASE_METRIC_NAMES;
 
@@ -65,8 +65,10 @@ fn simulate_product_metrics(
     })
 }
 
-/// Run every rollout with dense monthly state and compatibility events, returning the same
-/// JSON document `simulator_cli` writes.
+/// Run every rollout with dense monthly state and the canonical event frames.
+///
+/// This is the trace path: everything `simulate_forensic_json` carries except the balanced
+/// journal, which is Rust's own double-entry invariant and has no reader on the Python side.
 #[pyfunction]
 fn simulate_dense_json(fixture_json: &str) -> PyResult<String> {
     let fixture = parse(fixture_json)?;
@@ -77,7 +79,7 @@ fn simulate_dense_json(fixture_json: &str) -> PyResult<String> {
         })
     })
     .map_err(to_py_err)?;
-    serde_json::to_string(&output).map_err(to_py_err)
+    serde_json::to_string(&FramedOutput::new(&output)).map_err(to_py_err)
 }
 
 /// Run every rollout retaining dense state, the balanced journal, and the event frames.
@@ -95,7 +97,7 @@ fn simulate_forensic_json(fixture_json: &str) -> PyResult<String> {
         })
     })
     .map_err(to_py_err)?;
-    serde_json::to_string(&ForensicDocument::new(&output)).map_err(to_py_err)
+    serde_json::to_string(&FramedOutput::new(&output)).map_err(to_py_err)
 }
 
 /// Run every rollout retaining only fixed-size terminal summaries.

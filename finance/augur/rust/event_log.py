@@ -16,7 +16,7 @@ from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 
 
 def decode_event_log(output: Mapping[str, Any]) -> EventLog:
-    """Return canonical event frames from a forensic Rust document."""
+    """Return canonical event frames from a Rust run that retained monthly state."""
 
     frames = output["event_frames"]
     expected = {spec.name for spec in EVENT_FRAME_SPECS}

@@ -18,6 +18,6 @@ pub use engine::{
     simulate_product_metrics, simulate_product_metrics_validated, simulate_summaries,
     simulate_summaries_validated, simulate_validated,
 };
-pub use event_frames::{EventFrames, ForensicDocument};
+pub use event_frames::{EventFrames, FramedOutput};
 pub use fixture::{Fixture, PopulationOutput, SimulationOutput};
 pub use product::{BASE_METRIC_NAMES, ProductMetricSeries};

@@ -22,18 +22,22 @@ use serde::Serialize;
 use crate::fixture;
 use crate::money::{Money, Quantity};
 
-/// A forensic run beside the event frames derived from it.
+/// A run beside the event frames derived from it.
 ///
 /// Deriving them from the output rather than recording them separately means the frames
 /// cannot describe a different run than the snapshots they ship with.
+///
+/// Both capture modes that retain monthly state ship this. The frames are what a Python
+/// reader consumes, and they say the same thing whether or not the run also kept the
+/// balanced journal, so a caller wanting a trace need not pay for one.
 #[derive(Debug, Serialize)]
-pub struct ForensicDocument<'a> {
+pub struct FramedOutput<'a> {
     #[serde(flatten)]
     pub output: &'a fixture::SimulationOutput,
     pub event_frames: EventFrames,
 }
 
-impl<'a> ForensicDocument<'a> {
+impl<'a> FramedOutput<'a> {
     pub fn new(output: &'a fixture::SimulationOutput) -> Self {
         Self {
             event_frames: EventFrames::from_output(output),

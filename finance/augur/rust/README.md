@@ -195,11 +195,6 @@ against the fixture deployment's own portfolio and sampled model identically on 
 backends, funded and after ruin; `rollout_projection_test.py` renders one selected rollout's
 causal trace from each engine's frames and compares them.
 
-Deviation worth knowing: `RustEngine.events` reads the forensic document, because only that
-one serializes the canonical frames — the dense path keeps the same records in Rust's own
-per-rollout shape. So a trace request carries a balanced journal nothing reads, until the
-dense path learns to emit frames.
-
 A scenario the fixture cannot express is refused rather than encoded without it. The live
 case is a purchased property: its recurring HOA, insurance and maintenance obligations carry
 a Schedule E deduction category and a property gate, and `ObligationSpec` has neither field.
