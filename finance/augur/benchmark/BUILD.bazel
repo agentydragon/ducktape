@@ -1,6 +1,11 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
-package(default_visibility = ["//visibility:public"])
+# Measurement, not production: the benchmark exists to time an engine, and it reads the
+# scenario scaffolding in `sim/testing/` to do it.
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
 
 py_binary(
     name = "jax_driver_bin",
