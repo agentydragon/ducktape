@@ -29,7 +29,7 @@ from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.sim.backend import CompiledRun
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import load_jurisdictions_for
@@ -84,9 +84,14 @@ class Case:
     series: Mapping[LevelSeriesKey, Float64[np.ndarray, " rollout snapshot"]] = field(default_factory=dict)
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
     locations: Mapping[str, Location] = field(default_factory=dict)
+    # Already-materialized paths, for a case whose scenario carries its own series model.
+    # `sampled` below is the way to set this; `None` means the paths are the arrays above.
+    paths: ExternalSeriesContext | None = None
 
     @cached_property
     def external_series(self) -> ExternalSeriesContext:
+        if self.paths is not None:
+            return self.paths
         return ExternalSeriesContext.from_level_blocks(
             list(self.series.items()),
             rollout_count=self.rollout_count,
@@ -129,3 +134,24 @@ class Case:
             jurisdictions=self.jurisdictions,
             locations=dict(self.locations),
         )
+
+
+def sampled(scenario: Scenario, *, rollout_count: int, locations: Mapping[str, Location] | None = None) -> Case:
+    """A case whose paths come from the scenario's own series model.
+
+    That is what production does — a request samples a `SeriesModelBundle` — and what a
+    behavioural case usually wants: it wrote a scenario and means the paths that scenario
+    describes. A differential case authors exact arrays instead, so that two engines divide
+    identical rationals rather than two samplings of one model.
+    """
+
+    return Case(
+        scenario=scenario,
+        rollout_count=rollout_count,
+        locations=locations if locations is not None else {},
+        paths=materialize_external_series(
+            scenario.external_series,
+            rollout_seeds=tuple(range(rollout_count)),
+            horizon_months=int(scenario.horizon_months),
+        ),
+    )
