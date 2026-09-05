@@ -102,6 +102,9 @@ py_library(
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
+        # keep: starlette.middleware.sessions imports it at runtime; no aiquota module
+        # names it, so the import scan cannot see it.
+        "@pypi//itsdangerous",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
