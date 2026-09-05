@@ -974,6 +974,9 @@ rust_library(
 rust_test(
     name = "pipeline_test",
     crate = ":pipeline",
+    data = [
+        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+    ],
     edition = "2024",
     deps = ["@crates//:tempfile"],
 )

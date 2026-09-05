@@ -32,6 +32,13 @@ pub struct CompileSpecTreeOptions {
 #[serde(deny_unknown_fields)]
 struct AuthoringConfig {
     main_chunk_id: String,
+    /// Optional per-chunk module roots, relative to `--tree-modules`.
+    /// When omitted, every module below `--tree-modules` belongs to
+    /// `main_chunk_id`, preserving the original single-chunk authoring shape.
+    /// When present, only the listed subtrees are loaded and each subtree's
+    /// modules belong to its map key.
+    #[serde(default)]
+    module_roots: BTreeMap<String, PathBuf>,
     inputs: AuthoringInputs,
     /// Optional: only meaningful for a browser-delivered chunk. Omit for a
     /// target with no HTML entry point (e.g. a Node CLI bundle) to skip the
@@ -162,7 +169,11 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
     let input_root = source_path(source_root, config.inputs.root);
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
     let layout = OutputLayout::new(options.out_root.clone());
-    let module_sources = load_main_chunk_modules(&options.modules_root, &config.main_chunk_id)?;
+    let module_sources = load_module_sources(
+        &options.modules_root,
+        &config.main_chunk_id,
+        &config.module_roots,
+    )?;
     let binding_patch_members = load_binding_patch_members(&options.modules_root)?
         .into_iter()
         .filter(|member| !is_trivial_binding_patch(member))
@@ -243,13 +254,78 @@ impl OutputLayout {
     }
 }
 
-fn load_main_chunk_modules(modules_root: &Path, main_chunk_id: &str) -> Result<Vec<ModuleSource>> {
+fn load_module_sources(
+    modules_root: &Path,
+    main_chunk_id: &str,
+    module_roots: &BTreeMap<String, PathBuf>,
+) -> Result<Vec<ModuleSource>> {
+    if module_roots.is_empty() {
+        return load_chunk_modules(modules_root, main_chunk_id);
+    }
+
+    validate_module_roots(module_roots)?;
+    let mut active = Vec::new();
+    for (chunk_id, relative_root) in module_roots {
+        active.extend(
+            load_chunk_modules(&modules_root.join(relative_root), chunk_id).with_context(|| {
+                format!(
+                    "loading module_roots entry `{chunk_id}` from {}",
+                    relative_root.display()
+                )
+            })?,
+        );
+    }
+    active.sort_by(|left, right| (&left.chunk_id, &left.path).cmp(&(&right.chunk_id, &right.path)));
+    Ok(active)
+}
+
+fn validate_module_roots(module_roots: &BTreeMap<String, PathBuf>) -> Result<()> {
+    let mut roots: Vec<(&str, &Path)> = Vec::new();
+    for (chunk_id, root) in module_roots {
+        if chunk_id.is_empty() {
+            bail!("module_roots contains an empty chunk id");
+        }
+        if root.as_os_str().is_empty()
+            || root.is_absolute()
+            || root
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        {
+            bail!(
+                "module_roots entry `{chunk_id}` must be a non-empty normalized relative path, got `{}`",
+                root.display()
+            );
+        }
+        roots.push((chunk_id, root));
+    }
+
+    for (index, (left_chunk, left_root)) in roots.iter().enumerate() {
+        for (right_chunk, right_root) in roots.iter().skip(index + 1) {
+            if left_root == right_root {
+                bail!(
+                    "module_roots entries `{left_chunk}` and `{right_chunk}` use the same root `{}`",
+                    left_root.display()
+                );
+            }
+            if left_root.starts_with(right_root) || right_root.starts_with(left_root) {
+                bail!(
+                    "module_roots entries `{left_chunk}` (`{}`) and `{right_chunk}` (`{}`) overlap",
+                    left_root.display(),
+                    right_root.display()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn load_chunk_modules(modules_root: &Path, chunk_id: &str) -> Result<Vec<ModuleSource>> {
     let mut active = Vec::new();
     for path in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&path, modules_root);
         let data = read_module_file(&path)?;
         active.push(ModuleSource {
-            chunk_id: main_chunk_id.to_string(),
+            chunk_id: chunk_id.to_string(),
             path: module_path,
             members: data.members,
             source_matches: data.source_matches,
@@ -611,7 +687,7 @@ unassigned_mode:
     }
 
     #[test]
-    fn compiles_tree_sources_into_flat_transform_spec() {
+    fn legacy_single_chunk_tree_compiles_unchanged() {
         let temp = tempfile::tempdir().unwrap();
         let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
 
@@ -635,6 +711,150 @@ unassigned_mode:
         );
         assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
         assert!(spec.emit_browser_harness.is_some());
+    }
+
+    #[test]
+    fn compiles_multiple_chunk_module_roots_into_one_flat_spec() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let config = root.join("spec_config.yaml");
+        let modules = root.join("modules");
+        let vendor_marks = root.join("vendor_marks.yaml");
+        write_file(
+            &config,
+            r#"main_chunk_id: cli
+module_roots:
+  cli: chunks/cli
+  print: chunks/print
+inputs:
+  root: snapshot
+  js_list_path: extracted/js-files.txt
+unassigned_mode:
+  cli:
+    kind: inline_in_entry
+  print:
+    kind: catchall_file
+    target_path: residual/print
+"#,
+        );
+        write_file(&vendor_marks, "vendor_marks: []\n");
+        write_file(
+            &modules.join("chunks/cli/runtime/session.yaml"),
+            r#"source_matches:
+  - match: |
+      function selectedCli() {
+        return "cli";
+      }
+    bindings: [selectedCli]
+"#,
+        );
+        write_file(
+            &modules.join("chunks/print/protocol/stream.yaml"),
+            r#"members:
+  - name: StructuredStream
+    selector:
+      binding:
+        name: minifiedStream
+        kind: class_declaration
+"#,
+        );
+        write_file(
+            &modules.join("not_mapped.yaml"),
+            "members: [{ selector: { binding: { name: ignored } } }]\n",
+        );
+
+        let spec = compile_spec_tree(&CompileSpecTreeOptions {
+            config_path: config,
+            modules_root: modules,
+            vendor_marks_path: vendor_marks,
+            source_root: None,
+            out_root: root.join("out"),
+        })
+        .unwrap();
+
+        assert_eq!(spec.logical_modules.len(), 2);
+        assert_eq!(
+            spec.logical_modules
+                .values()
+                .map(BTreeMap::len)
+                .sum::<usize>(),
+            2
+        );
+        assert!(spec.logical_modules["cli"].contains_key("runtime/session"));
+        assert!(spec.logical_modules["print"].contains_key("protocol/stream"));
+        assert_eq!(
+            spec.logical_modules["cli"]["runtime/session"].source_matches[0].bindings[0].local(),
+            "selectedCli"
+        );
+        assert!(matches!(
+            spec.unassigned_mode["cli"],
+            UnassignedMode::InlineInEntry
+        ));
+        assert!(matches!(
+            spec.unassigned_mode["print"],
+            UnassignedMode::CatchallFile { .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_multi_chunk_module_roots() {
+        let cases = [
+            (
+                "duplicate",
+                "  cli: chunks/shared\n  print: chunks/shared\n",
+                "use the same root",
+            ),
+            (
+                "overlap",
+                "  cli: chunks\n  print: chunks/print\n",
+                "overlap",
+            ),
+            (
+                "traversal",
+                "  cli: ../outside\n  print: chunks/print\n",
+                "normalized relative path",
+            ),
+            (
+                "absolute",
+                "  cli: /tmp/cli\n  print: chunks/print\n",
+                "normalized relative path",
+            ),
+            (
+                "empty",
+                "  cli: ''\n  print: chunks/print\n",
+                "normalized relative path",
+            ),
+        ];
+
+        for (case, module_roots, expected) in cases {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            let config = root.join("spec_config.yaml");
+            let modules = root.join("modules");
+            let vendor_marks = root.join("vendor_marks.yaml");
+            write_file(
+                &config,
+                &format!(
+                    "main_chunk_id: cli\nmodule_roots:\n{module_roots}inputs:\n  root: snapshot\n  js_list_path: extracted/js-files.txt\nunassigned_mode:\n  cli: {{ kind: inline_in_entry }}\n  print: {{ kind: inline_in_entry }}\n"
+                ),
+            );
+            fs::create_dir_all(&modules).unwrap();
+            write_file(&vendor_marks, "vendor_marks: []\n");
+
+            let error = compile_spec_tree(&CompileSpecTreeOptions {
+                config_path: config,
+                modules_root: modules,
+                vendor_marks_path: vendor_marks,
+                source_root: None,
+                out_root: root.join("out"),
+            })
+            .expect_err(case);
+            let message = format!("{error:#}");
+            assert!(
+                message.contains(expected),
+                "{case}: expected `{expected}` in `{message}`"
+            );
+        }
     }
 
     #[test]

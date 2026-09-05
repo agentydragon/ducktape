@@ -58,6 +58,33 @@ debundle run \
   --out-root bazel-bin/example/debundle.out
 ```
 
+By default, every YAML file below `--tree-modules` belongs to the config's
+`main_chunk_id`, preserving the original single-chunk authoring layout. An
+application-level pipeline can author modules for several chunks by mapping each
+chunk ID to a distinct subtree relative to `--tree-modules`:
+
+```yaml
+main_chunk_id: cli
+module_roots:
+  cli: chunks/cli
+  print: chunks/print
+  structuredIO: chunks/structured_io
+
+inputs:
+  root: extracted
+  js_list_path: js-files.txt
+
+unassigned_mode:
+  cli: { kind: inline_in_entry }
+  print: { kind: inline_in_entry }
+  structuredIO: { kind: inline_in_entry }
+```
+
+The mapped roots must be normalized relative paths and may not duplicate or
+overlap. Module paths in the compiled flat spec are relative to their individual
+mapped root, while `logical_modules` remains keyed by chunk ID. The existing
+`binding_patches.yaml` stream still applies to `main_chunk_id`.
+
 (For other invocation shapes — flat spec, vendor package roots, etc. —
 see `docs/cli.md`.)
 
