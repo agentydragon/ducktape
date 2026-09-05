@@ -111,3 +111,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "jax_backend",
+    srcs = ["jax_backend.py"],
+    deps = [
+        ":jax_engine",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:product_metrics",
+        "//finance/augur/sim/codec:plan",
+    ],
+)

@@ -824,3 +824,17 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "backend",
+    srcs = ["backend.py"],
+    deps = [
+        ":events",
+        ":external_series",
+        ":jurisdictions",
+        ":locations",
+        ":product_metrics",
+        ":scenario",
+        "//finance/augur/sim/compiler:plan",
+    ],
+)
