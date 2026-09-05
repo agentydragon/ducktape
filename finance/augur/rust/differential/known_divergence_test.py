@@ -5,8 +5,14 @@ case with it. Each pins what each engine answers today, so a change to either si
 and whoever made it decides which answer was meant — rather than the disagreement quietly
 moving to a new number.
 
-The fuzz targets also fail on everything recorded here, and deliberately: nothing below is
-excused, canonicalized away, or generated around.
+**This file is the only thing guarding the failure month.** The fuzz targets used to fail on
+everything recorded here, which was the right default while the list was expected to empty
+out; it left `structural_fuzz_test` permanently red on a question nobody was going to answer
+soon. `assert_results_agree` now compares event frames outside a failed rollout's failure
+month, so the cases below are where both engines' answers in that month are written down. If
+either engine changes what it records there, these tests fail and the change has to say which
+answer it meant — but a *new* divergence confined to the failure month will no longer be
+found for you.
 
 What a frozen rollout reports for *later* months is settled: it reports nothing, and both
 engines now agree. What remains is the failure month itself, which is not a month-level
