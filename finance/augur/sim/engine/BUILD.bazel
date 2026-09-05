@@ -123,3 +123,18 @@ py_library(
         "//finance/augur/sim/codec:plan",
     ],
 )
+
+py_test(
+    name = "jax_backend_test",
+    srcs = ["jax_backend_test.py"],
+    deps = [
+        ":jax_backend",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:conftest",
+        "//finance/augur/sim/testing:engine_acceptance",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
