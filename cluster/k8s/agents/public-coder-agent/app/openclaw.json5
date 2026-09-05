@@ -30,14 +30,6 @@
         model: {
           primary: "litellm/chatgpt/oai-responses/gpt-5.6-sol",
         },
-        // Cross-agent sessions_send/sessions_spawn targets are invisible under
-        // the default "tree" scope; widen only the TPM's own view so it can
-        // hand tasks to "coder". tools.agentToAgent below still gates the send.
-        tools: {
-          sessions: {
-            visibility: "all",
-          },
-        },
       },
     },
   },
@@ -281,6 +273,12 @@
     },
   },
   tools: {
+    // Cross-agent sessions_send/sessions_spawn targets are invisible under
+    // the default "tree" scope. OpenClaw 2026.8.1 configures visibility only
+    // at this global scope; agentToAgent below remains the exact agent gate.
+    sessions: {
+      visibility: "all",
+    },
     // Off by default upstream: lets "haku_console_tpm" hand tasks to "coder"
     // via sessions_send/sessions_spawn. Both ids must be listed for either
     // direction of that handoff to be admitted.
