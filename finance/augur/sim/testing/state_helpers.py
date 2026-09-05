@@ -131,8 +131,11 @@ def tax_liabilities(run: Any) -> pl.DataFrame:
     active = np.asarray(output.taxes.liability_active, dtype=bool)
     previous_amount = np.concatenate((np.zeros_like(amounts[:1]), amounts[:-1]), axis=0)
     previous_active = np.concatenate((np.zeros_like(active[:1]), active[:-1]), axis=0)
-    changed = ((amounts != previous_amount) | (active != previous_active)).any(axis=2)
-    months, slots, rollouts = np.argwhere(changed[:, :, None] & active).T
+    # Per rollout. `any(axis=2)` here would ask whether the liability moved in ANY rollout and
+    # then report that answer for all of them, so a rollout whose liability sat unchanged would
+    # emit a row because a sibling's moved — one path's history leaking into another's.
+    changed = (amounts != previous_amount) | (active != previous_active)
+    months, slots, rollouts = np.argwhere(changed & active).T
     # A liability the rollout never lived to be assessed does not exist, so it reports nothing
     # — not even a zero. The assessment lands the month after its tax year closes, and a
     # rollout that ran out of cash before then never reached it; this engine cannot leave a
