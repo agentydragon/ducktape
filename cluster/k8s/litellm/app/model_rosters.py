@@ -74,6 +74,7 @@ def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
 # for clients that need them. OpenClaw uses the Responses surface below because it is
 # the working native passthrough to CLIProxyAPI.
 CLIPROXY_MODELS: list[str] = [
+    "gpt-6-astra",
     "gpt-5.4",
     "gpt-5.5",
     "gpt-5.6-sol",
@@ -100,6 +101,14 @@ CLIPROXY_MODELS: list[str] = [
 CODEX_CONTEXT_WINDOW = 372_000
 CODEX_MAX_TOKENS = 128_000
 
+# CLIProxyAPI's current upstream Codex-subscription registry declares Astra at
+# 272k rather than the raw API's 1.05M window. The deployed gateway discovered
+# this model and completed both Responses and Anthropic Messages tool calls on
+# 2026-09-05, but its /v1/models response omits limits. Use the upstream registry
+# values until this serving path is probed.
+ASTRA_CONTEXT_WINDOW = 272_000
+ASTRA_MAX_TOKENS = 128_000
+
 # Only the probed 5.6 models carry the measured window in the LiteLLM manifest;
 # gpt-5.4/5.5/5.3-codex-spark were never probed and are left without model_info
 # token limits. A newly added 5.6 model must be probed before being added here.
@@ -124,11 +133,17 @@ TANA_MODELS: list[tuple[str, str]] = [
 # keeps them in sync ("newest group only", as with the Gemini roster).
 ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
 
-# The subset exposed in OpenClaw's model picker. OpenClaw's bundled LiteLLM
-# provider does not query the proxy's authenticated /v1/models endpoint.
-OPENCLAW_CLIPROXY_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
+# The subset exposed in OpenClaw's model picker and the serving-path limits it
+# must declare because OpenClaw's bundled LiteLLM provider does not query the
+# proxy's authenticated /v1/models endpoint.
+OPENCLAW_CLIPROXY_MODEL_LIMITS: dict[str, tuple[int, int]] = {
+    "gpt-6-astra": (ASTRA_CONTEXT_WINDOW, ASTRA_MAX_TOKENS),
+    "gpt-5.6-luna": (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS),
+    "gpt-5.6-terra": (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS),
+    "gpt-5.6-sol": (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS),
+}
 OPENCLAW_CODEX_MODELS: list[str] = [
-    exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in OPENCLAW_CLIPROXY_MODELS
+    exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in OPENCLAW_CLIPROXY_MODEL_LIMITS
 ]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key

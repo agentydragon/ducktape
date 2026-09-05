@@ -57,6 +57,7 @@ locals {
   # _cliproxy_responses_entries in cluster/k8s/litellm/app/test_litellm_config.py,
   # which pins this list against it.
   oai_lane_models = [
+    "chatgpt/oai-responses/gpt-6-astra",
     "chatgpt/oai-responses/gpt-5.4",
     "chatgpt/oai-responses/gpt-5.5",
     "chatgpt/oai-responses/gpt-5.6-sol",
@@ -73,6 +74,7 @@ locals {
   # Codex-subscription models on the Anthropic Messages surface, fronted through
   # CLIProxyAPI (_cliproxy_messages_entries) -- Claude Code clients.
   codex_client_models = [
+    "chatgpt/ant-messages/gpt-6-astra",
     "chatgpt/ant-messages/gpt-5.4",
     "chatgpt/ant-messages/gpt-5.5",
     "chatgpt/ant-messages/gpt-5.6-sol",

@@ -100,12 +100,13 @@ this non-root image pod has not) and no boot-time render script:
   it. That Secret
   (`cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml`) is reflected
   into `codex-pod` — no per-pod key, just the one shared key.
-- **LiteLLM (Codex model)** — Codex routes to LiteLLM's `chatgpt/oai-responses/*`
-  (Codex-subscription) models — served by CLIProxyAPI over a native `/v1/responses`
-  passthrough — instead of an interactive ChatGPT sign-in. The baked `~/.codex/config.toml`
+- **LiteLLM (Codex model)** — Codex routes to LiteLLM's Codex-subscription models,
+  served by CLIProxyAPI over a native `/v1/responses` passthrough, instead of an
+  interactive ChatGPT sign-in. The baked `~/.codex/config.toml`
   defines a `litellm` `model_provider` (`base_url = litellm.allegedly.works/v1`,
   `wire_api = responses`, `env_key = LITELLM_API_KEY`) and defaults to
-  `chatgpt/oai-responses/gpt-5.6-sol`. `LITELLM_API_KEY` is a dedicated virtual key minted by
+  the hidden `gpt-6-astra` alias targeting `chatgpt/oai-responses/gpt-6-astra`,
+  which lets Codex load its bundled Astra metadata. `LITELLM_API_KEY` is a dedicated virtual key minted by
   `tf/gitops/litellm-keys` (alias `codex-pod`, scoped to the oai/chatgpt models with
   a budget — deleting it is the kill switch), reflected into `codex-pod` and set on
   the container via `secretKeyRef` (`optional: true`).

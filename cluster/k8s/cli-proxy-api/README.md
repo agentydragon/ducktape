@@ -1,7 +1,7 @@
 # CLIProxyAPI
 
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) is the gateway that lets
-**Claude Code run on ChatGPT/Codex subscription models** (GPT-5.6-sol, …). It speaks
+**Claude Code run on ChatGPT/Codex subscription models** (GPT-6 Astra, GPT-5.6-sol, …). It speaks
 Anthropic `/v1/messages` to Claude Code and the ChatGPT Codex backend upstream, and —
 unlike LiteLLM's `/v1/messages` bridge (BerriAI/litellm#25429) and claude-code-router —
 **translates tool calls correctly** (`function_call` → `tool_use`). It goes direct to
@@ -17,11 +17,17 @@ key below is now consumed only by the main LiteLLM pod (ESO-mirrored into `litel
 
 `/model` lists the Codex slugs via gateway discovery. Defaults in the wrapper:
 
-- main: `gpt-5.6-sol`
+- available flagship: `gpt-6-astra`
+- main: `gpt-6-astra`
 - background/Haiku tier: `gpt-5.6-luna` (the small 5.6 — `sol` is overkill for titles etc.)
 
 Reasoning effort is driven by Claude Code's `effortLevel` setting and forwarded to Codex
 `reasoning.effort` (not a model-slug suffix).
+
+The deployed CLIProxyAPI v7.2.135 discovered `gpt-6-astra` and completed live
+tool-call probes on both `/v1/responses` (`function_call`) and `/v1/messages`
+(`tool_use`) on 2026-09-05. Its remote model catalog makes Astra usable even
+though that binary predates the model's release.
 
 ## One-time setup: Codex OAuth login
 

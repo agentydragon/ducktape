@@ -11,7 +11,7 @@ from cluster.k8s.litellm.app.model_rosters import (
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
     GEMINI_NON_REASONING_MODELS,
-    OPENCLAW_CLIPROXY_MODELS,
+    OPENCLAW_CLIPROXY_MODEL_LIMITS,
     OPENCLAW_CODEX_MODELS,
     ApiShape,
     Provider,
@@ -54,9 +54,10 @@ _OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) 
 
 def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
     """Every model the agents may name must exist in the committed LiteLLM config."""
-    assert set(OPENCLAW_CLIPROXY_MODELS) <= set(CLIPROXY_MODELS)
+    assert set(OPENCLAW_CLIPROXY_MODEL_LIMITS) <= set(CLIPROXY_MODELS)
     litellm_models = _litellm_models()
-    for model, catalog_id in zip(OPENCLAW_CLIPROXY_MODELS, OPENCLAW_CODEX_MODELS, strict=True):
+    for model, catalog_id in zip(OPENCLAW_CLIPROXY_MODEL_LIMITS, OPENCLAW_CODEX_MODELS, strict=True):
+        context_window, max_tokens = OPENCLAW_CLIPROXY_MODEL_LIMITS[model]
         assert litellm_models[catalog_id] == {
             "model_name": catalog_id,
             "litellm_params": {
@@ -67,9 +68,9 @@ def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
             "model_info": {
                 "mode": "responses",
                 "supports_function_calling": True,
-                "max_input_tokens": CODEX_CONTEXT_WINDOW,
-                "max_output_tokens": CODEX_MAX_TOKENS,
-                "max_tokens": CODEX_MAX_TOKENS,
+                "max_input_tokens": context_window,
+                "max_output_tokens": max_tokens,
+                "max_tokens": max_tokens,
             },
         }
 
@@ -132,8 +133,8 @@ def test_public_coder_memory_model_preserves_its_litellm_compatibility_alias() -
     }
 
 
-def test_codex_context_window_is_the_measured_one() -> None:
-    """The declared window must be the measured one, not a plausible-looking guess.
+def test_codex_context_windows_match_their_sources() -> None:
+    """The declared windows must match the serving-path evidence, not a raw API guess.
 
     Not a change-detector: the manifest had drifted to 200000/64000 -- a value
     that was both inconsistent and wrong -- before this check existed. This
@@ -142,11 +143,18 @@ def test_codex_context_window_is_the_measured_one() -> None:
     declaring manifest now, so it guards against regression rather than drift.
     """
     models = {model["id"]: model for model in _public_coder_agent_models()}
-    declared = [models[model_id] for model_id in OPENCLAW_CODEX_MODELS]
+    expected_limits = {
+        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model): limits
+        for model, limits in OPENCLAW_CLIPROXY_MODEL_LIMITS.items()
+    }
+    assert set(expected_limits) == set(OPENCLAW_CODEX_MODELS)
+    for model_id, (context_window, max_tokens) in expected_limits.items():
+        assert models[model_id]["contextWindow"] == context_window
+        assert models[model_id]["maxTokens"] == max_tokens
+        assert max_tokens < context_window
 
-    assert [model["contextWindow"] for model in declared] == [CODEX_CONTEXT_WINDOW] * len(declared)
-    assert [model["maxTokens"] for model in declared] == [CODEX_MAX_TOKENS] * len(declared)
-    # maxTokens is reserved out of the window, so it has to leave room for input.
+    # The 5.6 maxTokens is reserved out of the measured window, so it has to
+    # leave room for input.
     assert CODEX_MAX_TOKENS < CODEX_CONTEXT_WINDOW
 
 

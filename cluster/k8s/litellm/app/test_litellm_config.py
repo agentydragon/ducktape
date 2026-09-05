@@ -69,6 +69,15 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
         assert not missing, f"{local} allows models the proxy does not serve: {missing}"
 
 
+def test_hidden_model_aliases_target_served_models() -> None:
+    config = _load_config("proxy-config.yaml")
+    served = {entry["model_name"] for entry in config["model_list"]}
+    aliases = config["router_settings"]["model_group_alias"]
+
+    assert aliases["gpt-6-astra"] == {"model": "chatgpt/oai-responses/gpt-6-astra", "hidden": True}
+    assert all(alias["model"] in served for alias in aliases.values())
+
+
 # haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
 # whose model choice lives outside the baked-config and Terraform pins above. The runner
 # hardcodes wire_api="responses" (haku/runner/codex/options.py), so the model

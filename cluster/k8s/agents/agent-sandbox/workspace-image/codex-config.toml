@@ -3,10 +3,11 @@
 # base URL. env_key names the env var carrying the LiteLLM virtual key — only
 # the codex-lane SandboxTemplate sets it, so on other lanes codex simply has
 # no credentials. wire_api=responses: LiteLLM passes /v1/responses straight
-# through to CLIProxyAPI's native Responses surface (no bridge), so the model
-# must be a `chatgpt/oai-responses/*` entry — `chatgpt/ant-messages/*` is the
-# Anthropic-wire lane for Claude Code and does not speak this protocol.
-model = "chatgpt/oai-responses/gpt-5.6-sol"
+# through to CLIProxyAPI's native Responses surface (no bridge). LiteLLM's
+# hidden bare-slug alias targets that route and lets Codex 0.153+ recognize its
+# bundled Astra metadata; the multi-segment route itself would use fallback
+# metadata.
+model = "gpt-6-astra"
 model_provider = "litellm"
 model_reasoning_effort = "xhigh"
 # Disposable operator-trusted pod, same as codex-pod: run unattended.

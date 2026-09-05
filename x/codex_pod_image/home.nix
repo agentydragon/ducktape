@@ -141,10 +141,10 @@ in
     # interactive ChatGPT sign-in. `env_key` names the env var carrying the
     # LiteLLM virtual key (LITELLM_API_KEY, from the reflected litellm-key-codex-pod
     # secret; see deployment.yaml + tf/gitops/litellm-keys). wire_api=responses:
-    # LiteLLM passes /v1/responses straight through to CLIProxyAPI's native
-    # Responses surface (no bridge), so the model must be a `chatgpt/oai-responses/*`
-    # entry — `chatgpt/ant-messages/*` is the Anthropic-wire lane for Claude Code.
-    model = "chatgpt/oai-responses/gpt-5.6-sol";
+    # LiteLLM's hidden gpt-6-astra alias targets the Responses route. Using the
+    # bare slug lets Codex 0.153+ load Astra's bundled model metadata instead of
+    # treating the multi-segment LiteLLM route as an unknown model.
+    model = "gpt-6-astra";
     model_provider = "litellm";
     model_providers.litellm = {
       name = "Cluster LiteLLM";

@@ -132,6 +132,21 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+  # Astra: CLIProxyAPI's current upstream Codex-subscription registry declares
+  # 272k input and 128k output, unlike the raw API's 1.05M window. The deployed
+  # gateway completed Responses and Anthropic Messages tool calls on 2026-09-05,
+  # but its /v1/models response omits limits.
+  - model_name: chatgpt/ant-messages/gpt-6-astra
+    litellm_params:
+      model: anthropic/gpt-6-astra
+      api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+      api_key: os.environ/CLIPROXY_CLIENT_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      max_input_tokens: 272000
+      max_output_tokens: 128000
+      max_tokens: 128000
   - model_name: chatgpt/ant-messages/gpt-5.4
     litellm_params:
       model: anthropic/gpt-5.4
@@ -196,6 +211,17 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+  - model_name: chatgpt/oai-responses/gpt-6-astra
+    litellm_params:
+      model: openai/gpt-6-astra
+      api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+      api_key: os.environ/CLIPROXY_CLIENT_KEY
+    model_info:
+      mode: responses
+      supports_function_calling: true
+      max_input_tokens: 272000
+      max_output_tokens: 128000
+      max_tokens: 128000
   - model_name: chatgpt/oai-responses/gpt-5.4
     litellm_params:
       model: openai/gpt-5.4
@@ -554,5 +580,13 @@ litellm_settings:
   callbacks:
     - langfuse_otel
     - prometheus
+router_settings:
+  # Codex 0.153+ bundles metadata for this exact slug (272k base / 872k
+  # configurable maximum). Keep the alias hidden so Codex can select the
+  # recognized slug while requests still use the Responses-only route below.
+  model_group_alias:
+    gpt-6-astra:
+      model: chatgpt/oai-responses/gpt-6-astra
+      hidden: true
 general_settings:
   store_model_in_db: false
