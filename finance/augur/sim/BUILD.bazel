@@ -9,6 +9,11 @@ package(default_visibility = ["//visibility:public"])
 package_group(
     name = "inside_the_simulator",
     packages = [
+        # A benchmark measures an engine rather than reading its results as a product would,
+        # and it times the compile and the scan separately — which is naming the insides on
+        # purpose. Routing it through the contract would move compilation out of the timed
+        # region and quietly change what the published numbers mean.
+        "//finance/augur/benchmark/...",
         "//finance/augur/sim/...",
     ],
 )
