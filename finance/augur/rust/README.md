@@ -236,9 +236,10 @@ anything a module uses alone stays private to it, which the single 7.5k-line fil
 not express.
 
 The Rust/JAX differential harness and its suites live in `differential/`, one suite per
-policy family; the throughput benchmark and its drivers live in `benchmark/`.
-`benchmark/fixture.py` serves both: it generates the feature-rich scenario the drivers
-measure and the harness compares the engines on.
+policy family; the Rust half of the throughput benchmark lives in `benchmark/`. The
+feature-rich scenario both measure is not Rust's and lives in
+<../benchmark/scenario.py>; `benchmark/fixture.py` here only writes it out as the integer
+document, which the standalone binary needs on disk and the in-process bindings do not.
 
 ## Targets
 
@@ -250,7 +251,6 @@ measure and the harness compares the engines on.
 //finance/augur/rust/benchmark:all
 //finance/augur/rust/benchmark:fixture_bin
 //finance/augur/rust/benchmark:driver_bin
-//finance/augur/rust/benchmark:jax_driver_bin
 ```
 
 `simulator_cli FIXTURE.json OUTPUT.json` retains full forensic traces. The Rust

@@ -53,7 +53,6 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.rust.differential.case import Case, levels, scenario
 from finance.augur.rust.differential.rounding_boundary import half_way_operand
 from finance.augur.sim.fixed_point import DEFAULT_UNIT_QUANTA, MONEY_FACTOR_SCALE
 from finance.augur.sim.locations import Location
@@ -94,6 +93,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
     TransferDeductionCategory,
 )
+from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 # The currency every case declares, and so the quantum its integer money draws count.

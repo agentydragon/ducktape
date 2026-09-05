@@ -9,8 +9,9 @@ import pytest_bazel
 
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.rust.backend import run_rust_product_metric_arrays
-from finance.augur.rust.differential.case import Case
+from finance.augur.rust.differential.fixture import fixture_for
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
+from finance.augur.sim.testing.case import Case
 
 # One agent per policy family the benchmark scenario separates. JAX bakes the selected agent
 # into the compiled program, so each name here costs a full compile of the 60-month
@@ -28,7 +29,7 @@ def test_rust_and_jax_match_every_product_metric_for_every_agent(feature_rich: C
     agent touches every metric. Shortfall needs a failing rollout and is covered below.
     """
 
-    plan, fixture = feature_rich.plan, feature_rich.fixture
+    plan, fixture = feature_rich.plan, fixture_for(feature_rich)
 
     nonzero_metrics: set[str] = set()
     for agent_id in PRODUCT_METRIC_AGENTS:
@@ -47,7 +48,7 @@ def test_rust_and_jax_match_every_product_metric_for_every_agent(feature_rich: C
 
 def test_rust_product_metrics_reject_an_unknown_primary_agent(feature_rich: Case) -> None:
     with pytest.raises(ValueError, match="no account for primary agent"):
-        run_rust_product_metric_arrays(feature_rich.fixture, primary_agent_id="nobody")
+        run_rust_product_metric_arrays(fixture_for(feature_rich), primary_agent_id="nobody")
 
 
 if __name__ == "__main__":

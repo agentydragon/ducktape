@@ -18,9 +18,9 @@ from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.rust.differential.backend import SimulationResult, assert_backends_agree
-from finance.augur.rust.differential.case import Case, scenario
 from finance.augur.rust.differential.fixtures import checking, taxed
 from finance.augur.sim.scenario import FixedAmount, InitialLot, PrivateEquityTenderPolicy
+from finance.augur.sim.testing.case import Case, scenario
 
 ACME = PrivateEquityAssetKey(issuer_id=IssuerId("acme"))
 HORIZON_MONTHS = 3

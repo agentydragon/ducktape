@@ -10,9 +10,9 @@ from decimal import Decimal
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
-from finance.augur.rust.differential.case import Case, levels, scenario
 from finance.augur.rust.differential.shrink import shrink_case
 from finance.augur.sim.scenario import InitialAccountBalance, ScheduledTransfer
+from finance.augur.sim.testing.case import Case, levels, scenario
 
 INFLATION = InflationKey()
 

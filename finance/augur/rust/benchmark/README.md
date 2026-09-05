@@ -106,7 +106,7 @@ bbr run -c opt //finance/augur/rust/benchmark:driver_bin -- \
 ### JAX dense state and canonical events
 
 ```text
-bbr run -c opt //finance/augur/rust/benchmark:jax_driver_bin -- \
+bbr run -c opt //finance/augur/benchmark:jax_driver_bin -- \
   --rollouts 10000 --horizon-months 60 --repeats 5
 ```
 
@@ -180,7 +180,7 @@ The 100,000-rollout workload was then executed as ten 10,000-rollout batches,
 which is an execution detail rather than a domain-model distinction:
 
 ```text
-bbr run -c opt //finance/augur/rust/benchmark:jax_driver_bin -- \
+bbr run -c opt //finance/augur/benchmark:jax_driver_bin -- \
   --rollouts 100000 --batch-size 10000 --horizon-months 60 --repeats 5
 ```
 

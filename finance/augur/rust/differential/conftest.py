@@ -7,8 +7,8 @@ parameterizing a pytest fixture costs more indirection than the call site it sav
 
 import pytest
 
-from finance.augur.rust.benchmark.fixture import MIN_FEATURE_HORIZON_MONTHS, feature_rich_case
-from finance.augur.rust.differential.case import Case
+from finance.augur.benchmark.scenario import MIN_FEATURE_HORIZON_MONTHS, feature_rich_case
+from finance.augur.sim.testing.case import Case
 
 
 @pytest.fixture

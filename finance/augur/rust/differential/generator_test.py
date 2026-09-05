@@ -19,10 +19,10 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.differential.case import Case
 from finance.augur.rust.differential.generator import VALUE_TIER_SHAPES, Shape, build_case, random_shape
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.scenario import CapitalImprovementEvent, PropertySaleEvent, Scenario, SetRentedFractionEvent
+from finance.augur.sim.testing.case import Case
 
 VALUE_SEEDS = (0, 1, 7, 41)
 

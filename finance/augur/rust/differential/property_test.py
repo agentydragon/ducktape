@@ -12,7 +12,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import BACKENDS, Backend, assert_backends_agree
-from finance.augur.rust.differential.case import Case, flat, levels, scenario
 from finance.augur.rust.differential.fixtures import (
     FINANCED_PROPERTY_ACCOUNTS,
     SF,
@@ -43,6 +42,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyPurchase,
     SetPrimaryResidenceEvent,
 )
+from finance.augur.sim.testing.case import Case, flat, levels, scenario
 
 # A place with no property tax, so a property there costs only what its cashflows say.
 UNTAXED_LOCATION = Location(

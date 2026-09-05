@@ -1,0 +1,45 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+# Measurement, not production: the benchmark exists to time an engine, and it reads the
+# scenario scaffolding in `sim/testing/` to do it.
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "jax_driver_bin",
+    imports = ["../../.."],
+    main_module = "finance.augur.benchmark.jax_driver",
+    deps = [":jax_driver"],
+)
+
+py_library(
+    name = "jax_driver",
+    srcs = ["jax_driver.py"],
+    deps = [
+        ":scenario",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim/codec:plan",
+        "//finance/augur/sim/compiler:plan",
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "scenario",
+    srcs = ["scenario.py"],
+    deps = [
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tlh_harvest",
+        "//finance/augur/sim/testing:case",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)

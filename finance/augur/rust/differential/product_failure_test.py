@@ -5,11 +5,12 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
+from finance.augur.benchmark.scenario import MIN_FEATURE_HORIZON_MONTHS, feature_rich_case
 from finance.augur.rust.backend import run_rust_product_metric_arrays
-from finance.augur.rust.benchmark.fixture import MIN_FEATURE_HORIZON_MONTHS, feature_rich_case
-from finance.augur.rust.differential.case import Case
+from finance.augur.rust.differential.fixture import fixture_for
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 from finance.augur.sim.scenario import ObligationType, ScheduledObligation
+from finance.augur.sim.testing.case import Case
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def test_rust_and_jax_match_product_metrics_across_a_rollout_failure(feature_ric
     """A frozen rollout reports the same metrics in both engines, and the failing month's
     shortfall lands in the same place — the one metric the all-funded scenario cannot show."""
 
-    plan, fixture = feature_rich_failure.plan, feature_rich_failure.fixture
+    plan, fixture = feature_rich_failure.plan, fixture_for(feature_rich_failure)
 
     saw_shortfall = False
     for agent_id in ("cashflow", "homeowner"):

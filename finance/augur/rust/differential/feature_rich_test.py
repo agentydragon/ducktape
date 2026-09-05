@@ -8,7 +8,7 @@ JAX program, and those compiles are the suite's whole wall clock and peak memory
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import assert_backends_agree
-from finance.augur.rust.differential.case import Case
+from finance.augur.sim.testing.case import Case
 
 # Every policy family the scenario is built to exercise, named by a record channel that is
 # empty unless that family actually ran. Comparing two engines that both did nothing would

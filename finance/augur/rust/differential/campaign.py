@@ -19,10 +19,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from finance.augur.rust.differential.backend import assert_results_agree, run_jax, run_rust
-from finance.augur.rust.differential.case import Case
+from finance.augur.rust.differential.fixture import fixture_for
 from finance.augur.rust.differential.generator import Shape, build_case
 from finance.augur.rust.differential.shrink import shrink_case
 from finance.augur.rust.fixture_encoder import UnsupportedScenarioError
+from finance.augur.sim.testing.case import Case
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -130,7 +131,7 @@ def _report_divergence(trial: Trial, signature: str, budget_seconds: float) -> s
     # document Rust ran — the encoding of the very plan JAX ran, so it states every number
     # the comparison was made on, tax tables included.
     (undeclared_outputs_dir() / f"{stem}.scenario.json").write_text(minimal.scenario.model_dump_json(indent=2))
-    fixture = json.dumps(minimal.fixture, indent=2, sort_keys=True)
+    fixture = json.dumps(fixture_for(minimal), indent=2, sort_keys=True)
     fixture_path = undeclared_outputs_dir() / f"{stem}.fixture.json"
     fixture_path.write_text(fixture)
     return (

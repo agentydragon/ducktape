@@ -15,7 +15,7 @@ import pytest_bazel
 from finance.augur.model.series import SecurityDistributionKey, SecuritySymbol
 from finance.augur.rust import simulator
 from finance.augur.rust.differential.backend import BACKENDS, Backend, SimulationResult, assert_backends_agree
-from finance.augur.rust.differential.case import Case, flat, levels
+from finance.augur.rust.differential.fixture import fixture_for
 from finance.augur.rust.differential.fixtures import (
     BND,
     VTI,
@@ -35,6 +35,7 @@ from finance.augur.sim.scenario import (
     RecurringObligation,
     SecurityDistribution,
 )
+from finance.augur.sim.testing.case import Case, flat, levels
 
 VTI_DISTRIBUTION = SecurityDistributionKey(symbol=SecuritySymbol("vti"))
 
@@ -318,7 +319,7 @@ def test_the_rust_validator_refuses_rebalancing_without_purchase_slots() -> None
     encoded one. The Python half of the rule is `sim/test_target_allocation_e2e.py`.
     """
 
-    fixture = target_allocation_rebalance_case().fixture
+    fixture = fixture_for(target_allocation_rebalance_case())
     fixture["scenario"]["target_allocation_policies"][0]["purchase_slots_per_sleeve"] = 0
 
     with pytest.raises(ValueError, match="invalid configuration"):

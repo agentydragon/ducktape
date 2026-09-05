@@ -12,7 +12,6 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.rust.differential.backend import RustResult, assert_backends_agree
-from finance.augur.rust.differential.case import Case, levels, scenario
 from finance.augur.rust.differential.fixtures import checking, taxed
 from finance.augur.sim.scenario import (
     HarvestPolicy,
@@ -25,6 +24,7 @@ from finance.augur.sim.scenario import (
     SleeveTarget,
     TargetAllocationPolicy,
 )
+from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 SP500 = SecurityKey(symbol=SecuritySymbol("sp500"))

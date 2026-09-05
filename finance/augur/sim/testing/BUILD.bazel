@@ -31,3 +31,21 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "case",
+    srcs = ["case.py"],
+    deps = [
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)

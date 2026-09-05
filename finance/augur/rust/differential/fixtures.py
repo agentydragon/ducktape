@@ -14,7 +14,6 @@ import numpy as np
 from jaxtyping import Float64
 
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, SecurityKey, SecuritySymbol
-from finance.augur.rust.differential.case import Case, flat, levels, scenario
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -42,6 +41,7 @@ from finance.augur.sim.scenario import (
     TargetAllocationPolicy,
     TaxProfile,
 )
+from finance.augur.sim.testing.case import Case, flat, levels, scenario
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 BND = SecurityKey(symbol=SecuritySymbol("bnd"))

@@ -15,9 +15,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import BACKENDS, Backend
-from finance.augur.rust.differential.case import Case, levels, scenario
 from finance.augur.rust.differential.fixtures import VTI, checking, taxed
 from finance.augur.sim.scenario import InitialLot, OrdinaryIncome, ScheduledAssetSale, ScheduledTransfer
+from finance.augur.sim.testing.case import Case, levels, scenario
 
 # One unit bought two years ago for $10,000 and sold for $60,000: a $50,000 long-term gain,
 # and no ordinary income anywhere in the scenario.

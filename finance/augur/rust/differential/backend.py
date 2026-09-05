@@ -21,12 +21,13 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 from finance.augur.rust import simulator
-from finance.augur.rust.differential.case import Case
+from finance.augur.rust.differential.fixture import fixture_for
 from finance.augur.rust.event_log import decode_event_log
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.engine.jax_engine import run_jax_scan
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 from finance.augur.sim.scenario import Scenario
+from finance.augur.sim.testing.case import Case
 from finance.augur.sim.testing.state_helpers import (
     asset_lots,
     capital_gains_ytd,
@@ -294,7 +295,7 @@ def run_rust(case: Case) -> RustResult:
 
     # Forensic rather than dense: the harness wants the balanced journal, which is the
     # double-entry invariant made checkable and has no JAX counterpart to compare against.
-    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(case.fixture))))
+    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(fixture_for(case)))))
     return rust_result(rust, case.scenario)
 
 

@@ -64,7 +64,7 @@ different things by it.
 ## End state: the plan is the wire format
 
 The fixture should stop being a third model. Both engines already run off `CompiledSimulation`
-— `differential/case.py` hands Rust `encode_fixture` of the very plan JAX runs — so the
+— `differential/fixture.py` hands Rust `encode_fixture` of the very plan JAX runs — so the
 document Rust reads can be a serialization of that plan, and the encoder collapses to
 serializing it.
 

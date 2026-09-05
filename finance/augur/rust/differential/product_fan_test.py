@@ -2,9 +2,10 @@
 
 import pytest_bazel
 
+from finance.augur.benchmark.scenario import MIN_FEATURE_HORIZON_MONTHS, feature_rich_case
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.rust.backend import run_rust_product_summaries
-from finance.augur.rust.benchmark.fixture import MIN_FEATURE_HORIZON_MONTHS, feature_rich_case
+from finance.augur.rust.differential.fixture import fixture_for
 from finance.augur.sim.engine.jax_engine import run_jax_product_summaries
 
 
@@ -16,7 +17,7 @@ def test_rust_and_jax_match_product_metric_fan_and_terminal_distribution() -> No
     """
 
     case = feature_rich_case(rollout_count=8, horizon_months=MIN_FEATURE_HORIZON_MONTHS)
-    plan, fixture = case.plan, case.fixture
+    plan, fixture = case.plan, fixture_for(case)
     percentiles = (5.0, 25.0, 50.0, 75.0, 95.0)
 
     # One agent, every metric. What varies by metric is `compose_metric` and the terminal

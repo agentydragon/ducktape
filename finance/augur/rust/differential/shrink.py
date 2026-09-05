@@ -28,7 +28,6 @@ from pydantic import BaseModel
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
-from finance.augur.rust.differential.case import Case
 from finance.augur.sim.scenario import (
     Agent,
     CapitalImprovementEvent,
@@ -46,6 +45,7 @@ from finance.augur.sim.scenario import (
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
 )
+from finance.augur.sim.testing.case import Case
 
 logger = logging.getLogger(__name__)
 

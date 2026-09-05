@@ -1,16 +1,16 @@
-"""One authored scenario, in the single form both engines run.
+"""One authored scenario, in the single form any engine runs.
 
-A differential case is a `Scenario` and the sampled paths it runs over. Nothing else
-describes it: the JAX engine executes the plan compiled from them, and the Rust engine runs
-`fixture_encoder.encode_fixture` of that very plan. So the two engines assess one tax
-schedule, one bracket ladder, one standard deduction — the compiled tables — rather than two
+A case is a `Scenario` and the sampled paths it runs over, and nothing else describes it:
+whatever runs it runs the plan compiled from those two. So every engine assesses one tax
+schedule, one bracket ladder, one standard deduction — the compiled tables — rather than
 lookups that have to agree.
 
-That is the whole point of authoring here rather than in the integer fixture. A fixture
-carries tax rules; the JAX engine never read them, resolving jurisdictions from
-`sim/data/jurisdictions/*.yaml` instead, so a fixture could state a deduction, a §1250 rate
-or a capital-loss cap that only one engine ever saw. Three divergences were traced to that
-before the direction was reversed, and the shape makes a fourth unrepresentable.
+That is why a case is authored here and not in an engine's own input format. An engine format
+that carries tax rules lets a rule reach one engine and not another, which has happened: three
+divergences were traced to a fixture stating a deduction, a §1250 rate and a capital-loss cap
+that the JAX engine never read, because it resolved jurisdictions from
+`sim/data/jurisdictions/*.yaml` instead. Authoring at this level makes that unrepresentable —
+an engine's input is derived from the case, never authored beside it.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ from jaxtyping import Float64
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
-from finance.augur.rust.fixture_encoder import encode_fixture
 from finance.augur.sim.backend import CompiledRun
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -72,9 +71,9 @@ def flat(value: Decimal, *, rollout_count: int, horizon_months: int) -> Float64[
 class Case:
     """A scenario, its sampled paths, and the locations its properties sit in.
 
-    The compiled plan is shared: `run_jax` executes it and `fixture` encodes it, so neither
-    engine re-derives anything the other resolved. It is cached because a case is run more
-    than once — `assert_backends_agree` runs both engines, and the product suites compile
+    The compiled plan is shared: every engine either executes it or derives its own input
+    from it, so none re-derives what another already resolved. It is cached because a case is
+    run more than once — an acceptance suite runs each engine, and the product suites compile
     once and dispatch per agent.
     """
 
@@ -129,16 +128,4 @@ class Case:
             external_series=self.external_series,
             jurisdictions=self.jurisdictions,
             locations=dict(self.locations),
-        )
-
-    @cached_property
-    def fixture(self) -> dict[str, Any]:
-        """The integer document the Rust engine consumes, encoded from this case's own plan."""
-
-        return encode_fixture(
-            self.scenario,
-            self.plan,
-            external_series=self.external_series,
-            jurisdictions=self.jurisdictions,
-            locations=self.locations,
         )
