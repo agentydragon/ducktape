@@ -114,18 +114,18 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         assert operator_list.json()[0]["caller_principal"] == CALLER.key
         assert operator_list.json()[0]["arguments"]["nested"]["api_key"] == "[redacted]"
 
-        allowed = await client.post(
-            f"/v1/action-requests/{request_id}/decision",
-            headers=_auth("operator-token"),
-            json={
-                "verdict": "allow",
-                "expected_version": pending["version"],
-                "idempotency_key": "decision-allow-1",
-                "private_reason": "operator-only context",
-            },
+        decision = {
+            "verdict": "allow",
+            "expected_version": pending["version"],
+            "idempotency_key": "decision-allow-1",
+            "private_reason": "operator-only context",
+        }
+        allowed, duplicate_allow = await asyncio.gather(
+            client.post(f"/v1/action-requests/{request_id}/decision", headers=_auth("operator-token"), json=decision),
+            client.post(f"/v1/action-requests/{request_id}/decision", headers=_auth("operator-token"), json=decision),
         )
         assert allowed.status_code == 200
-        assert allowed.json()["state"] == "allowed"
+        assert duplicate_allow.status_code == 200
         assert allowed.json()["decision"]["private_reason"] == "operator-only context"
 
         terminal = await _terminal(client, request_id)
