@@ -388,16 +388,19 @@ def _fetcher(request: Request) -> SnapshotFetcher:
     return cast(SnapshotFetcher, request.app.state.fetcher)
 
 
-def _require_bearer(
+def _require_api_auth(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)], request: Request
 ) -> None:
     expected = cast(str, request.app.state.bearer_token)
     if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-        or not hmac.compare_digest(credentials.credentials, expected)
+        credentials is not None
+        and credentials.scheme.lower() == "bearer"
+        and hmac.compare_digest(credentials.credentials, expected)
     ):
-        raise HTTPException(status_code=401, detail="unauthorized", headers={"WWW-Authenticate": "Bearer"})
+        return
+    if request.scope.get("session", {}).get("aiquota_user") == request.app.state.oauth_username:
+        return
+    raise HTTPException(status_code=401, detail="unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
 
 @dataclass(frozen=True)
@@ -416,11 +419,6 @@ class BrowserOAuth:
     @property
     def callback_url(self) -> str:
         return f"{self.public_base_url.rstrip('/')}/auth/callback"
-
-
-def _require_oauth_session(request: Request) -> None:
-    if request.session.get("aiquota_user") != request.app.state.oauth_username:
-        raise HTTPException(status_code=401, detail="OAuth login required")
 
 
 def _with_remaining_percent(value: object) -> object:
@@ -493,12 +491,12 @@ def create_app(
     async def prometheus_metrics() -> PlainTextResponse:
         return PlainTextResponse(generate_latest(app_metrics.registry).decode(), media_type=CONTENT_TYPE_LATEST)
 
-    @app.get("/v1/quotas", dependencies=[Depends(_require_bearer)])
+    @app.get("/v1/quotas", dependencies=[Depends(_require_api_auth)])
     async def quotas(service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
         snapshot = await service.fetch()
         return JSONResponse(_normalized_payload(snapshot.quotas), headers=_CACHE_CONTROL)
 
-    @app.get("/v1/providers/{provider}/raw", dependencies=[Depends(_require_bearer)])
+    @app.get("/v1/providers/{provider}/raw", dependencies=[Depends(_require_api_auth)])
     async def provider_raw(provider: str, service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
         snapshot = await service.fetch()
         if provider not in {quota.provider for quota in snapshot.quotas.providers}:
@@ -514,14 +512,6 @@ def create_app(
             },
             headers=_CACHE_CONTROL,
         )
-
-    # These paths are for the browser dashboard.  The Gateway sends `/api/`
-    # through Authentik's proxy outpost, while `/v1/` above remains the narrow
-    # bearer API consumed by unattended local and in-cluster clients.
-    @app.get("/api/v1/quotas", dependencies=[Depends(_require_oauth_session)])
-    async def oauth_quotas(service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
-        snapshot = await service.fetch()
-        return JSONResponse(_normalized_payload(snapshot.quotas), headers=_CACHE_CONTROL)
 
     if browser_oauth is not None:
         oauth = OAuth()

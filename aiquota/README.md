@@ -13,11 +13,10 @@ GET /readyz
 GET /metrics
 GET /v1/quotas
 GET /v1/providers/{provider}/raw
-GET /api/v1/quotas
 ```
 
 `/healthz`, `/readyz`, and `/metrics` are public for Kubernetes and Alloy.
-Quota endpoints require:
+Quota endpoints accept either a signed browser OAuth session or:
 
 ```http
 Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
@@ -36,13 +35,13 @@ OAuth refresh responses, cookies, or credentials.
 `https://aiquota.allegedly.works/` is a small React dashboard. aiquota owns an
 Authentik OAuth authorization-code flow: `/auth/login` redirects to the
 `aiquota` OIDC provider, `/auth/callback` verifies the returned token, and a
-signed, HTTP-only app session gates both the frontend entry point and
-`/api/v1/quotas`. Authentik's application policy and aiquota's expected
-`preferred_username` both restrict this to `agentydragon`.
+signed, HTTP-only app session gates both the frontend entry point and the
+existing `/v1/*` API. That API also continues to accept its existing bearer
+credential for unattended clients. Authentik's application policy and
+aiquota's expected `preferred_username` both restrict browser access to
+`agentydragon`.
 
-The existing `/v1/*` bearer surface remains intentionally separate for the
-GNOME extension and unattended in-cluster clients. Do not put its bearer token
-in browser code or an OAuth session.
+Do not put the bearer token in browser code or an OAuth session.
 
 ## Local clients
 

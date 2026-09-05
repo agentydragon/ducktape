@@ -95,7 +95,7 @@ export function App(): JSX.Element {
   const refresh = async (): Promise<void> => {
     setError(null);
     try {
-      const response = await fetch("/api/v1/quotas", { credentials: "same-origin", cache: "no-store" });
+      const response = await fetch("/v1/quotas", { credentials: "same-origin", cache: "no-store" });
       if (!response.ok)
         throw new Error(
           response.status === 401

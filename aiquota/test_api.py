@@ -88,7 +88,7 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     assert settings.poll_interval_seconds == 300
 
 
-async def test_browser_api_requires_app_owned_oauth_session() -> None:
+async def test_quota_api_requires_an_oauth_session_or_bearer() -> None:
     app = create_app(
         bearer_token="test-bearer",
         fetcher=FakeFetcher(),
@@ -103,7 +103,7 @@ async def test_browser_api_requires_app_owned_oauth_session() -> None:
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="https://aiquota.test") as browser:
-        response = await browser.get("/api/v1/quotas")
+        response = await browser.get("/v1/quotas")
     assert response.status_code == 401
 
 
