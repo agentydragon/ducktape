@@ -8,20 +8,6 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
-# Shared across the suites below; the single-suite cases live in the suite that uses them.
-py_library(
-    name = "fixtures",
-    srcs = ["fixtures.py"],
-    deps = [
-        "//finance/augur/model:series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim/testing:case",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
 py_test(
     name = "allocation_test",
     size = "medium",
@@ -30,13 +16,13 @@ py_test(
         ":backend",
         ":conftest",
         ":fixture",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -65,7 +51,6 @@ py_test(
         ":backend",
         ":conftest",
         ":fixture",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
@@ -73,6 +58,7 @@ py_test(
         "//finance/augur/sim:locations",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -86,7 +72,6 @@ py_test(
     deps = [
         ":backend",
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:private_equity_bundle",
@@ -94,6 +79,7 @@ py_test(
         "//finance/augur/product:asset_key",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//polars",
@@ -164,12 +150,12 @@ py_test(
     deps = [
         ":backend",
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -183,12 +169,12 @@ py_test(
     deps = [
         ":backend",
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -201,11 +187,11 @@ py_test(
     deps = [
         ":backend",
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -218,13 +204,13 @@ py_test(
     deps = [
         ":backend",
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:tlh_harvest",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -256,9 +242,9 @@ py_test(
     deps = [
         ":backend",
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -384,7 +370,6 @@ py_test(
     deps = [
         ":backend",
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:private_equity_bundle",
@@ -392,6 +377,7 @@ py_test(
         "//finance/augur/product:asset_key",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -464,27 +450,10 @@ py_test(
 )
 
 py_test(
-    name = "tax_law_test",
-    srcs = ["tax_law_test.py"],
-    deps = [
-        ":backend",
-        ":conftest",
-        ":fixtures",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim/testing:case",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "rollout_projection_test",
     srcs = ["rollout_projection_test.py"],
     deps = [
         ":conftest",
-        ":fixtures",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/product:projection",
@@ -493,6 +462,7 @@ py_test(
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/engine:jax_backend",
         "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest_bazel",
     ],
 )

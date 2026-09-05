@@ -50,3 +50,28 @@ py_library(
         "@pypi//numpy",
     ],
 )
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    deps = [
+        ":case",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "tax_statute",
+    srcs = ["tax_statute.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:scenario",
+        "@pypi//pytest",
+    ],
+)

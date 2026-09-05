@@ -1,7 +1,11 @@
-"""Cases and scenario pieces the differential suites share.
+"""Scenario pieces the behavioural suites share.
 
-Every case is a `Scenario` and the sampled paths it runs over, which is the one form both
-engines consume — `case.py` says why the authoring happens at that level.
+Every case is a `Scenario` and the sampled paths it runs over, which is the one form any
+engine consumes — `case.py` says why the authoring happens at that level.
+
+Nothing here knows about an engine, which is why it sits beside `Case` rather than in the
+differential harness it grew up in: a suite that states what the answer must be needs these
+just as much as one comparing two engines does.
 """
 
 from __future__ import annotations

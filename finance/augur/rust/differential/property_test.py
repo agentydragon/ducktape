@@ -12,21 +12,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import BACKENDS, Backend, assert_backends_agree
-from finance.augur.rust.differential.fixtures import (
-    FINANCED_PROPERTY_ACCOUNTS,
-    SF,
-    SF_HOME,
-    cash_spend,
-    checking,
-    county_property_tax,
-    financed_property_case,
-    home_mortgage,
-    home_purchase,
-    property_cashflow_case,
-    property_depreciation_case,
-    taxed,
-    transfer,
-)
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -43,6 +28,21 @@ from finance.augur.sim.scenario import (
     SetPrimaryResidenceEvent,
 )
 from finance.augur.sim.testing.case import Case, flat, levels, scenario
+from finance.augur.sim.testing.fixtures import (
+    FINANCED_PROPERTY_ACCOUNTS,
+    SF,
+    SF_HOME,
+    cash_spend,
+    checking,
+    county_property_tax,
+    financed_property_case,
+    home_mortgage,
+    home_purchase,
+    property_cashflow_case,
+    property_depreciation_case,
+    taxed,
+    transfer,
+)
 
 # A place with no property tax, so a property there costs only what its cashflows say.
 UNTAXED_LOCATION = Location(

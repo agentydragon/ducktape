@@ -16,11 +16,11 @@ import pytest_bazel
 
 from finance.augur.product.projection import ProductRolloutProjection, project_product_rollout
 from finance.augur.rust.backend import RustEngine
-from finance.augur.rust.differential.fixtures import VTI, checking, taxed
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.engine.jax_backend import JaxEngine
 from finance.augur.sim.scenario import InitialLot, ScheduledAssetSale
 from finance.augur.sim.testing.case import Case, levels, scenario
+from finance.augur.sim.testing.fixtures import VTI, checking, taxed
 
 PRIMARY_AGENT = "alice"
 HORIZON_MONTHS = 30

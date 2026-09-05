@@ -40,9 +40,9 @@ from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.rust.differential.backend import run_jax, run_rust
-from finance.augur.rust.differential.fixtures import cash_spend, checking, taxed
 from finance.augur.sim.scenario import FixedAmount, InitialAccountBalance, InitialLot, PrivateEquityTenderPolicy
 from finance.augur.sim.testing.case import Case, scenario
+from finance.augur.sim.testing.fixtures import cash_spend, checking, taxed
 
 ACME = IssuerId("acme")
 

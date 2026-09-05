@@ -16,7 +16,6 @@ import pytest_bazel
 from finance.augur.model.series import InflationKey, LocationId, RentKey
 from finance.augur.rust.differential.backend import assert_backends_agree, run_rust
 from finance.augur.rust.differential.fixture import fixture_for
-from finance.augur.rust.differential.fixtures import VTI, cash_spend, checking, failure_case, shared_case, transfer
 from finance.augur.rust.fixture_encoder import UnsupportedScenarioError
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
@@ -31,6 +30,7 @@ from finance.augur.sim.scenario import (
     SeriesIndexedAmount,
 )
 from finance.augur.sim.testing.case import Case, flat, levels, scenario
+from finance.augur.sim.testing.fixtures import VTI, cash_spend, checking, failure_case, shared_case, transfer
 
 TEST_INFLATION = InflationKey()
 TEST_RENT = RentKey(location_id=LocationId("test"))

@@ -11,7 +11,16 @@ import polars as pl
 import pytest_bazel
 
 from finance.augur.rust.differential.backend import assert_backends_agree
-from finance.augur.rust.differential.fixtures import (
+from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
+    FederalSaltCapEntry,
+    FederalSaltDeductionPolicy,
+    InitialLot,
+    RecurringTransfer,
+    ScheduledAssetSale,
+)
+from finance.augur.sim.testing.case import Case, levels, scenario
+from finance.augur.sim.testing.fixtures import (
     FINANCED_PROPERTY_ACCOUNTS,
     MONTHLY_SALARY,
     SF,
@@ -25,15 +34,6 @@ from finance.augur.rust.differential.fixtures import (
     salary_case,
     taxed,
 )
-from finance.augur.sim.scenario import (
-    ORDINARY_INCOME,
-    FederalSaltCapEntry,
-    FederalSaltDeductionPolicy,
-    InitialLot,
-    RecurringTransfer,
-    ScheduledAssetSale,
-)
-from finance.augur.sim.testing.case import Case, levels, scenario
 
 
 def tax_payment_case(*, funded: bool = True) -> Case:

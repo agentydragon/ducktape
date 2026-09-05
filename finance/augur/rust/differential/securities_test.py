@@ -13,9 +13,9 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecuritySymbol
 from finance.augur.rust.differential.backend import assert_backends_agree
-from finance.augur.rust.differential.fixtures import BND, VTI, checking, taxed
 from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
 from finance.augur.sim.testing.case import Case, levels, scenario
+from finance.augur.sim.testing.fixtures import BND, VTI, checking, taxed
 
 VTI_DISTRIBUTION = SecurityDistributionKey(symbol=SecuritySymbol("vti"))
 BND_DISTRIBUTION = SecurityDistributionKey(symbol=SecuritySymbol("bnd"))
