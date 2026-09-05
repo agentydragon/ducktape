@@ -21,6 +21,7 @@ py_library(
 py_library(
     name = "jax_engine",
     srcs = ["jax_engine.py"],
+    visibility = ["//finance/augur/sim:inside_the_simulator"],
     deps = [
         ":jax_types",
         ":jax_validation",
@@ -52,6 +53,7 @@ py_library(
 py_library(
     name = "jax_types",
     srcs = ["jax_types.py"],
+    visibility = ["//finance/augur/sim:inside_the_simulator"],
     deps = [
         "//finance/augur/sim:output",
         "//finance/augur/sim/compiler:plan",
@@ -63,6 +65,7 @@ py_library(
 py_library(
     name = "jax_validation",
     srcs = ["jax_validation.py"],
+    visibility = ["//finance/augur/sim:inside_the_simulator"],
     deps = [
         "//finance/augur/sim/compiler:plan",
         "@pypi//numpy",

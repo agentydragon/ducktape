@@ -2,6 +2,17 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# An engine's internals — the JAX month loop and the dense array layout it writes — are
+# visible only in here. Everything outside reads an engine through `sim/backend.py`, whose
+# whole point is that the product does not name one engine's output shape. Convention did
+# not hold that line before; this does.
+package_group(
+    name = "inside_the_simulator",
+    packages = [
+        "//finance/augur/sim/...",
+    ],
+)
+
 py_library(
     name = "events",
     srcs = ["events.py"],
@@ -472,6 +483,7 @@ py_library(
 py_library(
     name = "output",
     srcs = ["output.py"],
+    visibility = ["//finance/augur/sim:inside_the_simulator"],
     deps = [
         "@pypi//jaxtyping",
         "@pypi//numpy",
