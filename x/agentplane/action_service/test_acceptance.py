@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import cast
+from typing import Any, cast
 
 import httpx
 from sqlalchemy import select
@@ -60,11 +60,11 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "caller-token") -> dict:
+async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "caller-token") -> dict[str, Any]:
     for _ in range(100):
         response = await client.get(f"/v1/action-requests/{request_id}", headers=_auth(token))
         response.raise_for_status()
-        body = response.json()
+        body = cast(dict[str, Any], response.json())
         if body["state"] in {"succeeded", "failed", "cancelled", "execution_unknown"}:
             return body
         await asyncio.sleep(0.01)
