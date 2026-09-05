@@ -1,9 +1,16 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **two consumers, and the big one stops when wyrm2 leaves the cluster.** The
-consumer that broke the account runs at **~2200 points/minute** and exhausts the 5000
-budget about four minutes after each reset. Underneath it sits a metronomic **60
-points/minute** floor, ~1/36th the rate, present before and after and never the problem.
+Status: **the burn is reproducible on demand, and its shape matches neither documented
+consumer.** Sampled at 5-second resolution on 2026-09-05, the personal bucket takes
+**~150-point bursts every ~35-40 seconds** — 235 points/minute, 2.8x budget — rather than
+the ~2200/min fast consumer or the metronomic 60/min floor recorded below. That retires
+the constraint which shaped this whole investigation: nothing needs a burn window any
+more, and the burst period plus the ~150-point quantum is a fingerprint to match a caller
+against. Cluster-wide pod flow metrics now exist and are retained, but they cannot
+convict — flows are not requests.
+
+The earlier reading, kept because the measurements stand: two consumers, a ~2200/min one
+that stopped when wyrm2 left the cluster and a metronomic 60/min floor that did not.
 Stopping kubelet and containerd on wyrm2 removed the fast consumer and left the floor —
 though the operator was also asleep for that window, so pods and operator activity were
 removed together.
@@ -88,18 +95,21 @@ API traffic at all and spends nothing.
 
 ### In-cluster
 
-| Consumer                                                | Credential                           | Bucket | Notes                                            |
-| ------------------------------------------------------- | ------------------------------------ | ------ | ------------------------------------------------ |
-| `github-secrets-sync` tf-runner                         | `external-creds/github-agentydragon` | user   | GitHub TF provider → `api.github.com`            |
-| `github-branch-protection` tf-runner                    | same                                 | user   | branch protection is GraphQL                     |
-| `flux-webhook-token` tf-runner                          | same                                 | user   | seen on `api.github.com` via Hubble              |
-| `attic-jwt-rotation` CronJob :30 (nix-cache)            | same                                 | user   | REST                                             |
-| `authentik-jwt-rotation` CronJob :15                    | same                                 | user   | REST                                             |
-| `github-exporter` ×2 (monitoring)                       | both accounts                        | user   | REST `/rate_limit`                               |
-| `github-graphql-rate-exporter` ×2                       | both accounts                        | user   | 0-point `rateLimit` probe                        |
-| unidentified pod, `comm="main"` uid 65532               | unknown                              | user?  | **open** — recurs on `api.github.com` every ~60s |
-| `haku-indexer-chunk-ducktape-public`                    | none                                 | —      | git clone of the public repo, not API            |
-| Flux `source-controller`, `image-automation-controller` | deploy key / registry                | —      | git and registry, not API                        |
+| Consumer                                                | Credential                           | Bucket | Notes                                                  |
+| ------------------------------------------------------- | ------------------------------------ | ------ | ------------------------------------------------------ |
+| `github-secrets-sync` tf-runner                         | `external-creds/github-agentydragon` | user   | GitHub TF provider → `api.github.com`                  |
+| `github-branch-protection` tf-runner                    | same                                 | user   | branch protection is GraphQL                           |
+| `flux-webhook-token` tf-runner                          | same                                 | user   | seen on `api.github.com` via Hubble                    |
+| `attic-jwt-rotation` CronJob :30 (nix-cache)            | same                                 | user   | REST                                                   |
+| `authentik-jwt-rotation` CronJob :15                    | same                                 | user   | REST                                                   |
+| `github-exporter` ×2 (monitoring)                       | both accounts                        | user   | REST `/rate_limit`                                     |
+| `github-graphql-rate-exporter` ×2                       | both accounts                        | user   | 0-point `rateLimit` probe                              |
+| unidentified pod, `comm="main"` uid 65532               | unknown                              | user?  | **open** — recurs on `api.github.com` every ~60s       |
+| `cli-proxy-api`                                         | unknown                              | ?      | → GitHub Pages / raw.githubusercontent, ~5.7 flows/min |
+| `haku-console-static`                                   | unknown                              | ?      | → `140.82.115.x`, ~1.7 flows/min                       |
+| Flux `image-reflector-controller`                       | registry                             | ?      | → `140.82.116.34`, `20.29.134.18`; ~12 flows/min       |
+| `haku-indexer-chunk-ducktape-public`                    | none                                 | —      | git clone of the public repo, not API                  |
+| Flux `source-controller`, `image-automation-controller` | deploy key / registry                | —      | git and registry, not API                              |
 
 Measured contribution of the tf-runners together: ~560 points/h during an hour they were
 visibly reconciling. They reconcile on a 15-minute interval, and their API traffic lasts
@@ -966,6 +976,125 @@ local process talking to `api.github.com`?
 
 Only if all of that comes back empty does GitHub-hosted CI become the leading candidate,
 and `GH_RELEASE_PAT` is then the single user-authenticated credential to audit.
+
+## 2026-09-05: the burn is reproducible on demand, and it is a third shape
+
+Five-second sampling of the personal bucket, 01:11-01:13Z. The `rateLimit` query costs 0
+points, so the probe does not consume what it measures:
+
+```text
+01:11:13  used=232
+01:11:19  +0    01:11:24  +0    01:11:29  +0    01:11:35  +0
+01:11:40  +3    01:11:45  +8    01:11:50  +0    01:11:56  +3
+01:12:01  used=404   +158 in 5.3s   30.0 pts/s
+01:12:06  +0    01:12:11  +3    ... +0 through 01:12:32
+01:12:38  used=553   +146           27.8 pts/s
+01:12:43  +3    ... +0
+01:12:59  used=705   +149           28.4 pts/s
+01:13:04  +0    01:13:09  +0    01:13:15  +0
+```
+
+**235 points/minute, ~14,000/h, 2.8x the 5000/h budget** — delivered as ~150-point bursts
+about every 35-40 seconds, a +3 trickle between them, and nothing at all in most
+intervals.
+
+This is neither shape recorded above. It is not the ~2200/min fast consumer, and it is
+emphatically not a 1 Hz metronome: 150 points landing inside a single 5-second sample is
+one expensive query or a tight batch, not a ticker. Either the earlier characterisation
+was phase-specific, or there is a third regime.
+
+**What makes this the most useful observation in this file: it needs no burn window.**
+Nine hours of this investigation went on trying to be watching at the right moment, and
+the "sample under load or not at all" rule exists because short captures kept landing in
+quiet ones. This bursts every ~35 seconds, on demand. The period and the ~150-point
+quantum are together a fingerprint — enough to match against a candidate caller rather
+than eliminate candidates one machine at a time.
+
+**Not ruled out: the measuring session itself.** The `mcp__github__*` tools paginate with
+`endCursor`/`pageInfo`, which is GraphQL. No such call was made during 01:11-01:13, so the
+bursts are probably not self-inflicted — but the cheap control (idle the session five
+minutes, re-sample) has not been run, and this note has already lost a night to a
+mechanism that looked external and was not.
+
+## What the flow metrics can and cannot answer
+
+`hubble.metrics` is deployed (Cilium release 9, 8 of 9 agents), so pod→destination flows
+are retained in Mimir instead of living in hubble-relay's ring buffer. Verified serving
+end to end: 1062 `hubble_` lines off a node's `hostPort` 9965, not merely present in
+`cilium-config`.
+
+A cluster-wide scan for destinations inside GitHub's own `/meta` ranges, sampled twice 106
+seconds apart and reported as rates:
+
+```text
+   22.7/min  (unresolved source)
+   13.1/min  haku-indexer-chunk-ducktape-public     git clone, no API quota
+   11.9/min  image-reflector-controller
+    7.9/min  github-graphql-rate-exporter-agentydragon        ours, 0-point probe
+    7.9/min  github-graphql-rate-exporter-agentydragon-agent  ours, 0-point probe
+    7.4/min  source-controller                      git
+    5.7/min  cli-proxy-api
+    5.7/min  github-exporter-agentydragon-agent     ours, REST
+    5.1/min  github-exporter-agentydragon           ours, REST
+    3.4/min  image-automation-controller
+    1.7/min  haku-console-static
+```
+
+Ranges derived from `api.github.com/meta` at runtime, deliberately: a hand-picked IP list
+used twice is what blinded both earlier instruments.
+
+**The limit, which matters more than the result: flows are not requests.** ~93 flows/min
+cluster-wide cannot be reconciled with 235 points/min, and a caller holding one keep-alive
+HTTP/2 socket while issuing hundreds of queries appears here as _zero_ new flows. This is
+the fifth time this note has reached for connection counting and the fifth time it cannot
+answer the question. **Flow metrics narrow the candidate set; they never convict.**
+
+Coverage boundary, unchanged and worth restating: Hubble sees pods, not host namespaces
+(`enable-host-firewall` is `false`). Host→pod flows appear because the pod's endpoint
+generates the event; host→world flows do not. Two nodes were unscrapable during the scan —
+`iguana` is `NotReady`, and `rugged`'s agent is crash-looping on an unrelated kernel issue
+(`bpf_set_retval`; kernel floated to 7.2.0 through `linuxPackages_latest`, pinned back to
+the 7.1 series but not yet rebuilt or rebooted).
+
+## Rotating the personal PAT: the measured blast radius
+
+`cluster/k8s/external-creds/github-agentydragon-grants.yaml` binds one consumer
+ServiceAccount per namespace, so the in-cluster consumers of the personal PAT are exactly:
+
+| Namespace      | Workloads                                                                          |
+| -------------- | ---------------------------------------------------------------------------------- |
+| `flux-system`  | `github-secrets-sync`, `github-branch-protection`, `flux-webhook-token` tf-runners |
+| `nix-cache`    | `attic-jwt-rotation`                                                               |
+| `agents-infra` | `authentik-jwt-rotation`                                                           |
+| `monitoring`   | `github-exporter-agentydragon`, `github-graphql-rate-exporter-agentydragon`        |
+
+Seven workloads, four namespaces. Everything else in-cluster runs on the agent PAT, whose
+bucket is measured flat. Rotation is a bounded operation and its breakage is
+self-announcing — the exporters stop reporting.
+
+## Next
+
+Supersedes the earlier "Remaining work" and "Next" lists, which were written against the
+Claude Desktop and CLI hypotheses that later measurements retired.
+
+1. **Rule out the measuring session.** Idle it five minutes, re-sample at 5s. Cheap, and
+   it is the one candidate that would invalidate the sampling above rather than merely
+   compete with it.
+2. **Catch a burst in the act.** It fires every ~35-40 seconds on demand, so the wyrm2
+   connection recorder and a burst can now be aligned deliberately instead of by luck.
+   A ~150-point burst that leaves no local connection is a much sharper result than any
+   of the absence-of-evidence eliminations above.
+3. **Rotate the personal PAT.** The blast radius is measured (seven workloads, four
+   namespaces, above) and the failure is self-announcing. This remains the last unturned
+   knob: the consumer survived every process and pod on wyrm2, so it holds a stored
+   credential.
+4. Keep this note until the consumer is named. The recorder module's tombstone condition
+   ("once that note names the consumer") is still not satisfied.
+
+Do not reach for connection or flow counting again without pairing it against the
+account-wide counter. Five attempts, five failures to convict — the method cannot see
+request volume, and every time it has looked like progress it was measuring the wrong
+quantity.
 
 ## Still open
 
