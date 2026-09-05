@@ -15,7 +15,7 @@
 //!
 //! Every struct field name is an Augur column name, and `EventFrames`' field names are
 //! Augur's frame names: `finance/augur/sim/events.py` declares both, and
-//! `differential/output_adapter.py` checks a decoded document against those declarations.
+//! `event_log.py` checks a decoded document against those declarations.
 
 use serde::Serialize;
 

@@ -104,7 +104,7 @@ own column names and units: `Money` becomes a `_quanta` column, a rate in parts
 per billion becomes the fraction Augur reports, and a `Quantity` divides by its
 lot's scale. The knowledge of those units therefore lives beside the engine that
 defines them, and a field renamed here fails the Rust build rather than turning
-up later as a missing key in a Python decoder. `output_adapter.py` only checks
+up later as a missing key in a Python decoder. `event_log.py` only checks
 an arriving document frame-for-frame and column-for-column against the schemas
 in `sim/events.py`. Event frames are an explanatory-output boundary; snapshots
 remain authoritative state and events are not replayed to reconstruct them.
