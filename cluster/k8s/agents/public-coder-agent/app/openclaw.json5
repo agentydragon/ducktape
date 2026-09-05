@@ -251,7 +251,9 @@
         },
       },
       // Disabled on this headless agent: companion-device plugins need a paired
-      // phone/desktop, phone-control needs Android, and Ollama is not used.
+      // phone/desktop, and Ollama is not used. No phone-control entry: this
+      // OpenClaw build doesn't register that plugin, so configuring it is a
+      // stale no-op the gateway flags on every startup.
       canvas: {
         enabled: false,
       },
@@ -262,9 +264,6 @@
         enabled: false,
       },
       "talk-voice": {
-        enabled: false,
-      },
-      "phone-control": {
         enabled: false,
       },
       ollama: {
