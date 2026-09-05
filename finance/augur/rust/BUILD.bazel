@@ -164,8 +164,10 @@ py_test(
     ],
 )
 
+# Test scaffolding: it derives an engine's input from a `Case`, which is `sim/testing/`.
 py_library(
     name = "case_fixture",
+    testonly = True,
     srcs = ["case_fixture.py"],
     deps = [
         ":fixture_encoder",
@@ -173,8 +175,10 @@ py_library(
     ],
 )
 
+# Test scaffolding: it projects a run into the shape the behavioural suites read.
 py_library(
     name = "result",
+    testonly = True,
     srcs = ["result.py"],
     deps = [
         ":case_fixture",
