@@ -134,12 +134,13 @@ action tool and passes its execroot path to the debundler. The materializer uses
 that OR-Tools CP-SAT sidecar for global selector assignment. Consumers can
 override the solver tool with the matching label flag when needed.
 
-Pipeline outputs include `debug/selector_cpsat_request.pb`, the exact protobuf
-payload sent to the OR-Tools CP-SAT sidecar, plus
-`debug/selector_cpsat_summary.json` with compact counts for variables, finite
-domains, allowed tables, binary constraints, and global `all_different`
-constraints. The Rust debundler and C++ sidecar communicate through the binary
-protobuf request/response; JSON here is only human-readable metadata.
+Pipeline outputs include one exact protobuf payload per selector solve under
+`debug/selector_cpsat_requests/`, plus compact human-readable metadata under
+`debug/selector_cpsat_summaries/`. Per-solve files are required because the
+materializer solves multiple chunks concurrently. Summaries cover variables,
+finite domains, allowed tables, binary constraints, and global
+`all_different` constraints. The Rust debundler and C++ sidecar communicate
+through the binary protobuf request/response; JSON here is only metadata.
 
 For slow solver investigations, build the problem output group without running
 the CP-SAT search:
@@ -151,7 +152,7 @@ bazel build //path/to:debundle --output_groups=selector_problem
 This emits `bazel-bin/path/to/debundle.selector_cpsat_request.pb` after the
 same selector lowering step the full pipeline uses. The protobuf is the replay
 artifact for the C++ sidecar; human-readable selector summaries remain in the
-full pipeline's `debug/selector_cpsat_summary.json` output when available.
+full pipeline's `debug/selector_cpsat_summaries/` output when available.
 
 ## Profiling
 
@@ -197,8 +198,8 @@ PERF_RECORD_FREQ=49 \
 ```
 
 Save important runs under the consuming repo's `debug/perf/` directory with the
-captured command, stdout/stderr, profiler artifacts, and selector
-`debug/selector_cpsat_summary.json` when available.
+captured command, stdout/stderr, profiler artifacts, and selector summaries
+from `debug/selector_cpsat_summaries/` when available.
 
 ## Comments
 

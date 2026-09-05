@@ -155,6 +155,22 @@ rust_test(
 )
 
 rust_test(
+    name = "multi_chunk_selector_diagnostics_test",
+    srcs = ["multi_chunk_selector_diagnostics_test.rs"],
+    crate_root = "multi_chunk_selector_diagnostics_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle/solver_backends/ortools_cpsat:selector_cpsat_solver",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_test(
     name = "identifier_rename_queue_test",
     srcs = ["identifier_rename_queue_test.rs"],
     crate_root = "identifier_rename_queue_test.rs",

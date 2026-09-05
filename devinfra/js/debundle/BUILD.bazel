@@ -1,4 +1,5 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load(":pipeline_analysis_test.bzl", "pipeline_analysis_test_suite")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -6,6 +7,8 @@ exports_files([
     "README.md",
     "perf_wrapper.sh",
 ])
+
+pipeline_analysis_test_suite(name = "pipeline_analysis_test")
 
 rust_library(
     name = "js_ast",

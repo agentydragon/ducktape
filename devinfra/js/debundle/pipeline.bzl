@@ -24,8 +24,8 @@ def _debundle_pipeline_impl(ctx):
     ]
     exec_env = _selector_solver_env(
         ctx,
-        _shell_execroot_path(paths.join(out_dir.path, "debug/selector_cpsat_request.pb")),
-        _shell_execroot_path(paths.join(out_dir.path, "debug/selector_cpsat_summary.json")),
+        request_proto_dir = _shell_execroot_path(paths.join(out_dir.path, "debug/selector_cpsat_requests")),
+        summary_json_dir = _shell_execroot_path(paths.join(out_dir.path, "debug/selector_cpsat_summaries")),
     )
 
     ctx.actions.run_shell(
@@ -100,19 +100,36 @@ exit 1
         ])),
     ]
 
-def _selector_solver_env(ctx, request_proto_path, summary_json_path = None, dump_only = False):
+def _selector_solver_env(
+        ctx,
+        request_proto_path = None,
+        summary_json_path = None,
+        request_proto_dir = None,
+        summary_json_dir = None,
+        dump_only = False):
     exec_env = "{}={} ".format(
         "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER",
         _shell_execroot_path(ctx.executable.ortools_cpsat_solver.path),
     )
-    exec_env += "{}={} ".format(
-        "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO",
-        request_proto_path,
-    )
+    if request_proto_path:
+        exec_env += "{}={} ".format(
+            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO",
+            request_proto_path,
+        )
     if summary_json_path:
         exec_env += "{}={} ".format(
             "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON",
             summary_json_path,
+        )
+    if request_proto_dir:
+        exec_env += "{}={} ".format(
+            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_REQUEST_PROTO_DIR",
+            request_proto_dir,
+        )
+    if summary_json_dir:
+        exec_env += "{}={} ".format(
+            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON_DIR",
+            summary_json_dir,
         )
     if dump_only:
         exec_env += "{}={} ".format(

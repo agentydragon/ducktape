@@ -2126,6 +2126,44 @@ pub fn run_debundler_with_env(
     }
 }
 
+/// Run the tree-authoring form of `debundle run` with explicit environment
+/// variables. Keeping the environment on a child process makes diagnostics
+/// tests safe when Rust executes test functions concurrently.
+pub fn run_debundler_tree_with_env(
+    config_path: &Path,
+    modules_root: &Path,
+    vendor_marks_path: &Path,
+    source_root: &Path,
+    out_root: &Path,
+    env: &[(&str, &str)],
+) -> CommandResult {
+    let bin = debundler_path();
+    let mut command = Command::new(&bin);
+    command
+        .arg("run")
+        .arg("--tree-config")
+        .arg(config_path)
+        .arg("--tree-modules")
+        .arg(modules_root)
+        .arg("--tree-vendor-marks")
+        .arg(vendor_marks_path)
+        .arg("--tree-source-root")
+        .arg(source_root)
+        .arg("--out-root")
+        .arg(out_root);
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    let output = command
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    }
+}
+
 fn run_node_script(path: &Path) -> CommandResult {
     let node = node_path();
     let output = Command::new(&node)
