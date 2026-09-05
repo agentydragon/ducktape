@@ -88,10 +88,13 @@ that target exposes about the token's scope; it does not hold where the agent mu
 real credential. BuildBuddy is now split at the measured transport boundary: local HTTP API and
 gRPC clients can present `agentplane-credential-<name>` as the whole
 `x-buildbuddy-api-key` header/metadata value, and the proxy substitutes it across unary and
-bidirectional HTTP/2 calls with trailers intact. `bb remote` still cannot be credentialless because
-the CLI also embeds the key in the Bazel command run on BuildBuddy's hosted runner, outside the
-fence. The protocol requirements and acceptance test are canonical in the
-[egress SPEC](../egress/SPEC.md).
+bidirectional HTTP/2 calls with trailers intact. Under the current header-only contract, `bb remote`
+still sends the placeholder in the Bazel command run on BuildBuddy's hosted runner. A narrow rewrite
+of the unary `runner.RunRequest.steps[].run` protobuf field can keep the real key out of the local
+Sandbox, but it delivers the key to agent-controlled code on the hosted runner; that is a weaker
+boundary, not full credentiallessness. The implemented transport contract is canonical in the
+[egress SPEC](../egress/SPEC.md); the candidate rewrite and its required evidence are in
+[`buildbuddy_remote_auth.md`](buildbuddy_remote_auth.md).
 
 ## Choosing
 
@@ -125,15 +128,15 @@ operations fall where.
 
 ## Per-system inventory
 
-| System                                       | Delegated identity                                                         | Broker needed for                                           |
-| -------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Kubernetes                                   | ServiceAccount + RBAC via grants, proxy-substituted while reconciled       | anything the agent's RBAC does not cover                    |
-| GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review |
-| Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                      |
-| HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                               |
-| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC                 | `bb remote` hosted-runner credential delivery               |
-| Gmail                                        | OAuth scopes only                                                          | label-namespace confinement; every mutation                 |
-| Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                                 | unassessed; default to brokered until assessed              |
+| System                                       | Delegated identity                                                         | Broker needed for                                                       |
+| -------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Kubernetes                                   | ServiceAccount + RBAC via grants, proxy-substituted while reconciled       | anything the agent's RBAC does not cover                                |
+| GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review             |
+| Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                                  |
+| HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                                           |
+| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC                 | `bb remote`: choose local-only body rewrite or stronger hosted boundary |
+| Gmail                                        | OAuth scopes only                                                          | label-namespace confinement; every mutation                             |
+| Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                                 | unassessed; default to brokered until assessed                          |
 
 ## Consequences for the policy engine
 

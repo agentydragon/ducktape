@@ -12,6 +12,7 @@ work that remains open or deferred; the [task DAG](task_dag.md) is the project o
 - [Operations and access](operations_and_access.md)
 - [Driver-provided tools and background work](driver_tools_and_background.md)
 - [Agent access to external systems](external_access.md)
+- [BuildBuddy hosted remote-run authentication](buildbuddy_remote_auth.md) — body-rewrite boundary analysis
 - [Sandbox and Thread presets](launch_presets.md) — implementation in review
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 
