@@ -192,7 +192,9 @@ class RustEngine(Engine):
         )
 
     def events(self, run: CompiledRun) -> EventLog:
-        # Dense rather than forensic: the balanced journal is Rust's own invariant and has no
-        # place in a product trace, and retaining it costs the run nothing the caller reads.
-        dense = cast(dict[str, Any], json.loads(simulator.simulate_dense_json(json.dumps(self._fixture(run)))))
-        return decode_event_log(dense)
+        # Forensic because only `ForensicDocument` serializes the canonical frames; the dense
+        # path retains the same records but emits them in Rust's own per-rollout shape. That
+        # means carrying the balanced journal, which a product trace never reads — a cost worth
+        # removing by teaching the dense path to emit frames, not by decoding a second shape.
+        forensic = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(self._fixture(run)))))
+        return decode_event_log(forensic)
