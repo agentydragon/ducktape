@@ -106,6 +106,11 @@ on a per-input handle — including a coalescing rule that changes the unit of w
 what a common facade with Codex's `thread/queue/*` could and could not promise. Nothing there is
 capture-pinned yet; that page ends with the probes to run.
 
+Static analysis of the pinned implementation also exposes persistence fences, SDK MCP hosting,
+permission recovery, background snapshots, managed remote delivery, and budget/fallback state
+machines. Their Agentplane constraints and current coverage are collected in
+[`claude_runtime_contracts.md`](claude_runtime_contracts.md).
+
 ### Resume
 
 Use the provider's native session-resume mechanism after killing only an idle child. Assert recovery

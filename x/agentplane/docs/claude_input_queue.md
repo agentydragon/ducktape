@@ -9,12 +9,13 @@ actually offers, in the shape a later side-by-side with Codex's `thread/queue/*`
 
 ## Provenance
 
-The normative source here is the **published type declarations** in
-`@anthropic-ai/claude-agent-sdk` (`sdk.d.ts`), which document these frames and their semantics
-directly; the notes below quote them. Frame _shapes_ not named as a type there were read off the
-harness. Per the [shared rules](provider_protocols.md#shared-rules), none of this is pinned in a
-scripted test yet: **a live probe must confirm each behavior before a driver depends on it.** The
-coalescing rule in particular has a counter-intuitive outcome that deserves its own capture.
+The public source is the **published type declarations** in `@anthropic-ai/claude-agent-sdk`
+(`sdk.d.ts`), which document these frames and their semantics directly; the notes below quote them.
+Frame _shapes_ not named as a type there were read off the harness. The per-contributor lifecycle
+rule comes from static analysis of the pinned 2.1.252 implementation. Per the
+[shared rules](provider_protocols.md#shared-rules), none of this is pinned in a scripted test yet:
+**a live probe must confirm each behavior before a driver depends on it.** The coalescing rule in
+particular has a counter-intuitive outcome that deserves its own capture.
 
 ## The model in one paragraph
 
@@ -69,8 +70,10 @@ telling the caller exactly which of its sends are now orphaned by an abort.
 ## The coalescing hazard
 
 The harness does not run one queued command per turn. It pulls a run of compatible consecutive
-prompts and merges them into a single turn, and the merged command carries **one representative
-uuid** — the last contributor. The SDK states the consequence plainly:
+prompts and merges them into a single turn, and the merged command uses **one representative
+uuid** — the last contributor — for batch execution and cancellation. Static analysis of the
+pinned runtime corrects one implication of the SDK wording: it also retains the complete list of
+contributor UUIDs for lifecycle receipts.
 
 > Cancellation granularity: uuids still in the queue are individually cancellable via
 > `cancel_async_message`; once a batch is dequeued and coalesced into one turn, cancelling a
@@ -85,9 +88,8 @@ Three things a neutral facade must not paper over:
    name". A caller cannot distinguish these from the response alone.
 2. Withdrawal is **not per-input** once coalescing has happened. The unit of withdrawal silently
    becomes the batch.
-3. Inputs merged as non-representative members get **no terminal ack of their own**, because the
-   dispatched command no longer carries their uuid. A driver that waits for `completed` per sent
-   uuid will hang on them.
+3. Lifecycle remains per input: every contributor gets `started` and a terminal `completed` or
+   `cancelled` receipt even though execution and cancellation operate on the representative batch.
 
 Compatibility gate: only prompts agreeing on mode, workload, meta/query flags, priority and
 origin coalesce, and prompts carrying inlined images or relay rows never do. So a caller can
@@ -138,8 +140,8 @@ acknowledgement**, provided it:
   one side can be race-free;
 - carries a distinguishable "already dispatched" outcome rather than Claude's ambiguous
   `cancelled:false`, or leaves the ambiguity visible instead of inventing a state machine;
-- does **not** promise per-input terminal acks, because coalescing legitimately retires several
-  handles into one;
+- may promise per-input lifecycle receipts for this pinned implementation, while keeping
+  cancellation explicitly batch-granular after dequeue;
 - keeps `list` / `reorder` / `update` out of the common surface, or gates them behind an
   explicit capability, since Claude has no equivalent.
 

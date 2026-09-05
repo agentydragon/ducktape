@@ -41,6 +41,19 @@ def format_age(seconds: float) -> str:
     return format_duration(s)
 
 
+def format_known_reset_credit_expiries(expiries: list[datetime], tz: tzinfo | None = None) -> str | None:
+    """Render the detail endpoint's known expiries in the viewer's local time.
+
+    The endpoint can return fewer credit rows than the authoritative count, so
+    callers must retain the "known" qualifier rather than imply this is a
+    complete list.
+    """
+
+    if not expiries:
+        return None
+    return ", ".join(expiry.astimezone(tz).strftime("%b %-d %H:%M") for expiry in expiries)
+
+
 def format_pace(pace: PaceResult | None) -> str | None:
     if pace is None or not pace.stable:
         return None

@@ -13,3 +13,21 @@ py_library(
         "@pypi//polars",
     ],
 )
+
+py_library(
+    name = "engine_acceptance",
+    srcs = ["engine_acceptance.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/product:metric_composition",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)

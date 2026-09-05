@@ -218,6 +218,60 @@ async def test_weekly_primary_window_preserves_provider_duration(tmp_path: Path)
     assert not output.result.windows[1].display
 
 
+async def test_usage_surfaces_authoritative_banked_reset_count(tmp_path: Path) -> None:
+    token = _jwt(datetime.now(UTC) + timedelta(days=10))
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+    usage = {
+        **_USAGE_BODY,
+        # Codex may cap or omit detail rows. Never derive the count from them.
+        "rate_limit_reset_credits": {"available_count": 3, "credits": []},
+    }
+    details = {
+        "credits": [
+            {
+                "id": "expiring",
+                "reset_type": "codexRateLimits",
+                "status": "available",
+                "granted_at": "2026-09-01T09:00:00Z",
+                "expires_at": "2026-09-20T09:00:00Z",
+            },
+            {
+                "id": "permanent",
+                "reset_type": "codexRateLimits",
+                "status": "available",
+                "granted_at": "2026-09-01T09:00:00Z",
+                "expires_at": None,
+            },
+        ]
+    }
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=details))
+        output = await _provider(path).fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert output.result.available_reset_credits == 3
+    assert output.result.available_reset_credit_expiries == [datetime(2026, 9, 20, 9, 0, tzinfo=UTC)]
+
+
+async def test_credit_detail_failure_keeps_the_authoritative_banked_count(tmp_path: Path) -> None:
+    token = _jwt(datetime.now(UTC) + timedelta(days=10))
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(503, text="temporarily unavailable"))
+        output = await _provider(path).fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert output.result.available_reset_credits == 1
+    assert output.result.available_reset_credit_expiries == []
+
+
 async def test_management_api_uses_runtime_codex_auth_index() -> None:
     with respx.mock(assert_all_called=False) as mock:
         auth_files = mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
@@ -248,6 +302,39 @@ async def test_management_api_uses_runtime_codex_auth_index() -> None:
         "url": USAGE_URL,
         "header": {"Authorization": "Bearer $TOKEN$", "User-Agent": "codex_cli_rs/0.125.0 (Linux; x86_64)"},
     }
+
+
+async def test_management_api_surfaces_known_banked_reset_expiries() -> None:
+    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
+    details = {
+        "credits": [
+            {
+                "id": "expiring",
+                "reset_type": "codexRateLimits",
+                "status": "available",
+                "granted_at": "2026-09-01T09:00:00Z",
+                "expires_at": "2026-09-20T09:00:00Z",
+            }
+        ]
+    }
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
+            return_value=httpx.Response(
+                200, json={"files": [{"provider": "codex", "auth_index": "codex-auth", "disabled": False}]}
+            )
+        )
+
+        def api_call(request: httpx.Request) -> httpx.Response:
+            url = json.loads(request.read())["url"]
+            body = usage if url == USAGE_URL else details
+            return httpx.Response(200, json={"status_code": 200, "header": {}, "body": json.dumps(body)})
+
+        mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(side_effect=api_call)
+        output = await _management_provider().fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert output.result.available_reset_credits == 1
+    assert output.result.available_reset_credit_expiries == [datetime(2026, 9, 20, 9, 0, tzinfo=UTC)]
 
 
 async def test_management_api_rejects_multiple_codex_auth_files() -> None:

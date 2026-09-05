@@ -8,7 +8,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from aiquota.api import QuotaSnapshot, RawUpstreamResponse, Settings, _CapturingClientFactory, create_app
+from aiquota.api import BrowserOAuth, QuotaSnapshot, RawUpstreamResponse, Settings, _CapturingClientFactory, create_app
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 
 if __name__ == "__main__":
@@ -68,6 +68,10 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     monkeypatch.setenv("AIQUOTA_CLICKHOUSE_URL", "http://clickhouse:8123")
     monkeypatch.setenv("AIQUOTA_CLICKHOUSE_PASSWORD", "clickhouse-password")
     monkeypatch.setenv("AIQUOTA_POLL_INTERVAL_SECONDS", "300")
+    monkeypatch.setenv("AIQUOTA_OAUTH_ISSUER", "https://auth.test/application/o/aiquota/")
+    monkeypatch.setenv("AIQUOTA_OAUTH_CLIENT_ID", "aiquota")
+    monkeypatch.setenv("AIQUOTA_OAUTH_CLIENT_SECRET", "client-secret")
+    monkeypatch.setenv("AIQUOTA_OAUTH_SESSION_SECRET", "session-secret")
 
     settings = Settings()
 
@@ -82,6 +86,25 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     assert settings.clickhouse_password is not None
     assert settings.clickhouse_password.get_secret_value() == "clickhouse-password"
     assert settings.poll_interval_seconds == 300
+
+
+async def test_quota_api_requires_an_oauth_session_or_bearer() -> None:
+    app = create_app(
+        bearer_token="test-bearer",
+        fetcher=FakeFetcher(),
+        browser_oauth=BrowserOAuth(
+            issuer="https://auth.test/application/o/aiquota/",
+            client_id="aiquota",
+            client_secret="client-secret",
+            session_secret="session-secret",
+            public_base_url="https://aiquota.test",
+            username="agentydragon",
+        ),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://aiquota.test") as browser:
+        response = await browser.get("/v1/quotas")
+    assert response.status_code == 401
 
 
 async def test_health_is_public(client: httpx.AsyncClient) -> None:

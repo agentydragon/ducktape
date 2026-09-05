@@ -90,6 +90,7 @@ py_library(
 py_library(
     name = "api",
     srcs = ["api.py"],
+    data = ["//aiquota/frontend:bundle"],  # keep: SPA mounted by aiquota.api
     imports = [".."],
     deps = [
         ":cache",
@@ -97,11 +98,17 @@ py_library(
         ":config",
         ":models",
         "//aiquota/providers:base",
+        "//util/bazel:runfiles",
+        "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
+        # keep: starlette.middleware.sessions imports it at runtime; no aiquota module
+        # names it, so the import scan cannot see it.
+        "@pypi//itsdangerous",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )

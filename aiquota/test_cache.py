@@ -136,3 +136,13 @@ def test_assemble_keeps_prior_last_success_when_fresh_success_has_no_data() -> N
     empty = _success(now)
     pq = _assemble("codex", empty, prior=prior)
     assert pq.last_success is prior_success
+
+
+def test_assemble_records_banked_resets_without_windows() -> None:
+    now = datetime.now(UTC)
+    fetch = ProviderFetch(fetched_at=now, result=FetchSuccess(available_reset_credits=2))
+
+    pq = _assemble("codex", fetch, prior=None)
+
+    assert pq.last_success is not None
+    assert pq.last_success.result.available_reset_credits == 2

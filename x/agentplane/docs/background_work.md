@@ -41,6 +41,13 @@ two turns.
   `completed`/`failed`/`stopped`, `output_file`, `summary`, optional `usage`), and `task_progress`.
   All confirmed except `task_progress`, which no scenario here produced.
 
+The session event queue is capped at 1000 and preferentially retains lifecycle bookends and
+terminal status under pressure. Draining stamps fresh outer `uuid`/`session_id` values, and a
+terminal notification is guarded for once-only delivery (read). On process restart, consume the
+next `background_tasks_changed` as a replace/reset rather than replaying retained edges into old
+state. See [claude_runtime_contracts.md](claude_runtime_contracts.md) for the surrounding recovery
+constraints.
+
 **What the driver can do.** `stop_task {task_id}` kills one task — confirmed, and it produced
 `background_tasks_changed` with an empty set, `task_updated {status: "killed"}` and
 `task_notification {status: "stopped"}`. The `background_tasks` control request moves in-flight

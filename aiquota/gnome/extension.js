@@ -95,19 +95,37 @@ function formatAge(seconds) {
 }
 
 // Pick the state to render: prefer the latest fetch, but fall back to the
-// last successful snapshot (windows + extraSpend) when the latest call
+// last successful snapshot (windows + extraSpend + reset credits) when the latest call
 // returned nothing usable. `staleAge` is null when no fallback was needed.
 function effectiveState(state) {
-  if (state.windows.length > 0) {
+  if (state.windows.length > 0 || state.availableResetCredits != null) {
     const staleAge = state.error && state.lastFetch != null ? Math.max(0, (Date.now() - state.lastFetch) / 1000) : null;
-    return { windows: state.windows, extraSpend: state.extraSpend, staleAge };
+    return {
+      windows: state.windows,
+      extraSpend: state.extraSpend,
+      availableResetCredits: state.availableResetCredits,
+      availableResetCreditExpiries: state.availableResetCreditExpiries,
+      staleAge,
+    };
   }
   const snap = state.lastSuccess;
   if (!snap || snap.windows.length === 0) {
-    return { windows: [], extraSpend: null, staleAge: null };
+    return {
+      windows: [],
+      extraSpend: null,
+      availableResetCredits: null,
+      availableResetCreditExpiries: [],
+      staleAge: null,
+    };
   }
   const ageSeconds = snap.fetchedAt != null ? Math.max(0, (Date.now() - snap.fetchedAt) / 1000) : null;
-  return { windows: snap.windows, extraSpend: snap.extraSpend, staleAge: ageSeconds };
+  return {
+    windows: snap.windows,
+    extraSpend: snap.extraSpend,
+    availableResetCredits: snap.availableResetCredits,
+    availableResetCreditExpiries: snap.availableResetCreditExpiries,
+    staleAge: ageSeconds,
+  };
 }
 
 function formatFreshness(lastFetch) {
@@ -213,6 +231,19 @@ function formatExtraSpend(extra) {
   return `extra $${Math.round(used)}/$${Math.round(limit)} (${pct}%) this month`;
 }
 
+function formatKnownExpiry(expiry) {
+  const date = new Date(expiry);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function formatBankedResets(count, expiries) {
+  if (count == null) return null;
+  const knownExpiries = (expiries ?? []).map(formatKnownExpiry).filter((expiry) => expiry != null);
+  const label = `${count} banked reset${count === 1 ? "" : "s"}`;
+  return knownExpiries.length ? `${label} · known expiries: ${knownExpiries.join(", ")}` : label;
+}
+
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
 // decided in aiquota/peak_windows.py and delivered as state.burn; this only
 // formats it. Instants arrive absolute and are shown in the viewer's local
@@ -270,6 +301,8 @@ function emptyProviderState() {
     lastCheck: null,
     error: null,
     extraSpend: null,
+    availableResetCredits: null,
+    availableResetCreditExpiries: [],
     currentlyOverPlan: false,
     extraStatus: "none",
     // Peak-burn schedule from the Python view model; null when the provider has none.
@@ -361,6 +394,8 @@ const QuotaIndicator = GObject.registerClass(
         return {
           windows: [snap.short, snap.long].filter((window) => window != null),
           extraSpend: snap.extraSpend ?? null,
+          availableResetCredits: snap.availableResetCredits ?? null,
+          availableResetCreditExpiries: snap.availableResetCreditExpiries ?? [],
           fetchedAt,
         };
       };
@@ -373,6 +408,8 @@ const QuotaIndicator = GObject.registerClass(
           lastCheck,
           error: node?.error ?? null,
           extraSpend: node?.extraSpend ?? null,
+          availableResetCredits: node?.availableResetCredits ?? null,
+          availableResetCreditExpiries: node?.availableResetCreditExpiries ?? [],
           currentlyOverPlan: node?.currentlyOverPlan === true,
           extraStatus: node?.extraStatus ?? "none",
           burn: node?.burn ?? null,
@@ -566,6 +603,8 @@ const QuotaIndicator = GObject.registerClass(
           .map((window) => this._mapWindow(window))
           .filter((window) => window.display),
         extraSpend: this._mapExtraSpend(snap.result.extra_spend),
+        availableResetCredits: snap.result.available_reset_credits ?? null,
+        availableResetCreditExpiries: snap.result.available_reset_credit_expiries ?? [],
         fetchedAt: snap.fetched_at ? new Date(snap.fetched_at).getTime() : null,
       };
     }
@@ -598,6 +637,8 @@ const QuotaIndicator = GObject.registerClass(
           lastCheck,
           error: isSuccess ? null : (result.error ?? null),
           extraSpend: isSuccess ? this._mapExtraSpend(result.extra_spend) : null,
+          availableResetCredits: isSuccess ? (result.available_reset_credits ?? null) : null,
+          availableResetCreditExpiries: isSuccess ? (result.available_reset_credit_expiries ?? []) : [],
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
@@ -715,7 +756,8 @@ const QuotaIndicator = GObject.registerClass(
       item.label.remove_style_class_name("quota-popup-header-error");
       item.label.remove_style_class_name("quota-popup-header-stale");
 
-      const { windows, extraSpend, staleAge } = effectiveState(state);
+      const { windows, extraSpend, availableResetCredits, availableResetCreditExpiries, staleAge } =
+        effectiveState(state);
       const haveWindows = windows.length > 0;
       const parts = [title];
       if (state.error) {
@@ -725,6 +767,8 @@ const QuotaIndicator = GObject.registerClass(
         item.label.add_style_class_name("quota-popup-header-stale");
       }
       if (staleAge != null) parts.push(`(stale ${formatAge(staleAge)})`);
+      const resets = formatBankedResets(availableResetCredits, availableResetCreditExpiries);
+      if (resets) parts.push(resets);
       const extraStr = formatExtraSpend(extraSpend);
       if (extraStr) parts.push(extraStr);
       if (!state.error) parts.push(formatFreshness(state.lastFetch));

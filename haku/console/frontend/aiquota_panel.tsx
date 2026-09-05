@@ -3,7 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { AiquotaView } from "./client";
 import { AiquotaIcon, CloseIcon } from "./icons";
-import { formatClockTime, formatDurationShort, formatWindowDuration, parseTimestamp, secondsUntil } from "./time";
+import {
+  formatClockTime,
+  formatDurationShort,
+  formatWindowDuration,
+  parseTimestamp,
+  secondsUntil,
+  shortDate,
+} from "./time";
 
 type Window = NonNullable<NonNullable<AiquotaView["providers"][number]["last_success"]>["result"]["windows"]>[number];
 
@@ -26,6 +33,22 @@ function effectiveWindows(provider: AiquotaView["providers"][number]): Window[] 
     return result.windows.filter((window) => window.display);
   }
   return provider.last_success?.result.windows?.filter((window) => window.display) ?? [];
+}
+
+function effectiveResetCredits(provider: AiquotaView["providers"][number]): number | null {
+  const result = provider.last_output.result;
+  if (result.kind === "success" && (result.windows?.length || result.available_reset_credits != null)) {
+    return result.available_reset_credits ?? null;
+  }
+  return provider.last_success?.result.available_reset_credits ?? null;
+}
+
+function effectiveResetCreditExpiries(provider: AiquotaView["providers"][number]): string[] {
+  const result = provider.last_output.result;
+  if (result.kind === "success" && (result.windows?.length || result.available_reset_credits != null)) {
+    return result.available_reset_credit_expiries ?? [];
+  }
+  return provider.last_success?.result.available_reset_credit_expiries ?? [];
 }
 
 function QuotaWindowRow({ quotaWindow, short }: { quotaWindow: Window; short: boolean }): JSX.Element {
@@ -61,6 +84,11 @@ function QuotaWindowRow({ quotaWindow, short }: { quotaWindow: Window; short: bo
 
 function ProviderSection({ provider }: { provider: AiquotaView["providers"][number] }): JSX.Element {
   const windows = effectiveWindows(provider);
+  const resetCredits = effectiveResetCredits(provider);
+  const resetExpiryText = effectiveResetCreditExpiries(provider)
+    .map(shortDate)
+    .filter((expiry): expiry is string => expiry !== null)
+    .join(", ");
   const result = provider.last_output.result;
   const stale = provider.last_success !== null && (result.kind !== "success" || windows.length === 0);
   return (
@@ -68,6 +96,11 @@ function ProviderSection({ provider }: { provider: AiquotaView["providers"][numb
       <Group justify="space-between" align="center" wrap="nowrap">
         <Text fw={700}>{provider.provider}</Text>
         <Group gap="xs" wrap="nowrap">
+          {resetCredits !== null && (
+            <Badge variant="light" color="blue">
+              {resetCredits} banked reset{resetCredits === 1 ? "" : "s"}
+            </Badge>
+          )}
           {provider.currently_over_plan && (
             <Badge color="red" variant="light">
               Over plan
@@ -88,6 +121,11 @@ function ProviderSection({ provider }: { provider: AiquotaView["providers"][numb
       {result.kind === "error" && (
         <Text size="xs" c="red">
           {result.error}
+        </Text>
+      )}
+      {resetExpiryText && (
+        <Text size="xs" c="dimmed">
+          Known expiries: {resetExpiryText}
         </Text>
       )}
       {windows.length === 0 ? (

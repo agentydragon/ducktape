@@ -95,6 +95,7 @@ class ProductService:
             raise ValueError("max_horizon_months must be positive")
         if not models:
             raise ValueError("models must contain at least one preset")
+        self._engine = engine_for(simulation_backend)
         self._portfolio = portfolio
         self._initial_cash = initial_cash if isinstance(initial_cash, Decimal) else Decimal(str(initial_cash))
         self._primary_agent_id = primary_agent_id
@@ -104,7 +105,6 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
-        self._engine = engine_for(simulation_backend)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._security_distributions = security_distributions_from_portfolio(
@@ -166,7 +166,6 @@ class ProductService:
             return self._rollout_response(request.scenario, int(request.seed))
 
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
-        self._validate_scenario_key(scenario)
         run, model_id = self._compile_product_run(scenario, (seed,))
         projection = project_product_rollout(
             self._engine.events(run),

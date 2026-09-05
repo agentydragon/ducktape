@@ -99,7 +99,8 @@ jobs:
             done
             # The egress proxy preload is wired via NODE_OPTIONS (a nix-store
             # path, not /app as on the old upstream-base image); confirm it exists.
-            preload="${NODE_OPTIONS#--import=file://}"
+            preload_option="${NODE_OPTIONS%% *}"
+            preload="${preload_option#--import=file://}"
             test -f "$preload"
             # openclaw --version does not import the gateway runtime modules, so
             # it passes even when the gateway is missing runtime deps. Actually

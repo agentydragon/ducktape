@@ -107,7 +107,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260904110545-f7af6bf # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260905072109-2aaf52a # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -117,7 +117,7 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE__IMAGE_TAG
-              value: devel-20260904110545-f7af6bf # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260905072109-2aaf52a # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE__AIQUOTA_URL
               value: "http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"
             - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN

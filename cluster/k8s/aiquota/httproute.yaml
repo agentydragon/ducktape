@@ -13,6 +13,13 @@ spec:
     - matches:
         - path:
             type: PathPrefix
+            value: /
+      backendRefs:
+        - name: aiquota-api
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
             value: /v1
       backendRefs:
         - name: aiquota-api
