@@ -3,8 +3,8 @@
 - **Status:** Accepted and implemented by Agentplane's secure egress integration
 - **Date:** 2026-09-01
 - **Scope:** Agentplane's Kubernetes/Sandbox egress composition
-- **Not a v0 prerequisite:** This decision does not expand the native Claude/Codex capture slice or
-  require the first standalone credentialless Agentplane service to carry production credentials.
+- **Scope boundary:** This design does not make the current staging path ready to carry production
+  credentials; freshness, replay resistance, rotation, and escape tests remain separate gates.
 
 ## Decision
 
@@ -76,7 +76,7 @@ through the sidecar.
 ## Evidence behind the decision
 
 The retired disposable proof, preserved as
-[sandbox egress identity evidence](../docs/sandbox_egress_identity_evidence.md), established on the
+[sandbox egress identity evidence](sandbox_egress_identity_evidence.md), established on the
 pinned cluster:
 
 - only the proxy mounted the synthetic upstream Secret and projected audience-scoped Pod token;

@@ -8,12 +8,12 @@ repository commit is
 
 ## Decision
 
-Do not use A2A for the Harness Control Plane. It is not the harness-neutral control protocol, not the
+Do not use A2A for Agentplane. It is not the harness-neutral control protocol, not the
 web UI API, not an agent-to-agent facade in this design, and not part of the initial or planned
 experiment matrix.
 
 A2A's intentionally opaque task boundary is useful for independently implemented agents that
-exchange tasks, messages, artifacts, and coarse status. The Harness Control Plane is solving a
+exchange tasks, messages, artifacts, and coarse status. Agentplane is solving a
 different problem: supervising native harnesses while preserving exact protocol evidence,
 admission boundaries, queue and steering behavior, interruption, runtime fencing, and recovery.
 Using A2A here would require either hiding the evidence the control plane exists to understand or

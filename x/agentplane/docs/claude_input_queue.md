@@ -2,7 +2,7 @@
 
 Status: **provider evidence**, not a neutral API proposal.
 
-[`common_protocol.md`](../docs/common_protocol.md) leaves one question open: whether Claude has an
+[`common_protocol.md`](common_protocol.md) leaves one question open: whether Claude has an
 enqueued/dequeued state that `join`/steer alone cannot express, and therefore whether the seam's
 "one `Input` verb and no steer verb" rule is still right. It does. This page records what Claude
 actually offers, in the shape a later side-by-side with Codex's `thread/queue/*` needs.

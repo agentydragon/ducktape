@@ -2,7 +2,7 @@
 
 The central proxy of the secure egress integration: sandbox tools reach the outside through it,
 it decides each request from resources on the API server, and it alone holds the credentials it
-substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_gateway.md).
+substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gateway.md).
 
 ## Identity
 
@@ -138,9 +138,8 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
   trailers intact, over a long-lived bidirectional connection, from a client that first has to
   trust the interception CA, has never been tested. This decides whether fencing Bazel's
   BuildBuddy key is a matching question or a transport one, and it is a transport experiment, not
-  a looser matcher. Two statements in this repository disagree about whether it works elsewhere:
-  <../plans/external_access.md> says the key rides inside gRPC where the fence cannot substitute
-  it, while <../../../cluster/k8s/agents/public-coder-agent/app/deployment.yaml> says a local Bazel
-  client's authenticated gRPC does go through iron-proxy and locates the real obstacle elsewhere —
-  `bb remote` serialises the key into a command run on a BuildBuddy-hosted runner, outside any
-  fence of ours, where a placeholder would arrive unsubstituted.
+  a looser matcher. The public-coder deployment confirms that a local Bazel client's authenticated
+  gRPC reaches iron-proxy, but `bb remote` serialises the key into a command run on a
+  BuildBuddy-hosted runner, outside any fence of ours, where a placeholder would arrive
+  unsubstituted
+  (<../../../cluster/k8s/agents/public-coder-agent/app/deployment.yaml>).

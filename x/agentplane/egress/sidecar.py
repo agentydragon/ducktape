@@ -1,7 +1,7 @@
 """The per-Pod relay of the secure egress integration: the sandbox's tools speak ordinary HTTP proxy
 to this listener on loopback, and every request and every CONNECT is forwarded to the central proxy
 with `Proxy-Authorization: Bearer <token>` added, the token being the Pod's projected ServiceAccount
-token with the proxy's audience (x/agentplane/plans/adr_sandbox_proxy_gateway.md).
+token with the proxy's audience (x/agentplane/docs/adr_sandbox_proxy_gateway.md).
 
 The sidecar holds no credential and no TLS material and never looks inside a tunnel: a CONNECT is
 sent on with the header, the central proxy's status line is relayed back, and on success bytes are

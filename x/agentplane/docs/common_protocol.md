@@ -32,10 +32,10 @@ API, and silent on Thread naming, archive presentation, timeline design, and HTT
   (`thread/queue/{add,list,update,delete,reorder,start}`, `codex-rs/ext/queue`): unlike join, a
   queued item never touches the active turn and only starts a new one once the thread goes idle,
   and `delete` is race-free (mutex-serialized against dispatch, returns whether it actually still
-  removed something) up to that point — evidence in <../plans/provider_protocols.md>. That is a
+  removed something) up to that point — evidence in <provider_protocols.md>. That is a
   materially different shape from join/steer's all-or-nothing `turn/interrupt`.
 - Claude's side of that question is now written up in
-  [`../plans/claude_input_queue.md`](../plans/claude_input_queue.md): it too has a real
+  [`claude_input_queue.md`](claude_input_queue.md): it too has a real
   enqueued/dequeued state — inputs are queued under a caller-supplied uuid, withdrawn by
   `cancel_async_message`, and reported via `command_lifecycle` frames — so "one `Input` verb and
   no steer verb" is due a revisit against both providers, not just Codex. The two queues are not

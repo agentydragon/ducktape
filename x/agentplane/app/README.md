@@ -116,7 +116,7 @@ product state beyond that until a feature needs it.
   autonomously, so its sandboxes spend the `cheap-experiments` LiteLLM budget. The Pod holds no
   key: a harness sends the placeholder the `litellm-cheap-experiments` EgressCredential derives
   from its name, and the proxy substitutes the real one, so the model endpoint is governed by the
-  credentialless egress design in [the ADR](../plans/adr_sandbox_proxy_gateway.md) rather than
+  credentialless egress design in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather than
   excepted from it.
 - **Transport security on the runner port:** Cilium policy between the app namespace and the
   sandbox Pods is the v0 control. Authentication on the port itself waits for the credentialed

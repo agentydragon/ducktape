@@ -86,7 +86,8 @@ Missing:
   from a template its identity may use, opens a session, sends an `Input`, and reads the
   session's events. Its prompt tells it which templates and RBAC configurations it may create
   without asking, that doing so is allowed, and how to start and monitor an agent. Nothing
-  called a task or a delegation exists; the A2A evaluation ([`a2a.md`](a2a.md)) stays decided.
+  called a task or a delegation exists; the A2A evaluation
+  ([`../docs/a2a.md`](../docs/a2a.md)) stays decided.
 - **Reading an agent without drowning.** The events stream carries every native frame and text
   delta; an orchestrator wants a turn's outcome and the assistant's final text. The thin
   addition is a kind filter on the events endpoint and on stored events, so the orchestrator

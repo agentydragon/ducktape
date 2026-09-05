@@ -2,7 +2,7 @@
 
 Status: **provider evidence for the native drivers**.
 
-The first implementation speaks each native protocol directly. This document records only the
+Agentplane speaks each native protocol directly. This document records only the
 facts needed to write the drivers and tests. It does not define a neutral API, compatibility-profile
 system, or product persistence model.
 
@@ -20,7 +20,7 @@ system, or product persistence model.
 - A version string is useful human-readable metadata, not a compatibility gate.
 
 The existing `haku/runner`, `haku/cli_protocol`, and `haku/console` code is behavior evidence only.
-The new implementation under `x/agentplane/` must not import it.
+The implementation under `x/agentplane/` must not import it.
 
 When a harness version changes or a new protocol area needs coverage, run the live probe with the
 new pinned binary, compare what the harness sends with the scripted expectations, and update the

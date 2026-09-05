@@ -23,7 +23,7 @@ tools and its model traffic both leave through the sidecar, and the central prox
 real value.
 
 What is left is that trajectories should be as findable as they are durable — what an agent did, and
-why, under a name someone can search for — and the five experiences in
+why, under a name someone can search for — and the experiences in
 [`user_stories.md`](user_stories.md): asks Rai decides, a trusted orchestrator delegating public-only
 work to an untrusted fleet under a judge, an orchestrator running specialists, Haku itself as a
 long-lived agent here, and a UI Haku authors and is driven through.
@@ -163,7 +163,7 @@ personal context.
 - **Story 1 (`Y`) the ask.** A sandboxed agent's request — this token for this call, this verb on
   this namespace, this command on this host — is an object the app stores and shows with its
   rationale, it reaches Rai as a notification that can answer it, and the answer arrives in the
-  thread as an input. The four missing pieces and what already stands under each are in
+  thread as an input. The missing pieces and what already stands under each are in
   [`user_stories.md`](user_stories.md) § 1; the envelope, the batcher, and the no-expiry rule are in
   [`async_approvals.md`](async_approvals.md).
 - **`T2` named threads:** a small model proposes a name from the first turn, the user can edit it,
@@ -220,8 +220,9 @@ personal context.
 - The integration app's shape and decisions: [app README](../app/README.md).
 - What the egress proxy guarantees: [egress SPEC](../egress/SPEC.md); how policies, bindings and
   sandboxes compose into one decision: [`../docs/egress_composition.md`](../docs/egress_composition.md);
-  the design they implement: [egress ADR](adr_sandbox_proxy_gateway.md).
-- Native provider scenarios and the scripted-test workflow: [`experiments.md`](experiments.md), the
+  the design they implement: [egress ADR](../docs/adr_sandbox_proxy_gateway.md).
+- Native provider scenarios and the scripted-test workflow:
+  [`../docs/harness_evidence.md`](../docs/harness_evidence.md), the
   [native driver README](../native/README.md), the [harness tests README](../harness_tests/README.md),
   and the [live capture probe README](../capture/README.md).
 - The runner protocol and its tests: [runner README](../runner/README.md) and
@@ -230,8 +231,6 @@ personal context.
 - Driver-provided tools and background work, and the decisions the seam is waiting on:
   [`driver_tools_and_background.md`](driver_tools_and_background.md).
 - Profiles, and what would revive them: [`profiles.md`](profiles.md).
-- Product/API layering and deferred capabilities: [`product_surface.md`](product_surface.md) and
-  [`architecture.md`](architecture.md).
 - Asynchronous approvals, decision delivery, and the notification batcher:
   [`async_approvals.md`](async_approvals.md).
 - Delegated identity versus brokered credentials per external system, and the rule for choosing:

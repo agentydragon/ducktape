@@ -85,10 +85,10 @@ reconciler lands; with one identity per grant, only the grant being revoked paus
 The same guarantee holds for any target the egress fence fronts, since header substitution works
 the same for GitHub or Forgejo tokens, with the desired-versus-actual check replaced by whatever
 that target exposes about the token's scope; it does not hold where the agent must possess the
-real credential. The one known case is BuildBuddy, whose API key rides inside the Bazel gRPC
-protocol as a remote header rather than at the HTTP edge, so the fence cannot substitute it and
-the agent holds the real key. Accepted: the key is low-sensitivity and unresolved rather than
-unresolvable.
+real credential. BuildBuddy remains unresolved: local authenticated gRPC reaches the proxy, but
+whether the proxy can substitute its metadata correctly is unmeasured, and `bb remote` moves the
+call onto a hosted runner outside the fence regardless. The transport boundary is canonical in
+the [egress SPEC](../egress/SPEC.md).
 
 ## Choosing
 
