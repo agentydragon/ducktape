@@ -34,7 +34,7 @@ SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
 # `section_121_exclusion_for` raises NotImplementedError — which keeps "I forgot this
 # branch" from silently falling through to a wrong tax number.
 _SECTION_121_EXCLUSION_BY_FILING_STATUS: dict[FilingStatus, Decimal] = {FilingStatus.SINGLE: Decimal(250_000)}
-_OPEN_ENDED_BRACKET_UPPER_QUANTA = np.iinfo(np.int64).max
+OPEN_ENDED_BRACKET_UPPER_QUANTA = np.iinfo(np.int64).max
 
 
 def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
@@ -50,7 +50,7 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
 
 def bracket_upper_to_quanta(upper: BracketUpper, *, currency_quantum: object) -> np.int64:
     if upper == "Infinity":
-        return np.int64(_OPEN_ENDED_BRACKET_UPPER_QUANTA)
+        return np.int64(OPEN_ENDED_BRACKET_UPPER_QUANTA)
     return currency_amount_to_quanta(upper, quantum=currency_quantum)
 
 

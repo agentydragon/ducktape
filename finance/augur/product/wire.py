@@ -16,7 +16,14 @@ from pydantic import (
     model_validator,
 )
 
-from finance.augur.api.schemas import ApiModel, Frame, NonNegativeCurrencyAmount, Percentage, PositiveCurrencyAmount
+from finance.augur.api.schemas import (
+    ApiModel,
+    BasisPointPercentage,
+    Frame,
+    NonNegativeCurrencyAmount,
+    Percentage,
+    PositiveCurrencyAmount,
+)
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.product.asset_key import AssetKey
 from finance.augur.sim.fixed_point import validate_currency_quantum
@@ -213,7 +220,8 @@ class PropertySaleEventWire(ApiModel):
 
     kind: Literal["property_sale"] = "property_sale"
     month: PositiveInt
-    closing_cost_pct: NonNegativeFloat = Field(le=100.0)
+    # Basis points, not percent, is the resolution the simulator carries this at.
+    closing_cost_pct: BasisPointPercentage
 
 
 type PropertyLifecycleEventWire = Annotated[

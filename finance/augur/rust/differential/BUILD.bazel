@@ -1,0 +1,498 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Shared across the suites below; the single-suite cases live in the suite that uses them.
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = ["fixtures.py"],
+    deps = [
+        ":case",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "output_adapter",
+    srcs = ["output_adapter.py"],
+    deps = [
+        "//finance/augur:frames",
+        "//finance/augur/sim:events",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "allocation_test",
+    size = "medium",
+    srcs = ["allocation_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "feature_rich_test",
+    size = "medium",
+    srcs = ["feature_rich_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "core_test",
+    size = "medium",
+    srcs = ["core_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:fixture_encoder",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "private_equity_test",
+    size = "medium",
+    srcs = ["private_equity_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:scenario",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "product_failure_test",
+    size = "medium",
+    srcs = ["product_failure_test.py"],
+    deps = [
+        ":case",
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:backend",
+        "//finance/augur/rust/benchmark:fixture",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "product_fan_test",
+    size = "medium",
+    srcs = ["product_fan_test.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/product:metric_composition",
+        "//finance/augur/rust:backend",
+        "//finance/augur/rust/benchmark:fixture",
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "product_metrics_test",
+    # 308s measured: one XLA compile of the 60-month scenario per agent in
+    # PRODUCT_METRIC_AGENTS. Over the 300s `medium` cap, so it alone is large.
+    size = "large",
+    srcs = ["product_metrics_test.py"],
+    deps = [
+        ":case",
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/product:metric_composition",
+        "//finance/augur/rust:backend",
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "property_test",
+    size = "medium",
+    srcs = ["property_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "securities_test",
+    size = "medium",
+    srcs = ["securities_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "tax_test",
+    size = "medium",
+    srcs = ["tax_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "tlh_test",
+    size = "medium",
+    srcs = ["tlh_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tlh_harvest",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Reads the JAX engine through `sim/testing/state_helpers`, so the layer is testonly like
+# the fixtures beside it.
+py_library(
+    name = "backend",
+    testonly = True,
+    srcs = ["backend.py"],
+    deps = [
+        ":case",
+        ":output_adapter",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/codec:plan",
+        "//finance/augur/sim/engine:jax_engine",
+        "//finance/augur/sim/testing:state_helpers",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "backend_test",
+    size = "medium",
+    srcs = ["backend_test.py"],
+    deps = [
+        ":backend",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Drives the testonly `backend` layer, so it is testonly too.
+py_library(
+    name = "campaign",
+    testonly = True,
+    srcs = ["campaign.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":generator",
+        ":shrink",
+        "//finance/augur/rust:fixture_encoder",
+        "//util/testing:undeclared_outputs",
+    ],
+)
+
+py_library(
+    name = "generator",
+    srcs = ["generator.py"],
+    deps = [
+        ":case",
+        ":rounding_boundary",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tlh_harvest",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "rounding_boundary",
+    srcs = ["rounding_boundary.py"],
+)
+
+py_library(
+    name = "shrink",
+    srcs = ["shrink.py"],
+    deps = [
+        ":case",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "generator_test",
+    srcs = ["generator_test.py"],
+    deps = [
+        ":case",
+        ":conftest",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:scenario",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "rounding_boundary_test",
+    srcs = ["rounding_boundary_test.py"],
+    deps = [
+        ":conftest",
+        ":rounding_boundary",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "shrink_test",
+    srcs = ["shrink_test.py"],
+    deps = [
+        ":case",
+        ":conftest",
+        ":shrink",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:scenario",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Off the default CI path: `bazel test //...` skips a manual target, and this one costs
+# thousands of both-engine runs plus one XLA compile per structural case.
+py_test(
+    name = "soak_test",
+    size = "enormous",
+    srcs = ["soak_test.py"],
+    tags = ["manual"],
+    deps = [
+        ":campaign",
+        ":conftest",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//jax",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "known_divergence_test",
+    size = "medium",
+    srcs = ["known_divergence_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":case",
+        "//finance/augur/rust/benchmark:fixture",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "product_scenario_test",
+    size = "medium",
+    srcs = ["product_scenario_test.py"],
+    data = [
+        "//finance/augur/api:public_fixture_config",
+        "//finance/augur/api:public_fixture_properties",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/api:config",
+        "//finance/augur/api:product_service",
+        "//finance/augur/product:service",
+        "//finance/augur/product:wire",
+        "//finance/augur/rust:fixture_encoder",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# One XLA compile per case and nothing else, so it is sized by compiles rather than by cases.
+py_test(
+    name = "structural_fuzz_test",
+    size = "large",
+    srcs = ["structural_fuzz_test.py"],
+    deps = [
+        ":campaign",
+        ":conftest",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Four compiled programs shared across 320 cases; the wall clock is the cases, not the
+# compiles, which is the whole point of separating this tier from the structural one.
+py_test(
+    name = "value_fuzz_test",
+    size = "large",
+    srcs = ["value_fuzz_test.py"],
+    deps = [
+        ":campaign",
+        ":conftest",
+        ":generator",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "tax_law_test",
+    srcs = ["tax_law_test.py"],
+    deps = [
+        ":backend",
+        ":case",
+        ":conftest",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:scenario",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "case",
+    srcs = ["case.py"],
+    deps = [
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:fixture_encoder",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)

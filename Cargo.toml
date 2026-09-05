@@ -114,6 +114,9 @@ ts-rs = "11"
 multimap = "0.10.0"
 starlark = { version = "0.14.2", default-features = false }
 thiserror = "2.0.17"
+# finance/augur/rust: the simulator's in-process Python extension. `extension-module`
+# keeps libpython out of the link line so Bazel builds a cdylib the interpreter loads.
+pyo3 = { version = "^0.27.2", features = ["extension-module"] }
 
 [[bin]]
 name = "ducktape_fake"

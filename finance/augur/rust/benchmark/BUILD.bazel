@@ -1,0 +1,76 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "simulator_bench",
+    srcs = ["main.rs"],
+    edition = "2024",
+    deps = [
+        "//finance/augur/rust:simulator",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+py_binary(
+    name = "fixture_bin",
+    imports = ["../../../.."],
+    main_module = "finance.augur.rust.benchmark.fixture",
+    deps = [":fixture"],
+)
+
+py_binary(
+    name = "driver_bin",
+    data = [":simulator_bench"],
+    imports = ["../../../.."],
+    main_module = "finance.augur.rust.benchmark.driver",
+    deps = [":driver"],
+)
+
+py_binary(
+    name = "jax_driver_bin",
+    imports = ["../../../.."],
+    main_module = "finance.augur.rust.benchmark.jax_driver",
+    deps = [":jax_driver"],
+)
+
+py_library(
+    name = "driver",
+    srcs = ["driver.py"],
+    deps = [
+        ":fixture",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "fixture",
+    srcs = ["fixture.py"],
+    deps = [
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/rust/differential:case",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tlh_harvest",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "jax_driver",
+    srcs = ["jax_driver.py"],
+    deps = [
+        ":fixture",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim/codec:plan",
+        "//finance/augur/sim/compiler:plan",
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
