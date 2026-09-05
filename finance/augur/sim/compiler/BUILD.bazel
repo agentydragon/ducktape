@@ -297,3 +297,19 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "tax_test",
+    srcs = ["tax_test.py"],
+    deps = [
+        ":plan",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:conftest",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:scenario",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

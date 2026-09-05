@@ -30,6 +30,9 @@ ltcg_brackets:
 
 standard_deduction:
   single: 14600
+# IRC 1211(b).
+max_capital_loss_ordinary_offset:
+  single: 3000
 level: federal
 
 # IRC 103 excludes interest on state and local obligations from federal gross income —

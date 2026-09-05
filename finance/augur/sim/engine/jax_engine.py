@@ -83,7 +83,6 @@ from finance.augur.sim.compiler.private_equity import PEExecutionChannels
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
-from finance.augur.sim.compiler.tax import MAX_CAPITAL_LOSS_ORDINARY_OFFSET_QUANTA
 from finance.augur.sim.engine.jax_types import (
     _AssetSaleProgram,
     _CapitalGainTarget,
@@ -457,6 +456,7 @@ class _Operands(NamedTuple):
     # Device arrays the bodies + de-`plan`-ed cores read directly.
     capital_gain_agent_codes: Int64[Array, " capital_gain_profile"]
     cg_rep_profile: Int64[Array, " capital_gain_profile"]
+    cg_offset_cap: Int64[Array, " capital_gain_profile"]
     property_owner_ordinary_row: Int64[Array, " property"]
     liability_owner_profile_index: Int64[Array, " liability"]
     salt_contributing_mask: Int64[Array, " tax_link other_tax_link"]
@@ -1263,10 +1263,15 @@ def _build_program(
     # Ordinary-bucket ROWS, not profile indices: the §1211 ordinary offset scatters into the
     # YTD income tensor, whose rows are (profile, source) pairs.
     cg_rep_profile = np.full(max(1, p.capital_gain_agent_count), NO_CODE, dtype=np.int64)
+    # The IRC 1211(b) cap the netting clamps against, on the same axis. It is a taxpayer's
+    # figure, and `compile_tax` has already refused a profile whose jurisdictions disagree on
+    # it, so the first profile reaching a cg-agent carries the answer for all of them.
+    cg_offset_cap = np.zeros(max(1, p.capital_gain_agent_count), dtype=np.int64)
     for profile in range(profile_count):
         gp = int(plan.tax_profile_capital_gain_index[profile])
         if gp >= 0 and cg_rep_profile[gp] < 0:
             cg_rep_profile[gp] = plan.tax.buckets.ordinary_bucket(profile)
+            cg_offset_cap[gp] = int(plan.tax.profile_max_capital_loss_ordinary_offset[profile])
     salt_link_active = plan.salt.link_active  # bool array per link
     cap_year_index_by_month = np.minimum(np.arange(horizon) // 12, plan.salt.cap_by_year.shape[1] - 1)
     # Per-(link, month) SALT cap (cap_by_year indexed by the month's tax year), so the traced month
@@ -1361,6 +1366,7 @@ def _build_program(
         salt_cap_table=salt_cap_table,
         capital_gain_agent_codes=jnp.asarray(plan.capital_gain_agent_codes),
         cg_rep_profile=jnp.asarray(cg_rep_profile),
+        cg_offset_cap=jnp.asarray(cg_offset_cap),
         property_owner_ordinary_row=jnp.asarray(plan.property_owner_ordinary_row),
         liability_owner_profile_index=jnp.asarray(plan.liability_owner_profile_index),
         salt_contributing_mask=salt_contributing_mask,
@@ -1506,6 +1512,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     tax_slot_table = baked.tax_slot_table
     salt_cap_table = baked.salt_cap_table
     cg_rep_profile = baked.cg_rep_profile
+    cg_offset_cap = baked.cg_offset_cap
     property_owner_ordinary_row = baked.property_owner_ordinary_row
     liability_owner_profile_index = baked.liability_owner_profile_index
     salt_contributing_mask = baked.salt_contributing_mask
@@ -1617,6 +1624,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             cg_ytd[:, CapitalGainClassification.SHORT_TERM, :],
             cg_ytd[:, CapitalGainClassification.LONG_TERM, :],
             carryforward,
+            max_ordinary_offset_quanta=cg_offset_cap[: cg_ytd.shape[0], None],
         )
         # `cg_rep_profile` is padded to `max(1, count)`; align it to the actual cap-gain-agent axis
         # (which may be 0 when the scenario has no tax profiles).
@@ -3494,7 +3502,8 @@ def _net_capital_gains_jnp(
     long_term: Int64[Array, " rollout"],
     carryforward_in: Int64[Array, " rollout"],
     *,
-    max_ordinary_offset_quanta: int = MAX_CAPITAL_LOSS_ORDINARY_OFFSET_QUANTA,
+    # Broadcast against the loss: one cap per taxpayer in the engine, a bare row in tests.
+    max_ordinary_offset_quanta: Int64[Array, " *cap"],
 ) -> tuple[Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"]]:
     """Branch-free §1211/§1212 capital-loss netting for one tax year: cross-net ST against LT, consume
     the prior-year carryforward (short-term first, taxpayer-favorable), then split any residual loss

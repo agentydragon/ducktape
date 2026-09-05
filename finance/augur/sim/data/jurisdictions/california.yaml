@@ -22,6 +22,9 @@ ordinary_income_brackets:
 
 standard_deduction:
   single: 5363
+# California conforms to the federal limitation (R&TC 17201).
+max_capital_loss_ordinary_offset:
+  single: 3000
 level: state
 
 # 31 USC 3124 bars states from taxing federal obligations, so Treasury interest is exempt.

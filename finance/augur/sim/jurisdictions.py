@@ -74,6 +74,14 @@ class Jurisdiction(BaseModel):
     ordinary_income_brackets: dict[str, list[TaxBracket]]
     ltcg_brackets: dict[str, list[TaxBracket]] | None = Field(default=None)
     standard_deduction: dict[str, CurrencyAmount]
+    max_capital_loss_ordinary_offset: dict[str, CurrencyAmount] = Field(
+        description=(
+            "How much of a net capital loss may offset ordinary income in one year, by filing "
+            "status; the rest carries forward. Federal IRC 1211(b) sets $3,000 and most states "
+            "conform, but not all -- New Jersey allows none of it -- so it is stated per "
+            "jurisdiction rather than assumed."
+        )
+    )
     level: JurisdictionLevel
     exempt_interest_from_levels: frozenset[JurisdictionLevel] = Field(
         default=frozenset(),

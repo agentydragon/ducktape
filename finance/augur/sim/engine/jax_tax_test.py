@@ -49,6 +49,20 @@ def _brackets(schedule: list[TaxBracket]) -> _BracketTable:
     )
 
 
+# The IRC 1211(b) cap these cases net against. Stated here rather than imported from the
+# jurisdiction data: what is being checked is the netting arithmetic at a known cap, not that
+# the reducer and the YAML hold the same number.
+_CAPITAL_LOSS_OFFSET_CAP = jnp.asarray([300_000], dtype=jnp.int64)
+
+
+def _net(
+    short_term: jnp.ndarray, long_term: jnp.ndarray, carryforward: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    return _net_capital_gains_jnp(
+        short_term, long_term, carryforward, max_ordinary_offset_quanta=_CAPITAL_LOSS_OFFSET_CAP
+    )
+
+
 def _quanta(*usd: float) -> jnp.ndarray:
     return jnp.asarray(
         [int((Decimal(str(value)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)) for value in usd],
@@ -186,7 +200,7 @@ def test_ltcg_brackets_vectorized() -> None:
 def test_net_capital_gains_pure_gains_pass_through() -> None:
     """With no losses and no carryforward, ST/LT gains are returned untouched and nothing
     offsets ordinary income — the netting must be a no-op for the common all-gains year."""
-    net_st, net_lt, offset, carry_out = _net_capital_gains_jnp(_quanta(4_000.0), _quanta(10_000.0), _quanta(0.0))
+    net_st, net_lt, offset, carry_out = _net(_quanta(4_000.0), _quanta(10_000.0), _quanta(0.0))
     assert net_st.tolist() == [400_000]
     assert net_lt.tolist() == [1_000_000]
     assert offset.tolist() == [0]
@@ -195,7 +209,7 @@ def test_net_capital_gains_pure_gains_pass_through() -> None:
 
 def test_net_capital_gains_short_term_loss_offsets_long_term_gain() -> None:
     """A net short-term loss cross-nets against a long-term gain before either is taxed."""
-    net_st, net_lt, offset, carry_out = _net_capital_gains_jnp(_quanta(-3_000.0), _quanta(10_000.0), _quanta(0.0))
+    net_st, net_lt, offset, carry_out = _net(_quanta(-3_000.0), _quanta(10_000.0), _quanta(0.0))
     assert net_st.tolist() == [0]
     assert net_lt.tolist() == [700_000]
     assert offset.tolist() == [0]
@@ -205,7 +219,7 @@ def test_net_capital_gains_short_term_loss_offsets_long_term_gain() -> None:
 def test_net_capital_gains_net_loss_caps_ordinary_offset_and_carries_remainder() -> None:
     """A $12k net capital loss deducts $3k against ordinary income this year and carries the
     remaining $9k forward; no gains remain to tax."""
-    net_st, net_lt, offset, carry_out = _net_capital_gains_jnp(_quanta(-5_000.0), _quanta(-7_000.0), _quanta(0.0))
+    net_st, net_lt, offset, carry_out = _net(_quanta(-5_000.0), _quanta(-7_000.0), _quanta(0.0))
     assert net_st.tolist() == [0]
     assert net_lt.tolist() == [0]
     assert offset.tolist() == [300_000]
@@ -214,7 +228,7 @@ def test_net_capital_gains_net_loss_caps_ordinary_offset_and_carries_remainder()
 
 def test_net_capital_gains_small_loss_fully_offsets_ordinary() -> None:
     """A net loss below the $3k cap is fully deducted with nothing carried forward."""
-    _, _, offset, carry_out = _net_capital_gains_jnp(_quanta(-1_200.0), _quanta(0.0), _quanta(0.0))
+    _, _, offset, carry_out = _net(_quanta(-1_200.0), _quanta(0.0), _quanta(0.0))
     assert offset.tolist() == [120_000]
     assert carry_out.tolist() == [0]
 
@@ -222,7 +236,7 @@ def test_net_capital_gains_small_loss_fully_offsets_ordinary() -> None:
 def test_net_capital_gains_carryforward_consumes_following_year_gain() -> None:
     """A prior-year carryforward offsets this year's gains (short-term first), shrinking the
     taxed gain and the carryforward balance."""
-    net_st, net_lt, offset, carry_out = _net_capital_gains_jnp(_quanta(2_000.0), _quanta(5_000.0), _quanta(9_000.0))
+    net_st, net_lt, offset, carry_out = _net(_quanta(2_000.0), _quanta(5_000.0), _quanta(9_000.0))
     # $9k carryforward wipes the $2k ST gain and $5k LT gain (total $7k); the unused $2k is then a
     # net capital loss that deducts (under the $3k cap) against ordinary income, leaving $0 to carry.
     assert net_st.tolist() == [0]
@@ -234,7 +248,7 @@ def test_net_capital_gains_carryforward_consumes_following_year_gain() -> None:
 def test_net_capital_gains_vectorized_independent_rollouts() -> None:
     """One call over multiple rollouts: a gain year, a carryforward-consumed year, and a
     net-loss year each resolve independently."""
-    net_st, net_lt, offset, carry_out = _net_capital_gains_jnp(
+    net_st, net_lt, offset, carry_out = _net(
         _quanta(4_000.0, 1_000.0, -2_000.0), _quanta(10_000.0, 1_000.0, -6_000.0), _quanta(0.0, 0.0, 0.0)
     )
     assert net_st.tolist() == [400_000, 100_000, 0]
@@ -254,7 +268,7 @@ def test_tax_math_is_traceable() -> None:
     ltcg_tax = jax.jit(lambda gain, ordinary: _apply_ltcg_brackets(gain, ordinary, **ltcg_table))(
         _quanta(20_000.0), _quanta(30_000.0)
     )
-    _, _, offset, _ = jax.jit(_net_capital_gains_jnp)(_quanta(-5_000.0), _quanta(-7_000.0), _quanta(0.0))
+    _, _, offset, _ = jax.jit(_net)(_quanta(-5_000.0), _quanta(-7_000.0), _quanta(0.0))
     assert ordinary_tax.tolist() == [605_300]
     assert ltcg_tax.tolist() == [44_625]
     assert offset.tolist() == [300_000]
