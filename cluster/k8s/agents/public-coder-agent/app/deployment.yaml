@@ -78,6 +78,15 @@ spec:
               value: /home/openclaw/.local
             - name: NPM_CONFIG_CACHE
               value: /home/openclaw/.cache/npm
+            # LiteLLM's Gemini embedding route is request-quota limited. Keep a
+            # single request stream and wait long enough for its observed
+            # Retry-After windows instead of compounding throttled requests.
+            - name: OPENCLAW_MEMORY_INDEX_CONCURRENCY
+              value: "1"
+            - name: OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS
+              value: "30000"
+            - name: OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS
+              value: "120000"
             # Keep provider, compaction, and agent-loop debug records on
             # stdout so cluster logging captures them in Loki. OpenClaw's
             # sensitive-value redaction remains enabled at its default.
