@@ -5,16 +5,11 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.differential.backend import (
-    BACKENDS,
-    CANONICAL_STATE_CHANNELS,
-    Backend,
-    assert_backends_agree,
-    assert_results_agree,
-    run_rust,
-)
+from finance.augur.rust.differential.backend import BACKENDS, assert_backends_agree, assert_results_agree
+from finance.augur.rust.result import run_rust
 from finance.augur.sim.testing.fixtures import shared_case
 from finance.augur.sim.testing.jax_result import run_jax
+from finance.augur.sim.testing.simulation_result import CANONICAL_STATE_CHANNELS, Backend
 
 
 @pytest.mark.parametrize("backend", BACKENDS, ids=lambda run: run.__name__)

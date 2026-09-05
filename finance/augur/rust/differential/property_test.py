@@ -11,7 +11,7 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.differential.backend import BACKENDS, Backend, assert_backends_agree
+from finance.augur.rust.differential.backend import BACKENDS, assert_backends_agree
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -43,6 +43,7 @@ from finance.augur.sim.testing.fixtures import (
     taxed,
     transfer,
 )
+from finance.augur.sim.testing.simulation_result import Backend
 
 # A place with no property tax, so a property there costs only what its cashflows say.
 UNTAXED_LOCATION = Location(
