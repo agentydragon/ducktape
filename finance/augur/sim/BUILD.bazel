@@ -785,3 +785,23 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_frozen_rollout_reporting_e2e",
+    srcs = ["test_frozen_rollout_reporting_e2e.py"],
+    deps = [
+        ":conftest",
+        ":external_series",
+        ":scenario",
+        ":simulate",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim/codec:plan",
+        "//finance/augur/sim/testing:state_helpers",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)

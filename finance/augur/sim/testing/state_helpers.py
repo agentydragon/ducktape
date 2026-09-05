@@ -17,6 +17,17 @@ def _parts(run: Any) -> tuple[Any, Any]:
     return run.plan, run.output
 
 
+def _last_reported_month(plan: Any, output: Any) -> np.ndarray:
+    """The last month each rollout has anything to report, by rollout index.
+
+    A rollout that runs out of cash stops there; the failure month itself still reports, so
+    that the failure does. `codec/plan.py` states the same rule for the event log.
+    """
+
+    failed_month = np.asarray(output.state.failed_month[plan.horizon_months], dtype=np.int64)
+    return np.where(failed_month < 0, np.int64(plan.horizon_months), failed_month)
+
+
 def _strings(plan: Any, codes: np.ndarray) -> np.ndarray:
     strings = plan.strings
     flat = np.asarray(codes, dtype=np.int64).reshape(-1)
@@ -122,6 +133,19 @@ def tax_liabilities(run: Any) -> pl.DataFrame:
     previous_active = np.concatenate((np.zeros_like(active[:1]), active[:-1]), axis=0)
     changed = ((amounts != previous_amount) | (active != previous_active)).any(axis=2)
     months, slots, rollouts = np.argwhere(changed[:, :, None] & active).T
+    # A liability the rollout never lived to be assessed does not exist, so it reports nothing
+    # — not even a zero. The assessment lands the month after its tax year closes, and a
+    # rollout that ran out of cash before then never reached it; this engine cannot leave a
+    # vectorized scan early, so it keeps stepping under a mask and marks the liability active
+    # anyway.
+    #
+    # This drops the whole liability, not the months after the failure: a liability that *was*
+    # assessed stays on the books, and its later months are state the frozen rollout still has
+    # (they read zero once it stops). Events are the opposite case and `codec/plan.py` states
+    # that rule — a stopped rollout has no later events, because nothing later happens in it.
+    assessed = plan.tax_liabilities.year_end_month.astype(np.int64)[slots] + 1
+    reached = assessed <= _last_reported_month(plan, output)[rollouts]
+    months, slots, rollouts = months[reached], slots[reached], rollouts[reached]
     profile = plan.tax_liabilities.profile_index.astype(np.int64)[slots]
     links = plan.tax_liabilities.link_index.astype(np.int64)[slots]
     return pl.DataFrame(

@@ -102,6 +102,7 @@ py_library(
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:output",
         "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
         "@pypi//polars",
     ],
 )
