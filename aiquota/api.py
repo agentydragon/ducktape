@@ -22,11 +22,11 @@ from typing import Annotated, Protocol, cast
 
 import httpx
 import uvicorn
+from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from authlib.integrations.starlette_client import OAuth, OAuthError
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -536,7 +536,10 @@ def create_app(
         @app.get("/auth/login")
         async def oauth_login(request: Request) -> RedirectResponse:
             client = oauth.create_client("authentik")
-            return cast(RedirectResponse, await client.authorize_redirect(request, browser_oauth.callback_url, nonce=secrets.token_urlsafe(32)))
+            return cast(
+                RedirectResponse,
+                await client.authorize_redirect(request, browser_oauth.callback_url, nonce=secrets.token_urlsafe(32)),
+            )
 
         @app.get("/auth/callback")
         async def oauth_callback(request: Request) -> RedirectResponse:
@@ -547,7 +550,10 @@ def create_app(
                 logger.info("aiquota OAuth callback failed: %s", error.error)
                 raise HTTPException(status_code=401, detail="OAuth login failed") from error
             userinfo = token.get("userinfo") or {}
-            if userinfo.get("iss") != browser_oauth.issuer or userinfo.get("preferred_username") != browser_oauth.username:
+            if (
+                userinfo.get("iss") != browser_oauth.issuer
+                or userinfo.get("preferred_username") != browser_oauth.username
+            ):
                 raise HTTPException(status_code=403, detail="OAuth identity is not authorized")
             request.session["aiquota_user"] = browser_oauth.username
             return RedirectResponse(url="/", status_code=303)

@@ -7,13 +7,13 @@ resource "authentik_group" "aiquota_access" {
 }
 
 resource "authentik_provider_oauth2" "aiquota" {
-  name                  = "aiquota"
-  client_id             = "aiquota"
-  client_type           = "confidential"
-  authorization_flow    = data.authentik_flow.implicit_consent.id
-  invalidation_flow     = data.authentik_flow.invalidation.id
-  signing_key           = data.authentik_certificate_key_pair.self_signed.id
-  access_token_validity = "hours=1"
+  name                       = "aiquota"
+  client_id                  = "aiquota"
+  client_type                = "confidential"
+  authorization_flow         = data.authentik_flow.implicit_consent.id
+  invalidation_flow          = data.authentik_flow.invalidation.id
+  signing_key                = data.authentik_certificate_key_pair.self_signed.id
+  access_token_validity      = "hours=1"
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
   sub_mode                   = "user_id"
@@ -50,16 +50,16 @@ resource "kubernetes_secret" "aiquota_oidc_source" {
     name      = "aiquota-oidc"
     namespace = "authentik"
     annotations = {
-      description = "aiquota OAuth client credentials and browser session signing secret"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed" = "true"
+      description                                                     = "aiquota OAuth client credentials and browser session signing secret"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "cli-proxy-api"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled" = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces" = "cli-proxy-api"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "cli-proxy-api"
     }
   }
   data = {
-    client_id = authentik_provider_oauth2.aiquota.client_id
-    client_secret = authentik_provider_oauth2.aiquota.client_secret
+    client_id      = authentik_provider_oauth2.aiquota.client_id
+    client_secret  = authentik_provider_oauth2.aiquota.client_secret
     session_secret = random_password.aiquota_session.result
   }
 }
