@@ -86,18 +86,24 @@ hubble:
   # Observability plane only: no datapath, MTU, or routing change, so the
   # Nebula-compatibility warning at the top of this file does not apply.
   #
-  # Cardinality is the cost here, and `destinationContext` is where it bites:
-  # pod IPs churn on every restart and each new value is a new Mimir series
-  # forever. Resolving to a workload name first keeps intra-cluster traffic on
-  # stable labels and leaves the IP fallback for external destinations only.
+  # Cardinality is the cost here, and `destinationContext` is where it bites: an
+  # unresolved destination falls through to a raw pod IP. Those recycle within
+  # each node's podCIDR rather than growing without bound, but they are a far
+  # larger and far less useful label set than workload names.
+  #
+  # Order is load-bearing. `reserved-identity` catches the host, remote-node,
+  # world and kube-apiserver destinations that have neither a workload name nor
+  # a DNS name. It sits *after* `dns` so that an external destination reports its
+  # hostname rather than collapsing to `reserved:world` once an L7 DNS policy
+  # populates the FQDN cache.
   #
   # `dns` stays empty until an L7 DNS policy routes queries through Cilium's DNS
   # proxy; it is enabled here so that turning one on needs no Helm upgrade.
   # `drop` is what shows a namespace being black-holed by such a policy.
   metrics:
     enabled:
-      - "flow:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|ip"
-      - "drop:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|ip"
+      - "flow:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|reserved-identity|ip"
+      - "drop:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|reserved-identity|ip"
       - "dns:query;ignoreAAAA"
     # As with `prometheus` above: the ServiceMonitor is declared under
     # cluster/k8s/monitoring/cilium so this bootstrap-time install does not
