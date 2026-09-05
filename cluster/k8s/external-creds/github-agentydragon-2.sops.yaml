@@ -1,0 +1,38 @@
+# Replacement "Ducktape cluster secrets sync #2" fine-grained PAT. It is
+# staged alongside github-agentydragon so the old credential can remain valid
+# until every consumer is verified on this one and the quota boundary is
+# measured before revocation.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: github-agentydragon-2
+    namespace: ducktape-flux
+    annotations:
+        description: Replacement fine-grained GitHub PAT for the agentydragon account, staged for controlled consumer migration.
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:aVIJ4DSCBCzuMWUDR/LHYSMwOYlorzBb7Wbp7IhaSMaSCdR8fG1rBMxYKF37ryHu15/pg/AoyPSB3PmBSfm4pg7IDhZUK43LD0ToshL5Ph0Ne7DJG7tpjB3OKXw5,iv:y/hz7FdcO+aSFc7rzxQTR83jZlCbsmZs/EbdkOLw67Y=,tag:t8z1JucplrngxuHEM5yrbQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxdEZGbVY5eHRER3J6SE95
+            Wnpkdm9LckJtekJIT01NZ1F1ZnJpUVhMMHhvClNWVCtPTlM2UGlyYldxbUpuTFUw
+            U2Uvb1hDUng3SmRSaG9GdjljK0U3M0kKLS0tIDBZdExpbnV0ckV6UDhZR2tIZUlC
+            NGtGQlRMY1RKaVhtUUNXc2Z4ZmlVRGcKkpJadQLyxH3mw7Fbz/KVUMs68xBx/84U
+            R52G3/I97S7txCNutA5voBuwiNPxyuzXUS8f+SHqcr6vBovOZ3EVdg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3S0xaMzVLWDFxQ1NBTWVK
+            d04vWE1FSFJoQm5zbVArY1djbTZLblVOckEwCkFIUGpKM0pmNEVlZCtvWXZDcXcw
+            R21LQ1AzelVDSHN1NTdwNWMreW1LY1EKLS0tIGJUMGtnL2cyNmovcnpRZy9KVFVv
+            TndNOHhseEJ1ekluVUo5RzIwVWQvZjgKzt3nbTAbOt5Ez4GE6XiSIH794781ZlqP
+            gkdoFRcCB3x48vS2T0C+iorVfn6MhIdjtOeaAifOW+6+uH9NJYyczA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-05T02:35:57Z"
+    mac: ENC[AES256_GCM,data:qOl3h0zBo+iCYJxZSa2bpLdpe7OcvyuABa7nmlnNwKDSp21mCiuGAipEKu2LDaX/bPmamtPnIsKDKtSBwosSgczqE7JxlGX8uJ7gam7b140V08CdEaLvW0e+VjadcSFCkim2DCg6Ba48Gxgl+TKmjWIm3jTf+DKALTtyMqa7rTM=,iv:/c86QtPbwfsD89gKosXNLVZj7A0xuZxvaMD/taldtdo=,tag:Sm/YySkk9M89CRDOQVQusg==,type:str]
+    version: 3.13.3
