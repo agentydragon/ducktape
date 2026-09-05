@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EventLog
@@ -31,6 +32,18 @@ from finance.augur.sim.product_metrics import (
     ProductTerminalSummary,
 )
 from finance.augur.sim.scenario import Scenario
+
+
+class SimulationBackend(StrEnum):
+    """Which engine a deployment runs.
+
+    Named here rather than beside the engines because the deployment config has to spell it,
+    and `sim/` is the one place both the config and the Rust engine can reach. Resolving a
+    name to an `Engine` is `product/service.py`'s job: `sim/` cannot import `rust/`.
+    """
+
+    JAX = "jax"
+    RUST = "rust"
 
 
 @dataclass(frozen=True)

@@ -7,9 +7,7 @@ agent, initial cash); does not know about properties, locations, or bootstrap.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
 from decimal import Decimal
-from enum import StrEnum
 from typing import Any, overload
 
 import numpy as np
@@ -26,7 +24,7 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
-from finance.augur.product.projection import project_product_rollout
+from finance.augur.product.projection import project_product_rollout_from_events
 from finance.augur.product.quantiles import currency_quantiles
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
@@ -48,49 +46,32 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
     TerminalMetrics,
 )
-from finance.augur.rust.backend import run_rust_product_summaries, run_rust_product_summary
-from finance.augur.rust.fixture_encoder import encode_fixture
-from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
+from finance.augur.rust.backend import RustEngine
+from finance.augur.sim.backend import CompiledRun, Engine, SimulationBackend
+from finance.augur.sim.compiler.plan import compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.engine.jax_engine import run_jax_product_summaries, run_jax_product_summary
-from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
-from finance.augur.sim.jurisdictions import Jurisdiction
+from finance.augur.sim.engine.jax_backend import JaxEngine
+from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
-from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.product_metrics import (
-    ProductMetricArrays,
     ProductMetricFanSummary,
     ProductProjectionSummaries,
     ProductTerminalSummary,
 )
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import HarvestPolicy, Scenario
-from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics
 
 
-class SummaryBackend(StrEnum):
-    """Which simulator answers the percentile-fan and terminal-distribution endpoints.
+def engine_for(backend: SimulationBackend) -> Engine:
+    """The engine a deployment named.
 
-    Both reduce the same seven base metric series with the same shared Python
-    (`metric_composition`, `quantiles`), so the choice is which engine produces those series.
-    It is explicit rather than a rollout, because the point is to run both on one scenario and
-    compare. The single-rollout endpoint stays on JAX either way: it renders a causal event
-    trace out of dense output the Rust engine does not yet emit.
+    One choice serves every product endpoint, because everything above the engine is shared:
+    the derived metrics, the terminal reduction and the percentile brackets are one reduction
+    over the base series, and the selected-rollout trace is one projection over the canonical
+    event frames. The choice is which engine produces the inputs, never which read model runs.
     """
 
-    JAX = "jax"
-    RUST = "rust"
-
-
-@dataclass(frozen=True)
-class _CompiledProductRun:
-    """One compiled product simulation, plus what encoding it as a Rust fixture needs."""
-
-    plan: CompiledSimulation
-    scenario: Scenario
-    external_series: ExternalSeriesContext
-    jurisdictions: dict[str, Jurisdiction]
-    model_id: str
+    return RustEngine() if backend is SimulationBackend.RUST else JaxEngine()
 
 
 class ProductService:
@@ -108,7 +89,7 @@ class ProductService:
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
-        summary_backend: SummaryBackend = SummaryBackend.JAX,
+        simulation_backend: SimulationBackend = SimulationBackend.JAX,
     ) -> None:
         if max_horizon_months <= 0:
             raise ValueError("max_horizon_months must be positive")
@@ -123,7 +104,7 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
-        self._summary_backend = summary_backend
+        self._engine = engine_for(simulation_backend)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._security_distributions = security_distributions_from_portfolio(
@@ -186,11 +167,10 @@ class ProductService:
 
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
         self._validate_scenario_key(scenario)
-        plan, output, metrics, model_id = self._simulate_dense(scenario, (seed,))
-        projection = project_product_rollout(
-            plan,
-            output,
-            metrics,
+        run, model_id = self._compile_product_run(scenario, (seed,))
+        projection = project_product_rollout_from_events(
+            self._engine.events(run),
+            self._engine.product_metrics(run, primary_agent_id=self._primary_agent_id),
             rollout_index=0,
             primary_agent_id=self._primary_agent_id,
             asset_label_by_id=self._asset_label_by_id,
@@ -233,32 +213,26 @@ class ProductService:
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
 
-    def _compile_product_run(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> _CompiledProductRun:
+    def _compile_product_run(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[CompiledRun, str]:
         self._validate_scenario_key(scenario_key)
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
         external_series = materialize_sampled_exogenous(sampled)
         jurisdictions = load_jurisdictions_for(scenario)
-        return _CompiledProductRun(
-            plan=compile_simulation(
-                scenario,
-                rollout_count=len(seeds),
+        return (
+            CompiledRun(
+                scenario=scenario,
+                plan=compile_simulation(
+                    scenario,
+                    rollout_count=len(seeds),
+                    external_series=external_series,
+                    jurisdictions=jurisdictions,
+                    locations=self._locations,
+                ),
                 external_series=external_series,
                 jurisdictions=jurisdictions,
                 locations=self._locations,
             ),
-            scenario=scenario,
-            external_series=external_series,
-            jurisdictions=jurisdictions,
-            model_id=model_id,
-        )
-
-    def _rust_fixture(self, run: _CompiledProductRun) -> dict[str, Any]:
-        return encode_fixture(
-            run.scenario,
-            run.plan,
-            external_series=run.external_series,
-            jurisdictions=run.jurisdictions,
-            locations=self._locations,
+            model_id,
         )
 
     @overload
@@ -274,51 +248,25 @@ class ProductService:
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
     ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
-        run = self._compile_product_run(scenario_key, seeds)
+        run, model_id = self._compile_product_run(scenario_key, seeds)
         metric_name = _quanta_metric(metric)
-        if self._summary_backend is SummaryBackend.RUST:
-            summary = run_rust_product_summary(
-                self._rust_fixture(run),
-                primary_agent_id=self._primary_agent_id,
-                metric=metric_name,
-                percentiles=percentiles,
+        summary: ProductMetricFanSummary | ProductTerminalSummary = (
+            self._engine.product_terminal(run, primary_agent_id=self._primary_agent_id, metric=metric_name)
+            if percentiles is None
+            else self._engine.product_fan(
+                run, primary_agent_id=self._primary_agent_id, metric=metric_name, percentiles=percentiles
             )
-        else:
-            summary = run_jax_product_summary(
-                run.plan, primary_agent_id=self._primary_agent_id, metric=metric_name, percentiles=percentiles
-            )
-        return summary, run.model_id
+        )
+        return summary, model_id
 
     def _simulate_product_summaries(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
     ) -> tuple[ProductProjectionSummaries, str]:
-        run = self._compile_product_run(scenario_key, seeds)
-        metric_name = _quanta_metric(metric)
-        if self._summary_backend is SummaryBackend.RUST:
-            summaries = run_rust_product_summaries(
-                self._rust_fixture(run),
-                primary_agent_id=self._primary_agent_id,
-                metric=metric_name,
-                percentiles=percentiles,
-            )
-        else:
-            summaries = run_jax_product_summaries(
-                run.plan, primary_agent_id=self._primary_agent_id, metric=metric_name, percentiles=percentiles
-            )
-        return summaries, run.model_id
-
-    def _simulate_dense(
-        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
-    ) -> tuple[CompiledSimulation, DenseSimulationOutput, ProductMetricArrays, str]:
-        scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        plan, output, metrics = simulate_with_external_series_and_product_metrics(
-            scenario,
-            rollout_count=len(seeds),
-            external_series=materialize_sampled_exogenous(sampled),
-            locations=self._locations,
-            primary_agent_id=self._primary_agent_id,
+        run, model_id = self._compile_product_run(scenario_key, seeds)
+        summaries = self._engine.product_summaries(
+            run, primary_agent_id=self._primary_agent_id, metric=_quanta_metric(metric), percentiles=percentiles
         )
-        return plan, output, metrics, model_id
+        return summaries, model_id
 
     def _scenario_and_sample(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]

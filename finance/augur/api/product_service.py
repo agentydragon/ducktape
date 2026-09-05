@@ -8,7 +8,8 @@ from finance.augur.api.portfolio_sources import resolve_portfolio_sources
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.exogenous import Sampler
 from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
-from finance.augur.product.service import ProductService, SummaryBackend
+from finance.augur.product.service import ProductService
+from finance.augur.sim.backend import SimulationBackend
 
 
 def build_product_service(
@@ -16,7 +17,7 @@ def build_product_service(
     models: dict[str, Sampler],
     *,
     catalog: CatalogResponse | None = None,
-    summary_backend: SummaryBackend = SummaryBackend.JAX,
+    simulation_backend: SimulationBackend | None = None,
 ) -> ProductService:
     """Build a product service from deployment config and realized model presets.
 
@@ -24,8 +25,8 @@ def build_product_service(
     the API server and hermetic tests). When config is modified, omitting it rebuilds the
     catalog so location/property validation follows the modified deployment.
 
-    ``summary_backend`` selects which simulator answers the projection endpoints; it is an
-    explicit opt-in so a deployment can run the Rust engine beside JAX and compare.
+    ``simulation_backend`` overrides the engine the deployment config names, for tests that run
+    both on one scenario and compare. Production passes nothing and gets what config says.
     """
 
     resolved_portfolio = resolve_portfolio_sources(config)
@@ -42,5 +43,5 @@ def build_product_service(
         models=models,
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=config.max_horizon_months,
-        summary_backend=summary_backend,
+        simulation_backend=config.simulation_backend if simulation_backend is None else simulation_backend,
     )

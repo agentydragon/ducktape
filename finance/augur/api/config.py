@@ -32,6 +32,7 @@ from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
+from finance.augur.sim.backend import SimulationBackend
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -177,6 +178,14 @@ class Config(ApiModel):
             "Securities that pay a monthly per-unit cash distribution, with the tax character of "
             "that payout. Bond funds need this: their return is distributions plus price change, "
             "so a fund declared only as a holding is modeled at price alone and loses its yield."
+        ),
+    )
+    simulation_backend: SimulationBackend = Field(
+        default=SimulationBackend.JAX,
+        description=(
+            "Which simulator answers the product projection endpoints. Both run the same "
+            "compiled plan and are read by the same code above the engine, so this selects "
+            "who produces the numbers and never how they are reduced."
         ),
     )
     max_rollout_samples: PositiveInt

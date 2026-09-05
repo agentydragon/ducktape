@@ -499,9 +499,9 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/product:projection",
         "//finance/augur/rust:backend",
+        "//finance/augur/sim:backend",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/engine:jax_backend",
-        "//finance/augur/sim/engine:jax_engine",
         "@pypi//pytest_bazel",
     ],
 )

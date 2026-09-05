@@ -20,7 +20,7 @@ from pydantic import ValidationError
 
 from finance.augur.api.config import Config
 from finance.augur.api.product_service import build_product_service
-from finance.augur.product.service import ProductService, SummaryBackend
+from finance.augur.product.service import ProductService, SimulationBackend
 from finance.augur.product.wire import (
     FundingPolicy,
     MortgageFinancing,
@@ -88,9 +88,9 @@ def _ruined_owner() -> ScenarioKey:
     return _renting_owner(monthly_spend=Decimal(90000), funding_policy=FundingPolicy())
 
 
-def _service(augur_config: Config, backend: SummaryBackend) -> ProductService:
+def _service(augur_config: Config, backend: SimulationBackend) -> ProductService:
     model = augur_config.models[augur_config.default_model_id].realize_model()
-    return build_product_service(augur_config, {MODEL_ID: model}, summary_backend=backend)
+    return build_product_service(augur_config, {MODEL_ID: model}, simulation_backend=backend)
 
 
 def _request(scenario: ScenarioKey, metric: str) -> ProductProjectionRequest:
@@ -113,8 +113,8 @@ def _quanta(column: list[Any]) -> list[int]:
 def _projections_agree(augur_config: Config, request: ProductProjectionRequest) -> ProductProjectionResponse:
     """Both backends' answers to one request, asserted equal; returns the JAX one to anchor on."""
 
-    expected = _service(augur_config, SummaryBackend.JAX).projection_summary(request)
-    actual = _service(augur_config, SummaryBackend.RUST).projection_summary(request)
+    expected = _service(augur_config, SimulationBackend.JAX).projection_summary(request)
+    actual = _service(augur_config, SimulationBackend.RUST).projection_summary(request)
     assert actual.metric_fan.monthly_metric_fan == expected.metric_fan.monthly_metric_fan
     assert actual.metric_fan.terminal_metric_percentiles == expected.metric_fan.terminal_metric_percentiles
     assert actual.metric_fan.failed_count == expected.metric_fan.failed_count
@@ -215,7 +215,7 @@ def test_a_scenario_the_fixture_cannot_express_is_refused_rather_than_encoded(au
     has at most nine places, so a finer rate would quietly make the two engines answer different
     questions. The request fails instead of being encoded to whichever one rounds first.
 
-    It doubles as the proof that `SummaryBackend.RUST` really routes through the encoder: nothing
+    It doubles as the proof that `SimulationBackend.RUST` really routes through the encoder: nothing
     on the JAX path can raise this.
     """
 
@@ -224,7 +224,7 @@ def test_a_scenario_the_fixture_cannot_express_is_refused_rather_than_encoded(au
         financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=6.66666667),
         is_primary_residence=True,
     )
-    service = _service(augur_config, SummaryBackend.RUST)
+    service = _service(augur_config, SimulationBackend.RUST)
     with pytest.raises(UnsupportedScenarioError, match="parts per billion"):
         service.projection_summary(_request(_renting_owner(property_purchase=purchase), "net_worth"))
 
