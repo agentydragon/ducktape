@@ -209,14 +209,16 @@ remains for out-of-process forensic runs.
 Still missing before replacement is plausible:
 
 - selected-rollout event projection (`product/projection.py` reads dense plan+output);
-- deductible and property-gated obligations, which is what a purchased property's expenses
-  need and what `fixture_encoder` refuses today;
 - broader modeled tax facts and complete deduction policy;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax policy beyond purchase-price assessment and fixed location
   special assessments;
 - broader liquidity policy;
 - complete selected-rollout causal trace parity for those domains.
+
+What `fixture_encoder` still refuses, and how much of it a real request can reach, is a
+different list and a shorter one:
+[plans/rust_as_default.md](plans/rust_as_default.md) § Coverage.
 
 ## Layout
 
