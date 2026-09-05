@@ -131,32 +131,48 @@ nothing else, which also keeps the shared artifact every other Flux consumer
 pulls from growing.
 
 It uses `ignore`, not `sparseCheckout`, because `sparseCheckout` takes
-directories and this root reads a repo-root **file** —
-`jsondecode(file("${path.module}/../../../nebula-mesh.json"))` in `nebula.tf`.
-Two gotchas are baked into that rule list:
+directories and this root reads a repo-root **file** (`nebula-mesh.json`).
 
-- **`-target` does not prune `locals`.** The nebula locals are evaluated on
-  every plan even though nothing in `spec.targets` references them, so
-  `nebula-mesh.json` must be present. Resource- and data-source-level reads
-  _are_ pruned, which is why `cluster/k8s/flux-system/gotk-components.yaml`
-  (`filesha256` in `null_resource.flux_bootstrap`'s triggers, 380 KB) and
-  `talos-cloud-controller-manager/helmrelease.yaml` (`data.helm_template`) stay
-  out. If a future change makes either reachable, the plan will name the file
-  and it needs its own `!/…` line.
-- **gitignore cannot re-include a path under an excluded parent.** `/*`
-  followed by `!/cluster/terraform` alone silently yields nothing; each parent
-  needs its own `!/cluster` + `/cluster/*` pair.
+### Which files the artifact must carry
 
-## Exercised, still not green
+`-target` prunes resources and data sources, but **not `locals`** — every
+`locals` block in the root is evaluated on every plan, however narrow
+`spec.targets` is. So the rule is not "what do the targets touch" but:
 
-Two failures so far, both loud and harmless — `planOnly` means nothing can be
-applied whatever happens:
+> every `file()`-family call inside a `locals` block must resolve, no matter
+> which resources are targeted.
 
-1. `terraform path not found` — the shared source, fixed by `infra-drift-source`.
-2. `Invalid function argument` on `nebula.tf:17` — the root-level
-   `nebula-mesh.json` missing under the first (`sparseCheckout`) form of that
-   source, fixed by the `ignore` rules above.
+In this root that is exactly two, both of which the `ignore` rules carry:
+
+| Call                                    | Reads                                                         |
+| --------------------------------------- | ------------------------------------------------------------- |
+| `nebula.tf:17` `jsondecode(file(…))`    | `nebula-mesh.json` (repo root)                                |
+| `talos-ccm.tf:14` `yamldecode(file(…))` | `cluster/k8s/talos-cloud-controller-manager/helmrelease.yaml` |
+
+The other file reads sit in resource `triggers` and are pruned, which is why
+their files stay out: `flux.tf:23-24` `filesha256` on
+`cluster/k8s/flux-system/gotk-{components,sync}.yaml` (380 KB, the reason
+`cluster/k8s` is admitted one directory at a time rather than wholesale), and
+`cilium.tf:44` on `cilium-values.yaml`, which lives in the root module anyway.
+Move any of those into a `local` and its file needs a `!/…` line.
+
+**gitignore cannot re-include a path under an excluded parent.** `/*` followed
+by `!/cluster/terraform` alone silently yields nothing; each level needs its own
+`!/cluster` + `/cluster/*` pair. Verify a change to these rules against `git`
+in a scratch tree rather than reasoning about it.
+
+## Exercised; three failures to get a plan
+
+All loud and harmless — `planOnly` means nothing can be applied whatever
+happens:
+
+1. `terraform path not found` — the shared `flux-system` source omits
+   `cluster/terraform/`; fixed by this dedicated source.
+2. `Invalid function argument`, `nebula.tf:17` — `-target` does not prune
+   locals, and `sparseCheckout` cannot express a repo-root file; fixed by
+   switching to `ignore`.
+3. `Invalid function argument`, `talos-ccm.tf:14` — the second `file()` in a
+   local; fixed by admitting that one HelmRelease directory.
 
 Confirmed working along the way: `tofu init` reaches the registry and installs
-`ovh/ovh`, which no other `Terraform` CR in this cluster uses. What the plan
-itself reports is still unobserved.
+`ovh/ovh`, which no other `Terraform` CR in this cluster uses.
