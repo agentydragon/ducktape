@@ -419,7 +419,8 @@ def test_fan_and_selected_rollout_metrics_share_the_jax_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    _plan, _output, metrics, _model_id = product._simulate_dense(scenario_key, seeds)
+    run, _model_id = product._compile_product_run(scenario_key, seeds)
+    metrics = product._engine.product_metrics(run, primary_agent_id=product._primary_agent_id)
     expected_metrics = metrics.metric_arrays()
     expected_failed = metrics.failed_month
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
@@ -549,7 +550,7 @@ def test_combined_product_projection_runs_shared_reducer_once(
     monkeypatch: pytest.MonkeyPatch,
     scenario_key: ScenarioKey,
 ) -> None:
-    original = service.run_jax_product_summaries
+    original = product._engine.product_summaries
     calls = 0
 
     def counted(*args, **kwargs):
@@ -557,7 +558,7 @@ def test_combined_product_projection_runs_shared_reducer_once(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "run_jax_product_summaries", counted)
+    monkeypatch.setattr(product._engine, "product_summaries", counted)
 
     response = product.projection_summary(
         ProductProjectionRequest(
@@ -580,7 +581,7 @@ def test_combined_product_projection_runs_shared_reducer_once(
 def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    original = service.run_jax_product_summary
+    original = product._engine.product_fan
     calls = 0
 
     def counted(*args, **kwargs):
@@ -588,7 +589,7 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "run_jax_product_summary", counted)
+    monkeypatch.setattr(product._engine, "product_fan", counted)
 
     product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)))
 
