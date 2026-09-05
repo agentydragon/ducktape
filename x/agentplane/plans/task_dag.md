@@ -28,11 +28,11 @@ for app-owned `SandboxPreset` and `ThreadPreset` defaults, the public-coder defi
 bootstrap execution, UI, and a manual acceptance target. Once it lands and deploys, run the live
 acceptance target; do not extend the preset abstraction before that evidence.
 
-**The next product gate is the operation contract**, not yet an implementation task. “Ask” is useful
-conversation copy but is not a settled wire noun. Before building approval delivery, Rai needs to
-choose the durable object, lifecycle, pending-turn behavior, single-operation versus standing-grant
-semantics, and the MCP adapter boundary. The discussion and recommendations are in
-[`operations_and_access.md`](operations_and_access.md).
+**The product noun and core unit are now decided:** the durable object is `ActionRequest`, one
+logical intent with at most one Execution, with automatic dispatch after an allow Decision. The
+remaining operation gate is the event/delivery contract: pending-turn behavior, sensitive-field
+handling, standing grants, uncertain execution reconciliation, and the MCP adapter boundary. The
+accepted decisions and open questions are in [`operations_and_access.md`](operations_and_access.md).
 
 **BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
 Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
@@ -65,10 +65,10 @@ flowchart TB
     LP["Launch presets in review<br/>SandboxPreset → ThreadPreset,<br/>public-coder, runner bootstrap, UI"]:::active
     BB["BuildBuddy auth contract in review<br/>HTTP + unary/bidirectional gRPC substitution;<br/>hosted bb remote boundary remains"]:::active
 
-    OPD["Rai decision<br/>request noun and durable unit<br/>ActionRequest / Request / Intent?"]:::decision
-    OPS["Rai decision<br/>operation lifecycle and agent UX<br/>pending, decision, retry, delivery, withdrawal"]:::decision
+    OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
+    OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
-    OPI["Operation vertical slice<br/>one adapter, approval UI, machine delivery<br/>to the originating Thread"]:::ready
+    OPI["ActionRequest vertical slice<br/>one adapter, decision UI, machine delivery<br/>to the originating Thread"]:::ready
 
     T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
     PR["Proxy rollout survivability<br/>reproduce active-turn impact and fix/drain contract"]:::ready
@@ -145,22 +145,27 @@ A completed item leaves the active queue even when it supplies an edge.
   `bb remote` remains blocked at the hosted runner, which receives a nested Bazel command outside
   Agentplane's fence. The focused test and build passed in BuildBuddy invocations
   `e96f0276-2075-4fff-bb32-9815fd9ee500` and `58eb6493-79a3-4101-9cd8-c09c3074c856`.
-- **`OPD` request noun/unit:** Rai chooses the product noun (the current recommendation is
-  `ActionRequest`) and whether the durable object is a logical intent with attempts or one execution
-  attempt. The discussion is in
-  [`operations_and_access.md`](operations_and_access.md). No implementation starts on “ask” alone.
-- **`OPS` operation lifecycle/agent UX:** settle pending behavior, decision delivery, retry,
-  withdrawal, expiry/no-expiry, one-operation versus standing-grant semantics, sensitive-field
-  handling, and the machine envelope. The smallest acceptance is a hand-authored lifecycle and
-  replay example that makes each transition and agent-visible input unambiguous.
+- **`OPD` accepted request model:** Rai accepted `ActionRequest` as the product noun, one logical
+  intent with at most one Execution as the durable unit, invariant request shape, automatic dispatch
+  after an allow Decision, authoritative final Decisions from a future LLM judge, and no cryptographic
+  signing requirement in v0. The accepted decisions and boundaries are recorded in
+  [`operations_and_access.md`](operations_and_access.md); implementation is still deferred.
+- **`OPS` decision/event contract:** settle pending behavior, Decision delivery, withdrawal,
+  expiry/no-expiry, one-request versus standing-grant semantics, sensitive-field handling, uncertain
+  execution reconciliation without replay, and the machine envelope. The smallest acceptance is a
+  hand-authored lifecycle and replay example
+  that makes each transition and agent-visible input unambiguous.
 - **`MCPD` MCP boundary:** decide whether the first MCP server is trusted external infrastructure,
   where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
   Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
   built before this gate.
-- **`OPI` operation vertical slice:** one real adapter from agent intent through policy/approval to
-  execution/result and later Thread delivery. The operation layer may initially be colocated with
-  the integration app, but the test must keep runtime lifecycle, access authority, adapter, and
-  trajectory responsibilities separable.
+- **`OPI` ActionRequest vertical slice:** one real adapter from agent intent through
+  policy/Decision to the single Execution/result and later Thread delivery. V0 read scope is
+  caller-own plus operator-all within the existing operator scope; the Action Hub is the canonical
+  state store, while the integration app is the browser BFF. The operation layer may initially be
+  colocated with the integration app, but the test must keep runtime lifecycle, access authority,
+  adapter, and trajectory responsibilities separable. Push approval is a notification adapter over
+  the same Decision path, not a second authority.
 - **`T3` trajectory search:** search persisted text and action evidence, answer “what happened,”
   “why,” and “which Thread,” and link to raw frames. Scope is the caller's already-authorized
   trajectory surface; cross-agent visibility is not silently included.
@@ -172,10 +177,12 @@ A completed item leaves the active queue even when it supplies an edge.
   paths are rejected. Keep this separate from the preset feature.
 - **`AGD` Agent identity:** Rai decides what durable product Agent means and how it maps to an opaque
   authorization principal. It must not be inferred from Sandbox or Thread IDs.
-- **`DATAD` cross-agent read policy:** Rai decides the minimum data scopes and authority boundary
-  for reading another Agent's trajectories. Candidate scopes are metadata, derived summary, search
-  results, full events, and raw native frames. No scope inventory should be built until a real
-  cross-agent consumer exists.
+- **`DATAD` cross-agent read policy:** V0 is intentionally caller-own plus operator-all within
+  the existing operator scope, with redaction of credentials and private reviewer/notification data.
+  The remaining decision is the minimum data scopes and authority boundary for reading another
+  Agent's trajectories. Candidate scopes are metadata, derived summary, search results, full events,
+  raw native frames, and action request/result projections. No cross-agent scope inventory should be
+  built until a real consumer exists.
 - **`XREAD` cross-agent reads:** only after `AGD`, `DATAD`, and `T3`; enforce caller/target/scope at
   the read boundary and audit the result without making Agentplane a universal identity registry.
 - **`DT` driver tools/background:** provider evidence exists, but protocol shape waits for a real
@@ -190,10 +197,14 @@ A completed item leaves the active queue even when it supplies an edge.
 
 - The Sandbox and Thread runtime remains Agentplane's concern; named presets and their UI remain an
   integration-app concern.
-- An Operation/ApprovalRequest, if adopted, must not make Agentplane runtime own every external
-  protocol. The access authority owns allow/deny/approval and grants; adapters own MCP/HTTP/
+- An ActionRequest/Decision system must not make Agentplane runtime own every external protocol.
+  The decision authority owns allow/deny/referral and grants; adapters own MCP/HTTP/
   Kubernetes/host execution; the conversation app owns operator presentation; the trajectory store
   preserves evidence.
+- The Action Hub is the canonical owner of ActionRequest lifecycle and access checks; the existing
+  trajectory store may hold detailed evidence by reference, but raw trajectory links cannot bypass
+  the hub's ACL. The integration app is the authenticated browser BFF, and push notifications are
+  delivery adapters that return through the same Decision Authority.
 - An Agent is a future product identity, distinct from a Sandbox (runtime infrastructure), Thread
   (interaction context), and authorization principal (policy subject). Cross-agent reads require an
   explicit mapping and data-read policy.
