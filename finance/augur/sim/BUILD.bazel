@@ -765,3 +765,21 @@ py_library(
         "@pypi//numpy",
     ],
 )
+
+py_test(
+    name = "test_tax_statute_e2e",
+    srcs = ["test_tax_statute_e2e.py"],
+    deps = [
+        ":conftest",
+        ":scenario",
+        ":simulate",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:deterministic",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series",
+        "//finance/augur/model:series_model",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
