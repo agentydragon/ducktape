@@ -1,9 +1,10 @@
 # Asynchronous approvals
 
-Status: **design notes for machinery layered on the Agent thread API.** Builds on the shared
-protocol and service seam (`B`, `C` in [`task_dag.md`](task_dag.md)) and is the work behind `Y`,
-following the decision `X` that external events arrive as thread inputs. Nothing here is built
-yet; the harness behaviors it relies on are pinned by [`../harness_tests/`](../harness_tests/).
+Status: **design notes for machinery layered on the Agent thread API.** Builds on the runner
+protocol and the app's bridge, and is the work behind story 1 (`Y` in
+[`task_dag.md`](task_dag.md)), following the decision that external events arrive as thread inputs.
+Nothing here is built yet; the harness behaviors it relies on are pinned by
+[`../harness_tests/`](../harness_tests/).
 
 ## Decisions
 

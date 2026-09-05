@@ -1,13 +1,16 @@
 # Agentplane
 
-Status: **focused proposal**. “Agentplane” is the deliberately boring working name for the native
-harness bridge/controller; it is not a Haku implementation refactor.
+Status: **running on staging**. “Agentplane” is the deliberately boring working name for the
+native harness bridge/controller; it is not a Haku implementation refactor.
 
 Agentplane runs native Claude Code and Codex harnesses in replaceable Kubernetes workloads and
-speaks their structured machine protocols. The first slice is in place: native drivers for both
-harnesses ([`../native/`](../native/)), a live-capture probe ([`../capture/`](../capture/)),
-scripted behavioral tests against a loopback model ([`../harness_tests/`](../harness_tests/)), and
-the runner that serves both harnesses behind one gRPC contract ([`../runner/`](../runner/)).
+speaks their structured machine protocols: native drivers for both harnesses
+([`../native/`](../native/)), a live-capture probe ([`../capture/`](../capture/)), scripted
+behavioral tests against a loopback model ([`../harness_tests/`](../harness_tests/)), the runner
+that serves both harnesses behind one gRPC contract ([`../runner/`](../runner/)), the
+credentialless egress proxy every sandbox leaves through ([`../egress/`](../egress/)), and the
+integration app that drives all of it ([`../app/`](../app/)). What is left is on the
+[task DAG](task_dag.md).
 
 ## Documents
 
@@ -24,13 +27,15 @@ the runner that serves both harnesses behind one gRPC contract ([`../runner/`](.
 - [Product-surface inventory](product_surface.md)
 - [Sandbox egress identity option survey](sandbox_egress_identity_research.md)
 - [ADR: credentialless Sandbox egress](adr_sandbox_proxy_gateway.md)
-- [Secure egress integration: resources and packages](egress_proxy.md)
 - [Profiles: deferred pending design](profiles.md)
+- [Egress policy composition](../docs/egress_composition.md)
 - [Sandbox egress identity evidence](../docs/sandbox_egress_identity_evidence.md)
 - [Native driver README](../native/README.md)
 - [Live capture probe README](../capture/README.md)
 - [Scripted harness tests README](../harness_tests/README.md)
 - [Runner README](../runner/README.md) and [runner SPEC](../runner/SPEC.md)
+- [Egress proxy README](../egress/README.md) and [egress SPEC](../egress/SPEC.md)
+- [Acceptance suite README](../acceptance/README.md)
 - [Common protocol: what the seam owns and the vocabulary above it](../docs/common_protocol.md)
 - [Tools the driver provides](../docs/driver_tools.md)
 - [Background work](../docs/background_work.md)

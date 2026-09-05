@@ -1,9 +1,9 @@
 # Agentplane egress proxy
 
-The central proxy of the [secure egress integration](../plans/egress_proxy.md): a mitmproxy
-addon that proves each caller's Pod-bound token, decides the request from `EgressPolicy` and
-`EgressBinding` resources, and substitutes the real credential. What it guarantees is in
-<SPEC.md>. How the two kinds compose into one decision is in <../docs/egress_composition.md>.
+The central proxy of Agentplane's credentialless egress: a mitmproxy addon that proves each
+caller's Pod-bound token, decides the request from `EgressPolicy` and `EgressBinding` resources, and
+substitutes the real credential. What it guarantees is in <SPEC.md>. How the two kinds compose into
+one decision is in <../docs/egress_composition.md>.
 
 ```sh
 bbr test //x/agentplane/egress/...
@@ -49,3 +49,15 @@ credentials namespace (`--credentials-namespace`, `agentplane-egress-credentials
 `get`, `list`, `watch` on `secrets`, and nothing in the sandbox namespace. Cluster-wide: `create`
 on `tokenreviews.authentication.k8s.io`. The `EgressBinding` CRD must enable the `status`
 subresource, which the status writes go through.
+
+Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
+label: a namespace-wide read in the sandbox namespace would hand the proxy the model key and the
+database credential along with the ones it is meant to substitute.
+
+## Open questions
+
+- **Whether an agent also reads its own recent decisions.** The ring already answers "why was I
+  denied", and a failure the agent can diagnose itself is the practical win; nothing serves it to
+  the agent-facing surface today.
+- **Whether that surface versions separately from the operator API.** Agents are long-lived and
+  roll independently of the app, so the two may not be able to move together for long.

@@ -20,15 +20,20 @@ Standing under it:
 - The Haku grants system already brokers exactly this for Haku tool calls: `create_grant` with
   exact origins or namespaces plus verbs, a duration and a rationale, manual approval under the
   agent policy, `get_tool_call` for the long poll, `withdraw_tool_call`. The agent working on
-  Agentplane is living this story from the agent's side: a grant to read one staging key has been
-  pending for hours while the work continued.
+  Agentplane lives this story from the agent's side every time it needs a key it does not hold.
 - [`async_approvals.md`](async_approvals.md): submission never blocks, no expiry, the decision
   arrives as a thread input, one envelope for every tool, a batcher so five clicks are one input.
 - [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
   express the boundary, brokered credential where it cannot, agent-requested grants, and the
   revocation gate (placeholder token, substitution only while the ledger and the apiserver agree).
-- The decided egress shape (`J`): per-Pod sidecar, central proxy holding the credentials and the
-  per-identity rules, placeholder tokens the agent cannot use elsewhere.
+- Credentialless egress, running on staging: per-Pod sidecar, central proxy holding the
+  credentials and the per-identity rules, placeholder tokens the agent cannot use elsewhere
+  (<../egress/SPEC.md>). Two halves of the ask are already there — a refused call comes back as
+  `403` with a machine-readable reason, and an agent can read which rules it is bound to, so it can
+  tell what it lacks from what it was never given.
+- A standing grant already has an object to be: an `EgressBinding` the app creates and revokes while
+  a sandbox runs, each grant its own binding with its own expiry
+  ([`../docs/egress_composition.md`](../docs/egress_composition.md)).
 - Host commands: Haku's node daemons (`hostexec`) already run an approved command on a named
   machine.
 - Delivery to Rai exists once already: Haku Console sends a Web Push with Approve and Deny for a
@@ -48,8 +53,9 @@ Missing:
 - **The decision as an input.** The batcher and the `<agentplane-event>` envelope from
   [`async_approvals.md`](async_approvals.md), delivered by the bridge on the paths the scripted
   tests pin.
-- **Per-operation versus standing grant.** One ask, two possible answers; a standing grant is a
-  rule in the central proxy or a Kubernetes binding, minted and revoked through the ledger.
+- **Per-operation versus standing grant.** One ask, two possible answers. The standing answer is
+  an `EgressBinding` or a Kubernetes binding, both of which the app can already mint and revoke;
+  the single-operation answer has no mechanism at all, and it is the one an ask usually wants.
 
 ## 2. Trusted orchestrator, untrusted fleet
 
@@ -63,7 +69,7 @@ Haku and the fleet and checks that nothing sensitive crosses it.
 
 Standing under it:
 
-- One sandbox per agent with its own Kubernetes identity (`I3`, standalone Sandboxes), which is
+- One sandbox per agent with its own Kubernetes identity, standalone Sandboxes, which is
   what the central proxy keys credentials and rules on.
 - Trajectories outlive sandboxes (`T1`): every event on both sides of a delegation is stored under
   a thread, so the audit of what crossed the channel is the same store the UI reads.
@@ -138,11 +144,17 @@ Haku is not: a new sandbox clones the repository and resumes.
 
 Standing under it:
 
-- A sandbox whose harness resumes across process restarts and suspend/resume (`I4`), and whose
+- A sandbox whose harness resumes across process restarts and suspend/resume, and whose
   trajectory outlives it (`T1`).
 - `haku-state` on Forgejo with tokens minted by the GitOps controller
   ([`tf/gitops/haku-state`](../../../tf/gitops/haku-state)), which is exactly the credential the
-  egress proxy substitutes for Haku's identity.
+  egress proxy substitutes for Haku's identity. The shape is proven: staging's sandboxes reach
+  GitHub's API and HTTPS git as `agentydragon-agent` with a PAT they never hold, and the acceptance
+  suite checks it against the proxy's own record rather than the agent's account of it.
+- Standing instructions on the session (<../runner/SPEC.md>): what a long-lived agent is for reaches
+  the model on every turn, including a resumed one, without being written into the harness or into
+  the first input. They are fixed for the session's life, which is the strongest promise both
+  harnesses can keep — Codex accepts an override on resume and silently ignores it.
 - The tier model of story 2: Haku is the private, trusted tier; everything it authors inherits
   that.
 
@@ -150,8 +162,9 @@ Missing:
 
 - **A long-lived session as a first-class thing**: a thread that is never archived, survives
   harness compaction and pin refreshes, and is woken by events rather than only by Rai.
-- **Memory writes as git commits** from inside the sandbox, through the proxy, with the same
-  audit as any other egress.
+- **Memory writes as git commits** from inside the sandbox, through the proxy, with the same audit
+  as any other egress. What is missing is Haku's own credential and rule, not the mechanism: a
+  Forgejo `EgressCredential` and a policy that admits the write, where staging has a GitHub one.
 
 ## 5. Agentic UI: Haku authors its own affordances
 
@@ -161,7 +174,7 @@ paragraph that led to it. One agent writes the interaction surface it is then dr
 
 Standing under it:
 
-- The decision that external events arrive as thread inputs (`X`) and the batcher and envelope
+- The decision that external events arrive as thread inputs, and the batcher and envelope
   from [`async_approvals.md`](async_approvals.md): a UI event is one more source, delivered as a
   `<agentplane-event>` in a user-message envelope, batched with whatever else arrived.
 - Haku already owns a deployed UI: it authors the `haku/ui` repository on Forgejo, the image is
@@ -189,13 +202,14 @@ Missing:
 
 ## What this fixes about the order of work
 
-- Story 1 is next after the egress proxy lands: the proxy is where a denied call turns into an
-  ask, and the approvals machinery is already designed.
-- Story 2 needs the proxy's per-identity credential sets and the trajectory store, both in flight,
-  and adds tiers, the events kind filter, and the judge.
+- Story 1 is next: the proxy has landed and is where a denied call turns into an ask, and the
+  approvals machinery is already designed.
+- Story 2 has the proxy's per-identity credential sets and the trajectory store, and adds tiers,
+  the events kind filter, and the judge.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
-- Story 4 is the long-lived thread and memory-in-git on top of `I4` and `T1`; story 5 is the
-  event pipe on top of story 4, Haku's existing UI pipeline, and the approvals delivery path.
+- Story 4 is the long-lived thread and memory-in-git on top of a resuming sandbox and `T1`; story 5
+  is the event pipe on top of story 4, Haku's existing UI pipeline, and the approvals delivery
+  path.
 
 ## Open questions
 

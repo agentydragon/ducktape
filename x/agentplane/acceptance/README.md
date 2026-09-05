@@ -3,8 +3,8 @@
 Scenarios run against a **deployed** Agentplane: the suite creates real sandboxes through the app's
 HTTP API, opens sessions on the real harnesses, and asserts on what the egress proxy recorded. It is
 not a unit test with a live backend — it is the check that the deployed system does what
-`x/agentplane/plans/egress_proxy.md` says it does, and that a session's standing instructions reach
-the model that serves it.
+<../egress/SPEC.md> says it does, and that a session's standing instructions reach the model that
+serves it.
 
 Every scenario runs on **both harnesses**. The runner protocol is the same for Claude and Codex, so
 one test body covers both: the `provider` fixture is parametrised over `Provider`, and `model` asks

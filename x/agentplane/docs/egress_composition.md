@@ -173,3 +173,37 @@ does not hold. A dangling name is not corruption — the CRD admits any string a
 one that resolves to nothing with `MissingPolicy` — so the refusal is a guard on the typo at the
 moment of writing, not a guarantee: a policy deleted after the grant produces the same dangling
 name, and the proxy's condition stays the answer to it.
+
+## Where a binding came from, and what ends it
+
+Two provenances, and the view distinguishes them by what is on the object rather than by anything
+we stamp:
+
+- A binding the app created at runtime carries an `ownerReference` to its one Sandbox, so deleting
+  the sandbox garbage-collects the grant.
+- A binding Flux applied carries Flux's inventory labels (`kustomize.toolkit.fluxcd.io/name`),
+  which is what the view reads to say "from git" and what the app refuses to revoke: Flux prunes
+  only what it applied and would re-create it on the next reconcile.
+
+Who created a runtime binding is not re-asserted as a label of our own. Creating one is the whole
+grant, so everyone who may create one is equally entitled, and the API server's audit log and
+`managedFields` record the actor better than we could.
+
+Owner references cascade on deletion, not on liveness. Nothing is owned by the app's Pod or its
+Deployment, so the app going down revokes nothing — `expiresAt` is what fails closed, and the proxy
+enforces it from its own cache with no app in the loop.
+
+### Rejected: the app renewing a grant like a lease
+
+A short expiry the app extends while it still approves of the grant would give revocation a
+heartbeat. It puts the app back into the enforcement path, which is the one property the split
+between them exists to protect: with the app down, what a sandbox may reach does not change.
+
+### Rejected: a per-request use counter
+
+"Allow this one call" is the obvious reach once expiry exists, and a counter on the binding is the
+obvious way to build it. A count of requests says nothing about what they did — a retry, a redirect
+and a paginated read are one intention and three requests — so the counter would expire a grant
+mid-operation and call it enforcement. A genuine one-shot needs something that can see the
+operation, which is the webhook decision path a rule may later delegate to; nothing is built for it
+until a rule needs one.

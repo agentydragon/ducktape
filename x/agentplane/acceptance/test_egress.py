@@ -13,10 +13,11 @@ resolve, the sidecar carried the Pod's token, the proxy admitted the request and
 PAT in, and GitHub authenticated it. No part of that can be faked by a model being agreeable, and
 the placeholder appears nowhere in the prompt -- the agent has to go and find it.
 
-E3's and E5's acceptance in x/agentplane/plans/egress_proxy.md are what these encode. They exist
-because the last gap of this kind -- a runner that dropped the proxy variables, so every call
-bypassed the proxy and hung, leaving an empty ring behind a green unit suite -- was caught by a
-person noticing.
+What these encode is the deployed form of x/agentplane/egress/SPEC.md: a sandbox reaches what its
+policies name and nothing else, with the credential substituted at the proxy, and the model call is
+one of those requests rather than an exception to them. They exist because the last gap of this kind
+-- a runner that dropped the proxy variables, so every call bypassed the proxy and hung, leaving an
+empty ring behind a green unit suite -- was caught by a person noticing.
 """
 
 from __future__ import annotations
@@ -41,17 +42,17 @@ GITHUB_PUBLIC = "github-public"
 GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
-# Where a sandbox asks what it may reach (C11). The prompt names this and nothing about the
-# credential: the agent has to discover both what to present and how, which is the property under
-# test. Node H is what makes the second half discoverable -- the endpoint reports each target's
-# header, the shape of its value and its scheme, so an agent no longer has to guess that GitHub
-# wants `Bearer` (both harnesses sent the placeholder bare and were refused when it did not).
+# Where a sandbox asks what it may reach. The prompt names this and nothing about the credential:
+# the agent has to discover both what to present and how, which is the property under test. The
+# endpoint reports each target's header, the shape of its value and its scheme, so an agent does not
+# have to guess that GitHub wants `Bearer` -- both harnesses sent the placeholder bare and were
+# refused when it did not.
 RULES_URL = "https://egress.agentplane.internal/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
-# The model endpoint, which E5 moved onto the same path as everything else
+# The model endpoint, on the same path as everything else
 # (cluster/k8s/agentplane-staging/egress/egresspolicy-litellm.yaml). Granted by the deployment's
 # `default_policies` rather than by a caller, because an agent that cannot reach it has nothing to
 # run -- so a sandbox that names no policy still has this one.
@@ -134,9 +135,9 @@ async def _active(client: Client, sandbox: str, binding: str) -> None:
 async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     client: Client, sandbox: Sandboxes, provider: Provider, model: str
 ) -> None:
-    """E3 and C11's acceptance in one turn: the agent asks what it may reach, uses the credential it
-    is told about without ever holding it, is authenticated as the bot, and is refused everywhere the
-    policy does not name -- and the proxy agrees on every count.
+    """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
+    about without ever holding it, is authenticated as the bot, and is refused everywhere the policy
+    does not name -- and the proxy agrees on every count.
 
     Nothing here tells the agent the placeholder. If it comes back as the bot, discovery worked.
     """
@@ -166,14 +167,14 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 async def test_the_model_call_itself_goes_through_the_proxy(
     client: Client, sandbox: Sandboxes, provider: Provider, model: str
 ) -> None:
-    """E5's acceptance: the runner holds the placeholder, not the LiteLLM key, so a turn happens at
-    all only if the proxy admitted the model call and put the real key into it.
+    """The runner holds the placeholder, not the LiteLLM key, so a turn happens at all only if the
+    proxy admitted the model call and put the real key into it.
 
     That makes the turn its own proof of reachability -- an agent that answers has been served -- and
     leaves the decision to say *how*: through the proxy with a credential substituted, rather than
     around it on a key the sandbox held. Both halves matter, because the failure this replaces was a
     sandbox reaching LiteLLM directly with the key in its own environment, which answers just as well
-    and is what E5 exists to stop.
+    and is what routing the model endpoint through the proxy exists to stop.
 
     The sandbox names no policy. `litellm` reaching it anyway is what `default_policies` is for.
     """

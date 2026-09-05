@@ -324,7 +324,7 @@ if __name__ == "__main__":
 
 
 async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
-    """C11: the placeholder a sandbox must present is knowable from inside the sandbox, over the one
+    """The placeholder a sandbox must present is knowable from inside the sandbox, over the one
     listener it can reach, under the identity it already proves for every request."""
     response = await proxy.get_self(RULES_PATH)
 

@@ -98,6 +98,9 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 
 ## Resources and status
 
+- The proxy depends on the API server and nothing else. The integration app is a viewer of the
+  same resources, never a participant: no part of a decision passes through it, so an app that is
+  down or broken changes nothing about what a sandbox may reach.
 - Three namespaces are watched, and the separation is the point: policies and bindings in the
   proxy's own, Sandboxes in the one their Pods run in, Secrets in the credentials namespace. A
   sandbox is therefore never in a namespace holding the rules that govern it or the credentials
@@ -118,6 +121,10 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
   once, and none more than three resync periods since it last completed a list-and-watch cycle. It
   reports how long ago each kind last completed one, so a wedged watch reads as an age rather than
   as a proxy quietly enforcing rules it stopped receiving updates to.
+- **One replica**, because the ring is per-process and the admin Service selects every Pod: a second
+  would split the view the app and the acceptance suite read. Model traffic takes the proxy like
+  every other request, so a proxy that restarts ends the turns in flight, and that cost was accepted
+  rather than designed around.
 
 ## What the proxy does not decide
 
