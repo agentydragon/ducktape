@@ -1,26 +1,26 @@
-# Source-controlled grants for the agentydragon GitHub PAT. Each binding
-# explicitly approves one consumer ServiceAccount. Consumer-local identities
-# live with consumers; external-secrets-config owns the store.
+# Source-controlled grants for the replacement agentydragon GitHub PAT. Each
+# binding explicitly approves one consumer ServiceAccount. Consumer-local
+# identities live with consumers; external-secrets-config owns the store.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: github-agentydragon-reader
+  name: github-agentydragon-2-reader
   namespace: ducktape-flux
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["github-agentydragon"]
+    resourceNames: ["github-agentydragon-2"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: github-agentydragon-flux-system-reader
+  name: github-agentydragon-2-flux-system-reader
   namespace: ducktape-flux
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: github-agentydragon-reader
+  name: github-agentydragon-2-reader
 subjects:
   - kind: ServiceAccount
     name: external-creds-reader
@@ -29,12 +29,12 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: github-agentydragon-agents-infra-reader
+  name: github-agentydragon-2-agents-infra-reader
   namespace: ducktape-flux
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: github-agentydragon-reader
+  name: github-agentydragon-2-reader
 subjects:
   - kind: ServiceAccount
     name: external-creds-reader
@@ -43,12 +43,12 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: github-agentydragon-nix-cache-reader
+  name: github-agentydragon-2-nix-cache-reader
   namespace: ducktape-flux
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: github-agentydragon-reader
+  name: github-agentydragon-2-reader
 subjects:
   - kind: ServiceAccount
     name: external-creds-reader
@@ -57,12 +57,12 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: github-agentydragon-monitoring-reader
+  name: github-agentydragon-2-monitoring-reader
   namespace: ducktape-flux
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: github-agentydragon-reader
+  name: github-agentydragon-2-reader
 subjects:
   - kind: ServiceAccount
     name: external-creds-reader
