@@ -1,13 +1,18 @@
 """A rollout that runs out of cash stops there, and reports nothing later.
 
-The engine cannot leave a vectorized scan early, so it keeps stepping a frozen rollout under
-a mask. Those masked steps are not months that went wrong; they are months that did not
-happen, and the read model should not surface them — an assessment for a tax year the rollout
-did not survive, exogenous marks it was never around to see.
+An engine that cannot leave a vectorized scan early keeps stepping a frozen rollout under a
+mask. Those masked steps are not months that went wrong; they are months that did not happen,
+and the read model should not surface them — an assessment for a tax year the rollout did not
+survive, exogenous marks it was never around to see.
 
-The cases below are the two shapes that rule takes, because events and state are not the same
-claim: an event after the freeze never happened, while a liability already assessed stays on
-the books and its later months legitimately read zero.
+Stated against a `SimulationResult` rather than one engine's output, because "a frozen rollout
+reports nothing later" is a claim about what a simulator is.
+
+**What is deliberately not here:** whether a mark published *during* the failure month itself is
+reported. The engines disagree about that and the question is open — JAX reports the whole
+failure month, Rust stops at the phase that could not pay — so it is pinned per engine in
+`rust/differential/known_divergence_test.py` instead. Every case below is about months strictly
+after the freeze, which is settled.
 """
 
 from __future__ import annotations
@@ -15,13 +20,11 @@ from __future__ import annotations
 from decimal import Decimal
 
 import numpy as np
-import pytest_bazel
+import pytest
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.sim.codec.plan import SimulationRun
-from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
     FixedAmount,
@@ -33,13 +36,13 @@ from finance.augur.sim.scenario import (
     ScheduledObligation,
     TaxProfile,
 )
-from finance.augur.sim.simulate import simulate, simulate_with_external_series
-from finance.augur.sim.testing.state_helpers import rollout_status, tax_liabilities
+from finance.augur.sim.testing.case import Case
+from finance.augur.sim.testing.simulation_result import Backend
 
-_TAX_YEAR_MONTHS = 12
+TAX_YEAR_MONTHS = 12
 # The year closes at month 11 and is assessed at month 12: freezing in the closing month is
 # the boundary, where the rollout reaches the end of the year but never the assessment.
-_FAIL_MONTH = _TAX_YEAR_MONTHS - 1
+FAIL_MONTH = TAX_YEAR_MONTHS - 1
 
 
 def _case(*, horizon_months: int) -> Scenario:
@@ -53,7 +56,7 @@ def _case(*, horizon_months: int) -> Scenario:
         ],
         scheduled_obligations=[
             ScheduledObligation(
-                month=_FAIL_MONTH,
+                month=FAIL_MONTH,
                 obligation_id="unfundable",
                 obligation_type=ObligationType.CASH_SPEND,
                 agent_id="alice",
@@ -68,22 +71,11 @@ def _case(*, horizon_months: int) -> Scenario:
     )
 
 
-def _run(*, horizon_months: int) -> SimulationRun:
-    return simulate(_case(horizon_months=horizon_months), rollout_count=1, locations={})
-
-
-def test_the_rollout_really_does_freeze_where_the_case_says() -> None:
-    """The premise: without it, "reports nothing later" could hold for the wrong reason."""
-
-    status = rollout_status(_run(horizon_months=_TAX_YEAR_MONTHS))
-    assert status.get_column("failed_month").to_list() == [_FAIL_MONTH]
-
-
 _ACME = IssuerId("acme")
 _PE_MARK_MONTHS = 3
 
 
-def _private_equity_case(*, freeze: bool) -> tuple[Scenario, ExternalSeriesContext]:
+def _private_equity_case(*, freeze: bool) -> tuple[Scenario, PrivateEquityBundle]:
     """A holding whose issuer marks itself up every month, and an owner who may go broke.
 
     The marks are exogenous: they are decoded from the compiled plan, not from what the run
@@ -153,46 +145,56 @@ def _private_equity_case(*, freeze: bool) -> tuple[Scenario, ExternalSeriesConte
         rollout_count=1,
         horizon_months=horizon_months,
     )
-    context = ExternalSeriesContext.from_level_blocks(
-        [], rollout_count=1, horizon_months=horizon_months, private_equity=bundle
-    )
-    return scenario, context
+    return scenario, bundle
 
 
-def _private_equity_mark_months(*, freeze: bool) -> list[int]:
-    scenario, context = _private_equity_case(freeze=freeze)
-    run = simulate_with_external_series(scenario, rollout_count=1, external_series=context, locations={})
-    months: list[int] = run.events_log.private_equity_events.get_column("month_index").to_list()
-    return months
+def frozen_case(*, horizon_months: int) -> Case:
+    return Case(scenario=_case(horizon_months=horizon_months), rollout_count=1)
 
 
-def test_the_issuer_publishes_every_month_when_the_owner_can_pay() -> None:
-    """The anchor: without it, an empty frozen result could mean the marks never existed."""
-
-    # The last kind sits at the snapshot past the horizon, so two of the three land in range.
-    assert _private_equity_mark_months(freeze=False) == [1, 2]
+def private_equity_case(*, freeze: bool) -> Case:
+    scenario, bundle = _private_equity_case(freeze=freeze)
+    return Case(scenario=scenario, rollout_count=1, private_equity=bundle)
 
 
-def test_no_exogenous_mark_is_reported_after_the_month_the_rollout_froze() -> None:
-    """The issuer keeps marking; the rollout that would have held the position does not.
+class FrozenRolloutAcceptance:
+    """Inherit and supply `backend`. Add nothing unless the engine owes something extra."""
 
-    These come off the compiled plan rather than the run, so nothing about the freeze reaches
-    them on its own -- they are reported for months the rollout was no longer around to see
-    unless the read model drops them.
-    """
+    @pytest.fixture
+    def backend(self) -> Backend:
+        raise NotImplementedError("an acceptance module names the engine it runs")
 
-    assert _private_equity_mark_months(freeze=True) == [1]
+    def test_the_rollout_really_does_freeze_where_the_case_says(self, backend: Backend) -> None:
+        """The premise: without it, "reports nothing later" could hold for the wrong reason."""
 
+        status = backend(frozen_case(horizon_months=TAX_YEAR_MONTHS)).rollout_status
+        assert status.get_column("failed_month").to_list() == [FAIL_MONTH]
 
-def test_a_tax_year_the_rollout_did_not_survive_is_not_assessed() -> None:
-    """The year closes at month 11 and is assessed at month 12; this rollout froze at month 11.
+    def test_the_issuer_publishes_every_month_when_the_owner_can_pay(self, backend: Backend) -> None:
+        """The anchor: without it, an empty frozen result could mean the marks never existed."""
 
-    Not a zero assessment — no assessment. A liability that was never created reports nothing,
-    which is what an engine that simply never reaches the month does.
-    """
+        events = backend(private_equity_case(freeze=False)).events.private_equity_events
+        # The last kind sits at the snapshot past the horizon, so two of the three land in range.
+        assert events.get_column("month_index").to_list() == [1, 2]
 
-    assert tax_liabilities(_run(horizon_months=_TAX_YEAR_MONTHS + 1)).is_empty()
+    def test_nothing_is_marked_after_the_month_the_rollout_froze(self, backend: Backend) -> None:
+        """The issuer keeps marking; the rollout that would have held the position does not.
 
+        These come off the compiled plan rather than the run, so nothing about the freeze
+        reaches them on its own — they would be reported for months the rollout was no longer
+        around to see unless the read model drops them. The rollout freezes at month 1, so
+        month 2 is the one this rules out; whether month 1 itself is reported is the open
+        question named in the module docstring, and is not asserted here.
+        """
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+        events = backend(private_equity_case(freeze=True)).events.private_equity_events
+        assert [month for month in events.get_column("month_index").to_list() if month > 1] == []
+
+    def test_a_tax_year_the_rollout_did_not_survive_is_not_assessed(self, backend: Backend) -> None:
+        """The year closes at month 11 and is assessed at month 12; this rollout froze at 11.
+
+        Not a zero assessment — no assessment. A liability that was never created reports
+        nothing, which is what an engine that simply never reaches the month does.
+        """
+
+        assert backend(frozen_case(horizon_months=TAX_YEAR_MONTHS + 1)).tax_liabilities.is_empty()

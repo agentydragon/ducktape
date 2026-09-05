@@ -137,6 +137,7 @@ py_test(
         "//finance/augur/sim:backend",
         "//finance/augur/sim:conftest",
         "//finance/augur/sim/testing:engine_acceptance",
+        "//finance/augur/sim/testing:frozen_rollout",
         "//finance/augur/sim/testing:jax_result",
         "//finance/augur/sim/testing:rollout_independence",
         "//finance/augur/sim/testing:simulation_result",
