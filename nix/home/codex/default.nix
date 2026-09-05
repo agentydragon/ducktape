@@ -25,6 +25,8 @@ let
   # the writable-roots sandbox block is appended only under workspace-write.
   baseSettings = {
     model = "gpt-5.6-sol";
+    # To exceed a model's default, set `model_context_window = <tokens>;` here;
+    # Codex clamps it to that model's catalogued maximum (Astra: 872000).
     model_reasoning_effort = "medium";
     plan_mode_reasoning_effort = "medium";
 
