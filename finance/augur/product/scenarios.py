@@ -786,21 +786,28 @@ def _rental_cashflow_segments(purchase: PropertyPurchase, *, horizon_months: int
     return tuple(segments)
 
 
+def _down_payment_for(purchase: PropertyPurchase, property_: Property, *, currency_quantum: Decimal) -> Decimal:
+    if isinstance(purchase.financing, CashFinancing):
+        return _amount(property_.price)
+    return round_currency_amount(
+        _amount(property_.price) * _amount(purchase.financing.down_payment_pct) / Decimal(100), quantum=currency_quantum
+    )
+
+
 def _sim_mortgage_for(
     purchase: PropertyPurchase, property_: Property, *, currency_quantum: Decimal
 ) -> SimMortgageFinancing | None:
     if isinstance(purchase.financing, CashFinancing):
         return None
     assert isinstance(purchase.financing, MortgageFinancing)
-    principal = round_currency_amount(
-        _amount(property_.price) * (Decimal(1) - _amount(purchase.financing.down_payment_pct) / Decimal(100)),
-        quantum=currency_quantum,
-    )
     return SimMortgageFinancing(
         liability_id=f"{property_.id}_mortgage",
         lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
         lender_account_id=MORTGAGE_LENDER_ACCOUNT_ID,
-        principal=principal,
+        # Derived from the rounded down payment rather than rounded independently from the
+        # percentage: `ScheduledPropertyPurchase` requires the two to sum to the price exactly,
+        # and two half-quantum roundings of a split can each go up and overshoot it by one.
+        principal=_amount(property_.price) - _down_payment_for(purchase, property_, currency_quantum=currency_quantum),
         annual_interest_rate=purchase.financing.annual_rate_pct / 100.0,
         term_months=purchase.financing.term_months,
     )
@@ -815,12 +822,6 @@ def _sim_property_purchase(
     currency_quantum: Decimal,
 ) -> ScheduledPropertyPurchase:
     purchase_price = _amount(property_.price)
-    if isinstance(purchase.financing, CashFinancing):
-        down_payment = purchase_price
-    else:
-        down_payment = round_currency_amount(
-            purchase_price * _amount(purchase.financing.down_payment_pct) / Decimal(100), quantum=currency_quantum
-        )
     rented_fraction = _initial_rented_fraction(purchase)
     return ScheduledPropertyPurchase(
         month=0,
@@ -832,7 +833,7 @@ def _sim_property_purchase(
         seller_agent_id=PROPERTY_SELLER_AGENT_ID,
         seller_account_id=PROPERTY_SELLER_ACCOUNT_ID,
         purchase_price=purchase_price,
-        down_payment=down_payment,
+        down_payment=_down_payment_for(purchase, property_, currency_quantum=currency_quantum),
         buyer_closing_cost=round_currency_amount(
             purchase_price * _amount(purchase.closing_cost_pct) / Decimal(100), quantum=currency_quantum
         ),

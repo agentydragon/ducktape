@@ -76,12 +76,18 @@ def _series_context(*, levels_by_series: dict[LevelSeriesKey, list[float]]) -> E
 
 
 def _two_property_scenario(*, horizon_months: int = 3) -> Scenario:
-    """Two all-cash purchases by one buyer with distinct price/down-payment."""
+    """One financed purchase and one all-cash purchase by the same buyer.
+
+    Four distinct stake values, so a cross-assignment between properties and a swap between the
+    two columns are both visible. p1 is financed so that its equity ledger differs from its
+    purchase price as well: reading the price where the ledger is meant would pass on p2 alone.
+    """
     return Scenario(
-        agents=[Agent(agent_id="alice"), Agent(agent_id="property_seller")],
+        agents=[Agent(agent_id="alice"), Agent(agent_id="property_seller"), Agent(agent_id="lender")],
         initial_cash=[
             InitialAccountBalance(agent_id="alice", account_id="checking", balance=2000000),
             InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -94,6 +100,14 @@ def _two_property_scenario(*, horizon_months: int = 3) -> Scenario:
                 seller_agent_id="property_seller",
                 purchase_price=1000000,
                 down_payment=200000,
+                buyer_closing_cost=30000,
+                mortgage=MortgageFinancing(
+                    liability_id="p1_mortgage",
+                    lender_agent_id="lender",
+                    principal=800000,
+                    annual_interest_rate=0.06,
+                    term_months=360,
+                ),
             ),
             ScheduledPropertyPurchase(
                 month=0,
@@ -105,6 +119,7 @@ def _two_property_scenario(*, horizon_months: int = 3) -> Scenario:
                 seller_agent_id="property_seller",
                 purchase_price=500000,
                 down_payment=500000,
+                buyer_closing_cost=10000,
             ),
         ],
         tax_profiles=[],
@@ -118,11 +133,11 @@ def test_property_stakes_not_cross_assigned_across_properties() -> None:
     run = simulate(_two_property_scenario(), rollout_count=4, locations=LOCATIONS)
     stakes = property_stakes(run)
 
-    # equity_ledger = purchase_price - mortgage_principal (no mortgage here);
-    # contribution_used_usd = down_payment + closing_cost.
+    # equity_ledger = purchase_price - mortgage_principal; contribution_used = down_payment +
+    # closing_cost. All four differ, so no pair can be swapped without changing a value.
     expected = {
-        "p1": {"contribution_used_quanta": 20_000_000, "equity_ledger_quanta": 100_000_000},
-        "p2": {"contribution_used_quanta": 50_000_000, "equity_ledger_quanta": 50_000_000},
+        "p1": {"contribution_used_quanta": 23_000_000, "equity_ledger_quanta": 20_000_000},
+        "p2": {"contribution_used_quanta": 51_000_000, "equity_ledger_quanta": 50_000_000},
     }
     for property_id, fields in expected.items():
         rows = stakes.filter(pl.col("property_id") == property_id)
@@ -137,12 +152,15 @@ def test_property_stakes_not_cross_assigned_across_properties() -> None:
 def test_property_purchase_transfer_is_derived_from_active_and_stake() -> None:
     """Only active purchases with a positive stake emit the buyer-cash transfer."""
     scenario = Scenario(
-        agents=[Agent(agent_id="alice"), Agent(agent_id="property_seller")],
+        agents=[Agent(agent_id="alice"), Agent(agent_id="property_seller"), Agent(agent_id="lender")],
         initial_cash=[
             InitialAccountBalance(agent_id="alice", account_id="checking", balance=300000),
             InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
+            # Financed to the hilt: no down payment and no closing cost, so the stake is zero
+            # while the purchase itself is fully funded.
             ScheduledPropertyPurchase(
                 month=1,
                 cause_id="buy_zero_stake",
@@ -153,6 +171,13 @@ def test_property_purchase_transfer_is_derived_from_active_and_stake() -> None:
                 seller_agent_id="property_seller",
                 purchase_price=100000,
                 down_payment=0,
+                mortgage=MortgageFinancing(
+                    liability_id="zero_stake_mortgage",
+                    lender_agent_id="lender",
+                    principal=100000,
+                    annual_interest_rate=0.06,
+                    term_months=360,
+                ),
             ),
             ScheduledPropertyPurchase(
                 month=2,

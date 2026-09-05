@@ -815,6 +815,21 @@ class ScheduledPropertyPurchase(BaseModel):
     # `purchase_price × (1 - land_value_fraction) + buyer_closing_cost`.
     land_value_fraction: float = Field(default=0.20, ge=0.0, le=1.0)
 
+    @model_validator(mode="after")
+    def _reject_unfunded_purchase(self) -> ScheduledPropertyPurchase:
+        # The seller is paid the down payment and nothing else, while the buyer books
+        # `purchase_price - principal` of equity. Those two agree only when the down payment and
+        # the mortgage between them cover the price; short of that the buyer gains equity nobody
+        # paid for and the seller is handed less than the property was sold for.
+        principal = self.mortgage.principal if self.mortgage is not None else Decimal(0)
+        if self.down_payment + principal != self.purchase_price:
+            raise ValueError(
+                f"property purchase {self.cause_id!r} is not funded: "
+                f"{self.down_payment=} + {principal=} != {self.purchase_price=}. "
+                "Closing costs are paid on top of the price and are not part of this identity."
+            )
+        return self
+
 
 class PropertyTaxPolicy(BaseModel):
     """Monthly property-tax carrying cost for an owned property.
