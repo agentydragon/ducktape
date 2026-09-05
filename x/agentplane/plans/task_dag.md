@@ -34,14 +34,17 @@ choose the durable object, lifecycle, pending-turn behavior, single-operation ve
 semantics, and the MCP adapter boundary. The discussion and recommendations are in
 [`operations_and_access.md`](operations_and_access.md).
 
-**Parallel evidence work:** BuildBuddy HTTP and remote-build gRPC authentication/substitution is
-being researched in a separate branch/PR. Its result will decide whether BuildBuddy belongs in a
-credentialed Agentplane egress path or remains an external boundary; it must not block the operation
-contract or trajectory search.
+**BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
+Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
+`x-buildbuddy-api-key`, and that the existing `wholeValue` target substitutes its placeholder across
+HTTP, unary gRPC, and bidirectional gRPC with trailers intact. `bb remote` remains outside the safe
+slice because it also embeds the key in the Bazel command executed on BuildBuddy's hosted runner.
+That nested process is beyond Agentplane egress and needs a runner-side credential reference or
+separate broker; it is not evidence for another proxy matcher.
 
-Already unblocked after the preset review: trajectory search (`T3`), proxy rollout survivability,
-and sidecar-only credential security acceptance. They are separate slices, with different write
-surfaces.
+Independently ready now: trajectory search (`T3`), proxy rollout survivability, and sidecar-only
+credential security acceptance. They are separate slices with different write surfaces and do not
+depend on the preset deployment or operation-contract decision.
 
 ## DAG
 
@@ -60,7 +63,7 @@ flowchart TB
     T2["Named Threads + timeline UI<br/>name persistence and live conversation view"]:::completed
 
     LP["Launch presets in review<br/>SandboxPreset → ThreadPreset,<br/>public-coder, runner bootstrap, UI"]:::active
-    BB["BuildBuddy auth research<br/>HTTP API + remote-build gRPC metadata,<br/>substitution experiment and requirements PR"]:::active
+    BB["BuildBuddy auth contract in review<br/>HTTP + unary/bidirectional gRPC substitution;<br/>hosted bb remote boundary remains"]:::active
 
     OPD["Rai decision<br/>operation noun and durable unit<br/>Operation / Invocation / AccessRequest?"]:::decision
     OPS["Rai decision<br/>operation lifecycle and agent UX<br/>pending, decision, retry, delivery, withdrawal"]:::decision
@@ -135,10 +138,13 @@ A completed item leaves the active queue even when it supplies an edge.
   `public-coder` live target after deployment, including GitHub egress, bootstrap persistence,
   instructions, and per-Thread override behavior. Follow-up revision history and rollout semantics
   wait for live evidence.
-- **`BB` BuildBuddy auth research:** establish the exact HTTP and gRPC credential forms, whether
-  the current proxy can substitute them, and the separate `bb remote` hosted-execution boundary.
-  Acceptance is a reproducible fake/local protocol test or a concrete measured blocker, plus
-  requirements in the access/planning notes. Do not add an unmeasured metadata credential path.
+- **`BB` BuildBuddy auth contract:** PR #5650 establishes the complete
+  `x-buildbuddy-api-key` HTTP/gRPC metadata value and reuses the existing whole-header target. Its
+  fake-stack test exercises HTTP, a unary REAPI-shaped call, and a bidirectional BES-shaped stream
+  through sidecar, hosted mitmproxy, and upstream TLS, preserving multiple messages and trailers.
+  `bb remote` remains blocked at the hosted runner, which receives a nested Bazel command outside
+  Agentplane's fence. The focused test and build passed in BuildBuddy invocations
+  `e96f0276-2075-4fff-bb32-9815fd9ee500` and `58eb6493-79a3-4101-9cd8-c09c3074c856`.
 - **`OPD` operation noun/unit:** Rai chooses the product noun and whether the durable object is a
   logical intent with attempts or one execution attempt. The discussion is in
   [`operations_and_access.md`](operations_and_access.md). No implementation starts on “ask” alone.
@@ -175,8 +181,9 @@ A completed item leaves the active queue even when it supplies an edge.
   consumer. It now also depends on the operation/MCP boundary so tool invocation is not designed as
   a second incompatible request model.
 - **`L` credentialed readiness:** runner-port authentication, credential freshness/replay defence,
-  rotation, and acceptance escape tests. BuildBuddy evidence may add a requirement, but a successful
-  HTTP experiment does not prove gRPC or hosted remote execution is contained.
+  rotation, and acceptance escape tests. BuildBuddy's fake-stack acceptance proves local-client
+  transport and substitution, not production-key scope, freshness, rotation, or revocation. Hosted
+  `bb remote` credential delivery remains a distinct external-boundary requirement.
 
 ## Decisions and ownership rules
 

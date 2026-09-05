@@ -86,7 +86,7 @@ HTTP, Kubernetes, host execution, or MCP. It should distinguish at least:
   "operation_id": "op_...",
   "status": "approval_required",
   "capability": "mcp:github.search_repositories",
-  "input": {"...": "..."},
+  "input": { "...": "..." },
   "message": "The operator has been notified; continue other work.",
   "decision": null
 }
