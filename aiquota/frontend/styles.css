@@ -17,6 +17,6 @@ h2 { font-size: 1rem; margin: 0 0 20px; text-transform: capitalize; }
 .meter { background: #2b3445; border-radius: 999px; height: 8px; margin: 10px 0; overflow: hidden; }
 .meter span { background: #71d4c2; display: block; height: 100%; border-radius: inherit; }
 .meter.warning span { background: #f4c95d; }.meter.critical span { background: #fb7185; }
-.window-meta, footer { font-size: .78rem; } .status { font-size: .72rem; padding: 3px 7px; border-radius: 99px; } .status.error, .notice, .error-copy { color: #fda4af; } .status.error { background: #4c1d2b; }
+.window-meta, footer { font-size: .78rem; } .badges { display: flex; gap: 6px; } .status { font-size: .72rem; padding: 3px 7px; border-radius: 99px; } .status.error, .notice, .error-copy { color: #fda4af; } .status.error { background: #4c1d2b; } .status.reset { color: #a5d8ff; background: #172554; } .known-expiries { color: #98a4b8; font-size: .78rem; margin: -8px 0 16px; }
 .notice { background: #351a25; border: 1px solid #713044; border-radius: 8px; padding: 12px; } footer { margin-top: 24px; }
 @media (max-width: 560px) { main { padding: 28px 18px; }.page-heading { align-items: start; flex-direction: column; } }

@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 
 type Window = { name: string | null; used_percent: number; remaining_percent: number; reset_seconds: number; window_seconds: number };
-type ProviderResult = { kind: "success"; windows?: Window[] } | { kind: "error"; error: string };
-type Provider = { provider: string; last_output: { result: ProviderResult }; last_success: { result: { windows: Window[] } } | null };
+type ProviderSuccess = {
+  kind: "success";
+  windows?: Window[];
+  available_reset_credits?: number | null;
+  available_reset_credit_expiries?: string[];
+};
+type ProviderResult = ProviderSuccess | { kind: "error"; error: string };
+type Provider = { provider: string; last_output: { result: ProviderResult }; last_success: { result: ProviderSuccess } | null };
 type Quotas = { providers: Provider[]; fetched_at: string };
 
 const duration = (seconds: number) => {
@@ -16,10 +22,14 @@ const label = (window: Window) => window.name || duration(window.window_seconds)
 
 function ProviderCard({ provider }: { provider: Provider }) {
   const result = provider.last_output.result;
-  const windows = result.kind === "success" ? result.windows ?? [] : provider.last_success?.result.windows ?? [];
+  const success = result.kind === "success" ? result : provider.last_success?.result;
+  const windows = success?.windows ?? [];
+  const resetCredits = success?.available_reset_credits ?? null;
+  const resetExpiries = success?.available_reset_credit_expiries ?? [];
   return <article className="provider-card">
-    <header><h2>{provider.provider}</h2>{result.kind === "error" && <span className="status error">Stale</span>}</header>
+    <header><h2>{provider.provider}</h2><div className="badges">{resetCredits !== null && <span className="status reset">{resetCredits} banked reset{resetCredits === 1 ? "" : "s"}</span>}{result.kind === "error" && <span className="status error">Stale</span>}</div></header>
     {result.kind === "error" && <p className="error-copy">{result.error}</p>}
+    {resetExpiries.length > 0 && <p className="known-expiries">Known expiries: {resetExpiries.map((value) => new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })).join(", ")}</p>}
     {windows.length === 0 ? <p className="empty">No quota data available.</p> : windows.map((window) => {
       const used = Math.max(0, Math.min(100, window.used_percent));
       const severity = used >= 95 ? "critical" : used >= 80 ? "warning" : "normal";
