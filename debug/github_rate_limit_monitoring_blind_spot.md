@@ -1079,6 +1079,43 @@ Seven workloads, four namespaces. Everything else in-cluster runs on the agent P
 bucket is measured flat. Rotation is a bounded operation and its breakage is
 self-announcing — the exporters stop reporting.
 
+## The `dns` destination label is a subset explosion, not an improvement
+
+The flow metrics' `destinationContext` originally read `workload-name|dns|ip`, on the
+assumption that resolving destinations to hostnames beats raw IPs. Measured on one
+workload two hours after an L7 DNS policy started populating the FQDN cache, that is
+false here — and badly.
+
+Cilium's `dns` context emits _every_ known name for the destination IP, comma-joined, and
+the FQDN cache expires on a 30s TTL. So the set of names attached to an IP keeps changing,
+and each subset that happens to be cached together becomes its own label value:
+
+```text
+auth.allegedly.works,cache.allegedly.works
+auth.allegedly.works,cache.allegedly.works,chat.allegedly.works
+auth.allegedly.works,cache.allegedly.works,chat.allegedly.works,git.allegedly.works
+auth.allegedly.works,cache.allegedly.works,chat.allegedly.works,git.allegedly.works,grafana.allegedly.works
+```
+
+Every `*.allegedly.works` name resolves to the same five node ExternalIPs
+(<../cluster/docs/cilium_network_policy.md>), which is the worst possible input: nine
+names behind five IPs is a subset space of up to 512 values per IP, minted continuously
+as the cache turns over. One workload went from ~12 distinct destinations to **75**, 45 of
+them name-combinations. Unlike pod IPs recycling within a podCIDR, this does not saturate.
+
+`reserved-identity` was removed from the same chain for an unrelated reason: it matches
+`reserved:world`, which collapses every external destination into a single label and
+erases which external service a workload reached — the exact attribution this note needs.
+It named four values in practice.
+
+So the destination chain is `workload-name|ip`. Unresolved destinations stay raw IPs,
+bounded internally by the podCIDR and externally by the services actually contacted, which
+is what makes the GitHub-destined scan above possible at all.
+
+**The transferable part**: a label whose value is a _set_ derived from mutable state is not
+a higher-fidelity version of a label whose value is a scalar. It is a different and much
+worse cardinality class, and the fidelity argument hides that.
+
 ## The installation bucket is separate, free, and idle
 
 Measured 2026-09-05, by minting a real installation token and querying `rateLimit` with

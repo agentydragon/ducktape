@@ -86,24 +86,35 @@ hubble:
   # Observability plane only: no datapath, MTU, or routing change, so the
   # Nebula-compatibility warning at the top of this file does not apply.
   #
-  # Cardinality is the cost here, and `destinationContext` is where it bites: an
-  # unresolved destination falls through to a raw pod IP. Those recycle within
-  # each node's podCIDR rather than growing without bound, but they are a far
-  # larger and far less useful label set than workload names.
+  # Cardinality is the cost here, and `destinationContext` is where it bites.
   #
-  # Order is load-bearing. `reserved-identity` catches the host, remote-node,
-  # world and kube-apiserver destinations that have neither a workload name nor
-  # a DNS name. It sits *after* `dns` so that an external destination reports its
-  # hostname rather than collapsing to `reserved:world` once an L7 DNS policy
-  # populates the FQDN cache.
+  # `dns` is deliberately absent. Cilium's dns context emits *every* known name
+  # for the destination IP, comma-joined, and the FQDN cache turns over on a 30s
+  # TTL — so each subset of names cached together becomes its own label value.
+  # Every `*.allegedly.works` name resolves to the same five node ExternalIPs
+  # (<../../docs/cilium_network_policy.md>), which is the worst case for that:
+  # measured on one workload, enabling it took distinct destinations from ~12 to
+  # 75, 45 of them name-combinations. A subset space does not saturate the way a
+  # podCIDR does.
+  #
+  # `reserved-identity` is absent for a different reason: it matches
+  # `reserved:world`, collapsing every external destination into one label and
+  # erasing which external service a workload actually reached. It named four
+  # values in practice (three Nebula node IPs and kube-dns) — not worth that.
+  #
+  # So unresolved destinations stay raw IPs: bounded by the podCIDR internally,
+  # and externally by the services actually contacted, which is also what makes
+  # per-destination attribution possible at all. Per-name visibility, where it is
+  # wanted, belongs in `hubble_dns_queries_total`, whose `query` label is linear
+  # in names rather than combinatorial — and which needs an L7 DNS policy.
   #
   # `dns` stays empty until an L7 DNS policy routes queries through Cilium's DNS
   # proxy; it is enabled here so that turning one on needs no Helm upgrade.
   # `drop` is what shows a namespace being black-holed by such a policy.
   metrics:
     enabled:
-      - "flow:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|reserved-identity|ip"
-      - "drop:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|dns|reserved-identity|ip"
+      - "flow:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|ip"
+      - "drop:sourceContext=workload-name|reserved-identity;destinationContext=workload-name|ip"
       - "dns:query;ignoreAAAA"
     # As with `prometheus` above: the ServiceMonitor is declared under
     # cluster/k8s/monitoring/cilium so this bootstrap-time install does not
