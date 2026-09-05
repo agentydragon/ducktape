@@ -1,9 +1,47 @@
-# Making Rust the default summary backend
+# Serving the web app from Rust, without calling JAX
 
-`SummaryBackend` already dispatches the percentile-fan and terminal-distribution endpoints to
-either engine, defaulting to JAX. This is the burn-down for flipping that default. The
-single-rollout endpoint is out of scope and stays on JAX: it renders a causal trace out of
-dense output, over one rollout, so it has no share of the 16x.
+The goal is that no request the web app makes reaches JAX. That is three problems, not one,
+and only the first is close.
+
+**1. The fan, terminal-distribution and summary endpoints.** `SummaryBackend` already
+dispatches these to either engine, defaulting to JAX. Flipping that default is what the gates
+below are about, and it is where the 16x lives.
+
+**2. The selected-rollout endpoint.** `/api/product/projections/rollout` calls
+`simulate_with_external_series_and_product_metrics` and then `project_product_rollout`, which
+reads `CompiledSimulation` plus `DenseSimulationOutput` — JAX's own array layout. It has no
+share of the 16x, being one rollout, but it is JAX in the request path, so it has to move.
+
+Not by writing the projection twice. Its 612 lines are a read model, and a second copy makes
+the differential harness test the read model rather than the engines — the shape this branch
+already deleted as `fixture_adapter.py` and shrank `output_adapter.py` out of. The seam
+belongs at the canonical event frames, which both engines already emit: `event_frames.rs` for
+Rust, `codec/plan.py` for JAX. `project_product_rollout` gets re-founded on `EventLog` plus
+`ProductMetricArrays`, stays one implementation, and a Rust trace equals a JAX trace by
+construction — the same argument that makes a Rust fan equal a JAX fan.
+
+The frames can carry it. Seventeen frames against nineteen rollout event types, near 1:1, and
+the two richest schemas hold every field the projection currently digs out of the arrays:
+`private_equity_opportunities` has floor, liquid net worth, shortfall, units held, sellable
+and target units, proceeds and outcome; `property_purchases` has purchase price, closing cost
+and equity ledger. The projection reads plan and output because it predates
+`event_frames.rs`, not because the frames are short.
+
+One cost, stated rather than glossed: the projection deliberately reads one rollout's dense
+output "without materializing broad state/event frames first". Frames reverse that. For a
+single rollout it is cheap, but it is a design choice being undone.
+
+**3. The exogenous sampler, which nothing here has addressed.** `model/gbm.py` runs
+`jax.vmap` and `jax.random.normal`; `state_space.py`, `vecm.py` and `independent.py` import
+JAX too. Sampling happens in `_scenario_and_sample` on **every** request, including the ones
+the Rust backend serves, so JAX stays in the request path and in the server image no matter
+what the two problems above do. The plan compiler is fine — `sim/compiler/` imports only
+`jaxtyping`, which is annotations, and produces numpy.
+
+This is the one that decides whether the goal is literally reachable, and it carries a
+consequence the other two do not: a seed maps to sampled paths, and that mapping is a product
+contract. Porting sampling to numpy or to Rust changes every number a stored seed produces
+unless the PRNG is matched exactly. Worth deciding deliberately rather than discovering.
 
 ## What the differential harness is and is not
 
@@ -88,7 +126,21 @@ the unreachable ones held by something other than this list.
    whether a wrong reading would show up as a different number, not by whether a walk exists
    for it.
 
-7. Flip the default.
+7. Re-found `project_product_rollout` on the canonical event frames, give `backend.py` a
+   dense per-engine entry point (`simulate_dense_json` for Rust, `decode_events` for JAX), and
+   assert in the differential suite that both engines render the same trace for one selected
+   rollout.
+8. Decide the sampler. Until JAX leaves `model/`, the server still imports and runs it on
+   every request, so "the web app runs on Rust" is not true yet however green the rest is.
+9. Flip the default.
+
+## What "done" means
+
+Every endpoint under `/api/product/projections/` answered without JAX executing, and JAX no
+longer imported by the server image. The four simulator-backed endpoints are `metric_fan`,
+`terminal_distribution`, `summary` (all three already dispatchable) and `rollout` (gate 7).
+`portfolio`, `catalog`, `settings`, `deployment`, `calibration` and the budget routes do not
+run the simulator.
 
 ## Why it is worth it
 
