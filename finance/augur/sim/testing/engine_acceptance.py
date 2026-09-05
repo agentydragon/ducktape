@@ -23,7 +23,7 @@ import polars as pl
 import pytest
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.product.metric_composition import BASE_METRIC_NAMES
+from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.sim.backend import CompiledRun, Engine
 from finance.augur.sim.compiler.plan import compile_simulation
 from finance.augur.sim.events import EVENT_FRAME_SPECS
@@ -142,12 +142,19 @@ class EngineAcceptance:
         assert accruals.height, "a long-term gain went unassessed"
         assert accruals.filter(pl.col("month_index") > SALE_MONTH).height, "no accrual after the sale"
 
-    def test_product_metrics_cover_every_base_series(self, engine: Engine, run: CompiledRun) -> None:
+    def test_product_metrics_cover_every_metric_the_product_renders(self, engine: Engine, run: CompiledRun) -> None:
+        """An engine supplies the seven base series; all ten come back.
+
+        The derived three are composed by shared Python, so this also says the composition
+        runs over whatever engine produced the base — which is the property that makes one
+        engine's fan equal another's.
+        """
+
         metrics = engine.product_metrics(run, primary_agent_id=AGENT)
         arrays = metrics.metric_arrays()
-        assert set(arrays) == {"month_index", *BASE_METRIC_NAMES}
+        assert set(arrays) == {"month_index", *METRIC_NAMES}
         assert len(arrays["month_index"]) == HORIZON_MONTHS + 1
-        for name in BASE_METRIC_NAMES:
+        for name in METRIC_NAMES:
             assert arrays[name].shape == (HORIZON_MONTHS + 1, 1), f"{name} is not snapshots by rollouts"
         assert metrics.failed_month.shape == (1,)
         assert metrics.currency_code == run.scenario.currency.code
