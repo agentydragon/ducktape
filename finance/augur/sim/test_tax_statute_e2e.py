@@ -30,8 +30,10 @@ from finance.augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
+    OrdinaryIncome,
     Scenario,
     ScheduledAssetSale,
+    ScheduledTransfer,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate
@@ -51,16 +53,48 @@ _FEDERAL_STANDARD_DEDUCTION_QUANTA = 1_460_000  # $14,600
 
 _HORIZON_MONTHS = 12
 
+# The §1(h) stacking case. $30,000 of wages against the same $50,000 gain, chosen so the gain
+# straddles the top of the 0% long-term bracket instead of sitting wholly inside it.
+#
+#   ordinary taxable   $30,000 - $14,600 deduction      = $15,400
+#   ordinary tax       $11,600 @ 10% + $3,800 @ 12%     =  $1,616.00
+#   gain at 0%         $47,025 bracket top - $15,400    = $31,625
+#   gain at 15%        $50,000 - $31,625 = $18,375      =  $2,756.25
+#                                                          ---------
+#                                                          $4,372.25
+#
+# Every figure is from `sim/data/jurisdictions/federal_us.yaml`, single filer. An engine that
+# rates the gain from zero rather than from where ordinary taxable income leaves off puts
+# $47,025 in the 0% band and only $2,975 at 15%, and assesses $2,062.25.
+_WAGES = Decimal(30_000)
+_WAGES_QUANTA = int(_WAGES * 100)
+_STACKED_FEDERAL_TAX_QUANTA = 437_225  # $4,372.25
 
-def _sale_scenario(*, cost_basis_per_unit: Decimal) -> Scenario:
-    """One long-term lot sold at `_SALE_PRICE`, and no other income at all."""
+
+def _sale_scenario(*, cost_basis_per_unit: Decimal, wages: Decimal = Decimal(0)) -> Scenario:
+    """One long-term lot sold at `_SALE_PRICE`, and `wages` of ordinary income if any."""
 
     return Scenario(
-        agents=[Agent(agent_id="alice"), Agent(agent_id="irs")],
+        agents=[Agent(agent_id="alice"), Agent(agent_id="irs"), Agent(agent_id="employer")],
         initial_cash=[
             InitialAccountBalance(agent_id="alice", account_id="checking", balance=Decimal(0)),
             InitialAccountBalance(agent_id="irs", account_id="checking", balance=Decimal(0)),
+            InitialAccountBalance(agent_id="employer", account_id="checking", balance=wages),
         ],
+        scheduled_transfers=[
+            ScheduledTransfer(
+                month=0,
+                cause_id="wages",
+                from_agent_id="employer",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount=wages,
+                income_category=OrdinaryIncome(),
+            )
+        ]
+        if wages
+        else [],
         initial_lots=[
             InitialLot(
                 lot_id="alice-vti",
@@ -128,6 +162,31 @@ def test_an_unused_standard_deduction_shelters_a_long_term_gain() -> None:
 
     accruals, _ = _run(_sale_scenario(cost_basis_per_unit=_LOT_BASIS))
     assert [row["amount_quanta"] for row in accruals.to_dicts()] == [0]
+
+
+def test_the_stacking_case_really_is_wages_beside_a_gain() -> None:
+    """The premise. A tax figure can come out right for reasons unrelated to the rule."""
+
+    _, breakdowns = _run(_sale_scenario(cost_basis_per_unit=_LOT_BASIS, wages=_WAGES))
+    assert breakdowns.height == 1, "one jurisdiction, one tax year"
+    row = breakdowns.to_dicts()[0]
+    assert row["standard_deduction_quanta"] == _FEDERAL_STANDARD_DEDUCTION_QUANTA
+    assert row["ordinary_income_quanta"] == _WAGES_QUANTA
+    assert row["ltcg_quanta"] == _LONG_TERM_GAIN_QUANTA
+
+
+def test_a_long_term_gain_is_rated_from_where_ordinary_income_leaves_off() -> None:
+    """§1(h): the long-term bracket is walked on total taxable income, not on the gain alone.
+
+    The gain here straddles the top of the 0% bracket, which the deduction case above cannot
+    reach — there the whole gain fits inside that bracket, so an engine that rated it from zero
+    would still answer zero. Only a gain that crosses the boundary tells the two apart, and it
+    is the same composition #5588 got wrong: what the engine hands the long-term bracket walk,
+    rather than the walk itself.
+    """
+
+    accruals, _ = _run(_sale_scenario(cost_basis_per_unit=_LOT_BASIS, wages=_WAGES))
+    assert [row["amount_quanta"] for row in accruals.to_dicts()] == [_STACKED_FEDERAL_TAX_QUANTA]
 
 
 if __name__ == "__main__":
