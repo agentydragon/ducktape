@@ -181,14 +181,24 @@ deliberately rather than corrects: [docs/product_metrics.md](docs/product_metric
 `fixture_encoder.py` is what connects that to a live request: a `Scenario` and its
 `CompiledSimulation` become the strict integer fixture, taking money straight out of
 `external_money_values` and quantizing index levels to the same parts per billion JAX rounds
-them to before any multiplication. `ProductService` takes a `summary_backend`, defaulting to
-JAX, so a deployment runs both on one scenario and compares rather than switching.
-`differential/product_scenario_test.py` is that comparison as a test: one `ScenarioKey`
-against the fixture deployment's own portfolio and sampled model, answered identically by
-both backends, funded and after ruin.
+them to before any multiplication.
 
-The single-rollout endpoint stays on JAX whichever backend is selected — it renders a causal
-event trace out of dense output this engine does not emit.
+Which engine serves is `Config.simulation_backend`, defaulting to JAX. It covers all four
+projection endpoints, the selected rollout included: `ProductService` holds an `Engine`
+(<../sim/backend.py>) rather than branching per call site, and everything above that contract
+is written once — the derived metrics, the terminal reduction, the percentile brackets, and
+the rollout projection, which reads the canonical event frames both engines emit rather than
+either one's output layout. So a Rust answer equals a JAX answer by construction.
+
+Two differential suites hold that: `product_scenario_test.py` answers one `ScenarioKey`
+against the fixture deployment's own portfolio and sampled model identically on both
+backends, funded and after ruin; `rollout_projection_test.py` renders one selected rollout's
+causal trace from each engine's frames and compares them.
+
+Deviation worth knowing: `RustEngine.events` reads the forensic document, because only that
+one serializes the canonical frames — the dense path keeps the same records in Rust's own
+per-rollout shape. So a trace request carries a balanced journal nothing reads, until the
+dense path learns to emit frames.
 
 A scenario the fixture cannot express is refused rather than encoded without it. The live
 case is a purchased property: its recurring HOA, insurance and maintenance obligations carry
@@ -208,13 +218,13 @@ remains for out-of-process forensic runs.
 
 Still missing before replacement is plausible:
 
-- selected-rollout event projection (`product/projection.py` reads dense plan+output);
 - broader modeled tax facts and complete deduction policy;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax policy beyond purchase-price assessment and fixed location
   special assessments;
 - broader liquidity policy;
-- complete selected-rollout causal trace parity for those domains.
+- complete selected-rollout causal trace parity for those domains — the projection reads both
+  engines now, so what is left is the domains themselves rather than the plumbing.
 
 What `fixture_encoder` still refuses, and how much of it a real request can reach, is a
 different list and a shorter one:
