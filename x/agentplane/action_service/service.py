@@ -8,6 +8,7 @@ from uuid import UUID
 
 from x.agentplane.action_service.db import ActionStore
 from x.agentplane.action_service.models import (
+    ActionEventView,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
@@ -78,7 +79,7 @@ class ActionService:
     async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
         return await self._store.get(request_id, principal)
 
-    async def events(self, request_id: UUID, principal: Principal):
+    async def events(self, request_id: UUID, principal: Principal) -> list[ActionEventView]:
         return await self._store.events(request_id, principal)
 
     async def decide(self, request_id: UUID, body: DecisionInput, principal: Principal) -> ActionRequestView:
