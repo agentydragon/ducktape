@@ -151,12 +151,38 @@ py_test(
     srcs = ["backend_test.py"],
     deps = [
         ":backend",
+        ":result",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:backend",
         "//finance/augur/sim/testing:engine_acceptance",
+        "//finance/augur/sim/testing:rollout_independence",
+        "//finance/augur/sim/testing:simulation_result",
         "//finance/augur/sim/testing:tax_statute",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "case_fixture",
+    srcs = ["case_fixture.py"],
+    deps = [
+        ":fixture_encoder",
+        "//finance/augur/sim/testing:case",
+    ],
+)
+
+py_library(
+    name = "result",
+    srcs = ["result.py"],
+    deps = [
+        ":case_fixture",
+        ":event_log",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:simulation_result",
+        "@pypi//polars",
     ],
 )

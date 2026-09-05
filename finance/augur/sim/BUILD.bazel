@@ -809,25 +809,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_liability_rows_per_rollout_e2e",
-    srcs = ["test_liability_rows_per_rollout_e2e.py"],
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim/codec:plan",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "backend",
     srcs = ["backend.py"],

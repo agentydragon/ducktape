@@ -75,3 +75,40 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "rollout_independence",
+    srcs = ["rollout_independence.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":simulation_result",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "simulation_result",
+    srcs = ["simulation_result.py"],
+    deps = [
+        ":case",
+        "//finance/augur/sim:events",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "jax_result",
+    srcs = ["jax_result.py"],
+    deps = [
+        ":case",
+        ":simulation_result",
+        ":state_helpers",
+        "//finance/augur/sim/codec:plan",
+        "//finance/augur/sim/engine:jax_engine",
+    ],
+)

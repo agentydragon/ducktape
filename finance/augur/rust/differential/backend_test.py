@@ -11,10 +11,10 @@ from finance.augur.rust.differential.backend import (
     Backend,
     assert_backends_agree,
     assert_results_agree,
-    run_jax,
     run_rust,
 )
 from finance.augur.sim.testing.fixtures import shared_case
+from finance.augur.sim.testing.jax_result import run_jax
 
 
 @pytest.mark.parametrize("backend", BACKENDS, ids=lambda run: run.__name__)

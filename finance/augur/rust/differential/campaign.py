@@ -18,12 +18,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from finance.augur.rust.differential.backend import assert_results_agree, run_jax, run_rust
-from finance.augur.rust.differential.fixture import fixture_for
+from finance.augur.rust.case_fixture import fixture_for
+from finance.augur.rust.differential.backend import assert_results_agree, run_rust
 from finance.augur.rust.differential.generator import Shape, build_case
 from finance.augur.rust.differential.shrink import shrink_case
 from finance.augur.rust.fixture_encoder import UnsupportedScenarioError
 from finance.augur.sim.testing.case import Case
+from finance.augur.sim.testing.jax_result import run_jax
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)

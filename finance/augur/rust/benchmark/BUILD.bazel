@@ -49,6 +49,6 @@ py_library(
     srcs = ["fixture.py"],
     deps = [
         "//finance/augur/benchmark:scenario",
-        "//finance/augur/rust/differential:fixture",
+        "//finance/augur/rust:case_fixture",
     ],
 )

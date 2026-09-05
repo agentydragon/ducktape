@@ -14,8 +14,8 @@ import pytest_bazel
 
 from finance.augur.model.series import SecurityDistributionKey, SecuritySymbol
 from finance.augur.rust import simulator
+from finance.augur.rust.case_fixture import fixture_for
 from finance.augur.rust.differential.backend import BACKENDS, Backend, SimulationResult, assert_backends_agree
-from finance.augur.rust.differential.fixture import fixture_for
 from finance.augur.sim.scenario import (
     DistributionTaxSlice,
     InitialLot,

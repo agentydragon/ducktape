@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from finance.augur.benchmark.scenario import feature_rich_case
-from finance.augur.rust.differential.fixture import fixture_for
+from finance.augur.rust.case_fixture import fixture_for
 
 
 def write_fixture(path: Path, *, rollout_count: int, horizon_months: int) -> None:

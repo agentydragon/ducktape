@@ -9,7 +9,7 @@ import pytest_bazel
 
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.rust.backend import run_rust_product_metric_arrays
-from finance.augur.rust.differential.fixture import fixture_for
+from finance.augur.rust.case_fixture import fixture_for
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 from finance.augur.sim.testing.case import Case
 
