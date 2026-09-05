@@ -1,10 +1,11 @@
 # Asynchronous approvals
 
-Status: **design notes for machinery layered on the Agent thread API.** Builds on the runner
-protocol and the app's bridge, and is the work behind story 1 (`Y` in
-[`task_dag.md`](task_dag.md)), following the decision that external events arrive as thread inputs.
-Nothing here is built yet; the harness behaviors it relies on are pinned by
-[`../harness_tests/`](../harness_tests/).
+Status: **provisional design notes pending the operation-contract gate.** Builds on the runner
+protocol and the app's bridge, and is the work behind story 1 (`OPI` in
+[`task_dag.md`](task_dag.md)), following the current direction that external events arrive as
+Thread inputs. Nothing here is built yet; the product noun, lifecycle, MCP boundary, and data
+handling must first be settled in [`operations_and_access.md`](operations_and_access.md). The
+harness behaviors it relies on are pinned by [`../harness_tests/`](../harness_tests/).
 
 ## Decisions
 

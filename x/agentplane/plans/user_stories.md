@@ -44,11 +44,14 @@ Standing under it:
 
 Missing:
 
-- **The ask itself, in Agentplane's own vocabulary.** A sandboxed agent's request (this token for
-  this call, this verb on this namespace, this command on this host) as a first-class object the
-  app stores and shows, with the rationale and the exact operation, distinct from the Haku tool
-  call it may become.
-- **Delivery to Rai.** A notification with approve and deny buttons that answer the ask; the app's
+- **A settled operation/approval contract.** A sandboxed agent's request (this token for this call,
+  this verb on this namespace, this command on this host) needs a first-class object the app stores
+  and shows, with rationale and exact operation, distinct from the Haku `tool_call` it may become.
+  The product noun, lifecycle, pending-turn behavior, MCP wrapping, and authority split are not
+  decided yet; see [`operations_and_access.md`](operations_and_access.md). Do not implement an
+  Agentplane-wide “ask” object until those gates are resolved.
+- **Delivery to Rai.** A notification with approve and deny buttons that answer the operation;
+  the app's
   inbox is the fallback view, never the primary one.
 - **The decision as an input.** The batcher and the `<agentplane-event>` envelope from
   [`async_approvals.md`](async_approvals.md), delivered by the bridge on the paths the scripted

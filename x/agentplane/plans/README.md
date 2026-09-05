@@ -8,10 +8,11 @@ work that remains open or deferred; the [task DAG](task_dag.md) is the project o
 
 - [Task DAG](task_dag.md)
 - [User stories](user_stories.md)
-- [Asynchronous approvals](async_approvals.md)
+- [Asynchronous approvals](async_approvals.md) — pending operation-contract decisions
+- [Operations and access](operations_and_access.md)
 - [Driver-provided tools and background work](driver_tools_and_background.md)
 - [Agent access to external systems](external_access.md)
-- [Sandbox and Thread presets](launch_presets.md)
+- [Sandbox and Thread presets](launch_presets.md) — implementation in review
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 
 Durable decisions and evidence:

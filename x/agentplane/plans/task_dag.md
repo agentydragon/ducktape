@@ -1,251 +1,214 @@
 # Agentplane task DAG
 
 This is the single project overview for Agentplane work. It is a dependency map, not a workflow
-engine or a request to build every future subsystem. Boxes are sized as coherent agent work packages
-that ship as their own PRs; the detailed tasks live in the supporting documents. An edge is a real
-dependency, meaning the downstream package cannot be specified or tested without the upstream one.
-Packages without an edge between them are meant to be worked in parallel, and a conflict between
-two of them is resolved by whoever lands second rebasing.
+engine or a request to build every future subsystem. Each active box is a coherent package with a
+named acceptance test; completed work is recorded as evidence, not kept as an open task. Edges are
+real dependencies. Packages without an edge are intended to proceed in parallel, with whoever lands
+second rebasing.
 
-A package leaves this page when it lands. What it guarantees afterwards lives where the code does:
-[`../runner/SPEC.md`](../runner/SPEC.md), [`../egress/SPEC.md`](../egress/SPEC.md),
-[`../app/README.md`](../app/README.md), [`../acceptance/README.md`](../acceptance/README.md), and
-the design notes under [`../docs/`](../docs/).
+The implemented contracts live with the app, runner, egress proxy, acceptance suite, and durable
+notes under [`../docs/`](../docs/). This directory contains only current design gates, active work,
+and deferred work.
 
-## Outcome
+## Outcome already reached
 
-The first functioning product is reached: Rai opens the integration app, creates a sandbox running
-one Claude or Codex runner, sends an Input, watches response and tool activity arrive, detaches and
-comes back to what happened since, suspends and resumes with the conversation intact, and reads the
-raw native frames behind any event — and the agent working on Agentplane does all of that without
-Rai, against staging on the cheap-experiments key. A sandbox holds no credential of its own: its
-tools and its model traffic both leave through the sidecar, and the central proxy substitutes the
-real value.
+The first functioning product is landed: Rai can open the integration app, create a Sandbox running
+Claude or Codex, send an Input, watch response and tool activity, detach and return to history,
+suspend and resume with the conversation intact, and read raw native frames. The app persists
+trajectories beyond Sandbox lifetime. Sandboxes hold no upstream credential: model and tool traffic
+leave through the sidecar, and the central proxy substitutes the real value.
 
-What is left is that trajectories should be as findable as they are durable — what an agent did, and
-why, under a name someone can search for — and the experiences in
-[`user_stories.md`](user_stories.md): asks Rai decides, a trusted orchestrator delegating public-only
-work to an untrusted fleet under a judge, an orchestrator running specialists, Haku itself as a
-long-lived agent here, and a UI Haku authors and is driven through.
+The current app also already has named Thread persistence and the conversation/timeline UI needed
+for this slice. These are completed foundations, not pending DAG packages.
 
 ## Current status
 
-**Next implementation slice: launch presets** ([`launch_presets.md`](launch_presets.md)). This is a
-narrow integration-app feature on top of the first functioning product: a live SandboxPreset may
-name a default ThreadPreset, callers can override preset fields freely, and the runner executes the
-SandboxPreset's bootstrap before the first Thread. It is the first concrete definition of
-`public-coder-agent` without turning Agentplane core into a preset registry.
+**Launch presets are in review**, not an unstarted task: PR #5648 carries the first vertical slice
+for app-owned `SandboxPreset` and `ThreadPreset` defaults, the public-coder definition, runner-owned
+bootstrap execution, UI, and a manual acceptance target. Once it lands and deploys, run the live
+acceptance target; do not extend the preset abstraction before that evidence.
 
-**Story 1, the ask** ([`user_stories.md`](user_stories.md) § 1) remains the next unresolved product
-story. Credentialless egress was its
-gate and is through: a refused call is already a `403` with a machine-readable reason, which is
-where an ask comes from; the delivery and batching design is written
-([`async_approvals.md`](async_approvals.md)); the decision arriving as a thread input is decided; and
-a standing grant has an object to be — an `EgressBinding` the app already creates and revokes while a
-sandbox runs. What is missing is the ask itself as something the app stores and shows.
+**The next product gate is the operation contract**, not yet an implementation task. “Ask” is useful
+conversation copy but is not a settled wire noun. Before building approval delivery, Rai needs to
+choose the durable object, lifecycle, pending-turn behavior, single-operation versus standing-grant
+semantics, and the MCP adapter boundary. The discussion and recommendations are in
+[`operations_and_access.md`](operations_and_access.md).
 
-`T2` and `T3` are blocked on nothing in code. They want a first reader of the persisted history who
-needs a name or a search, which is the thing to find rather than an upstream package to build.
+**Parallel evidence work:** BuildBuddy HTTP and remote-build gRPC authentication/substitution is
+being researched in a separate branch/PR. Its result will decide whether BuildBuddy belongs in a
+credentialed Agentplane egress path or remains an external boundary; it must not block the operation
+contract or trajectory search.
 
-**Every turn now depends on the proxy.** Model traffic takes the sidecar like everything else, so a
-proxy that is rolling is a proxy that ends the turns in flight — and it is single-replica by design,
-since its decision ring is per-process (`PR`).
-
-**Access-control scope is intentionally deferred:** the current Ducktape work can use its existing
-broad internet boundary and scoped GitHub credential for `agentydragon-agent`; that convenience is
-not a policy model for the private, high-context Haku agent.
+Already unblocked after the preset review: trajectory search (`T3`), proxy rollout survivability,
+and sidecar-only credential security acceptance. They are separate slices, with different write
+surfaces.
 
 ## DAG
-
-Three landed nodes stay on the map because the remaining work hangs off them; everything else that
-landed is gone from this page.
 
 ```mermaid
 flowchart TB
     classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
-    classDef ready fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
-    classDef next fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e,stroke-width:2px
+    classDef active fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
+    classDef ready fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e,stroke-width:2px
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
 
-    F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
-    J["Credentialless egress<br/>sidecar, central proxy, declared substitution,<br/>the model endpoint included"]:::completed
-    T1["T1 Trajectory persistence<br/>every event under a thread that outlives the sandbox"]:::completed
+    F0["First functioning Agentplane<br/>Sandbox + runner + app + native capture"]:::completed
+    J["Credentialless egress<br/>sidecar, central proxy, substitution, model endpoint"]:::completed
+    T1["Trajectory persistence<br/>events under Threads beyond Sandbox lifetime"]:::completed
+    T2["Named Threads + timeline UI<br/>name persistence and live conversation view"]:::completed
 
-    Y["Story 1: ask me, I decide<br/>asks, delivery, decisions as inputs<br/>async_approvals.md, user_stories.md"]:::ready
-    LP["Launch presets<br/>SandboxPreset → ThreadPreset,<br/>public-coder, runner bootstrap, UI"]:::ready
-    T2["T2 Named threads<br/>a small model proposes, the user edits"]:::next
-    T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::next
-    PR["The proxy endures its own rollout<br/>a hard dependency of every turn, with a per-process<br/>decision ring, so scaling out is not free"]:::next
-    DT["Rai decision<br/>does the seam carry driver-provided tools<br/>or background work?<br/>driver_tools_and_background.md"]:::decision
+    LP["Launch presets in review<br/>SandboxPreset → ThreadPreset,<br/>public-coder, runner bootstrap, UI"]:::active
+    BB["BuildBuddy auth research<br/>HTTP API + remote-build gRPC metadata,<br/>substitution experiment and requirements PR"]:::active
 
-    E["Conversation app<br/>timeline and live control over persisted threads"]:::future
-    F["Product milestone<br/>persisted history, honest outcomes, real users"]:::milestone
+    OPD["Rai decision<br/>operation noun and durable unit<br/>Operation / Invocation / AccessRequest?"]:::decision
+    OPS["Rai decision<br/>operation lifecycle and agent UX<br/>pending, decision, retry, delivery, withdrawal"]:::decision
+    MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
+    OPI["Operation vertical slice<br/>one adapter, approval UI, machine delivery<br/>to the originating Thread"]:::ready
 
-    G["Rai decision<br/>second viewer on one session needed?"]:::decision
-    R1["Read-only follower attachments"]:::future
+    T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
+    PR["Proxy rollout survivability<br/>reproduce active-turn impact and fix/drain contract"]:::ready
+    SEC["Credential boundary acceptance<br/>sidecar-only secret access and bypass rejection"]:::ready
 
-    P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
-    K["Conditional access controller<br/>allow / deny / user approval required"]:::future
-    R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
-    V["Stronger runtime evaluation<br/>gVisor, Kata, Firecracker, or equivalent"]:::future
-    L["Credentialed production readiness<br/>runner port auth, freshness, replay, rotation"]:::future
+    AGD["Rai decision<br/>durable Agent identity and ownership<br/>separate from Sandbox and Thread"]:::decision
+    DATAD["Rai decision<br/>cross-agent data-read policy<br/>metadata, search, events, raw frames"]:::decision
+    XREAD["Cross-agent reads<br/>tier-scoped trajectory access and audit"]:::future
 
-    Q["Rai decision<br/>which observed reliability failure is next highest-cost?"]:::decision
-    M["Reliability hardening only from observed failures<br/>mid-tool crash recovery, log compaction, harness pin refresh"]:::future
+    DT["Rai decision<br/>driver-provided tools/background work<br/>protocol shape and first consumer"]:::decision
+    N["Story 2: trusted orchestrator, untrusted fleet<br/>tiers, public-only delegation, channel judge"]:::future
+    O["Story 3: orchestrator with specialists<br/>fleet view, wake-ups, scoped reads"]:::future
+    HK["Story 4: Haku lives here<br/>long-lived Agent identity and git-backed memory"]:::future
+    UI["Story 5: agentic UI<br/>Haku-authored pages and event inputs"]:::future
+    L["Credentialed production readiness<br/>runner auth, freshness, replay, rotation"]:::future
+    V["Stronger runtime evaluation<br/>only if threat model requires it"]:::future
+    W["Hardened Kubernetes/Authentik deployment"]:::future
+    F["Product milestone<br/>findable, governed, reliable Agentplane"]:::milestone
 
-    N["Story 2: trusted orchestrator, untrusted fleet<br/>tiers, events kind filter, channel judge"]:::future
-    O["Story 3: an orchestrator with specialists<br/>fleet view, wake-ups, tier-scoped reads"]:::future
-    HK["Story 4: Haku lives here<br/>long-lived thread, memory in git"]:::future
-    UI["Story 5: agentic UI<br/>Haku-authored pages, events as inputs"]:::future
-
-    Z["Rai decision<br/>what explicit Haku Console integration is needed?"]:::decision
-    U["Stretch<br/>Haku Console link, adapter, or enveloped message path"]:::future
-    AA["Rai decision<br/>what permission and policy model is acceptable for private Haku?"]:::decision
-    AB["Stretch<br/>Agent Console access-control track<br/>external_access.md"]:::future
-    AC["Stretch<br/>Haku-ready policy enforcement<br/>private context, least privilege, resilient controls"]:::future
-    W["Stretch<br/>hardened Kubernetes/Authentik deployment"]:::future
-
-    F0 --> Y
     F0 --> LP
-    J --> Y
-    J --> PR
-    T1 --> T2
+    F0 --> OPD
+    J --> OPD
+    J --> BB
+    T1 --> OPD
     T1 --> T3
-    T1 --> E
-    T2 --> E
-    E --> F
+    J --> PR
+    J --> SEC
+    OPD --> OPS
+    OPD --> MCPD
+    OPS --> OPI
+    MCPD --> OPI
+    J --> OPI
+    T1 --> OPI
     T3 --> F
-    F0 --> G
-    G -->|yes| R1
-    J --> P
-    P -->|yes| K
-    K --> R
-    P -->|no| R
-    R -->|yes| V
-    V --> L
-    R -->|no| L
-    F0 --> Q
-    Q --> M
-    J --> N
-    T1 --> N
-    Y --> N
+    OPI --> F
+    PR --> F
+    SEC --> L
+    BB --> L
+    OPD --> DT
+    T1 --> AGD
+    AGD --> DATAD
+    T3 --> XREAD
+    DATAD --> XREAD
+    OPI --> N
+    XREAD --> N
+    DT --> N
     N --> O
+    XREAD --> O
     T3 --> O
-    F0 --> HK
-    T1 --> HK
+    N --> HK
+    AGD --> HK
     HK --> UI
-    Y --> UI
-    E --> Z
-    Z --> U
-    F --> AA
-    AA --> AB
-    AB --> AC
     L --> W
+    OPD --> L
+    L --> V
 ```
 
-Legend: green is landed and kept only to carry an edge; the bold blue node is ready to start now;
-light blue is work nothing in code blocks; purple is a milestone; orange diamonds are unresolved
-decisions requiring Rai's product or design input; gray is conditional or stretch work.
+Legend: green is completed evidence; bold blue is active work or in review; light blue is ready to
+start; orange diamonds are Rai decisions/design gates; gray is future work; purple is a milestone.
+A completed item leaves the active queue even when it supplies an edge.
 
-`DT` hangs off nothing on purpose: it is not blocked on a package but on a first consumer above the
-seam that wants either surface.
+## Work packages and acceptance
 
-The orange nodes are deliberately limited to choices that change downstream implementation ordering.
-A "no" choice should close or defer that branch rather than create speculative scaffolding.
-Decided already, and not re-litigated here: the conversation app stays a separate deployment;
-trajectories live in PostgreSQL (a CNPG cluster beside the runner Pods; staging's is disposable);
-approval decisions and other notifications reach a thread as inputs
-([`async_approvals.md`](async_approvals.md)); and profiles — the preset a sandbox runs under — are
-deferred pending a design that is not settled by egress, their first consumer
-([`profiles.md`](profiles.md)).
+- **`LP` launch presets:** PR #5648. The integration app owns the preset defaults and Sandbox
+  association; explicit fields override; the runner executes configured bootstrap source; the UI
+  selects presets and exposes editable inherited Thread defaults. Acceptance is the configured
+  `public-coder` live target after deployment, including GitHub egress, bootstrap persistence,
+  instructions, and per-Thread override behavior. Follow-up revision history and rollout semantics
+  wait for live evidence.
+- **`BB` BuildBuddy auth research:** establish the exact HTTP and gRPC credential forms, whether
+  the current proxy can substitute them, and the separate `bb remote` hosted-execution boundary.
+  Acceptance is a reproducible fake/local protocol test or a concrete measured blocker, plus
+  requirements in the access/planning notes. Do not add an unmeasured metadata credential path.
+- **`OPD` operation noun/unit:** Rai chooses the product noun and whether the durable object is a
+  logical intent with attempts or one execution attempt. The discussion is in
+  [`operations_and_access.md`](operations_and_access.md). No implementation starts on “ask” alone.
+- **`OPS` operation lifecycle/agent UX:** settle pending behavior, decision delivery, retry,
+  withdrawal, expiry/no-expiry, one-operation versus standing-grant semantics, sensitive-field
+  handling, and the machine envelope. The smallest acceptance is a hand-authored lifecycle and
+  replay example that makes each transition and agent-visible input unambiguous.
+- **`MCPD` MCP boundary:** decide whether the first MCP server is trusted external infrastructure,
+  where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
+  Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
+  built before this gate.
+- **`OPI` operation vertical slice:** one real adapter from agent intent through policy/approval to
+  execution/result and later Thread delivery. The operation layer may initially be colocated with
+  the integration app, but the test must keep runtime lifecycle, access authority, adapter, and
+  trajectory responsibilities separable.
+- **`T3` trajectory search:** search persisted text and action evidence, answer “what happened,”
+  “why,” and “which Thread,” and link to raw frames. Scope is the caller's already-authorized
+  trajectory surface; cross-agent visibility is not silently included.
+- **`PR` proxy survivability:** reproduce a proxy rollout during a live model turn, then implement
+  only the smallest graceful-drain/recovery or persistence change the reproduction demands. A
+  passing ordinary health check is not acceptance.
+- **`SEC` credential boundary:** deployed acceptance proves the runner receives placeholders only,
+  the real credential is sidecar/proxy-only, and direct runner-to-central requests or alternate
+  paths are rejected. Keep this separate from the preset feature.
+- **`AGD` Agent identity:** Rai decides what durable product Agent means and how it maps to an opaque
+  authorization principal. It must not be inferred from Sandbox or Thread IDs.
+- **`DATAD` cross-agent read policy:** Rai decides the minimum data scopes and authority boundary
+  for reading another Agent's trajectories. Candidate scopes are metadata, derived summary, search
+  results, full events, and raw native frames. No scope inventory should be built until a real
+  cross-agent consumer exists.
+- **`XREAD` cross-agent reads:** only after `AGD`, `DATAD`, and `T3`; enforce caller/target/scope at
+  the read boundary and audit the result without making Agentplane a universal identity registry.
+- **`DT` driver tools/background:** provider evidence exists, but protocol shape waits for a real
+  consumer. It now also depends on the operation/MCP boundary so tool invocation is not designed as
+  a second incompatible request model.
+- **`L` credentialed readiness:** runner-port authentication, credential freshness/replay defence,
+  rotation, and acceptance escape tests. BuildBuddy evidence may add a requirement, but a successful
+  HTTP experiment does not prove gRPC or hosted remote execution is contained.
 
-The `P`/`K` path is only the narrow access decision needed for a credentialed Agentplane egress
-deployment. It is not the general Agent Console permission model represented by `AA`/`AB`, and it
-must not be reused as a private-Haku policy language by default. The existing broad Ducktape lane is
-a scoped operational convenience, not evidence that the same grants are safe for an agent with Rai's
-personal context.
+## Decisions and ownership rules
 
-## Work-package acceptance
+- The Sandbox and Thread runtime remains Agentplane's concern; named presets and their UI remain an
+  integration-app concern.
+- An Operation/ApprovalRequest, if adopted, must not make Agentplane runtime own every external
+  protocol. The access authority owns allow/deny/approval and grants; adapters own MCP/HTTP/
+  Kubernetes/host execution; the conversation app owns operator presentation; the trajectory store
+  preserves evidence.
+- An Agent is a future product identity, distinct from a Sandbox (runtime infrastructure), Thread
+  (interaction context), and authorization principal (policy subject). Cross-agent reads require an
+  explicit mapping and data-read policy.
+- Egress remains enforced by the existing proxy and target policy. A preset or operation adapter
+  cannot bypass it or turn a placeholder into a reusable credential.
+- Do not add persistence schemas, controllers, policy DSLs, MCP registries, or permission matrices
+  before the first acceptance test that needs them. Preserve whole evidence payloads rather than
+  duplicating derivable hashes, lengths, manifests, or parsed mirrors.
+- Existing completed foundations — T2 named Threads, the timeline app, native capture, credentialless
+  egress, and trajectory persistence — are not reopened as tasks. New work must name the observed
+  failure or user behavior it proves.
 
-- **Launch presets (`LP`).** The integration app owns live SandboxPreset and ThreadPreset
-  definitions, Sandbox bindings, revision/provenance, and explicit overrides. A `public-coder`
-  launch exercises the UI, runner bootstrap, egress selection, and first Thread as one vertical
-  slice; the detailed contract and acceptance test are in [`launch_presets.md`](launch_presets.md).
-- **Story 1 (`Y`) the ask.** A sandboxed agent's request — this token for this call, this verb on
-  this namespace, this command on this host — is an object the app stores and shows with its
-  rationale, it reaches Rai as a notification that can answer it, and the answer arrives in the
-  thread as an input. The missing pieces and what already stands under each are in
-  [`user_stories.md`](user_stories.md) § 1; the envelope, the batcher, and the no-expiry rule are in
-  [`async_approvals.md`](async_approvals.md).
-- **`T2` named threads:** a small model proposes a name from the first turn, the user can edit it,
-  and the name lives on the thread record; naming never touches the runner or the harness.
-- **`T3` search and lookup:** find past interactions by text and by what an agent did; answer "what
-  happened here", "why did the agent do that", and "which agent did this" from the persisted
-  trajectory, with the raw frames one step away.
-- **`PR` the proxy endures its own rollout.** Tracked outside this plan; the node stays because the
-  dependency is real — every turn now runs through the proxy, so its availability is the app's.
-- **`DT` driver-provided tools and background work.** Both harnesses offer both surfaces and the
-  provider evidence is settled ([`../docs/driver_tools.md`](../docs/driver_tools.md),
-  [`../docs/background_work.md`](../docs/background_work.md)); what is open is whether the runner
-  protocol carries either, and in what shape. It waits on a first consumer above the seam, which
-  story 1 may well be. The decisions and their sub-questions:
-  [`driver_tools_and_background.md`](driver_tools_and_background.md).
-- **Conversation app (`E`):** timeline and live control over persisted threads, as a client of the
-  same API; how archived threads are presented stays in this layer. The archived flag still lives
-  on the Sandbox; it moves to the thread record here, after which an archived sandbox may be
-  deleted without losing anything.
-- **Credentialed production readiness (`L`):** durable freshness and replay defence, per-Sandbox and
-  per-Thread binding, rotation, runner-port authentication, and escape tests. Staging spends a
-  scoped PAT and a capped model key through the proxy today; neither is evidence that the path is
-  ready for a credential that matters.
-- **Reliability (`M`):** choose one observed failure with the highest user cost. Candidates already
-  known: recovery of a turn lost mid-tool beyond `PROCESS_LOST`, session log growth, and the harness
-  pin refresh workflow. Each hardening slice needs its own reproduction and acceptance test; do not
-  implement every candidate in advance.
-- **Stretch branches:** collaboration, external events, Haku Console integration, stronger runtimes,
-  hardened deployment, and the private-Haku access-control track each begin only after the
-  corresponding decision node and dependencies are resolved. The private-Haku track must cover tool
-  execution, HTTP/API calls, credential handling, approvals, and policy behavior without assuming that
-  routine per-action approval clicks are a reliable safety mechanism.
+## Deferred until the gates resolve
 
-## Ownership and sequencing rules
+- general capability/access profiles;
+- arbitrary preset inheritance and a preset editor;
+- cross-agent rooms, subscriptions, and delegation graphs;
+- Haku Console/Matrix migration;
+- provider migration and multi-agent hosting;
+- stronger isolation runtimes unless the threat-model decision requires them; and
+- a private-Haku policy model until Rai accepts an access and data boundary that does not depend on
+  routine approval clicks.
 
-- Kubernetes/Agent Sandbox owns Sandbox, Pod, PVC, readiness, suspension, and workload lifecycle.
-- Native harnesses own native history, execution semantics, and provider-native resume.
-- The runner owns harness supervision, the session log, and the protocol; Agentplane's app owns
-  the sandbox inventory it derives from Kubernetes, the browser API, and later the live
-  `Pod -> Sandbox -> Thread -> Agent` mapping once that mapping is required.
-- The conversation app owns product UX such as generated Thread names, naming persistence, archive
-  presentation, and timeline behavior. It may remain separate or later be hosted by Haku Console, but
-  must not create shared runtime, route, frontend, or persistence coupling.
-- Do not add a persistence schema, UI projection, Kubernetes controller, credential path, or
-  approval framework ahead of the first test or feature that cannot pass without it.
-- Real upstream credentials stay behind the credentialed-readiness gate (`L`).
-- One runner per sandbox and one runner attachment per session are acceptable for the first
-  functioning product; the app fans that attachment out to every browser tab on the session.
-  Multi-Agent rooms, subscriptions, external events, advanced retention, and provider migration
-  are not hidden prerequisites.
-
-## Detailed plans
-
-- The integration app's shape and decisions: [app README](../app/README.md).
-- What the egress proxy guarantees: [egress SPEC](../egress/SPEC.md); how policies, bindings and
-  sandboxes compose into one decision: [`../docs/egress_composition.md`](../docs/egress_composition.md);
-  the design they implement: [egress ADR](../docs/adr_sandbox_proxy_gateway.md).
-- Native provider scenarios and the scripted-test workflow:
-  [`../docs/harness_evidence.md`](../docs/harness_evidence.md), the
-  [native driver README](../native/README.md), the [harness tests README](../harness_tests/README.md),
-  and the [live capture probe README](../capture/README.md).
-- The runner protocol and its tests: [runner README](../runner/README.md) and
-  [runner SPEC](../runner/SPEC.md).
-- Sandbox identity and egress evidence: [observed identity evidence](../docs/sandbox_egress_identity_evidence.md).
-- Driver-provided tools and background work, and the decisions the seam is waiting on:
-  [`driver_tools_and_background.md`](driver_tools_and_background.md).
-- Sandbox and Thread presets: [`launch_presets.md`](launch_presets.md); broader profiles and what
-  would revive them: [`profiles.md`](profiles.md).
-- Asynchronous approvals, decision delivery, and the notification batcher:
-  [`async_approvals.md`](async_approvals.md).
-- Delegated identity versus brokered credentials per external system, and the rule for choosing:
-  [`external_access.md`](external_access.md).
+See [`operations_and_access.md`](operations_and_access.md) for the detailed operation, MCP, Agent
+identity, and cross-agent data-access design discussion. See [`launch_presets.md`](launch_presets.md)
+for the completed preset contract and live acceptance target.

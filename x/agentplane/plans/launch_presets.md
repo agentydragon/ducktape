@@ -1,7 +1,7 @@
 # Sandbox and Thread presets
 
-Status: **ready for implementation**. This is an integration-app feature, not a new
-Agentplane runtime authority.
+Status: **implemented in PR #5648, pending merge/deployment evidence**. This is an
+integration-app feature, not a new Agentplane runtime authority.
 
 ## Outcome
 
