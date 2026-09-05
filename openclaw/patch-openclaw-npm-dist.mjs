@@ -64,6 +64,108 @@ for (const [original, replacement] of memoryManagerReplacements) {
 }
 fs.writeFileSync(memoryManagerFile, memoryManagerSource);
 
+// OpenClaw 2026.8.1 performs a full O(N log N) SQLite integrity_check while
+// opening every already-current agent database. On rotational state storage,
+// that synchronous scan can outlive the five-minute startup migration lease
+// and prevent its event-loop heartbeat from running. Allow gateways to select
+// SQLite's O(N) quick_check (or skip the pragma entirely) for this steady-state
+// startup path while retaining the upstream full check by default and for
+// doctor/backup/compaction commands.
+const sqliteIntegrityFiles = jsFiles.filter((file) => {
+  const source = fs.readFileSync(file, "utf8");
+  return (
+    source.includes("function assertSqliteIntegrity(database, databaseLabel)") &&
+    source.includes("function runSqliteCheck(database, databaseLabel, pragma, tableName)")
+  );
+});
+if (sqliteIntegrityFiles.length !== 1) {
+  fail(`expected exactly one SQLite integrity chunk, found ${sqliteIntegrityFiles.length}`);
+}
+const sqliteIntegrityFile = sqliteIntegrityFiles[0];
+let sqliteIntegritySource = fs.readFileSync(sqliteIntegrityFile, "utf8");
+const fullIntegrityFunction = `function assertSqliteIntegrity(database, databaseLabel) {
+\tconst integrityCheck = runSqliteCheck(database, databaseLabel, "integrity_check");
+\trunSqliteForeignKeyCheck(database, databaseLabel);
+\treturn { integrityCheck };
+}`;
+const quickIntegrityFunction = `function assertSqliteQuickIntegrity(database, databaseLabel) {
+\tconst integrityCheck = runSqliteCheck(database, databaseLabel, "quick_check");
+\trunSqliteForeignKeyCheck(database, databaseLabel);
+\treturn { integrityCheck };
+}`;
+if (sqliteIntegritySource.split(fullIntegrityFunction).length - 1 !== 1) {
+  fail("SQLite integrity chunk did not contain exactly one full integrity function");
+}
+sqliteIntegritySource = sqliteIntegritySource.replace(
+  fullIntegrityFunction,
+  `${fullIntegrityFunction}\n${quickIntegrityFunction}`
+);
+const sqliteIntegrityExport =
+  "export { isTerminalSqliteIntegrityError as i, assertSqliteTableIntegrity as n, confirmSqliteFileIntegrity as r, assertSqliteIntegrity as t };";
+const patchedSqliteIntegrityExport =
+  "export { assertSqliteQuickIntegrity as a, isTerminalSqliteIntegrityError as i, assertSqliteTableIntegrity as n, confirmSqliteFileIntegrity as r, assertSqliteIntegrity as t };";
+if (sqliteIntegritySource.split(sqliteIntegrityExport).length - 1 !== 1) {
+  fail("SQLite integrity chunk did not contain exactly one expected export list");
+}
+sqliteIntegritySource = sqliteIntegritySource.replace(sqliteIntegrityExport, patchedSqliteIntegrityExport);
+fs.writeFileSync(sqliteIntegrityFile, sqliteIntegritySource);
+
+const agentDatabaseMaintenanceFiles = jsFiles.filter((file) =>
+  fs
+    .readFileSync(file, "utf8")
+    .includes("function assertAgentDatabaseIntegrityBeforeMutation(database, agentId, pathname)")
+);
+if (agentDatabaseMaintenanceFiles.length !== 1) {
+  fail(`expected exactly one agent database maintenance chunk, found ${agentDatabaseMaintenanceFiles.length}`);
+}
+const agentDatabaseMaintenanceFile = agentDatabaseMaintenanceFiles[0];
+let agentDatabaseMaintenanceSource = fs.readFileSync(agentDatabaseMaintenanceFile, "utf8");
+const sqliteIntegrityModule = `./${path.basename(sqliteIntegrityFile)}`;
+const agentDatabaseIntegrityImport = `import { t as assertSqliteIntegrity } from "${sqliteIntegrityModule}";`;
+const patchedAgentDatabaseIntegrityImport = `import { a as assertSqliteQuickIntegrity, t as assertSqliteIntegrity } from "${sqliteIntegrityModule}";`;
+if (agentDatabaseMaintenanceSource.split(agentDatabaseIntegrityImport).length - 1 !== 1) {
+  fail("agent database maintenance chunk did not contain exactly one SQLite integrity import");
+}
+agentDatabaseMaintenanceSource = agentDatabaseMaintenanceSource.replace(
+  agentDatabaseIntegrityImport,
+  patchedAgentDatabaseIntegrityImport
+);
+const agentDatabaseIntegrityBranch = `\tif (userVersion === 19 && !hasPendingCurrentVersionMigration) verifyAndRepairCanonicalSqliteIndexes(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
+\t\tallowMissingColumns: true,
+\t\tvalidateAfterRepair: () => assertOpenClawAgentCurrentRuntimeSchema(database, {
+\t\t\tagentId,
+\t\t\tpathname
+\t\t})
+\t});
+\telse assertSqliteIntegrity(database, pathname);`;
+const patchedAgentDatabaseIntegrityBranch = `\tif (userVersion === 19 && !hasPendingCurrentVersionMigration) {
+\t\tconst configuredIntegrityCheck = process.env.OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK?.trim().toLowerCase() || "full";
+\t\tif (configuredIntegrityCheck !== "full" && configuredIntegrityCheck !== "quick" && configuredIntegrityCheck !== "none") throw new Error("OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK must be full, quick, or none");
+\t\tconst indexRepairOptions = {
+\t\t\tallowMissingColumns: true,
+\t\t\tvalidateAfterRepair: () => assertOpenClawAgentCurrentRuntimeSchema(database, {
+\t\t\t\tagentId,
+\t\t\t\tpathname
+\t\t\t})
+\t\t};
+\t\tif (configuredIntegrityCheck === "full") verifyAndRepairCanonicalSqliteIndexes(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, indexRepairOptions);
+\t\telse {
+\t\t\tif (configuredIntegrityCheck === "quick") assertSqliteQuickIntegrity(database, pathname);
+\t\t\trepairCanonicalSqliteIndexes(database, pathname, OPENCLAW_AGENT_SCHEMA_SQL, {
+\t\t\t\t...indexRepairOptions,
+\t\t\t\tverifyPhysicalIntegrity: false
+\t\t\t});
+\t\t}
+\t} else assertSqliteIntegrity(database, pathname);`;
+if (agentDatabaseMaintenanceSource.split(agentDatabaseIntegrityBranch).length - 1 !== 1) {
+  fail("agent database maintenance chunk did not contain exactly one current-schema integrity branch");
+}
+agentDatabaseMaintenanceSource = agentDatabaseMaintenanceSource.replace(
+  agentDatabaseIntegrityBranch,
+  patchedAgentDatabaseIntegrityBranch
+);
+fs.writeFileSync(agentDatabaseMaintenanceFile, agentDatabaseMaintenanceSource);
+
 const hardlinkPolicyFiles = jsFiles.filter((file) =>
   fs.readFileSync(file, "utf8").includes("function shouldRejectHardlinkedPluginFiles")
 );
