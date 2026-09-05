@@ -26,7 +26,7 @@ def py_binary(imports = None, **kwargs):
         imports = repo_imports()
     _py_binary(imports = imports, **kwargs)
 
-def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env_inherit = None, **kwargs):
+def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env_inherit = None, shard_count = None, **kwargs):
     """py_test with auto repo-root imports and sensible defaults.
 
     Args:
@@ -45,6 +45,13 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         deps: Test dependencies.
         env_inherit: Extra env vars to inherit. Docker vars are added automatically
             when requires_docker is True.
+        shard_count: Split the test's cases across this many Bazel shards. Adds the
+            pytest-shard plugin, which is what reads the --shard-id/--num-shards
+            pytest_bazel derives from Bazel's shard environment; without it pytest
+            rejects those flags and the test fails at startup rather than sharding.
+            Shard only tests whose per-case cost dominates their per-process setup --
+            a suite that recompiles the same program in every shard pays that cost
+            per shard instead of once.
         **kwargs: Passed through to py_test.
     """
     if imports == None:
@@ -65,6 +72,9 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         # hook is in place if that path is revived.
         base_args = base_args + ["-p", "util.testing.docker_mtls"]
         base_deps = base_deps + ["//util/testing:docker_mtls"]
+    if shard_count != None:
+        base_deps = base_deps + ["@pypi//pytest_shard"]
+        kwargs["shard_count"] = shard_count
     if uses_syrupy:
         base_args = base_args + [
             "--snapshot-default-extension=util.testing.bazel_snapshot_extension.BazelAmberExtension",

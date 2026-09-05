@@ -5914,6 +5914,7 @@ pytest==9.0.2 \
     #   pytest-mock
     #   pytest-playwright
     #   pytest-postgresql
+    #   pytest-shard
     #   pytest-timeout
     #   pytest-xdist
     #   syrupy
@@ -5947,6 +5948,10 @@ pytest-playwright==0.7.2 \
 pytest-postgresql==8.0.0 \
     --hash=sha256:125b63b16d630c2dea19807062ed4c96e6123f06058ce65b82b4b14174d6c4b8 \
     --hash=sha256:26cbd44a0adef76cf4a82a3a2263f0e029bc54b5863556a9bd86ca3edfa91cce
+    # via ducktape (pyproject.toml)
+pytest-shard==0.1.2 \
+    --hash=sha256:407a1df385cebe1feb9b4d2e7eeee8b044f8a24f0919421233159a17c59be2b9 \
+    --hash=sha256:b86a967fbfd1c8e50295095ccda031b7e890862ee06531d5142844f4c1d1cd67
     # via ducktape (pyproject.toml)
 pytest-timeout==2.4.0 \
     --hash=sha256:7e68e90b01f9eff71332b25001f85c75495fc4e3a836701876183c4bcfd0540a \

@@ -518,6 +518,7 @@ py_test(
     name = "simulate_test",
     size = "medium",
     srcs = ["simulate_test.py"],
+    shard_count = 8,
     deps = [
         ":conftest",
         ":external_series",
@@ -609,6 +610,7 @@ py_test(
     name = "test_rental_lifecycle_e2e",
     size = "medium",
     srcs = ["test_rental_lifecycle_e2e.py"],
+    shard_count = 4,
     deps = [
         ":conftest",
         ":external_series",
