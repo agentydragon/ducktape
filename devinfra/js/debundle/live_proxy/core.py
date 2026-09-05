@@ -414,6 +414,45 @@ def map_local_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAssetMa
     )
 
 
+def map_snapshot_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAssetMapping | None:
+    """Map an original root-absolute snapshot URL onto the emitted app tree.
+
+    Runtime-created workers can retain URLs such as ``/static/worker-X.js``.
+    Unlike HTML assets, those URLs never pass through the live proxy's HTML
+    rewrite.  JavaScript chunks are materialized as ``<chunk>/entry.js`` while
+    non-JavaScript snapshot assets keep their original path.
+
+    Only claim the request when the corresponding local file exists (or the
+    chunk is a configured vendor swap), so unrelated target-origin endpoints
+    continue upstream unchanged.
+    """
+    normalized_path = pathname.split("?", 1)[0]
+    if not any(normalized_path.startswith(prefix) for prefix in SNAPSHOT_ASSET_PREFIXES):
+        return None
+
+    snapshot_relative_path = unquote(normalized_path).lstrip("/")
+    if snapshot_relative_path.endswith(".js"):
+        chunk_id = snapshot_relative_path[: -len(".js")]
+        vendor_runtime = config.vendor_runtime_index.get(chunk_id)
+        if vendor_runtime:
+            return LocalAssetMapping(
+                kind=LocalAssetKind.VENDOR_FILE,
+                chunk_id=vendor_runtime.chunk_id,
+                content_type=content_type_for_path(vendor_runtime.file_path),
+                file_path=vendor_runtime.file_path,
+            )
+        app_relative_path = f"{chunk_id}/entry.js"
+    else:
+        app_relative_path = snapshot_relative_path
+
+    file_path = safe_join(config.app_root or config.out_root, app_relative_path)
+    if not file_path.is_file():
+        return None
+    return LocalAssetMapping(
+        kind=LocalAssetKind.FILE, content_type=content_type_for_path(file_path), file_path=file_path
+    )
+
+
 def strip_app_asset_prefix(relative_path: str) -> str | None:
     normalized = normalize_relative_path(relative_path)
     if normalized == "app":

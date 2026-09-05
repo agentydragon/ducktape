@@ -12,6 +12,7 @@ from devinfra.js.debundle.live_proxy.core import (
     is_target_document_request,
     load_live_proxy_configuration,
     map_local_asset_path,
+    map_snapshot_asset_path,
     normalize_host,
 )
 from devinfra.js.debundle.live_proxy.responses import response_for_mapping, unknown_asset_response
@@ -43,6 +44,10 @@ class DebundleLiveProxyAddon:
             return
         if request_path.startswith(f"{self.config.internal_prefix}/"):
             self._serve_local_mapping(flow, flow.request.path)
+            return
+        snapshot_mapping = map_snapshot_asset_path(request_path, self.config)
+        if snapshot_mapping is not None:
+            flow.response = response_for_mapping(snapshot_mapping)
             return
         if is_target_document_request(flow.request.method, headers, self.config):
             self._serve_local_mapping(flow, self.config.control_paths.live_index)

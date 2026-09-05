@@ -15,6 +15,7 @@ from devinfra.js.debundle.live_proxy.core import (
     is_target_document_request,
     load_live_proxy_configuration,
     map_local_asset_path,
+    map_snapshot_asset_path,
     parse_live_proxy_args,
     rewrite_html_for_live_proxy,
 )
@@ -214,6 +215,69 @@ class LiveProxyCoreTest(unittest.TestCase):
         sw_mapping = require_mapping(map_local_asset_path("/_debundle/live/example/sw.js", config))
         assert sw_mapping.kind == LocalAssetKind.SERVICE_WORKER
         assert b"skipWaiting" in (sw_mapping.body or b"")
+
+    def test_maps_root_absolute_snapshot_chunk_to_materialized_entry(self) -> None:
+        fixture = write_base_fixture()
+        write_text(fixture.app_root / "static" / "worker-Example" / "entry.js", "self.postMessage('ready');\n")
+        config = load_live_proxy_configuration(
+            {
+                "app_manifest_path": str(fixture.app_manifest_path),
+                "proxy_host": "127.0.0.1",
+                "proxy_port": 9800,
+                "state_dir": str(fixture.root / "state"),
+            }
+        )
+
+        mapping = require_mapping(map_snapshot_asset_path("/static/worker-Example.js", config))
+        assert mapping.kind == LocalAssetKind.FILE
+        assert mapping.file_path == fixture.app_root / "static" / "worker-Example" / "entry.js"
+        assert mapping.content_type == "text/javascript; charset=utf-8"
+
+    def test_addon_serves_root_absolute_snapshot_chunk(self) -> None:
+        fixture = write_base_fixture()
+        write_text(fixture.app_root / "static" / "worker-Example" / "entry.js", "self.postMessage('ready');\n")
+        addon = DebundleLiveProxyAddon(
+            {
+                "app_manifest_path": str(fixture.app_manifest_path),
+                "proxy_host": "127.0.0.1",
+                "proxy_port": 9800,
+                "state_dir": str(fixture.root / "state"),
+            }
+        )
+
+        flow = FakeFlow(
+            host="example.test",
+            method="GET",
+            path="/static/worker-Example.js",
+            headers={"accept": "*/*", "sec-fetch-dest": "script"},
+        )
+        addon.request(flow)
+
+        assert flow.response is not None
+        assert flow.response.status_code == 200
+        assert flow.response.content == b"self.postMessage('ready');\n"
+        assert flow.response.headers["content-type"] == "text/javascript; charset=utf-8"
+
+    def test_addon_leaves_unknown_snapshot_asset_for_upstream(self) -> None:
+        fixture = write_base_fixture()
+        addon = DebundleLiveProxyAddon(
+            {
+                "app_manifest_path": str(fixture.app_manifest_path),
+                "proxy_host": "127.0.0.1",
+                "proxy_port": 9800,
+                "state_dir": str(fixture.root / "state"),
+            }
+        )
+
+        flow = FakeFlow(
+            host="example.test",
+            method="GET",
+            path="/static/not-in-snapshot.js",
+            headers={"accept": "*/*", "sec-fetch-dest": "script"},
+        )
+        addon.request(flow)
+
+        assert flow.response is None
 
     def test_vendor_and_partial_swap_resolution(self) -> None:
         fixture = write_base_fixture(ui_version="vendor")
