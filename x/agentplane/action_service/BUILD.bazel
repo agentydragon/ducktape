@@ -180,6 +180,7 @@ py_test(
         ":service",
         "//:conftest",
         "@pypi//httpx",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -195,5 +196,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
