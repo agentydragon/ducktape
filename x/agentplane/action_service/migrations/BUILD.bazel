@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "script.py.mako",
+    ] + glob(["versions/**"]),
+    visibility = ["//x/agentplane/action_service:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//x/agentplane/action_service:db",
+        "@pypi//alembic",
+    ],
+)

@@ -1,0 +1,10 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "0001_action_service",
+    srcs = ["0001_action_service.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
