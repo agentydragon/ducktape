@@ -22,7 +22,7 @@ from polars.testing import assert_frame_equal
 
 from finance.augur.rust import simulator
 from finance.augur.rust.differential.case import Case
-from finance.augur.rust.differential.output_adapter import decode_rust_event_log
+from finance.augur.rust.event_log import decode_event_log
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.engine.jax_engine import run_jax_scan
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
@@ -588,7 +588,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     )
     return RustResult(
         backend="rust",
-        events=decode_rust_event_log(rust),
+        events=decode_event_log(rust),
         cash=cash,
         lots=lots,
         capital_gains=capital_gains,

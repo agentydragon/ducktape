@@ -17,16 +17,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "output_adapter",
-    srcs = ["output_adapter.py"],
-    deps = [
-        "//finance/augur:frames",
-        "//finance/augur/sim:events",
-        "@pypi//polars",
-    ],
-)
-
 py_test(
     name = "allocation_test",
     size = "medium",
@@ -238,7 +228,7 @@ py_library(
     srcs = ["backend.py"],
     deps = [
         ":case",
-        ":output_adapter",
+        "//finance/augur/rust:event_log",
         "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:events",
         "//finance/augur/sim:scenario",

@@ -15,7 +15,7 @@ from finance.augur.frames import FrameSpec
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 
 
-def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
+def decode_event_log(output: Mapping[str, Any]) -> EventLog:
     """Return canonical event frames from a forensic Rust document."""
 
     frames = output["event_frames"]
