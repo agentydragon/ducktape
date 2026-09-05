@@ -101,12 +101,10 @@ CLIPROXY_MODELS: list[str] = [
 CODEX_CONTEXT_WINDOW = 372_000
 CODEX_MAX_TOKENS = 128_000
 
-# CLIProxyAPI's current upstream Codex-subscription registry declares Astra at
-# 272k rather than the raw API's 1.05M window. The deployed gateway discovered
-# this model and completed both Responses and Anthropic Messages tool calls on
-# 2026-09-05, but its /v1/models response omits limits. Use the upstream registry
-# values until this serving path is probed.
-ASTRA_CONTEXT_WINDOW = 272_000
+# Codex 0.153.4's bundled Astra metadata permits model_context_window up to
+# 872k. Advertise that maximum instead of Codex's conservative 272k default;
+# the raw API advertises a 1.05M combined window and 128k maximum output.
+ASTRA_CONTEXT_WINDOW = 872_000
 ASTRA_MAX_TOKENS = 128_000
 
 # Only the probed 5.6 models carry the measured window in the LiteLLM manifest;

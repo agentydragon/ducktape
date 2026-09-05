@@ -15,9 +15,8 @@ import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   model = "chatgpt/ant-messages/gpt-6-astra";
   haikuModel = "chatgpt/ant-messages/gpt-5.6-luna";
   gatewayDiscovery = true;
-  # CLIProxyAPI's upstream Codex-subscription registry advertises Astra's
-  # serving-path limits as 272k/128k (SSOT: model_rosters.py). Claude Code does
-  # not discover these from the gateway, so set them explicitly.
-  maxContextTokens = 272000;
+  # Codex 0.153.4 permits Astra's context window up to 872k (SSOT:
+  # model_rosters.py). Claude Code does not discover it, so set it explicitly.
+  maxContextTokens = 872000;
   maxOutputTokens = 128000;
 }

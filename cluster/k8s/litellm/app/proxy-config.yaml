@@ -132,10 +132,9 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  # Astra: CLIProxyAPI's current upstream Codex-subscription registry declares
-  # 272k input and 128k output, unlike the raw API's 1.05M window. The deployed
-  # gateway completed Responses and Anthropic Messages tool calls on 2026-09-05,
-  # but its /v1/models response omits limits.
+  # Astra: Codex 0.153.4 permits an 872k context override; advertise that
+  # runnable maximum instead of its conservative 272k default. The deployed
+  # gateway completed Responses and Messages tool calls on 2026-09-05.
   - model_name: chatgpt/ant-messages/gpt-6-astra
     litellm_params:
       model: anthropic/gpt-6-astra
@@ -144,7 +143,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-      max_input_tokens: 272000
+      max_input_tokens: 872000
       max_output_tokens: 128000
       max_tokens: 128000
   - model_name: chatgpt/ant-messages/gpt-5.4
@@ -219,7 +218,7 @@ model_list:
     model_info:
       mode: responses
       supports_function_calling: true
-      max_input_tokens: 272000
+      max_input_tokens: 872000
       max_output_tokens: 128000
       max_tokens: 128000
   - model_name: chatgpt/oai-responses/gpt-5.4
