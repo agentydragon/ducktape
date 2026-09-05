@@ -26,6 +26,9 @@ from x.agentplane.app.identity import CallerIdentity, CallerKind
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
 CALLER = CallerIdentity(CallerKind.TOKEN, "system:serviceaccount:test:caller")
 OTHER = CallerIdentity(CallerKind.TOKEN, "system:serviceaccount:test:other")
 OPERATOR = CallerIdentity(CallerKind.OPERATOR, "operator")

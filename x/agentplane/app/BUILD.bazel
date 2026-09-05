@@ -150,6 +150,7 @@ py_test(
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )
@@ -165,6 +166,7 @@ py_test(
         ":trajectory",
         "//:conftest",
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

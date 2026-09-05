@@ -10,6 +10,23 @@ import type { ActionRequestView, ActionService, ActionState } from "./client";
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: vi.fn().mockImplementation(
+    (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })
+  ),
+});
+
 function request(state: ActionState, index: number): ActionRequestView {
   const decided = state !== "decision_pending";
   const executing = !["decision_pending", "allowed", "denied"].includes(state);
