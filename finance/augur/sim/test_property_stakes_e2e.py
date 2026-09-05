@@ -202,8 +202,10 @@ def test_property_purchase_transfer_is_derived_from_active_and_stake() -> None:
         {"month_index": 1, "cause_id": "buy_zero_stake"},
         {"month_index": 2, "cause_id": "buy_positive_stake"},
     ]
-    transfers = run.events_log.transfers
-    assert transfers.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
+    # Only the settlement transfers: the financed purchase also pays its mortgage every month,
+    # which is not what emits a buyer-cash transfer.
+    buyer_cash = run.events_log.transfers.filter(pl.col("cause_id").str.ends_with("_buyer_cash"))
+    assert buyer_cash.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
         {"month_index": 2, "cause_id": "buy_positive_stake_buyer_cash", "amount_quanta": 20_000_000}
     ]
 
