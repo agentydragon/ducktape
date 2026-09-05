@@ -130,20 +130,33 @@ DO NOT EDIT. Hence `infra-drift-source`, scoped to what this plan reads and
 nothing else, which also keeps the shared artifact every other Flux consumer
 pulls from growing.
 
-Sparse checkout is cone mode, so repo-root files come along with the listed
-directories — `nebula-mesh.json`, which `nebula.tf`'s locals read, arrives that
-way rather than by being listed.
+It uses `ignore`, not `sparseCheckout`, because `sparseCheckout` takes
+directories and this root reads a repo-root **file** —
+`jsondecode(file("${path.module}/../../../nebula-mesh.json"))` in `nebula.tf`.
+Two gotchas are baked into that rule list:
 
-## Exercised once, partially
+- **`-target` does not prune `locals`.** The nebula locals are evaluated on
+  every plan even though nothing in `spec.targets` references them, so
+  `nebula-mesh.json` must be present. Resource- and data-source-level reads
+  _are_ pruned, which is why `cluster/k8s/flux-system/gotk-components.yaml`
+  (`filesha256` in `null_resource.flux_bootstrap`'s triggers, 380 KB) and
+  `talos-cloud-controller-manager/helmrelease.yaml` (`data.helm_template`) stay
+  out. If a future change makes either reachable, the plan will name the file
+  and it needs its own `!/…` line.
+- **gitignore cannot re-include a path under an excluded parent.** `/*`
+  followed by `!/cluster/terraform` alone silently yields nothing; each parent
+  needs its own `!/cluster` + `/cluster/*` pair.
 
-First unsuspended reconcile (2026-09-05) failed with the path error above; the
-dedicated source is the fix. Beyond that point the plan is still unverified —
-these would each surface as a failing plan, never as anything applied:
+## Exercised, still not green
 
-- `tofu init` pulls `ovh/ovh`, which no other `Terraform` CR in this cluster
-  uses, so registry reachability for that provider is untested.
-- `-target` prunes unreferenced locals, so the `file()` and `data.local_file`
-  reads under `secrets/nebula/` and the `helm_template`/`local_file` resources
-  should stay out of the graph. If any turns out to be reachable from
-  `ovh_dedicated_server.*`, the plan will say so and the source needs another
-  path.
+Two failures so far, both loud and harmless — `planOnly` means nothing can be
+applied whatever happens:
+
+1. `terraform path not found` — the shared source, fixed by `infra-drift-source`.
+2. `Invalid function argument` on `nebula.tf:17` — the root-level
+   `nebula-mesh.json` missing under the first (`sparseCheckout`) form of that
+   source, fixed by the `ignore` rules above.
+
+Confirmed working along the way: `tofu init` reaches the registry and installs
+`ovh/ovh`, which no other `Terraform` CR in this cluster uses. What the plan
+itself reports is still unobserved.

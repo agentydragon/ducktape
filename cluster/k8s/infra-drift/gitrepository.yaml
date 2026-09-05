@@ -10,20 +10,29 @@ metadata:
   namespace: flux-system
   annotations:
     description: >-
-      Sparse checkout of the metal tofu root, its module tree and the SOPS
-      secrets it reads, for the infra-drift plan-only Terraform CR.
+      Filtered checkout of the metal tofu root, its module tree, the SOPS
+      secrets it reads and nebula-mesh.json, for the infra-drift plan-only
+      Terraform CR.
 spec:
   interval: 10m
   ref:
     branch: devel
   url: https://github.com/agentydragon/ducktape.git
-  # Cone-mode sparse checkout, so repo-root files (nebula-mesh.json, consumed
-  # by nebula.tf's locals) come along with these directories.
-  sparseCheckout:
-    - cluster/terraform/
+  # `ignore` rather than `sparseCheckout`: nebula.tf's locals read the repo-root
+  # nebula-mesh.json, and sparseCheckout takes directories only. Exclude-all
+  # then re-include, spelling out each parent — gitignore cannot re-include a
+  # path whose parent directory is excluded.
+  ignore: |
+    /*
+    !/nebula-mesh.json
+    # data.sops_file.ovh_{credentials,rescue_ssh} and, if -target ever stops
+    # pruning them, the nebula certs under secrets/nebula/. Ciphertext only.
+    !/secrets
+    !/cluster
+    /cluster/*
+    !/cluster/terraform
     # module "wyrm2_image": `tofu init` installs every module block in the
     # config, whether or not -target keeps it in the plan graph.
-    - terraform/modules/
-    # data.sops_file.ovh_{credentials,rescue_ssh}, read as
-    # ${path.module}/../../../secrets/…. Ciphertext only.
-    - secrets/
+    !/terraform
+    /terraform/*
+    !/terraform/modules
