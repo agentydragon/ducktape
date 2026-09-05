@@ -4,10 +4,11 @@ metadata:
   name: infra-drift
   namespace: ducktape-flux
 spec:
-  # Suspended until the runner's narrow age key for the OVH SOPS files exists —
-  # README § Enabling. Held here rather than on the Terraform CR: a CR that has
-  # never reconciled has no conditions for the healthCheck below to read, so
-  # suspending it instead would leave this Kustomization waiting forever.
+  # Suspended until `sops updatekeys` re-encrypts the two OVH files to the
+  # cluster key — README § Enabling. Held here rather than on the Terraform CR:
+  # a CR that has never reconciled has no conditions for the healthCheck below
+  # to read, so suspending it instead would leave this Kustomization waiting
+  # forever.
   suspend: true
 
   retryInterval: 1m

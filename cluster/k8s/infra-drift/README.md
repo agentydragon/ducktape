@@ -34,7 +34,7 @@ Everything else is excluded:
 | `kubernetes_*`, `helm_*`                                              | Both providers are configured with `config_path = "${path.module}/kubeconfig"` — the file above.                                                                                                                                        |
 | `null_resource.*` bootstrap steps                                     | `local-exec` against `kubectl`, `helm` and `cilium` with that same kubeconfig.                                                                                                                                                          |
 | `talos_*`                                                             | Machine config carries the Nebula node identities, whose private keys are per-host SOPS files.                                                                                                                                          |
-| `data.sops_file.cluster_secrets_age`                                  | The cluster's master age key. It does not go into a runner pod.                                                                                                                                                                         |
+| `data.sops_file.cluster_secrets_age`                                  | Reads `secrets/shared/cluster-secrets-age.yaml`, which is not encrypted to the cluster key the runner carries — and its `kubernetes_secret` consumer needs the kubeconfig above anyway.                                                 |
 
 Targeting is not just a scoping preference here: `cluster/k8s/TODO.md` records
 that an untargeted `tofu plan` on this root still stalls during provider
@@ -42,29 +42,39 @@ refresh.
 
 ## Enabling
 
-The Flux Kustomization ships `suspend: true` because the runner needs a
-credential the cluster does not have, and minting it requires SOPS decryption.
+The Flux Kustomization ships `suspend: true`. One step remains, and it needs
+SOPS decryption:
 
-1. **Narrow age key for the OVH secrets.** The `ovh` provider is configured
-   from `secrets/ovh-credentials.sops.yaml`, and `ovh_dedicated_server.kimsufi`
-   reads `secrets/ovh-rescue-ssh.sops.yaml`. Neither is encrypted to a key the
-   cluster holds. Mint a single-purpose key rather than adding
-   `&cluster-secrets` to them — same pattern as `&litellm-clients` in
-   <../../../.sops.yaml>:
+1. **Re-encrypt the two OVH files to the cluster key.** `.sops.yaml` already
+   lists `*cluster-secrets` as a recipient of
+   `secrets/ovh-{credentials,rescue-ssh}.sops.yaml`; the ciphertext has not
+   caught up:
 
    ```bash
-   age-keygen -o /tmp/infra-drift-age.key   # note the public half
+   sops updatekeys secrets/ovh-credentials.sops.yaml
+   sops updatekeys secrets/ovh-rescue-ssh.sops.yaml
    ```
 
-   Add the public half to `.sops.yaml` as `&infra-drift`, list it in the
-   `secrets/ovh-credentials\.sops\.yaml$` and
-   `secrets/ovh-rescue-ssh\.sops\.yaml$` rules, then `sops updatekeys` both
-   files. Store the private half as
-   `cluster/k8s/infra-drift/sops-age-key.sops.yaml` (Secret
-   `infra-drift-sops-age-key`, key `key`).
+2. Drop `suspend: true` from `flux-kustomization.yaml` and commit both.
 
-2. Add that filename to `kustomization.yaml`, drop `suspend: true` from
-   `flux-kustomization.yaml`, and commit.
+No new Secret to plant: the runner reads `SOPS_AGE_KEY` from the existing
+`flux-system/sops-age-cluster-secrets`, the same identity Flux decrypts
+manifests with.
+
+### Why the broad key rather than a narrow one
+
+`tf-runner-role` is a `ClusterRole`, bound cluster-wide, granting
+`get/list/watch/create/update/patch/delete` on `secrets` in **every** namespace.
+Every tf-runner pod can therefore already read `sops-age-cluster-secrets`
+itself. A single-purpose age key would have been stored as a cluster Secret
+too, reachable by exactly the same principals — ceremony, not containment.
+
+The one real consequence: these two files become decryptable by anything
+holding the cluster key, which includes the `wyrm2-host` identity via
+`secrets/shared/cluster-secrets-age.yaml`. Before, they were reachable only
+from the five user keys. That widening is small but not nil; it is the price of
+not maintaining a key whose only protection was against an attacker who could
+already bypass it.
 
 ## Reading a plan
 
@@ -107,7 +117,7 @@ Two failure modes to expect:
 ## Not yet exercised
 
 The manifests have not been run: this session could not decrypt any SOPS file,
-so the age key could not be minted and no runner pod has ever planned this
+so `sops updatekeys` could not be run and no runner pod has ever planned this
 root. One thing to confirm on first unsuspend, which would show up as a failing
 plan rather than as anything applied: `tofu init` in the runner pulls
 `ovh/ovh`, which no existing `Terraform` CR in this cluster uses, so registry

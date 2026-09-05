@@ -843,22 +843,30 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
-  # OVH API credentials for Terraform (US endpoint, HIL Kimsufi node)
+  # OVH API credentials for Terraform (US endpoint, HIL Kimsufi node).
+  # cluster-secrets: the infra-drift tf-runner (cluster/k8s/infra-drift) needs
+  # the ovh provider to configure during a plan. tf-runner-role already grants
+  # cluster-wide secret read, so a narrow key here would buy nothing the runner
+  # cannot already take.
   - path_regex: secrets/ovh-credentials\.sops\.yaml$
     key_groups:
       - age:
           - *admin
+          - *cluster-secrets
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
 
-  # OVH rescue-mode SSH key (ED25519, used to SSH into rescue and dd Talos image)
+  # OVH rescue-mode SSH key (ED25519, used to SSH into rescue and dd Talos image).
+  # cluster-secrets: read by ovh_dedicated_server.kimsufi's rescue_ssh_key, so
+  # the infra-drift plan needs it too. Rationale as above.
   - path_regex: secrets/ovh-rescue-ssh\.sops\.yaml$
     encrypted_regex: ^private_key$
     key_groups:
       - age:
           - *admin
+          - *cluster-secrets
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon

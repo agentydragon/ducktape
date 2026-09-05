@@ -57,11 +57,13 @@ spec:
             secretKeyRef:
               name: tofu-state-db-credentials
               key: password
-        # Narrow age key covering secrets/ovh-credentials.sops.yaml and
-        # secrets/ovh-rescue-ssh.sops.yaml only, so the ovh provider can
-        # configure — NOT the broad cluster SOPS key.
+        # Decrypts secrets/ovh-{credentials,rescue-ssh}.sops.yaml so the ovh
+        # provider can configure. This is the broad cluster age key, not a
+        # narrow one: tf-runner-role is a ClusterRole granting secret CRUD in
+        # every namespace, so any runner can already read this very Secret — a
+        # single-purpose key would be ceremony, not containment.
         - name: SOPS_AGE_KEY
           valueFrom:
             secretKeyRef:
-              name: infra-drift-sops-age-key
-              key: key
+              name: sops-age-cluster-secrets
+              key: age.agekey
