@@ -14,12 +14,13 @@ pub(super) fn execute_tlh_harvest(
     fixture: &Fixture,
     rollout_id: u32,
     lots: &[LotState],
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     cumulative_harvest: &mut [Money],
     month: u32,
 ) -> Result<(), SimulationError> {
     for (policy_index, policy) in fixture.scenario.harvest_policies.iter().enumerate() {
-        if !tax_facts
+        if !tax
+            .facts
             .keys()
             .any(|(agent_id, _)| agent_id == &policy.owner_agent_id)
         {
@@ -104,19 +105,14 @@ pub(super) fn execute_tlh_harvest(
         let long_term = gross.checked_sub(short_term)?;
         if short_term != Money(0) {
             record_capital_gain(
-                tax_facts,
+                tax,
                 &policy.owner_agent_id,
                 short_term.checked_neg()?,
                 false,
             )?;
         }
         if long_term != Money(0) {
-            record_capital_gain(
-                tax_facts,
-                &policy.owner_agent_id,
-                long_term.checked_neg()?,
-                true,
-            )?;
+            record_capital_gain(tax, &policy.owner_agent_id, long_term.checked_neg()?, true)?;
         }
         cumulative_harvest[policy_index] = cumulative_harvest[policy_index].checked_add(gross)?;
     }

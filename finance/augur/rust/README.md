@@ -211,18 +211,10 @@ cross as JSON text because that is the simulator's input contract; results cross
 integers, so the fan workload never pays for a dense JSON round trip. `simulator_cli`
 remains for out-of-process forensic runs.
 
-Still missing before replacement is plausible:
-
-- broader modeled tax facts and complete deduction policy;
-- mortgage contracts beyond the basic fixed-rate purchase mortgage;
-- property-tax policy beyond purchase-price assessment and fixed location
-  special assessments;
-- broader liquidity policy;
-- complete selected-rollout causal trace parity for those domains — the projection reads both
-  engines now, so what is left is the domains themselves rather than the plumbing.
-
-What `fixture_encoder` still refuses, and how much of it a real request can reach, is a
-different list and a shorter one:
+What the JAX engine models and this one does not — refused scenario features, values the
+integer fixture cannot represent, unmodelled behaviour, and the one thing the two engines
+answer differently: [docs/parity_gaps.md](docs/parity_gaps.md). How much of it a live product
+request can reach, and in what order it closes, is the plan's:
 [plans/rust_as_default.md](plans/rust_as_default.md) § Coverage.
 
 ## Layout

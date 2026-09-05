@@ -11,11 +11,20 @@ from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.output import DenseSimulationOutput
 
 
-def _income_category_column(mask: np.ndarray) -> pl.Series:
-    values: list[str | None] = [None] * int(mask.size)
-    for index in np.flatnonzero(mask):
-        values[int(index)] = "ordinary"
-    return pl.Series("income_category", values, dtype=pl.Utf8)
+def _income_category_column(plan: CompiledSimulation, buckets: np.ndarray) -> pl.Series:
+    """The income source each transfer booked to, or nothing where it booked nowhere.
+
+    A transfer to an untaxed recipient carries `NO_CODE`: it was categorized in the scenario
+    and reached no ledger, which is not the same as having no category to begin with.
+    """
+
+    labels = np.asarray(plan.tax.buckets.source_wire_ids())
+    _, sources = plan.tax.buckets.split_rows(np.maximum(buckets, 0))
+    return pl.Series(
+        "income_category",
+        [None if bucket < 0 else str(labels[source]) for bucket, source in zip(buckets, sources, strict=True)],
+        dtype=pl.Utf8,
+    )
 
 
 def decode_cashflows(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
@@ -33,5 +42,5 @@ def decode_cashflows(plan: CompiledSimulation, output: DenseSimulationOutput) ->
         to_agent_id=code_column(plan, cashflows.to_agent[months, slots]),
         to_account_id=code_column(plan, cashflows.to_account[months, slots]),
         amount_quanta=currency_quanta_column(output.cashflows.amount[months, slots, rollouts]),
-        income_category=_income_category_column(execution.income_profile[months, slots] >= 0),
+        income_category=_income_category_column(plan, execution.income_profile[months, slots]),
     )

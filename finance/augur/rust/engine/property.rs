@@ -34,7 +34,7 @@ pub(super) fn execute_property_lifecycle_events(
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     properties: &mut [PropertyState],
     mortgages: &mut [MortgageState],
     primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
@@ -139,7 +139,7 @@ pub(super) fn execute_property_lifecycle_events(
             rollout_id,
             ledger,
             recorder,
-            tax_facts,
+            tax,
             properties,
             mortgages,
             primary_residence_by_agent,
@@ -156,7 +156,7 @@ fn execute_property_sales(
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     properties: &mut [PropertyState],
     mortgages: &mut [MortgageState],
     primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
@@ -316,13 +316,8 @@ fn execute_property_sales(
             mortgages[index].principal = Money(0);
             mortgages[index].active = false;
         }
-        record_capital_gain(
-            tax_facts,
-            &purchase.buyer_agent_id,
-            long_term_capital_gain,
-            true,
-        )?;
-        record_section_1250_recapture(tax_facts, &purchase.buyer_agent_id, depreciation_recapture)?;
+        record_capital_gain(tax, &purchase.buyer_agent_id, long_term_capital_gain, true)?;
+        record_section_1250_recapture(tax, &purchase.buyer_agent_id, depreciation_recapture)?;
         recorder.record_property_sale(PropertySaleOutcome {
             month,
             property_id: sale.property_id.clone(),
@@ -546,7 +541,7 @@ pub(super) fn execute_property_purchases(
 }
 
 pub(super) fn accrue_property_depreciation(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     properties: &mut [PropertyState],
 ) -> Result<(), SimulationError> {
     for property in properties
@@ -568,9 +563,10 @@ pub(super) fn accrue_property_depreciation(
         property.cumulative_depreciation =
             property.cumulative_depreciation.checked_add(depreciation)?;
         property.depreciation_ytd = property.depreciation_ytd.checked_add(depreciation)?;
-        for ((taxpayer, _), facts) in tax_facts.iter_mut() {
+        // Accrued monthly, deducted annually: `accrue_year_end_taxes` takes the year's
+        // depreciation off ordinary income when it assesses the year.
+        for ((taxpayer, _), facts) in tax.facts.iter_mut() {
             if taxpayer == &property.owner_agent_id {
-                facts.ordinary_income = facts.ordinary_income.checked_sub(depreciation)?;
                 facts.depreciation_deduction =
                     facts.depreciation_deduction.checked_add(depreciation)?;
             }

@@ -35,7 +35,7 @@ pub(super) fn execute_distributions(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &[LotState],
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     month: u32,
 ) -> Result<(), SimulationError> {
     for distribution in &fixture.scenario.distributions {
@@ -88,11 +88,9 @@ pub(super) fn execute_distributions(
                 amount,
             )?;
             record_interest_income(
-                fixture,
-                tax_facts,
+                tax,
                 &distribution.agent_id,
                 slice.issuer_jurisdiction_id.as_deref(),
-                jurisdiction_level(fixture, slice.issuer_jurisdiction_id.as_deref()),
                 amount,
             )?;
             recorder.record_distribution(DistributionOutcome {
@@ -120,7 +118,7 @@ pub(super) fn execute_sale(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &mut [LotState],
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     scheduled_tlh: &mut ScheduledTlhGiveBack,
     sale: &crate::fixture::ScheduledSaleSpec,
 ) -> Result<(), SimulationError> {
@@ -227,7 +225,7 @@ pub(super) fn execute_sale(
         lot.units_remaining.0 -= item.units.0;
         lot.basis_remaining = lot.basis_remaining.checked_sub(item.basis)?;
         record_capital_gain(
-            tax_facts,
+            tax,
             &sale.agent_id,
             item.realized_gain.checked_add(give_back)?,
             long_term,
@@ -401,7 +399,7 @@ pub(super) fn execute_bonds(
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     month: u32,
 ) -> Result<(), SimulationError> {
     for bond in &fixture.scenario.initial_bonds {
@@ -441,11 +439,9 @@ pub(super) fn execute_bonds(
         let income = coupon.checked_add(accretion)?;
         if income != Money(0) {
             record_interest_income(
-                fixture,
-                tax_facts,
+                tax,
                 &bond.agent_id,
                 bond.issuer_jurisdiction_id.as_deref(),
-                jurisdiction_level(fixture, bond.issuer_jurisdiction_id.as_deref()),
                 income,
             )?;
         }

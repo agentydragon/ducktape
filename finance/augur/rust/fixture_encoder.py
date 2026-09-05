@@ -71,7 +71,7 @@ from finance.augur.sim.scenario import (
 
 # Mirrors `FIXTURE_SCHEMA_VERSION` in `fixture.rs`; the simulator rejects any other value, so a
 # schema bump fails loudly here rather than encoding a document the engine will not read.
-FIXTURE_SCHEMA_VERSION = 8
+FIXTURE_SCHEMA_VERSION = 9
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -151,17 +151,16 @@ def _amount(amount: object, *, quantum: Decimal, context: str) -> int | dict[str
     raise UnsupportedScenarioError(f"{context} carries an unsupported amount {amount!r}")
 
 
-def _income_category(category: OrdinaryIncome | InterestIncome | None, *, context: str) -> str | None:
-    """The fixture tags ordinary income only; interest reaches income through its instrument."""
+def _income_category(category: OrdinaryIncome | InterestIncome | None) -> str | None:
+    """The income source a transfer books to, spelled the way both engines label a row."""
 
     match category:
         case None:
             return None
         case OrdinaryIncome():
             return "ordinary"
-    raise UnsupportedScenarioError(
-        f"{context} tags income as {category!r}; the fixture's transfers carry only ordinary income"
-    )
+        case InterestIncome(issuer_jurisdiction_id=issuer):
+            return f"interest:{issuer if issuer is not None else 'corporate'}"
 
 
 def _span(start_month: int, end_month: int | None) -> dict[str, Any]:
@@ -187,7 +186,7 @@ def _flow(
         "from": _account(flow.from_agent_id, flow.from_account_id),
         "to": _account(flow.to_agent_id, flow.to_account_id),
         "amount": _amount(flow.amount, quantum=quantum, context=context),
-        "income_category": _income_category(flow.income_category, context=context),
+        "income_category": _income_category(flow.income_category),
         "deduction_category": flow.deduction_category,
     }
 
@@ -658,6 +657,9 @@ def encode_fixture(
                 for sale in scenario.scheduled_asset_sales
             ],
             "tax_profiles": _tax_profiles(scenario, plan, jurisdictions),
+            # The income buckets the compiler derived for this scenario, so the Rust ledger
+            # reports the same rows the JAX tensor has instead of rediscovering the set.
+            "income_sources": list(plan.tax.buckets.source_wire_ids()),
             "distributions": [
                 {
                     "agent_id": distribution.agent_id,

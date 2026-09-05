@@ -12,6 +12,7 @@ from finance.augur.sim.backend import Engine
 from finance.augur.sim.engine.jax_backend import JaxEngine
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
+from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.jax_result import run_jax
 from finance.augur.sim.testing.rollout_independence import RolloutIndependenceAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
@@ -31,6 +32,12 @@ class TestJaxTaxStatute(TaxStatuteAcceptance):
 
 
 class TestJaxRolloutIndependence(RolloutIndependenceAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxIncomeSources(IncomeSourceAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_jax

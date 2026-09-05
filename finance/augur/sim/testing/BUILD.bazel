@@ -127,3 +127,16 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "income_sources",
+    srcs = ["income_sources.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":simulation_result",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)
