@@ -602,7 +602,7 @@ def test_metric_fan_does_not_materialize_rollout_events(
     def fail_rollout_projection(*_args, **_kwargs):
         raise AssertionError("metric fan should not build selected-rollout detail")
 
-    monkeypatch.setattr(service, "project_product_rollout_from_events", fail_rollout_projection)
+    monkeypatch.setattr(service, "project_product_rollout", fail_rollout_projection)
 
     product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,)))
 

@@ -24,7 +24,7 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
-from finance.augur.product.projection import project_product_rollout_from_events
+from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.quantiles import currency_quantiles
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
@@ -168,7 +168,7 @@ class ProductService:
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
         self._validate_scenario_key(scenario)
         run, model_id = self._compile_product_run(scenario, (seed,))
-        projection = project_product_rollout_from_events(
+        projection = project_product_rollout(
             self._engine.events(run),
             self._engine.product_metrics(run, primary_agent_id=self._primary_agent_id),
             rollout_index=0,
