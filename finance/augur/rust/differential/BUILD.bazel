@@ -1,11 +1,16 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-package(default_visibility = ["//visibility:public"])
+# The whole harness is scaffolding: it authors cases with `sim/testing/`, runs both engines
+# and compares them. Nothing in production reads any of it, and Bazel is right to refuse a
+# production target that names it.
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
 
 # Shared across the suites below; the single-suite cases live in the suite that uses them.
 py_library(
     name = "fixtures",
-    testonly = True,
     srcs = ["fixtures.py"],
     deps = [
         "//finance/augur/model:series",
@@ -229,7 +234,6 @@ py_test(
 # the fixtures beside it.
 py_library(
     name = "backend",
-    testonly = True,
     srcs = ["backend.py"],
     deps = [
         ":fixture",
@@ -263,7 +267,6 @@ py_test(
 # Drives the testonly `backend` layer, so it is testonly too.
 py_library(
     name = "campaign",
-    testonly = True,
     srcs = ["campaign.py"],
     deps = [
         ":backend",
