@@ -1,13 +1,22 @@
 # Cilium agent fatals on kernel ≥ 7.2-rc1: `bpf_set_retval` feature probe
 
-**Date**: 2026-07-16. **Status**: resolved for `rugged` 2026-08-26 (remediation
-3B below: the Xe/TTM fix this host needed the RC kernel for, `ba7fd1634228`,
-is confirmed present in `linuxPackages_latest` 7.1.8, so `rugged` now runs
-that stable kernel directly with no override — see
-`nix/nixos/hosts/rugged/default.nix`). Upstream `cilium/ebpf` probe fix
-(remediation 1) still not shipped as of that date; the general "every kernel ≥
-7.2-rc1, every released Cilium" blast radius remains open for anyone actually
-needing a ≥ 7.2 kernel.
+**Date**: 2026-07-16. **Status**: resolved for `rugged` 2026-09-05 by pinning the
+7.1 _series_ (`linuxPackages_7_1`) in
+<../../../nix/nixos/hosts/rugged/ipu7-camera.nix>, where the bounds that produce
+it are recorded.
+
+**A floating alias is not a pin.** The 2026-08-26 remediation set
+`linuxPackages_latest`, correct at the time because the alias then resolved to
+7.1.8. A flake update moved it to 7.2, and the next rebuild put `rugged` back on
+the broken kernel — `cilium-agent` crash-looped, taking the node's CNI and its
+DaemonSets with it. What this host needs is a floor (≥ 6.17, IPU7 camera) and a
+ceiling (< 7.2, this bug); an alias encodes neither and tracks whatever upstream
+ships. A series attribute encodes both and cannot cross the ceiling.
+
+Upstream `cilium/ebpf` probe fix (remediation 1) is still not shipped: Cilium
+1.19.6 was observed fatalling on kernel 7.2.0 on 2026-09-04. The general "every
+kernel ≥ 7.2-rc1, every released Cilium" blast radius remains open for anyone
+actually needing a ≥ 7.2 kernel.
 
 ## Symptom
 
@@ -81,8 +90,11 @@ haveProgramHelper`, special-case `FnSetRetval` to prepend
      testing kernel. Keeps the Xe experiment bit-exact; the dropped hardening is
      irrelevant on a personal laptop node. Remove once a Cilium release ships the
      fixed prober.
-   - **B**: back to `linuxPackages_latest` (7.1) + cherry-pick `ba7fd1634228`.
-     Cilium-compatible, but changes the Xe experiment's baseline.
+   - **B (applied)**: a released kernel carrying `ba7fd1634228`. Cilium-compatible,
+     but changes the Xe experiment's baseline. Name the **series**
+     (`linuxPackages_7_1`), never `linuxPackages_latest`: the alias satisfied this
+     when it resolved to 7.1.8 and then floated to 7.2, which is how the bug
+     returned on 2026-09-04.
 
 ## References
 

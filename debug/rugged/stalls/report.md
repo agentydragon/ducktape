@@ -445,6 +445,11 @@ hardening in the same RC tree; see
 Building the actual `linux-7.1.8` derivation (`pkgs.linuxPackages_latest` at
 the current nixpkgs-26.05 pin) and attempting to apply that same commit as a
 local patch confirmed it via `patch`'s own "reversed (or previously applied)
-patch detected" — the fix is already in stable 7.1.8. `default.nix` now runs
-`linuxPackages_latest` directly (via `./ipu7-camera.nix`) with no override and
-no local patch.
+patch detected" — the fix is already in stable 7.1.8. `./ipu7-camera.nix` now
+carries the kernel choice with no override and no local patch.
+
+That file pins `linuxPackages_7_1`, not `linuxPackages_latest`: the alias was used
+here first and floated to 7.2 on 2026-09-04, which re-broke `cilium-agent` (see
+`cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md`).
+The Xe fix is what sets this host's kernel floor, so any future change to that pin
+has to keep `ba7fd1634228` — verify with the same reverse-patch test used above.
