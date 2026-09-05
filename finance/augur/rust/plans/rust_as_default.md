@@ -83,10 +83,7 @@ unreachable ones held by something other than this list.
 3. Fix the within-failure-month phase ordering, the last red differential target. Rust's
    answer is the chosen one in both channels, so the work is in the JAX scan: a phase's
    position inside the failing month has to become observable.
-4. Fix the property-sale market value, the one place a money level is read off the float
-   cube (`_scan_property_sale` scales the purchase price by `external_values`, not
-   `external_money_values`). Latent disagreement, reachable since #5589.
-5. Grow the statute-level suites over the tax surface the product actually exercises. This is
+4. Grow the statute-level suites over the tax surface the product actually exercises. This is
    the gate that carries the confidence, and the only one that would have caught #5588. It
    does not block the flip, and it is not finished by it.
 
@@ -99,7 +96,7 @@ unreachable ones held by something other than this list.
    whether a wrong reading would show up as a different number, not by whether a walk exists
    for it.
 
-6. Flip the default.
+5. Flip the default.
 
 ## What "done" means
 

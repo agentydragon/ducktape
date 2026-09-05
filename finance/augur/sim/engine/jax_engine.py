@@ -1788,7 +1788,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 ) = _scan_property_sale(
                     ev,
                     lifecycle_sale_series[evi],
-                    external_values,
+                    external_money_values,
                     cash=cash,
                     property_active=property_active,
                     property_rented_fraction=property_rented_fraction,
@@ -3613,7 +3613,7 @@ def _compute_tax_for_link(
 def _scan_property_sale(
     ev: _FoldedLifecycleEvent,
     home_value_series: Int[Array, ""],
-    external_values: Float64[Array, " series rollout snapshot"],
+    external_money_values: Int64[Array, " series rollout snapshot"],
     *,
     cash: Int64[Array, " cash rollout"],
     property_active: Bool[Array, " property rollout"],
@@ -3648,8 +3648,11 @@ def _scan_property_sale(
     prop = ev.property_slot
     closing_cost_pct = ev.amount
     # `home_value_series` is a TRACED scalar row index (dynamic gather), not a baked static index.
-    series_row = external_values[home_value_series]  # (rollouts, H+1)
-    market_value = _scale_money_by_float_ratio(
+    # A home value is money, so the ratio is taken between quanta: the float cube carries the same
+    # levels rounded to parts per billion, and net worth values the same property from the integer
+    # cube. Reading the float here made a sale disagree with the metric series it appears in.
+    series_row = external_money_values[home_value_series]  # (rollouts, H+1)
+    market_value = _scale_quanta_by_ratio(
         jnp.full(rollout_count, ev.purchase_price, dtype=jnp.int64), series_row[:, month], series_row[:, 0]
     )
     gross_proceeds = _scale_money(market_value, 1.0 - closing_cost_pct / 100.0)

@@ -23,6 +23,7 @@ py_library(
         "//finance/augur/sim:backend",
         "//finance/augur/sim:events",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:locations",
         "//finance/augur/sim:runtime",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/compiler:plan",

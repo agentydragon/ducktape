@@ -78,17 +78,6 @@ coupon, which the compiler reads as the exact rational `Fraction(str(rate))`, an
 sale's closing cost, which the fixture spells in basis points. Both refuse a value whose two
 routes disagree.
 
-The property-sale market value is the one place a **money** level is read off the float cube
-(`_scan_property_sale` scales the purchase price by `external_values`, not
-`external_money_values`), so its ratio is PPB-quantized dollars where Rust's is currency
-quanta. Those agree only while the sampled home value is already a whole quantum, which a
-hand-written fixture's is and a sampled path's need not be.
-
-The encoder no longer refuses a purchased property, so this is reachable rather than
-hypothetical: it is the first thing to suspect when a property channel diverges on a sampled
-path, and the reason a differential case that sells a property should not assume its home
-value lands on a quantum.
-
 ## Test cost
 
 The differential suites' whole wall clock is XLA compilation: JAX bakes the plan structure
