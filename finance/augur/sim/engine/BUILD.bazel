@@ -43,6 +43,7 @@ py_library(
         "//finance/augur/sim/compiler:obligations",
         "//finance/augur/sim/compiler:plan",
         "//finance/augur/sim/compiler:private_equity",
+        "//finance/augur/sim/compiler:tax",
         "@pypi//jax",
         "@pypi//jaxtyping",
         "@pypi//numpy",

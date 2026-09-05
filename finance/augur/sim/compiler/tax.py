@@ -36,6 +36,11 @@ SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
 _SECTION_121_EXCLUSION_BY_FILING_STATUS: dict[FilingStatus, Decimal] = {FilingStatus.SINGLE: Decimal(250_000)}
 _OPEN_ENDED_BRACKET_UPPER_QUANTA = np.iinfo(np.int64).max
 
+# §1211(b): a net capital loss offsets at most $3,000 of ordinary income per year, and the rest
+# carries forward. A quantum count rather than a Decimal because that is the form the netting
+# reducer clamps against.
+MAX_CAPITAL_LOSS_ORDINARY_OFFSET_QUANTA = 300_000
+
 
 def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
     if filing_status not in _SECTION_121_EXCLUSION_BY_FILING_STATUS:
