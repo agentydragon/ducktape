@@ -41,6 +41,12 @@ class FetchSuccess(BaseModel):
     kind: Literal["success"] = "success"
     windows: list[QuotaWindow] = Field(default_factory=list)
     extra_spend: ExtraSpend | None = None
+    # Earned Codex rate-limit resets. None means the provider did not publish a
+    # count; 0 is an authoritative "none available" response.
+    available_reset_credits: int | None = Field(default=None, ge=0)
+    # Expiries from the best-effort reset-credit detail endpoint. This can be
+    # incomplete even when `available_reset_credits` is authoritative.
+    available_reset_credit_expiries: list[datetime] = Field(default_factory=list)
 
     @field_validator("windows")
     @classmethod

@@ -24,6 +24,8 @@ codex:
   lastFetch: 1
   error: null
   extraSpend: null
+  availableResetCredits: 2
+  availableResetCreditExpiries: ["2026-09-20T09:00:00Z"]
 zai:
   short: null
   long: { usedPercent: 40, resetSeconds: 423360, windowSeconds: 604800 }

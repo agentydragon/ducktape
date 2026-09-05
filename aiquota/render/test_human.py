@@ -177,6 +177,21 @@ def test_hidden_window_remains_in_model_but_is_not_rendered() -> None:
     assert len(output.result.windows) == 2
 
 
+def test_renders_banked_reset_count_from_live_usage() -> None:
+    output = ProviderFetch(
+        fetched_at=_FETCHED_AT,
+        result=FetchSuccess(
+            windows=[QuotaWindow(used_percent=12, reset_seconds=12 * 3600, window_seconds=24 * 3600)],
+            available_reset_credits=2,
+            available_reset_credit_expiries=[datetime(2026, 1, 20, 9, 0, tzinfo=UTC)],
+        ),
+    )
+
+    assert human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC).startswith(
+        "codex · 2 banked resets · known expiries: Jan 20 09:00\n"
+    )
+
+
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
 def test_renders_shared_fixture(fixture_name: str, snapshot: SnapshotAssertion) -> None:
     fixture_path = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")

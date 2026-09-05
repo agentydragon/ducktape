@@ -88,6 +88,15 @@ credit's status change is dated. For the settled total of a past day, take
 Raw capture is keyed per endpoint (`codex_token_activity`, `codex_reset_credits`)
 so a provider reading several endpoints in one cycle keeps every body.
 
+The current Codex usage response also carries
+`rate_limit_reset_credits.available_count`. AIQuota displays this authoritative
+live count as banked resets in the CLI, GNOME popup, and Haku Console; it never
+redeems a credit. When the companion detail endpoint names an expiry for a
+currently available credit, those surfaces display it as a _known_ expiry. The
+historical credit rows above remain available for analytics, but their detail
+list may be capped or omitted and is not used as the live count or assumed to
+be a complete expiry list.
+
 Raw response rows retain one year; typed quota observations retain five years.
 ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with
 asynchronous inserts enabled, so small periodic batches are combined before

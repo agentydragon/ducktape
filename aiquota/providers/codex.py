@@ -8,6 +8,7 @@ Auth via ~/.codex/auth.json (file-based; Secret Service not available from CLI).
 import base64
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -89,11 +90,24 @@ class _AdditionalRateLimit(BaseModel):
     rate_limit: _RateLimit
 
 
+class _ResetCreditsSummary(BaseModel):
+    """Live earned-reset count embedded in Codex's usage response.
+
+    The detail rows can be absent or capped, so `available_count` is the only
+    count safe to show in a quota display.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    available_count: int
+
+
 class _UsageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     rate_limit: _RateLimit | None = None
     additional_rate_limits: list[_AdditionalRateLimit] = []
+    rate_limit_reset_credits: _ResetCreditsSummary | None = None
 
 
 class _DailyUsageBucket(BaseModel):
@@ -302,6 +316,38 @@ async def _fetch_usage_via_management(management: CLIProxyAPIManagementClient, p
     return _UsageResponse.model_validate_json(body)
 
 
+async def _fetch_reset_credits(auth: _AuthState, client: httpx.AsyncClient) -> _ResetCreditsResponse:
+    response = await client.get(RESET_CREDITS_URL, headers=_usage_headers(auth))
+    response.raise_for_status()
+    return _ResetCreditsResponse.model_validate_json(response.text)
+
+
+async def _fetch_reset_credits_via_management(
+    management: CLIProxyAPIManagementClient, provider: str
+) -> _ResetCreditsResponse:
+    body = await management.fetch_usage(
+        provider,
+        RESET_CREDITS_URL,
+        _MANAGEMENT_HEADERS,
+        # This is supplemental display metadata; keep `/providers/codex/raw`
+        # pinned to its normal usage response.
+        capture_key=f"{provider}_reset_credit_details",
+    )
+    return _ResetCreditsResponse.model_validate_json(body)
+
+
+def _available_credit_expiries(details: _ResetCreditsResponse) -> list[datetime]:
+    """Known expiry instants for credits the service says are currently usable."""
+
+    return sorted(
+        {
+            credit.expires_at
+            for credit in details.credits
+            if credit.status == "available" and credit.expires_at is not None
+        }
+    )
+
+
 def _to_window(w: _WindowData | None, name: str | None = None, display: bool = True) -> QuotaWindow | None:
     if w is None or w.limit_window_seconds <= 0:
         return None
@@ -327,7 +373,26 @@ def _to_success(usage: _UsageResponse) -> FetchSuccess:
                 _to_window(additional.rate_limit.secondary_window, additional.limit_name, display=False),
             )
         )
-    return FetchSuccess(windows=[window for window in windows if window])
+    reset_credits = usage.rate_limit_reset_credits
+    return FetchSuccess(
+        windows=[window for window in windows if window],
+        available_reset_credits=reset_credits.available_count if reset_credits else None,
+    )
+
+
+async def _with_reset_credit_expiries(
+    result: FetchSuccess, fetch_details: Callable[[], Awaitable[_ResetCreditsResponse]]
+) -> FetchSuccess:
+    """Add detail-derived expiry information without making the count fragile."""
+
+    if not result.available_reset_credits:
+        return result
+    try:
+        details = await fetch_details()
+    except Exception as error:
+        logger.warning("codex reset-credit detail fetch failed; retaining count only: %s", error)
+        return result
+    return result.model_copy(update={"available_reset_credit_expiries": _available_credit_expiries(details)})
 
 
 class CodexProvider(Provider):
@@ -345,12 +410,16 @@ class CodexProvider(Provider):
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
-        if self.management_client:
+        management = self.management_client
+        if management:
             try:
-                usage = await _fetch_usage_via_management(self.management_client, self.name)
+                usage = await _fetch_usage_via_management(management, self.name)
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
-            return ProviderFetch(fetched_at=now, result=_to_success(usage))
+            result = await _with_reset_credit_expiries(
+                _to_success(usage), lambda: _fetch_reset_credits_via_management(management, self.name)
+            )
+            return ProviderFetch(fetched_at=now, result=result)
 
         auth = _read_auth(self.settings.auth_path)
         if not auth:
@@ -375,6 +444,7 @@ class CodexProvider(Provider):
                     if not refreshed:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
                     usage = await _fetch_usage(refreshed, client)
+                    auth = refreshed
                 except Exception as refresh_error:
                     return ProviderFetch(
                         fetched_at=now, result=FetchError.from_exception(refresh_error, "codex token refresh")
@@ -382,7 +452,9 @@ class CodexProvider(Provider):
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "codex usage fetch"))
 
-        return ProviderFetch(fetched_at=now, result=_to_success(usage))
+            result = await _with_reset_credit_expiries(_to_success(usage), lambda: _fetch_reset_credits(auth, client))
+
+        return ProviderFetch(fetched_at=now, result=result)
 
     async def fetch_history(self) -> list[HistoryObservation]:
         """Read the endpoints describing past usage.

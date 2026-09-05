@@ -99,10 +99,11 @@ def _instantiate(
 
 
 def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> ProviderQuota:
-    """Wrap a provider fetch in a `ProviderQuota`, carrying the last-known-good
-    snapshot forward when the latest call did not produce usable windows."""
+    """Wrap a provider fetch, retaining the last substantive quota snapshot."""
     success: SuccessfulProviderFetch | None = None
-    if isinstance(output.result, FetchSuccess) and output.result.windows:
+    if isinstance(output.result, FetchSuccess) and (
+        output.result.windows or output.result.available_reset_credits is not None
+    ):
         success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)
     return ProviderQuota(
         provider=name, last_output=output, last_success=success or (prior.last_success if prior else None)

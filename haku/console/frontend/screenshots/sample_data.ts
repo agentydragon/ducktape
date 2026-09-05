@@ -622,6 +622,8 @@ export const SAMPLE_AIQUOTA: AiquotaView = {
             },
           ],
           extra_spend: null,
+          available_reset_credits: 2,
+          available_reset_credit_expiries: ["2026-09-20T09:00:00Z"],
         },
       },
       last_success: null,
