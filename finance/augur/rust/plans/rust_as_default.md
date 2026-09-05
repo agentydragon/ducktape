@@ -80,9 +80,12 @@ unreachable ones held by something other than this list.
    gate.
 2. Establish that the portfolio source cannot produce a lot, bond or TIPS the encoder
    refuses.
-3. Fix the within-failure-month phase ordering, the last red differential target. Rust's
-   answer is the chosen one in both channels, so the work is in the JAX scan: a phase's
-   position inside the failing month has to become observable.
+3. Decide the within-failure-month phase ordering. Rust's answer is the chosen one in both
+   channels, so the work is in the JAX scan: a phase's position inside the failing month has
+   to become observable. No longer a red target — the harness stops comparing event frames in
+   a failed rollout's failure month, so `known_divergence_test.py` is the only thing holding
+   both engines' answers there, and a new divergence confined to that month will not be found
+   for you. That trade is why this stays a gate rather than leaving with the red.
 4. Grow the statute-level suites over the tax surface the product actually exercises. This is
    the gate that carries the confidence, and the only one that would have caught #5588. It
    does not block the flip, and it is not finished by it.
