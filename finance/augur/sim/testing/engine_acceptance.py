@@ -22,19 +22,22 @@ import numpy as np
 import polars as pl
 import pytest
 
-from finance.augur.model.series import SecurityKey, SecuritySymbol
+from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.sim.backend import CompiledRun, Engine
 from finance.augur.sim.compiler.plan import compile_simulation
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
+    PropertySaleEvent,
     Scenario,
     ScheduledAssetSale,
+    ScheduledPropertyPurchase,
     TaxProfile,
 )
 
@@ -45,6 +48,18 @@ UNITS = 2.0
 LOT_BASIS = Decimal(10_000)
 SALE_PRICE = Decimal(60_000)
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
+
+LOCATION = "acceptance-town"
+HOME_VALUE = HomeValueKey(location_id=LocationId(LOCATION))
+PROPERTY_SALE_MONTH = 12
+# Sampled levels that are not a whole number of cents. A level already on a cent reads the same
+# out of either representation, which is exactly what the property assertion has to rule out.
+HOME_VALUE_AT_PURCHASE = 400_000.004
+HOME_VALUE_AT_SALE = 600_000.007
+# The same levels as money: cents, rounded half up, which is how the simulator's one
+# float-to-money boundary quantizes a sampled path.
+PURCHASE_PRICE = Decimal("400000.00")
+HOME_VALUE_AT_SALE_QUANTA = 60_000_001
 
 
 def sale_and_tax_year() -> CompiledRun:
@@ -101,6 +116,66 @@ def sale_and_tax_year() -> CompiledRun:
     )
 
 
+def a_property_bought_and_sold() -> CompiledRun:
+    """One all-cash property, bought at what it is worth and sold while it is worth more.
+
+    The home-value levels are deliberately not whole cents. A property is valued from that
+    series in two places — the net-worth series and the sale — and a level carries an exact
+    integer representation beside its sampled float, so which one an engine reads is
+    observable exactly when the level is fractional.
+    """
+
+    scenario = Scenario(
+        agents=[Agent(agent_id=AGENT), Agent(agent_id="seller")],
+        initial_cash=[
+            InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=Decimal(1_000_000))
+            for agent_id in (AGENT, "seller")
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="buy-house",
+                property_id="house",
+                location_id=LOCATION,
+                buyer_agent_id=AGENT,
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                # Bought for exactly what the series says it is worth, so the sale's proceeds are
+                # the home value itself rather than a figure a reader has to recompute.
+                purchase_price=PURCHASE_PRICE,
+                down_payment=PURCHASE_PRICE,
+            )
+        ],
+        property_lifecycle_events=[
+            PropertySaleEvent(month=PROPERTY_SALE_MONTH, property_id="house", closing_cost_pct=0.0)
+        ],
+        # Untaxed on purpose: what the gain is assessed at is the statute suites' business, and
+        # here it would only put a bracket walk between the series and the number under test.
+        tax_profiles=[],
+        horizon_months=HORIZON_MONTHS,
+    )
+    levels = np.full((1, HORIZON_MONTHS + 1), HOME_VALUE_AT_PURCHASE)
+    levels[:, PROPERTY_SALE_MONTH] = HOME_VALUE_AT_SALE
+    external_series = ExternalSeriesContext.from_level_blocks(
+        [(HOME_VALUE, levels)], rollout_count=1, horizon_months=HORIZON_MONTHS
+    )
+    locations = {
+        LOCATION: Location(
+            location_id=LOCATION, display_name="Acceptance Town", jurisdiction_ids=[], annual_property_tax_rate=0.0
+        )
+    }
+    jurisdictions = load_jurisdictions_for(scenario)
+    return CompiledRun(
+        scenario=scenario,
+        plan=compile_simulation(
+            scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations=locations
+        ),
+        external_series=external_series,
+        jurisdictions=jurisdictions,
+        locations=locations,
+    )
+
+
 class EngineAcceptance:
     """Inherit and supply `engine`. Add nothing unless the engine owes something extra."""
 
@@ -111,6 +186,10 @@ class EngineAcceptance:
     @pytest.fixture(scope="class")
     def run(self) -> CompiledRun:
         return sale_and_tax_year()
+
+    @pytest.fixture(scope="class")
+    def property_run(self) -> CompiledRun:
+        return a_property_bought_and_sold()
 
     def test_it_says_which_engine_it_is(self, engine: Engine) -> None:
         assert engine.name, "an engine identifies itself in responses and test failures"
@@ -181,6 +260,25 @@ class EngineAcceptance:
         assert list(fan.terminal_percentiles) == sorted(fan.terminal_percentiles), "percentiles must not decrease"
         assert min(samples) <= min(fan.terminal_percentiles)
         assert max(fan.terminal_percentiles) <= max(samples)
+
+    def test_a_property_sells_for_what_the_series_says_it_is_worth(
+        self, engine: Engine, property_run: CompiledRun
+    ) -> None:
+        """A money level is money, whichever cube an engine happens to keep it in.
+
+        The house was bought at the month-0 home value and sold at 0% closing cost, so its gross
+        proceeds are the home value at the sale month — as quanta, since that is what a money
+        series is. Reading the sampled float instead lands a cent low here, and the same way for
+        every fractional level a real sampled path produces.
+        """
+
+        rows = engine.events(property_run).property_sale_events.to_dicts()
+        assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
+        assert rows[0]["month_index"] == PROPERTY_SALE_MONTH
+        assert rows[0]["gross_proceeds_quanta"] == HOME_VALUE_AT_SALE_QUANTA, (
+            f"sold for {rows[0]['gross_proceeds_quanta']} quanta, not the {HOME_VALUE_AT_SALE_QUANTA} "
+            "the home value is worth"
+        )
 
     def test_one_execution_answers_both_summaries(self, engine: Engine, run: CompiledRun) -> None:
         """`product_summaries` is the two of them together, not a third reduction."""
