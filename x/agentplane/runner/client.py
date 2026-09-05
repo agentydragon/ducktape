@@ -102,6 +102,9 @@ class RunnerClient:
         assert message.HasField("attached"), "the first server message must be Attached"
         return Attachment(call, message.attached)
 
+    async def initialize(self, key: str, script: str) -> pb.InitializeResult:
+        return await self._stub.Initialize(pb.InitializeRequest(key=key, script=script))
+
     async def list_sessions(self) -> list[pb.SessionSummary]:
         response = await self._stub.ListSessions(pb.ListSessionsRequest())
         return list(response.sessions)

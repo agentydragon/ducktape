@@ -37,6 +37,7 @@ py_library(
         ":inventory",
         ":live",
         ":oidc",
+        ":presets",
         ":trajectory",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
@@ -49,9 +50,16 @@ py_library(
 )
 
 py_library(
+    name = "presets",
+    srcs = ["presets.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "inventory",
     srcs = ["inventory.py"],
     deps = [
+        ":presets",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
@@ -71,6 +79,7 @@ py_library(
         ":inventory",
         ":live",
         ":oidc",
+        ":presets",
         ":trajectory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
@@ -122,6 +131,7 @@ py_test(
         ":identity",
         ":inventory",
         ":live",
+        ":presets",
         ":trajectory",
         "//:conftest",
         "//x/agentplane/app/testing:egress_proxy",
@@ -130,6 +140,18 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_presets",
+    srcs = ["test_presets.py"],
+    deps = [
+        ":conftest",
+        ":presets",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -154,6 +176,7 @@ py_library(
     srcs = ["bridge.py"],
     deps = [
         ":inventory",
+        ":presets",
         ":trajectory",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:protocol_pb2",
@@ -441,6 +464,7 @@ py_library(
         ":decisions",
         ":egress",
         ":inventory",
+        ":presets",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -33,7 +34,8 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential
 
-from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
+from x.agentplane.app.presets import PresetCatalog, SandboxBinding
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
@@ -79,7 +81,8 @@ class NewSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
-    spec: dict[str, object] = Field(description="Proto-JSON of the runner's SessionSpec.")
+    spec: dict[str, object] = Field(description="Explicit proto-JSON SessionSpec fields; these override a preset.")
+    preset: str | None = Field(default=None, description="Optional ThreadPreset override.")
 
 
 def runner_address(inventory: SandboxInventory, port: int) -> AddressOf:
@@ -234,6 +237,20 @@ class RunnerBridge:
     async def list_sessions(self, sandbox: str) -> list[pb.SessionSummary]:
         return await (await self._client(sandbox)).list_sessions()
 
+    async def initialize(self, sandbox: str, initialization: str, script: str) -> pb.InitializeResult:
+        """Send configured source under a stable idempotence key and refuse a failed initialization."""
+        key = hashlib.sha256(initialization.encode()).hexdigest()
+        try:
+            result = await (await self._client(sandbox)).initialize(key, script)
+        except grpc.aio.AioRpcError as error:
+            if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                raise RunnerError(f"sandbox bootstrap refused: {error.details()}") from error
+            raise
+        if result.exit_code != 0:
+            detail = result.stderr or result.stdout or f"exit {result.exit_code}"
+            raise RunnerError(f"sandbox bootstrap failed: {detail}")
+        return result
+
     async def open_session(self, sandbox: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
         """Create the session and start its harness, then follow it."""
         key = (sandbox, session_id)
@@ -378,8 +395,29 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def open_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
-    attached = await bridge.open_session(name, body.session_id, _parse(pb.SessionSpec(), body.spec))
+async def open_session(bridge: Bridge, name: str, body: NewSession, request: Request) -> dict[str, object]:
+    inventory = request.app.state.inventory
+    presets = request.app.state.presets
+    if not isinstance(inventory, SandboxInventory) or not isinstance(presets, PresetCatalog):
+        raise TypeError("the app's inventory or preset catalog is not configured")
+    try:
+        binding_raw = await inventory.preset_binding(name)
+    except SandboxNotFoundError:
+        # Preserve the old concrete-spec path: its runner address remains the authority that decides
+        # whether the sandbox is reachable. Tests and non-Kubernetes embeddings may supply one
+        # without keeping a second inventory record solely for preset lookup.
+        binding_raw = None
+    binding = SandboxBinding.model_validate(binding_raw) if binding_raw is not None else None
+    resolved = dict(body.spec)
+    if body.preset is not None:
+        resolved = presets.thread(body.preset).defaults().proto_json(body.session_id) | resolved
+    elif binding is not None:
+        resolved = presets.thread_defaults(binding).proto_json(body.session_id) | resolved
+    if binding is not None:
+        bootstrap = presets.sandbox(binding.sandbox_preset).bootstrap
+        if bootstrap:
+            await bridge.initialize(name, f"sandbox-preset:{binding.sandbox_preset}", bootstrap)
+    attached = await bridge.open_session(name, body.session_id, _parse(pb.SessionSpec(), resolved))
     return MessageToDict(attached)
 
 

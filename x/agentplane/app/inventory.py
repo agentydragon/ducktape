@@ -23,9 +23,11 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.app.presets import SandboxBinding, ThreadDefaults
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 ARCHIVED_LABEL = "agentplane.allegedly.works/archived"
+PRESET_BINDING_ANNOTATION = "agentplane.allegedly.works/launch-preset"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
 _TEMPLATES_PLURAL = "sandboxtemplates"
@@ -74,13 +76,21 @@ class SandboxRunningError(InventoryError):
 
 
 class NewSandbox(BaseModel):
-    """What a caller decides about a sandbox; everything else is the namespace's template."""
+    """What a caller decides about a sandbox; absent optional fields may inherit a preset."""
 
     model_config = ConfigDict(extra="forbid")
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
+    preset: str | None = Field(default=None, description="Optional app-owned SandboxPreset name.")
     policies: list[str] = Field(
-        default_factory=list, description="EgressPolicy names to grant this sandbox, as one sandbox-owned binding."
+        default_factory=list,
+        description="EgressPolicy names to grant. When a preset is selected, omission inherits its list.",
+    )
+    thread_preset: str | None = Field(
+        default=None, description="Optional ThreadPreset override for this Sandbox's future sessions."
+    )
+    thread_defaults: ThreadDefaults | None = Field(
+        default=None, description="Editable ThreadPreset fields stored as explicit Sandbox-level overrides."
     )
 
 
@@ -135,6 +145,9 @@ class SandboxView(BaseModel):
     operating_mode: OperatingMode
     conditions: list[Condition] = Field(description="The Sandbox's own status conditions.")
     node_name: str | None = Field(default=None, description="Where the Sandbox controller placed the Pod.")
+    preset_binding: SandboxBinding | None = Field(
+        default=None, description="The app-owned live preset association and explicit thread overrides."
+    )
     pod: PodStatus | None = None
 
 
@@ -147,6 +160,7 @@ class _ObjectMeta(BaseModel):
     name: str
     uid: UUID
     labels: dict[str, str] = Field(default_factory=dict)
+    annotations: dict[str, str] = Field(default_factory=dict)
     creation_timestamp: datetime = Field(alias="creationTimestamp")
 
 
@@ -215,17 +229,23 @@ class SandboxInventory:
         sandbox = await self._sandbox(name)
         return _view(sandbox, await self._pod(name))
 
-    async def create(self, spec: NewSandbox) -> SandboxView:
+    async def create(
+        self, spec: NewSandbox, *, template_name: str | None = None, annotations: dict[str, str] | None = None
+    ) -> SandboxView:
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
-                *_TEMPLATE_API, self._namespace, _TEMPLATES_PLURAL, self._template
+                *_TEMPLATE_API, self._namespace, _TEMPLATES_PLURAL, template_name or self._template
             )
         )
         suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
         body = {
             "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
             "kind": "Sandbox",
-            "metadata": {"name": f"{spec.slug}-{suffix}", "labels": {MANAGED_LABEL: "true"}},
+            "metadata": {
+                "name": f"{spec.slug}-{suffix}",
+                "labels": {MANAGED_LABEL: "true"},
+                **({"annotations": annotations} if annotations else {}),
+            },
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
                 "podTemplate": template.spec.pod_template,
@@ -237,6 +257,12 @@ class SandboxInventory:
             *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, body
         )
         return _view(_Sandbox.model_validate(created), None)
+
+    async def preset_binding(self, name: str) -> SandboxBinding | None:
+        raw = (await self._sandbox(name)).metadata.annotations.get(PRESET_BINDING_ANNOTATION)
+        if raw is None:
+            return None
+        return SandboxBinding.model_validate_json(raw)
 
     async def suspend(self, name: str) -> None:
         await self._set_operating_mode(name, OperatingMode.SUSPENDED)
@@ -339,8 +365,16 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
         operating_mode=sandbox.spec.operating_mode,
         conditions=sandbox.status.conditions,
         node_name=sandbox.status.node_name,
+        preset_binding=_preset_binding(sandbox),
         pod=_pod_status(pod) if pod is not None else None,
     )
+
+
+def _preset_binding(sandbox: _Sandbox) -> SandboxBinding | None:
+    raw = sandbox.metadata.annotations.get(PRESET_BINDING_ANNOTATION)
+    if raw is None:
+        return None
+    return SandboxBinding.model_validate_json(raw)
 
 
 def _pod_status(pod: k8s_client.V1Pod) -> PodStatus:

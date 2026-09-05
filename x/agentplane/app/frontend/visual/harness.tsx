@@ -381,6 +381,26 @@ const EVENTS: Event[] = [
 // live streams above.
 routes.push(
   ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
+  [
+    "GET",
+    /^\/presets$/,
+    () => [
+      {
+        name: "public-coder",
+        title: "Public coder",
+        template: "agentplane-runner",
+        policies: ["github-public"],
+        thread_preset: "public-coder-codex",
+        thread_defaults: {
+          provider: "codex",
+          model: "harness-codex-model",
+          cwd: "/state/workspaces/{session_id}",
+          reasoning_effort: "medium",
+          instructions: "Work on public repositories only.",
+        },
+      },
+    ],
+  ],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/sandboxes\/([^/]+)\/egress\/decisions$/, () => egressDecisions()],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],

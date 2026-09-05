@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -25,6 +24,7 @@ from x.agentplane.app.egress import (
 )
 from x.agentplane.app.identity import TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
+    PRESET_BINDING_ANNOTATION,
     NewSandbox,
     SandboxInventory,
     SandboxNotFoundError,
@@ -33,6 +33,14 @@ from x.agentplane.app.inventory import (
 )
 from x.agentplane.app.live import LiveIndex, router as live_router
 from x.agentplane.app.oidc import OIDCSettings, build_oauth
+from x.agentplane.app.presets import (
+    PresetCatalog,
+    Provider,
+    SandboxBinding,
+    SandboxPresetView,
+    ThreadDefaults,
+    UnknownPresetError,
+)
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -45,11 +53,8 @@ from x.agentplane.runner.client import RunnerError
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 
 
-class Provider(StrEnum):
-    """The harness a session runs; the runner image carries both, so a sandbox is not tied to one."""
-
-    CLAUDE = "claude"
-    CODEX = "codex"
+class InvalidLaunchError(Exception):
+    """A syntactically valid launch combines preset fields that cannot apply."""
 
 
 # The models each harness may be opened with: the app's configuration, offered to the session form.
@@ -70,6 +75,24 @@ models = APIRouter(prefix="/models", tags=["models"])
 @models.get("")
 async def list_models(catalog: Annotated[ModelCatalog, Depends(_models)]) -> ModelCatalog:
     return catalog
+
+
+preset_router = APIRouter(prefix="/presets", tags=["presets"])
+
+
+def _presets(request: Request) -> PresetCatalog:
+    presets = request.app.state.presets
+    if not isinstance(presets, PresetCatalog):
+        raise TypeError(f"app.state.presets is {type(presets).__name__}, not PresetCatalog")
+    return presets
+
+
+Presets = Annotated[PresetCatalog, Depends(_presets)]
+
+
+@preset_router.get("")
+async def list_presets(presets: Presets) -> list[SandboxPresetView]:
+    return presets.views()
 
 
 def _inventory(request: Request) -> SandboxInventory:
@@ -110,13 +133,28 @@ async def list_sandboxes(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox) -> SandboxView:
-    """Create the Sandbox; the deployment's default policies and the picked ones become one binding
-    it owns. The names are resolved first, so a policy that does not exist refuses the request
-    before there is a sandbox."""
-    policies = egress.launch_policies(spec.policies)
+async def create_sandbox(inventory: Inventory, egress: Egress, presets: Presets, spec: NewSandbox) -> SandboxView:
+    """Resolve an optional app preset, then create the same concrete Sandbox the no-preset API does."""
+    template_name: str | None = None
+    annotations: dict[str, str] | None = None
+    picked_policies = spec.policies
+    if spec.preset is not None:
+        preset = presets.sandbox(spec.preset)
+        template_name = preset.template
+        picked_policies = preset.policies if "policies" not in spec.model_fields_set else spec.policies
+        # Validate and preserve only explicit Sandbox-level edits; current preset defaults remain live.
+        overrides = spec.thread_defaults or ThreadDefaults()
+        if spec.thread_preset is not None:
+            presets.thread(spec.thread_preset)
+        binding = SandboxBinding(
+            sandbox_preset=spec.preset, thread_preset=spec.thread_preset, thread_overrides=overrides
+        )
+        annotations = {PRESET_BINDING_ANNOTATION: binding.model_dump_json(exclude_none=True)}
+    elif spec.thread_preset is not None or spec.thread_defaults is not None:
+        raise InvalidLaunchError("thread_preset and thread_defaults require a sandbox preset")
+    policies = egress.launch_policies(picked_policies)
     await egress.require_policies(policies)
-    view = await inventory.create(spec)
+    view = await inventory.create(spec, template_name=template_name, annotations=annotations)
     if policies:
         await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=policies)
     return view
@@ -279,16 +317,22 @@ def create_app(
     live: LiveIndex,
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
+    presets: PresetCatalog | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
     if set(catalog) != set(Provider) or not all(catalog.values()):
         raise ValueError(f"the model catalog needs a non-empty list for every provider: {catalog=}")
+    configured_presets = presets or PresetCatalog()
+    for name, preset in configured_presets.threads.items():
+        if preset.model not in catalog[preset.provider]:
+            raise ValueError(f"ThreadPreset {name!r} names model {preset.model!r} outside the configured catalog")
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory
     app.state.bridge = bridge
     app.state.store = store
     app.state.models = catalog
+    app.state.presets = configured_presets
     app.state.egress = egress
     app.state.decisions = decisions
     app.state.live = live
@@ -296,7 +340,7 @@ def create_app(
     app.state.reviewer = reviewer
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
-    for api_router in (router, models, runner_bridge.router, threads, egress_router, live_router):
+    for api_router in (router, models, preset_router, runner_bridge.router, threads, egress_router, live_router):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
@@ -339,6 +383,14 @@ def create_app(
     @app.exception_handler(FluxOwnedBindingError)
     async def _flux_owned(_request: Request, error: FluxOwnedBindingError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownPresetError)
+    async def _unknown_preset(_request: Request, error: UnknownPresetError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
+
+    @app.exception_handler(InvalidLaunchError)
+    async def _invalid_launch(_request: Request, error: InvalidLaunchError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(UnknownPolicyError)
     async def _unknown_policy(_request: Request, error: UnknownPolicyError) -> JSONResponse:

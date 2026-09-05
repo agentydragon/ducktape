@@ -14,6 +14,9 @@ bbr test //x/agentplane/app/...
 
 - `main.py`: the entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`
   variable, and a key of the YAML file `AGENTPLANE_CONFIG_FILE` points at.
+- `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
+  resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
+  fields.
 - `inventory.py`: the sandbox inventory read from and written to Kubernetes (create, suspend,
   resume, archive, delete), with the parsed subset of each CR it needs. It works in
   `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
@@ -103,9 +106,23 @@ Sandbox -> Pod, PVC               |
                     model traffic to LiteLLM through the egress proxy, which holds the key
 ```
 
-Kubernetes is the sandbox inventory, including the archived flag; the runner holds the live
-session; PostgreSQL holds the copy of every event that outlives the sandbox. The app stores no
-product state beyond that until a feature needs it.
+Kubernetes is the sandbox inventory, including the archived flag and a compact annotation holding
+its live preset association plus explicit thread-default edits; the runner holds the live session;
+PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
+configuration, and each launch sends only resolved concrete fields to the runtime.
+
+## Launch presets
+
+`GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
+`POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
+fields inherit, while explicit policies and thread fields replace preset values. The Sandbox
+annotation stores the preset name and only explicit thread edits, so later sessions resolve against
+the current configured default instead of freezing a copied form.
+
+Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
+content to the runner under a stable preset identity. The runner executes it idempotently on the
+persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
+unchanged when no preset is selected.
 
 ## Decisions
 

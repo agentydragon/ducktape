@@ -6,9 +6,11 @@ not a unit test with a live backend — it is the check that the deployed system
 <../egress/SPEC.md> says it does, and that a session's standing instructions reach the model that
 serves it.
 
-Every scenario runs on **both harnesses**. The runner protocol is the same for Claude and Codex, so
-one test body covers both: the `provider` fixture is parametrised over `Provider`, and `model` asks
-the deployment which models it offers for that harness rather than hardcoding one.
+The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
+same for Claude and Codex, so one test body covers both: the `provider` fixture is parametrised over
+`Provider`, and `model` asks the deployment which models it offers for that harness rather than
+hardcoding one. `test_launch_presets` instead exercises the configured `public-coder` preset's
+intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, and local override.
 
 ## Running it
 

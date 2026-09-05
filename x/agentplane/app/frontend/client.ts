@@ -31,6 +31,8 @@ export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
+export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
+export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
 export type Decision = components["schemas"]["Decision"];
 
 export function displayableError(error: unknown): string {

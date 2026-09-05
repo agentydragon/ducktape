@@ -1,4 +1,18 @@
-import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Code,
+  Group,
+  Select,
+  Stack,
+  Switch,
+  Table,
+  Tabs,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -6,6 +20,7 @@ import { create } from "@bufbuild/protobuf";
 
 import { api, displayableError, listSessions, openSession, type Condition, type SandboxView } from "./client";
 import { EgressSection } from "./egress";
+import { effectiveThreadDefaults } from "./launch_presets";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
@@ -121,6 +136,8 @@ export function SandboxPage({
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
+  const [instructions, setInstructions] = useState("");
+  const [presetLabel, setPresetLabel] = useState<string | null>(null);
   // The app's catalog of what this sandbox's harness may run; the thread carries the choice.
   const [harness, setHarness] = useState<Harness>("claude");
   const [models, setModels] = useState<string[]>([]);
@@ -141,6 +158,7 @@ export function SandboxPage({
   // when the page next reads.
   const state = sandbox?.state;
   const openedSessions = threads.length;
+  const presetBindingKey = JSON.stringify(sandbox?.preset_binding ?? null);
   useEffect(() => {
     if (state !== "running") {
       setSessions([]);
@@ -161,6 +179,29 @@ export function SandboxPage({
       setModel((current) => (current && offered.includes(current) ? current : (offered[0] ?? null)));
     })();
   }, [harness]);
+
+  useEffect(() => {
+    const binding = sandbox?.preset_binding;
+    if (!binding) {
+      setPresetLabel(null);
+      return;
+    }
+    void (async () => {
+      const { data, error: failure } = await api.GET("/presets");
+      if (failure) {
+        setError(displayableError(failure));
+        return;
+      }
+      const preset = data.find((candidate) => candidate.name === binding.sandbox_preset);
+      if (!preset) return;
+      const defaults = effectiveThreadDefaults(preset.thread_defaults, binding.thread_overrides ?? {});
+      setPresetLabel(`${preset.title} · ${binding.thread_preset ? "overridden" : "inherited"}`);
+      if (defaults.provider) setHarness(defaults.provider as Harness);
+      if (defaults.model) setModel(defaults.model);
+      if (defaults.reasoning_effort) setEffort(defaults.reasoning_effort);
+      setInstructions(defaults.instructions ?? "");
+    })();
+  }, [presetBindingKey]);
 
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
@@ -190,6 +231,7 @@ export function SandboxPage({
           cwd: `/state/workspaces/${sessionId}`,
           model,
           reasoningEffort: effort,
+          instructions,
         })
       );
       onOpenSession(sessionId);
@@ -206,6 +248,7 @@ export function SandboxPage({
         </Button>
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
+        {presetLabel && <Badge variant="light">{presetLabel}</Badge>}
         {sandbox && (
           <Group gap="xs" ml="auto" wrap="nowrap">
             <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
@@ -271,6 +314,14 @@ export function SandboxPage({
                 New session
               </Button>
             </Group>
+            <Textarea
+              label="Standing instructions"
+              description={presetLabel ? "Inherited from the sandbox preset; editable for this thread" : undefined}
+              autosize
+              minRows={2}
+              value={instructions}
+              onChange={(event) => setInstructions(event.currentTarget.value)}
+            />
             <Table>
               <Table.Thead>
                 <Table.Tr>

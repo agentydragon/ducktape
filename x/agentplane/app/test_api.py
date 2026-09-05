@@ -18,6 +18,7 @@ from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
 from x.agentplane.app.live import LiveIndex
+from x.agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
@@ -37,6 +38,26 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 
 TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
+TEST_PRESETS = PresetCatalog(
+    sandboxes={
+        "public-coder": SandboxPreset(
+            title="Public coder",
+            template="agentplane-test-runner",
+            policies=["github"],
+            thread_preset="public-coder-codex",
+            bootstrap="mkdir -p /state/workspaces",
+        )
+    },
+    threads={
+        "public-coder-codex": ThreadPreset(
+            title="Public coder / Codex",
+            provider=Provider.CODEX,
+            model="test-codex-model",
+            reasoning_effort="medium",
+            instructions="preset instructions",
+        )
+    },
+)
 
 
 @pytest.fixture
@@ -67,7 +88,9 @@ def client(
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
         "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], from_git=False
     )
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer, presets=TEST_PRESETS
+    )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
 
@@ -102,6 +125,44 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert ("sandboxes", row["name"]) in custom_objects.objects
     # Nothing was picked, so nothing may leave it.
     assert client.get(f"/sandboxes/{row['name']}/egress").json() == []
+
+
+def test_create_with_preset_records_the_live_binding_and_allows_explicit_edits(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    response = client.post(
+        "/sandboxes",
+        json={
+            "slug": "coder",
+            "preset": "public-coder",
+            "thread_defaults": {"model": "edited-model", "instructions": "extra instructions"},
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    row = response.json()
+    assert row["preset_binding"] == {
+        "sandbox_preset": "public-coder",
+        "thread_preset": None,
+        "thread_overrides": {
+            "provider": None,
+            "model": "edited-model",
+            "cwd": None,
+            "reasoning_effort": None,
+            "instructions": "extra instructions",
+        },
+    }
+    (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["github"]
+    annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
+    assert "agentplane.allegedly.works/launch-preset" in annotation
+
+
+def test_explicit_sandbox_fields_replace_preset_defaults(client: TestClient) -> None:
+    row = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder", "policies": ["pypi"]}).json()
+
+    (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
+    assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
 
 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
@@ -187,6 +248,63 @@ def test_delete_removes_the_sandbox_once_it_is_suspended(
     assert client.delete("/sandboxes/live").status_code == 204
     assert ("sandboxes", "live") not in custom_objects.objects
     assert client.delete("/sandboxes/live").status_code == 404
+
+
+def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fields_win(
+    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = client.post(
+        "/sandboxes", json={"slug": "coder", "preset": "public-coder", "thread_defaults": {"model": "sandbox-model"}}
+    ).json()
+    calls: list[tuple[str, object]] = []
+
+    async def initialize(name: str, initialization: str, script: str) -> pb.InitializeResult:
+        calls.append(("initialize", (initialization, script)))
+        return pb.InitializeResult(key="0" * 64, executed=True)
+
+    async def open_session(name: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
+        calls.append(("open", spec))
+        return pb.Attached(session_id=session_id, spec=spec)
+
+    monkeypatch.setattr(bridge, "initialize", initialize)
+    monkeypatch.setattr(bridge, "open_session", open_session)
+
+    response = client.post(
+        f"/sandboxes/{created['name']}/sessions",
+        json={"session_id": "thread-1", "spec": {"model": "thread-model", "instructions": "thread instructions"}},
+    )
+
+    assert response.status_code == 201, response.text
+    assert calls[0] == ("initialize", ("sandbox-preset:public-coder", "mkdir -p /state/workspaces"))
+    assert calls[1][0] == "open"
+    spec = calls[1][1]
+    assert isinstance(spec, pb.SessionSpec)
+    assert (spec.provider, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
+        pb.PROVIDER_CODEX,
+        "/state/workspaces/thread-1",
+        "thread-model",
+        "medium",
+        "thread instructions",
+    )
+
+
+def test_no_preset_session_api_is_unchanged(
+    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[pb.SessionSpec] = []
+
+    async def open_session(name: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
+        captured.append(spec)
+        return pb.Attached(session_id=session_id, spec=spec)
+
+    monkeypatch.setattr(bridge, "open_session", open_session)
+    response = client.post(
+        "/sandboxes/live/sessions",
+        json={"session_id": "plain-1", "spec": {"provider": "PROVIDER_CLAUDE", "cwd": "/w", "model": "plain-model"}},
+    )
+
+    assert response.status_code == 201, response.text
+    assert captured == [pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="plain-model")]
 
 
 def test_a_runner_that_does_not_answer_is_a_503(
@@ -345,6 +463,25 @@ def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) ->
     assert {policy["name"] for policy in client.get("/egress/policies").json()} == {"github", "pypi"}
 
 
+def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient) -> None:
+    assert client.get("/presets").json() == [
+        {
+            "name": "public-coder",
+            "title": "Public coder",
+            "template": "agentplane-test-runner",
+            "policies": ["github"],
+            "thread_preset": "public-coder-codex",
+            "thread_defaults": {
+                "provider": "codex",
+                "model": "test-codex-model",
+                "cwd": "/state/workspaces/{session_id}",
+                "reasoning_effort": "medium",
+                "instructions": "preset instructions",
+            },
+        }
+    ]
+
+
 def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     """The catalog the session form offers; a thread carries its model, a sandbox does not."""
     assert client.get("/models").json() == {"claude": ["test-claude-model"], "codex": ["test-codex-model"]}
@@ -394,6 +531,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
 
     assert set(paths) == {
         "/models",
+        "/presets",
         "/sandboxes",
         "/sandboxes/{name}",
         "/sandboxes/{name}/suspend",

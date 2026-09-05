@@ -26,6 +26,7 @@ py_library(
         "//x/agentplane/app:api",
         "//x/agentplane/app:client",
         "//x/agentplane/app:inventory",
+        "//x/agentplane/app:presets",
         "@pypi//pytest",
         "@pypi//tenacity",
     ],
@@ -65,6 +66,30 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_launch_presets",
+    timeout = "eternal",
+    srcs = ["test_launch_presets.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/app:client",
+        "//x/agentplane/app:inventory",
+        "//x/agentplane/app:presets",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//pytest_bazel",
     ],
 )
 

@@ -22,6 +22,7 @@ from x.agentplane.app.bridge import NewSession
 from x.agentplane.app.decisions import Decision
 from x.agentplane.app.egress import BindingView, PolicyView
 from x.agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
+from x.agentplane.app.presets import SandboxPresetView
 from x.agentplane.runner import protocol_pb2 as pb
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -78,11 +79,16 @@ class Client:
         """Which models each harness may be opened with, as this deployment is configured."""
         return {Provider(harness): names for harness, names in (await self._json("GET", "/models")).items()}
 
+    async def presets(self) -> list[SandboxPresetView]:
+        return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
+
     async def policies(self) -> list[PolicyView]:
         return [PolicyView.model_validate(row) for row in await self._json("GET", "/egress/policies")]
 
     async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
-        return SandboxView.model_validate(await self._json("POST", "/sandboxes", json=spec.model_dump()))
+        return SandboxView.model_validate(
+            await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
+        )
 
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
@@ -105,6 +111,14 @@ class Client:
 
     async def open_session(self, name: str, session_id: str, spec: pb.SessionSpec) -> Attachment:
         body = NewSession(session_id=session_id, spec=MessageToDict(spec))
+        answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
+        return Attachment(ParseDict(answered, pb.Attached()))
+
+    async def open_preset_session(
+        self, name: str, session_id: str, *, overrides: dict[str, object] | None = None, preset: str | None = None
+    ) -> Attachment:
+        """Open from a Sandbox binding or explicit ThreadPreset, sending only caller overrides."""
+        body = NewSession(session_id=session_id, spec=overrides or {}, preset=preset)
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
         return Attachment(ParseDict(answered, pb.Attached()))
 

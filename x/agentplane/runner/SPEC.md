@@ -5,6 +5,20 @@ through it without knowing which harness is behind it: the only provider-specifi
 sets is `SessionSpec.provider`. The wire definition is [`protocol.proto`](protocol.proto); this
 page is what the runner guarantees about it.
 
+## Initialization
+
+- `Initialize` receives integration-app configured shell source and a stable digest naming that
+  initialization. The runner executes it with `/bin/sh -eu` from `state_dir` before a caller opens
+  the first session that needs it.
+- The first successful initialization is marked under `<state_dir>/initializations/` with both its
+  app-owned identity and source digest. Exact retries and later session launches return success
+  without executing again. The runner refuses a different identity or changed source: bootstrap is
+  a Sandbox-level choice and two possibly incompatible initializations must never be combined. A
+  failure is returned with bounded stdout/stderr and is not marked, so an operator may retry after
+  fixing the cause.
+- The runner accepts source only over this in-cluster control protocol. The integration app exposes
+  configured presets, not an arbitrary-shell HTTP field.
+
 ## Sessions
 
 - A session is one native conversation. Its id is client-chosen, up to 128 characters of

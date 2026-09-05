@@ -29,6 +29,7 @@ from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.live import STALE_AFTER_CYCLES, LiveIndex, watch_for
 from x.agentplane.app.oidc import load_settings
+from x.agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -89,6 +90,12 @@ class Settings(BaseSettings):
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
     models: ModelCatalog = Field(
         description='The models each provider may run, as JSON: {"claude": ["..."], "codex": ["..."]}.'
+    )
+    sandbox_presets: dict[str, SandboxPreset] = Field(
+        default_factory=dict, description="App-owned SandboxPreset definitions keyed by stable name."
+    )
+    thread_presets: dict[str, ThreadPreset] = Field(
+        default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
     )
     default_policies: list[str] = Field(
         default_factory=list,
@@ -186,6 +193,7 @@ async def async_main(settings: Settings) -> None:
             live,
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
+            presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
         )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")

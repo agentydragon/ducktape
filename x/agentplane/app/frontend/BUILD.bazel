@@ -71,6 +71,23 @@ ts_library(
 )
 
 ts_library(
+    name = "launch_presets",
+    srcs = ["launch_presets.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "launch_presets_test",
+    srcs = ["launch_presets.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":launch_presets",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "events_test",
     srcs = ["events.test.ts"],
     tsconfig = TSCONFIG,
@@ -113,6 +130,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":launch_presets",
         ":lifecycle",
         ":live",
         "//:node_modules/@mantine/core",
@@ -142,6 +160,7 @@ ts_library(
     deps = [
         ":client",
         ":egress",
+        ":launch_presets",
         ":lifecycle",
         ":live",
         ":protocol_pb",
@@ -273,6 +292,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":events_test",
+        ":launch_presets_test",
         "//:node_modules/vitest",
     ],
 )

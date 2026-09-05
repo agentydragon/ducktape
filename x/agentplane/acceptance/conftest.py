@@ -17,6 +17,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client, is_running
 from x.agentplane.app.inventory import NewSandbox, SandboxView
+from x.agentplane.app.presets import ThreadDefaults
 
 BASE_URL = "AGENTPLANE_ACCEPTANCE_URL"
 TOKEN = "AGENTPLANE_ACCEPTANCE_TOKEN"
@@ -127,8 +128,17 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
     """
     created: list[str] = []
 
-    async def create(slug: str, *, policies: list[str] | None = None) -> SandboxView:
-        view = await client.create_sandbox(NewSandbox(slug=slug, policies=policies or []))
+    async def create(
+        slug: str,
+        *,
+        policies: list[str] | None = None,
+        preset: str | None = None,
+        thread_defaults: ThreadDefaults | None = None,
+    ) -> SandboxView:
+        values: dict[str, object] = {"slug": slug, "preset": preset, "thread_defaults": thread_defaults}
+        if policies is not None:
+            values["policies"] = policies
+        view = await client.create_sandbox(NewSandbox.model_validate(values))
         created.append(view.name)
         return await _running(client, view.name)
 

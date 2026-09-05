@@ -5,10 +5,12 @@ import {
   Group,
   Menu,
   MultiSelect,
+  Select,
   Stack,
   Switch,
   Table,
   Text,
+  Textarea,
   TextInput,
   Title,
   Tooltip,
@@ -17,11 +19,21 @@ import {
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import { useEffect, useState } from "react";
 
-import { api, displayableError, type Condition, type NewSandbox, type SandboxView } from "./client";
+import {
+  api,
+  displayableError,
+  type Condition,
+  type NewSandbox,
+  type SandboxPresetView,
+  type SandboxView,
+  type ThreadDefaults,
+} from "./client";
+import { changedDefaults } from "./launch_presets";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 
 const EMPTY_FORM: NewSandbox = { slug: "", policies: [] };
+const EMPTY_THREAD: ThreadDefaults = {};
 
 const STATE_COLORS: Record<string, string> = {
   running: "green",
@@ -71,6 +83,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
+  const [presets, setPresets] = useState<SandboxPresetView[]>([]);
+  const [inheritedThread, setInheritedThread] = useState<ThreadDefaults>(EMPTY_THREAD);
+  const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
@@ -80,9 +95,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   useEffect(() => {
     void (async () => {
-      const { data, error: failure } = await api.GET("/egress/policies");
-      if (failure) setError(displayableError(failure));
-      else setPolicies(data.map((policy) => policy.name));
+      const { data: policyViews, error: policyFailure } = await api.GET("/egress/policies");
+      if (policyFailure) setError(displayableError(policyFailure));
+      else setPolicies(policyViews.map((policy) => policy.name));
+      const { data: presetViews } = await api.GET("/presets");
+      setPresets(presetViews ?? []);
     })();
   }, []);
 
@@ -98,12 +115,18 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   }
 
   async function create(): Promise<void> {
+    const body = {
+      ...form,
+      thread_defaults: form.preset ? changedDefaults(thread, inheritedThread) : undefined,
+    };
     const { error: failure } = await api.POST("/sandboxes", {
-      body: form,
+      body,
     });
     if (failure) setError(displayableError(failure));
     else {
       setForm(EMPTY_FORM);
+      setInheritedThread(EMPTY_THREAD);
+      setThread(EMPTY_THREAD);
       setError(null);
     }
   }
@@ -124,6 +147,26 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       )}
       {error && <Text c="red">{error}</Text>}
       <Group align="flex-end">
+        <Select
+          clearable
+          label="Preset"
+          description="Fills editable launch defaults"
+          data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
+          value={form.preset ?? null}
+          onChange={(name) => {
+            const preset = presets.find((candidate) => candidate.name === name);
+            if (!preset) {
+              setForm({ ...form, preset: null, policies: [] });
+              setInheritedThread(EMPTY_THREAD);
+              setThread(EMPTY_THREAD);
+              return;
+            }
+            setForm({ ...form, preset: preset.name, policies: preset.policies });
+            setInheritedThread(preset.thread_defaults);
+            setThread(preset.thread_defaults);
+          }}
+          style={{ flex: "1 1 12rem" }}
+        />
         <TextInput
           label="Name"
           value={form.slug}
@@ -142,6 +185,43 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           New sandbox
         </Button>
       </Group>
+      {form.preset && (
+        <Stack gap="xs">
+          <Text size="sm" fw={600}>
+            Inherited thread defaults · editable
+          </Text>
+          <Group align="flex-end">
+            <Select
+              label="Harness"
+              data={["claude", "codex"]}
+              value={thread.provider ?? null}
+              onChange={(provider) =>
+                setThread({ ...thread, provider: (provider ?? undefined) as ThreadDefaults["provider"] })
+              }
+            />
+            <TextInput
+              label="Model"
+              value={thread.model ?? ""}
+              onChange={(event) => setThread({ ...thread, model: event.currentTarget.value })}
+              style={{ flex: "1 1 20rem" }}
+            />
+            <Select
+              label="Reasoning effort"
+              data={["low", "medium", "high"]}
+              value={thread.reasoning_effort ?? null}
+              onChange={(effort) => setThread({ ...thread, reasoning_effort: effort ?? undefined })}
+            />
+          </Group>
+          <Textarea
+            label="Standing instructions"
+            description="Inherited from the preset; edits apply to future threads in this sandbox"
+            autosize
+            minRows={3}
+            value={thread.instructions ?? ""}
+            onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
+          />
+        </Stack>
+      )}
       <Group justify="flex-end">
         <Switch
           size="md"

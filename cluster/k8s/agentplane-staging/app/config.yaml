@@ -6,6 +6,35 @@ models:
     - anthropic-api/ant-messages/claude-haiku-4-5-20251001
   codex:
     - chatgpt/oai-responses/gpt-5.6-luna
+
+# App-owned launch presets. Names are resolved here; the Sandbox CR and runner receive only the
+# concrete template, policies, bootstrap source, and SessionSpec fields.
+thread_presets:
+  public-coder-codex:
+    title: Public coder / Codex
+    provider: codex
+    model: chatgpt/oai-responses/gpt-5.6-luna
+    cwd: /state/workspaces/{session_id}
+    reasoning_effort: medium
+    instructions: >-
+      Work as a public-repository coding agent. Keep private cluster data out of the workspace and
+      outputs. Outbound access is policy-controlled; discover the GitHub credential placeholder and
+      its required presentation from https://egress.agentplane.internal/v1/rules rather than asking
+      for or printing a credential.
+sandbox_presets:
+  public-coder:
+    title: Public coder
+    template: agentplane-runner
+    policies:
+      - github-public
+    thread_preset: public-coder-codex
+    bootstrap: |
+      marker=/state/workspaces/.agentplane-public-coder-ready
+      mkdir -p /state/workspaces
+      if [ ! -f "$marker" ]; then
+        printf '%s\n' 'public-coder workspace initialized' > "$marker"
+      fi
+
 # Granted to every sandbox before whatever the operator picks: without the model endpoint a
 # sandbox has no agent, so it is not a choice (cluster/k8s/agentplane-staging/egress).
 default_policies:

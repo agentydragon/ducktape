@@ -40,9 +40,29 @@ import "google/protobuf/timestamp.proto";
 
 service Runner {
   rpc Attach(stream ClientMessage) returns (stream ServerMessage);
+  // Execute integration-app configured initialization before the first Thread opens. The runner
+  // records the successful key and source on persistent state. An exact retry is a no-op; any
+  // different key or source is refused because initialization belongs to the Sandbox, not a Thread.
+  rpc Initialize(InitializeRequest) returns (InitializeResult);
   // Every session in the runner's state directory. Session ids are client-chosen, so this is how a
   // client that keeps no record of its own finds them again.
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+}
+
+message InitializeRequest {
+  // Stable digest of the app-owned initialization identity, used as the idempotence key. Once this
+  // key and its script complete, the runner refuses every other initialization for the Sandbox.
+  string key = 1;
+  string script = 2;
+}
+
+message InitializeResult {
+  string key = 1;
+  // False only when this exact key and script had already completed successfully.
+  bool executed = 2;
+  int32 exit_code = 3;
+  string stdout = 4;
+  string stderr = 5;
 }
 
 enum Provider {
