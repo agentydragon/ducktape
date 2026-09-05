@@ -15,8 +15,24 @@
 // Node script lints under the .mjs node-globals block.
 /* global document, window, requestAnimationFrame */
 
-import { remainingWaitMs } from "./deadline.mjs";
 import { frozenClockScript, FROZEN_NOW_MS } from "./launcher.mjs";
+
+/**
+ * The bound every wait in a visual test takes — navigations, the mount wait, a scenario's own
+ * condition, the network-settle gate.
+ *
+ * The number is measured, not guessed: across a 49-target parallel `--nocache_test_results` run,
+ * the slowest navigation to networkidle0 was 1.9s and the slowest mount after it 79ms, so this is
+ * ~380x the slowest healthy mount seen under the load that produces flakes. That headroom is the
+ * whole point — the 5s literal this replaces was already 60x the healthy mount and a starved RBE
+ * worker still outran it (debug/2026_08_rbe_small_test_timeouts.md).
+ *
+ * It is not larger because a bound only helps while it is the thing that reports the failure: the
+ * smallest scenario using it is a `small` (60s) target, which must fail here — naming the selector
+ * it waited for — rather than be killed by Bazel, and Puppeteer caps any single CDP call at 180s
+ * regardless.
+ */
+export const WAIT_TIMEOUT_MS = 30_000;
 
 /** Wait `ms`. Prefer `waitForStable` or a Puppeteer `waitFor*` — see STYLE.md § Waiting. */
 export const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,7 +94,7 @@ export async function prepareDeterministicPage(page, { viewport, colorScheme, no
  * A page with no ledger passes: a harness that stubs no fetch has nothing to settle, and
  * `abortUnexpectedRequests` is the fence that keeps such a page's network empty.
  */
-export async function assertNetworkSettled(page, { context, timeoutMs = remainingWaitMs() ?? 10_000 } = {}) {
+export async function assertNetworkSettled(page, { context, timeoutMs = WAIT_TIMEOUT_MS } = {}) {
   const prefix = context ? `${context}: ` : "";
   if (!(await page.evaluate(() => Boolean(window.__visualNetworkLedger__)))) return;
   try {

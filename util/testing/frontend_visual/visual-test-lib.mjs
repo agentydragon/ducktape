@@ -31,8 +31,8 @@ import {
   screenshotElement,
   settle,
   waitForStable,
+  WAIT_TIMEOUT_MS,
 } from "./capture.mjs";
-import { remainingWaitMs } from "./deadline.mjs";
 import { launchDeterministicBrowser } from "./launcher.mjs";
 import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
 
@@ -108,7 +108,7 @@ export async function main(scenarioName, options) {
     // shared test-fonts.css default), but a harness can override via the
     // EXPECTED_FONT_FAMILY env var when it bundles its own typography.
     const expectedFont = process.env.EXPECTED_FONT_FAMILY || "Inter";
-    await page.goto(harnessUrl, { waitUntil: "networkidle0", timeout: remainingWaitMs() });
+    await page.goto(harnessUrl, { waitUntil: "networkidle0", timeout: WAIT_TIMEOUT_MS });
     const fontLoaded = await page.evaluate((family) => document.fonts.check(`16px "${family}"`), expectedFont);
     if (!fontLoaded) {
       console.error(`FATAL: ${expectedFont} font did not load`);
@@ -116,8 +116,8 @@ export async function main(scenarioName, options) {
     }
 
     console.log(`Testing: ${outputName} (page=${scenarioName})`);
-    await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0", timeout: remainingWaitMs() });
-    await page.waitForSelector("#app > *", { timeout: remainingWaitMs() });
+    await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0", timeout: WAIT_TIMEOUT_MS });
+    await page.waitForSelector("#app > *", { timeout: WAIT_TIMEOUT_MS });
     await waitForStable(page);
     // A scene whose content arrives after mount (a fetch, a lazily-built editor) still needs its
     // own condition; waitMs is the leftover blind wait for scenes that have not got one yet.

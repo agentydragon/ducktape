@@ -4,20 +4,6 @@ load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
 
-# The wait deadline derived from the target's own Bazel timeout, shared by every wait a visual
-# test makes.
-js_library(
-    name = "deadline",
-    srcs = ["deadline.mjs"],
-    visibility = ["//visibility:public"],
-)
-
-js_test(
-    name = "deadline_test",
-    data = [":deadline"],
-    entry_point = "deadline.test.mjs",
-)
-
 # The one Puppeteer launcher for JS visual/screenshot tests. The flag/clock
 # assets it reads live in //util/testing:browser_launcher_assets, shared with
 # the Python launcher (//util/testing:frontend_visual).
@@ -26,7 +12,6 @@ js_library(
     srcs = ["launcher.mjs"],
     visibility = ["//visibility:public"],
     deps = [
-        ":deadline",
         ":node_modules/puppeteer",
         "//util/testing:browser_launcher_assets_js",
     ],
@@ -40,10 +25,7 @@ js_library(
     name = "capture",
     srcs = ["capture.mjs"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":deadline",
-        ":launcher",
-    ],
+    deps = [":launcher"],
 )
 
 js_test(
@@ -59,7 +41,6 @@ js_library(
     visibility = ["//visibility:public"],
     deps = [
         ":capture",
-        ":deadline",
         ":launcher",
         ":visual_review_manifest",
     ],

@@ -338,8 +338,7 @@ VISUAL_DATA = [
 ]
 
 # medium: a scenario launches Chromium and mounts the unbundled app; alone on a worker it takes
-# 30-40s, and under RBE contention longer still — the timeout the size declares is also what
-# bounds the harness's own waits (util/testing/frontend_visual/deadline.mjs).
+# 30-40s, and under RBE contention longer still.
 [
     js_test(
         name = "visual_%s" % scenario,

@@ -46,15 +46,14 @@ the screenshot tracks the true CSS instead of a number that can drift from it.
 
 ## Wait bounds
 
-Every wait `visual-test-lib.mjs` makes — both navigations, the mount wait, and
-`assertNetworkSettled` — is bounded by `remainingWaitMs()` (`deadline.mjs`),
-which derives one process-wide deadline from Bazel's `TEST_TIMEOUT`. A
-scenario-specific wait a harness adds should take the same bound rather than a
-literal: `5000` for the first mount was comfortable on an idle machine and
-expired on a loaded RBE worker while the bundle was still loading, reporting an
-arbitrary elapsed time instead of the page failing to mount. A scenario that
-genuinely needs longer raises its target's `size`, which is where the deadline
-comes from.
+Every wait takes `WAIT_TIMEOUT_MS` from `capture.mjs` — both navigations, the
+mount wait, `assertNetworkSettled`, and any condition a scenario adds. One bound
+in one place; why that number is at its declaration.
+
+Don't put a literal next to a `waitFor*` call. The 5s that used to sit on the
+mount wait was already ~60x the slowest healthy mount, and a loaded RBE worker
+still outran it — reporting an arbitrary elapsed time rather than that the page
+never mounted.
 
 ## Verifying determinism
 

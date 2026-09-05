@@ -12,8 +12,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
 
-import { remainingWaitMs } from "./deadline.mjs";
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // The shared assets live one directory up: a data file under
@@ -56,16 +54,7 @@ export const DISABLE_ANIMATIONS_CSS = `
 
 /** Launch headless Chromium with the container-safe base flags plus `args`. */
 export async function launchBrowser({ args = [], headless = true, userDataDir } = {}) {
-  // Puppeteer caps every CDP call at `protocolTimeout` (180s by default), and that cap outranks
-  // the wait sitting on top of it: a `waitForSelector` bounded above 180s dies as a ProtocolError
-  // telling you to raise a Puppeteer setting, instead of as its own "waiting for selector X"
-  // timeout. Taking the deadline here keeps it above every later wait's bound — the remaining
-  // budget only shrinks — so the wait's own message is the one that fails the test.
-  const launchOptions = {
-    args: [...CONTAINER_BASE_ARGS, ...args],
-    headless,
-    protocolTimeout: remainingWaitMs(),
-  };
+  const launchOptions = { args: [...CONTAINER_BASE_ARGS, ...args], headless };
   if (userDataDir) {
     launchOptions.userDataDir = userDataDir;
   }
