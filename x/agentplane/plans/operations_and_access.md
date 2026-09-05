@@ -20,13 +20,23 @@ Working vocabulary for discussion:
   originating Thread.
 - **ApprovalRequest** (or **AccessRequest**): the subset of Operations that need a human decision.
 
-Recommendation: use `Operation` for the durable general object and reserve `ApprovalRequest` for
-its gated subset. Do not use “ask” in a wire contract; retain it as UI copy until Rai chooses the
-product noun.
+Recommendation: call the durable agent-originated object an **`ActionRequest`** (or simply a
+`Request` in a scoped API), and use “action” in the UI. It says “the agent intends this effect”
+without claiming that a harness-level tool call, an authorization decision, or an execution has
+already happened. `Operation` remains a reasonable internal term for an adapter operation, but it is
+too easy to confuse with implementation-level calls. Do not use “ask” or “tool call” in this wire
+contract.
+
+A human approval is not a different request shape. Every ActionRequest has the same capability,
+arguments, provenance, and correlation fields whether the eventual decision is automatic, human,
+LLM-assisted, or denied. The request is submitted to the hub; the decision route is an explicit
+recorded transition, not a schema branch known by the agent in advance.
 
 The choice Rai needs to make is whether a single durable object covers the whole lifecycle, or
-whether authorization is a separate object linked to an invocation. The latter is more explicit
-for retries and standing grants; the former is smaller for the first implementation.
+whether authorization is a separate object linked to an invocation. The recommendation below is to
+separate all three concerns: ActionRequest (intent), Decision (authorization disposition), and
+Execution/Attempt (a concrete run). This is slightly more machinery than one status field, but it
+matches the desired distinction between waiting for a decision, being denied, and actually running.
 
 ## Semantics to settle before implementation
 
@@ -45,18 +55,34 @@ normalized mirror of every MCP argument or provider-specific field is not justif
 
 ### Lifecycle
 
-A candidate lifecycle is:
+Use one immutable request payload plus separate decision and execution projections:
 
 ```text
-submitted
-  -> allowed | denied | approval_required
-approval_required
-  -> approved | denied | withdrawn
-approved
-  -> running
+ActionRequest accepted
+  -> decision_pending
+  -> allowed              [Decision: allow]
+  -> denied               [Decision: deny]
+
+allowed
+  -> dispatching -> running
 running
-  -> completed | failed | cancelled
+  -> succeeded | failed | cancelled
+
+decision_pending
+  -> cancelled | withdrawn
 ```
+
+`decision_pending` means no authority has issued a final disposition yet; the UI may explain that
+this is waiting on policy, an LLM judge, or a human, but those are routes, not request schemas.
+`allowed` is an authorization result, not a claim that execution has started. `denied` is an
+authorization outcome; `failed` means execution began and did not complete; `cancelled` means an
+actor withdrew work. Reserve `rejected` for hub-level refusal before a valid request exists (bad
+schema, missing identity, or duplicate idempotency key), rather than using it interchangeably with
+policy denial.
+
+The durable evidence is an append-only sequence containing the ActionRequest, Decision event(s),
+and Execution/Attempt event(s). The hub can maintain a current projection for UI and agent delivery,
+but it must not collapse “pending decision,” “denied,” and “running” into one overloaded queue state.
 
 Potential `expired` state is deliberately undecided. Haku's current approval machinery has no
 expiry, while credentials and execution attempts may still have independent time limits. Do not add
@@ -70,10 +96,15 @@ Questions for Rai:
 - Does approval authorize exactly one execution, or may the adapter retry under the same decision?
 - Is a standing grant a different object, or a Decision that creates a reusable grant?
 
-Initial recommendation: submission never blocks the agent; approval is an explicit later Decision;
-withdrawal is available to the originating agent; one approval covers one logical operation and its
-bounded retries; standing authority is a separate grant owned by the existing grants/access
-machinery.
+Initial recommendation: submission returns a receipt immediately and never blocks the agent;
+a later Decision is delivered as an event/input; withdrawal is available before execution starts;
+one allow decision covers one logical ActionRequest and its bounded retry attempts; standing authority
+is a separate grant owned by the existing grants/access machinery. Automatic dispatch after an
+`allow` decision is acceptable, but it must appear as explicit `dispatching` and `running` events.
+Do not make the agent manually “approve its own” auto-approved request in v1: that adds a stranded
+half-state without improving the policy boundary. Reserve an explicit `commit`/`release` transition
+for a future two-phase workflow if a real use case needs the agent to inspect an authorization before
+execution.
 
 ### Agent-facing UX
 
@@ -109,22 +140,32 @@ protocol translator.
 
 ## Authority boundary
 
-Keep these authorities separate:
+Keep the hub, decision issuers, and executors separate even if the first deployment colocates them:
 
 - **Agentplane runtime**: Sandbox and Thread lifecycle, native runner protocol, and delivery to a
   Thread when a product layer asks it to deliver an event.
-- **Integration/conversation app**: current operator-facing workflow and presentation, if it owns
-  the first Operation UX.
-- **Access Controller / grants machinery**: allow, deny, approval-required, standing grants, and
-  revocation. It may be a separate service or an existing Haku Console authority; it should not be
-  hidden inside Sandbox lifecycle code.
-- **Execution adapter**: MCP/HTTP/Kubernetes/host-specific invocation and result translation.
-- **Trajectory store**: durable event evidence and operation references, without becoming the policy
-  engine.
+- **Action Hub / Action Coordinator**: accepts and durably records ActionRequests, validates
+  correlation/idempotency, routes them to a DecisionProvider, persists signed Decision artifacts,
+  dispatches allowed requests to an Executor, and delivers state changes. It is the durable
+  coordinator, not the policy authority.
+- **DecisionProvider / Decision Authority**: evaluates a request and issues an allow, deny, or
+  referral/pending result. The provider may be an automatic policy evaluator, an LLM judge, or a
+  human-review adapter. A final Decision names its issuer, basis, request digest, constraints, and
+  provenance; cryptographic signing is required when the artifact crosses a trust boundary, not as
+  ceremony inside one process.
+- **Execution adapter / Executor**: MCP/HTTP/Kubernetes/host-specific invocation and result
+  translation. It receives an allowed request and creates one or more bounded Execution/Attempt
+  records; it does not reinterpret approval policy.
+- **Integration/conversation app**: current operator-facing review and presentation, if it owns the
+  first Action UX. Human action should enter through a DecisionProvider rather than directly mutating
+  hub state.
+- **Trajectory store**: durable event evidence and request references, without becoming the policy
+  engine or decision issuer.
 
-The first vertical slice may compose these in one deployment for convenience, but it must retain
-interfaces that keep the authorities replaceable. Do not add a generic controller, policy DSL, or
-MCP gateway until one real consumer requires it.
+This gives the requested independent rollout seam: the hub can remain stable while a policy evaluator,
+LLM judge, or human-review surface is replaced. The first vertical slice may implement the interfaces
+in one deployment, but it must preserve the boundaries and record the issuer of every final Decision.
+Do not add a generic controller, policy DSL, or MCP gateway until one real consumer requires it.
 
 ## Data access and cross-agent reads
 
@@ -186,11 +227,14 @@ calls the server.
 
 Do not implement the first approval feature until Rai chooses or accepts:
 
-- the product noun (`Operation`, `Invocation`, `AccessRequest`, or another term);
-- whether the durable unit is logical intent or execution attempt;
+- the product noun (`ActionRequest` is the recommendation);
+- whether the durable unit is logical intent with bounded attempts (the recommendation) or execution
+  attempt;
 - pending-turn behavior and later-input delivery;
-- single-operation versus standing-grant semantics;
-- the minimum machine envelope and sensitive-field handling; and
+- single-request versus standing-grant semantics;
+- the minimum machine envelope and sensitive-field handling;
+- whether automatic dispatch follows an allow decision (the recommendation) or requires an explicit
+  agent `commit`; and
 - whether the first MCP adapter belongs in the integration app or an external access/adapter layer.
 
 After those choices, the first implementation should be one end-to-end adapter and one acceptance

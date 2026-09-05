@@ -65,7 +65,7 @@ flowchart TB
     LP["Launch presets in review<br/>SandboxPreset → ThreadPreset,<br/>public-coder, runner bootstrap, UI"]:::active
     BB["BuildBuddy auth contract in review<br/>HTTP + unary/bidirectional gRPC substitution;<br/>hosted bb remote boundary remains"]:::active
 
-    OPD["Rai decision<br/>operation noun and durable unit<br/>Operation / Invocation / AccessRequest?"]:::decision
+    OPD["Rai decision<br/>request noun and durable unit<br/>ActionRequest / Request / Intent?"]:::decision
     OPS["Rai decision<br/>operation lifecycle and agent UX<br/>pending, decision, retry, delivery, withdrawal"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
     OPI["Operation vertical slice<br/>one adapter, approval UI, machine delivery<br/>to the originating Thread"]:::ready
@@ -145,8 +145,9 @@ A completed item leaves the active queue even when it supplies an edge.
   `bb remote` remains blocked at the hosted runner, which receives a nested Bazel command outside
   Agentplane's fence. The focused test and build passed in BuildBuddy invocations
   `e96f0276-2075-4fff-bb32-9815fd9ee500` and `58eb6493-79a3-4101-9cd8-c09c3074c856`.
-- **`OPD` operation noun/unit:** Rai chooses the product noun and whether the durable object is a
-  logical intent with attempts or one execution attempt. The discussion is in
+- **`OPD` request noun/unit:** Rai chooses the product noun (the current recommendation is
+  `ActionRequest`) and whether the durable object is a logical intent with attempts or one execution
+  attempt. The discussion is in
   [`operations_and_access.md`](operations_and_access.md). No implementation starts on “ask” alone.
 - **`OPS` operation lifecycle/agent UX:** settle pending behavior, decision delivery, retry,
   withdrawal, expiry/no-expiry, one-operation versus standing-grant semantics, sensitive-field
