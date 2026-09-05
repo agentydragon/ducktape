@@ -31,17 +31,19 @@ One cost, stated rather than glossed: the projection deliberately reads one roll
 output "without materializing broad state/event frames first". Frames reverse that. For a
 single rollout it is cheap, but it is a design choice being undone.
 
-**3. The exogenous sampler, which nothing here has addressed.** `model/gbm.py` runs
-`jax.vmap` and `jax.random.normal`; `state_space.py`, `vecm.py` and `independent.py` import
-JAX too. Sampling happens in `_scenario_and_sample` on **every** request, including the ones
-the Rust backend serves, so JAX stays in the request path and in the server image no matter
-what the two problems above do. The plan compiler is fine — `sim/compiler/` imports only
-`jaxtyping`, which is annotations, and produces numpy.
+**The exogenous model stays on JAX, deliberately.** `model/gbm.py` runs `jax.vmap` and
+`jax.random.normal`, and `state_space.py`, `vecm.py` and `independent.py` import JAX; sampling
+happens in `_scenario_and_sample` on every request whichever backend serves it. That is fine
+and is not a gate. The line this plan draws is around the **simulation engine and the read
+models over its output**, not around the process: JAX may sample the paths, and must not run
+the simulation or shape what the product reads back.
 
-This is the one that decides whether the goal is literally reachable, and it carries a
-consequence the other two do not: a seed maps to sampled paths, and that mapping is a product
-contract. Porting sampling to numpy or to Rust changes every number a stored seed produces
-unless the PRNG is matched exactly. Worth deciding deliberately rather than discovering.
+Keeping it there also keeps a contract that porting it would break: a seed maps to sampled
+paths, and re-implementing the PRNG elsewhere would change every number a stored seed
+produces.
+
+The plan compiler is likewise clear — `sim/compiler/` imports only `jaxtyping`, which is
+annotations, and produces numpy.
 
 ## What the differential harness is and is not
 
@@ -130,17 +132,19 @@ the unreachable ones held by something other than this list.
    dense per-engine entry point (`simulate_dense_json` for Rust, `decode_events` for JAX), and
    assert in the differential suite that both engines render the same trace for one selected
    rollout.
-8. Decide the sampler. Until JAX leaves `model/`, the server still imports and runs it on
-   every request, so "the web app runs on Rust" is not true yet however green the rest is.
-9. Flip the default.
+8. Flip the default.
 
 ## What "done" means
 
-Every endpoint under `/api/product/projections/` answered without JAX executing, and JAX no
-longer imported by the server image. The four simulator-backed endpoints are `metric_fan`,
-`terminal_distribution`, `summary` (all three already dispatchable) and `rollout` (gate 7).
-`portfolio`, `catalog`, `settings`, `deployment`, `calibration` and the budget routes do not
-run the simulator.
+Every endpoint under `/api/product/projections/` answered without `sim/engine/jax_engine.py`
+executing. The four simulator-backed endpoints are `metric_fan`, `terminal_distribution`,
+`summary` (all three already dispatchable) and `rollout` (gate 7). `portfolio`, `catalog`,
+`settings`, `deployment`, `calibration` and the budget routes do not run the simulator.
+
+JAX stays in the image and in the request path, sampling the exogenous paths. So the 16x is a
+statement about the engine, and the speedup a request actually sees is smaller by whatever
+share sampling takes — a share nothing here has measured. Measure it before quoting an
+end-to-end number.
 
 ## Why it is worth it
 
