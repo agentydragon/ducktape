@@ -24,7 +24,8 @@ spec:
   chart:
     spec:
       chart: headlamp
-      version: "0.40.0"
+      # 0.45.0 ships the Prometheus details-view plugin, enabled by default.
+      version: "0.45.0"
       sourceRef:
         kind: HelmRepository
         name: headlamp
@@ -87,6 +88,9 @@ spec:
           - name: headlamp_keda
             source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_keda
             version: "0.1.2"
+          - name: headlamp_kubevirt
+            source: https://artifacthub.io/packages/headlamp/headlamp-kubevirt/headlamp_kubevirt
+            version: "0.3.1"
         installOptions:
           parallel: true
           maxConcurrent: 2
