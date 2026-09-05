@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -22,22 +23,28 @@ from typing import Annotated, Protocol, cast
 import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from authlib.integrations.starlette_client import OAuth, OAuthError
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from starlette.middleware.sessions import SessionMiddleware
 
 from aiquota.cache import _assemble, _instantiate
 from aiquota.clickhouse import ClickHouseSnapshotSink
 from aiquota.config import Config, load as load_config
 from aiquota.models import AllQuotas, FetchSuccess, HistoryObservation
 from aiquota.providers.base import SupportsHistory
+from util.bazel.runfiles import get_required_path
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024
 _bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
+
+_FRONTEND_INDEX = "_main/aiquota/frontend/dist/index.html"
 
 
 class RawUpstreamResponse(BaseModel):
@@ -359,6 +366,12 @@ class Settings(BaseSettings):
     clickhouse_windows_table: str = "aiquota_windows"
     poll_interval_seconds: int = Field(default=300, gt=0)
     history_interval_seconds: int = Field(default=3600, gt=0)
+    public_base_url: str = "https://aiquota.allegedly.works"
+    oauth_issuer: str
+    oauth_client_id: str
+    oauth_client_secret: SecretStr
+    oauth_session_secret: SecretStr
+    oauth_username: str = "agentydragon"
 
     @model_validator(mode="after")
     def validate_clickhouse(self) -> "Settings":
@@ -385,6 +398,29 @@ def _require_bearer(
         or not hmac.compare_digest(credentials.credentials, expected)
     ):
         raise HTTPException(status_code=401, detail="unauthorized", headers={"WWW-Authenticate": "Bearer"})
+
+
+@dataclass(frozen=True)
+class BrowserOAuth:
+    issuer: str
+    client_id: str
+    client_secret: str
+    session_secret: str
+    public_base_url: str
+    username: str
+
+    @property
+    def metadata_url(self) -> str:
+        return f"{self.issuer.rstrip('/')}/.well-known/openid-configuration"
+
+    @property
+    def callback_url(self) -> str:
+        return f"{self.public_base_url.rstrip('/')}/auth/callback"
+
+
+def _require_oauth_session(request: Request) -> None:
+    if request.session.get("aiquota_user") != request.app.state.oauth_username:
+        raise HTTPException(status_code=401, detail="OAuth login required")
 
 
 def _with_remaining_percent(value: object) -> object:
@@ -422,6 +458,8 @@ def create_app(
     collector: BackgroundCollector | None = None,
     history_collector: HistoryCollector | None = None,
     metrics: CollectorMetrics | None = None,
+    frontend_dir: Path | None = None,
+    browser_oauth: BrowserOAuth | None = None,
 ) -> FastAPI:
     app_metrics = metrics or (collector.metrics if collector else CollectorMetrics())
 
@@ -440,6 +478,7 @@ def create_app(
     app = FastAPI(title="aiquota API", version="1", lifespan=lifespan)
     app.state.bearer_token = bearer_token
     app.state.fetcher = fetcher
+    app.state.oauth_username = browser_oauth.username if browser_oauth else None
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -475,6 +514,66 @@ def create_app(
             },
             headers=_CACHE_CONTROL,
         )
+
+    # These paths are for the browser dashboard.  The Gateway sends `/api/`
+    # through Authentik's proxy outpost, while `/v1/` above remains the narrow
+    # bearer API consumed by unattended local and in-cluster clients.
+    @app.get("/api/v1/quotas", dependencies=[Depends(_require_oauth_session)])
+    async def oauth_quotas(service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
+        snapshot = await service.fetch()
+        return JSONResponse(_normalized_payload(snapshot.quotas), headers=_CACHE_CONTROL)
+
+    if browser_oauth is not None:
+        oauth = OAuth()
+        oauth.register(
+            name="authentik",
+            client_id=browser_oauth.client_id,
+            client_secret=browser_oauth.client_secret,
+            server_metadata_url=browser_oauth.metadata_url,
+            client_kwargs={"scope": "openid email profile"},
+        )
+
+        @app.get("/auth/login")
+        async def oauth_login(request: Request) -> RedirectResponse:
+            client = oauth.create_client("authentik")
+            return cast(RedirectResponse, await client.authorize_redirect(request, browser_oauth.callback_url, nonce=secrets.token_urlsafe(32)))
+
+        @app.get("/auth/callback")
+        async def oauth_callback(request: Request) -> RedirectResponse:
+            client = oauth.create_client("authentik")
+            try:
+                token = await client.authorize_access_token(request)
+            except OAuthError as error:
+                logger.info("aiquota OAuth callback failed: %s", error.error)
+                raise HTTPException(status_code=401, detail="OAuth login failed") from error
+            userinfo = token.get("userinfo") or {}
+            if userinfo.get("iss") != browser_oauth.issuer or userinfo.get("preferred_username") != browser_oauth.username:
+                raise HTTPException(status_code=403, detail="OAuth identity is not authorized")
+            request.session["aiquota_user"] = browser_oauth.username
+            return RedirectResponse(url="/", status_code=303)
+
+        @app.get("/")
+        async def frontend_entry(request: Request) -> RedirectResponse | object:
+            if request.session.get("aiquota_user") != browser_oauth.username:
+                return RedirectResponse(url="/auth/login", status_code=303)
+            return FileResponse(frontend_dir / "index.html") if frontend_dir else {"status": "frontend unavailable"}
+
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=browser_oauth.session_secret,
+            https_only=browser_oauth.public_base_url.startswith("https://"),
+            same_site="lax",
+            max_age=3600,
+        )
+
+    if frontend_dir is None:
+        try:
+            frontend_dir = get_required_path(_FRONTEND_INDEX).parent
+        except FileNotFoundError:
+            # Unit tests exercise the API library without packaging its SPA.
+            logger.warning("aiquota frontend bundle is not present in runfiles")
+    if frontend_dir is not None:
+        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
     return app
 
@@ -514,6 +613,14 @@ def main() -> None:
             collector=collector,
             history_collector=history_collector,
             metrics=metrics,
+            browser_oauth=BrowserOAuth(
+                issuer=settings.oauth_issuer,
+                client_id=settings.oauth_client_id,
+                client_secret=settings.oauth_client_secret.get_secret_value(),
+                session_secret=settings.oauth_session_secret.get_secret_value(),
+                public_base_url=settings.public_base_url,
+                username=settings.oauth_username,
+            ),
         ),
         host="0.0.0.0",
         port=8080,

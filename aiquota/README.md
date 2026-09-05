@@ -1,9 +1,9 @@
 # aiquota API
 
-`aiquota` can run as a small, bearer-authenticated in-cluster API in addition
-to the CLI and GNOME extension. Its Kubernetes manifests and Deployment are
-separate from CLIProxyAPI. The API's Codex adapter uses the CLIProxyAPI
-integration; it does not mount or access CLIProxyAPI's OAuth PVC.
+`aiquota` can run as a small in-cluster API and an Authentik-gated browser
+dashboard in addition to the CLI and GNOME extension. Its Kubernetes manifests
+and Deployment are separate from CLIProxyAPI. The API's Codex adapter uses the
+CLIProxyAPI integration; it does not mount or access CLIProxyAPI's OAuth PVC.
 
 ## Endpoints
 
@@ -13,6 +13,7 @@ GET /readyz
 GET /metrics
 GET /v1/quotas
 GET /v1/providers/{provider}/raw
+GET /api/v1/quotas
 ```
 
 `/healthz`, `/readyz`, and `/metrics` are public for Kubernetes and Alloy.
@@ -29,6 +30,19 @@ carries the bounded exact response bytes as base64, their full-body SHA-256 and
 original byte length. The exact-byte field is truncated only when the response
 exceeds the 1 MiB capture cap. It never returns request or response headers,
 OAuth refresh responses, cookies, or credentials.
+
+## Browser dashboard and OAuth API
+
+`https://aiquota.allegedly.works/` is a small React dashboard. aiquota owns an
+Authentik OAuth authorization-code flow: `/auth/login` redirects to the
+`aiquota` OIDC provider, `/auth/callback` verifies the returned token, and a
+signed, HTTP-only app session gates both the frontend entry point and
+`/api/v1/quotas`. Authentik's application policy and aiquota's expected
+`preferred_username` both restrict this to `agentydragon`.
+
+The existing `/v1/*` bearer surface remains intentionally separate for the
+GNOME extension and unattended in-cluster clients. Do not put its bearer token
+in browser code or an OAuth session.
 
 ## Local clients
 

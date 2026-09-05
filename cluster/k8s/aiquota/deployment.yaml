@@ -67,6 +67,25 @@ spec:
             # frequent enough to watch the current day accrue.
             - name: AIQUOTA_HISTORY_INTERVAL_SECONDS
               value: "3600"
+            # App-owned Authentik authorization-code flow for the browser UI and
+            # `/api/v1/*`; the bearer-only `/v1/*` surface remains for clients.
+            - name: AIQUOTA_OAUTH_ISSUER
+              value: https://auth.allegedly.works/application/o/aiquota/
+            - name: AIQUOTA_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-oidc
+                  key: client_id
+            - name: AIQUOTA_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-oidc
+                  key: client_secret
+            - name: AIQUOTA_OAUTH_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-oidc
+                  key: session_secret
           volumeMounts:
             - name: config
               mountPath: /etc/aiquota

@@ -91,12 +91,15 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     imports = [".."],
+    data = ["//aiquota/frontend:bundle"],  # keep: SPA mounted by aiquota.api
     deps = [
         ":cache",
         ":clickhouse",
         ":config",
         ":models",
         "//aiquota/providers:base",
+        "//util/bazel:runfiles",
+        "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//prometheus_client",
