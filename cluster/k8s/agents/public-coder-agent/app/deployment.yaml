@@ -90,8 +90,13 @@ spec:
             # Keep provider, compaction, and agent-loop debug records on
             # stdout so cluster logging captures them in Loki. OpenClaw's
             # sensitive-value redaction remains enabled at its default.
+            # CLEANUP(added 2026-09-05): revert to debug once the gateway's
+            #   current startup hang/crash-loop is root-caused. Raised to
+            #   trace because debug-level output stops after 3 startup lines
+            #   with no further clue; trace adds hot-path timing diagnostics
+            #   debug doesn't have.
             - name: OPENCLAW_LOG_LEVEL
-              value: debug
+              value: trace
             # A placeholder, not a credential. The real PAT lives in the egress
             # proxy, which swaps this value into `Authorization` on the way out to
             # GitHub — in `Bearer <value>` and inside base64 `Basic user:<value>`
