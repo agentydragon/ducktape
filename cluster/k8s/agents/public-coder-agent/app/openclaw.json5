@@ -30,6 +30,14 @@
         model: {
           primary: "litellm/chatgpt/oai-responses/gpt-5.6-sol",
         },
+        // Cross-agent sessions_send/sessions_spawn targets are invisible under
+        // the default "tree" scope; widen only the TPM's own view so it can
+        // hand tasks to "coder". tools.agentToAgent below still gates the send.
+        tools: {
+          sessions: {
+            visibility: "all",
+          },
+        },
       },
     },
   },
@@ -271,6 +279,13 @@
     },
   },
   tools: {
+    // Off by default upstream: lets "haku_console_tpm" hand tasks to "coder"
+    // via sessions_send/sessions_spawn. Both ids must be listed for either
+    // direction of that handoff to be admitted.
+    agentToAgent: {
+      enabled: true,
+      allow: ["haku_console_tpm", "coder"],
+    },
     web: {
       search: {
         enabled: true,
