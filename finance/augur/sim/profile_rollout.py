@@ -28,7 +28,7 @@ import jax
 from finance.augur.model.deterministic import Constant
 from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
-from finance.augur.model.series_model import SeriesModelBundle
+from finance.augur.model.series_model import ScalarSeriesSpec, SeriesModelBundle
 from finance.augur.sim.bench_scenario import build_bench_scenario
 from finance.augur.sim.external_series import materialize_external_series
 from finance.augur.sim.locations import Location
@@ -81,7 +81,9 @@ def _add_scale_sales(scenario: Scenario, *, n: int, horizon_months: int) -> Scen
     ]
     # The sales price off SP500, which the bench scenario's own portfolio does not carry.
     model = scenario.external_series.model
-    asset_prices = AssetPriceGroups(security={**model.asset_prices.security, SP500_SYMBOL: Constant(value=120.0)})
+    asset_prices: AssetPriceGroups[ScalarSeriesSpec] = AssetPriceGroups(
+        security={**model.asset_prices.security, SP500_SYMBOL: Constant(value=120.0)}
+    )
     return scenario.model_copy(
         update={
             "initial_lots": [*scenario.initial_lots, *lots],
