@@ -50,7 +50,7 @@ py_library(
     srcs = ["identity.py"],
     deps = [
         ":policy",
-        ":resources",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
     ],
 )

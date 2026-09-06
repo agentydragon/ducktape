@@ -9,8 +9,8 @@ py_library(
     name = "fake_apiserver",
     srcs = ["fake_apiserver.py"],
     deps = [
-        "//x/agentplane/egress:identity",
         "//x/agentplane/egress:resources",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
     ],
