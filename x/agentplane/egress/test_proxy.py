@@ -154,16 +154,14 @@ class ProxyUnderTest:
         ):
             return Response(status=response.status, headers=dict(response.headers), body=await response.read())
 
-    async def get(
-        self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None, tls: bool = True
-    ) -> Response:
+    async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
         async with (
             aiohttp.ClientSession() as session,
             session.get(
-                self.url(path, tls=tls),
+                self.url(path),
                 proxy=f"http://127.0.0.1:{self.proxy_port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
-                ssl=client_tls_context(self.interception_ca) if tls else False,
+                ssl=client_tls_context(self.interception_ca),
                 headers=headers,
             ) as response,
         ):
@@ -322,10 +320,22 @@ async def test_authenticated_workload_source_uses_validated_context_for_plain_ht
     fake: FakeApiServer, proxy: ProxyUnderTest
 ) -> None:
     await install_workload_credential(fake, proxy)
+    token_file = proxy.tmp_path / "plain-http-sidecar-token"
+    token_file.write_text(TOKEN_A)
 
-    response = await proxy.get("/workload/http", headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"}, tls=False)
+    async with (
+        SidecarRelay(
+            proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
+        ) as sidecar,
+        aiohttp.ClientSession() as session,
+        session.get(
+            proxy.url("/workload/http", tls=False),
+            proxy=f"http://127.0.0.1:{sidecar.listen_port}",
+            headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"},
+        ) as response,
+    ):
+        assert (response.status, await response.read()) == (200, b"upstream ok")
 
-    assert (response.status, response.body) == (200, b"upstream ok")
     _, _, headers = one(proxy.upstream.requests)
     assert headers["authorization"] == f"Bearer {TOKEN_A}"
     assert "proxy-authorization" not in headers
