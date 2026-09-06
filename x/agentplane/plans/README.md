@@ -10,6 +10,7 @@ work that remains open or deferred; the [task DAG](task_dag.md) is the project o
 - [User stories](user_stories.md)
 - [Asynchronous approvals](async_approvals.md) — pending operation-contract decisions
 - [Operations and access](operations_and_access.md)
+- [Workload authentication and credential propagation](authentication_and_credentials.md) — authoritative Action Service design gate
 - [Driver-provided tools and background work](driver_tools_and_background.md)
 - [Agent access to external systems](external_access.md)
 - [BuildBuddy hosted remote-run authentication](buildbuddy_remote_auth.md) — body-rewrite boundary analysis

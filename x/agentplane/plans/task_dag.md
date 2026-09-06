@@ -34,6 +34,13 @@ remaining operation gate is the event/delivery contract: pending-turn behavior, 
 handling, standing grants, uncertain execution reconciliation, and the MCP adapter boundary. The
 accepted decisions and open questions are in [`operations_and_access.md`](operations_and_access.md).
 
+**Authentication and credential propagation is an implementation gate:**
+[`authentication_and_credentials.md`](authentication_and_credentials.md) keeps Action Service and
+LLM Proxy behind the existing per-Sandbox sidecar and central egress proxy, separates hop identity
+from destination credentials and service authorization, and defines the bounded future seam for
+Pod ServiceAccount tokens. PRs #5657, #5658, and #5662 are not merge-ready; no Action Service
+implementation lands before this design is accepted.
+
 **BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
 Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
 `x-buildbuddy-api-key`, and that the existing `wholeValue` target substitutes its placeholder across
@@ -68,6 +75,7 @@ flowchart TB
     OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
     OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
+    AUTH["Authentication/credential design gate<br/>shared proven workload context;<br/>bounded destination credentials"]:::decision
     OPI["ActionRequest vertical slice<br/>one adapter, decision UI, machine delivery<br/>to the originating Thread"]:::ready
 
     T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
@@ -100,7 +108,8 @@ flowchart TB
     OPD --> MCPD
     OPS --> OPI
     MCPD --> OPI
-    J --> OPI
+    J --> AUTH
+    AUTH --> OPI
     T1 --> OPI
     T3 --> F
     OPI --> F
@@ -159,6 +168,12 @@ A completed item leaves the active queue even when it supplies an edge.
   where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
   Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
   built before this gate.
+- **`AUTH` authentication and credential design:** accept
+  [`authentication_and_credentials.md`](authentication_and_credentials.md) before Action Service
+  implementation. Managed Sandboxes reuse the loopback sidecar and `agentplane-egress` hop token;
+  the central proxy derives workload context and applies exact credential bindings, while each
+  destination owns service authorization. Native destination-audience KSA tokens remain deferred
+  until the sidecar-to-central encrypted credential relay and CONNECT selection seam exist.
 - **`OPI` ActionRequest vertical slice:** one real adapter from agent intent through
   policy/Decision to the single Execution/result and later Thread delivery. V0 read scope is
   caller-own plus operator-all within the existing operator scope; the Action Hub is the canonical
@@ -209,7 +224,9 @@ A completed item leaves the active queue even when it supplies an edge.
   (interaction context), and authorization principal (policy subject). Cross-agent reads require an
   explicit mapping and data-read policy.
 - Egress remains enforced by the existing proxy and target policy. A preset or operation adapter
-  cannot bypass it or turn a placeholder into a reusable credential.
+  cannot bypass it or turn a placeholder into a reusable credential. LLM Proxy and Action Service
+  consume the same proxy-derived workload context but apply service-specific authorization; the
+  `agentplane-egress` hop token is never forwarded as their destination credential.
 - Do not add persistence schemas, controllers, policy DSLs, MCP registries, or permission matrices
   before the first acceptance test that needs them. Preserve whole evidence payloads rather than
   duplicating derivable hashes, lengths, manifests, or parsed mirrors.
