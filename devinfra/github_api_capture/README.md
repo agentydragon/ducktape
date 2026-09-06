@@ -171,7 +171,10 @@ and `/run/user/1001/systemd/user/github-api-proxy.service.d/80-graphql-5213-appe
 Either can replace the declarative `ExecStart`; inspect both before the switchover
 and do not restart a bare `-w` capture command. The owned
 `~/.local/state/github-api-proxy/cloud-github-block{,-runtime}-gcroot` links are
-retired only after these overrides no longer need them. Inspect the actual
+retired only after these overrides no longer need them. The later incremental
+WebSocket capture also owns `session-ws-metadata-gcroot` and
+`session-ws-metadata-service-gcroot` in that state directory; inventory these too.
+Inspect the actual
 profile bridge and local CA files on each host before deciding exact cleanup
 targets; neither source activation nor a successful build removes these.
 
