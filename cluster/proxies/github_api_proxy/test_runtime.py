@@ -11,9 +11,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from aiohttp import web
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
-from mitmproxy import certs, http, io
+from mitmproxy import http, io
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.proxy.server_hooks import ServerConnectionHookData
 from mitmproxy.tools.dump import DumpMaster
@@ -23,32 +21,10 @@ from cluster.proxies.github_api_proxy.config import Settings
 from cluster.proxies.github_api_proxy.destinations import PublicOrigins
 from cluster.proxies.github_api_proxy.metrics import Metrics
 from cluster.proxies.github_api_proxy.runtime import create_master
+from cluster.proxies.github_api_proxy.testing import certificates
 
 PASSWORD = "test-private-password-alpha-0123456789"
 SECOND_PASSWORD = "test-private-password-beta-0123456789"
-
-
-@dataclass
-class Certificates:
-    cert: Path
-    key: Path
-    ca: Path
-
-
-def certificates(directory: Path, label: str, hostname: str | None) -> Certificates:
-    key, authority = certs.create_ca(f"test-{label}", f"test-{label}", 2048)
-    leaf = (
-        certs.dummy_cert(key, authority, hostname, [x509.DNSName(hostname)]).to_cryptography()
-        if hostname
-        else authority
-    )
-    paths = Certificates(directory / f"{label}.crt", directory / f"{label}.key", directory / f"{label}-ca.crt")
-    paths.cert.write_bytes(leaf.public_bytes(serialization.Encoding.PEM))
-    paths.ca.write_bytes(authority.public_bytes(serialization.Encoding.PEM))
-    paths.key.write_bytes(
-        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
-    )
-    return paths
 
 
 @dataclass
