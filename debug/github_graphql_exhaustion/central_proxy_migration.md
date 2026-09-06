@@ -1,6 +1,6 @@
 # Central proxy migration
 
-Implementation checkpoint: 2026-09-06 04:43 UTC. This is not a quota-resolution
+Implementation checkpoint: 2026-09-06 04:53 UTC. This is not a quota-resolution
 or client-migration claim.
 
 ## Landed and verified
@@ -31,9 +31,11 @@ completed. Real proxy authentication remains a deployment gate.
 
 The default-off relay is published in
 [#5689](https://github.com/agentydragon/ducktape/pull/5689), head
-`a40bccd04ff26406663d1e431d9a006d5b793e60`; PR CI remains pending. A CodeQL
+`1902306c3bf61cfdaa8630d8322ad7250a868802`; the rebase onto the merged runtime
+is published, GitHub reports it mergeable without conflicts, and fresh CI is
+running. A CodeQL
 finding in the synthetic TLS fixture was repaired by setting its explicit
-TLS 1.2 minimum; the new head's Bazel CI passed and CodeQL no longer reported
+TLS 1.2 minimum; the pre-rebase head's Bazel CI passed and CodeQL no longer reported
 that failure. It passed 11
 real Squid 7.6/OpenSSL integration
 cases, including nested TLS, parent authentication, rejected bad certificates
@@ -42,20 +44,32 @@ and names, no direct fallback, and old-to-new app-private CA migration:
 The generated Nix wrapper builds; actual host activation and the production Nix
 Squid binary's central-route check are still required.
 
-Central runtime is published in
-[#5690](https://github.com/agentydragon/ducktape/pull/5690), head
-`77379cc3b9301d0c16bb7723b2d20aa59e20fcdb`. Its final-head Bazel CI passed in
+Central runtime [#5690](https://github.com/agentydragon/ducktape/pull/5690)
+merged at 04:43:38 UTC as `6b4172216861c39da1463249093f633b96296b1e`.
+Its final-head Bazel CI passed in
 [this invocation](https://app.buildbuddy.io/invocation/9949a020-fc03-55a8-86a5-8fbb428ce360),
 including the actual OCI entrypoint under UID 1000 (`--help`, not a full
 mounted-secret server boot). Authentication must precede origin
 dials, outer TLS must never use the interception CA, proxy credentials must not
 reach raw flows, and public-origin validation must reject local/private targets
-including DNS rebinding. Image publication and the real deployed route remain
-gates, not assumptions inferred from source tests. All CodeQL, Gazelle and
-Pre-commit checks passed; the artifact/import check remained running in its
-generated-command-policy Nix step. A denied CONNECT followed by a missing-auth
+including DNS rebinding. The real deployed route remains a gate, not an
+assumption inferred from source tests. A denied CONNECT followed by a missing-auth
 HTTP request on the same open connection is also tested: the successful-tunnel
 credential cache must not be installed by a denied CONNECT.
+
+The owning devel workflow successfully published
+`git.allegedly.works/ducktape-ci/github-api-proxy:devel-20260906044947-6b41722`
+at 04:50:09 UTC, digest
+`sha256:fe054926fb3e02511ac68c513dddafd544ba9ac224226b5efffe4d0e8a0c6f7f`:
+[image publication job](https://github.com/agentydragon/ducktape/actions/runs/34012234305/job/101430454299).
+The image test gate, OCI build and registry push succeeded. A separate local-only
+test follow-up booted the full image twice as UID/GID 1000 with read-only
+synthetic TLS/CA/credential mounts, memory-backed working configuration and one
+shared writable capture directory. Readiness and the authenticated verified-TLS
+probe succeeded; capture appended across restart, remained mode 0600/owner 1000,
+and contained no proxy password:
+[mounted-secret smoke invocation](https://app.buildbuddy.io/invocation/8ba8242b-1543-46ab-a721-da3a903c13c3).
+This does not verify actual Kubernetes storage permissions or production routing.
 
 ## Gateway decision
 
@@ -68,17 +82,17 @@ deployment is Cilium 1.19.6; a similar overlap is described in the
 [upstream report](https://github.com/cilium/cilium/issues/47590).
 
 The separate Gateway leaves existing listeners untouched. Its Service, metrics
-PodMonitor, private capture PVC and egress policy are prepared under
-`cluster/k8s/github-api-proxy/app/`, but are not wired into Flux. The Deployment
-must use a published image, one capture writer and Recreate rollouts. Storage
+PodMonitor, private capture PVC and egress policy are wired under
+`cluster/k8s/github-api-proxy/app/` in the deployment change. The Deployment
+uses the published image above, one capture writer and Recreate rollouts. Storage
 must retain evidence on app removal. Capture-write failure must remain observable
 without a liveness restart erasing the sticky readiness failure.
 
-The complete Deployment template is saved locally outside the repository at
-`/tmp/github-api-proxy-deployment-5213.yaml.in`. It deliberately has no usable
-image reference yet. Replace its publication marker with the verified registry
-tag before adding it to the app and wiring root Flux. Do not publish a guessed
-image tag or claim the directory deploys a running proxy.
+The deployment change now connects the app to root Flux, the registry credential
+reflection allowlist and Forgejo image automation. It remains unmerged at this
+checkpoint. Verify rollout, individual listener and route conditions, every
+resolved endpoint address on port 8443, private metrics, captures and actual
+client authentication before changing the working host proxy.
 
 The actual alert expressions passed upstream promtool scenarios for healthy
 operation, sticky capture failure, scrape failure, disappearance, replacement
@@ -103,9 +117,9 @@ cancelled, not passed. No blind rerun was triggered.
 
 ## Finish order
 
-1. Land the independently tested runtime/image and default-off relay changes;
-   verify image publication. Credentials have already reconciled.
-2. Complete and reconcile the central Deployment, networking and metrics. Verify
+1. Finish default-off relay CI and merge; the runtime image is already published
+   and credentials have reconciled.
+2. Publish, land and reconcile the central Deployment, networking and metrics. Verify
    the dedicated listener and route conditions, then authenticated nested TLS,
    exact-route blocking, raw credential redaction and incremental capture.
 3. Pin the verified public CA and opt in wyrm2/rugged declaratively. Activate

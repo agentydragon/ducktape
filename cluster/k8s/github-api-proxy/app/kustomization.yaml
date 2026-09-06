@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - capture-pvc.yaml
   - config.yaml
+  - deployment.yaml
   - gateway.yaml
   - networkpolicy.yaml
   - podmonitor.yaml

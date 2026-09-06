@@ -7,7 +7,7 @@ credentials, or network authorization boundary for workstation traffic.
 
 ## Transport and identity
 
-`github-proxy.allegedly.works:8443` is the planned authenticated HTTPS forward
+`github-proxy.allegedly.works:8443` is the configured authenticated HTTPS forward
 proxy endpoint. A dedicated TLS-only Gateway passes the stream through a
 hostname-specific TLSRoute; an ordinary HTTPRoute is not assumed to forward
 CONNECT requests. Port 8443 avoids changing the shared Gateway's listeners:
@@ -57,8 +57,8 @@ the corresponding host's runtime secret together; do not create a second copy.
 
 ## Migration gate and cleanup
 
-The central runtime and host trampoline are being implemented independently.
-This directory is not evidence of deployment. Preserve the working local
+The central runtime and host trampoline are separate changes.
+Committed manifests are not evidence of a successful rollout. Preserve the working local
 mitigation until all of these are verified on the actual central route:
 
 1. Correct credentials and both TLS trust chains work; wrong or missing
@@ -79,11 +79,14 @@ rugged or wyrm2 migrated successfully.
 Successful migration is not resolution of quota exhaustion. Account-wide quota
 and observation coverage still require the agreed multi-day acceptance window.
 
-## Central deployment preparation
+## Central deployment
 
-The `app/` manifests are not connected to root Flux yet. Runtime image publication,
-the Deployment, and its reconciliation layer are still required before exposure.
-Do not apply this directory manually or treat prepared manifests as a live route.
+Root Flux owns `app/` through the `github-api-proxy` Kustomization, after the
+identity/credentials, registry credentials, storage, monitoring, Gateway and
+Reloader dependencies. The Deployment starts from a verified published runtime
+image; Forgejo image automation tracks subsequent devel releases. Verify the
+reconciled revision, actual image digest, Pod startup, individual Gateway listener
+and TLSRoute conditions, and the authenticated route before migrating a client.
 
 Capture storage uses the replicated `seaweedfs-ovh` class and an initial 100-GiB
 claim. The app must run one writer with a Recreate rollout strategy. The PVC is
