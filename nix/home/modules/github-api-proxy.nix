@@ -103,7 +103,8 @@ in
           "--set"
           "confdir=${confDir}"
           "-w"
-          "${stateDir}/github.flows"
+          # + preserves existing flows when the service restarts.
+          "+${stateDir}/github.flows"
           "--set"
           "flow_detail=0"
         ];
