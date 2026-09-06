@@ -379,9 +379,13 @@ the reset observed at 01:35:46. The normal Desktop PID remained unchanged.
 A synthetic caller-tagged POST returned 429 at 01:35:28.189; this is one known
 non-application increment in the block counter. Private mode-0600 heartbeats
 arrived at 01:35:57 and 01:36:27. No natural batch attempt had arrived by those
-heartbeats, so synthetic success alone is not representative app-use proof.
-The account was zero used after reset through 01:36:59. Rugged has source
-configuration only; no live activation was performed there.
+heartbeats, so synthetic success alone was not representative app-use proof.
+By **01:40:59.208**, the cumulative count reached 84: **83 natural app attempts
+plus the known synthetic probe**. Desktop's original network child retained
+nine established loopback-proxy connections. The account was zero used through
+01:40:35, then one used at 01:40:41 and still one at 01:41:18. This verifies
+natural requests reaching the standing block, not a completed healthy hour.
+Rugged has source configuration only; no live activation was performed there.
 
 Start the acceptance clock at a clean hourly reset after verified mitigation,
 with independent account-counter and mitigation coverage. Check after 48 hours;
