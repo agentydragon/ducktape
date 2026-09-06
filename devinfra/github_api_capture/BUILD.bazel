@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "report",
+    srcs = ["report.py"],
+    deps = ["@pypi//mitmproxy"],
+)
+
+py_test(
+    name = "test_report",
+    srcs = ["test_report.py"],
+    deps = [
+        ":report",
+        "//:conftest",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
