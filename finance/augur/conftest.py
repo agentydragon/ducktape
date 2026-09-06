@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
+
 import pytest
 
 from finance.augur.api.config import Config, load_augur_config
 from finance.augur.fit.synthetic_evidence import write_synthetic_evidence
-from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from finance.augur.model.deterministic import Constant, Deterministic
+from finance.augur.model.level_series_groups import AssetPriceGroups
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode, SecuritySymbol
+from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.model.testing import (
     ConstantFrameModel,
     PrivateEquityChannels,
@@ -13,6 +18,8 @@ from finance.augur.model.testing import (
     level_matrix_with_month_override,
 )
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
+from finance.augur.sim.locations import Location
+from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario, ScheduledTransfer
 from util.bazel.runfiles import get_required_path
 
 _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
@@ -78,4 +85,84 @@ def capacity_limited_private_equity_model() -> ConstantFrameModel:
             )
         },
         model_id="capacity_limited_pe_fixture",
+    )
+
+
+DeterministicSeriesModelBundleFactory = Callable[[Sequence[float]], SeriesModelBundle]
+# Module-level singleton so the fixture's default isn't a call in arg defaults (ruff B008).
+_DEFAULT_SYMBOL = SecuritySymbol("vti")
+ConstantPriceBundleFactory = Callable[[Mapping[SecuritySymbol, float]], SeriesModelBundle]
+
+
+@pytest.fixture
+def deterministic_series_bundle() -> DeterministicSeriesModelBundleFactory:
+    def build(levels: Sequence[float], *, symbol: SecuritySymbol = _DEFAULT_SYMBOL) -> SeriesModelBundle:
+        # The fixture's series lives in the asset-price role (keyed by symbol); all
+        # callers take the default. No flat LevelSeriesKey map is constructed.
+        return SeriesModelBundle.independent(
+            asset_prices=AssetPriceGroups(security={symbol: Deterministic(levels=list(levels))})
+        )
+
+    return build
+
+
+@pytest.fixture
+def constant_price_bundle() -> ConstantPriceBundleFactory:
+    """Asset prices every rollout and month holds flat.
+
+    A sale is priced off its asset's own sampled series, so a test that wants an exact
+    expected proceeds figure pins the series rather than the sale.
+    """
+
+    def build(prices: Mapping[SecuritySymbol, float]) -> SeriesModelBundle:
+        return SeriesModelBundle.independent(
+            asset_prices=AssetPriceGroups(security={symbol: Constant(value=price) for symbol, price in prices.items()})
+        )
+
+    return build
+
+
+@pytest.fixture
+def san_francisco_location() -> Location:
+    return Location(
+        location_id="san_francisco",
+        display_name="San Francisco, CA",
+        jurisdiction_ids=["federal_us", "california"],
+        annual_property_tax_rate=0.01180,
+        annual_special_assessment=0,
+    )
+
+
+@pytest.fixture
+def vallejo_mare_island_location() -> Location:
+    return Location(
+        location_id="vallejo_mare_island",
+        display_name="Vallejo, CA — Mare Island",
+        jurisdiction_ids=["federal_us", "california"],
+        annual_property_tax_rate=0.0115,
+        annual_special_assessment=2300,
+    )
+
+
+@pytest.fixture
+def alice_bob_scenario() -> Scenario:
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=10),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=20),
+        ],
+        scheduled_transfers=[
+            ScheduledTransfer(
+                month=0,
+                cause_id="bob_gives_alice_5",
+                from_agent_id="bob",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount=5,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=1,
     )

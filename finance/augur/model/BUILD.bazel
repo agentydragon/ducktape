@@ -546,3 +546,18 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
 )
+
+py_test(
+    name = "private_equity_bundle_test",
+    srcs = ["private_equity_bundle_test.py"],
+    deps = [
+        ":conftest",
+        ":private_equity_bundle",
+        ":series",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

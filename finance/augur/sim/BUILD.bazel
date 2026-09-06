@@ -436,15 +436,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = [
-        ":locations",
-        "//finance/augur/model:deterministic",
-        "//finance/augur/model:level_series_groups",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-        "@pypi//jax",
-        "@pypi//pytest",
-    ],
+    deps = ["@pypi//jax"],
 )
 
 SIMULATE_TEST_DEPS = [
@@ -467,35 +459,6 @@ SIMULATE_TEST_DEPS = [
     "@pypi//pytest",
     "@pypi//pytest_bazel",
 ]
-
-py_test(
-    name = "simulate_test",
-    size = "medium",
-    srcs = ["simulate_test.py"],
-    shard_count = 8,
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":fixed_point",
-        ":locations",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:gbm",
-        "//finance/augur/model:level_series_groups",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
 
 py_test(
     name = "scan_test",
@@ -678,5 +641,21 @@ py_library(
         ":product_metrics",
         ":scenario",
         "//finance/augur/sim/compiler:plan",
+    ],
+)
+
+py_test(
+    name = "scenario_test",
+    srcs = ["scenario_test.py"],
+    deps = [
+        ":conftest",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -10,12 +10,23 @@ import pytest_bazel
 
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.engine.jax_backend import JaxEngine
+from finance.augur.sim.testing.behaviour import (
+    AssetSaleAcceptance,
+    IndexedAmountAcceptance,
+    ObligationAcceptance,
+    PropertyCarryingCostAcceptance,
+    RolloutFailureAcceptance,
+    TransferAcceptance,
+    YearEndTaxAcceptance,
+)
 from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
+from finance.augur.sim.testing.deductions import DeductionAcceptance
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.jax_result import run_jax
+from finance.augur.sim.testing.private_equity import PrivateEquityAcceptance
 from finance.augur.sim.testing.property_stakes import PropertyStakeAcceptance
 from finance.augur.sim.testing.rental_lifecycle import (
     LeasingFeeAcceptance,
@@ -63,6 +74,18 @@ class TestJaxSecurityDistributions(SecurityDistributionAcceptance):
 
 
 class TestJaxPropertyStakes(PropertyStakeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxPrivateEquity(PrivateEquityAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxDeductions(DeductionAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_jax
@@ -129,6 +152,48 @@ class TestJaxRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
 
 
 class TestJaxRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxTransfer(TransferAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxIndexedAmount(IndexedAmountAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxAssetSale(AssetSaleAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxYearEndTax(YearEndTaxAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxObligation(ObligationAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxPropertyCarryingCost(PropertyCarryingCostAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxRolloutFailure(RolloutFailureAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_jax

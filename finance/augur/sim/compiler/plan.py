@@ -310,6 +310,12 @@ def compile_simulation(
     jurisdictions: dict[str, Jurisdiction],
     locations: dict[str, Location],
 ) -> CompiledSimulation:
+    # Every engine reads the compiled plan, so the population size is checked here rather than
+    # at whichever entry point a caller happened to use. JAX otherwise divides by the rollout
+    # count deep inside a traced reshape and raises ZeroDivisionError from XLA.
+    if rollout_count <= 0:
+        raise ValueError(f"rollout_count must be positive; got {rollout_count}")
+
     strings = StringTable()
     assets = AssetTable()
     horizon = int(scenario.horizon_months)
