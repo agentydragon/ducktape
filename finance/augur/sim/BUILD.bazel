@@ -581,30 +581,6 @@ py_test(
 )
 
 py_test(
-    name = "test_rental_lifecycle_e2e",
-    size = "medium",
-    srcs = ["test_rental_lifecycle_e2e.py"],
-    shard_count = 4,
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":fixed_point",
-        ":locations",
-        ":runtime",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_income_category_e2e",
     size = "medium",
     srcs = ["test_income_category_e2e.py"],
@@ -732,5 +708,20 @@ py_library(
         ":product_metrics",
         ":scenario",
         "//finance/augur/sim/compiler:plan",
+    ],
+)
+
+py_test(
+    name = "test_obligation_deduction_e2e",
+    srcs = ["test_obligation_deduction_e2e.py"],
+    deps = [
+        ":conftest",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:jax_result",
+        "//finance/augur/sim/testing:rental_lifecycle",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

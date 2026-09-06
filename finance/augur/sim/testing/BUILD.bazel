@@ -201,3 +201,21 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "rental_lifecycle",
+    srcs = ["rental_lifecycle.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":simulation_result",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)

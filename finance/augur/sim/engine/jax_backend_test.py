@@ -17,6 +17,14 @@ from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.jax_result import run_jax
 from finance.augur.sim.testing.property_stakes import PropertyStakeAcceptance
+from finance.augur.sim.testing.rental_lifecycle import (
+    LeasingFeeAcceptance,
+    ManagementFeeAcceptance,
+    RentalCashflowReconciliationAcceptance,
+    RentalIncomeAcceptance,
+    RentalIncomeTaxationAcceptance,
+    RentalLifecycleCashflowsAcceptance,
+)
 from finance.augur.sim.testing.rollout_independence import RolloutIndependenceAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
@@ -78,6 +86,42 @@ class TestJaxBondValue(BondValueAcceptance):
 
 
 class TestJaxFrozenRollout(FrozenRolloutAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxRentalIncome(RentalIncomeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxManagementFee(ManagementFeeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxRentalLifecycleCashflows(RentalLifecycleCashflowsAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxLeasingFee(LeasingFeeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_jax
