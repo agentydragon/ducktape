@@ -16,6 +16,9 @@ model:
 - `google/goog-generate/*` / `google/goog-embed/*` — Google AI key (Gemini), on Google's
   own `:generateContent` / `:embedContent` wire
 - `mistral/oai-chat/*` — Mistral API key
+- `ollama/oai-chat/*` / `ollama/olm-chat/*` — self-hosted Ollama, which serves the same
+  models on an OpenAI-compatible `/v1` and on its own `/api/chat`; the model segment
+  carries the `num_ctx` variant (`gpt-oss-20b-512k`) that distinguishes entries
 
 The shape is the OUTBOUND wire — the request LiteLLM makes to the provider, never the
 request a client makes to LiteLLM. Nothing about the inbound side is pinned: LiteLLM routes
@@ -29,15 +32,15 @@ load-bearing wherever one account is served over two wires:
 tool calls instead of LiteLLM's own Messages bridge (<nix/home/claude_code/codex-claude.nix>).
 
 A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
-goog-generate, goog-embed): the shape segment names a wire protocol, and wire protocols are
+goog-generate, goog-embed, olm-chat): the shape segment names a wire protocol, and wire protocols are
 identified by their definer — the bare nouns are unique only in today's snapshot
 ("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
 distinct wire shapes answering to the same nouns). The definer prefix is NOT the
 provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
 PROTOCOL that wire is, and they vary independently — `chatgpt/ant-messages/*` is the
 ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
-(ant, oai, goog; future coh, ...) so a provider slug can never stutter against a
-definer name (openai/openai-chat).
+(ant, oai, goog, olm; future coh, ...) so a provider slug can never stutter against a
+definer name (openai/openai-chat, ollama/ollama-chat).
 
 Segments are separated by `/`, not `-`: provider model slugs are dash-heavy
 (gpt-5.6-sol, claude-sonnet-4-6, gemini-embedding-001), so a dash cannot mark segment
@@ -50,8 +53,8 @@ rides in a URL path or a Kubernetes resource name.
 The provider segment rides in front, not behind, because key allowlists match
 `model_name` prefixes (the `anthropic-api/ant-messages/*` wildcard in
 tf/gitops/litellm-keys/main.tf). Deliberately not renamed: the raw upstream model slugs
-inside the exposed names, the groq entries, and the self-hosted Ollama entries, whose
-`-openai-chat`/`-ollama-native` wire suffixes have no account to name. The bare `gemini-embedding-2`
+inside the exposed names, and the groq entries, whose single wire nothing else contends
+with. The bare `gemini-embedding-2`
 alias is exempt too: it predates the scheme and public-coder-agent's durable memory index
 stores that model identity, so it stays until the index is deliberately rebuilt.
 """
@@ -68,6 +71,7 @@ class Provider(StrEnum):
     TANA = "tana"
     GOOGLE = "google"
     MISTRAL = "mistral"
+    OLLAMA = "ollama"
 
 
 class ApiShape(StrEnum):
@@ -78,6 +82,7 @@ class ApiShape(StrEnum):
     OAI_CHAT = "oai-chat"
     GOOG_GENERATE = "goog-generate"
     GOOG_EMBED = "goog-embed"
+    OLM_CHAT = "olm-chat"
 
 
 def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:

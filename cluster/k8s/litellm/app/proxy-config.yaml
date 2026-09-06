@@ -1,6 +1,6 @@
 # Validated by //cluster/k8s/litellm/app:test_litellm_config — keep in sync with its composed expectations.
 model_list:
-  - model_name: gpt-oss-20b-128k-openai-chat
+  - model_name: ollama/oai-chat/gpt-oss-20b-128k
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
@@ -8,7 +8,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-20b-256k-openai-chat
+  - model_name: ollama/oai-chat/gpt-oss-20b-256k
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
@@ -19,7 +19,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-20b-512k-openai-chat
+  - model_name: ollama/oai-chat/gpt-oss-20b-512k
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
@@ -30,7 +30,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-20b-1m-openai-chat
+  - model_name: ollama/oai-chat/gpt-oss-20b-1m
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
@@ -41,14 +41,14 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-20b-128k-ollama-native
+  - model_name: ollama/olm-chat/gpt-oss-20b-128k
     litellm_params:
       model: ollama/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-20b-256k-ollama-native
+  - model_name: ollama/olm-chat/gpt-oss-20b-256k
     litellm_params:
       model: ollama/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434
@@ -58,7 +58,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-20b-512k-ollama-native
+  - model_name: ollama/olm-chat/gpt-oss-20b-512k
     litellm_params:
       model: ollama/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434
@@ -68,7 +68,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-20b-1m-ollama-native
+  - model_name: ollama/olm-chat/gpt-oss-20b-1m
     litellm_params:
       model: ollama/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434
@@ -78,7 +78,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-120b-128k-openai-chat
+  - model_name: ollama/oai-chat/gpt-oss-120b-128k
     litellm_params:
       model: openai/gpt-oss:120b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
@@ -86,14 +86,14 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-oss-120b-128k-ollama-native
+  - model_name: ollama/olm-chat/gpt-oss-120b-128k
     litellm_params:
       model: ollama/gpt-oss:120b
       api_base: http://ollama.ollama.svc.cluster.local:11434
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gemma4-31b-it-q8_0-128k-openai-chat
+  - model_name: ollama/oai-chat/gemma4-31b-it-q8_0-128k
     litellm_params:
       model: openai/gemma4:31b-it-q8_0
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
@@ -101,7 +101,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gemma4-31b-it-q8_0-128k-ollama-native
+  - model_name: ollama/olm-chat/gemma4-31b-it-q8_0-128k
     litellm_params:
       model: ollama/gemma4:31b-it-q8_0
       api_base: http://ollama.ollama.svc.cluster.local:11434
