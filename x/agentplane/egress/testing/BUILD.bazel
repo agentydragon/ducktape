@@ -8,6 +8,10 @@ package(
 py_library(
     name = "fake_apiserver",
     srcs = ["fake_apiserver.py"],
+    visibility = [
+        "//x/agentplane/egress:__pkg__",
+        "//x/agentplane/llm_ingress:__pkg__",
+    ],
     deps = [
         "//x/agentplane/egress:resources",
         "//x/agentplane/sandbox_auth:principal",

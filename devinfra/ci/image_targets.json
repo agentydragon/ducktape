@@ -234,6 +234,11 @@
       "target": "//x/agentplane/egress:sidecar_image",
       "test": "//x/agentplane/egress/...",
       "registry": "forgejo"
+    },
+    "agentplane-llm-ingress": {
+      "target": "//x/agentplane/llm_ingress:image",
+      "test": "//x/agentplane/llm_ingress/...",
+      "registry": "forgejo"
     }
   }
 }

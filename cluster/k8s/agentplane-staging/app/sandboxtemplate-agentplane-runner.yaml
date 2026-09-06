@@ -3,8 +3,8 @@
 # or warm pool references it), driven over port 7000. The Pod is pinned to
 # hil-ovh, where its state PVC binds; a suspended Sandbox (operatingMode:
 # Suspended) drops the Pod and keeps the PVC, so it resumes on the node holding
-# it. Both harnesses reach the cluster LiteLLM through the egress sidecar, which
-# substitutes the cheap-experiments key; the runner holds only its placeholder.
+# it. Both harnesses reach the authenticated LLM ingress through the egress sidecar, which
+# substitutes the sidecar-only workload token; the runner holds only an inert placeholder.
 # Everything outside the sandbox goes through the egress sidecar: the harness
 # children's HTTP(S)_PROXY, declared in the runner's --harness-env below, is the
 # sidecar on loopback, which relays to the central proxy (../egress) with the Pod's
@@ -110,15 +110,15 @@ spec:
                 - ALL
           env:
             - name: LITELLM_URL
-              value: http://litellm.litellm.svc.cluster.local:4000
-            # Not the key: the placeholder the litellm-cheap-experiments EgressCredential derives
-            # from its name. Both harnesses send it as `Authorization: Bearer`, and the proxy puts
-            # the real key there on the way out. Nothing in this Pod can read the key, so a runner
-            # spends the budget only through requests the proxy admitted.
+              value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
+            # Neither a workload token nor a LiteLLM key: the placeholder the agentplane-workload
+            # EgressCredential derives from its name. Both harnesses send it as Authorization:
+            # Bearer; central substitutes the sidecar-only projected token, and the ingress replaces
+            # that with its server-held LiteLLM virtual key after live SandboxPrincipal resolution.
             - name: ANTHROPIC_AUTH_TOKEN
-              value: agentplane-credential-litellm-cheap-experiments
+              value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY
-              value: agentplane-credential-litellm-cheap-experiments
+              value: agentplane-credential-agentplane-workload
           resources:
             requests:
               cpu: 500m

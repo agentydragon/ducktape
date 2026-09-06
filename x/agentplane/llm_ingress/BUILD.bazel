@@ -1,0 +1,90 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":app",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "x.agentplane.llm_ingress.main",
+    deps = [":main"],
+)
+
+py_test(
+    name = "test_ingress",
+    size = "medium",
+    srcs = ["test_ingress.py"],
+    deps = [
+        ":app",
+        "//:conftest",
+        "//x/agentplane/egress:resources",
+        "//x/agentplane/egress/testing:fake_apiserver",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//aiohttp",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Published as agentplane-llm-ingress (devinfra/ci/image_targets.json) and deployed only between
+# the central Agentplane egress proxy and the existing LiteLLM Service.
+aspect_py_binary(
+    name = "image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("image_bin"),
+    env = py_image_env(
+        binary_name = "image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+)

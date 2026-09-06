@@ -1,0 +1,23 @@
+# TokenReview proves the Pod-bound workload bearer presented by the central egress proxy. It grants
+# none of that Pod's authority to the ingress.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-llm-ingress-token-reviewer
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-llm-ingress-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-llm-ingress-token-reviewer
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-llm-ingress
+    namespace: agentplane-staging
