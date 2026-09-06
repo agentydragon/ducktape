@@ -99,16 +99,15 @@ class CredentialTargetView(BaseModel):
 
 
 class CredentialView(BaseModel):
-    """A credential a rule lets a subject present. The value lives only in the proxy: this names the
-    Secret it is drawn from, never its content."""
+    """A credential a rule lets a subject present. Source metadata names no credential value."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
     description: str = Field(description="What the credential is and what it can do, as its owner wrote it.")
     placeholder: str = Field(description="What a sandbox sends in its place; derived from the name.")
-    secret: str
-    key: str = Field(description="Key of that Secret, in the proxy's credentials namespace.")
+    secret: str | None = Field(default=None, description="Source Secret, absent for a workload-token source.")
+    key: str | None = Field(default=None, description="Source Secret key, absent for a workload-token source.")
     targets: list[CredentialTargetView]
 
 
@@ -283,17 +282,18 @@ def policy_views(policies: Iterable[object], credentials: Iterable[object]) -> l
 
 
 def _credentials_by_name(credentials: Iterable[object]) -> dict[str, CredentialView]:
-    return {
-        credential.metadata.name: CredentialView(
+    resolved: dict[str, CredentialView] = {}
+    for credential in map(EgressCredential.model_validate, credentials):
+        secret_ref = credential.spec.source.secret_ref
+        resolved[credential.metadata.name] = CredentialView(
             name=credential.metadata.name,
             description=credential.spec.description,
             placeholder=credential.placeholder,
-            secret=credential.spec.source.secret_ref.name,
-            key=credential.spec.source.secret_ref.key,
+            secret=secret_ref.name if secret_ref is not None else None,
+            key=secret_ref.key if secret_ref is not None else None,
             targets=[_target_view(target) for target in credential.spec.targets],
         )
-        for credential in map(EgressCredential.model_validate, credentials)
-    }
+    return resolved
 
 
 def _target_view(target: Target) -> CredentialTargetView:

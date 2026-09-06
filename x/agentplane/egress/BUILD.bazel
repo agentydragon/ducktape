@@ -194,6 +194,7 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
+        "@pypi//mitmproxy",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

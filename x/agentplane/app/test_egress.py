@@ -192,6 +192,29 @@ async def test_list_policies_summarises_every_rule(
     assert (open_rule.hosts, open_rule.methods, open_rule.credential) == (["pypi.org"], None, None)
 
 
+async def test_authenticated_workload_source_projects_no_token_or_secret_reference(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    custom_objects.objects[("egresscredentials", "workload")] = {
+        "apiVersion": "agentplane.allegedly.works/v1alpha1",
+        "kind": "EgressCredential",
+        "metadata": {"name": "workload"},
+        "spec": {
+            "source": {"authenticatedWorkloadToken": {}},
+            "description": "the authenticated caller",
+            "targets": [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
+        },
+    }
+    custom_objects.objects[("egresspolicies", "workload")] = egress_policy(
+        "workload", [{"hosts": ["agentplane.internal"], "credentialRef": {"name": "workload"}}]
+    )
+
+    credential = (await egress.list_policies())[0].rules[0].credential
+
+    assert credential is not None
+    assert (credential.name, credential.secret, credential.key) == ("workload", None, None)
+
+
 async def test_a_rule_naming_a_credential_the_namespace_does_not_hold_says_which_name_dangles(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:

@@ -22,6 +22,7 @@ import pytest
 import pytest_bazel
 from aiohttp import web
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from mitmproxy import connection, http
 from more_itertools import one
 
 from x.agentplane.egress.addon import DENIED_HEADER, RULES_PATH, SELF_HOST, EgressAddon
@@ -43,7 +44,7 @@ from x.agentplane.egress.conftest import (
     informer,
 )
 from x.agentplane.egress.decisions import DecisionRing
-from x.agentplane.egress.identity import PodIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.resources import TargetMethod, placeholder_of
@@ -135,6 +136,7 @@ class ProxyUnderTest:
     tmp_path: Path
     index: Index
     upstream: RecordingUpstream
+    addon: EgressAddon
 
     def url(self, path: str, *, tls: bool = True) -> str:
         scheme = "https" if tls else "http"
@@ -197,7 +199,7 @@ async def proxy(
         async with (
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
-                EgressAddon(
+                addon := EgressAddon(
                     index=index, verifier=verifier, ring=ring, resolver=UpstreamResolver(exempt=exempt_networks)
                 ),
                 confdir=tmp_path / "confdir",
@@ -213,6 +215,7 @@ async def proxy(
                 tmp_path=tmp_path,
                 index=index,
                 upstream=upstream,
+                addon=addon,
             )
     finally:
         informer_task.cancel()
@@ -227,6 +230,49 @@ WORKLOAD_POLICY = "first-party-workload"
 
 def denial(response: Response, reason: DenyReason) -> bool:
     return response.status == 403 and response.headers[DENIED_HEADER] == f"denied; reason={reason}"
+
+
+def authentication_flow(client: connection.Client, proxy_authorization: str | None) -> http.HTTPFlow:
+    flow = http.HTTPFlow(client, connection.Server(address=(UPSTREAM_HOST, 80)))
+    headers = http.Headers()
+    if proxy_authorization is not None:
+        headers["Proxy-Authorization"] = proxy_authorization
+    flow.request = http.Request.make("GET", f"http://{UPSTREAM_HOST}/workload/context", headers=headers)
+    return flow
+
+
+@pytest.mark.parametrize(
+    ("replacement", "reason"),
+    [("Basic malformed", DenyReason.TOKEN_MISSING), ("Bearer rejected", DenyReason.TOKEN_REJECTED)],
+)
+async def test_rejected_replacement_clears_authenticated_connection_context(
+    proxy: ProxyUnderTest, replacement: str, reason: DenyReason
+) -> None:
+    client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
+    admitted = authentication_flow(client, f"Bearer {TOKEN_A}")
+    assert (await proxy.addon._sandbox_of(admitted)).metadata.name == SANDBOX_A
+    assert "proxy-authorization" not in admitted.request.headers
+
+    rejected = authentication_flow(client, replacement)
+    with pytest.raises(IdentityRejectedError) as refusal:
+        await proxy.addon._sandbox_of(rejected)
+    assert refusal.value.reason is reason
+    assert "proxy-authorization" not in rejected.request.headers
+
+    with pytest.raises(IdentityRejectedError) as after:
+        await proxy.addon._sandbox_of(authentication_flow(client, None))
+    assert after.value.reason is DenyReason.TOKEN_MISSING
+
+
+async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest) -> None:
+    client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
+    assert (await proxy.addon._sandbox_of(authentication_flow(client, f"Bearer {TOKEN_A}"))).metadata.name == SANDBOX_A
+
+    proxy.addon.client_disconnected(client)
+
+    with pytest.raises(IdentityRejectedError) as after:
+        await proxy.addon._sandbox_of(authentication_flow(client, None))
+    assert after.value.reason is DenyReason.TOKEN_MISSING
 
 
 async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest, *, bind_b: bool = False) -> None:

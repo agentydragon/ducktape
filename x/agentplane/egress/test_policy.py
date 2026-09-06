@@ -382,6 +382,7 @@ def test_authenticated_workload_source_substitutes_only_the_validated_context_be
         ),
     )
     assert decision == Allowed("b", "workload", 0, (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {token}",)),))
+    assert token not in repr(decision)
 
 
 def test_authenticated_workload_source_fails_without_authenticated_context() -> None:

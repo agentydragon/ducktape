@@ -16,7 +16,7 @@ from __future__ import annotations
 import base64
 import binascii
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from x.agentplane.egress.resources import (
     BasicPasswordTarget,
@@ -46,7 +46,7 @@ class HeaderRewrite:
     every position that presented the placeholder and the rest untouched."""
 
     header: str
-    values: tuple[str, ...]
+    values: tuple[str, ...] = field(repr=False)
 
 
 @dataclass(frozen=True)
