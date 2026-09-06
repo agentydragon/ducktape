@@ -491,7 +491,6 @@ py_test(
         "//finance/augur/sim/testing:state_helpers",
         "@pypi//numpy",
         "@pypi//polars",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -678,5 +677,21 @@ py_library(
         ":product_metrics",
         ":scenario",
         "//finance/augur/sim/compiler:plan",
+    ],
+)
+
+py_test(
+    name = "scenario_test",
+    srcs = ["scenario_test.py"],
+    deps = [
+        ":conftest",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
