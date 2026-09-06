@@ -39,6 +39,33 @@ fn assert_half_away_from_zero(product: i128, denominator: i128, quotient: i128) 
     }
 }
 
+/// Denominators that reach the rounding boundary as well as the extremes.
+///
+/// A uniformly random `i64` denominator is so large that a random dividend never lands
+/// near half of it, so a suite drawn only from the full range checks the easy interior
+/// of the rule and never its edge.
+fn interesting_denominator() -> impl Strategy<Value = i64> {
+    prop_oneof![
+        2 => 1i64..=64,
+        2 => -64i64..=-1,
+        1 => any::<i64>().prop_filter("the zero denominator has its own test", |d| *d != 0),
+    ]
+}
+
+/// Operands whose exact quotient is a half -- the case the rounding rule exists for.
+///
+/// Ties cannot be found by sampling, so they are constructed: `half` is one half of an
+/// even denominator, and the dividend is that much past a whole multiple of it.
+fn exact_tie() -> impl Strategy<Value = (i64, i64, i64)> {
+    (1i64..=(1 << 30), -(1i64 << 30)..=(1 << 30), any::<bool>()).prop_map(
+        |(half, multiple, below)| {
+            let denominator = 2 * half;
+            let offset = if below { -half } else { half };
+            (multiple * denominator + offset, 1, denominator)
+        },
+    )
+}
+
 /// A lot's basis, its units, and cut points that sell it down to nothing.
 ///
 /// Cuts stop short of the last unit, so the final piece is never empty and the sale
@@ -66,7 +93,7 @@ proptest! {
     fn narrow_mul_div_rounds_half_away_from_zero(
         lhs: i64,
         rhs: i64,
-        denominator in any::<i64>().prop_filter("the zero denominator has its own test", |d| *d != 0),
+        denominator in interesting_denominator(),
     ) {
         let product = i128::from(lhs) * i128::from(rhs);
         match mul_div_round_half_up(lhs, rhs, denominator, "proptest") {
@@ -82,6 +109,20 @@ proptest! {
             }
             Err(other) => prop_assert!(false, "unexpected refusal: {other}"),
         }
+    }
+
+    /// An exact tie lands away from zero, in both signs and in either direction across
+    /// the multiple. This is the half of the rule that sampling cannot reach.
+    #[test]
+    fn an_exact_tie_rounds_away_from_zero((lhs, rhs, denominator) in exact_tie()) {
+        let quotient = mul_div_round_half_up(lhs, rhs, denominator, "proptest")
+            .expect("constructed operands cannot overflow");
+        let product = i128::from(lhs) * i128::from(rhs);
+        assert_half_away_from_zero(product, i128::from(denominator), i128::from(quotient));
+        prop_assert!(
+            i128::from(quotient).abs() * i128::from(denominator).abs() > product.abs(),
+            "the tie at {lhs}/{denominator} did not move away from zero"
+        );
     }
 
     /// Negating either side negates the result. Half away from zero is the rounding
