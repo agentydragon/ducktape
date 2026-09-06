@@ -16,120 +16,150 @@ it was not inherently the wrong topology.
 
 ## Decision
 
-Use the same caller-authentication mechanism for Action Service, LLM Proxy, and future
-Kubernetes-native access: a sidecar-held, destination-audience projected token for the Sandbox Pod's
-actual Kubernetes ServiceAccount. The central proxy transports and substitutes that token, but the
-destination validates it directly and derives the caller from it.
+Keep two bearer credentials with different consumers and authorities:
+
+- `Proxy-Authorization: Bearer <agentplane-egress>` is hop authentication. The central egress proxy
+  consumes and validates it, then applies its own EgressPolicy/EgressBinding and target policy.
+- An end-to-end destination field such as `Authorization: Bearer <destination KSA JWT>` is
+  destination authentication. LLM Proxy, Action Service, or the Kubernetes API consumes and
+  validates it. The central proxy may carry, observe, and forward or inject this request data, but it
+  does not semantically validate or authorize the destination credential merely because it passes
+  through the proxy.
+
+For native KSA service authentication, project a destination-audience token for the Sandbox Pod's
+actual Kubernetes ServiceAccount into the sidecar only. Prefer sidecar-local transport or injection.
+The destination derives the caller from that token and remains authoritative for audience, issuer,
+Pod/ServiceAccount claims, liveness, service policy, and RBAC.
 
 ```text
 runner / agent
-    | ordinary HTTP(S) proxy traffic; inert placeholder only
+    | ordinary HTTP(S) proxy traffic; inert placeholder where injection is required
     v
 per-Sandbox egress-sidecar on loopback
-    | hop token: projected Pod KSA token, aud=agentplane-egress
-    | destination token: separate sidecar-only projected Pod KSA token,
-    |                    audience fixed by trusted Pod configuration
+    | Proxy-Authorization: Bearer <agentplane-egress>       (hop credential)
+    | Authorization: Bearer <destination KSA JWT>           (end-to-end credential,
+    |                                                        sidecar-supplied when configured)
     v
 central egress proxy
-    | validates both tokens with TokenReview for their configured audiences
-    | requires the same Pod UID + ServiceAccount on both proofs
-    | applies live Pod/Sandbox lookup and exact policy/binding/target checks
-    | TLS interception; substitutes destination token only in exact auth field
+    | consumes and validates Proxy-Authorization
+    | rejects runner bypass; enforces host/method/path and EgressPolicy/EgressBinding
+    | routes request; forwards or narrowly injects destination auth without validating it
+    | never logs or persists either bearer
     +--------------------+----------------------+----------------------+
     v                    v                      v
 LLM Proxy          Action Service       Kubernetes API        other upstream
-TokenReview +      TokenReview +        native token          configured
-WorkloadPrincipal WorkloadPrincipal    validation + RBAC     destination auth
+TokenReview +      TokenReview +        native token          provider/service
+WorkloadPrincipal WorkloadPrincipal    validation + RBAC     credential validation
 ```
 
-The `agentplane-egress` token remains a hop credential from sidecar to central only. It is never
-forwarded and authorizes no destination operation. The destination token is a separate projection,
-held only by the sidecar, for the Pod's real ServiceAccount and one operator-configured audience.
-The agent emits only an inert placeholder.
-
-The central proxy is a bounded credential relay and policy enforcement point. It is not the caller
-identity, a token mint, a signing authority, or a generic impersonation service. A proxy-derived
-private context header or the authenticated identity of the central proxy must not become the
-primary proof of the caller. The central proxy may attach non-authoritative decision references or
-correlation metadata, but every destination that uses workload identity validates the substituted
-KSA token itself.
+The central proxy is an authenticated route, egress policy enforcement point, and—where explicitly
+configured—credential substitution point. It is not the destination caller identity, a token mint,
+a TokenRequest service, a signing authority, a destination-token validation oracle, or a generic
+impersonation service. A proxy-derived identity header or the authenticated identity of the central
+proxy must not become caller proof.
 
 ## Four separate decisions
 
 Do not collapse these into one “auth token”:
 
-1. **Hop authentication** proves which live Kubernetes workload reached the central proxy. The
-   sidecar presents its projected `agentplane-egress` token over the authenticated relay. The
-   central proxy validates it with `TokenReview`, verifies Pod-bound claims, and correlates the live
-   Pod UID, ServiceAccount, source, and owning Sandbox. This token goes no farther.
-2. **Destination authentication** proves the same workload directly to the selected destination.
-   The trusted Pod template/controller projects a second token for the Pod's actual ServiceAccount
-   and a fixed destination audience. The sidecar alone can read it. The central proxy validates and
-   relays that exact token, then substitutes it only into the configured intercepted auth field.
-   Action Service, LLM Proxy, or the Kubernetes API validates the substituted token for its own
-   audience.
-3. **Workload attribution** resolves a validated Kubernetes subject and Pod UID through live
-   Kubernetes and Agentplane state into a shared `WorkloadPrincipal`: namespace, ServiceAccount,
-   Pod, and Sandbox, plus optional authoritative Agent and Thread references. Missing Agent or
-   Thread bindings remain absent.
-4. **Authorization** remains the destination's decision. Action Service owns ActionRequest policy;
-   LLM Proxy owns model, routing, and quota policy; Kubernetes API applies native RBAC. Egress
-   admission and successful authentication do not themselves allow an operation.
+1. **Hop authentication** proves which live Kubernetes workload's sidecar reached the central proxy.
+   The sidecar sends `Proxy-Authorization: Bearer <agentplane-egress>`. The central proxy consumes
+   it, validates it with `TokenReview`, verifies the configured Pod-bound claims, correlates the live
+   Pod/Sandbox and source, and never forwards it.
+2. **Destination authentication** proves a workload directly to the selected destination. For native
+   KSA service auth, trusted Pod configuration projects a second token for the Pod's actual
+   ServiceAccount and one fixed destination audience; the sidecar alone can read it. The destination
+   receives it in its normal auth field, validates it for its own audience and issuer, resolves the
+   workload, and applies service authorization or native RBAC. Central routing does not make the
+   destination credential valid.
+3. **Workload attribution** is destination-side for services that use KSA identity. Action Service
+   and LLM Proxy resolve a validated Kubernetes subject and Pod UID through live Kubernetes and
+   Agentplane state into the same `WorkloadPrincipal`: namespace, ServiceAccount, Pod, and Sandbox,
+   plus optional authoritative Agent and Thread references. Missing Agent or Thread bindings remain
+   absent.
+4. **Authorization** remains split by authority. Central decides whether the authenticated sidecar
+   may egress to the host/method/path under EgressPolicy/EgressBinding. Action Service owns
+   ActionRequest policy; LLM Proxy owns model, routing, and quota policy; Kubernetes API applies
+   native RBAC. Passing either layer does not grant the other layer's operation.
 
-## Token projection and bounded relay
+## Credential ownership and transport
 
-At Sandbox Pod creation, trusted configuration declares a finite set of projected ServiceAccount
-token volumes. Each destination projection fixes:
+### Central-held substitutions
+
+Existing provider and service secrets continue to work as they do today. The runner presents the
+configured inert placeholder; central evaluates the live workload, EgressPolicy/EgressBinding,
+request target, credential reference, and exact substitution field, then substitutes the configured
+Secret value.
+
+Credential target and presentation policy are central-owned in this case because central owns the
+Secret and performs the substitution. Central still does not need to validate the resulting API key,
+provider token, or service credential. It substitutes the exact configured value; the provider or
+service decides whether that credential is valid and authorized. Central must not return, persist,
+or log the value.
+
+### Native KSA destination authentication
+
+At Sandbox Pod creation, trusted configuration may declare destination-audience projected
+ServiceAccount token volumes. Each projection fixes:
 
 - the Pod's actual ServiceAccount;
-- one audience and expiry;
-- one sidecar-only token path;
-- one inert placeholder;
-- one exact destination host, port, protocol, and intercepted auth field; and
-- the EgressPolicy/EgressBinding credential definition allowed to select it.
+- one destination audience and expiry;
+- one sidecar-only token path; and
+- a trusted route or adapter that identifies the destination and presentation field.
 
 The runner container cannot mount or read these projections. The agent cannot choose a
-ServiceAccount, audience, token path, destination, or presentation field. Adding a destination token
-requires a trusted Pod-template/controller and binding change before the Pod starts, not a runtime
-request from the agent or central proxy.
+ServiceAccount, audience, token path, or destination credential. The central proxy receives no
+TokenRequest or ServiceAccount impersonation authority. Never send every projected token to central
+and never expose a token through an agent-visible response, file, environment variable, or log.
+
+Prefer the sidecar to place the projected destination token into the destination request and send
+that request through central as an authenticated egress route. The destination token is end-to-end
+authentication even if the TLS-intercepting central proxy can see it as request data. Central forwards
+it without TokenReview, destination authorization, or identity-header translation and does not log
+or persist it.
+
+The current generic sidecar sees a CONNECT host and port but relays opaque HTTPS after the tunnel is
+established. If it cannot set an inner `Authorization` or other destination auth field, the real
+implementation choices are:
+
+1. a local TLS-terminating or service-specific adapter that can construct the destination request,
+   inject the sidecar-only credential, and route it through central; or
+2. a narrowly specified encrypted sideband on the authenticated sidecar-to-central hop that supplies
+   one end-to-end credential for forwarding or exact-field injection after central intercepts TLS.
+
+The sideband is credential transport, not delegated destination authentication. It must bind the
+credential to trusted sidecar configuration and the selected CONNECT target, carry no caller-chosen
+audience or token path, and expose no token to the runner. P0 may configure at most one destination
+credential per unique CONNECT `host:port`; shared endpoints that need multiple credentials require a
+separate local route/listener or service-specific adapter rather than inference from an opaque inner
+path.
+
+## Request flow and enforcement
 
 For each request or tunnel:
 
-1. The agent sends the configured inert placeholder in the ordinary destination auth field.
-2. The sidecar selects at most one preconfigured destination credential from trusted local routing
-   configuration and reads that projection just in time.
-3. The sidecar sends the hop token, inert selector, and at most that one destination token to the
-   central proxy over an encrypted, authenticated relay. A plaintext bearer header on the existing
-   sidecar-to-central connection is not acceptable.
-4. The central proxy validates the hop token with `TokenReview` for `agentplane-egress` and the
-   destination token with `TokenReview` for the credential's configured audience.
-5. Both reviews must identify the same Pod UID and ServiceAccount. The central proxy also requires
-   the live Pod, owning Sandbox, source, CONNECT target, placeholder, EgressPolicy/EgressBinding,
-   credential slot, audience, and presentation target to agree.
-6. After TLS interception, the central proxy verifies the inner request still contains the expected
-   placeholder in the exact configured auth field. It replaces only that field with the validated
-   destination token. It never returns, persists, or logs either bearer.
+1. The runner connects only to the loopback sidecar. Network policy and central admission reject a
+   direct runner-to-central or runner-to-destination bypass.
+2. The sidecar sends `Proxy-Authorization: Bearer <agentplane-egress>` to central. The runner cannot
+   supply or override this header.
+3. Central validates that hop token for `agentplane-egress`, correlates the live Pod/Sandbox and
+   source, and enforces the requested CONNECT host plus applicable inner host/method/path and
+   EgressPolicy/EgressBinding rules.
+4. For a central-held Secret, central verifies the configured placeholder and performs the existing
+   exact-field substitution. For native KSA auth, the sidecar either injects the end-to-end token
+   locally or supplies the one configured token through the narrow sideband for forwarding/injection.
+5. Central strips its consumed `Proxy-Authorization`, forwards the destination auth field, and does
+   not TokenReview, authorize, log, or persist the destination credential.
+6. The destination authenticates and authorizes the destination credential. Action Service and LLM
+   Proxy use their shared `WorkloadPrincipal` authenticator/resolver; Kubernetes API uses native
+   token validation and RBAC; external providers use their own credential semantics.
 
-Any missing or stale Pod, wrong audience, ServiceAccount or Pod mismatch, unknown placeholder,
-ambiguous selection, binding mismatch, target mismatch, unavailable token, or unexpected inner auth
-value fails closed. The central proxy has no TokenRequest or ServiceAccount impersonation authority.
-Never send all projected tokens to the central proxy.
-
-## P0 HTTPS CONNECT selector
-
-The sidecar sees the CONNECT host and port before it relays opaque TLS; the central proxy sees the
-intercepted inner request and placeholder. P0 therefore allows exactly one configured destination
-credential for each unique CONNECT `host:port`.
-
-The sidecar selects that one credential from trusted configuration, never from a caller-supplied
-audience or token name. The central proxy binds it to the outer CONNECT target and then checks the
-inner placeholder, destination, and auth field after interception before substitution. HTTP/2
-connection coalescing must not widen the configured target.
-
-Multiple credentials or audiences on one CONNECT `host:port` are deferred. Supporting them requires
-one dedicated local listener/route per credential or a service-specific adapter that gives the
-sidecar an unambiguous trusted selection before the tunnel is opened. Do not guess from an inner
-path the sidecar cannot see, request a token after the tunnel begins, or send every candidate token.
+Central fails closed for missing or invalid hop auth, stale or unbound hop identity, direct bypass,
+unknown or disallowed targets, EgressPolicy/EgressBinding denial, ambiguous sidecar credential
+selection, credential/CONNECT binding mismatch, unavailable configured credential, or an unexpected
+placeholder at a central-owned substitution point. A destination rejects wrong audience, issuer,
+claims, liveness, service policy, or RBAC. Those destination failures are not reimplemented at
+central.
 
 ## Shared `WorkloadPrincipal`
 
@@ -137,7 +167,7 @@ Action Service and LLM Proxy use the same destination authenticator and Agentpla
 than service-local subject maps:
 
 ```text
-substituted destination-audience KSA token
+Authorization: Bearer <destination-audience KSA token>
   -> destination TokenReview
   -> validated namespace + ServiceAccount + Pod name/UID
   -> live Pod and owning Sandbox lookup
@@ -145,11 +175,11 @@ substituted destination-audience KSA token
   -> WorkloadPrincipal
 ```
 
-The shared contract contains the proven Kubernetes workload and Sandbox identity. Agent and Thread
-appear only when the existing Agentplane control plane has a current authoritative binding. A
-request body, Sandbox name, native provider thread ID, placeholder, or caller-supplied header is not
-evidence for those identities. Missing Agent or Thread remains absent; P0 does not invent a durable
-Agent registry to fill the gap.
+The shared contract contains the destination-proven Kubernetes workload and Sandbox identity. Agent
+and Thread appear only when the existing Agentplane control plane has a current authoritative
+binding. A request body, Sandbox name, native provider thread ID, placeholder, caller-supplied
+header, proxy identity, or proxy-derived identity header is not evidence for those identities.
+Missing Agent or Thread remains absent; P0 does not invent a durable Agent registry to fill the gap.
 
 Static `system:serviceaccount:*` to caller/operator role lists are insufficient. They authenticate a
 coarse subject but do not establish the live Pod/Sandbox or optional Agent/Thread that owns the
@@ -157,64 +187,73 @@ request. Service policy evaluates the resolved `WorkloadPrincipal` and current s
 Operator or end-user access is a separate authenticated BFF/operator path, not a role inferred from
 a Sandbox destination token.
 
-The central proxy may pass non-authoritative correlation IDs, selected policy/rule/credential
-references, and egress decision metadata on its protected hop. Destinations may log or compare those
-values, but identity headers and the central proxy's own mTLS identity are not caller proof and must
-not replace direct token validation.
+Central may pass non-authoritative correlation IDs and egress policy/rule/credential decision
+references. Destinations may log them as routing or audit context, but they must not accept them as
+caller proof or as a substitute for validating the destination credential.
 
 ## Destination behavior
 
 ### Action Service and LLM Proxy
 
-Both are independently deployed internal services reached through the existing sidecar and central
-proxy. Each:
+Both are independently deployed internal services reached through the sidecar and central route.
+Each:
 
 - receives a token projected for its configured audience and the Pod's actual ServiceAccount;
-- validates that token directly through the shared `WorkloadPrincipal` authenticator/resolver;
-- rejects a wrong audience, stale or deleted Pod, changed owner, or unresolved Sandbox;
+- validates audience, issuer, and Kubernetes workload claims directly through the shared
+  `WorkloadPrincipal` authenticator/resolver;
+- rejects a stale or deleted Pod, changed owner, unresolved Sandbox, or unauthorized operation;
 - leaves Agent/Thread absent when no authoritative current binding exists; and
 - applies its own authorization to the requested operation.
 
-Action Service must not accept `agent_id`, `sandbox_id`, `thread_id`, owner, caller role, or central
-identity headers as proof. LLM Proxy follows the same rule for model requests and provider-native
-thread metadata. A direct Sandbox-to-service path that bypasses egress policy remains disallowed,
-but the destination does not delegate caller authentication to the central proxy.
+Action Service must not accept `agent_id`, `sandbox_id`, `thread_id`, owner, caller role, central
+identity, or proxy-derived headers as proof. LLM Proxy follows the same rule for model requests and
+provider-native thread metadata. Central can require that all Sandbox traffic use the governed route,
+but the destination does not need central to prove or pre-validate the destination token.
 
 ### Kubernetes API
 
 For a Kubernetes API destination, the projected token uses the Kubernetes API's configured audience.
 The API server validates the token and applies native RBAC RoleBindings to the Pod's ServiceAccount.
-The central proxy performs the same relay checks but does not translate the principal or make the
-RBAC decision.
+Central enforces its egress route policy and forwards the request; it does not translate the
+principal, TokenReview the destination token, or make the RBAC decision.
 
 Ordinary non-apiserver services do **not** automatically inherit Kubernetes RoleBindings merely
 because they validate a KSA token. Action Service and LLM Proxy apply explicit service policy over
 the resolved `WorkloadPrincipal` unless they deliberately integrate with Kubernetes authorization,
-for example through `SubjectAccessReview` or another explicit RBAC-backed check. Audience validation
-is authentication and isolation, not authorization by itself.
+for example through `SubjectAccessReview`. Audience validation is authentication and isolation, not
+authorization by itself.
 
 ### Other upstreams
 
-External providers may continue to use operator-configured secrets or other destination credentials.
-They use the same exact placeholder/binding/target discipline, but they need not implement
-`WorkloadPrincipal` when they do not understand Kubernetes identity.
+External providers may continue to use central-held operator-configured secrets or other destination
+credentials. Central owns the target, policy, placeholder, and field binding for substitutions it
+performs, but the upstream remains authoritative for the substituted credential's validity and
+permissions.
 
 ## Scope and acceptance gate
 
 **P0 behavior**
 
-- retain the `aud=agentplane-egress` hop token for sidecar-to-central authentication only;
-- add sidecar-only destination projections whose audiences and credential bindings are fixed by
-  trusted Pod configuration for the Pod's actual ServiceAccount;
-- carry at most one selected destination token over an encrypted/authenticated relay;
-- implement the one-credential-per-CONNECT-`host:port` selector and exact inner-placeholder check;
-- require central `TokenReview` of both tokens and equality of Pod UID and ServiceAccount before
-  substitution into the exact intercepted auth field;
-- make Action Service and LLM Proxy directly validate their substituted token through the same
-  `WorkloadPrincipal` authenticator/resolver and apply service-owned policy; and
-- prove end to end that the runner sees placeholders only, forged identity metadata is ignored,
-  direct/bypass calls fail, mismatched hop/destination identities fail, wrong audiences and targets
-  fail, and both services resolve the same live workload identity.
+- keep `Proxy-Authorization: Bearer <agentplane-egress>` as sidecar-to-central hop auth only; central
+  consumes and validates it and never forwards it;
+- keep destination authentication in the destination's normal end-to-end field, such as
+  `Authorization: Bearer <destination KSA JWT>`;
+- enforce direct-bypass rejection and central host/method/path plus EgressPolicy/EgressBinding policy
+  independently from destination authentication and authorization;
+- preserve existing central-held Secret placeholder substitution without requiring central to
+  validate the substituted provider or service credential;
+- keep projected destination KSA tokens sidecar-only and agent-invisible; implement either local
+  injection/transport or the narrow one-credential-per-CONNECT-`host:port` sideband required by the
+  generic opaque CONNECT seam;
+- make central forward or inject a configured destination token without acting as TokenRequest,
+  TokenReview, authorization, or proxy-derived identity authority for it;
+- make Action Service and LLM Proxy validate destination tokens directly through the same
+  `WorkloadPrincipal` authenticator/resolver and apply service-owned policy; Kubernetes API uses
+  native validation and RBAC; and
+- prove end to end that the runner sees placeholders only, cannot bypass the sidecar/central route,
+  cannot forge identity metadata, and cannot select another destination credential; central rejects
+  invalid hop auth and disallowed egress, while destinations reject invalid or unauthorized
+  destination credentials and both internal services resolve the same live workload identity.
 
 **Observed evidence preserved**
 
@@ -227,6 +266,8 @@ They use the same exact placeholder/binding/target discipline, but they need not
 
 **Deferred**
 
+- optional central comparison of hop and destination token provenance as defense in depth; it is not
+  core authentication correctness and must not make central a destination-token oracle;
 - multiple credentials or audiences on one CONNECT `host:port`, pending dedicated local routes or a
   service adapter;
 - authoritative Agent/Thread attribution until a live control-plane binding exists;
@@ -237,6 +278,6 @@ They use the same exact placeholder/binding/target discipline, but they need not
   layer.
 
 Acceptance of this document fixes the implementation contract. The independently deployable
-standalone Action Service slice remains blocked until this auth transport, shared authenticator, and
-end-to-end evidence are implemented and reconciled. Nothing in #5657, #5658, or #5662 is merge-ready
-as-is.
+standalone Action Service slice remains blocked until the destination-credential transport seam,
+shared authenticator, and end-to-end evidence are implemented and reconciled. Nothing in #5657,
+#5658, or #5662 is merge-ready as-is.

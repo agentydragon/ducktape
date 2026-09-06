@@ -35,13 +35,13 @@ handling, standing grants, uncertain execution reconciliation, and the MCP adapt
 accepted decisions and open questions are in [`operations_and_access.md`](operations_and_access.md).
 
 **Authentication and credential propagation is an implementation gate:**
-[`authentication_and_credentials.md`](authentication_and_credentials.md) keeps the
-`agentplane-egress` token on the sidecar-to-central hop, then substitutes a separate sidecar-only,
-destination-audience token for the Pod's actual ServiceAccount. Action Service and LLM Proxy both
-validate that token directly through the same live `WorkloadPrincipal` resolver. PR #5658 is
-superseded, #5657 is incomplete/superseded, and #5662 is paused/reference-only; no Action Service
-implementation lands before this design and its transport/authentication seam are accepted and
-proven.
+[`authentication_and_credentials.md`](authentication_and_credentials.md) separates the
+`Proxy-Authorization` `agentplane-egress` hop token consumed by central from end-to-end destination
+authentication forwarded through it. Central authenticates and governs the egress hop; Action Service
+and LLM Proxy validate their destination KSA token through the same live `WorkloadPrincipal`
+resolver, while Kubernetes API uses native RBAC. PR #5658 is superseded, #5657 is
+incomplete/superseded, and #5662 is paused/reference-only; no Action Service implementation lands
+before the destination-credential transport seam and its end-to-end evidence are implemented.
 
 **BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
 Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
@@ -77,7 +77,7 @@ flowchart TB
     OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
     OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
-    AUTH["Authentication/credential design gate<br/>destination KSA token substitution;<br/>shared WorkloadPrincipal validation"]:::decision
+    AUTH["Authentication/credential design gate<br/>hop auth ≠ destination auth;<br/>destination-authoritative validation"]:::decision
     OPI["Standalone Action Service slice<br/>one ActionRequest/Decision/Execution;<br/>one adapter + originating-Thread delivery"]:::ready
 
     T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
@@ -172,13 +172,14 @@ A completed item leaves the active queue even when it supplies an edge.
   built before this gate.
 - **`AUTH` authentication and credential design:** accept and implement
   [`authentication_and_credentials.md`](authentication_and_credentials.md) before Action Service
-  implementation lands. Managed Sandboxes keep the loopback sidecar and `agentplane-egress` hop
-  token, while trusted Pod configuration projects one sidecar-only destination token for each
-  audience and exact credential binding. The central proxy validates matching Pod UID and
-  ServiceAccount proofs, then substitutes the destination token. Action Service and LLM Proxy each
-  validate it directly through the shared live `WorkloadPrincipal` authenticator/resolver and apply
-  service policy. P0 permits one configured credential per CONNECT `host:port`; ambiguous shared
-  endpoints require a dedicated local route or adapter and remain deferred.
+  implementation lands. Managed Sandboxes keep the loopback sidecar and
+  `Proxy-Authorization: Bearer <agentplane-egress>` hop token. Central validates that hop and
+  enforces egress target/policy; it forwards or narrowly injects a separate sidecar-only destination
+  token without validating it as destination identity. Action Service and LLM Proxy validate their
+  destination token directly through the shared live `WorkloadPrincipal` authenticator/resolver;
+  Kubernetes API uses native validation and RBAC. P0 may bind one configured credential per CONNECT
+  `host:port`; ambiguous shared endpoints require a dedicated local route or adapter. Standalone
+  Action Service remains blocked until this transport seam and end-to-end evidence exist.
 - **`OPI` standalone Action Service vertical slice:** one independently deployable Action Service
   takes agent intent through policy/Decision to the single Execution/result and later Thread
   delivery. Preserve the accepted invariant ActionRequest, at most one Execution, and automatic
@@ -230,11 +231,12 @@ A completed item leaves the active queue even when it supplies an edge.
   (interaction context), and authorization principal (policy subject). Cross-agent reads require an
   explicit mapping and data-read policy.
 - Egress remains enforced by the existing proxy and target policy. A preset or operation adapter
-  cannot bypass it or turn a placeholder into a reusable credential. The `agentplane-egress` token
-  authenticates only sidecar to central. LLM Proxy and Action Service receive separate
-  destination-audience tokens for the Pod's actual ServiceAccount, validate them directly with the
-  same `WorkloadPrincipal` authenticator/resolver, and apply service-specific authorization. Central
-  identity or context headers are not caller proof.
+  cannot bypass it or turn a placeholder into a reusable credential.
+  `Proxy-Authorization: Bearer <agentplane-egress>` authenticates only sidecar to central and is
+  consumed there. Destination authentication remains in the destination's end-to-end auth field:
+  LLM Proxy and Action Service validate their KSA tokens with the same `WorkloadPrincipal`
+  authenticator/resolver, and Kubernetes API applies native RBAC. Central need not TokenReview the
+  destination token, and central identity or proxy-derived context headers are not caller proof.
 - Do not add persistence schemas, controllers, policy DSLs, MCP registries, or permission matrices
   before the first acceptance test that needs them. Preserve whole evidence payloads rather than
   duplicating derivable hashes, lengths, manifests, or parsed mirrors.
