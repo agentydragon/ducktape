@@ -265,3 +265,24 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "behaviour",
+    srcs = ["behaviour.py"],
+    deps = [
+        ":case",
+        ":simulation_result",
+        "//finance/augur/model:deterministic",
+        "//finance/augur/model:gbm",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series",
+        "//finance/augur/model:series_model",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)

@@ -15,6 +15,7 @@ an engine buffers a PE lot.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -54,21 +55,20 @@ def codes(*, horizon_months: int, rollouts: int = 1, value: int) -> CodeMatrix:
     return np.full((rollouts, horizon_months + 1), value, dtype=np.int64)
 
 
-def _one_month(matrix: FloatMatrix | CodeMatrix, *, month: int, value: float | int) -> FloatMatrix | CodeMatrix:
-    matrix[:, month] = value
-    return matrix
-
-
 def in_month(*, horizon_months: int, month: int, value: float, default: float = 0.0) -> FloatMatrix:
     """A float channel holding `default` except at one month."""
 
-    return _one_month(floats(horizon_months=horizon_months, value=default), month=month, value=value)
+    matrix = floats(horizon_months=horizon_months, value=default)
+    matrix[:, month] = value
+    return matrix
 
 
 def code_in_month(*, horizon_months: int, month: int, value: int, default: int) -> CodeMatrix:
     """A code channel holding `default` except at one month."""
 
-    return _one_month(codes(horizon_months=horizon_months, value=default), month=month, value=value)
+    matrix = codes(horizon_months=horizon_months, value=default)
+    matrix[:, month] = value
+    return matrix
 
 
 def protocol(
@@ -185,12 +185,12 @@ def holder(
 
 def units_held(result: SimulationResult, *, month: int) -> float:
     row = result.lots.filter((pl.col("lot_id") == LOT_ID) & (pl.col("month_index") == month)).row(0, named=True)
-    return row["remaining_quantity_quanta"] / row["quantity_scale"]
+    return float(cast(int, row["remaining_quantity_quanta"])) / float(cast(int, row["quantity_scale"]))
 
 
 def cash(result: SimulationResult, *, month: int, agent_id: str = "alice") -> float:
     rows = result.cash.filter((pl.col("agent_id") == agent_id) & (pl.col("month_index") == month))
-    return rows.get_column("balance_quanta").sum() / 100
+    return float(cast(int, rows.get_column("balance_quanta").sum())) / 100
 
 
 def opportunity(result: SimulationResult, *, month: int) -> dict[str, object]:
@@ -386,7 +386,7 @@ class PrivateEquityAcceptance:
         assert traced["outcome"] == "sold"
         assert traced["sellable_units"] == pytest.approx(25.0)
         assert traced["target_units"] == pytest.approx(25.0)
-        assert traced["proceeds_quanta"] / 100 == pytest.approx(2_500.0)
+        assert cast(int, traced["proceeds_quanta"]) / 100 == pytest.approx(2_500.0)
 
     def test_zero_capacity_is_traced_as_its_own_outcome(self, backend: Backend) -> None:
         """An open window with no capacity behind it is not the same as a satisfied floor."""

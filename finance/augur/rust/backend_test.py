@@ -16,6 +16,15 @@ import pytest_bazel
 from finance.augur.rust.backend import RustEngine
 from finance.augur.rust.result import run_rust
 from finance.augur.sim.backend import Engine
+from finance.augur.sim.testing.behaviour import (
+    AssetSaleAcceptance,
+    IndexedAmountAcceptance,
+    ObligationAcceptance,
+    PropertyCarryingCostAcceptance,
+    RolloutFailureAcceptance,
+    TransferAcceptance,
+    YearEndTaxAcceptance,
+)
 from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.deductions import DeductionAcceptance
@@ -148,6 +157,48 @@ class TestRustRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
 
 
 class TestRustRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustTransfer(TransferAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustIndexedAmount(IndexedAmountAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustAssetSale(AssetSaleAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustYearEndTax(YearEndTaxAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustObligation(ObligationAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustPropertyCarryingCost(PropertyCarryingCostAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustRolloutFailure(RolloutFailureAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust

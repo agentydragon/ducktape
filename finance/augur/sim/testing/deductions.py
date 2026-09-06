@@ -15,6 +15,7 @@ not what the schedule is.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 import polars as pl
 import pytest
@@ -195,7 +196,7 @@ def breakdown(result: SimulationResult, *, jurisdiction_id: str, year_index: int
 
 
 def usd(row: dict, field: str) -> float:
-    return row[field] / 100
+    return float(cast(int, row[field])) / 100
 
 
 def interest_through(result: SimulationResult, *, liability_id: str, month: int) -> float:
@@ -204,14 +205,14 @@ def interest_through(result: SimulationResult, *, liability_id: str, month: int)
     rows = result.events.mortgage_payments.filter(
         (pl.col("liability_id") == liability_id) & (pl.col("month_index") <= month)
     )
-    return rows.get_column("interest_quanta").sum() / 100
+    return float(cast(int, rows.get_column("interest_quanta").sum())) / 100
 
 
 def property_tax_through(result: SimulationResult, *, month: int) -> float:
     rows = result.events.obligation_settlements.filter(
         (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= month)
     )
-    return rows.get_column("amount_paid_quanta").sum() / 100
+    return float(cast(int, rows.get_column("amount_paid_quanta").sum())) / 100
 
 
 class DeductionAcceptance:
