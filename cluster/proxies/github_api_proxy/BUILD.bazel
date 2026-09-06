@@ -1,0 +1,222 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_binary(
+    name = "main_bin",
+    main_module = "cluster.proxies.github_api_proxy.main",
+    deps = [":main"],
+)
+
+aspect_py_binary(
+    name = "main_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":main_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("main_image_bin"),
+    env = py_image_env(binary_name = "main_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["github-api-proxy:test"],
+)
+
+oci_layout_rloc(
+    name = "image_layout",
+    image = ":image",
+)
+
+py_test(
+    name = "test_image",
+    srcs = ["test_image.py"],
+    data = [
+        ":image_layout",
+        "@crane",
+    ],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":test_capture",
+        ":test_config",
+        ":test_destinations",
+        ":test_image",
+        ":test_metrics",
+        ":test_runtime",
+    ],
+)
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    deps = [
+        ":metrics",
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "capture",
+    srcs = ["capture.py"],
+    deps = [
+        ":auth",
+        ":metrics",
+        "//devinfra/github_api_capture:session_ws_metadata",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":config",
+        ":metrics",
+        ":runtime",
+        "@pypi//aiohttp",
+    ],
+)
+
+py_library(
+    name = "metrics",
+    srcs = ["metrics.py"],
+    deps = [
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+        "@pypi//prometheus_client",
+    ],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":auth",
+        ":capture",
+        ":config",
+        ":destinations",
+        ":metrics",
+        ":tls",
+        "@pypi//cryptography",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_test(
+    name = "test_capture",
+    srcs = ["test_capture.py"],
+    deps = [
+        ":capture",
+        ":metrics",
+        "//:conftest",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_metrics",
+    srcs = ["test_metrics.py"],
+    deps = [
+        ":metrics",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    deps = [
+        ":config",
+        ":destinations",
+        ":metrics",
+        ":runtime",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//cryptography",
+        "@pypi//mitmproxy",
+        "@pypi//prometheus_client",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "tls",
+    srcs = ["tls.py"],
+    deps = [
+        "@pypi//cryptography",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "destinations",
+    srcs = ["destinations.py"],
+    deps = ["@pypi//mitmproxy"],
+)
+
+py_test(
+    name = "test_destinations",
+    srcs = ["test_destinations.py"],
+    deps = [
+        ":destinations",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

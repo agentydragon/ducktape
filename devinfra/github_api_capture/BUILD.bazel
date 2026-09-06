@@ -57,6 +57,7 @@ py_test(
 py_library(
     name = "session_ws_metadata",
     srcs = ["session_ws_metadata.py"],
+    visibility = ["//cluster/proxies/github_api_proxy:__pkg__"],
     deps = ["@pypi//mitmproxy"],
 )
 
