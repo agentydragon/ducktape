@@ -368,6 +368,7 @@ py_test(
     name = "test_rules_api",
     srcs = ["test_rules_api.py"],
     deps = [
+        ":conftest",
         ":policy",
         ":resources",
         ":rules_api",
