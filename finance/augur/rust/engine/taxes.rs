@@ -4,24 +4,19 @@
 use super::*;
 
 pub(super) fn record_transfer_income(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     recipient_agent_id: &str,
-    income_category: Option<&str>,
+    income_category: Option<&IncomeSource>,
     amount: Money,
 ) -> Result<(), SimulationError> {
-    if income_category != Some("ordinary") {
+    let Some(source) = income_category else {
         return Ok(());
-    }
-    for ((agent_id, _), facts) in tax_facts {
-        if agent_id == recipient_agent_id {
-            facts.ordinary_income = facts.ordinary_income.checked_add(amount)?;
-        }
-    }
-    Ok(())
+    };
+    Ok(tax.income.accrue(recipient_agent_id, source, amount)?)
 }
 
 pub(super) fn record_transfer_deduction(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     payer_agent_id: &str,
     deduction_category: Option<&str>,
     amount: Money,
@@ -29,11 +24,11 @@ pub(super) fn record_transfer_deduction(
     if deduction_category != Some("ordinary") {
         return Ok(());
     }
-    record_ordinary_deduction(tax_facts, payer_agent_id, amount, RATE_SCALE_PPB)
+    record_ordinary_deduction(tax, payer_agent_id, amount, RATE_SCALE_PPB)
 }
 
 pub(super) fn record_ordinary_deduction(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     payer_agent_id: &str,
     amount: Money,
     deductible_fraction_ppb: i64,
@@ -44,21 +39,16 @@ pub(super) fn record_ordinary_deduction(
         RATE_SCALE_PPB,
         "ordinary deduction",
     )?);
-    for ((agent_id, _), facts) in tax_facts {
-        if agent_id == payer_agent_id {
-            facts.ordinary_income = facts.ordinary_income.checked_sub(deduction)?;
-        }
-    }
-    Ok(())
+    Ok(tax.income.deduct_from_ordinary(payer_agent_id, deduction)?)
 }
 
 pub(super) fn record_capital_gain(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     agent_id: &str,
     gain: Money,
     long_term: bool,
 ) -> Result<(), SimulationError> {
-    for ((taxpayer, _), facts) in tax_facts {
+    for ((taxpayer, _), facts) in &mut tax.facts {
         if taxpayer != agent_id {
             continue;
         }
@@ -72,11 +62,11 @@ pub(super) fn record_capital_gain(
 }
 
 pub(super) fn record_section_1250_recapture(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     agent_id: &str,
     amount: Money,
 ) -> Result<(), SimulationError> {
-    for ((taxpayer, _), facts) in tax_facts {
+    for ((taxpayer, _), facts) in &mut tax.facts {
         if taxpayer == agent_id {
             facts.section_1250_recapture = facts.section_1250_recapture.checked_add(amount)?;
         }
@@ -85,13 +75,14 @@ pub(super) fn record_section_1250_recapture(
 }
 
 pub(super) fn record_rental_interest_deduction(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     agent_id: &str,
     amount: Money,
 ) -> Result<(), SimulationError> {
-    for ((taxpayer, _), facts) in tax_facts {
+    // Accrued as the interest is paid, deducted annually: `accrue_year_end_taxes` takes the
+    // year's rented share off ordinary income when it assesses the year.
+    for ((taxpayer, _), facts) in &mut tax.facts {
         if taxpayer == agent_id {
-            facts.ordinary_income = facts.ordinary_income.checked_sub(amount)?;
             facts.rental_interest_deduction =
                 facts.rental_interest_deduction.checked_add(amount)?;
         }
@@ -100,7 +91,7 @@ pub(super) fn record_rental_interest_deduction(
 }
 
 pub(super) fn record_property_tax_paid(
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     agent_id: &str,
     amount: Money,
     rented_fraction_ppb: i64,
@@ -117,9 +108,10 @@ pub(super) fn record_property_tax_paid(
         RATE_SCALE_PPB,
         "owner property tax",
     )?);
-    for ((taxpayer, _), facts) in tax_facts {
+    tax.income
+        .deduct_from_ordinary(agent_id, rental_deduction)?;
+    for ((taxpayer, _), facts) in &mut tax.facts {
         if taxpayer == agent_id {
-            facts.ordinary_income = facts.ordinary_income.checked_sub(rental_deduction)?;
             facts.property_tax_paid = facts.property_tax_paid.checked_add(owner_property_tax)?;
         }
     }
@@ -200,7 +192,7 @@ pub(super) fn accrue_year_end_taxes(
     fixture: &Fixture,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     tax_liabilities: &mut Vec<TaxLiabilityState>,
     mortgages: &[MortgageState],
     month: u32,
@@ -210,7 +202,8 @@ pub(super) fn accrue_year_end_taxes(
             profile.agent_id.clone(),
             profile.jurisdictions[0].jurisdiction_id.clone(),
         );
-        let representative = *tax_facts
+        let representative = *tax
+            .facts
             .get(&representative_key)
             .expect("validated tax profile has representative facts");
         let (net_short, net_long, ordinary_offset, shared_carryforward) = net_capital_gains(
@@ -219,19 +212,35 @@ pub(super) fn accrue_year_end_taxes(
             representative.capital_loss_carryforward,
             profile.jurisdictions[0].max_capital_loss_ordinary_offset,
         )?;
+        // Every annual deduction lands in the ordinary bucket before any jurisdiction reads
+        // its taxable base: Schedule E depreciation and the rented share of mortgage
+        // interest, both accrued through the year and taken against it here, and the capital
+        // loss this year's netting lets offset ordinary income.
+        for deduction in [
+            representative.depreciation_deduction,
+            representative.rental_interest_deduction,
+            ordinary_offset,
+        ] {
+            tax.income
+                .deduct_from_ordinary(&profile.agent_id, deduction)?;
+        }
         for rules in &profile.jurisdictions {
-            let facts = tax_facts
+            let taxable_ordinary_income =
+                taxable_ordinary_income(fixture, &tax.income, &profile.agent_id, rules)?;
+            let facts = tax
+                .facts
                 .get_mut(&(profile.agent_id.clone(), rules.jurisdiction_id.clone()))
                 .expect("validated tax profile has jurisdiction facts");
             facts.short_term_gain = net_short;
             facts.long_term_gain = net_long;
             facts.capital_loss_carryforward = Money(0);
-            facts.ordinary_income = facts.ordinary_income.checked_sub(ordinary_offset)?;
+            facts.taxable_ordinary_income = taxable_ordinary_income;
         }
         let mut annual = BTreeMap::new();
         for rules in &profile.jurisdictions {
             let key = (profile.agent_id.clone(), rules.jurisdiction_id.clone());
-            let facts = tax_facts
+            let facts = tax
+                .facts
                 .get_mut(&key)
                 .expect("validated tax profile has initialized facts");
             facts.mortgage_interest_deduction = mortgage_interest_deduction_for(
@@ -280,6 +289,7 @@ pub(super) fn accrue_year_end_taxes(
                 .checked_add(salt_deduction)?;
             *assessment = assess(*facts, federal_rules)?;
         }
+        let ordinary_income = tax.income.ordinary(&profile.agent_id);
         for rules in &profile.jurisdictions {
             let key = (profile.agent_id.clone(), rules.jurisdiction_id.clone());
             let (facts, assessment) = annual
@@ -327,9 +337,9 @@ pub(super) fn accrue_year_end_taxes(
                 agent_id: profile.agent_id.clone(),
                 jurisdiction_id: rules.jurisdiction_id.clone(),
                 tax_year_end_month: month,
-                ordinary_income: facts
-                    .ordinary_income
-                    .checked_sub(assessment.ordinary_loss_offset)?,
+                // The ordinary bucket alone, not the taxable base: what interest this
+                // jurisdiction reaches is reported by the assessment, not by this row.
+                ordinary_income: ordinary_income.checked_sub(assessment.ordinary_loss_offset)?,
                 short_term_gain: assessment.short_term_gain,
                 long_term_gain: assessment.long_term_gain,
                 section_1250_recapture: facts.section_1250_recapture,
@@ -347,7 +357,7 @@ pub(super) fn accrue_year_end_taxes(
                 total_tax: assessment.total_tax,
                 capital_loss_carryforward: shared_carryforward,
             })?;
-            tax_facts.insert(
+            tax.facts.insert(
                 key,
                 TaxFacts {
                     capital_loss_carryforward: shared_carryforward,
@@ -355,8 +365,35 @@ pub(super) fn accrue_year_end_taxes(
                 },
             );
         }
+        tax.income.reset(&profile.agent_id);
     }
     Ok(())
+}
+
+/// The part of a taxpayer's year-to-date income one jurisdiction taxes at ordinary rates.
+///
+/// Interest is admitted or exempted here, at assessment, rather than when the coupon was
+/// paid: the ledger keeps what was earned, and each jurisdiction reads the part of it that
+/// its own rules reach.
+fn taxable_ordinary_income(
+    fixture: &Fixture,
+    income: &IncomeLedger,
+    agent_id: &str,
+    rules: &TaxRules,
+) -> Result<Money, SimulationError> {
+    income
+        .rows_for(agent_id)
+        .filter(|(source, _)| match source {
+            IncomeSource::Ordinary => true,
+            IncomeSource::Interest {
+                issuer_jurisdiction_id,
+            } => {
+                let issuer = issuer_jurisdiction_id.as_deref();
+                rules.taxes_interest_from(issuer, jurisdiction_level(fixture, issuer))
+            }
+        })
+        .try_fold(Money(0), |total, (_, amount)| total.checked_add(amount))
+        .map_err(SimulationError::from)
 }
 
 fn salt_cap_for(policy: &crate::fixture::FederalSaltDeductionSpec, year_index: u32) -> Money {
@@ -470,29 +507,16 @@ pub(super) fn settle_tax_liabilities(
 }
 
 pub(super) fn record_interest_income(
-    fixture: &Fixture,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     recipient_agent_id: &str,
     issuer_jurisdiction_id: Option<&str>,
-    issuer_level: Option<JurisdictionLevel>,
     amount: Money,
 ) -> Result<(), SimulationError> {
-    for profile in fixture
-        .scenario
-        .tax_profiles
-        .iter()
-        .filter(|profile| profile.agent_id == recipient_agent_id)
-    {
-        for rules in &profile.jurisdictions {
-            if rules.taxes_interest_from(issuer_jurisdiction_id, issuer_level) {
-                let facts = tax_facts
-                    .get_mut(&(profile.agent_id.clone(), rules.jurisdiction_id.clone()))
-                    .expect("validated tax facts must exist for every profile jurisdiction");
-                facts.interest_income = facts.interest_income.checked_add(amount)?;
-            }
-        }
-    }
-    Ok(())
+    Ok(tax.income.accrue(
+        recipient_agent_id,
+        &IncomeSource::interest(issuer_jurisdiction_id),
+        amount,
+    )?)
 }
 
 pub(super) fn jurisdiction_level(

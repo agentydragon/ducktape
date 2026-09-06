@@ -76,6 +76,14 @@ STATE_CHANNELS = (
         ("rollout_index", "month_index", "lot_id"),
     ),
     StateChannel(
+        # Year-to-date income taxed at ordinary rates, kept by source rather than resolved
+        # against any one jurisdiction's exemptions: what a taxpayer earned, not what a
+        # jurisdiction can reach. Which sources exist is the scenario's, not the engine's.
+        "income",
+        pl.Schema({**_ROLLOUT_MONTH, "agent_id": pl.String, "income_source": pl.String, "income_quanta": pl.Int64}),
+        ("rollout_index", "month_index", "agent_id", "income_source"),
+    ),
+    StateChannel(
         "capital_gains",
         pl.Schema({**_ROLLOUT_MONTH, "agent_id": pl.String, "classification": pl.String, "gain_quanta": pl.Int64}),
         ("rollout_index", "month_index", "agent_id", "classification"),
@@ -163,6 +171,7 @@ class SimulationResult:
     events: EventLog
     cash: pl.DataFrame
     lots: pl.DataFrame
+    income: pl.DataFrame
     capital_gains: pl.DataFrame
     tax_liabilities: pl.DataFrame
     properties: pl.DataFrame

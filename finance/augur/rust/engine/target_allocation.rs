@@ -18,7 +18,7 @@ pub(super) fn execute_target_allocation_sales(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &mut [LotState],
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     tlh_cumulative_harvest: &mut [Money],
     month: u32,
     obligations: &[ActiveObligation],
@@ -211,7 +211,7 @@ pub(super) fn execute_target_allocation_sales(
                     ledger,
                     recorder,
                     lots,
-                    tax_facts,
+                    tax,
                     tlh_cumulative_harvest,
                     month,
                     &cause_id,
@@ -319,7 +319,7 @@ pub(super) fn execute_target_allocation_pool_sale(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &mut [LotState],
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     tlh_cumulative_harvest: &mut [Money],
     month: u32,
     cause_id: &str,
@@ -396,7 +396,7 @@ pub(super) fn execute_target_allocation_pool_sale(
         lot.units_remaining.0 -= item.units.0;
         lot.basis_remaining = lot.basis_remaining.checked_sub(item.basis)?;
         record_capital_gain(
-            tax_facts,
+            tax,
             agent_id,
             item.realized_gain.checked_add(give_back)?,
             long_term,

@@ -11,13 +11,13 @@ use crate::{
     fixture::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondSpec, BondState, CapitalGainState,
         CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
-        HarvestPolicySpec, InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
-        MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
-        PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome, PrivateEquityProtocolOutcome,
-        PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
-        PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput, RolloutSummary,
-        SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState,
-        TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
+        HarvestPolicySpec, IncomeState, InitialLotSpec, LotDisposition, MonthOutput,
+        MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState, ObligationOutcome,
+        PopulationOutput, PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome,
+        PrivateEquityProtocolOutcome, PropertyPurchaseOutcome, PropertyRentedFractionOutcome,
+        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput,
+        RolloutSummary, SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual,
+        TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -26,8 +26,8 @@ use crate::{
         snapshot_metrics,
     },
     tax::{
-        JurisdictionLevel, RATE_SCALE, TaxError, TaxFacts, assess, net_capital_gains,
-        validate_rules,
+        IncomeLedger, IncomeSource, JurisdictionLevel, RATE_SCALE, TaxError, TaxFacts, TaxRules,
+        TaxState, assess, net_capital_gains, validate_rules,
     },
 };
 
@@ -356,19 +356,29 @@ fn simulate_rollout(
     accounts.dedup();
     let mut ledger = Ledger::with_accounts(accounts);
     let mut recorder = Recorder::new(capture_mode);
-    let mut tax_facts: BTreeMap<(String, String), TaxFacts> = fixture
-        .scenario
-        .tax_profiles
-        .iter()
-        .flat_map(|profile| {
-            profile.jurisdictions.iter().map(|rules| {
-                (
-                    (profile.agent_id.clone(), rules.jurisdiction_id.clone()),
-                    TaxFacts::default(),
-                )
+    let mut tax = TaxState {
+        income: IncomeLedger::for_taxpayers(
+            fixture
+                .scenario
+                .tax_profiles
+                .iter()
+                .map(|profile| profile.agent_id.as_str()),
+            &fixture.scenario.income_sources,
+        ),
+        facts: fixture
+            .scenario
+            .tax_profiles
+            .iter()
+            .flat_map(|profile| {
+                profile.jurisdictions.iter().map(|rules| {
+                    (
+                        (profile.agent_id.clone(), rules.jurisdiction_id.clone()),
+                        TaxFacts::default(),
+                    )
+                })
             })
-        })
-        .collect();
+            .collect(),
+    };
     let mut tlh_cumulative_harvest = vec![Money(0); fixture.scenario.harvest_policies.len()];
 
     for spec in &fixture.scenario.accounts {
@@ -541,7 +551,7 @@ fn simulate_rollout(
             &properties,
             &mortgages,
             &tax_liabilities,
-            &tax_facts,
+            &tax,
             &tlh_cumulative_harvest,
             false,
         )?);
@@ -572,7 +582,7 @@ fn simulate_rollout(
                     &properties,
                     &mortgages,
                     &tax_liabilities,
-                    &tax_facts,
+                    &tax,
                     &tlh_cumulative_harvest,
                     true,
                 )?);
@@ -604,7 +614,7 @@ fn simulate_rollout(
             rollout_id,
             &mut ledger,
             &mut recorder,
-            &mut tax_facts,
+            &mut tax,
             &mut properties,
             &mut mortgages,
             &mut primary_residence_by_agent,
@@ -615,7 +625,7 @@ fn simulate_rollout(
             rollout_id,
             &mut ledger,
             &mut recorder,
-            &mut tax_facts,
+            &mut tax,
             month,
         )?;
         execute_distributions(
@@ -624,7 +634,7 @@ fn simulate_rollout(
             &mut ledger,
             &mut recorder,
             &lots,
-            &mut tax_facts,
+            &mut tax,
             month,
         )?;
         execute_property_purchases(
@@ -640,7 +650,7 @@ fn simulate_rollout(
             rollout_id,
             &mut ledger,
             &mut recorder,
-            &mut tax_facts,
+            &mut tax,
             &properties,
             month,
         )?;
@@ -658,7 +668,7 @@ fn simulate_rollout(
                 &mut ledger,
                 &mut recorder,
                 &mut lots,
-                &mut tax_facts,
+                &mut tax,
                 &mut scheduled_tlh,
                 sale,
             )?;
@@ -725,7 +735,7 @@ fn simulate_rollout(
             &mut ledger,
             &mut recorder,
             &mut lots,
-            &mut tax_facts,
+            &mut tax,
             &mut tlh_cumulative_harvest,
             month,
             &active_obligations,
@@ -734,7 +744,7 @@ fn simulate_rollout(
             fixture,
             &mut ledger,
             &mut recorder,
-            &mut tax_facts,
+            &mut tax,
             &properties,
             &mut mortgages,
             &mut tax_liabilities,
@@ -758,7 +768,7 @@ fn simulate_rollout(
                 fixture,
                 rollout_id,
                 &lots,
-                &mut tax_facts,
+                &mut tax,
                 &mut tlh_cumulative_harvest,
                 month,
             )?;
@@ -768,7 +778,7 @@ fn simulate_rollout(
                 &mut ledger,
                 &mut recorder,
                 &mut lots,
-                &mut tax_facts,
+                &mut tax,
                 &mut tlh_cumulative_harvest,
                 month,
             )?;
@@ -779,14 +789,14 @@ fn simulate_rollout(
                 &mut properties,
                 month,
             )?;
-            accrue_property_depreciation(&mut tax_facts, &mut properties)?;
+            accrue_property_depreciation(&mut tax, &mut properties)?;
         }
         if failed_month.is_none() && (month + 1) % 12 == 0 {
             accrue_year_end_taxes(
                 fixture,
                 &mut ledger,
                 &mut recorder,
-                &mut tax_facts,
+                &mut tax,
                 &mut tax_liabilities,
                 &mortgages,
                 month,
@@ -803,7 +813,7 @@ fn simulate_rollout(
                 &properties,
                 &mortgages,
                 &tax_liabilities,
-                &tax_facts,
+                &tax,
                 &tlh_cumulative_harvest,
                 failed_month.is_some(),
             )?);

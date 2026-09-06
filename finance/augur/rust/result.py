@@ -118,6 +118,18 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         ]
     )
     lots = held_lots(lots)
+    income = CHANNEL["income"].build(
+        [
+            {
+                "rollout_index": rollout,
+                "month_index": month,
+                "agent_id": record["agent_id"],
+                "income_source": record["income_source"],
+                "income_quanta": record["income"],
+            }
+            for rollout, month, record in _rust_rows(rust, "income")
+        ]
+    )
     capital_gains = CHANNEL["capital_gains"].build(
         [
             {
@@ -370,6 +382,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         events=decode_event_log(rust),
         cash=cash,
         lots=lots,
+        income=income,
         capital_gains=capital_gains,
         tax_liabilities=tax_liability_frame,
         properties=properties,

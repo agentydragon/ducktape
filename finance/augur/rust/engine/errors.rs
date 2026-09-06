@@ -124,8 +124,10 @@ pub enum SimulationError {
     },
     #[error("{kind} identifier must not be empty")]
     EmptyIdentifier { kind: &'static str },
-    #[error("unsupported income category {category:?}; only ordinary is implemented")]
-    UnsupportedIncomeCategory { category: String },
+    #[error("unsupported deduction category {category:?}; only ordinary is implemented")]
+    UnsupportedDeductionCategory { category: String },
+    #[error("income source {income_source:?} is not one the scenario declared")]
+    UndeclaredIncomeSource { income_source: String },
     #[error("{kind} {cause_id:?} uses unsupported amount index series {series_id:?}")]
     UnsupportedAmountSeries {
         kind: &'static str,

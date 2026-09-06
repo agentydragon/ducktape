@@ -383,19 +383,20 @@ pub(super) fn month_output(
     properties: &[PropertyState],
     mortgages: &[MortgageState],
     tax_liabilities: &[TaxLiabilityState],
-    tax_facts: &BTreeMap<(String, String), TaxFacts>,
+    tax: &TaxState,
     tlh_cumulative_harvest: &[Money],
     failed: bool,
 ) -> Result<MonthOutput, SimulationError> {
     Ok(MonthOutput {
         month,
         balances: account_balances(ledger, failed),
+        income: income_states(&tax.income, failed),
         lots: security_lot_states(lots, failed),
         bonds: bond_states(fixture, rollout_id, month, failed)?,
         properties: property_states(properties, failed),
         mortgages: mortgage_states(mortgages, failed),
         tax_liabilities: tax_liability_states(tax_liabilities, failed),
-        capital_gains: capital_gain_states(fixture, tax_facts, failed),
+        capital_gains: capital_gain_states(fixture, &tax.facts, failed),
         tlh_cumulative_harvest: if failed {
             vec![Money(0); tlh_cumulative_harvest.len()]
         } else {
@@ -403,6 +404,17 @@ pub(super) fn month_output(
         },
         failed,
     })
+}
+
+fn income_states(income: &IncomeLedger, failed: bool) -> Vec<IncomeState> {
+    income
+        .rows()
+        .map(|(agent_id, source, amount)| IncomeState {
+            agent_id: agent_id.to_owned(),
+            income_source: source.clone(),
+            income: if failed { Money(0) } else { amount },
+        })
+        .collect()
 }
 
 fn capital_gain_states(

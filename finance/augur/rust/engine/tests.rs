@@ -47,6 +47,7 @@ fn minimal_fixture() -> Fixture {
             mortgage_interest_deduction_policies: vec![],
             property_tax_policies: vec![],
             federal_salt_deduction_policies: vec![],
+            income_sources: vec![IncomeSource::Ordinary],
         },
         series: vec![],
     }
@@ -208,6 +209,10 @@ fn series_indexed_amount_validation_rejects_invalid_paths() {
 #[test]
 fn nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts() {
     let mut fixture = minimal_fixture();
+    fixture
+        .scenario
+        .income_sources
+        .push(IncomeSource::interest(Some("federal_us")));
     fixture.rollout_count = 2;
     fixture.scenario.horizon_months = 13;
     fixture.scenario.jurisdictions = vec![JurisdictionIdentitySpec {
@@ -330,6 +335,10 @@ fn nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts() 
 #[test]
 fn bond_validation_rejects_non_par_and_missing_index_paths() {
     let mut fixture = minimal_fixture();
+    fixture.scenario.income_sources.extend([
+        IncomeSource::interest(None),
+        IncomeSource::interest(Some("federal_us")),
+    ]);
     fixture.scenario.initial_bonds = vec![BondSpec {
         bond_id: "bad".into(),
         agent_id: "alice".into(),
@@ -415,8 +424,35 @@ fn rejects_invalid_references_before_rollout_execution() {
 }
 
 #[test]
+fn rejects_income_from_a_source_the_scenario_did_not_declare() {
+    // The income ledger holds one row per taxpayer per declared source and accrues to
+    // nothing else, so an undeclared source would drop the income silently.
+    let mut fixture = minimal_fixture();
+    fixture
+        .scenario
+        .scheduled_transfers
+        .push(ScheduledTransferSpec {
+            month: 0,
+            cause_id: "muni-coupon".into(),
+            from: AccountRef::new("alice", "checking"),
+            to: AccountRef::new("alice", "brokerage"),
+            amount: Money(1).into(),
+            income_category: Some(IncomeSource::interest(Some("california"))),
+            deduction_category: None,
+        });
+    assert!(matches!(
+        simulate(&fixture),
+        Err(SimulationError::UndeclaredIncomeSource { income_source }) if income_source == "interest:california"
+    ));
+}
+
+#[test]
 fn distribution_tax_character_requires_a_complete_known_issuer_split() {
     let mut fixture = minimal_fixture();
+    fixture.scenario.income_sources.extend([
+        IncomeSource::interest(None),
+        IncomeSource::interest(Some("federal_us")),
+    ]);
     fixture.scenario.initial_lots = vec![InitialLotSpec {
         lot_id: "bnd".into(),
         agent_id: "alice".into(),
@@ -616,6 +652,7 @@ fn transfer_and_fifo_sale_remain_balanced() {
             mortgage_interest_deduction_policies: vec![],
             property_tax_policies: vec![],
             federal_salt_deduction_policies: vec![],
+            income_sources: vec![IncomeSource::Ordinary],
         },
         series: vec![SeriesSpec {
             series_id: "security:vti".into(),
@@ -843,6 +880,7 @@ fn oversell_is_rejected_before_any_disposition() {
             mortgage_interest_deduction_policies: vec![],
             property_tax_policies: vec![],
             federal_salt_deduction_policies: vec![],
+            income_sources: vec![IncomeSource::Ordinary],
         },
         series: vec![SeriesSpec {
             series_id: "security:vti".into(),
@@ -923,6 +961,7 @@ fn failure_stops_future_actions_and_zeroes_value_state() {
             mortgage_interest_deduction_policies: vec![],
             property_tax_policies: vec![],
             federal_salt_deduction_policies: vec![],
+            income_sources: vec![IncomeSource::Ordinary],
         },
         series: vec![],
     };
@@ -1019,6 +1058,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
             mortgage_interest_deduction_policies: vec![],
             property_tax_policies: vec![],
             federal_salt_deduction_policies: vec![],
+            income_sources: vec![IncomeSource::Ordinary],
         },
         series: vec![],
     };

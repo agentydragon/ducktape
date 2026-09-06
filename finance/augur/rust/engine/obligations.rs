@@ -340,7 +340,7 @@ pub(super) fn settle_obligations(
     fixture: &Fixture,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     properties: &[PropertyState],
     mortgages: &mut [MortgageState],
     tax_liabilities: &mut [TaxLiabilityState],
@@ -402,7 +402,7 @@ pub(super) fn settle_obligations(
                         obligation.amount_due,
                     )?;
                     record_ordinary_deduction(
-                        tax_facts,
+                        tax,
                         &obligation.from.agent_id,
                         obligation.amount_due,
                         deductible_fraction_ppb,
@@ -422,7 +422,7 @@ pub(super) fn settle_obligations(
                         obligation.amount_due,
                     )?;
                     record_property_tax_paid(
-                        tax_facts,
+                        tax,
                         owner_agent_id,
                         obligation.amount_due,
                         rented_fraction_ppb,
@@ -540,11 +540,7 @@ pub(super) fn settle_obligations(
                     mortgage.rental_interest_paid_ytd = mortgage
                         .rental_interest_paid_ytd
                         .checked_add(rental_interest)?;
-                    record_rental_interest_deduction(
-                        tax_facts,
-                        &mortgage.agent_id,
-                        rental_interest,
-                    )?;
+                    record_rental_interest_deduction(tax, &mortgage.agent_id, rental_interest)?;
                     if mortgage.principal == Money(0) {
                         mortgage.active = false;
                     }

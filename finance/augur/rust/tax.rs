@@ -1,9 +1,166 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::money::{ArithmeticError, Money};
 
 pub const RATE_SCALE: i64 = 1_000_000_000;
+
+/// What a year-to-date income row is: what the money is, not who taxes it.
+///
+/// The wire form is the label the read model reports — `ordinary`, `interest:<issuer
+/// jurisdiction>`, or `interest:corporate` for an issuer with no jurisdiction of its own.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum IncomeSource {
+    Ordinary,
+    Interest {
+        /// `None` is a corporate issuer: no jurisdiction can exempt its own issue.
+        issuer_jurisdiction_id: Option<String>,
+    },
+}
+
+const INTEREST_PREFIX: &str = "interest:";
+const CORPORATE_ISSUER: &str = "corporate";
+
+impl IncomeSource {
+    pub fn interest(issuer_jurisdiction_id: Option<&str>) -> Self {
+        Self::Interest {
+            issuer_jurisdiction_id: issuer_jurisdiction_id.map(str::to_owned),
+        }
+    }
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+#[error("income source {0:?} is not a source label")]
+pub struct UnknownIncomeSource(String);
+
+impl TryFrom<String> for IncomeSource {
+    type Error = UnknownIncomeSource;
+
+    fn try_from(wire_id: String) -> Result<Self, Self::Error> {
+        if wire_id == "ordinary" {
+            return Ok(Self::Ordinary);
+        }
+        let Some(issuer) = wire_id.strip_prefix(INTEREST_PREFIX) else {
+            return Err(UnknownIncomeSource(wire_id));
+        };
+        Ok(Self::interest(match issuer {
+            CORPORATE_ISSUER => None,
+            issuer => Some(issuer),
+        }))
+    }
+}
+
+impl From<IncomeSource> for String {
+    fn from(source: IncomeSource) -> Self {
+        match source {
+            IncomeSource::Ordinary => "ordinary".to_owned(),
+            IncomeSource::Interest {
+                issuer_jurisdiction_id,
+            } => format!(
+                "{INTEREST_PREFIX}{}",
+                issuer_jurisdiction_id
+                    .as_deref()
+                    .unwrap_or(CORPORATE_ISSUER)
+            ),
+        }
+    }
+}
+
+/// A taxpayer's year-to-date income, kept by source rather than by jurisdiction.
+///
+/// Which sources a jurisdiction taxes is resolved when the year is assessed, not when the
+/// money arrives, so interest a state exempts is still recorded here as income the taxpayer
+/// earned. Storing it per jurisdiction instead would lose exactly that: an exempt coupon
+/// would be absent from the only row that could have reported it.
+///
+/// Rows are created when the scenario is set up, one per taxpayer per source the scenario
+/// can produce, so a source that earned nothing this year reports zero rather than nothing.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct IncomeLedger {
+    by_source: BTreeMap<(String, IncomeSource), Money>,
+}
+
+impl IncomeLedger {
+    /// One zeroed row per taxpayer per source, which fixes what the ledger can report.
+    pub fn for_taxpayers<'a>(
+        agent_ids: impl IntoIterator<Item = &'a str>,
+        sources: &[IncomeSource],
+    ) -> Self {
+        Self {
+            by_source: agent_ids
+                .into_iter()
+                .flat_map(|agent_id| {
+                    sources
+                        .iter()
+                        .map(move |source| ((agent_id.to_owned(), source.clone()), Money(0)))
+                })
+                .collect(),
+        }
+    }
+
+    /// Accrue to one row, or nothing at all when the recipient is not a taxpayer or the
+    /// scenario never declared the source — an untaxed recipient's income is not tracked.
+    pub fn accrue(
+        &mut self,
+        agent_id: &str,
+        source: &IncomeSource,
+        amount: Money,
+    ) -> Result<(), ArithmeticError> {
+        let key = (agent_id.to_owned(), source.clone());
+        let Some(row) = self.by_source.get_mut(&key) else {
+            return Ok(());
+        };
+        *row = row.checked_add(amount)?;
+        Ok(())
+    }
+
+    /// A deduction, which reduces what was earned rather than being income of its own.
+    pub fn deduct_from_ordinary(
+        &mut self,
+        agent_id: &str,
+        amount: Money,
+    ) -> Result<(), ArithmeticError> {
+        self.accrue(agent_id, &IncomeSource::Ordinary, amount.checked_neg()?)
+    }
+
+    /// What the taxpayer earned in the bucket every deduction lands in. This is the figure a
+    /// year-end accrual reports as ordinary income: interest is stated separately, because
+    /// which of it is taxable is a question about the jurisdiction rather than the taxpayer.
+    pub fn ordinary(&self, agent_id: &str) -> Money {
+        self.by_source
+            .get(&(agent_id.to_owned(), IncomeSource::Ordinary))
+            .copied()
+            .unwrap_or(Money(0))
+    }
+
+    pub fn rows_for<'a>(
+        &'a self,
+        agent_id: &'a str,
+    ) -> impl Iterator<Item = (&'a IncomeSource, Money)> + 'a {
+        self.by_source
+            .iter()
+            .filter(move |((row_agent_id, _), _)| row_agent_id == agent_id)
+            .map(|((_, source), amount)| (source, *amount))
+    }
+
+    pub fn rows(&self) -> impl Iterator<Item = (&str, &IncomeSource, Money)> {
+        self.by_source
+            .iter()
+            .map(|((agent_id, source), amount)| (agent_id.as_str(), source, *amount))
+    }
+
+    /// Start the taxpayer's next year: the rows stay, holding nothing.
+    pub fn reset(&mut self, agent_id: &str) {
+        for ((row_agent_id, _), amount) in &mut self.by_source {
+            if row_agent_id == agent_id {
+                *amount = Money(0);
+            }
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -14,8 +171,10 @@ pub enum JurisdictionLevel {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaxFacts {
-    pub ordinary_income: Money,
-    pub interest_income: Money,
+    /// The part of the taxpayer's year-to-date income this jurisdiction taxes at ordinary
+    /// rates: read off the income ledger when the year is assessed, because only then is it
+    /// known which interest this jurisdiction exempts.
+    pub taxable_ordinary_income: Money,
     pub short_term_gain: Money,
     pub long_term_gain: Money,
     pub section_1250_recapture: Money,
@@ -26,6 +185,17 @@ pub struct TaxFacts {
     pub mortgage_interest_deduction: Money,
     pub property_tax_paid: Money,
     pub salt_deduction: Money,
+}
+
+/// A rollout's tax year in progress: what was earned, and what each jurisdiction makes of it.
+///
+/// The two halves are one object because they are read together and reset together, and
+/// because keeping income out of `TaxFacts` is what lets it stay per-source: the same wage
+/// is one row here, not a copy inside every jurisdiction's facts.
+#[derive(Clone, Debug, Default)]
+pub struct TaxState {
+    pub income: IncomeLedger,
+    pub facts: BTreeMap<(String, String), TaxFacts>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -138,11 +308,12 @@ pub fn assess(facts: TaxFacts, rules: &TaxRules) -> Result<TaxAssessment, TaxErr
     )?;
     let deduction = facts.itemized_deduction.max(rules.standard_deduction);
     let federal_style_recapture = rules.section_1250_rate_ppb > 0;
-    let taxable_ordinary_income = facts.ordinary_income.checked_add(facts.interest_income)?;
     let ordinary_for_brackets = if federal_style_recapture {
-        taxable_ordinary_income
+        facts.taxable_ordinary_income
     } else {
-        taxable_ordinary_income.checked_add(facts.section_1250_recapture)?
+        facts
+            .taxable_ordinary_income
+            .checked_add(facts.section_1250_recapture)?
     };
     if rules.long_term_capital_gain_brackets.is_empty() {
         let taxable = nonnegative(
@@ -440,7 +611,7 @@ mod tests {
     fn preferential_gain_stacks_above_ordinary_income() {
         let assessment = assess(
             TaxFacts {
-                ordinary_income: Money(5_000_000),
+                taxable_ordinary_income: Money(5_000_000),
                 long_term_gain: Money(2_000_000),
                 ..TaxFacts::default()
             },
@@ -477,7 +648,7 @@ mod tests {
 
         let assessment = assess(
             TaxFacts {
-                ordinary_income: Money(1_000_000),
+                taxable_ordinary_income: Money(1_000_000),
                 short_term_gain: Money(-1_000_000),
                 long_term_gain: Money(200_000),
                 ..TaxFacts::default()

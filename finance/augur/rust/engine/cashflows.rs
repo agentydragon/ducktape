@@ -8,7 +8,7 @@ pub(super) fn execute_cashflows(
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     properties: &[PropertyState],
     month: u32,
 ) -> Result<(), SimulationError> {
@@ -21,13 +21,13 @@ pub(super) fn execute_cashflows(
         apply_cashflow(
             ledger,
             recorder,
-            tax_facts,
+            tax,
             month,
             &cashflow.cause_id,
             &cashflow.from,
             &cashflow.to,
             amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-            cashflow.income_category.as_deref(),
+            cashflow.income_category.as_ref(),
             cashflow.deduction_category.as_deref(),
         )?;
     }
@@ -42,13 +42,13 @@ pub(super) fn execute_cashflows(
         apply_cashflow(
             ledger,
             recorder,
-            tax_facts,
+            tax,
             month,
             &cashflow.cause_id,
             &cashflow.from,
             &cashflow.to,
             amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-            cashflow.income_category.as_deref(),
+            cashflow.income_category.as_ref(),
             cashflow.deduction_category.as_deref(),
         )?;
     }
@@ -65,13 +65,13 @@ pub(super) fn execute_cashflows(
             apply_cashflow(
                 ledger,
                 recorder,
-                tax_facts,
+                tax,
                 month,
                 &cashflow.cause_id,
                 &cashflow.from,
                 &cashflow.to,
                 amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-                cashflow.income_category.as_deref(),
+                cashflow.income_category.as_ref(),
                 cashflow.deduction_category.as_deref(),
             )?;
         }
@@ -91,13 +91,13 @@ pub(super) fn execute_cashflows(
             apply_cashflow(
                 ledger,
                 recorder,
-                tax_facts,
+                tax,
                 month,
                 &cashflow.cause_id,
                 &cashflow.from,
                 &cashflow.to,
                 amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-                cashflow.income_category.as_deref(),
+                cashflow.income_category.as_ref(),
                 cashflow.deduction_category.as_deref(),
             )?;
         }
@@ -109,21 +109,25 @@ pub(super) fn execute_cashflows(
 fn apply_cashflow(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax: &mut TaxState,
     month: u32,
     cause_id: &str,
     from: &AccountRef,
     to: &AccountRef,
     amount: Money,
-    income_category: Option<&str>,
+    income_category: Option<&IncomeSource>,
     deduction_category: Option<&str>,
 ) -> Result<(), SimulationError> {
     transfer_money(ledger, recorder, month, cause_id, from, to, amount)?;
-    let recorded_income_category = (income_category == Some("ordinary")
-        && tax_facts
-            .keys()
-            .any(|(agent_id, _)| agent_id == &to.agent_id))
-    .then(|| "ordinary".to_owned());
+    // What the frame reports is the source the money landed in, and only when it landed
+    // anywhere: an untaxed recipient has no income ledger for it to reach.
+    let recorded_income_category = income_category
+        .filter(|_| {
+            tax.facts
+                .keys()
+                .any(|(agent_id, _)| agent_id == &to.agent_id)
+        })
+        .map(|source| String::from(source.clone()));
     recorder.record_transfer(TransferOutcome {
         month,
         cause_id: cause_id.into(),
@@ -132,8 +136,8 @@ fn apply_cashflow(
         amount,
         income_category: recorded_income_category,
     });
-    record_transfer_income(tax_facts, &to.agent_id, income_category, amount)?;
-    record_transfer_deduction(tax_facts, &from.agent_id, deduction_category, amount)
+    record_transfer_income(tax, &to.agent_id, income_category, amount)?;
+    record_transfer_deduction(tax, &from.agent_id, deduction_category, amount)
 }
 
 pub(super) fn transfer_money(

@@ -18,6 +18,7 @@ from finance.augur.rust.result import run_rust
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
+from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.rollout_independence import RolloutIndependenceAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.tax_statute import TaxStatuteAcceptance
@@ -36,6 +37,12 @@ class TestRustTaxStatute(TaxStatuteAcceptance):
 
 
 class TestRustRolloutIndependence(RolloutIndependenceAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustIncomeSources(IncomeSourceAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust

@@ -4,10 +4,10 @@ use std::collections::BTreeMap;
 use crate::{
     ledger::{AccountRef, JournalEntry},
     money::{Money, Quantity},
-    tax::{JurisdictionLevel, TaxRules},
+    tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 8;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -76,6 +76,15 @@ pub struct ScenarioSpec {
     pub property_tax_policies: Vec<PropertyTaxPolicySpec>,
     #[serde(default)]
     pub federal_salt_deduction_policies: Vec<FederalSaltDeductionSpec>,
+    /// The income sources this scenario can produce, which fixes the rows every taxpayer's
+    /// income ledger reports. Derived from the compiled plan rather than rediscovered here,
+    /// so both engines answer with the same set of buckets for the same scenario.
+    #[serde(default = "ordinary_income_only")]
+    pub income_sources: Vec<IncomeSource>,
+}
+
+fn ordinary_income_only() -> Vec<IncomeSource> {
+    vec![IncomeSource::Ordinary]
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -172,7 +181,7 @@ pub struct ScheduledTransferSpec {
     pub to: AccountRef,
     pub amount: AmountSpec,
     #[serde(default)]
-    pub income_category: Option<String>,
+    pub income_category: Option<IncomeSource>,
     #[serde(default)]
     pub deduction_category: Option<String>,
 }
@@ -187,7 +196,7 @@ pub struct RecurringTransferSpec {
     pub to: AccountRef,
     pub amount: AmountSpec,
     #[serde(default)]
-    pub income_category: Option<String>,
+    pub income_category: Option<IncomeSource>,
     #[serde(default)]
     pub deduction_category: Option<String>,
 }
@@ -202,7 +211,7 @@ pub struct ScheduledPropertyCashflowSpec {
     pub to: AccountRef,
     pub amount: AmountSpec,
     #[serde(default)]
-    pub income_category: Option<String>,
+    pub income_category: Option<IncomeSource>,
     #[serde(default)]
     pub deduction_category: Option<String>,
 }
@@ -218,7 +227,7 @@ pub struct RecurringPropertyCashflowSpec {
     pub to: AccountRef,
     pub amount: AmountSpec,
     #[serde(default)]
-    pub income_category: Option<String>,
+    pub income_category: Option<IncomeSource>,
     #[serde(default)]
     pub deduction_category: Option<String>,
 }
@@ -586,6 +595,7 @@ pub struct AccountBalance {
 pub struct MonthOutput {
     pub month: u32,
     pub balances: Vec<AccountBalance>,
+    pub income: Vec<IncomeState>,
     pub lots: Vec<SecurityLotState>,
     pub bonds: Vec<BondState>,
     pub properties: Vec<PropertyState>,
@@ -594,6 +604,14 @@ pub struct MonthOutput {
     pub capital_gains: Vec<CapitalGainState>,
     pub tlh_cumulative_harvest: Vec<Money>,
     pub failed: bool,
+}
+
+/// One taxpayer's year-to-date income from one source, as of a month.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IncomeState {
+    pub agent_id: String,
+    pub income_source: IncomeSource,
+    pub income: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

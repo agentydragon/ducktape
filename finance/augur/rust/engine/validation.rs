@@ -16,6 +16,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
     if fixture.scenario.horizon_months == 0 {
         return Err(SimulationError::EmptyHorizon);
     }
+    validate_income_sources(fixture)?;
     if fixture.currency_code.len() != 3
         || !fixture
             .currency_code
@@ -109,8 +110,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             &transfer.amount,
             std::iter::once(transfer.month),
         )?;
-        validate_income_category(transfer.income_category.as_deref())?;
-        validate_income_category(transfer.deduction_category.as_deref())?;
+        validate_deduction_category(transfer.deduction_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
         validate_account(&accounts, &transfer.to, &transfer.cause_id)?;
     }
@@ -143,8 +143,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                     .unwrap_or(fixture.scenario.horizon_months - 1)
                     .min(fixture.scenario.horizon_months - 1),
         )?;
-        validate_income_category(transfer.income_category.as_deref())?;
-        validate_income_category(transfer.deduction_category.as_deref())?;
+        validate_deduction_category(transfer.deduction_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
         validate_account(&accounts, &transfer.to, &transfer.cause_id)?;
     }
@@ -164,7 +163,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             &obligation.amount_due,
             std::iter::once(obligation.month),
         )?;
-        validate_income_category(obligation.deduction_category.as_deref())?;
+        validate_deduction_category(obligation.deduction_category.as_deref())?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
     }
@@ -198,7 +197,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                     .unwrap_or(fixture.scenario.horizon_months - 1)
                     .min(fixture.scenario.horizon_months - 1),
         )?;
-        validate_income_category(obligation.deduction_category.as_deref())?;
+        validate_deduction_category(obligation.deduction_category.as_deref())?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
     }
@@ -1031,8 +1030,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             &cashflow.amount,
             std::iter::once(cashflow.month),
         )?;
-        validate_income_category(cashflow.income_category.as_deref())?;
-        validate_income_category(cashflow.deduction_category.as_deref())?;
+        validate_deduction_category(cashflow.deduction_category.as_deref())?;
         validate_account(&accounts, &cashflow.from, &cashflow.cause_id)?;
         validate_account(&accounts, &cashflow.to, &cashflow.cause_id)?;
         validate_property_reference(
@@ -1071,8 +1069,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                     .unwrap_or(fixture.scenario.horizon_months - 1)
                     .min(fixture.scenario.horizon_months - 1),
         )?;
-        validate_income_category(cashflow.income_category.as_deref())?;
-        validate_income_category(cashflow.deduction_category.as_deref())?;
+        validate_deduction_category(cashflow.deduction_category.as_deref())?;
         validate_account(&accounts, &cashflow.from, &cashflow.cause_id)?;
         validate_account(&accounts, &cashflow.to, &cashflow.cause_id)?;
         validate_property_reference(
@@ -1398,13 +1395,68 @@ fn validate_amount_index_level(
     Ok(())
 }
 
-fn validate_income_category(category: Option<&str>) -> Result<(), SimulationError> {
+fn validate_deduction_category(category: Option<&str>) -> Result<(), SimulationError> {
     if let Some(category) = category
         && category != "ordinary"
     {
-        return Err(SimulationError::UnsupportedIncomeCategory {
+        return Err(SimulationError::UnsupportedDeductionCategory {
             category: category.into(),
         });
+    }
+    Ok(())
+}
+
+/// Every source income can arrive from is one the scenario declared.
+///
+/// The income ledger has a row per taxpayer per declared source and accrues to nothing
+/// else, so an undeclared source would silently drop the income rather than mis-tax it.
+/// Checking it here is what lets that accrual stay a lookup.
+fn validate_income_sources(fixture: &Fixture) -> Result<(), SimulationError> {
+    let declared: BTreeSet<&IncomeSource> = fixture.scenario.income_sources.iter().collect();
+    let interest_from = |issuer: &Option<String>| IncomeSource::interest(issuer.as_deref());
+    let scenario = &fixture.scenario;
+    let referenced = scenario
+        .scheduled_transfers
+        .iter()
+        .map(|transfer| transfer.income_category.clone())
+        .chain(
+            scenario
+                .recurring_transfers
+                .iter()
+                .map(|transfer| transfer.income_category.clone()),
+        )
+        .chain(
+            scenario
+                .scheduled_property_cashflows
+                .iter()
+                .map(|cashflow| cashflow.income_category.clone()),
+        )
+        .chain(
+            scenario
+                .recurring_property_cashflows
+                .iter()
+                .map(|cashflow| cashflow.income_category.clone()),
+        )
+        .flatten()
+        .chain(
+            scenario
+                .initial_bonds
+                .iter()
+                .map(|bond| interest_from(&bond.issuer_jurisdiction_id)),
+        )
+        .chain(
+            scenario
+                .distributions
+                .iter()
+                .flat_map(|distribution| &distribution.tax_character)
+                .map(|slice| interest_from(&slice.issuer_jurisdiction_id)),
+        );
+    for source in referenced {
+        if !declared.contains(&source) {
+            return Err(SimulationError::UndeclaredIncomeSource {
+                income_source: String::from(source),
+            });
+        }
     }
     Ok(())
 }
