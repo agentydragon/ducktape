@@ -6,20 +6,63 @@ that is not a completed multi-day reliability result. Keep the issue open.
 
 ## Acceptance boundary
 
-Wyrm2's standing block began September 6 at 01:35:27 UTC. The first clean
-post-mitigation reset was observed at **2026-09-06T01:35:46Z**, Unix
-`1788658546`. Check after 48 hours; prefer seven days, ending
-**2026-09-13T01:35:46Z**, Unix `1789263346`, before declaring resolved.
+Wyrm2's standing block began September 6 at 01:35:27 UTC; its first
+post-mitigation reset was observed at 01:35:46 UTC. That early interval includes
+broken Desktop operation and is not the representative-use acceptance window.
+
+The operator accepted Desktop functionality at the **2026-09-06T08:43:00Z**
+checkpoint (Unix `1788684180`) and asked to wind down active debugging while
+keeping **another 1–2 weeks** under observation. Review on or after
+**September 13, 08:43 UTC** (`1789288980`); extend through
+**September 20, 08:43 UTC** (`1789893780`) when coverage or representative use
+is insufficient. Do not automatically close #5213 at either date.
 
 Require normal representative Desktop use, no observed exhaustion, independent
 account-counter coverage, and verified mitigation/capture coverage. A quiet
 account with a closed app is not the same experiment. Source opt-in is not a
-rollout: rugged is configured in #5675 but has not been live-activated.
+rollout: rugged has a declarative central-proxy opt-in but has not been
+live-activated or verified.
 
 Uncovered intervals cannot count as healthy. Recover stronger independent
 evidence or extend the covered observation window. A recurrence with the block
 verified active requires attribution of the residual consumer, not declaring
 the mitigation successful because average usage fell.
+
+## Confirmation round
+
+Active debugging is paused at the operator's request. Existing collection and
+mitigation remain deployed; no new scheduled agent job or automatic issue
+closure was created. For pickup:
+
+1. Confirm normal Desktop use remained functional and whether any quota errors
+   recurred. Re-check the actual image, relay, and enabled exact-route block.
+2. Query retained account counters at a fixed endpoint; inspect raw sample gaps
+   and exporter `up` coverage. Missing intervals are not healthy observations.
+3. Check central capture continuity, write-failure alerts, request/block counters,
+   and storage headroom. Terminal captures do not cover unfinished requests.
+4. For any recurrence, preserve its UTC interval and correlate captured route
+   activity with independent quota samples. Do not disable the block casually
+   or publish raw captures, credentials, session IDs, or request variables.
+5. Record the outcome on #5213. Close only after the covered, representative-use
+   interval supports the claim; otherwise extend observation or resume targeted
+   attribution. Rugged activation, residual caller attribution, notification
+   delivery, and deferred local-key/GC-root cleanup remain separate follow-ups.
+
+At the seven-day endpoint set the query API's `time=1789288980`:
+
+```promql
+min(min_over_time(github_graphql_rate_remaining{github_account="agentydragon"}[7d]))
+```
+
+Fresh quota coverage on a one-minute grid, allowing 90-second sample age:
+
+```promql
+avg_over_time((max((time()-timestamp(github_graphql_rate_remaining{github_account="agentydragon"})) < bool 90) or vector(0))[7d:1m])
+```
+
+For the two-week endpoint use `time=1789893780` and `14d`. Inspect raw retained
+timestamps and exporter success separately, as in the historical examples
+below; an empty exhaustion query alone is insufficient.
 
 ## Deployed measurement contract
 
@@ -36,18 +79,19 @@ Live scraping is once per minute, with a 15-second scrape timeout and
 override. Seven-day-old data was queried successfully; the quota exporter
 itself has only roughly two days of history at investigation time.
 
-The block's private local event log records thirty-second heartbeats and
-cumulative counts per process lifetime. Check heartbeat continuity, enabled
-state, raw-capture availability, and actual client routing separately from
-account usage. Subtract known synthetic probes from natural-request counts.
-No central block-health collector or automatic issue-closing job is deployed.
+Wyrm2 now uses the central proxy. Check its actual deployed configuration,
+`github_api_proxy_requests_total` by client/route/status, capture health and file
+continuity, and the installed relay/Desktop routing separately from account
+usage. Subtract known synthetic probes from observed block counts. The retired
+local block's thirty-second heartbeat log is historical evidence, not current
+coverage. No automatic issue-closing job is deployed.
 
-## Reproducible queries
+## Historical query examples
 
 These examples use the verified snapshot **2026-09-06T01:59:05Z**, Unix
 `1788659945`, 1399 seconds after the start. Fix the API query's `time` to that
-timestamp. For later checks replace `1399s` with the elapsed duration; at the
-seven-day endpoint use `7d` and `time=1789263346`.
+timestamp. The old seven-day endpoint used `7d` and `time=1789263346`. For the current
+acceptance window use the endpoint and duration in the confirmation section.
 
 Minimum remaining:
 
@@ -97,12 +141,14 @@ The previous 24 hours were **not fully covered**: fresh-grid coverage was
 
 ## Alerts are not delivery proof
 
-The deployed exhaustion rule waits for fifteen continuous minutes at zero.
-An exhaustion near hourly reset can be recorded without ever alerting.
-[PR #5680](https://github.com/agentydragon/ducktape/pull/5680) proposes a
-five-minute sampled-zero latch and missing-observation detection, preserving
-generic `TargetDown` ownership of explicitly failed scrapes. It was not applied
-live during the measurements above.
+The old fifteen-minute exhaustion rule was replaced by
+[#5680](https://github.com/agentydragon/ducktape/pull/5680). Live rules were
+rechecked during wind-down: `GitHubGraphQLQuotaExhausted` latches a sampled zero
+for five minutes with no additional `for`, and
+`GitHubGraphQLQuotaObservationsMissing` detects missing samples while preserving
+generic `TargetDown` ownership of explicitly failed scrapes. The historical
+measurements below predate that change. Exhaustion entirely between scrapes
+and actual notification delivery remain separate visibility limits.
 
 GitHub alerts route to the default `ntfy` receiver. Its secret-file URL was not
 read. Group wait is thirty seconds; group interval five minutes; repeat two

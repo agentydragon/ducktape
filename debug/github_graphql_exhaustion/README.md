@@ -3,11 +3,14 @@
 Tracking issue: [#5213](https://github.com/agentydragon/ducktape/issues/5213).
 
 The observed large burn is causally linked to Claude Desktop's cloud-mediated
-GitHub batch-status route. Wyrm2 now uses the central exact-route block through
-a local relay, but Desktop compatibility remains broken; rugged has a source
-opt-in but no verified rollout. The investigation remains open: the exact
-refresh trigger and upstream work are partly unobserved, and the required
-multi-day exhaustion-free acceptance window is not complete.
+GitHub batch-status route. Wyrm2 uses the central exact-route block through
+a local relay. After repairing SSE buffering (#5699) and connection reuse
+(#5703), the operator confirmed Desktop works on September 6, 2026 and asked
+to wind down active debugging. Existing mitigation, capture, and metrics remain
+running. Review the next **1–2 weeks, September 13–20**, before closing #5213;
+the reliability result is not yet established. Rugged has a source opt-in but
+no verified rollout; the exact refresh trigger and upstream work remain partly
+unobserved. [Confirmation checklist and query window](acceptance_monitoring.md).
 
 - [Attribution and controlled block/reversal](attribution_2026_09_05.md):
   measurements, source evidence, competing explanations, and remaining experiments.
@@ -18,7 +21,7 @@ multi-day exhaustion-free acceptance window is not complete.
   real relay canary, host cutover gates, local mitigation retirement and remaining
   monitoring limitations.
 - [Wyrm2 cutover](wyrm2_central_cutover.md): installed relay, preserved captures,
-  restored launcher search and unresolved Desktop history/fetch regression.
+  repaired Desktop regressions, deployed-image proof, and operator acceptance.
 - [Acceptance monitoring](acceptance_monitoring.md): exact retained-metric
   queries, coverage requirements, historical gaps, and notification limitations.
 - [Notification delivery](notification_delivery.md): the source-specific ntfy
@@ -30,9 +33,8 @@ multi-day exhaustion-free acceptance window is not complete.
 - [Wyrm2 restart pod delta](wyrm2_pod_delta_2026_09_04.md): supporting historical
   evidence about the scope of the node-off control, not current caller exclusion.
 
-The recorder coverage report is part of
-[PR #5665](https://github.com/agentydragon/ducktape/pull/5665), under this directory
-once landed. [#5663](https://github.com/agentydragon/ducktape/issues/5663) tracks
+[Recorder coverage](recorder_coverage_2026_09_06.md) documents the measurement
+boundaries. [#5663](https://github.com/agentydragon/ducktape/issues/5663) tracks
 retained process/resource history; [#5666](https://github.com/agentydragon/ducktape/issues/5666)
 tracks attributed in-cluster GitHub proxying.
 

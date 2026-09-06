@@ -2,8 +2,10 @@
 
 Server implementation checkpoint: 2026-09-06 05:37 UTC. Client-state statements
 below describe that checkpoint. The subsequent [wyrm2 cutover](wyrm2_central_cutover.md)
-replaced local MITM with the central relay, but Desktop compatibility remains
-unresolved. Neither checkpoint establishes quota resolution.
+replaced local MITM with the central relay. The operator accepted Desktop
+functionality after the streaming and connection-reuse repairs on September 6;
+that later evidence is in the cutover note. This historical checkpoint alone
+does not establish client acceptance or quota resolution.
 
 ## Landed and verified
 
