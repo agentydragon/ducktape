@@ -56,9 +56,11 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":testing",
         "//:conftest",
         "//util:oci",
         "//util/testing:container_logs",
+        "@pypi//aiohttp",
         "@pypi//pytest_bazel",
     ],
 )
@@ -185,9 +187,9 @@ py_test(
         ":destinations",
         ":metrics",
         ":runtime",
+        ":testing",
         "//:conftest",
         "@pypi//aiohttp",
-        "@pypi//cryptography",
         "@pypi//mitmproxy",
         "@pypi//prometheus_client",
         "@pypi//pytest",
@@ -218,5 +220,14 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "testing",
+    srcs = ["testing.py"],
+    deps = [
+        "@pypi//cryptography",
+        "@pypi//mitmproxy",
     ],
 )
