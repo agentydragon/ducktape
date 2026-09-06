@@ -45,12 +45,6 @@ Anything fully shipped is removed — git history is the record of done work.
   in one place. Implementations exist (security, home_value, rent,
   PE, inflation), but no single document says whether a configured value
   is a sim-month-0 level or a fixed contract value.
-- Replace float dollar/share accounting in the dense engine with integer
-  cents/share-quantum accounting where possible. The FIFO dollar-sale path
-  currently has a small dollar-space snap before ceiling whole-unit sales so
-  float32/JAX arithmetic does not turn exact ratios like `$50,000 / $500` into
-  a spurious extra share. That tolerance should disappear once obligations,
-  proceeds, cash, and share quantities operate on explicit integer quanta.
 - **Arrays reconcile to ledger.** Monthly result columns should remain
   charts, not truth. Keep shrinking bespoke explanatory array math
   without changing monthly-column semantics:
@@ -281,6 +275,22 @@ recovery cashouts. Still missing:
 
 ## Refactor follow-ups
 
+- **Delete the orphaned `jnp` policy modules.** `sim/target_allocation.py`,
+  `payment_policy.py` and `bonds.py` have no importer outside their own tests,
+  and `allocation.py` and `actor_view.py` are reachable only through them. They
+  were written to run inside a jitted scan that no longer exists; their
+  docstrings still say so. Deleting them drops most of `sim/BUILD.bazel`'s
+  `@pypi//jax` deps. Check `cash_band.py` separately — `sim/scenario.py` imports
+  it, so part of it is live.
+- **`MetricSeries` / `MetricValue` need not be Protocols.** They exist in
+  `product/metric_composition.py` only because two backends' array types (numpy
+  host arrays and `jnp` device arrays) could not be named together. One backend
+  remains, so name the concrete type (STYLE.md § General: Protocol is a smell).
+- **Settle what a mark published during the failure month reports.** The engine
+  stops at the phase that could not pay; reporting the whole failure month is
+  the other defensible answer. It was previously pinned as a per-engine
+  divergence rather than decided, and `sim/testing/frozen_rollout.py` states
+  every case strictly after the freeze because of it.
 - Revisit whether policy should emit all agent actions, including
   obligation-payment transfers. Potential future shape: hard demands
   are inputs to the agent policy; the policy emits both liquidation
@@ -300,20 +310,6 @@ recovery cashouts. Still missing:
   YAML in `augur/api/portfolio.py` may still want custody/source
   metadata, valuation provenance, account references, and tender-window
   metadata.
-
-### Dual-backend (NumPy→JAX) indirection cleanup — done
-
-The NumPy backend was removed in `cdf0ea1fe`; the leftover indirection is now
-cleared: naming/comment vestiges and the unused `slice.py` (#1924/#1925/#1926),
-and `DenseSimulationResult` collapsed into `SimulationRun` (one lazy run handle
-exposing the raw `(plan, output, external_series)` triple plus decoded frames).
-
-State outputs intentionally stay **R-last**: the engine's hot rollout math is
-memory-bandwidth-bound on the R axis and the metric-fan reduces over R, so R as
-the contiguous trailing axis is correct. `r_first_view` is a cheap `np.moveaxis`
-view, not a real cost. The actual dense-decode wins are orthogonal to layout —
-sparse-active decoding and not storing rarely-read state as a dense per-snapshot
-grid; see <augur/debug/rollout_perf_profiling.md>.
 
 ## Code review — open findings (2026-05)
 

@@ -1,8 +1,9 @@
-# Augur Rust simulator prototype
+# Augur simulator
 
-This directory contains a clean-sheet deterministic simulator that is being
-built in parallel with `finance/augur/sim`. It is not yet a replacement for the
-existing engine.
+The deterministic engine behind every Augur projection. It runs a compiled plan
+from `finance/augur/sim` (which holds the scenario model and the engine
+contract, and no engine) and answers in canonical event frames and state
+channels.
 
 ## Invariants
 
@@ -15,8 +16,8 @@ existing engine.
   integer fixture. Rust does not resample paths.
 - Independent rollouts execute in parallel with Rayon and are collected by
   deterministic rollout index.
-- Obligations sharing one payer/source account settle all-or-none, matching the
-  existing simulator's hard-demand grouping.
+- Obligations sharing one payer/source account settle all-or-none: a funding
+  group is a hard demand, so a shortfall fails the whole group.
 - Failed rollouts stop executing future actions and expose zero value-bearing
   snapshots while retaining the preceding causal trace.
 - Full forensic output and compact population output use the same state-machine
@@ -31,7 +32,7 @@ performance comparisons must use `simulate_dense(...)`, not the compact path.
 
 ## Covered behavior
 
-The differential suite currently proves exact integer agreement for:
+The acceptance suites in `sim/testing/` assert exact integer answers for:
 
 - opening balances and opening equity;
 - scheduled and recurring transfers;
@@ -110,25 +111,25 @@ remain authoritative state and events are not replayed to reconstruct them.
 The strict fixture stores monetary series (security prices, distributions, and
 home values) as currency quanta. Inflation and rent index levels instead use a
 dimensionless parts-per-billion scale. Referenced index levels must be positive
-and must round-trip exactly through the Python/JAX `float64` external-series
-boundary; the Rust validator and Python adapter reject fixtures that would lose
-an integer level during that conversion. Series coverage is deliberately dense:
+and must round-trip exactly through the `float64` external-series boundary the
+sampler writes across; the Rust validator and Python adapter reject fixtures
+that would lose an integer level during that conversion. Series coverage is deliberately dense:
 every series supplies every rollout and snapshot in the fixture.
 
 Private-equity channels use the same dense row-major fixture contract but keep
 their distinct types explicit in the series names: mark/recovery/valuation are
 currency quanta, capacity/eligibility/forced-sale fractions are exact PPB,
 regime/event-kind are validated integer codes, and opportunity/blocked channels
-are 0/1. The Python adapter reconstructs the typed `PrivateEquityBundle` only at
-the legacy boundary; Rust never routes PE marks through ordinary security-price
-series.
+are 0/1. The Python adapter reconstructs the typed `PrivateEquityBundle` only where the
+sampled model hands one over; Rust never routes PE marks through ordinary
+security-price series.
 
-TLH policies encode every heuristic parameter as integer PPB. Rust evaluates
-the same float64 maturity/drawdown curve as JAX, quantizes the resulting monthly
-factor back to PPB before applying it to integer money, and keeps the give-back
-ledger entirely in currency quanta. The shared differential fixtures cover
-drawdown versus flat paths, year-end tax facts, two-stage partial liquidation,
-and target-allocation sale give-back.
+TLH policies encode every heuristic parameter as integer PPB. The engine
+evaluates the calibrated float64 maturity/drawdown curve, quantizes the
+resulting monthly factor back to PPB before applying it to integer money, and
+keeps the give-back ledger entirely in currency quanta. The acceptance cases
+cover drawdown versus flat paths, year-end tax facts, two-stage partial
+liquidation, and target-allocation sale give-back.
 
 Initial lots store total basis and never a per-unit figure. A sale apportions
 the basis a lot still holds by the units leaving it, so selling a lot down in
@@ -137,9 +138,9 @@ remainder stranded in an emptied lot. What money is and why it is not a decimal
 crate: <docs/money_representation.md>.
 
 Bond coupon rates use the same parts-per-billion contract and must round-trip
-exactly through the legacy Python/JAX `float64` boundary. Nominal coupons round
-the full `face × annual rate × period / 12` rational once; TIPS preserve the
-legacy engine's indexed-principal and fixed-point period-rate path. Government
+exactly through the `float64` boundary. Nominal coupons round the full
+`face × annual rate × period / 12` rational once; TIPS carry an indexed
+principal and a fixed-point period rate. Government
 issuer levels come from one scenario-level jurisdiction identity registry,
 rather than duplicated caller-supplied metadata on each bond.
 
@@ -173,8 +174,8 @@ series plus the per-rollout failure month, under the compact capture mode — no
 snapshot, journal, or event trace. `backend.py` wraps it as the product API's
 `ProductMetricArrays` and `ProductProjectionSummaries`, composing the derived metrics and
 the percentile fan with `product/metric_composition.py` and `product/quantiles.py`.
-Design, and two behaviours inherited from the engine this one replaced and kept deliberately
-rather than corrected: [docs/product_metrics.md](docs/product_metrics.md).
+Design, and two behaviours the engine keeps deliberately rather than corrects:
+[docs/product_metrics.md](docs/product_metrics.md).
 
 `fixture_encoder.py` is what connects that to a live request: a `Scenario` and its
 `CompiledSimulation` become the strict integer fixture, taking money straight out of
@@ -228,7 +229,6 @@ document, which the standalone binary needs on disk and the in-process bindings 
 //finance/augur/rust:simulator_cli
 //finance/augur/rust:simulator_ext
 //finance/augur/rust:simulator_test
-//finance/augur/rust/differential:all
 //finance/augur/rust/benchmark:all
 //finance/augur/rust/benchmark:fixture_bin
 //finance/augur/rust/benchmark:driver_bin

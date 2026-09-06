@@ -8,10 +8,10 @@ Everything below reads the channels every engine answers in, so the claims are a
 simulator does with an (s,S) cash band and not about how either one computes it. Prices are
 authored flat rather than sampled, so every number is exact.
 
-Two properties in the JAX suite this came from are deliberately not here. Cash conservation
-is stated over JAX's cash tensor including its external contra row, which Rust has no
-counterpart for — its double-entry ledger validates the same thing per journal entry. And
-"sweeping sleeve weights does not recompile" is a claim about JAX's compile cache.
+Two properties in the suite this came from are deliberately not here. Cash conservation was
+stated over a cash tensor including its external contra row, which these channels have no
+counterpart for — the double-entry ledger validates the same thing per journal entry. And
+"sweeping sleeve weights does not recompile" was a claim about a compile cache.
 """
 
 from __future__ import annotations

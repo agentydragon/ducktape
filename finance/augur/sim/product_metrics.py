@@ -2,9 +2,8 @@
 
 These carry no backend detail: a backend supplies the seven base series and the failure
 vector, and everything above that — the derived metrics, the percentile fan, the terminal
-distribution — is composed here, once, from `product.metric_composition`. That is what
-lets JAX and Rust hand the product API the same objects rather than two lookalikes that
-have to be kept in agreement.
+distribution — is composed here, once, from `product.metric_composition`. An engine
+therefore owes the product API these objects and not a read model of its own.
 """
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.

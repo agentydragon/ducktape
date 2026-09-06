@@ -1,10 +1,10 @@
 """Month phases, edge inputs, and tax-loss harvesting, stated for any engine.
 
-Three things that were only ever asserted against the JAX engine's own run: that each phase
-of a month books what the scenario says when they all fire together; what a run does with
-inputs it cannot use -- an unpriceable sleeve, an oversold lot, a channel carrying a value
-that is not a price; and that harvesting a loss defers a gain rather than creating one, which
-is the claim that makes the whole mechanism legitimate rather than free money.
+Three things that were once asserted only against one engine's own output layout: that each
+phase of a month books what the scenario says when they all fire together; what a run does
+with inputs it cannot use -- an unpriceable sleeve, an oversold lot, a channel carrying a
+value that is not a price; and that harvesting a loss defers a gain rather than creating one,
+which is the claim that makes the whole mechanism legitimate rather than free money.
 """
 
 from __future__ import annotations
@@ -246,8 +246,8 @@ def _harvested_short_term_in_month(result, *, calendar_month: int, rollout_index
 class ScanPhaseAcceptance:
     """Each month phase books what the scenario says, in a run that exercises them together."""
 
-    def test_transfers_only_scan(self, backend: Backend) -> None:
-        # Recurring paycheck for a year + a one-off gift: pure transfers, so JAX runs the lax.scan path.
+    def test_transfers_only_month_loop(self, backend: Backend) -> None:
+        # Recurring paycheck for a year + a one-off gift: transfers and nothing else.
         scenario = Scenario(
             agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="bob")],
             initial_cash=[

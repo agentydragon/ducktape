@@ -8,11 +8,10 @@ survive, exogenous marks it was never around to see.
 Stated against a `SimulationResult` rather than one engine's output, because "a frozen rollout
 reports nothing later" is a claim about what a simulator is.
 
-**What is deliberately not here:** whether a mark published *during* the failure month itself is
-reported. The engines disagree about that and the question is open — JAX reports the whole
-failure month, Rust stops at the phase that could not pay — so it is pinned per engine in
-`rust/differential/known_divergence_test.py` instead. Every case below is about months strictly
-after the freeze, which is settled.
+**What is deliberately not here:** whether a mark published *during* the failure month itself
+is reported. The engine stops at the phase that could not pay, which is a defensible answer
+and not an established one -- the question is open (`TODO.md`). Every case below is about
+months strictly after the freeze, which is settled.
 """
 
 from __future__ import annotations

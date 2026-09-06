@@ -1,10 +1,9 @@
 # The fixture boundary
 
-Everything that reaches the Rust engine crosses as one JSON document. `fixture.rs` declares
-its shape and `fixture_encoder.py` writes it, and neither is derived from the other: the 139
-distinct keys the encoder emits are, all 139 of them, field names declared on a Rust struct
-in `fixture.rs`, `tax.rs`, `ledger.rs` or `money.rs`. The schema is written twice, by hand,
-in two languages.
+Everything that reaches the engine crosses as one JSON document. `fixture.rs` declares its
+shape and `fixture_encoder.py` writes it, and neither is derived from the other: every key
+the encoder emits is a field name declared by hand on a Rust struct in `fixture.rs`,
+`tax.rs`, `ledger.rs` or `money.rs`. The schema is written twice, in two languages.
 
 ## Why there is a third model at all
 
@@ -53,25 +52,22 @@ deletes anyway.
 every list on `ScenarioSpec` is `#[serde(default)]`, so a field added on the Rust side and
 never written by the encoder deserializes to its default in silence.
 
-Nothing schematic closes that. What closes it is behavioral — a field Rust reads and the
-encoder never writes makes Rust answer differently from JAX, which is what the differential
-suites and `structural_fuzz_test` exist to find. A drift in this schema is therefore caught
-as a disagreement about money rather than as a missing key, which is slower to read but
-strictly stronger: it also catches the case where both sides spell the field and mean
-different things by it.
+Nothing schematic closes that. What closes it is behavioral — a field the engine reads and
+the encoder never writes makes the engine answer something the acceptance suites in
+`sim/testing/` say is wrong. A drift in this schema is therefore caught as a wrong number
+rather than as a missing key, which is slower to read but strictly stronger: it also catches
+the case where both sides spell the field and mean different things by it.
 
 ## End state: the plan is the wire format
 
-The fixture should stop being a third model. Both engines already run off `CompiledSimulation`
-— `differential/fixture.py` hands Rust `encode_fixture` of the very plan JAX runs — so the
-document Rust reads can be a serialization of that plan, and the encoder collapses to
-serializing it.
+The fixture should stop being a third model. The engine already runs a `CompiledSimulation`
+in all but serialization, so the document it reads can be a serialization of that plan and
+the encoder collapses to writing it out.
 
-This does not delete the subset, it moves it. Refusing an unmodeled feature becomes Rust's
-job: the plan carries everything the JAX engine models, so Rust has to name what it will not
-run instead of receiving a document from which it was already absent. That is the whole cost
-of the change, and it is the reason it is a separate change rather than a rider on parity
-work.
+This does not delete the subset, it moves it. Refusing an unmodeled feature becomes the
+engine's job: the plan carries everything the compiler can express, so the engine has to
+name what it will not run instead of receiving a document from which it was already absent.
+That is the whole cost of the change, and the reason it is a change of its own.
 
 ## Rejected: generate the encoder from the Rust structs
 
@@ -96,6 +92,5 @@ vocabulary, not of the engine behind it.
 | A `SeriesIndexedAmount` indexed by a series that is not an index | The fixture's `AmountSpec` indexes by inflation and rent levels only.                                               |
 | A `LevelSeriesKey` that is neither money nor an index            | Money series cross as currency quanta and index series as parts per billion; a key that is neither has no encoding. |
 
-Rates and per-unit values are not on this list. They are read off the parts-per-billion grid
-and rounded onto it, which is a single defined rule rather than an agreement between two
-implementations to be checked.
+Rates and per-unit values are not on this list. They are rounded onto the parts-per-billion
+grid, which is one defined rule stated in one place.

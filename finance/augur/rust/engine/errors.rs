@@ -91,12 +91,10 @@ pub enum SimulationError {
     #[error("inflation-indexed bond {bond_id:?} requires an inflation series")]
     MissingBondInflationSeries { bond_id: String },
     #[error(
-        "bond {bond_id:?} coupon rate {rate_ppb} ppb cannot round-trip through the Python/JAX float boundary"
+        "bond {bond_id:?} coupon rate {rate_ppb} ppb cannot round-trip through the float64 boundary"
     )]
     InexactBondCouponRate { bond_id: String, rate_ppb: i64 },
-    #[error(
-        "indexed bond {bond_id:?} period rate cannot match the Python/JAX float boundary exactly"
-    )]
+    #[error("indexed bond {bond_id:?} period rate cannot match the float64 boundary exactly")]
     InexactBondPeriodRate { bond_id: String },
     #[error("sale {cause_id:?} has non-positive units {units}")]
     InvalidSaleUnits { cause_id: String, units: i64 },
@@ -165,7 +163,7 @@ pub enum SimulationError {
         value: i64,
     },
     #[error(
-        "series-indexed amount {cause_id:?} has level {value} in {series_id:?} for rollout {rollout} at month {month}, which cannot round-trip exactly through the Python/JAX float level boundary"
+        "series-indexed amount {cause_id:?} has level {value} in {series_id:?} for rollout {rollout} at month {month}, which cannot round-trip exactly through the float64 level boundary"
     )]
     InexactSeriesAmountLevel {
         cause_id: String,

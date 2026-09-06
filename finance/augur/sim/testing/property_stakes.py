@@ -3,8 +3,8 @@
 Two properties is the smallest shape in which an output indexed by property slot can be
 wrong. With one property every flattening of `(snapshot, rollout, property)` coincides, so a
 reader that applies a rollout-major mask to a property-major buffer is correct by accident;
-with two, each property's values land in the other's cells. That was a real bug in the JAX
-decoder, and it is why the first case below is deliberately as small as it is.
+with two, each property's values land in the other's cells. That has been a real decoder bug
+here, which is why the first case below is deliberately as small as it is.
 
 The rest is the same claim over a whole lifecycle: property tax, Schedule E depreciation,
 capex, sale basis, §121 eligibility and mortgage payoff are all per property, and a scenario

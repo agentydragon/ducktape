@@ -5,8 +5,7 @@
 //! so this module deliberately stops at the base series and derives nothing.
 //!
 //! The reduction runs for every capture mode, including `Summary`: the percentile-fan
-//! workload wants these series without paying for dense monthly snapshots, which is the
-//! same split JAX draws with `emit_dense=False`.
+//! workload wants these series without paying for dense monthly snapshots.
 
 use std::collections::BTreeMap;
 
@@ -58,7 +57,7 @@ pub struct ProductInputs {
     /// `private_equity_mark:<issuer>` row for each issuer the selected agent can hold.
     private_equity_mark_by_issuer: BTreeMap<String, usize>,
     /// Keyed by `property_id`; a property whose home-value series is absent is omitted and
-    /// contributes nothing, matching the JAX reducer's `valid_series` gate.
+    /// contributes nothing rather than reducing over a series that is not there.
     property_valuations: BTreeMap<String, PropertyValuation>,
     primary_agent_id: String,
 }
@@ -216,10 +215,10 @@ pub struct SnapshotState<'a> {
 
 /// Reduce one snapshot to its base metrics.
 ///
-/// Failure semantics follow the JAX reducer exactly, including where it is uneven: dollar
-/// state (cash, lots, mortgage principal) is already drained by the caller, and bonds are
-/// zeroed here because their face is a static input the freeze never touches. Property
-/// value is deliberately NOT zeroed — see `docs/product_metrics.md` § Failed rollouts.
+/// Failure semantics are uneven, and kept that way on purpose: dollar state (cash, lots,
+/// mortgage principal) is already drained by the caller, and bonds are zeroed here because
+/// their face is a static input the freeze never touches. Property value is NOT zeroed —
+/// see `docs/product_metrics.md` § Failed rollouts.
 pub fn snapshot_metrics(
     fixture: &Fixture,
     inputs: &ProductInputs,

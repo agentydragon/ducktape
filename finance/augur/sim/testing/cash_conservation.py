@@ -15,10 +15,9 @@ Every case is minimal on purpose: in the month under test, the disposal is the o
 crossing the boundary, so the total's move is the whole story. The mortgage payment and the
 tax settlement that share the property sale's month are between modeled agents and cancel.
 
-The stronger form of this — that JAX's cash tensor including its external contra row never
-changes at all, in any month — is not stateable here: it is how the JAX engine keeps a flow
-to an unmodeled counterparty from vanishing, and Rust's counterpart is the double-entry
-journal it validates on every entry. It stays in `sim/test_cash_conservation_e2e.py`.
+The stronger form of this — that no flow to an unmodeled counterparty can vanish, in any
+month — is not stateable over these channels, because the external boundary is not one of
+them. The engine's own counterpart is the double-entry journal it validates on every entry.
 """
 
 from __future__ import annotations

@@ -85,8 +85,8 @@ fn simulate_dense_json(fixture_json: &str) -> PyResult<String> {
 /// Run every rollout retaining dense state, the balanced journal, and the event frames.
 ///
 /// The journal is the double-entry invariant made checkable: every entry's signed postings
-/// sum to zero. Python/JAX has no matching channel, which is why `simulate_dense_json`
-/// leaves it out of the apples-to-apples comparison path.
+/// sum to zero. No canonical channel carries it, which is why `simulate_dense_json` leaves
+/// it out.
 #[pyfunction]
 fn simulate_forensic_json(fixture_json: &str) -> PyResult<String> {
     let fixture = parse(fixture_json)?;

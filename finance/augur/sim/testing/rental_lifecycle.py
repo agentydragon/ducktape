@@ -1791,8 +1791,8 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
     ):
         """§121 is a 24-of-trailing-60-month use test, not cumulative lifetime occupancy.
 
-        The JAX scan keeps a 60-month occupancy ring. These cases pin the exact boundary behavior
-        that ring must preserve.
+        The engine keeps a 60-month occupancy ring. These cases pin the exact boundary
+        behavior that ring must preserve.
         """
 
         purchase_price = 500_000

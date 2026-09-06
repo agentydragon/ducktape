@@ -1,12 +1,11 @@
 """Rust's projection into the result shape every engine answers in.
 
-`sim/testing/simulation_result.py` declares that shape and JAX's projection into it; this is
-the Rust side. It lives here rather than in the differential harness so a suite reading Rust's
-channels does not depend on the package whose job is comparing Rust against JAX — and so it
-does not drag the JAX engine in behind it.
+`sim/testing/simulation_result.py` declares that shape; this is the projection into it. It
+lives beside the engine rather than beside the shape, so `sim/` keeps its one-way dependency
+and a suite reading these channels pulls in the engine it is running and nothing else.
 
-Forensic rather than dense: the harness wants the balanced journal, which is Rust's
-double-entry invariant made checkable and has no JAX counterpart.
+Forensic rather than dense: a suite wants the balanced journal, which is this engine's
+double-entry invariant made checkable and is not part of the canonical shape.
 """
 
 from __future__ import annotations
@@ -32,8 +31,8 @@ RATE_SCALE_PPB = 1_000_000_000
 class RustResult(SimulationResult):
     """The canonical channels plus the ones only Rust keeps.
 
-    The journal has no Python counterpart by design, and the TLH ledger and bond principal
-    are engine state the JAX output does not surface.
+    The journal is not part of the canonical shape by design, and the TLH ledger and bond
+    principal are engine state no canonical channel carries.
     """
 
     journal: pl.DataFrame
@@ -41,8 +40,8 @@ class RustResult(SimulationResult):
     bonds: pl.DataFrame
     bond_cashflows: pl.DataFrame
     distributions: pl.DataFrame
-    # The accrual fields Rust records beyond the canonical `tax_breakdowns` frame: §1250
-    # tax and the shared capital-loss carryforward have no JAX event counterpart.
+    # The accrual fields recorded beyond the canonical `tax_breakdowns` frame: §1250 tax and
+    # the shared capital-loss carryforward, neither of which the canonical frame carries.
     tax_accrual_details: pl.DataFrame
     # A property sale's tax split. The canonical frame carries the sale, not its components.
     property_sale_details: pl.DataFrame
@@ -71,8 +70,8 @@ def _rust_rows(rust: dict[str, Any], channel: str) -> list[tuple[int, int, dict[
 def run_rust(case: Case) -> RustResult:
     """Run the case on the Rust engine, in-process through the extension module."""
 
-    # Forensic rather than dense: the harness wants the balanced journal, which is the
-    # double-entry invariant made checkable and has no JAX counterpart to compare against.
+    # Forensic rather than dense: a suite wants the balanced journal, which is the
+    # double-entry invariant made checkable and is not part of the canonical shape.
     rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(fixture_for(case)))))
     return rust_result(rust, case.scenario)
 
@@ -83,7 +82,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     The scenario is needed to know which accounts it declared: the Rust ledger also carries
     the internal accounts a double-entry engine needs (opening equity, asset basis, realized
     gain, tax expense and liability, the external boundary), and none of those are cash the
-    JAX engine models.
+    scenario declared.
     """
 
     declared_accounts = {(balance.agent_id, balance.account_id) for balance in scenario.initial_cash}
@@ -144,8 +143,8 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             if record[key] != 0
         ]
     )
-    # JAX emits a tax liability row only where the amount or the active flag changed, so the
-    # Rust projection has to take the same differences rather than every snapshot's state.
+    # The canonical `tax_liabilities` channel is a change log: a row means the amount or the
+    # active flag moved. Snapshots carry full state, so the projection takes the differences.
     liability_rows: list[dict[str, Any]] = []
     for rollout in rust["rollouts"]:
         previous: dict[tuple[str, str, int], tuple[int, bool]] = {}

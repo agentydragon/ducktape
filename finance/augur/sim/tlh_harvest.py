@@ -2,11 +2,10 @@
 
 This is the calibratable math behind a direct-indexing harvest process: given the
 period's index return and a position's embedded-gain fraction, it produces the
-*gross realized loss* harvested this period as a fraction of market value. It does
-**not** touch the sim engine — `augur/sim/engine` wires it in (see the
-`_apply_tlh_harvest` phase), reading MV/basis and the index path per rollout,
-clamping the output to the loss actually available below basis, and feeding it
-into the Piece-1 capital-loss netting.
+*gross realized loss* harvested this period as a fraction of market value. It holds no
+engine state: this is where a harvest policy's parameters are authored and calibrated,
+and `rust/engine/tlh.rs` evaluates the same curve per rollout, clamping the output to
+the loss actually available below basis and feeding it into capital-loss netting.
 
 Why reduced-form (not constituent simulation): a single S&P 500 series has no
 cross-sectional dispersion, so harvestable losses must be modeled as a calibrated
@@ -137,10 +136,9 @@ def harvest_fraction_curve_ppb(
     """Evaluate the shared monthly harvest-yield curve, in parts per billion.
 
     `embedded_gain_ppb` must be clipped to `[0, PPB]` and `drawdown_ppb` must be
-    non-negative. The arithmetic is integer and deliberately array-library-neutral, so the
-    eager NumPy calibration helper, the traced JAX engine, and the Rust engine's
-    `engine/tlh.rs` all evaluate one formula and agree exactly rather than to within a
-    rounding of float64.
+    non-negative. The arithmetic is integer and deliberately array-library-neutral, so this
+    calibration helper and the engine's `engine/tlh.rs` evaluate one formula and agree
+    exactly rather than to within a rounding of float64.
     """
 
     maturity = _pow_half_ppb(PPB - embedded_gain_ppb, maturity_decay_half_exponent)

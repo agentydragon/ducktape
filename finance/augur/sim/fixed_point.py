@@ -3,8 +3,8 @@
 The simulator's money contract is a currency-specific integer quantum count.
 ``Decimal`` is used only at an explicitly declared boundary: parsing an exact
 human/API decimal or quantizing a model-owned sampled price path before that
-path enters the simulator.  The JAX engine must receive and produce integer
-money values only.
+path enters the simulator.  The engine receives and produces integer money
+values only.
 
 Keeping conversion policy here provides one auditable definition rather than
 several subtly different ``round(value * 100)`` calls.

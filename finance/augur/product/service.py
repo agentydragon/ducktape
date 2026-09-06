@@ -98,8 +98,8 @@ class ProductService:
         )
         self._harvest_policies = harvest_policies
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
-        # Keep one product projection in flight per API process. JAX/XLA batches are memory-heavy
-        # enough that overlapping fan + terminal requests can exceed the production pod limit.
+        # Keep one product projection in flight per API process. A dense rollout batch is
+        # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
         self._projection_lock = threading.Lock()
 
     def metric_fan(self, request: ProjectionSamplingRequest) -> MetricFanResponse:
@@ -360,7 +360,7 @@ def _quanta(value: int | np.integer[Any]) -> str:
 
 
 def _terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_index: int | None) -> TerminalMetrics:
-    """Build the rollout wire's terminal snapshot from JAX-emitted metric series."""
+    """Build the rollout wire's terminal snapshot from the engine's metric series."""
 
     return TerminalMetrics(
         cash_quanta=_quanta(arrays["cash_quanta"][-1]),

@@ -4,11 +4,11 @@ A behavioural suite should not know which engine produced the rows it reads. Eac
 projects a run into the channels declared here, so a suite asserts against
 `SimulationResult` and inherits into a runner per engine, the way the acceptance suites do.
 
-Each engine's projection lives beside that engine — `jax_result.py` here, `rust/result.py`
-there — so a suite reading one engine's channels does not pull the other engine in behind it.
-The two normalizations below are shared because both engines apply them: a zero gain and an
-absent row say the same thing, and a lot holding no units says nothing about its own
-acquisition. Neither is one engine bent to match the other.
+An engine's projection lives beside that engine — `rust/result.py` — so `sim/` keeps its
+one-way dependency and a suite pulls in only the engine it runs. The two normalizations
+below live here instead, because they are properties of the shape rather than of an engine:
+a zero gain and an absent row say the same thing, and a lot holding no units says nothing
+about its own acquisition.
 """
 
 from __future__ import annotations
@@ -27,12 +27,12 @@ from finance.augur.sim.testing.case import Case
 class StateChannel:
     """One channel both engines answer in: its columns, and the key that orders it.
 
-    The schema is declared here rather than inferred from whatever each engine happened to
-    build, because neither engine declares one. The JAX readers assemble frames from numpy
-    arrays, so their identifier columns arrive as `Object` and an all-null month column as
-    `Null` — carrier accidents, not differences between the engines. Conforming both sides
-    to one declaration turns that from a repair into a contract, and a channel that lost a
-    column fails here by name instead of comparing as absent.
+    The schema is declared here rather than inferred from whatever an engine happened to
+    build, because no engine declares one. A frame assembled from arrays carries whatever
+    dtype the carrier produced — identifier columns as `Object`, an all-null month column as
+    `Null` — which is an accident of the carrier and not a statement about the data. One
+    declaration turns conforming to it from a repair into a contract, and a channel that
+    lost a column fails here by name instead of comparing as absent.
     """
 
     name: str
@@ -192,13 +192,11 @@ type Backend = Callable[[Case], SimulationResult]
 def realized_gains(frame: pl.DataFrame, taxed: set[str]) -> pl.DataFrame:
     """Taxed agents' nonzero gains.
 
-    Scoped to taxed agents because that is what both engines model: JAX also tracks gains
-    for any agent holding lots or selling, taxed or not, while Rust surfaces none for an
-    untaxed agent (README.md § Scope Rust does not cover).
+    Scoped to taxed agents because that is what the engine models: an untaxed agent
+    surfaces no gains even when it holds lots and sells.
 
-    Zeroes are dropped because a zero gain and an absent row say the same thing, and the two
-    engines disagree only on which they emit — JAX masks by a per-tax-year active flag, Rust
-    reports every snapshot.
+    Zeroes are dropped because a zero gain and an absent row say the same thing, and which
+    of the two an engine emits is not something a suite should have to know.
     """
 
     return frame.filter(
@@ -208,9 +206,8 @@ def realized_gains(frame: pl.DataFrame, taxed: set[str]) -> pl.DataFrame:
 
 
 # What a lot holding no units says about its own acquisition. A preallocated
-# target-allocation slot not yet bought into carries a placeholder in each, and the engines
-# choose different ones — Rust zero, JAX the sleeve's configured price and the month the
-# slot will eventually fill. Neither is a claim about anything while no units sit behind it.
+# target-allocation slot not yet bought into carries a placeholder price and month, which is
+# not a claim about anything while no units sit behind it.
 # What a lot actually cost and when it was bought is compared through `lot_dispositions`,
 # which carries both.
 UNHELD_LOT_PLACEHOLDERS = ("cost_basis_per_unit_quanta", "purchase_month_index")

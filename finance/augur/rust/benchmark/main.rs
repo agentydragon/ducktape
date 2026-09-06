@@ -226,7 +226,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parsing and fixture validation are intentionally outside the timed region. The dense mode
     // retains monthly state and compatibility-event records but omits Rust's additional forensic
-    // journal, for which Python/JAX has no corresponding output channel.
+    // journal, for which the Python output contract has no corresponding channel.
     let fixture: Fixture = serde_json::from_reader(BufReader::new(File::open(input)?))?;
     let rollout_count = fixture.rollout_count;
     let horizon_months = fixture.scenario.horizon_months;

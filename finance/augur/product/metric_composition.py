@@ -46,9 +46,7 @@ class MetricValue(Protocol):
 
 class MetricSeries(Protocol):
     """What a metric's `(snapshot, rollout)` series has to support to be reduced to its
-    terminal samples. Like `MetricValue`, this is a Protocol because the two backends'
-    array types — `numpy` host arrays and `jnp` device arrays — cannot be named together
-    without importing JAX into the backend-neutral reduction.
+    terminal samples.
     """
 
     def sum(self, axis: int) -> Self: ...

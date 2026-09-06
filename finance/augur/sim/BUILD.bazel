@@ -2,22 +2,18 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-# An engine's internals — the JAX month loop and the dense array layout it writes — are
-# visible only in here. Everything outside reads an engine through `sim/backend.py`, whose
-# whole point is that the product does not name one engine's output shape. Convention did
-# not hold that line before; this does.
+# An engine's internals — its month loop and the output layout it writes — are visible only
+# in here. Everything outside reads an engine through `sim/backend.py`, whose whole point is
+# that the product does not name one engine's output shape. Convention did not hold that
+# line before; this does.
 package_group(
     name = "inside_the_simulator",
     packages = [
         # A benchmark measures an engine rather than reading its results as a product would,
-        # and it times the compile and the scan separately — which is naming the insides on
+        # and it times compilation and execution separately — which is naming the insides on
         # purpose. Routing it through the contract would move compilation out of the timed
         # region and quietly change what the published numbers mean.
         "//finance/augur/benchmark/...",
-        # The differential harness runs JAX's scan and its product reductions directly, for
-        # the same kind of reason: it exists to compare one engine against another, and
-        # reading both through the contract would compare the contract with itself.
-        "//finance/augur/rust/differential/...",
         "//finance/augur/sim/...",
     ],
 )
