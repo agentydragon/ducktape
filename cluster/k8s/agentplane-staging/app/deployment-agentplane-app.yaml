@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: git.allegedly.works/ducktape-ci/agentplane-app:devel-20260906062313-fb75c98 # {"$imagepolicy": "flux-system:agentplane-app"}
+          image: git.allegedly.works/ducktape-ci/agentplane-app:devel-20260906081734-589e2c7 # {"$imagepolicy": "flux-system:agentplane-app"}
           imagePullPolicy: IfNotPresent
           args:
             - --namespace=agentplane-staging
