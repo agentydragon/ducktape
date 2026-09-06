@@ -60,7 +60,11 @@ option for private origins. Synthetic tests alone redirect validated public IPs 
 loopback fixtures.
 
 Raw flows and incremental session metadata append to private files without rotation
-or deletion. Raw capture remains sensitive application data despite proxy-password
+or deletion. `text/event-stream` responses forward headers and chunks immediately:
+waiting for EOF would stall long-lived Claude subscriptions. Mitmproxy retains
+streamed bodies in memory for the normal terminal-flow capture; this is not an
+incremental SSE recorder, and interrupted streams may lack captured body data.
+Raw capture remains sensitive application data despite proxy-password
 redaction. Session metadata follows the limited schema in
 `devinfra/github_api_capture/README.md`. A write failure increments
 `github_api_proxy_capture_write_failures_total{channel}`, emits a fixed error message,

@@ -76,6 +76,7 @@ def create_master(settings: Settings, metrics: Metrics) -> DumpMaster:
         block_global=False,
         connection_strategy="lazy",
         save_stream_file=f"+{settings.capture_path}",
+        store_streamed_bodies=True,
         record_cloud_session_ws=True,
         cloud_session_ws_events=str(settings.session_ws_events),
         ssl_verify_upstream_trusted_ca=str(settings.upstream_ca_file)
