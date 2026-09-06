@@ -25,7 +25,7 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
 from mitmproxy import connection, http
 from more_itertools import one
 
-from x.agentplane.egress.addon import DENIED_HEADER, RULES_PATH, SELF_HOST, EgressAddon
+from x.agentplane.egress.addon import DENIED_HEADER, EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.conftest import (
     AUDIENCE,
@@ -48,6 +48,7 @@ from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerif
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.resources import TargetMethod, placeholder_of
+from x.agentplane.egress.rules_api import HOST as RULES_HOST, PATH as RULES_PATH, RulesApi, RulesProjection
 from x.agentplane.egress.sidecar import SidecarRelay
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
@@ -143,15 +144,26 @@ class ProxyUnderTest:
         port = self.upstream.port if tls else self.upstream.http_port
         return f"{scheme}://{UPSTREAM_HOST}:{port}{path}"
 
-    async def get_self(self, path: str, *, token: str | None = TOKEN_A) -> Response:
-        """A request to the proxy's own name: tunnelled like any other, answered without an upstream."""
+    async def get_rules(
+        self,
+        path: str,
+        *,
+        token: str | None = TOKEN_A,
+        headers: dict[str, str] | None = None,
+        body: bytes | None = None,
+        proxy_port: int | None = None,
+    ) -> Response:
+        """A request to the stable rules name, answered by its in-process API backend."""
         async with (
             aiohttp.ClientSession() as session,
-            session.get(
-                f"https://{SELF_HOST}{path}",
-                proxy=f"http://127.0.0.1:{self.proxy_port}",
+            session.request(
+                "GET",
+                f"https://{RULES_HOST}{path}",
+                proxy=f"http://127.0.0.1:{proxy_port or self.proxy_port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
                 ssl=client_tls_context(self.interception_ca),
+                headers=headers,
+                data=body,
             ) as response,
         ):
             return Response(status=response.status, headers=dict(response.headers), body=await response.read())
@@ -200,7 +212,11 @@ async def proxy(
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
                 addon := EgressAddon(
-                    index=index, verifier=verifier, ring=ring, resolver=UpstreamResolver(exempt=exempt_networks)
+                    index=index,
+                    verifier=verifier,
+                    ring=ring,
+                    resolver=UpstreamResolver(exempt=exempt_networks),
+                    rules_api=RulesApi(RulesProjection(index)),
                 ),
                 confdir=tmp_path / "confdir",
                 extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
@@ -360,7 +376,7 @@ async def test_authenticated_workload_source_uses_each_https_tunnels_own_token(
     ]
     assert all("proxy-authorization" not in headers for _, _, headers in proxy.upstream.requests)
 
-    view = await proxy.get_self(RULES_PATH)
+    view = await proxy.get_rules(RULES_PATH)
     assert view.status == 200
     assert WORKLOAD_PLACEHOLDER in view.body.decode()
     assert all(token not in view.body.decode() for token in (TOKEN_A, TOKEN_B))
@@ -699,7 +715,7 @@ if __name__ == "__main__":
 async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
     """The placeholder a sandbox must present is knowable from inside the sandbox, over the one
     listener it can reach, under the identity it already proves for every request."""
-    response = await proxy.get_self(RULES_PATH)
+    response = await proxy.get_rules(RULES_PATH)
 
     assert response.status == 200, response.body
     view = json.loads(response.body)
@@ -713,10 +729,34 @@ async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest)
     assert SECRET_VALUE not in response.body.decode(), "the proxy handed the sandbox the real credential"
 
 
+async def test_a_sandbox_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
+    """The deployed path: ordinary HTTPS proxying to loopback, then the authenticated central hop."""
+    token_file = proxy.tmp_path / "rules-sidecar-token"
+    token_file.write_text(TOKEN_A)
+    async with SidecarRelay(
+        proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
+    ) as sidecar:
+        response = await proxy.get_rules(RULES_PATH, token=None, proxy_port=sidecar.listen_port)
+
+    assert response.status == 200, response.body
+    assert json.loads(response.body)["sandbox"] == SANDBOX_A
+
+
+async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: ProxyUnderTest) -> None:
+    response = await proxy.get_rules(
+        RULES_PATH,
+        headers={"X-Agentplane-Sandbox": SANDBOX_B, "Content-Type": "application/json"},
+        body=json.dumps({"sandbox": SANDBOX_B, "sandbox_uid": POD_B_UID}).encode(),
+    )
+
+    assert response.status == 200, response.body
+    assert json.loads(response.body)["sandbox"] == SANDBOX_A
+
+
 async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
     """Refused at the CONNECT, before a handshake it would learn nothing from."""
     with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get_self(RULES_PATH, token=None)
+        await proxy.get_rules(RULES_PATH, token=None)
 
     assert refused.value.status == 403
     assert refused.value.headers is not None
@@ -725,6 +765,6 @@ async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: 
 
 async def test_the_proxys_own_name_serves_nothing_else(proxy: ProxyUnderTest) -> None:
     """One path, so the reserved name cannot become an accidental surface."""
-    response = await proxy.get_self("/")
+    response = await proxy.get_rules("/")
 
     assert response.status == 404, response.body

@@ -23,7 +23,9 @@ bbr test //x/agentplane/egress/...
   globally reachable, and pinned so the dial goes to the address checked.
 - `informer.py`: list-and-watch of the five kinds into the `Index`, and the binding status
   writes.
-- `addon.py`: the mitmproxy addon gating CONNECTs and requests; `decisions.py` the ring and the
+- `rules_api.py`: the stable `egress.agentplane.internal/v1/rules` API and the narrow
+  Sandbox-name/UID-to-redacted-projection boundary; `addon.py` is only its current authenticated
+  proxy transport as well as the mitmproxy gate for ordinary egress. `decisions.py` is the ring and
   JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
@@ -120,6 +122,23 @@ uses the same header; the [browser cookie definitions](https://github.com/buildb
 show the interactive-session form; and the
 [`bb remote` implementation](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/cli/remotebazel/remotebazel.go)
 both appends the key to the local outgoing gRPC context and retains it in the nested Bazel command.
+
+## Why the rules API remains in the central process
+
+The API now has a transport-neutral projection boundary, but a separate Deployment would add more
+special machinery than it removes today. The stable hostname is deliberately non-DNS-routable, and
+the existing zero-header `GET` learns its identity from the authenticated CONNECT hop. Routing that
+same request to an ordinary destination would require a new hostname-to-Service mapping plus either
+sidecar/proxy-specific Authorization injection or a newly required, pre-known credential
+placeholder. The former recreates the special case at a less trustworthy boundary; the latter
+changes the bootstrap request contract. An independently watching service could also report a
+different informer snapshot from the proxy that is authoritatively enforcing the policies.
+
+For now, the proxy transports the request to `RulesApi`, which accepts only the already-proven
+Sandbox name and UID and resolves them again against the proxy's current enforcement index. A future
+service can reuse `RulesProjection.for_sandbox` after destination-side `SandboxPrincipal`
+authentication when an ordinary non-recursive route and authentication bootstrap exist. No
+`egress-view` hostname or integration-app authority is introduced.
 
 ## ServiceAccount permissions
 

@@ -22,6 +22,7 @@ from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
+from x.agentplane.egress.rules_api import RulesApi, RulesProjection
 from x.agentplane.egress.upstream import UpstreamResolver
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,9 @@ async def async_main(settings: Settings) -> None:
             cache_seconds=settings.identity_cache_seconds,
         )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
-        addon = EgressAddon(index=index, verifier=verifier, ring=ring, resolver=resolver)
+        addon = EgressAddon(
+            index=index, verifier=verifier, ring=ring, resolver=resolver, rules_api=RulesApi(RulesProjection(index))
+        )
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (

@@ -85,9 +85,14 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   the Secret, its key,
   or its value — the projection is built from its own field list, so a field added to a resource
   does not appear here until someone writes it in.
-  The name is reserved and resolves nowhere: nothing is dialled for it, no rule can admit it, and
-  identity is proved at the CONNECT exactly as it is for egress, because `Proxy-Authorization` is
-  hop-by-hop and a plain request would arrive with none.
+  The stable API and projection are isolated behind a narrow rules boundary that accepts only the
+  already-proven Sandbox name and UID, then resolves that exact UID against the same current index
+  the proxy enforces. Request headers and bodies are not identity inputs. The name is reserved and
+  resolves nowhere: nothing is dialled for it, no rule can admit it, and identity is proved at the
+  CONNECT exactly as it is for egress, because `Proxy-Authorization` is hop-by-hop and a plain
+  request would arrive with none. The central process remains the backend until the unchanged,
+  zero-header bootstrap request can reach an ordinary destination without a routing loop or a new
+  sidecar/proxy header-injection special case; the integration app is not in this path.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;

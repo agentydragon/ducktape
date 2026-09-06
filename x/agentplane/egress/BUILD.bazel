@@ -15,11 +15,11 @@ py_library(
     name = "addon",
     srcs = ["addon.py"],
     deps = [
-        ":agent_view",
         ":decisions",
         ":identity",
         ":policy",
         ":resources",
+        ":rules_api",
         ":upstream",
         "@pypi//mitmproxy",
     ],
@@ -78,6 +78,7 @@ py_library(
         ":informer",
         ":policy",
         ":proxy",
+        ":rules_api",
         ":upstream",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -186,6 +187,7 @@ py_test(
         ":policy",
         ":proxy",
         ":resources",
+        ":rules_api",
         ":sidecar",
         ":upstream",
         "//:conftest",
@@ -349,6 +351,28 @@ py_test(
         ":policy",
         ":resources",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "rules_api",
+    srcs = ["rules_api.py"],
+    deps = [
+        ":agent_view",
+        ":policy",
+    ],
+)
+
+py_test(
+    name = "test_rules_api",
+    srcs = ["test_rules_api.py"],
+    deps = [
+        ":policy",
+        ":resources",
+        ":rules_api",
+        "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
