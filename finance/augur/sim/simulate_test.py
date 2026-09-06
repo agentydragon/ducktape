@@ -37,6 +37,7 @@ from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    DistributionTaxSlice,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
     FilingStatus,
@@ -56,6 +57,7 @@ from finance.augur.sim.scenario import (
     ScheduledObligation,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
+    SecurityDistribution,
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
@@ -636,6 +638,20 @@ def test_scheduled_property_purchase_accepts_closing_costs_on_top_of_a_funded_pr
         ),
     )
     assert purchase.buyer_closing_cost == 15000
+
+
+def test_scenario_rejects_a_distribution_tax_character_that_does_not_sum_to_one() -> None:
+    """A short split pays out less than the fund distributes, which reads as a lower yield
+    rather than as the misconfiguration it is."""
+
+    with pytest.raises(ValidationError, match="fractions must sum to 1"):
+        SecurityDistribution(
+            asset=SecurityKey(symbol=SecuritySymbol("bnd")),
+            agent_id="alice",
+            holding_account_id="brokerage",
+            to_account_id="checking",
+            tax_character=(DistributionTaxSlice(fraction=0.4, issuer_jurisdiction_id="federal_us"),),
+        )
 
 
 def test_scenario_rejects_out_of_horizon_scheduled_transfers() -> None:

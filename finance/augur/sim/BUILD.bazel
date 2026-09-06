@@ -343,26 +343,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_security_distribution_e2e",
-    srcs = ["test_security_distribution_e2e.py"],
-    deps = [
-        ":conftest",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:deterministic",
-        "//finance/augur/model:level_series_groups",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "scenario",
     srcs = ["scenario.py"],
@@ -576,22 +556,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_income_category_e2e",
-    size = "medium",
-    srcs = ["test_income_category_e2e.py"],
-    deps = [
-        ":conftest",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
 )

@@ -26,6 +26,7 @@ from finance.augur.sim.testing.rental_lifecycle import (
     RentalLifecycleCashflowsAcceptance,
 )
 from finance.augur.sim.testing.rollout_independence import RolloutIndependenceAcceptance
+from finance.augur.sim.testing.security_distributions import SecurityDistributionAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
 from finance.augur.sim.testing.tax_statute import TaxStatuteAcceptance
@@ -50,6 +51,12 @@ class TestJaxRolloutIndependence(RolloutIndependenceAcceptance):
 
 
 class TestJaxIncomeSources(IncomeSourceAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxSecurityDistributions(SecurityDistributionAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_jax
