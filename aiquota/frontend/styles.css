@@ -224,18 +224,12 @@ h2 {
   white-space: nowrap;
 }
 
-.badge.resets {
-  background: color-mix(in srgb, var(--cool) 16%, transparent);
-  color: var(--cool);
-}
-
 .badge.stale {
   background: color-mix(in srgb, var(--warn) 18%, transparent);
   color: var(--warn);
 }
 
-.badge.error,
-.badge.over-plan {
+.badge.error {
   background: color-mix(in srgb, var(--hot) 16%, transparent);
   color: var(--hot);
 }
@@ -346,60 +340,65 @@ h2 {
   text-transform: uppercase;
 }
 
-.over-plan-block {
-  background: color-mix(in srgb, var(--hot) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--hot) 28%, transparent);
+/*
+ * A provider fact that is not a quota window — banked resets, peak-burn hours, the over-plan
+ * notice — is a strip: a headline and, where there is one, a detail line under it. One shape
+ * so they read as a set, and so a single fact is never split between a status pill and a
+ * loose line of grey text.
+ */
+.strip {
+  background: var(--surface-sunken);
   border-radius: 10px;
   display: grid;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 3px;
+  padding: 8px 11px;
 }
 
-.over-plan-headline {
-  color: var(--hot);
-  font-size: 0.85rem;
-  font-weight: 700;
+.strip-line {
+  font-size: 0.8rem;
+  font-weight: 650;
   margin: 0;
 }
 
-.over-plan-windows {
+.strip-note {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.73rem;
   font-variant-numeric: tabular-nums;
   margin: 0;
   white-space: pre-wrap;
 }
 
-.burn {
-  background: var(--surface-sunken);
-  border-radius: 9px;
-  display: grid;
-  gap: 3px;
-  padding: 8px 10px;
+/* Whole intervals wrap as units; a range broken across lines is unreadable. */
+.strip-note.intervals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
 }
 
-.burn.in-peak {
+.strip-note.intervals span {
+  white-space: nowrap;
+}
+
+/* Credits in hand are headroom, so they are tinted only when there are actually some. */
+.strip.resets {
+  background: color-mix(in srgb, var(--cool) 12%, transparent);
+}
+
+.strip.resets .strip-line {
+  color: var(--cool);
+}
+
+.strip.in-peak {
   background: color-mix(in srgb, var(--warn) 14%, transparent);
 }
 
-.burn-summary {
-  font-size: 0.78rem;
-  font-weight: 650;
-  margin: 0;
+.strip.over-plan {
+  background: color-mix(in srgb, var(--hot) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hot) 28%, transparent);
 }
 
-.burn-schedule {
-  color: var(--muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-  gap: 2px 10px;
-  margin: 0;
-}
-
-.burn-schedule span {
-  white-space: nowrap;
+.strip.over-plan .strip-line {
+  color: var(--hot);
 }
 
 .freshness {

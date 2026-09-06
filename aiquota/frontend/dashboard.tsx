@@ -124,38 +124,31 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
           {PROVIDER_NAMES[provider.provider] ?? provider.provider}
         </h2>
         <div className="badges">
-          {quota.resetCredits !== null && (
-            <span className="badge resets">
-              {quota.resetCredits} banked reset{quota.resetCredits === 1 ? "" : "s"}
-            </span>
-          )}
-          {overPlan && <span className="badge over-plan">⚡ Over plan</span>}
           {quota.staleSince !== null && <span className="badge stale">Stale</span>}
           {quota.error !== null && <span className="badge error">Error</span>}
         </div>
       </header>
 
       {quota.error !== null && <p className="error-copy">{quota.error}</p>}
-      {quota.resetCreditExpiries.length > 0 && (
-        <p className="aside">Known expiries: {formatKnownExpiries(quota.resetCreditExpiries)}</p>
+      {overPlan && <OverPlanStrip extra={quota.extraSpend} windows={quota.windows} now={now} />}
+      {quota.resetCredits !== null && (
+        <ResetCreditsStrip count={quota.resetCredits} expiries={quota.resetCreditExpiries} />
       )}
-      {provider.burn && <BurnRow burn={provider.burn} now={now} />}
+      {provider.burn && <BurnStrip burn={provider.burn} now={now} />}
 
-      {overPlan ? (
-        <OverPlanRow extra={quota.extraSpend} windows={quota.windows} now={now} />
-      ) : quota.windows.length === 0 ? (
-        quota.error === null && <p className="empty">No quota data.</p>
-      ) : (
-        quota.windows.map((window) => (
-          <WindowRow
-            key={`${window.name ?? ""}-${window.window_seconds}`}
-            window={window}
-            isShort={isShortWindow(window, quota.windows)}
-            stale={quota.staleSince !== null}
-            now={now}
-          />
-        ))
-      )}
+      {overPlan
+        ? null
+        : quota.windows.length === 0
+          ? quota.error === null && <p className="empty">No quota data.</p>
+          : quota.windows.map((window) => (
+              <WindowRow
+                key={`${window.name ?? ""}-${window.window_seconds}`}
+                window={window}
+                isShort={isShortWindow(window, quota.windows)}
+                stale={quota.staleSince !== null}
+                now={now}
+              />
+            ))}
 
       {!overPlan && provider.extra_status === "informational" && quota.extraSpend && (
         <p className="aside">{extraSpendText(quota.extraSpend)} spent this month</p>
@@ -252,7 +245,7 @@ function Meter({
  * CLI and the GNOME popup both drop the bars here and show the two countdowns on one line —
  * what is left to know is when the plan starts covering work again.
  */
-function OverPlanRow({
+function OverPlanStrip({
   extra,
   windows,
   now,
@@ -262,11 +255,9 @@ function OverPlanRow({
   now: number;
 }): JSX.Element {
   return (
-    <div className="over-plan-block">
-      <p className="over-plan-headline">
-        ⚡ Paying above subscription{extra ? ` — ${extraSpendText(extra)} this month` : ""}
-      </p>
-      <p className="over-plan-windows">
+    <div className="strip over-plan">
+      <p className="strip-line">⚡ Paying above subscription{extra ? ` — ${extraSpendText(extra)} this month` : ""}</p>
+      <p className="strip-note">
         {windows
           .map(
             (window) =>
@@ -278,21 +269,37 @@ function OverPlanRow({
   );
 }
 
+/**
+ * Earned rate-limit resets: headroom the account already has in hand, so it belongs with the
+ * other facts about the future rather than in the status badges. The expiries come from a
+ * best-effort detail endpoint that can name fewer credits than the count — hence "known".
+ */
+function ResetCreditsStrip({ count, expiries }: { count: number; expiries: string[] }): JSX.Element {
+  return (
+    <div className={`strip${count > 0 ? " resets" : ""}`}>
+      <p className="strip-line">
+        ↻ {count} banked reset{count === 1 ? "" : "s"}
+      </p>
+      {expiries.length > 0 && <p className="strip-note">Known expiries: {formatKnownExpiries(expiries)}</p>}
+    </div>
+  );
+}
+
 /** Peak hours cost a multiple per token, so they belong beside the quota they drain. */
-function BurnRow({ burn, now }: { burn: BurnStatus; now: number }): JSX.Element {
+function BurnStrip({ burn, now }: { burn: BurnStatus; now: number }): JSX.Element {
   const first = burn.upcoming[0];
   const changesAt = first ? new Date(burn.in_peak ? first.end : first.start) : null;
   const until = changesAt ? formatDuration((changesAt.getTime() - now) / 1000) : null;
   const ahead = burn.in_peak ? burn.upcoming.slice(1) : burn.upcoming;
   return (
-    <div className={`burn${burn.in_peak ? " in-peak" : ""}`}>
-      <p className="burn-summary">
+    <div className={`strip${burn.in_peak ? " in-peak" : ""}`}>
+      <p className="strip-line">
         {burn.in_peak && changesAt
           ? `🔥 ${formatMultiplier(burn.multiplier)} burn until ${formatClock(changesAt)} (${until}) — ${burn.applies_to}`
           : `${formatMultiplier(burn.multiplier)} burn — next ${formatMultiplier(burn.peak_multiplier)} window in ${until}`}
       </p>
       {ahead.length > 0 && (
-        <p className="burn-schedule">
+        <p className="strip-note intervals">
           <span>{formatMultiplier(burn.peak_multiplier)} windows (local):</span>
           {ahead.map((interval) => (
             <span key={interval.start}>{formatPeakInterval(interval)}</span>
