@@ -27,6 +27,90 @@ Credentials do not select RBE and are not sent unless a repository enables the
 available; the build then fails authentication instead of silently executing
 locally.
 
+## Execution environments and entry points
+
+There are two different locality decisions:
+
+1. **Where the Bazel client runs.** Bzlmod module extensions, repository rules,
+   analysis, and Bazel-internal file work run here. This includes rules_js's
+   pnpm/Node setup and any lockfile update performed during repository setup.
+2. **Where build actions run.** Compilation, code generation, lint, typecheck,
+   and ordinary test actions may run on BuildBuddy workers when `rbe` is
+   enabled.
+
+BuildBuddy remote execution does not move the Bazel client automatically. A
+local `bb run` therefore still needs the caller's runtime to execute downloaded
+repository-rule tools, even though its build actions are remote. Conversely,
+`bbr`/`bb remote` moves the outer Bazel client to a BuildBuddy runner, so the
+runner's environment—not the caller's—runs repository rules and the completed
+`run` binary.
+
+Use the entry points as follows:
+
+| Entry point                       | Bazel client and repository rules | Build actions                                     | Completed `run` binary / local live test | Use it for                                                                    |
+| --------------------------------- | --------------------------------- | ------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------- |
+| `bb build` / `bb test` / `bb run` | Caller                            | BuildBuddy, under `rbe`                           | Caller                                   | Caller-local services, Kubernetes access, and live tests                      |
+| `bbr` / `bb remote`               | BuildBuddy's outer FHS runner     | BuildBuddy, if the runner receives `--config=rbe` | Outer runner                             | Ordinary builds, tests, and queries from an uncontrolled or Nix-shaped client |
+| Direct `bazelisk` on NixOS        | NixOS host                        | Local or BuildBuddy, explicitly selected          | NixOS host                               | Controlled development and debugging                                          |
+| NixOS devbox/VM                   | Controlled NixOS host             | Local or BuildBuddy, explicitly selected          | VM                                       | A stable local client and caller-local acceptance tests                       |
+
+`bbr` is the preferred default for ordinary build-like work from Claude Code
+Web and similar uncontrolled containers. It avoids requiring those containers
+to reproduce every NixOS/FHS compatibility detail. Use direct `bb run` (or
+direct `bazelisk`) when the requested process must retain the caller's network,
+Kubernetes credentials, filesystem, or other local services.
+
+Do not interpret remote failure as permission to fall back locally. The RBE
+configuration deliberately makes locality explicit so a missing remote
+credential or unavailable worker cannot silently change the execution and
+credential boundary.
+
+### Credential boundary for hosted `bb remote`
+
+The current egress credential-substitution contract is a **local-client**
+contract. It can replace a whole HTTP header or gRPC metadata value while the
+request crosses the Agentplane proxy. It does not give a BuildBuddy-hosted
+runner the caller's Sandbox workload identity.
+
+With direct `bb run`, the local client and any caller-local live test remain in
+the Sandbox, so a configured placeholder can be resolved on the intended local
+path. With `bbr`/`bb remote`, the outer control request may be authenticated,
+but the Bazel command embedded in `RunRequest` is executed later on the
+BuildBuddy runner. Under the current header-only substitution contract, that
+embedded placeholder remains inert. The hosted runner also has neither the
+caller Pod's Kubernetes token nor a runner-side Agentplane gateway, so it
+cannot use the current Sandbox-authenticated path to reach the staging
+Kubernetes API.
+
+Therefore:
+
+- use direct `bb run` from a controlled caller for staging acceptance tests that
+  need Kubernetes access;
+- use `bbr` for ordinary builds and tests that do not need caller-local
+  services or credentials;
+- do not treat successful outer `bb remote` authentication as proof that the
+  nested hosted Bazel process can authenticate; and
+- do not add a generic body rewrite or place a real staging credential in the
+  hosted command as an incidental workaround.
+
+The deferred hosted-runner alternatives and their weaker/stronger security
+boundaries are recorded in
+[`x/agentplane/plans/buildbuddy_remote_auth.md`](../../x/agentplane/plans/buildbuddy_remote_auth.md).
+
+### NixOS and Nix-built images
+
+NixOS hosts and Nix-built OCI images share package ownership but not a runtime
+substrate. NixOS can use `nix-ld`, the system Bazel rc, and stable
+`/run/current-system/sw/bin` paths. A `dockerTools` image has no NixOS
+activation, `envfs`, or automatic `nix-ld` setup; downloaded FHS-linked tools
+need actual filesystem defaults such as `/lib64/ld-linux-x86-64.so.2`, expected
+library directories, `/bin/bash`, and `/usr/bin/env`.
+
+The public-coder image should keep this compatibility surface in its Nix image
+definition. A controlled NixOS devbox/VM should keep the host-specific pieces
+in the NixOS module. Neither environment should leak Nix store paths into
+remote actions; see the shell-path and strict-action-environment rules below.
+
 ## Action placement
 
 “Local” always means local to the Bazel client, which differs by entry point:
