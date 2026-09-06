@@ -1,31 +1,10 @@
-# Records which local process opens each outbound TCP connection, so a burst of
-# GitHub API traffic can be attributed to a caller.
+# Connection attempts across the node, plus periodic established TCP counters in
+# the host network namespace. Persistent HTTP/2 connections can carry API traffic
+# without producing another connection event. Neither source measures GraphQL cost.
+# Logs stay on the host because they include every peer; the journal ships to Loki.
 #
-# Something authenticating as the `agentydragon` GitHub account drains the entire
-# 5000-point GraphQL budget within three minutes of every hourly reset, then keeps
-# calling through the 403s. Cilium Hubble cannot see it: with `enable-host-firewall`
-# false there is no host endpoint, so host-namespace egress produces no flows at all
-# — verified, not assumed. A kernel probe has neither limitation, and sees container
-# processes on the node as readily as host ones.
-# See <debug/github_rate_limit_monitoring_blind_spot.md>.
-#
-# CLEANUP(added 2026-09-04): remove this module and its host opt-ins once that note
-# names the consumer.
-#
-# Two deliberate choices, both from failures during the investigation:
-#
-# - Every outbound connection to a public address is recorded, rather than only
-#   GitHub's ranges. The cluster and this host resolve api.github.com into
-#   entirely different ranges (140.82.116.0/24 vs Azure 172.182.252.0/22), and an
-#   allowlist that is slightly wrong records nothing while looking like a clean
-#   result. Private ranges are excluded, which is safe in the other direction: a
-#   wrong denylist only over-records. These hosts are Kubernetes nodes, where
-#   kubelet probes and pod-to-pod traffic would otherwise contribute on the order
-#   of ten records a second (wyrm2: 75 pods, 102 HTTP/TCP probes, 10.6
-#   connections/s by their configured periods).
-# - The log stays on the host. It is a complete record of every peer this machine
-#   dials, and `promtail-journal` ships the journal to Loki, so writing there would
-#   put that record in cluster storage.
+# CLEANUP(added 2026-09-04): remove this module and its host opt-ins once GitHub
+# issue #5213 identifies the consumer and the attribution investigation is closed.
 {
   config,
   pkgs,
@@ -36,10 +15,11 @@ let
   cfg = config.ducktape.githubApiRecorder;
   logDir = "/var/log/tcp-connect-recorder";
   logFile = "${logDir}/connections.log";
+  socketLogFile = "${logDir}/sockets.log";
 in
 {
   options.ducktape.githubApiRecorder = {
-    enable = lib.mkEnableOption "outbound TCP connection recording for GitHub API attribution";
+    enable = lib.mkEnableOption "connection and established TCP activity recording for GitHub API attribution";
 
     retentionDays = lib.mkOption {
       type = lib.types.int;
@@ -56,6 +36,7 @@ in
     systemd.tmpfiles.rules = [
       "d ${logDir} 0750 root users -"
       "z ${logFile} 0640 root users -"
+      "f ${socketLogFile} 0640 root users -"
     ];
 
     systemd.services.github-api-recorder = {
@@ -79,10 +60,38 @@ in
       };
     };
 
+    systemd.services.github-api-socket-snapshot = {
+      description = "Established TCP socket counters (GitHub API attribution)";
+      path = [
+        pkgs.coreutils
+        pkgs.iproute2
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        TimeoutStartSec = "10s";
+        ExecStart = "${lib.getExe pkgs.bash} ${./github-api-socket-snapshot.sh}";
+        StandardOutput = "append:${socketLogFile}";
+        StandardError = "journal";
+        UMask = "0027";
+      };
+    };
+
+    systemd.timers.github-api-socket-snapshot = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "30s";
+        OnUnitActiveSec = "30s";
+        AccuracySec = "1s";
+      };
+    };
+
     # copytruncate: systemd holds the append fd open for the service's lifetime, so
     # renaming the file would leave bpftrace writing to an unlinked inode.
     services.logrotate.settings.github-api-recorder = {
-      files = logFile;
+      files = [
+        logFile
+        socketLogFile
+      ];
       frequency = "daily";
       rotate = cfg.retentionDays;
       compress = true;
