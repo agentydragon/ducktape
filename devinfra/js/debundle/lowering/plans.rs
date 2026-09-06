@@ -219,9 +219,7 @@ pub(super) struct ModulePlan {
 pub(super) fn logical_requests_for_chunk(
     chunk_logical_modules: Option<&BTreeMap<String, LogicalModule>>,
     chunk_unassigned_mode: &UnassignedMode,
-    chunk_renames_present: bool,
     chunk_id: &str,
-    target_dir: &str,
 ) -> Result<Vec<LogicalRequest>> {
     let mut requests = Vec::new();
     let catchall_target = chunk_unassigned_mode
@@ -283,30 +281,6 @@ pub(super) fn logical_requests_for_chunk(
         requests.push(LogicalRequest {
             id: format!("{chunk_id}::residual"),
             target_path,
-            residual: true,
-            members: Vec::new(),
-            anonymous_statements: Vec::new(),
-            comment: None,
-        });
-    }
-    // Fallback: when the spec is silent about this chunk (no
-    // `logical_modules`, default `InlineInEntry` mode, no
-    // `chunk_renames`), inject a memberless residual so the
-    // materializer has at least one module to point unowned decls
-    // at. Skipped when the spec has any `chunk_renames` for the
-    // chunk — that signals the spec wants bindings to stay in
-    // `ResidualEntry`-land (no `Logical(R)` module, no separate
-    // residual file emitted), with renames applied in-place by the
-    // lowerer. Skipped when `MiniFactors` is active — the
-    // synthesizer takes care of placing unclaimed code into
-    // mini-factor modules.
-    if requests.is_empty()
-        && !chunk_renames_present
-        && !matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors)
-    {
-        requests.push(LogicalRequest {
-            id: format!("{chunk_id}::residual"),
-            target_path: join_module_path(&[target_dir, "unhandled"]),
             residual: true,
             members: Vec::new(),
             anonymous_statements: Vec::new(),

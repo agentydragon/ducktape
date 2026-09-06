@@ -165,9 +165,7 @@ pub(super) fn materialize_logical_chunk(
     let requests = logical_requests_for_chunk(
         logical_modules.get(chunk_id),
         &chunk_unassigned_mode,
-        chunk_renames.contains_key(chunk_id),
         chunk_id,
-        target_dir,
     )?;
     let mut explicit_requests = requests
         .iter()
@@ -317,6 +315,9 @@ pub(super) fn materialize_logical_chunk(
         owner_graph_and_units: precomputed,
     } = chunk_analysis;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
+    if explicit_requests.is_empty() {
+        builder.add_unclaimed_chunk_statements(&precomputed, &runtime_ast.module.body);
+    }
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
         builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)?;
     }

@@ -1748,7 +1748,11 @@ module's `anonymous_statements` shape selector. There is no
 implicit pulling: when an atomic unit or planner proposal includes
 anonymous statements, the spec author copies their source into
 `anonymous_statements` (one entry per claimed statement); the
-materializer never silently co-moves an anonymous statement.
+materializer never silently co-moves an anonymous statement into a peeled module.
+When a chunk has no explicit logical modules, `inline_in_entry` keeps the
+whole statement sequence in the entry; `catchall_file` places named and
+anonymous statements together in the catchall. Their ordering edges are
+internal to that destination and cannot create a module cycle.
 
 The owner graph is the explicit replacement for hidden closure. It
 records the fine-grained "this owner uses that owner" relation before

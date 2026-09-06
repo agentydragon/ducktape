@@ -2849,6 +2849,29 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
+    /// With no explicit modules, the catchall must preserve the whole
+    /// statement sequence, including anonymous effects between declarations.
+    pub(super) fn add_unclaimed_chunk_statements(
+        &mut self,
+        precomputed: &OwnerGraphAndUnits,
+        body: &[ModuleItem],
+    ) {
+        let Some(index) = self.residual_plan_index else {
+            return;
+        };
+        for node in precomputed.owner_graph.iter_nodes() {
+            if node.declared.is_empty()
+                && let Some(body_index) =
+                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+            {
+                self.anonymous_ordinal_assignment.insert(body_index, index);
+                self.module_plans[index]
+                    .anonymous_statement_ordinals
+                    .push(body_index);
+            }
+        }
+    }
+
     /// `MiniFactors` mode: every unclaimed atomic factor unit gets
     /// its own synthesized plan at `__auto/mini/NNNN`. Run after rebind folding
     /// so the residual sweep and fold decisions have already settled which
