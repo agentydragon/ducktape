@@ -3,10 +3,12 @@
 # LiteLLM translates Claude Code's Anthropic /v1/messages calls to the `gemini/` provider;
 # the upstream reaches Google with the in-cluster GEMINI_API_KEY, so this key never carries
 # it. WebFetch/WebSearch are disabled: they are Anthropic-hosted server tools a non-Anthropic
-# backend cannot execute. The
-# gemini-clients team falls back to the flash-lite tier, so a quota-throttled preview
-# model (gemini-3.1-pro-preview has tight Google quota) degrades instead of hard-failing. See
-# ./gateway.nix for the shared wrapper pattern.
+# backend cannot execute. The gemini-clients team falls back to the flash-lite tier, so a
+# throttled model degrades instead of hard-failing — but only at routing time: a model
+# outside the key's allowlist is refused during auth, before the router sees it, so both
+# names below must be ones the proxy serves and the key admits (GEMINI_MODELS in
+# cluster/k8s/litellm/app/model_rosters.py, gemini_client_models in
+# tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
 #
 # Prompt caching (settled empirically 2026-07-18, do not relitigate): Claude Code's
 # Anthropic `cache_control` breakpoints do NOT translate through LiteLLM's Anthropic→Gemini
@@ -22,7 +24,7 @@ in
 import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenEnvVar = "GEMINI_LITELLM_KEY";
-  model = "google/oai-chat/gemini-3.1-pro-preview";
+  model = "google/oai-chat/gemini-3.7-flash";
   haikuModel = "google/oai-chat/gemini-3.5-flash-lite";
   disallowedTools = [
     "WebFetch"
