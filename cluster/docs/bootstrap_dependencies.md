@@ -246,6 +246,20 @@ The importer and route contract are the SSOT in
 [`cluster/docs/activitywatch/README.md`](activitywatch/README.md); the SOPS source
 for the importer tokens is next to the ActivityWatch manifests.
 
+### Central workstation proxy identity
+
+`github-api-proxy-identity` depends on `cert-manager-environment` and the issuer
+configuration. It creates the dedicated `github-api-proxy` namespace, a public
+TLS certificate for `github-proxy.allegedly.works`, and a separate interception
+CA Secret. No workstation, agent namespace, or global trust bundle receives the
+CA private key. Clients require a verified copy of its public certificate before
+migration. If the CA Secret is lost or its key deliberately rotated, recreate it
+and update client trust before moving traffic; do not silently accept a new root.
+
+This identity layer does not expose a proxy, issue client passwords, or migrate a
+workstation. The authenticated runtime and per-host SOPS distribution are
+separate dependent changes.
+
 ## L7: NixOS Worker Integration
 
 wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.

@@ -1,0 +1,43 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: github-api-proxy-server
+  namespace: github-api-proxy
+spec:
+  secretName: github-api-proxy-server-tls
+  dnsNames:
+    - github-proxy.allegedly.works
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - server auth
+  issuerRef:
+    name: "${LETSENCRYPT_ISSUER}"
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: github-api-proxy-interception-ca
+  namespace: github-api-proxy
+  annotations:
+    description: Dedicated workstation proxy interception root. Only its public certificate may be distributed to clients; the signing key stays in this namespace.
+spec:
+  isCA: true
+  commonName: ducktape-github-api-proxy-interception-ca
+  secretName: github-api-proxy-interception-ca
+  duration: 87600h
+  renewBefore: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    # A signing-key rotation requires an explicit client trust migration.
+    rotationPolicy: Never
+  usages:
+    - cert sign
+    - crl sign
+  issuerRef:
+    name: cluster-ca-bootstrap
+    kind: ClusterIssuer

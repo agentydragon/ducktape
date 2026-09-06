@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: github-api-proxy-identity
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/github-api-proxy/identity
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: cert-manager-environment
+      namespace: ducktape-flux
+    - name: cert-manager-issuer-config
+      namespace: ducktape-flux
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
