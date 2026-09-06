@@ -131,6 +131,13 @@ Still missing:
 - **Mid-horizon property purchase** in year N. Today the product knob is
   locked to "buy at month 0 or don't"; the same `PropertyPurchase`
   should eventually plumb to a configurable purchase month.
+- **Mortgage contracts other than the fixed-rate purchase mortgage.**
+  `MortgageFinancing` is principal, one fixed `annual_interest_rate`, and a
+  term, attached to a purchase — so there is no refinance, no adjustable rate,
+  and no second lien or HELOC. A 30-year horizon that cannot refinance prices
+  the rate at origination as if it were the rate for life, which biases every
+  high-rate purchase against buying. Wants the loan to be state the engine
+  carries rather than a compile-time amortization table.
 - **Property-tax: Proposition-13-style 2%/yr assessed-value escalation
   cap.** `property_initial_assessed_value` is set at purchase and never
   escalates. Long horizons (20-30y) progressively understate tax — by

@@ -212,8 +212,8 @@ integers, so the fan workload never pays for a dense JSON round trip. `simulator
 remains for out-of-process forensic runs.
 
 What the JAX engine models and this one does not — refused scenario features, values the
-integer fixture cannot represent, unmodelled behaviour, and the one thing the two engines
-answer differently: [docs/parity_gaps.md](docs/parity_gaps.md). How much of it a live product
+integer fixture cannot represent, and the one thing the two engines answer differently:
+[docs/parity_gaps.md](docs/parity_gaps.md). How much of it a live product
 request can reach, and in what order it closes, is the plan's:
 [plans/rust_as_default.md](plans/rust_as_default.md) § Coverage.
 
