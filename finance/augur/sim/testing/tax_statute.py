@@ -1,13 +1,13 @@
 """What the tax code says, asserted against whichever engine runs it.
 
-Every differential suite asks whether two engines agree. That cannot catch a rule both
-implement the same way and both get wrong, which is exactly what happened here: JAX and Rust
-computed the §63/§1(h) composition identically, so thirty hand-written cases and a randomized
-campaign of 320 compared ones all passed while both answers were wrong.
+Asking whether an implementation matches another implementation cannot catch a rule both
+get wrong. That is not hypothetical: two engines once computed the §63/§1(h) composition
+identically, so thirty hand-written cases and a randomized campaign of 320 compared ones all
+passed while both answers were wrong.
 
-So this suite states the answer the statute gives and points it at one engine at a time. A
-test here failing on every engine is the useful outcome, not a contradiction — it is the only
-shape of failure that says the rule, rather than one implementation, is wrong.
+So this suite states the answer the statute gives, and never an answer read off an
+implementation. A test here failing says the rule is wrong, which is the one thing a
+comparison can never say.
 
 It reads `Engine.events` and nothing else, so an engine satisfies it without exposing an
 internal layout, and a third engine inherits it by naming itself.
@@ -37,9 +37,9 @@ FEDERAL_STANDARD_DEDUCTION_QUANTA = 1_460_000  # $14,600
 
 # §1211(b): a net capital loss reduces a single filer's ordinary income by at most $3,000, and
 # §1212(b) carries the rest forward. Spelled here as the statute's own number rather than
-# imported, because no engine takes it from the scenario — JAX holds it as a default argument
-# and Rust reads the fixture field the encoder fills from that same constant — so no case can
-# configure it, and only a test stating the figure catches a change to either side (#5586).
+# imported, because no engine takes it from the scenario — the engine reads a fixture field
+# the encoder fills from that same constant — so no case can configure it, and only a test
+# stating the figure catches a change to it (#5586).
 CAPITAL_LOSS_ORDINARY_OFFSET_CAP_QUANTA = 300_000  # $3,000
 LOSS_SALE_PRICE = Decimal(1_000)
 
@@ -201,10 +201,9 @@ class TaxStatuteAcceptance:
     def test_a_long_term_gain_is_rated_from_where_ordinary_income_leaves_off(self, engine: Engine) -> None:
         """§1(h): the long-term bracket is walked on total taxable income, not on the gain alone.
 
-        `differential/tax_test.py` already asserts the two engines agree on stacking, and
-        `engine/jax_tax_test.py` walks the bracket function directly. Neither reaches the
-        composition between them — which taxable income the walk is handed — and that is where
-        #5588 was: the walk was right, its input was not, and both engines shared the mistake.
+        A test of the bracket walk alone does not reach the composition around it — which
+        taxable income the walk is handed — and that is where #5588 was: the walk was right
+        and its input was not.
 
         The deduction case above cannot reach it either, because the whole gain fits inside the
         0% bracket, where rating it from zero still answers zero. This gain crosses that boundary.

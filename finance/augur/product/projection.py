@@ -1,8 +1,8 @@
 """Product rollout read model, projected from the canonical event frames.
 
-One selected trajectory, rendered from the frames every engine emits plus that engine's
-product metric arrays. Nothing here names an engine's own output layout, which is what
-lets the rollout endpoint be served by either simulator.
+One selected trajectory, rendered from the canonical frames plus the engine's product
+metric arrays. Nothing here names an engine's own output layout — the seam is what would
+make a second engine possible, not evidence that one exists.
 """
 
 from __future__ import annotations
@@ -70,9 +70,8 @@ def project_product_rollout(
 ) -> ProductRolloutProjection:
     """One rollout, projected from the canonical event frames rather than an engine's arrays.
 
-    Reads the canonical event frames rather than any engine's own output layout, so either
-    engine can answer it and a Rust trace equals a JAX trace because one projection read
-    both — not because two projections agreed.
+    Reads the canonical event frames rather than any engine's own output layout, so what a
+    trace says is decided once here rather than per engine.
 
     The frames already did most of the joining this file used to do by hand: seven payment
     shapes are `obligation_settlements` filtered by `obligation_type`, the three disposition

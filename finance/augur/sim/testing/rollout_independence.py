@@ -3,8 +3,7 @@
 Rollouts are independent sample paths that happen to be computed together, so a reader that
 reduces over the rollout axis and reports the answer back across it will attribute one path's
 history to all of them. That is not a rounding difference or an off-by-one: it puts a row in a
-rollout that nothing happened in. It was a real bug in the JAX reader (#5629), found because
-Rust reported the months differently.
+rollout that nothing happened in. It has been a real reader bug here (#5629).
 
 The case below is the smallest shape that can show it, and it is worth saying why it takes
 this much: a single rollout cannot exhibit it at all, because there is no sibling to leak

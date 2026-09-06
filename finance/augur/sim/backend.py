@@ -1,14 +1,13 @@
 """What a simulation engine is, and what every engine answers with.
 
-Two engines run Augur's scenarios: the JAX one in `sim/engine/jax_engine.py` and the Rust
-one behind `rust/backend.py`. They agree on results because they run one compiled plan and
-answer in the shapes declared here — `ProductMetricArrays` for the population workload,
-`EventLog` for a rollout's causal trace — not because two implementations were checked
-against each other.
+One engine runs Augur's scenarios, behind `rust/backend.py`. It answers in the shapes
+declared here — `ProductMetricArrays` for the population workload, `EventLog` for a
+rollout's causal trace — and this module names no engine, so what a consumer may depend on
+is decided here rather than by whichever engine happens to be behind it.
 
-Everything a consumer builds on top of those shapes is therefore written once. The derived
-metrics, the terminal reduction and the percentile brackets are shared Python both engines
-call; so is the selected-rollout projection. An engine supplies inputs, never a read model.
+Everything a consumer builds on top of those shapes is therefore written once, above this
+line: the derived metrics, the terminal reduction, the percentile brackets, and the
+selected-rollout projection. An engine supplies inputs, never a read model.
 
 `sim/` cannot import `rust/`, so this contract lives here and the Rust engine implements it
 from the other side.
@@ -37,9 +36,9 @@ from finance.augur.sim.scenario import Scenario
 class CompiledRun:
     """One compiled simulation, and everything an engine needs to run it.
 
-    `plan` is what the JAX engine executes directly. The Rust engine reads a strict integer
-    fixture instead, which `rust/fixture_encoder.py` derives from this same object — so the
-    two engines run one compilation of one scenario rather than two derivations of it.
+    `plan` is the compiled scenario. The engine reads a strict integer fixture derived from
+    it by `rust/fixture_encoder.py`, so what runs is one compilation of one scenario rather
+    than a second derivation of it.
 
     `external_series` is carried beside the plan because the compiler drops the
     private-equity company-valuation channel that no engine phase reads and the Rust

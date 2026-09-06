@@ -1,6 +1,6 @@
 """End-to-end product-path scale benchmark/smoke.
 
-Drives the real `ProductService.metric_fan` (exogenous sampling → reduced JAX
+Drives the real `ProductService.metric_fan` (exogenous sampling → reduced engine
 product metrics → percentiles) at a configurable rollout count, so we can see
 where time/memory go through the *actual* product entry point rather than the
 synthetic sim profiler.

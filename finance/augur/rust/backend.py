@@ -1,9 +1,9 @@
 """The Rust simulator behind the product read model's backend-neutral entry points.
 
-The Rust engine supplies the seven base metric series and the failure vector; every
-reduction above that — the derived metrics, the order statistics, the interpolation — is
-the same shared code the JAX backend runs, so a fan produced here is identical to a JAX
-fan by construction rather than by a second implementation agreeing.
+The engine supplies the seven base metric series and the failure vector; every reduction
+above that — the derived metrics, the order statistics, the interpolation — lives above
+this module and reads only those. That split is deliberate rather than incidental: it is
+what the product read model needs a backend to owe, and no more.
 
 Fixtures cross the boundary as JSON text because that is the simulator's own input
 contract. Nothing else does: results come back as Python integers the caller wraps in
@@ -126,8 +126,8 @@ def run_rust_product_summary(
 ) -> ProductMetricFanSummary | ProductTerminalSummary:
     """Either projection for one metric, from one Rust execution.
 
-    The `percentiles`-shaped overload pair mirrors `run_jax_product_summary`, so the product
-    service dispatches to a backend without a second call shape to keep aligned.
+    The `percentiles`-shaped overload pair is the product service's own dispatch shape, so a
+    backend answers both projections without a second call shape to keep aligned.
     """
 
     arrays, series, terminal = _metric_series(fixture, primary_agent_id=primary_agent_id, metric=metric)

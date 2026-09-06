@@ -1,22 +1,19 @@
 """Encode a `Scenario` and its compiled sampled paths as the Rust simulator's integer fixture.
 
-This is the only direction: what `product/service.py` dispatches to the Rust engine, and what
-the differential suites encode a case with, so nothing the JAX engine runs reaches Rust by a
-second derivation.
+This is the only direction, and what `product/service.py` dispatches a live request through.
 
-Money crosses exactly. `CompiledSimulation.external_money_values` is already the integer
-quantum count the JAX engine itself reads, and configured amounts go through the same
-`currency_amount_to_quanta` boundary the compiler uses, so neither side rounds twice.
+Money crosses exactly. `CompiledSimulation.external_money_values` is already an integer
+quantum count, and configured amounts go through the same `currency_amount_to_quanta`
+boundary the compiler uses, so no amount is rounded twice on the way in.
 
 Index levels (inflation, rent) are float64 in the plan and parts per billion in the fixture.
-Every JAX site that turns one into money quantizes it to PPB first — `_scale_money_by_float_ratio`
-rounds both the numerator and the denominator level with `_round_int64(level * MONEY_FACTOR_SCALE)`
-before dividing integers — so pre-quantizing here hands Rust the very integers JAX would have
-formed, and the two engines divide the same rational.
+Quantizing here rather than in the engine is the point: the engine multiplies integer money
+by these levels, so the float has to become an exact integer somewhere, and doing it once at
+the boundary means one rounding rule to state instead of one per multiplication site.
 
-A scenario feature the fixture cannot express raises instead of being dropped. The Rust engine
-models a subset of the Python one, and a silently discarded feature is how a fan that looks
-right is wrong.
+A scenario feature the fixture cannot express raises instead of being dropped. The fixture
+is a deliberate subset, and a silently discarded feature is how a fan that looks right is
+wrong.
 """
 
 from __future__ import annotations
@@ -87,10 +84,10 @@ class UnsupportedScenarioError(ValueError):
 
 
 def _round_ppb(values: Float64[np.ndarray, " *shape"] | float) -> Int64[np.ndarray, " *shape"]:
-    """Quantize a dimensionless level or rate exactly as `jax_engine._round_int64` does.
+    """Quantize a dimensionless level or rate onto the parts-per-billion grid.
 
-    Half away from zero on `value * MONEY_FACTOR_SCALE`, which is the rounding every JAX site
-    applies to a level or rate before it multiplies integer money.
+    Half away from zero on `value * MONEY_FACTOR_SCALE`, matching the engine's own rounding,
+    so a level rounds once here and never again when it multiplies integer money.
     """
 
     scaled = np.asarray(values, dtype=np.float64) * MONEY_FACTOR_SCALE
@@ -187,8 +184,8 @@ def _obligation(obligation: ScheduledObligation | RecurringObligation, *, quantu
         "amount_due": _amount(obligation.amount_due, quantum=quantum, context=context),
         "property_id": obligation.property_id,
         "deduction_category": obligation.deduction_category,
-        # Quantized the way the JAX engine quantizes it before multiplying integer money, so
-        # both sides scale the payment by the same parts-per-billion numerator.
+        # Quantized before it multiplies integer money, so the payment is scaled by an exact
+        # parts-per-billion numerator rather than a float.
         "deductible_fraction_ppb": _ppb(obligation.deductible_fraction),
     }
 
@@ -223,10 +220,10 @@ def _level_series(plan: CompiledSimulation) -> list[dict[str, Any]]:
 def _private_equity_series(plan: CompiledSimulation, bundle: PrivateEquityBundle) -> list[dict[str, Any]]:
     """The ten per-issuer private-equity channels, in the fixture's typed integer units.
 
-    Nine come off the compiled channels the JAX engine executes, so both engines read one
-    materialization of the sampled bundle. `company_valuation` is the exception: the compiler
-    drops it because no engine phase reads it, while the Rust validator still requires the
-    channel, so it comes off the bundle at the same money boundary as the marks.
+    Nine come off the compiled channels, so the fixture carries one materialization of the
+    sampled bundle rather than a second one. `company_valuation` is the exception: the
+    compiler drops it because no engine phase reads it, while the validator still requires
+    the channel, so it comes off the bundle at the same money boundary as the marks.
     """
 
     channels = plan.pe_channels.execution
@@ -300,9 +297,8 @@ def _tax_profiles(
     """Tax profiles built from the compiled tables rather than re-read from the jurisdiction YAML.
 
     `plan.tax` already holds the bracket edges, rates, standard deductions, prior-year tax and
-    §121 cap the JAX engine will run, each resolved for its profile's filing status. Taking them
-    from there is what makes the two engines assess one schedule instead of two lookups that have
-    to agree.
+    §121 cap, each resolved for its profile's filing status. Taking them from there is what
+    makes a case assessed under one schedule instead of two lookups that have to agree.
     """
 
     tax = plan.tax
@@ -323,7 +319,7 @@ def _tax_profiles(
                 ),
                 "standard_deduction": int(tax.link_standard_deduction[link]),
                 # The taxpayer's own IRC 1211(b) cap, not this engine's constant. It is a
-                # per-profile figure because the JAX netting runs once per taxpayer, and
+                # per-profile figure because netting runs once per taxpayer, and
                 # `compile_tax` has already refused a profile whose jurisdictions disagree —
                 # so every link of a profile carries the same number, and writing it per
                 # jurisdiction here is faithful rather than a flattening.
@@ -460,9 +456,9 @@ def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> list[dict[st
 def _closing_cost_bps(event: PropertySaleEvent) -> int:
     """Seller closing costs, which the fixture spells in basis points and the scenario in percent.
 
-    The engines then reach the retained fraction by different routes — Rust scales proceeds by
-    `(10_000 - bps) / 10_000`, JAX by `_round_int64((1 - pct / 100) * PPB) / PPB` — so the
-    integer identity between them is checked here rather than assumed.
+    The engine scales proceeds by `(10_000 - bps) / 10_000`, so the basis-point figure has to
+    mean exactly what the authored percent did. That identity is checked here rather than
+    assumed, because the two spellings round on different grids.
     """
 
     exact = Decimal(str(event.closing_cost_pct)) * 100
@@ -507,10 +503,10 @@ def encode_fixture(
     """The strict integer fixture for one compiled simulation.
 
     `plan` must be `compile_simulation(scenario, ..., external_series, jurisdictions, locations)`:
-    the sampled cubes and the compiled tax tables come from it, so the fixture carries the same
-    integers the JAX engine would run rather than a second derivation of them. `external_series`
-    supplies only the private-equity company-valuation channel, which the compiler drops because
-    no engine phase reads it and the Rust validator still requires.
+    the sampled cubes and the compiled tax tables come from it, so the fixture carries the
+    plan's own integers rather than a second derivation of them. `external_series` supplies
+    only the private-equity company-valuation channel, which the compiler drops because no
+    engine phase reads it and the validator still requires.
     """
 
     if plan.horizon_months != int(scenario.horizon_months):
@@ -577,8 +573,8 @@ def encode_fixture(
                 for sale in scenario.scheduled_asset_sales
             ],
             "tax_profiles": _tax_profiles(scenario, plan, jurisdictions),
-            # The income buckets the compiler derived for this scenario, so the Rust ledger
-            # reports the same rows the JAX tensor has instead of rediscovering the set.
+            # The income buckets the compiler derived for this scenario, so the ledger reports
+            # the set the plan declared instead of rediscovering it.
             "income_sources": list(plan.tax.buckets.source_wire_ids()),
             "distributions": [
                 {

@@ -275,7 +275,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
         product.rollout(_rollout_request(scenario_key))
 
 
-def test_jax_product_metrics_fail_when_holding_price_series_is_missing() -> None:
+def test_product_metrics_fail_when_holding_price_series_is_missing() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="agent_a")],
         initial_cash=[InitialAccountBalance(agent_id="agent_a", account_id="checking", balance=0)],
@@ -415,7 +415,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
 
 
-def test_fan_and_selected_rollout_metrics_share_the_jax_reducer(
+def test_fan_and_selected_rollout_metrics_share_one_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)

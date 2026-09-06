@@ -13,6 +13,9 @@ pub mod money;
 pub mod product;
 pub mod tax;
 
+#[cfg(test)]
+mod money_proptest;
+
 pub use engine::{
     SimulationError, ValidatedFixture, simulate, simulate_dense, simulate_dense_validated,
     simulate_product_metrics, simulate_product_metrics_validated, simulate_summaries,

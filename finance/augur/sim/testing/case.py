@@ -1,14 +1,14 @@
 """One authored scenario, in the single form any engine runs.
 
 A case is a `Scenario` and the sampled paths it runs over, and nothing else describes it:
-whatever runs it runs the plan compiled from those two. So every engine assesses one tax
+whatever runs it runs the plan compiled from those two. So a case is assessed under one tax
 schedule, one bracket ladder, one standard deduction — the compiled tables — rather than
 lookups that have to agree.
 
-That is why a case is authored here and not in an engine's own input format. An engine format
-that carries tax rules lets a rule reach one engine and not another, which has happened: three
-divergences were traced to a fixture stating a deduction, a §1250 rate and a capital-loss cap
-that the JAX engine never read, because it resolved jurisdictions from
+That is why a case is authored here and not in an engine's own input format. An input format
+that carries tax rules lets an authored rule diverge from the one the engine resolves, which
+has happened: three divergences were traced to a fixture stating a deduction, a §1250 rate
+and a capital-loss cap that no engine read, because jurisdictions came from
 `sim/data/jurisdictions/*.yaml` instead. Authoring at this level makes that unrepresentable —
 an engine's input is derived from the case, never authored beside it.
 """
@@ -101,10 +101,10 @@ class Case:
 
     @cached_property
     def jurisdictions(self) -> dict[str, Jurisdiction]:
-        """The deployment's own tax law, which is what the JAX engine resolves for a scenario.
+        """The deployment's own tax law, as a scenario resolves it.
 
-        Both engines read it through the compiled plan, so the rates, brackets, deductions and
-        exemptions a case is assessed under are stated in exactly one place.
+        It reaches the engine through the compiled plan, so the rates, brackets, deductions
+        and exemptions a case is assessed under are stated in exactly one place.
         """
 
         return load_jurisdictions_for(self.scenario)
@@ -121,10 +121,10 @@ class Case:
 
     @cached_property
     def compiled_run(self) -> CompiledRun:
-        """This case as the production engines take it.
+        """This case as the production engine takes it.
 
-        Lets a suite drive `JaxEngine`/`RustEngine` rather than a harness-only path, so what
-        the differential tests compare is what the product service runs.
+        Lets a suite drive `RustEngine` rather than a test-only path, so what a suite asserts
+        against is what the product service runs.
         """
 
         return CompiledRun(

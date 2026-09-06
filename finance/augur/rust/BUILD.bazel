@@ -31,6 +31,7 @@ rust_library(
         "ledger.rs",
         "lib.rs",
         "money.rs",
+        "money_proptest.rs",
         "product.rs",
         "tax.rs",
     ],
@@ -57,6 +58,7 @@ rust_binary(
 rust_test(
     name = "simulator_test",
     crate = ":simulator",
+    deps = ["@crates//:proptest"],
 )
 
 # The CPython extension module. `crate_name` is what names the emitted

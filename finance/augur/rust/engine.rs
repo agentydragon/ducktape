@@ -172,7 +172,7 @@ pub fn simulate_validated(
 
 /// Run every rollout while retaining dense monthly state and compatibility events.
 ///
-/// Unlike [`simulate`], this omits the Rust-only balanced journal because the Python/JAX
+/// Unlike [`simulate`], this omits the balanced journal because the Python
 /// compatibility output has no corresponding channel. This is the apples-to-apples dense
 /// benchmark and backend handoff path; all canonical event inputs remain present.
 pub fn simulate_dense(fixture: &Fixture) -> Result<SimulationOutput, SimulationError> {

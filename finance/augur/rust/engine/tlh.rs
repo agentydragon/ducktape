@@ -133,8 +133,9 @@ fn mul_ppb(left: i64, right: i64, operation: &'static str) -> Result<i64, Simula
 ///
 /// A half-integer exponent is a whole number of multiplications and at most one square
 /// root, and `i64::isqrt` is an exact floor — which is why `HarvestYieldParams` and the
-/// fixture validator admit only those exponents. `sim/tlh_harvest.py` evaluates the same
-/// formula for the JAX engine; two exact floors agree without mirroring each other.
+/// fixture validator admit only those exponents. `sim/tlh_harvest.py` states the same
+/// formula where the policy is calibrated; two exact floors agree without mirroring
+/// each other.
 fn pow_half_ppb(base: i64, half_exponent: i64) -> Result<i64, SimulationError> {
     let mut power = RATE_SCALE_PPB;
     for _ in 0..half_exponent / 2 {

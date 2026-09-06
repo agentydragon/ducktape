@@ -117,11 +117,3 @@ and prints the top cumulative functions. The target is guarded by
 `--max-seconds=60`; retune request size with `--rollout-count`,
 `--horizon-months`, `--metric`, and `--percentiles` when profiling a different
 shape.
-
-The simulator runs through the JAX dense-array engine. Collect a profile for
-the target request shape directly:
-
-```bash
-bazelisk run --config=nolint //augur/api:profile_metric_fan -- \
-  --profile-output=/tmp/augur_metric_fan_jax.prof
-```

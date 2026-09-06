@@ -261,7 +261,7 @@ What remains is composing that target with the PE tender floor, and buying.
       a floor is a one-sided target with an infinite upper deadband, so it
       should BE a sleeve, with the tender's sale capacity as the constraint on
       how fast that sleeve can be drained. Blocked on nothing in particular;
-      wants the PE lot axis to be reachable from `ActorView`.
+      wants the PE lot axis reachable wherever the sleeve target is computed.
 
 - [ ] **A ladder that rolls.** Today an inflation-indexed ladder can only be HELD from
       scenario start (`BondHolding`), never extended. Since TIPS are issued in 5/10/30-year

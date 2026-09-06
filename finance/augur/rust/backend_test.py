@@ -4,10 +4,9 @@ Nothing here but the name of the engine. What it has to satisfy is not particula
 lives in `sim/testing/`: `engine_acceptance.py` for the contract every engine answers in, and
 `tax_statute.py` for what the tax code says the answers are.
 
-This is the substitutability claim in its strongest form. The differential suites next door
-compare Rust against JAX, which is blind to a rule both implement the same way and both get
-wrong; these assertions state what the answer must be, so Rust can fail them alone — or,
-more usefully, fail them alongside JAX and say the rule is wrong rather than one engine.
+Stating the answer rather than comparing two engines is what outlived the second engine.
+A comparison is blind to a rule both implementations get the same way and both get wrong;
+these assertions say what the answer must be, so they still bind with one engine left.
 """
 
 import pytest

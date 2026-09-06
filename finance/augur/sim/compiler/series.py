@@ -147,9 +147,9 @@ def collect_level_series_keys(
             keys.append(key)
 
     # `value_rows()` is ordered by wire id. Series row-indices are assigned from that order and
-    # baked into the jitted program's STATIC structure (e.g. `_FoldedPE.floor_series`), so a
-    # content-independent order would bust the native `jax.jit` compile cache (every other compile
-    # re-traces); a deterministic one gives identical scenarios one compile, then cache hits.
+    # then baked into the plan's static structure (e.g. `_FoldedPE.floor_series`) and into the
+    # fixture rows the engine reads by index, so the order has to depend on the scenario and
+    # nothing else: identical scenarios must compile to identical row assignments.
     for rows in level_rows:
         add(rows.key)
     for scheduled_transfer in scenario.scheduled_transfers:
