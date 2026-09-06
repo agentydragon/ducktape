@@ -34,6 +34,7 @@ class LocalOrigins:
     requests: list[tuple[str, str]] = field(default_factory=list)
     dials: int = 0
     ready: asyncio.Event = field(default_factory=asyncio.Event)
+    finish_events: asyncio.Event = field(default_factory=asyncio.Event)
 
     def running(self) -> None:
         self.ready.set()
@@ -55,9 +56,17 @@ class LocalOrigins:
         # must redact even when another addon introduces it after authentication.
         flow.metadata["proxyauth"] = ("test-alpha", PASSWORD)
 
-    async def handle(self, request: web.Request) -> web.Response:
+    async def handle(self, request: web.Request) -> web.StreamResponse:
         assert "Proxy-Authorization" not in request.headers
         self.requests.append((request.method, request.path))
+        if request.path == "/events":
+            response = web.StreamResponse(headers={"Content-Type": request.query["content_type"]})
+            await response.prepare(request)
+            await response.write(b"data: first\n\n")
+            await self.finish_events.wait()
+            await response.write(b"data: last\n\n")
+            await response.write_eof()
+            return response
         return web.json_response({"data": {"rateLimit": {"cost": 7}}}, headers={"x-ratelimit-used": "999"})
 
 
@@ -287,6 +296,41 @@ async def test_inner_https_and_independent_auth_redaction(proxy: Harness) -> Non
     assert PASSWORD.encode() not in raw
     assert authorization().encode() not in raw
     assert stat.S_IMODE(proxy.settings.capture_path.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("content_type", ["text/event-stream", "Text/Event-Stream;%20charset=utf-8"])
+async def test_event_stream_arrives_before_eof_and_is_captured(proxy: Harness, content_type: str) -> None:
+    reader, writer = await proxy.connect()
+    try:
+        async with asyncio.timeout(5):
+            assert (await request(reader, writer, method="CONNECT", target="claude.ai:443", auth=authorization()))[
+                0
+            ] == 200
+            await writer.start_tls(proxy.client_tls, server_hostname="claude.ai")
+            writer.write(f"GET /events?content_type={content_type} HTTP/1.1\r\nHost: claude.ai\r\n\r\n".encode())
+            await writer.drain()
+            headers = await reader.readuntil(b"\r\n\r\n")
+            assert headers.startswith(b"HTTP/1.1 200 ")
+            assert b"transfer-encoding: chunked" in headers.lower()
+            # The origin cannot finish until the client receives its first event.
+            await reader.readuntil(b"data: first\n\n")
+            proxy.origins.finish_events.set()
+            assert b"data: last\n\n" in await reader.readuntil(b"0\r\n\r\n")
+    finally:
+        proxy.origins.finish_events.set()
+        writer.close()
+        await writer.wait_closed()
+    with proxy.settings.capture_path.open("rb") as stream:
+        captured = [
+            flow
+            for flow in io.FlowReader(stream).stream()
+            if isinstance(flow, http.HTTPFlow) and flow.request.path.startswith("/events?")
+        ]
+    assert len(captured) == 1
+    assert captured[0].response is not None
+    assert captured[0].response.raw_content == b"data: first\n\ndata: last\n\n"
+    assert "Proxy-Authorization" not in captured[0].request.headers
+    assert "proxyauth" not in captured[0].metadata
 
 
 @pytest.mark.parametrize("next_auth", [None, authorization(password="test-private-wrong")])

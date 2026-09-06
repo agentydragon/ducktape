@@ -27,6 +27,12 @@ class PrivateSave(Save):
         self.path = path
         self.metrics = metrics
 
+    def responseheaders(self, item: http.HTTPFlow) -> None:
+        assert item.response is not None
+        # Event streams may never reach EOF; buffering them prevents client progress.
+        if item.response.headers.get("content-type", "").partition(";")[0].strip().lower() == "text/event-stream":
+            item.response.stream = True
+
     def save_flow(self, item: flow.Flow) -> None:
         if self.stream is None:
             return
