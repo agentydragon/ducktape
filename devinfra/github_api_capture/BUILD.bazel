@@ -17,3 +17,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "cloud_report",
+    srcs = ["cloud_report.py"],
+    deps = ["@pypi//mitmproxy"],
+)
+
+py_test(
+    name = "test_cloud_report",
+    srcs = ["test_cloud_report.py"],
+    deps = [
+        ":cloud_report",
+        "//:conftest",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

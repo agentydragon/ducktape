@@ -179,7 +179,8 @@ in
       # Offline JSONL metadata only; no request/response bodies or auth headers.
       (pkgs.writeShellScriptBin "github-api-proxy-report" ''
         exec ${pkgs.mitmproxy}/bin/mitmdump -q -nr ${lib.escapeShellArg captureFile} \
-          -s ${../../../devinfra/github_api_capture/report.py} "$@"
+          -s ${../../../devinfra/github_api_capture/report.py} \
+          -s ${../../../devinfra/github_api_capture/cloud_report.py} "$@"
       '')
     ];
   };

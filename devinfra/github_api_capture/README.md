@@ -21,3 +21,16 @@ alone cannot prove bypass traffic. Error metadata is retained even on HTTP 200.
 
 The source `github.flows` remains a raw capture containing sensitive unrelated
 application traffic. This metadata report does not make the source safe to publish.
+
+## Cloud-mediated GitHub calls
+
+The report also includes three exact `claude.ai` routes: GitHub batch branch status,
+compare refs, and installation status. These records include the endpoint, bounded
+`caller` tag, exact request-body fingerprint, batch cardinalities, completion/status,
+and transport-failure indicator. They exclude session/repository/branch values,
+auth headers, other query parameters, and response payloads. Missing cardinalities
+remain unknown; an explicitly empty list has cardinality zero.
+
+These are calls to Claude's backend, not observations of its upstream GitHub
+requests. The reporter cannot assign GitHub GraphQL cost or query fingerprints
+to them. HTTP 200 likewise does not prove every upstream GitHub operation succeeded.
