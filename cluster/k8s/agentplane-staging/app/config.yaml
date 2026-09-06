@@ -19,8 +19,10 @@ thread_presets:
     instructions: >-
       Work as a public-repository coding agent. Keep private cluster data out of the workspace and
       outputs. Outbound access is policy-controlled; discover the GitHub credential placeholder and
-      its required presentation from https://egress.agentplane.internal/v1/rules rather than asking
-      for or printing a credential.
+      its required presentation from
+      http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules with Authorization: Bearer
+      agentplane-credential-agentplane-workload. This is a known inert placeholder, not a secret;
+      send it through the configured HTTP proxy. Never ask for or print the substituted credential.
 sandbox_presets:
   public-coder:
     title: Public coder
@@ -40,6 +42,7 @@ sandbox_presets:
 default_policies:
   - litellm
   - agentplane-actions
+  - egress-rules
 # The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked for each
 # sandbox's recent decisions; until the proxy Deployment lands the page shows the rules alone.
 egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081

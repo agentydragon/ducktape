@@ -1,0 +1,18 @@
+# Ordinary policy for the agent-facing API on this Deployment's Service. The proxy authenticates the
+# sidecar hop, substitutes the exact workload placeholder, and dials Service port 80; targetPort routes
+# that connection to the separate agent-api listener rather than back to the proxy listener.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: egress-rules
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - agentplane-egress.agentplane-staging.svc.cluster.local
+      clusterInternal: true
+      methods: [GET]
+      paths:
+        - /v1/rules
+      credentialRef:
+        name: agentplane-workload

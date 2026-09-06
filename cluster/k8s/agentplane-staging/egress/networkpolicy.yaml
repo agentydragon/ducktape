@@ -31,6 +31,16 @@ spec:
         - ports:
             - port: "8081"
               protocol: TCP
+    # The proxy dials its own Service port 80 after ordinary policy evaluation. The Service maps
+    # that connection to this distinct listener; runners cannot bypass central and reach it directly.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-egress
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
@@ -45,6 +55,15 @@ spec:
               - matchPattern: "*"
     - toEntities:
         - kube-apiserver
+    # Hairpin through Service/agentplane-egress: destination port 80 maps to this Pod's agent API.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-egress
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
     # The authenticated LLM ingress, which the litellm policy admits as a cluster-internal host.
     # LiteLLM itself is reachable only from that ingress; central never receives its virtual key.
     - toEndpoints:

@@ -15,7 +15,6 @@ py_library(
     name = "addon",
     srcs = ["addon.py"],
     deps = [
-        ":agent_view",
         ":decisions",
         ":identity",
         ":policy",
@@ -78,8 +77,11 @@ py_library(
         ":informer",
         ":policy",
         ":proxy",
+        ":rules_api",
         ":upstream",
         "//util:kubernetes",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -186,11 +188,15 @@ py_test(
         ":policy",
         ":proxy",
         ":resources",
+        ":rules_api",
         ":sidecar",
         ":upstream",
         "//:conftest",
+        "//util:net",
         "//x/agentplane/egress/testing:fake_apiserver",
         "//x/agentplane/egress/testing:tls",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
@@ -349,6 +355,37 @@ py_test(
         ":policy",
         ":resources",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "rules_api",
+    srcs = ["rules_api.py"],
+    deps = [
+        ":agent_view",
+        ":policy",
+        "//x/agentplane/sandbox_auth:http",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_rules_api",
+    srcs = ["test_rules_api.py"],
+    deps = [
+        ":conftest",
+        ":policy",
+        ":resources",
+        ":rules_api",
+        "//:conftest",
+        "//x/agentplane/egress/testing:fake_apiserver",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

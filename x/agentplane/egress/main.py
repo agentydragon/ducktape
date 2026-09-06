@@ -22,7 +22,10 @@ from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
+from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
 from x.agentplane.egress.upstream import UpstreamResolver
+from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,8 @@ class Settings(BaseSettings):
     listen_port: int = Field(default=8888, description="Proxy listener port the sidecars relay to.")
     admin_host: str = Field(default="0.0.0.0", description="Admin listener bind address.")
     admin_port: int = Field(default=8081, description="Admin port serving /decisions and /healthz.")
+    agent_api_host: str = Field(default="0.0.0.0", description="Agent-facing rules API bind address.")
+    agent_api_port: int = Field(default=8082, description="Agent-facing HTTP port serving /v1/rules.")
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
@@ -94,15 +99,28 @@ async def async_main(settings: Settings) -> None:
             credentials_namespace=settings.credentials_namespace,
             resync_seconds=settings.resync_seconds,
         )
+        authentication = AuthenticationV1Api(api)
+        core_v1 = CoreV1Api(api)
         verifier = PodIdentityVerifier(
-            authentication=AuthenticationV1Api(api),
-            core_v1=CoreV1Api(api),
+            authentication=authentication,
+            core_v1=core_v1,
             namespace=settings.sandbox_namespace,
             audience=settings.token_audience,
             cache_seconds=settings.identity_cache_seconds,
         )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
         addon = EgressAddon(index=index, verifier=verifier, ring=ring, resolver=resolver)
+        rules_app = create_rules_app(
+            SandboxPrincipalAuthenticator(
+                SandboxPrincipalResolver(
+                    authentication=authentication,
+                    core_v1=core_v1,
+                    audience=settings.token_audience,
+                    namespaces=frozenset({settings.sandbox_namespace}),
+                )
+            ),
+            RulesProjection(index),
+        )
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (
@@ -111,11 +129,13 @@ async def async_main(settings: Settings) -> None:
                     settings.admin_host,
                     settings.admin_port,
                 ) as admin_port,
+                serve_rules_api(rules_app, settings.agent_api_host, settings.agent_api_port),
                 EgressProxyServer(
                     addon, confdir=settings.confdir, listen_host=settings.listen_host, listen_port=settings.listen_port
                 ),
             ):
                 logger.info("admin listening on %s:%d", settings.admin_host, admin_port)
+                logger.info("agent API listening on %s:%d", settings.agent_api_host, settings.agent_api_port)
                 await stop.wait()
         finally:
             informer_task.cancel()

@@ -1,4 +1,5 @@
-# The listener the sandbox sidecars relay to (the SandboxTemplate names this Service).
+# The sidecar forward proxy and the ordinary agent-facing API share one Service but terminate on
+# different listeners. Port 80 must never target the proxy port, or the Service would recurse.
 apiVersion: v1
 kind: Service
 metadata:
@@ -8,6 +9,9 @@ spec:
   selector:
     app.kubernetes.io/name: agentplane-egress
   ports:
+    - name: http
+      port: 80
+      targetPort: agent-api
     - name: proxy
       port: 8888
       targetPort: proxy

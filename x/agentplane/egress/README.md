@@ -23,7 +23,10 @@ bbr test //x/agentplane/egress/...
   globally reachable, and pinned so the dial goes to the address checked.
 - `informer.py`: list-and-watch of the five kinds into the `Index`, and the binding status
   writes.
-- `addon.py`: the mitmproxy addon gating CONNECTs and requests; `decisions.py` the ring and the
+- `rules_api.py`: the agent-facing
+  `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
+  independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
+  ordinary mitmproxy policy/substitution gate. `decisions.py` is the ring and
   JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
@@ -120,6 +123,30 @@ uses the same header; the [browser cookie definitions](https://github.com/buildb
 show the interactive-session form; and the
 [`bb remote` implementation](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/cli/remotebazel/remotebazel.go)
 both appends the key to the local outgoing gRPC context and retains it in the nested Bazel command.
+
+## Rules API
+
+Agents send an ordinary proxied HTTP `GET` to
+`http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` with
+`Authorization: Bearer agentplane-credential-agentplane-workload`. The placeholder is inert and
+published in nonsecret runner instructions. The default `egress-rules` policy binds this exact
+host, method, and path to the existing `agentplane-workload` credential's `schemeToken` target.
+Central applies normal exact-placeholder substitution using the authenticated sidecar workload
+context; no rules-specific proxy dispatch or credential injection mode is involved.
+
+Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
+proxy. Central resolves and dials the API like any other cluster-internal policy destination.
+The FastAPI endpoint independently validates ordinary `Authorization` through
+`SandboxPrincipalAuthenticator` (TokenReview and live Pod/Sandbox resolution). The API sees central's
+source address, not the Sandbox Pod address; proxy-hop identity and caller metadata are not API
+identity authorities. Missing or forged destination auth fails closed.
+
+The API shares the central process's current enforcement `Index` through `RulesProjection`, which
+checks the authenticated Sandbox UID and returns only the redacted field allowlist. Operator
+`/decisions` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
+admits the agent API from central egress only. Service target-port separation prevents recursion.
+The single-replica `Recreate` Deployment keeps Service requests on the enforcing Pod; scaling to
+multiple replicas would require revisiting the same-index guarantee.
 
 ## ServiceAccount permissions
 

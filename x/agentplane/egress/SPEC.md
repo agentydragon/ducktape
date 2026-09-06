@@ -76,8 +76,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 ## Upstream address
 
 - **A sandbox can read the rules that apply to it**, at
-  `https://egress.agentplane.internal/v1/rules` through the same proxy it sends everything else
-  through. The answer names the sandbox and the policies an active binding grants it: each rule's
+  `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
+  existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
+  sandbox and the policies an active binding grants it: each rule's
   hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
   `description`, and every target — which is what a client needs to build the value and to know whose
   credential it is spending, since a header name and a placeholder leave open both whether the value
@@ -85,9 +86,16 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   the Secret, its key,
   or its value — the projection is built from its own field list, so a field added to a resource
   does not appear here until someone writes it in.
-  The name is reserved and resolves nowhere: nothing is dialled for it, no rule can admit it, and
-  identity is proved at the CONNECT exactly as it is for egress, because `Proxy-Authorization` is
-  hop-by-hop and a plain request would arrive with none.
+  The caller sends the published inert `agentplane-credential-agentplane-workload` placeholder
+  in ordinary `Authorization: Bearer` through the configured proxy. An active ordinary
+  `egress-rules` policy/binding authorizes exact substitution using `agentplane-workload`.
+  Missing or forged destination auth and unbound placeholders fail closed.
+  The destination independently authenticates its Authorization bearer with TokenReview and live
+  Pod/Sandbox resolution, without relying on proxy-hop identity or the Sandbox's source address.
+  `RulesProjection` checks the authenticated name and UID against the current enforcement index.
+  Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
+  API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
+  Operator admin endpoints are not available through this route.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;
