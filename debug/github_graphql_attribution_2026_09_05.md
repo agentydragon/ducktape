@@ -83,6 +83,13 @@ at approximately 17:43:50. A sandboxed `ps` had hidden those processes; it was
 not evidence of their exit. System observations must use the host namespace.
 At 17:41:59 the account had used 56 points, and at 17:43:13 it had used 63.
 
+At **17:49:40**, the original Desktop was deliberately replaced with the
+always-proxied normal-profile app (new main PID `3398172`). This ends the
+unchanged-original-Desktop part of the phone-off control. Before the restart,
+usage was 100 points at 17:49:35: no recurrence of the earlier large bursts
+in approximately fifteen minutes after reset. No phone-on rechallenge has
+been performed, so causation remains open.
+
 ## Proven coverage defects
 
 ### Host recorder
@@ -120,6 +127,25 @@ proposed ten-minute loss alert already matched live counters.
 pre-metric loss sources. It excludes history-ring overruns, which occur after
 metric processing, and does not duplicate the existing target-down alert.
 Detection is not remediation of the loss.
+
+Further read-only diagnosis found two raw-counter bursts on ovh-ns102453:
+11,308 observer rejects and 9 perf-loss notifications during 00:26–00:28 UTC,
+then 9,199 rejects and 8 notifications during 00:39–00:41. Cilium's own
+cgroup I/O-full PSI reached 32.5% and 43.3% over two-minute windows; CPU wait
+was approximately 1–2%. Its CPU quota was unlimited and `nr_throttled` zero.
+Two Haku CI pods accounted for 99.3% of observed container writes to the busy
+system disk during the first window. That is evidence for an I/O-contention
+experiment, not proof those writers are the sole cause of every loss.
+
+A retained Cilium goroutine dump captured the sole Hubble observer blocked
+resolving an endpoint identity on `RWMutex.RLock`. The matching endpoint's
+writer was stalled allocating a label map; the perf-reader goroutine was
+also stalled allocating an event. The dump identifies real observer and
+perf-reader blockages, but not the underlying runtime/kernel reason for the
+allocation stalls. Increasing the history ring cannot repair either loss
+source. Moving/reducing CI system-disk writes and comparing I/O pressure,
+observer/perf loss, and probe failures is the next causal test; no such
+placement or workload change was made during this investigation.
 
 Six nodes were Ready. Stale Cilium pods on NotReady nodes and missing/down
 scrape targets must not be counted as current fleet coverage. Host-namespace
@@ -162,6 +188,24 @@ There is an additional mechanism behind the failed temporary handler: Desktop
 registers itself as the default protocol client at startup, using the normal
 `com.anthropic.Claude.desktop` identity. That overwrites a competing temporary
 handler. Wrapping the normal package entry addresses that mechanism directly.
+
+The generated normal package was installed at 17:49:40 through wyrm2's
+previously empty user Nix profile, plus its generated normal desktop entry.
+The command and all three desktop actions resolve to the wrapped package;
+the normal URI handler remains `com.anthropic.Claude.desktop`. This is a
+scoped runtime bridge to the declarative host change, not a full NixOS
+activation. Other hosts and the dirty primary checkout were not changed.
+Desktop booted with the original profile, no fresh TLS errors, and verified
+loopback proxy sockets. Desktop and URI launches reused the same main PID.
+Authenticated Desktop GitHub traffic still needs an active Code/PR view;
+successful startup is not that proof.
+
+The raw capture is now owner-only (directory `0700`, file `0600`).
+[PR #5670](https://github.com/agentydragon/ducktape/pull/5670) makes those
+permissions the service default. Always-on proxying also makes raw-capture
+retention a standing operational concern: the existing flow file includes
+unrelated application traffic and has no configured rotation. No existing
+capture was deleted or published.
 
 A sanitized read of the existing flow file found 37 GraphQL requests from
 `claude-code/2.1.245`, spanning September 4 12:41:35–20:23:23 UTC. All 37 lacked
