@@ -78,7 +78,7 @@ from x.agentplane.egress.upstream import Network, UpstreamResolver
 
 @dataclass
 class RecordingUpstream:
-    """An HTTPS upstream that records every request's method, path, and headers."""
+    """HTTP and HTTPS listeners that record every request's method, path, and headers."""
 
     port: int = 0
     http_port: int = 0
@@ -292,10 +292,21 @@ async def test_authenticated_workload_source_uses_each_https_tunnels_own_token(
     await install_workload_credential(fake, proxy, bind_b=True)
 
     for token, suffix in ((TOKEN_A, "a"), (TOKEN_B, "b")):
-        response = await proxy.get(
-            f"/workload/{suffix}", token=token, headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"}
-        )
-        assert (response.status, response.body) == (200, b"upstream ok")
+        token_file = proxy.tmp_path / f"workload-sidecar-token-{suffix}"
+        token_file.write_text(token)
+        async with (
+            SidecarRelay(
+                proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
+            ) as sidecar,
+            aiohttp.ClientSession() as session,
+            session.get(
+                proxy.url(f"/workload/{suffix}"),
+                proxy=f"http://127.0.0.1:{sidecar.listen_port}",
+                ssl=client_tls_context(proxy.interception_ca),
+                headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"},
+            ) as response,
+        ):
+            assert (response.status, await response.read()) == (200, b"upstream ok")
 
     assert [headers["authorization"] for _, _, headers in proxy.upstream.requests] == [
         f"Bearer {TOKEN_A}",
