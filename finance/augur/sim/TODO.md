@@ -138,6 +138,21 @@ Still missing:
   the rate at origination as if it were the rate for life, which biases every
   high-rate purchase against buying. Wants the loan to be state the engine
   carries rather than a compile-time amortization table.
+- **Depreciation is not capped at basis.** `accrue_property_depreciation` adds
+  `building_basis x rented_share / 330` every active rented month with no check
+  against `cumulative_depreciation` reaching `building_basis`. SS168 lets a
+  building be depreciated once; past 330 months this keeps going, so
+  `tax_adjusted_basis` (`adjusted_basis - cumulative_depreciation`) falls and can
+  go negative, realized gain and SS1250 recapture inflate with it, and the annual
+  deduction against ordinary income continues after there is no basis left.
+  Latent rather than live: the fixture deployment caps `max_horizon_months` at
+  240, so a rental held the whole horizon reaches 240/330 of basis. But
+  `max_horizon_months` is an unbounded `PositiveInt`, and a 30-year horizon
+  overruns by ~9% of building basis.
+  Decide it together with capital improvements, which are added straight to
+  `building_basis` and depreciated at the same 1/330 rate: real SS168 gives an
+  improvement its own schedule from its own in-service date, and which way that
+  goes moves where the basis is exhausted.
 - **Property-tax: Proposition-13-style 2%/yr assessed-value escalation
   cap.** `property_initial_assessed_value` is set at purchase and never
   escalates. Long horizons (20-30y) progressively understate tax — by
