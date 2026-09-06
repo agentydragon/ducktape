@@ -198,6 +198,7 @@ py_test(
         ":api",
         ":auth",
         ":client",
+        ":conftest",
         ":models",
         ":service",
         "//:conftest",
