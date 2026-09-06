@@ -1,10 +1,10 @@
 # Wyrm2 central proxy cutover
 
-Cutover checkpoint: 2026-09-06 06:26 UTC; compatibility evidence through 07:49 UTC.
-Wyrm2 uses the central proxy, but the migration
-is not accepted: Desktop has incomplete conversation history and “Failed to
-fetch” errors. A response-buffering defect is identified below; full Desktop
-recovery remains unverified. Keep the exact-route mitigation during verification.
+Cutover checkpoint: 2026-09-06 06:26 UTC; compatibility evidence through 08:36 UTC.
+Wyrm2 uses the central proxy. The response-buffering and connection-reuse defects
+described below are repaired in the deployed image, with passing live transport
+checks. Full Desktop history and message-send recovery still need operator
+verification, so the migration is not yet accepted. Keep the exact-route mitigation.
 
 - Host opt-in #5692 merged as `8f3c3ff323e59980053b31145d69c1856f29efe6`.
   Its built NixOS generation is
@@ -209,7 +209,54 @@ dial. The runtime, destination, and capture tests plus changed-library type/lint
 aspects pass ([invocation](https://app.buildbuddy.io/invocation/6a3cde5a-3603-485c-b836-a341c59f9218)).
 The operator permits a larger pool if needed; no increase is currently included,
 because it would defer the same starvation without repairing connection reuse.
-PR CI, deployment, and Desktop recovery are not yet verified.
+The deployed repair and remaining acceptance boundary are described below.
+
+## Connection-reuse deployment verification
+
+[#5703](https://github.com/agentydragon/ducktape/pull/5703) merged at 08:07:39 UTC
+as `eb58b4860859cbcea0dbbb0e975e1e6bff0874dd`. Its PR Bazel CI passed all six
+proxy test targets, including unprivileged image startup and capture persistence
+([invocation](https://app.buildbuddy.io/invocation/1fcfd631-c446-5217-a7a1-c18fed08d2e7)).
+Pre-commit, Gazelle, and CodeQL passed; the separate Nix wheel check was still
+running at this checkpoint, not proven successful.
+
+Two superseded devel runs were cancelled, not failed. Successor
+`589e2c75224ab98f78d94e12f8d3bb9b01aad641` retained the proxy source, passed
+the devel test/build job, and [published the tested proxy image](https://github.com/agentydragon/ducktape/actions/runs/34021161691/job/101454461110).
+
+- Image: `devel-20260906081725-589e2c7`, digest
+  `sha256:7a8c000c74eca271e4d2e0f8253e6ef2d99efe944214afc34306c4a712857544`.
+- Flux image-update commit: `b4408f9174d7a190a48052116b35ae1d745690d7`.
+  The application Kustomization became Ready and Healthy at 08:30:50 UTC.
+  The replacement pod reports the expected digest and zero restarts.
+- The same eight unauthenticated `claude.ai/robots.txt` GETs now all return
+  HTTP/2 200 with certificate verification enabled, over one curl client
+  connection. Durations are 179, 45, 47, 46, 46, 40, 41, and 41 ms; the last
+  three no longer stall. Bodies were discarded. The synthetic regression,
+  separately, verifies one upstream dial for all eight requests.
+- A seven-second public Wikimedia SSE probe returns HTTP 200/H2, first byte
+  at 0.679 seconds, and 419,150 bytes before the deliberate time limit.
+  Streaming still works through the installed relay and repaired central proxy.
+- One empty synthetic batch-route POST returns HTTP/2 429 with
+  `Retry-After: 3600`. No Claude credential or user message was replayed.
+  The authenticated history-replay count remains six.
+- The first 51,750,438 raw-capture bytes have the same checksum before and
+  after rollout. Raw and session metadata retain their inodes, mode 0600,
+  and UID/GID 1000; both files grew. Existing metrics are receiving samples
+  from the new pod, including `up=1` and successful requests.
+
+Rollout was briefly blocked by unavailable trust-manager and CNPG admission
+webhooks in the dependency chain. Trust-manager exited after losing leader
+election; both controllers recovered through their normal restarts around
+08:28 UTC. The old proxy also had readiness timeouts during this interval.
+These are separate deployment observations, not an attribution of the original
+Desktop stalls to host interface churn. No unrelated service or host network
+was changed to clear the blocker.
+
+The operator was asked to reload Desktop and retry an affected older
+conversation and a message send. The transport checks do not prove rendering,
+full history synchronization, or successful ordinary use. Those results are
+still pending; neither the cutover nor the multi-day quota goal is accepted.
 
 ## Acceptance
 
