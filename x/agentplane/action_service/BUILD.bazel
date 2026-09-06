@@ -1,0 +1,212 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    deps = [
+        ":models",
+        "//x/agentplane/sandbox_auth:principal",
+    ],
+)
+
+py_library(
+    name = "db",
+    srcs = ["db.py"],
+    deps = [
+        ":models",
+        "@pypi//asyncpg",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    deps = [
+        ":db",
+        ":models",
+    ],
+)
+
+py_library(
+    name = "api",
+    srcs = ["api.py"],
+    deps = [
+        ":auth",
+        ":db",
+        ":models",
+        ":service",
+        "//x/agentplane/sandbox_auth:http",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        ":models",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//x/agentplane/action_service/migrations:files"],
+    deps = [
+        ":db",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":api",
+        ":auth",
+        ":db",
+        ":service",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "x.agentplane.action_service.main",
+    deps = [":main"],
+)
+
+py_binary(
+    name = "migrate",
+    main_module = "x.agentplane.action_service.database_migrate",
+    deps = [":database_migrate"],
+)
+
+aspect_py_binary(
+    name = "server_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_image_bin"),
+    env = py_image_env(binary_name = "server_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+aspect_py_binary(
+    name = "migration_image_bin",
+    main = "database_migrate.py",
+    deps = [":database_migrate"],
+)
+
+py_image_layer(
+    name = "migration_layers",
+    binary = ":migration_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migration_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migration_image_bin"),
+    env = py_image_env(binary_name = "migration_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migration_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":database_migrate",
+        ":db",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_acceptance",
+    size = "medium",
+    srcs = ["test_acceptance.py"],
+    requires_docker = True,
+    deps = [
+        ":api",
+        ":auth",
+        ":conftest",
+        ":db",
+        ":models",
+        ":service",
+        "//:conftest",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_boundaries",
+    srcs = ["test_boundaries.py"],
+    deps = [
+        ":api",
+        ":auth",
+        ":client",
+        ":conftest",
+        ":models",
+        ":service",
+        "//:conftest",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,0 +1,20 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "script.py.mako",
+        "//x/agentplane/action_service/migrations/versions:0001_action_service.py",
+    ],
+    visibility = ["//x/agentplane/action_service:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//x/agentplane/action_service:db",
+        "@pypi//alembic",
+    ],
+)

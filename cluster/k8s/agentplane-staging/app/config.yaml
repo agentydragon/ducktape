@@ -39,6 +39,7 @@ sandbox_presets:
 # sandbox has no agent, so it is not a choice (cluster/k8s/agentplane-staging/egress).
 default_policies:
   - litellm
+  - agentplane-actions
 # The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked for each
 # sandbox's recent decisions; until the proxy Deployment lands the page shows the rules alone.
 egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081

@@ -109,6 +109,16 @@ spec:
         - ports:
             - port: "8081"
               protocol: TCP
+    # Separate BFF/operator transport boundary. The Action Service still requires its own configured
+    # operator authenticator; network reachability grants no review authority.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-actions
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging

@@ -225,6 +225,16 @@
       "test": "//x/agentplane/app/...",
       "registry": "forgejo"
     },
+    "agentplane-action-service": {
+      "target": "//x/agentplane/action_service:image",
+      "test": "//x/agentplane/action_service/...",
+      "registry": "forgejo"
+    },
+    "agentplane-action-service-migrate": {
+      "target": "//x/agentplane/action_service:migration_image",
+      "test": "//x/agentplane/action_service/...",
+      "registry": "forgejo"
+    },
     "agentplane-egress": {
       "target": "//x/agentplane/egress:image",
       "test": "//x/agentplane/egress/...",
