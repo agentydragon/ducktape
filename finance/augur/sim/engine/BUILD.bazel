@@ -148,6 +148,7 @@ py_test(
         "//finance/augur/sim/testing:property_stakes",
         "//finance/augur/sim/testing:rental_lifecycle",
         "//finance/augur/sim/testing:rollout_independence",
+        "//finance/augur/sim/testing:security_distributions",
         "//finance/augur/sim/testing:simulation_result",
         "//finance/augur/sim/testing:target_allocation",
         "//finance/augur/sim/testing:tax_statute",

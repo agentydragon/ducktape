@@ -219,3 +219,17 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "security_distributions",
+    srcs = ["security_distributions.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":simulation_result",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)
