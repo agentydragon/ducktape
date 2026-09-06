@@ -4,18 +4,15 @@
 # The connection recorder (<../../nixos/modules/github-api-recorder.nix>) counts
 # TCP connections, which cannot distinguish a process that opens one socket and
 # sends three requests from one that opens one socket and sends three thousand.
-# Both products keep HTTP/2 connections alive, and both have been observed
-# spending this account's GraphQL budget, so connection counts have twice pointed
-# at the wrong culprit. See <debug/github_rate_limit_monitoring_blind_spot.md>.
+# Both products keep HTTP/2 connections alive; connection counts alone cannot
+# establish either one's contribution to the shared account quota.
 #
 # CLEANUP(added 2026-09-04): remove once that note names the consumers and the
 # upstream issues are resolved.
 #
-# Deliberately not wired into the normal `claude` and `claude-desktop`: this
-# provides `claude-proxied` and `claude-desktop-proxied` instead. Routing a daily
-# driver through a proxy means a stopped proxy breaks it, and neither app is worth
-# that for a diagnostic. Run the wrapper for a measurement session, read the flows,
-# go back to the normal binary.
+# `claude-proxied` opts a CLI session into capture. Hosts may select desktopPackage
+# to route the normal Desktop command, launcher actions, and URI callbacks through
+# the proxy while retaining the normal app profile.
 #
 # Everything is decrypted, deliberately. Earlier versions decrypted only
 # api.github.com; that narrowness blinded this instrument and the connection
@@ -23,8 +20,8 @@
 # the API" turned out to mean "nothing else touches the four addresses we happened
 # to list". Operator's call, on the operator's own machine: capture everything and
 # filter at analysis time. Note this does mean Anthropic API traffic from a proxied
-# session passes through the MITM and lands in the flow file, so run the wrappers
-# for measurement sessions rather than leaving them on.
+# session passes through the MITM and lands in the flow file. Always-proxied hosts
+# accumulate this sensitive raw capture continuously, without size/age rotation.
 #
 # The point is to exonerate as much as to attribute. GraphQL responses carry
 # `data.rateLimit.cost`, and the exporter records the account-wide `used` delta over
@@ -39,6 +36,7 @@
   config,
   lib,
   pkgs,
+  ducktapePackages,
   ...
 }:
 let
@@ -47,6 +45,8 @@ let
   stateDir = "${config.xdg.stateHome}/github-api-proxy";
   caCert = "${confDir}/mitmproxy-ca-cert.pem";
   proxyUrl = "http://127.0.0.1:${toString cfg.port}";
+  desktopNssDir = "${stateDir}/claude-desktop/nssdb";
+  rawDesktop = ducktapePackages.claude-desktop;
 
   caBundle = "${stateDir}/ca-bundle.pem";
 
@@ -73,6 +73,49 @@ let
     export NODE_EXTRA_CA_CERTS=${caCert}
     export SSL_CERT_FILE=${caBundle} REQUESTS_CA_BUNDLE=${caBundle} GIT_SSL_CAINFO=${caBundle}
   '';
+
+  # GhRestClient uses Electron net.fetch, requiring Chromium routing and trust.
+  # Chromium's own NSS store is isolated below; Node CA variables do not cover it.
+  desktopLauncher = pkgs.writeShellScriptBin "claude-desktop-proxied" ''
+    set -euo pipefail
+    umask 077
+    ${pkgs.systemd}/bin/systemctl --user start github-api-proxy.service
+    # mitm.it is served by mitmproxy itself. This waits for its listener and CA
+    # initialization without spending GitHub quota or disabling TLS verification.
+    ${pkgs.curl}/bin/curl --silent --show-error --fail --output /dev/null \
+      --proxy ${proxyUrl} --noproxy "" --retry 5 --retry-connrefused \
+      --retry-delay 1 --max-time 2 http://mitm.it/
+    ${proxiedEnv}
+    ${pkgs.coreutils}/bin/mkdir -p ${desktopNssDir}
+    if [ ! -f ${desktopNssDir}/cert9.db ]; then
+      ${pkgs.nssTools}/bin/certutil -N --empty-password -d sql:${desktopNssDir}
+    fi
+    ${pkgs.nssTools}/bin/certutil -A -d sql:${desktopNssDir} \
+      -n ducktape-github-api-proxy -t C,, -i ${caCert}
+    # Chromium prioritizes ~/.pki/nssdb even with --user-data-dir. This mount
+    # is visible only to the diagnostic app and its descendants; global
+    # Chromium trust and HOME remain unchanged. /dev must retain device access.
+    exec ${pkgs.bubblewrap}/bin/bwrap \
+      --bind / / --dev-bind /dev /dev \
+      --tmpfs ${config.home.homeDirectory}/.pki \
+      --bind ${desktopNssDir} ${config.home.homeDirectory}/.pki/nssdb \
+      -- ${lib.getExe rawDesktop} "$@" --proxy-server=${proxyUrl}
+  '';
+
+  desktopPackage = pkgs.symlinkJoin {
+    name = "claude-desktop-github-proxy-${rawDesktop.version}";
+    paths = [ rawDesktop ];
+    postBuild = ''
+      rm "$out/bin/claude-desktop"
+      ln -s ${lib.getExe desktopLauncher} "$out/bin/claude-desktop"
+      ln -s ${lib.getExe desktopLauncher} "$out/bin/claude-desktop-proxied"
+      rm "$out/share/applications/com.anthropic.Claude.desktop"
+      substitute ${rawDesktop}/share/applications/com.anthropic.Claude.desktop \
+        "$out/share/applications/com.anthropic.Claude.desktop" \
+        --replace-fail ${lib.getExe rawDesktop} "$out/bin/claude-desktop"
+    '';
+    inherit (rawDesktop) meta;
+  };
 in
 {
   options.ducktape.githubApiProxy = {
@@ -82,6 +125,13 @@ in
       type = lib.types.port;
       default = 8788;
       description = "Loopback port for the intercepting proxy.";
+    };
+
+    desktopPackage = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      default = desktopPackage;
+      description = "Claude Desktop with all normal launch routes using this proxy and private NSS trust.";
     };
   };
 
@@ -118,27 +168,7 @@ in
         exec ${lib.getExe config.programs.claude-code.package} "$@"
       '')
 
-      # Gotcha: Claude Desktop refuses to start if a Chromium network-override
-      # switch is on its command line -- "refusing to start — a debugging or
-      # network-override switch is present" -- so --proxy-server and
-      # --ignore-certificate-errors are out. Only the environment is available.
-      # That is very likely enough: GhRestClient logs to main.log, so it runs in
-      # the main (Node) process, and the app's bundle references HTTPS_PROXY,
-      # NO_PROXY, undici and ProxyAgent. Requests made from a renderer through
-      # Chromium's own stack stay unproxied and unmeasured.
-      (pkgs.writeShellScriptBin "claude-desktop-proxied" ''
-        ${proxiedEnv}
-        # Electron hands off to an existing instance and exits, so launching this
-        # while an unproxied app is running silently measures nothing: the window
-        # appears, the flows file stays empty. Refuse instead of lying.
-        if ${pkgs.procps}/bin/pgrep -f 'claude-desktop/claude-desktop' >/dev/null; then
-          echo "claude-desktop is already running; this would hand off to that" >&2
-          echo "unproxied instance and capture nothing. Quit it first:" >&2
-          echo "  pkill -f 'claude-desktop/claude-desktop'" >&2
-          exit 1
-        fi
-        exec claude-desktop "$@"
-      '')
+      desktopLauncher
 
       # Summarise a capture: request count and total GraphQL cost per client.
       (pkgs.writeShellScriptBin "github-api-proxy-report" ''
