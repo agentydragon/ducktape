@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: proxy
-          image: git.allegedly.works/ducktape-ci/github-api-proxy:devel-20260906070647-956c496 # {"$imagepolicy": "flux-system:github-api-proxy"}
+          image: git.allegedly.works/ducktape-ci/github-api-proxy:devel-20260906081725-589e2c7 # {"$imagepolicy": "flux-system:github-api-proxy"}
           imagePullPolicy: IfNotPresent
           args:
             - --config
