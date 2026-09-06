@@ -22,9 +22,8 @@
 
   # Request-level accounting for the GitHub GraphQL drain investigated in
   # <debug/github_rate_limit_monitoring_blind_spot.md>. Host-scoped: wyrm2 is where
-  # the burn is observed. Enabling only starts a loopback mitmdump and installs the
-  # `claude-proxied` / `claude-desktop-proxied` wrappers -- the normal `claude` and
-  # `claude-desktop` are untouched, so a stopped proxy cannot break them.
+  # the burn is observed. The Desktop package below always uses this proxy;
+  # CLI sessions opt in through `claude-proxied`.
   ducktape.githubApiProxy.enable = true;
 
   ducktape.attic = {
@@ -298,7 +297,7 @@
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
     ducktapePackages.bebas-neue-font
-    ducktapePackages.claude-desktop
+    config.ducktape.githubApiProxy.desktopPackage
     ducktapePackages.chatgpt
     pkgs.inkscape
     pkgs.kicad
