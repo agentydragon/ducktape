@@ -13,6 +13,9 @@ the required multi-day exhaustion-free acceptance window is not complete.
 - [Desktop proxy operation](desktop_proxy.md): normal launch and OAuth routing,
   private CA trust, temporary block, capture durability, rollback, and central
   HTTPS/password compatibility findings.
+- [Central migration](central_proxy_migration.md): verified server rollout and
+  real relay canary, host cutover gates, local mitigation retirement and remaining
+  monitoring limitations.
 - [Acceptance monitoring](acceptance_monitoring.md): exact retained-metric
   queries, coverage requirements, historical gaps, and notification limitations.
 - [Notification delivery](notification_delivery.md): the source-specific ntfy

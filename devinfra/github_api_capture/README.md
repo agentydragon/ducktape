@@ -124,11 +124,38 @@ Chromium's normal loopback bypass remain outside its coverage.
 The authenticated identifier names the configured credential, not a process.
 Desktop and opt-in `claude-proxied` sessions share this relay and credential.
 
+### Workstation ownership
+
+The host opt-ins are <../../nix/home/hosts/wyrm2.nix> and
+<../../nix/home/hosts/rugged.nix>: `github-proxy.allegedly.works:8443` is their
+single parent. Each selects its own
+`cluster/k8s/github-api-proxy/secrets/<host>-credentials.sops.yaml`, key
+`stringData/credentials.json`. Home Manager's existing `sops-nix.service` decrypts
+it as the configured user into `%r/secrets.d`, mode `0600`, with a stable
+`~/.config/sops-nix/secrets/github_api_proxy_credentials` symlink. The relay is
+ordered after and requires that service. On credential rotation, reconcile the
+central Secret, activate the corresponding Home Manager configuration, then
+restart the relay so its private runtime configuration receives the new value.
+
+<../../nix/home/modules/github-api-proxy-ca.pem> pins only the public
+`tls.crt` from Secret `github-api-proxy/github-api-proxy-interception-ca`.
+Its SHA-256 fingerprint is
+`6F:51:AD:39:F5:B9:7D:B7:E2:FB:6D:96:50:91:70:7F:74:CC:05:CB:1F:DB:90:6E:36:D2:A1:8E:3B:54:0C:55`.
+Certificate renewal requires explicit pin verification and app trust migration;
+the launcher never downloads a replacement. The cluster Certificate owner is
+<../../cluster/k8s/github-api-proxy/identity/certificates.yaml>.
+
 ### Migration and retirement
 
 Do not activate remote mode until the central authenticated readiness and real
 application route are verified. Set `blockCloudGithubBatch = false` locally;
 central interception owns any remaining mitigation policy.
+
+Both hosts use NixOS-inline Home Manager: the normal deployment owner is
+`nixosConfigurations.<host>`, not a standalone `home-manager switch`. Build and
+inspect its generated `home-manager.users.agentydragon` proxy unit and Desktop
+package before a scoped activation. A full `nixos-rebuild switch` also activates
+unrelated configuration changes; review that generation separately.
 
 After central end-to-end verification, inventory and remove only the owned local
 service overrides (including the temporary `80`/`90` overrides), profile bridge,
@@ -137,6 +164,19 @@ and get approval before deletion. Preserve raw investigation captures and the
 normal Desktop profile/sign-in. Verify that the single service now runs only the
 transport relay and no old local MITM process remains. Once all actual consumers
 have migrated, remove the local-interception mode and its unused dependencies.
+
+The known wyrm2 override targets are
+`~/.config/systemd/user/github-api-proxy.service.d/90-cloud-github-block.conf`
+and `/run/user/1001/systemd/user/github-api-proxy.service.d/80-graphql-5213-append.conf`.
+Either can replace the declarative `ExecStart`; inspect both before the switchover
+and do not restart a bare `-w` capture command. The owned
+`~/.local/state/github-api-proxy/cloud-github-block{,-runtime}-gcroot` links are
+retired only after these overrides no longer need them. The later incremental
+WebSocket capture also owns `session-ws-metadata-gcroot` and
+`session-ws-metadata-service-gcroot` in that state directory; inventory these too.
+Inspect the actual
+profile bridge and local CA files on each host before deciding exact cleanup
+targets; neither source activation nor a successful build removes these.
 
 ### Validation
 

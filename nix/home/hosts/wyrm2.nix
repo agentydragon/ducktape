@@ -20,12 +20,27 @@
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/wyrm2-forgejo.sops.key;
 
-  # Request-level accounting for the GitHub GraphQL drain investigated in
-  # <debug/github_graphql_exhaustion/README.md>. Host-scoped: wyrm2 is where
-  # the burn is observed. The Desktop package below always uses this proxy;
-  # CLI sessions opt in through `claude-proxied`.
-  ducktape.githubApiProxy.enable = true;
-  ducktape.githubApiProxy.blockCloudGithubBatch = true;
+  ducktape.githubApiProxy = {
+    enable = true;
+    remote = {
+      enable = true;
+      host = "github-proxy.allegedly.works";
+      port = 8443;
+      credentialsFile = config.sops.secrets.github_api_proxy_credentials.path;
+      caCertificate = ../modules/github-api-proxy-ca.pem;
+    };
+  };
+
+  sops.secrets.github_api_proxy_credentials = {
+    sopsFile = ../../../cluster/k8s/github-api-proxy/secrets/wyrm2-credentials.sops.yaml;
+    key = "stringData/credentials.json";
+    mode = "0600";
+  };
+
+  systemd.user.services.github-api-proxy.Unit = {
+    After = [ "sops-nix.service" ];
+    Requires = [ "sops-nix.service" ];
+  };
 
   ducktape.attic = {
     enable = true;

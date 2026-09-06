@@ -21,7 +21,18 @@
 
   ducktape.githubApiProxy = {
     enable = true;
-    blockCloudGithubBatch = true;
+    remote = {
+      enable = true;
+      host = "github-proxy.allegedly.works";
+      port = 8443;
+      credentialsFile = config.sops.secrets.github_api_proxy_credentials.path;
+      caCertificate = ../modules/github-api-proxy-ca.pem;
+    };
+  };
+
+  systemd.user.services.github-api-proxy.Unit = {
+    After = [ "sops-nix.service" ];
+    Requires = [ "sops-nix.service" ];
   };
 
   ducktape.attic = {
@@ -55,42 +66,50 @@
   };
 
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
-  sops.secrets = builtins.listToAttrs (
-    map
-      (
-        {
-          name,
-          sopsFile,
-          filename,
-        }:
-        {
-          inherit name;
-          value = {
-            sopsFile = ../../../ssh_keys/${sopsFile};
-            format = "binary";
-            path = "${config.home.homeDirectory}/.ssh/${filename}";
-            mode = "0600";
-          };
-        }
-      )
-      [
-        {
-          name = "wyrm_ssh_key";
-          sopsFile = "rugged-wyrm.sops.key";
-          filename = "wyrm_agentydragon_user_id_ed25519";
-        }
-        {
-          name = "vps_root_ssh_key";
-          sopsFile = "rugged-vps-root.sops.key";
-          filename = "vps_root_id_ed25519";
-        }
-        {
-          name = "vps_user_ssh_key";
-          sopsFile = "rugged-vps-user.sops.key";
-          filename = "vps_agentydragon_user_id_ed25519";
-        }
-      ]
-  );
+  sops.secrets =
+    builtins.listToAttrs (
+      map
+        (
+          {
+            name,
+            sopsFile,
+            filename,
+          }:
+          {
+            inherit name;
+            value = {
+              sopsFile = ../../../ssh_keys/${sopsFile};
+              format = "binary";
+              path = "${config.home.homeDirectory}/.ssh/${filename}";
+              mode = "0600";
+            };
+          }
+        )
+        [
+          {
+            name = "wyrm_ssh_key";
+            sopsFile = "rugged-wyrm.sops.key";
+            filename = "wyrm_agentydragon_user_id_ed25519";
+          }
+          {
+            name = "vps_root_ssh_key";
+            sopsFile = "rugged-vps-root.sops.key";
+            filename = "vps_root_id_ed25519";
+          }
+          {
+            name = "vps_user_ssh_key";
+            sopsFile = "rugged-vps-user.sops.key";
+            filename = "vps_agentydragon_user_id_ed25519";
+          }
+        ]
+    )
+    // {
+      github_api_proxy_credentials = {
+        sopsFile = ../../../cluster/k8s/github-api-proxy/secrets/rugged-credentials.sops.yaml;
+        key = "stringData/credentials.json";
+        mode = "0600";
+      };
+    };
 
   ducktape.aiquota.enable = true;
   ducktape.hakuApprovals.enable = true;
