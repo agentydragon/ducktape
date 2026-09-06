@@ -71,7 +71,7 @@ from finance.augur.sim.scenario import (
 
 # Mirrors `FIXTURE_SCHEMA_VERSION` in `fixture.rs`; the simulator rejects any other value, so a
 # schema bump fails loudly here rather than encoding a document the engine will not read.
-FIXTURE_SCHEMA_VERSION = 9
+FIXTURE_SCHEMA_VERSION = 10
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -203,28 +203,10 @@ def _obligation(obligation: ScheduledObligation | RecurringObligation, *, quantu
         "amount_due": _amount(obligation.amount_due, quantum=quantum, context=context),
         "property_id": obligation.property_id,
         "deduction_category": obligation.deduction_category,
+        # Quantized the way the JAX engine quantizes it before multiplying integer money, so
+        # both sides scale the payment by the same parts-per-billion numerator.
+        "deductible_fraction_ppb": _ppb(obligation.deductible_fraction),
     }
-
-
-def _reject_unsupported_obligation(obligation: ScheduledObligation | RecurringObligation) -> None:
-    """The obligation shape the fixture's `ObligationSpec` still has nowhere to put.
-
-    `property_id` and `deduction_category` cross as themselves; `deductible_fraction` does not,
-    and only has to when no property is named. A property-tied obligation takes its Schedule E
-    share from that property's runtime rented fraction on both sides, which leaves the
-    compile-time fraction inert. With no property the fixture deducts the whole payment, so a
-    partial fraction is refused rather than silently widened to all of it.
-    """
-
-    if (
-        obligation.deduction_category is not None
-        and obligation.property_id is None
-        and obligation.deductible_fraction != 1.0
-    ):
-        raise UnsupportedScenarioError(
-            f"obligation {obligation.obligation_id!r} deducts {obligation.deductible_fraction} of what it "
-            "pays; the Rust fixture's obligations deduct all of it unless a property supplies the fraction"
-        )
 
 
 def _series_values(key: LevelSeriesKey, plan: CompiledSimulation, row: int) -> Int64[np.ndarray, " rollout snapshot"]:
@@ -583,12 +565,6 @@ def encode_fixture(
     if plan.horizon_months != int(scenario.horizon_months):
         raise ValueError(f"plan horizon {plan.horizon_months} does not match scenario {scenario.horizon_months}")
     quantum = scenario.currency.quantum
-    obligations: tuple[ScheduledObligation | RecurringObligation, ...] = (
-        *scenario.scheduled_obligations,
-        *scenario.recurring_obligations,
-    )
-    for obligation in obligations:
-        _reject_unsupported_obligation(obligation)
     for sale in scenario.scheduled_asset_sales:
         if sale.price_per_unit is not None:
             raise UnsupportedScenarioError(

@@ -51,9 +51,10 @@ pub(super) fn configured_obligation_effect(
     properties: &[PropertyState],
     property_id: Option<&str>,
     deduction_category: Option<&str>,
+    configured_fraction_ppb: i64,
 ) -> Option<ObligationEffect> {
     let deductible_fraction_ppb = match property_id {
-        None => RATE_SCALE_PPB,
+        None => configured_fraction_ppb,
         Some(property_id) => {
             properties
                 .iter()

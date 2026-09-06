@@ -685,6 +685,7 @@ fn simulate_rollout(
                 &properties,
                 obligation.property_id.as_deref(),
                 obligation.deduction_category.as_deref(),
+                obligation.deductible_fraction_ppb,
             ) else {
                 continue;
             };
@@ -710,6 +711,7 @@ fn simulate_rollout(
                 &properties,
                 obligation.property_id.as_deref(),
                 obligation.deduction_category.as_deref(),
+                obligation.deductible_fraction_ppb,
             ) else {
                 continue;
             };

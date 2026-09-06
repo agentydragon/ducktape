@@ -4,10 +4,10 @@ use std::collections::BTreeMap;
 use crate::{
     ledger::{AccountRef, JournalEntry},
     money::{Money, Quantity},
-    tax::{IncomeSource, JurisdictionLevel, TaxRules},
+    tax::{IncomeSource, JurisdictionLevel, RATE_SCALE, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 9;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -232,6 +232,10 @@ pub struct RecurringPropertyCashflowSpec {
     pub deduction_category: Option<String>,
 }
 
+fn fully_deductible() -> i64 {
+    RATE_SCALE
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObligationSpec {
@@ -248,6 +252,11 @@ pub struct ObligationSpec {
     pub property_id: Option<String>,
     #[serde(default)]
     pub deduction_category: Option<String>,
+    /// How much of each payment the deduction reaches, in parts per billion. Inert when
+    /// `property_id` names a property: that property's runtime rented share decides it
+    /// instead, so a mid-horizon lifecycle event can move it.
+    #[serde(default = "fully_deductible")]
+    pub deductible_fraction_ppb: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -265,6 +274,11 @@ pub struct RecurringObligationSpec {
     pub property_id: Option<String>,
     #[serde(default)]
     pub deduction_category: Option<String>,
+    /// How much of each payment the deduction reaches, in parts per billion. Inert when
+    /// `property_id` names a property: that property's runtime rented share decides it
+    /// instead, so a mid-horizon lifecycle event can move it.
+    #[serde(default = "fully_deductible")]
+    pub deductible_fraction_ppb: i64,
 }
 
 fn default_obligation_type() -> String {

@@ -124,6 +124,14 @@ pub enum SimulationError {
     },
     #[error("{kind} identifier must not be empty")]
     EmptyIdentifier { kind: &'static str },
+    #[error(
+        "obligation {obligation_id:?} deducts {deductible_fraction_ppb} ppb, outside [0, {scale}]"
+    )]
+    InvalidDeductibleFraction {
+        obligation_id: String,
+        deductible_fraction_ppb: i64,
+        scale: i64,
+    },
     #[error("unsupported deduction category {category:?}; only ordinary is implemented")]
     UnsupportedDeductionCategory { category: String },
     #[error("income source {income_source:?} is not one the scenario declared")]

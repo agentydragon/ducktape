@@ -110,6 +110,7 @@ fn series_indexed_amounts_follow_rollout_specific_reset_boundaries() {
         }),
         property_id: None,
         deduction_category: None,
+        deductible_fraction_ppb: RATE_SCALE,
     }];
     fixture.series = vec![SeriesSpec {
         series_id: "rent:test".into(),
@@ -942,6 +943,7 @@ fn failure_stops_future_actions_and_zeroes_value_state() {
                 amount_due: Money(101).into(),
                 property_id: None,
                 deduction_category: None,
+                deductible_fraction_ppb: RATE_SCALE,
             }],
             recurring_obligations: vec![],
             initial_lots: vec![],
@@ -1028,6 +1030,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
                     amount_due: Money(60_000).into(),
                     property_id: None,
                     deduction_category: None,
+                    deductible_fraction_ppb: RATE_SCALE,
                 },
                 RecurringObligationSpec {
                     start_month: 1,
@@ -1039,6 +1042,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
                     amount_due: Money(1).into(),
                     property_id: None,
                     deduction_category: None,
+                    deductible_fraction_ppb: RATE_SCALE,
                 },
             ],
             initial_lots: vec![],
