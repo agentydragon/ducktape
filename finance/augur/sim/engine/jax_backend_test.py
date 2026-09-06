@@ -16,6 +16,7 @@ from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.jax_result import run_jax
+from finance.augur.sim.testing.private_equity import PrivateEquityAcceptance
 from finance.augur.sim.testing.property_stakes import PropertyStakeAcceptance
 from finance.augur.sim.testing.rental_lifecycle import (
     LeasingFeeAcceptance,
@@ -63,6 +64,12 @@ class TestJaxSecurityDistributions(SecurityDistributionAcceptance):
 
 
 class TestJaxPropertyStakes(PropertyStakeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxPrivateEquity(PrivateEquityAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_jax

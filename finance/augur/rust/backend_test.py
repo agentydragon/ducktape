@@ -21,6 +21,7 @@ from finance.augur.sim.testing.cash_conservation import CashConservationAcceptan
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
+from finance.augur.sim.testing.private_equity import PrivateEquityAcceptance
 from finance.augur.sim.testing.property_stakes import PropertyStakeAcceptance
 from finance.augur.sim.testing.rental_lifecycle import (
     LeasingFeeAcceptance,
@@ -68,6 +69,12 @@ class TestRustSecurityDistributions(SecurityDistributionAcceptance):
 
 
 class TestRustPropertyStakes(PropertyStakeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustPrivateEquity(PrivateEquityAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust
