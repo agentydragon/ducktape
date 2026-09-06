@@ -12,6 +12,12 @@ neither an IP match nor the absence of a new connection identifies or excludes
 a request-level consumer. Earlier claims that Desktop, CLI, or the cluster were
 conclusively cleared exceed their controls.
 
+**New leading candidate:** the proxied Desktop exposed a cloud-mediated
+GitHub route, `claude.ai/v1/code/github/batch-branch-status`, whose request
+fan-out aligns with a fresh post-control burn. This is invisible to a
+report restricted to `api.github.com`. See the live cloud-route section
+below. An endpoint-specific causal block has been proposed but not performed.
+
 This investigation read issue #5213 and all 21 comments available at session
 start, related #5596 and its comments, and both the tracked historical note and
 the operator's untracked hyphenated note. The untracked file was not modified.
@@ -212,6 +218,64 @@ A sanitized read of the existing flow file found 37 GraphQL requests from
 explicit `rateLimit.cost`; the capture contained no Desktop GraphQL requests.
 Missing cost is **unknown**, not zero or automatically one. An account-wide
 header increase on one response cannot be assigned to that request.
+
+## Live cloud-route evidence
+
+After the operator activated GitHub data in the normal proxied Desktop, large
+debits recurred even though the phone app was still reported force-stopped.
+The app's main process was `3398172`, network child `3398260`; local sockets
+confirmed the latter talking to the loopback proxy. A report limited to direct
+`api.github.com` traffic would have missed the principal new candidate.
+
+All-host metadata from the private flow capture showed **289 POST requests**
+to `https://claude.ai/v1/code/github/batch-branch-status` from
+00:51:27.584–00:55:14.090 UTC. Of these, 223 completed with HTTP 200 and 66
+were incomplete/aborted in the capture. There were also seven cloud
+`/v1/code/github/compare-refs` requests and two installation-status requests.
+These are cloud-mediated GitHub operations, not direct local GraphQL requests.
+
+| Cloud batch request group (UTC) | Request count | Nearby observed personal debit |
+| --- | ---: | --- |
+| 00:52:30 | 56 | +644 by 00:52:35 |
+| 00:52:50 | 35 | +470 by 00:52:50 |
+| 00:53:13–00:53:16 | 58 | +575 by 00:53:17 |
+| 00:53:32 | 56 | +356 at 00:53:32 |
+
+Payload **shape**, without publishing its private values: 267 requests
+contained one repository branch and one session; 19 contained no branches
+and one session; just three contained 25 branches and 25 sessions. Identical
+bodies repeated three to eight times. Flags include PR discovery, CI status,
+and review-decision inclusion. This demonstrates per-row fan-out and repeated
+cloud work, but does not measure each backend operation's GraphQL charge.
+
+In contrast, the same window contained four direct Desktop GraphQL requests
+(user agent `Claude-Desktop/1.40609.1`), starting at 00:52:41.706,
+00:52:43.575, 00:52:44.305, and 00:52:51.265 UTC. All completed successfully
+in 0.31–0.40 seconds, with no GraphQL errors and no explicit cost field.
+They were simple issue/PR link-preview metadata queries, with no connection
+pagination. One bounded replay of that query shape against public PR #5669,
+adding `rateLimit`, reported **cost 1**, no errors, and `used:2274`.
+The response reporting `used:1263` must not be assigned the intervening large
+account delta as its own cost. The first +644 burst preceded all four calls.
+
+The five-second sampler encountered a TLS handshake timeout after 00:53:49
+and stopped; this is a real observation gap, not zero usage. A bounded probe
+at 00:55:58 read `used:2220`. The resumed sampler uses a per-probe timeout
+and explicit failure markers. Usage was 2277 at 01:04:15 UTC.
+
+Public Claude frontend bundles contain the batch endpoint's query hook;
+the installed native `app.asar` did not contain that endpoint string. Bundles
+with differing focus/refetch/deduplication behavior exist in the capture and
+cache. Cache presence alone does not establish which revision ran, so a
+specific active frontend bug still needs caller/version proof.
+
+The next causal test is a two-minute, exact-endpoint proxy block while the
+app remains open, followed by automatic pass-through restoration. No block
+has been applied. It requires a one-time proxy restart to load the temporary
+addon, preserving the existing capture and first establishing a pass-through
+baseline. Starting mitmproxy again with its current bare `-w` path would
+truncate the evidence: use a fresh experimental stream or verified append
+mode. Query timings alone are not a completed causal experiment.
 
 ## Next experiments and independent follow-ups
 
