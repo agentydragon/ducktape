@@ -65,8 +65,6 @@ pub enum SimulationError {
         units: i64,
         basis: i64,
     },
-    #[error("lot {lot_id:?} total basis does not encode an exact per-unit basis")]
-    InexactLotBasis { lot_id: String },
     #[error(
         "FIFO pool {agent_id}:{account_id}:{asset_id} mixes quantity scales {first_scale} and {second_scale}"
     )]

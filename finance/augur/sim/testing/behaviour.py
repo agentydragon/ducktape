@@ -46,7 +46,8 @@ from finance.augur.sim.scenario import (
     TargetAllocationPolicy,
     TaxProfile,
 )
-from finance.augur.sim.testing.case import Case, sampled
+from finance.augur.sim.testing.case import Case, sampled, scenario
+from finance.augur.sim.testing.fixtures import checking
 from finance.augur.sim.testing.simulation_result import Backend, SimulationResult
 
 
@@ -1128,6 +1129,66 @@ class AssetSaleAcceptance:
             .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         )
         assert cash_at_end.n_unique() > 100
+
+    def test_liquidating_a_lot_consumes_exactly_the_basis_it_held(self, backend: Backend) -> None:
+        """A lot sold to zero gives up all of its basis and no more.
+
+        The basis of the parts must sum to the basis of the whole, however the sale is
+        split. A per-unit figure derived once and multiplied cannot promise that: its
+        remainders need not sum back, so an emptied lot is left holding basis nobody can
+        ever consume, or having given up more than it had. Both are wrong in the same
+        way -- the realized gain absorbs the difference and the tax follows it.
+
+        2.5 units at $33.33 is $83.325, which the fixture holds as $83.33; sold in
+        awkward thirds it is the smallest shape where a per-unit derivation drifts.
+        """
+
+        horizon = 6
+        lot_basis_quanta = 8333  # $33.33 x 2.5 = $83.325, to the cent
+        scenario_ = scenario(
+            checking(("alice", Decimal(0))),
+            initial_lots=[
+                InitialLot(
+                    lot_id="alice_vti",
+                    agent_id="alice",
+                    asset=SecurityKey(symbol=SecuritySymbol("vti")),
+                    purchase_month_index=-24,
+                    quantity=2.5,
+                    cost_basis_per_unit=Decimal("33.33"),
+                )
+            ],
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=month,
+                    cause_id=f"sell_{month}",
+                    agent_id="alice",
+                    asset=SecurityKey(symbol=SecuritySymbol("vti")),
+                    quantity=quantity,
+                    proceeds_account_id="checking",
+                )
+                for month, quantity in [(1, 0.833333), (2, 0.833333), (3, 0.833334)]
+            ],
+            external_series=SeriesModelBundle.independent(
+                asset_prices=AssetPriceGroups(security={SecuritySymbol("vti"): Constant(value=50.0)})
+            ),
+            tax_profiles=[],
+            horizon_months=horizon,
+        )
+
+        result = backend(sampled(scenario_, rollout_count=1, locations={}))
+
+        dispositions = result.events.lot_dispositions.filter(pl.col("lot_id") == "alice_vti")
+        assert dispositions.height == 3
+        assert dispositions.get_column("cost_basis_consumed_quanta").sum() == lot_basis_quanta
+
+        [final] = (
+            _lots(result)
+            .filter((pl.col("lot_id") == "alice_vti") & (pl.col("month_index") == horizon))
+            .iter_rows(named=True)
+        )
+        assert final["remaining_quantity_quanta"] == 0
+        # Nothing is left to charge against, so nothing is quoted per unit.
+        assert final["cost_basis_per_unit_quanta"] == 0
 
 
 class YearEndTaxAcceptance:

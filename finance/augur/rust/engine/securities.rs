@@ -9,7 +9,6 @@ pub(super) struct LotState {
     pub(super) fifo_rank: i64,
     pub(super) units_remaining: Quantity,
     pub(super) basis_remaining: Money,
-    pub(super) basis_per_unit: Money,
 }
 
 #[derive(Clone, Debug)]
@@ -157,7 +156,7 @@ pub(super) fn execute_sale(
         });
     }
     let series_id = format!("security:{}", sale.asset_id);
-    let price = Money(series_value(fixture, &series_id, rollout_id, sale.month)?);
+    let price = PerUnit(series_value(fixture, &series_id, rollout_id, sale.month)?);
     let mut remaining = sale.units.0;
     let mut planned = Vec::new();
     let mut total_proceeds = Money(0);
@@ -168,18 +167,13 @@ pub(super) fn execute_sale(
         }
         let lot = &lots[index];
         let units = remaining.min(lot.units_remaining.0);
-        let basis = Money(mul_div_round_half_up(
-            lot.basis_per_unit.0,
-            units,
-            lot.spec.quantity_scale,
-            "FIFO basis allocation",
-        )?);
-        let proceeds = Money(mul_div_round_half_up(
-            price.0,
-            units,
-            lot.spec.quantity_scale,
-            "sale proceeds",
-        )?);
+        let sold = Quantity(units);
+        // The lot's own basis, apportioned by what is being taken out of it. Selling the
+        // last of a lot therefore consumes exactly what is left.
+        let basis =
+            lot.basis_remaining
+                .apportion(sold, lot.units_remaining, "FIFO basis allocation")?;
+        let proceeds = price.times(Units::new(sold, lot.spec.quantity_scale), "sale proceeds")?;
         let realized_gain = proceeds.checked_sub(basis)?;
         total_proceeds = total_proceeds.checked_add(proceeds)?;
         total_gain = total_gain.checked_add(realized_gain)?;

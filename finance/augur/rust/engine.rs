@@ -20,7 +20,10 @@ use crate::{
         TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
-    money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
+    money::{
+        ArithmeticError, Bps, Money, PerUnit, Ppb, Quantity, Ratio, Units,
+        mul_div_i128_round_half_up, mul_div_round_half_up,
+    },
     product::{
         BaseMetrics, LotView, ProductError, ProductInputs, ProductMetricSeries, SnapshotState,
         snapshot_metrics,
@@ -456,15 +459,6 @@ fn simulate_rollout(
             fifo_rank: i64::from(spec.purchase_month),
             units_remaining: spec.units,
             basis_remaining: spec.basis,
-            basis_per_unit: Money(
-                i64::try_from(
-                    i128::from(spec.basis.0) * i128::from(spec.quantity_scale)
-                        / i128::from(spec.units.0),
-                )
-                .map_err(|_| ArithmeticError::Overflow {
-                    operation: "initial lot per-unit basis",
-                })?,
-            ),
         });
     }
     let mut purchase_slot_rank = i64::from(fixture.scenario.horizon_months)
@@ -507,7 +501,6 @@ fn simulate_rollout(
                     fifo_rank: purchase_slot_rank,
                     units_remaining: Quantity(0),
                     basis_remaining: Money(0),
-                    basis_per_unit: Money(0),
                 });
                 purchase_slot_rank =
                     purchase_slot_rank

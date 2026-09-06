@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// SS168(b)(3): residential rental property is depreciated straight-line over 27.5
+/// years, which the engine takes monthly.
+const DEPRECIATION_MONTHS: i64 = 330;
+
 pub(super) fn execute_primary_residence_events(
     fixture: &Fixture,
     recorder: &mut Recorder,
@@ -187,18 +191,12 @@ fn execute_property_sales(
         let series_id = format!("home_value:{}", purchase.location_id);
         let base_value = series_value(fixture, &series_id, rollout_id, 0)?;
         let sale_value = series_value(fixture, &series_id, rollout_id, month)?;
-        let market_value = Money(mul_div_round_half_up(
-            purchase.purchase_price.0,
-            sale_value,
-            base_value,
-            "property market value",
-        )?);
-        let gross_proceeds = Money(mul_div_round_half_up(
-            market_value.0,
-            i64::from(10_000 - sale.closing_cost_bps),
-            10_000,
-            "property sale proceeds",
-        )?);
+        let appreciation = Ratio::new(sale_value, base_value);
+        let market_value = purchase
+            .purchase_price
+            .scaled_by(appreciation, "property market value")?;
+        let retained = Bps(i64::from(sale.closing_cost_bps)).complement();
+        let gross_proceeds = market_value.scaled_by(retained, "property sale proceeds")?;
         let mortgage_indices: Vec<_> = mortgages
             .iter()
             .enumerate()
@@ -548,18 +546,12 @@ pub(super) fn accrue_property_depreciation(
         .iter_mut()
         .filter(|property| property.active && property.rented_fraction_ppb > 0)
     {
-        let monthly_factor_ppb = mul_div_round_half_up(
-            property.rented_fraction_ppb,
-            1,
-            330,
-            "property monthly depreciation factor",
-        )?;
-        let depreciation = Money(mul_div_round_half_up(
-            property.building_basis.0,
-            monthly_factor_ppb,
-            RATE_SCALE_PPB,
-            "property monthly depreciation",
-        )?);
+        // SS168: 27.5 years of monthly depreciation, taken on the rented share.
+        let monthly_share = Ppb(property.rented_fraction_ppb)
+            .per(DEPRECIATION_MONTHS, "property monthly depreciation factor")?;
+        let depreciation = property
+            .building_basis
+            .scaled_by(monthly_share, "property monthly depreciation")?;
         property.cumulative_depreciation =
             property.cumulative_depreciation.checked_add(depreciation)?;
         property.depreciation_ytd = property.depreciation_ytd.checked_add(depreciation)?;
