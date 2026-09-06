@@ -167,12 +167,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     );
 
     let mut entry_body = Vec::new();
-    let import_insert_index = runtime_ast
-        .module
-        .body
-        .iter()
-        .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
-        .count();
     split_entry_body(
         &runtime_ast.module.body,
         &selected_ordinals,
@@ -461,6 +455,10 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         );
     }
     if !entry_imports.is_empty() {
+        let import_insert_index = entry_body
+            .iter()
+            .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+            .count();
         let tail = entry_body.split_off(import_insert_index);
         entry_body.extend(entry_imports);
         entry_body.extend(tail);
