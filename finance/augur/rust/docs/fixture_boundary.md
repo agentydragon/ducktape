@@ -10,7 +10,7 @@ in two languages.
 
 The fixture is neither of the two models Augur already has. `Scenario` is what a user
 configures — Pydantic, decimal money, optional everything. `CompiledSimulation` is what the
-JAX engine runs — numpy cubes in integer quanta, tax tables already flattened to brackets.
+compiler produces — numpy cubes in integer quanta, tax tables already flattened to brackets.
 The fixture is a third: integer units like the plan, but declarative like the scenario, and
 a deliberate **subset** of both. `UnsupportedScenarioError` is the load-bearing part of that
 subset — a scenario feature the fixture cannot express is refused, because a feature silently
@@ -22,10 +22,9 @@ what makes a partial engine safe to run against a live request.
 ## What actually crosses
 
 Very little of `fixture_encoder.py` is naming. The bulk is conversion the boundary genuinely
-owes: `currency_amount_to_quanta` for configured money, `_round_ppb` for a level or rate that
-JAX would quantize before multiplying integer money, `_exact_ppb` refusing a rate whose
-decimal is finer than the wire, per-asset quantity scales, and `isinstance` narrowing of the
-property lifecycle union into three flat lists. Those are the lines, and they are lines
+owes: `currency_amount_to_quanta` for configured money, `_round_ppb` for a level or rate quantized
+before it multiplies integer money, per-asset quantity scales, and `isinstance` narrowing of
+the property lifecycle union into three flat lists. Those are the lines, and they are lines
 either representation would need.
 
 The repetition worth removing is the other kind: one shape spelled several times because
@@ -85,3 +84,18 @@ conversions stay hand-written and the same length, so the encoder does not shrin
 buys is a maintained codegen toolchain guarding the correctness of a model we intend to
 remove, and a schema artifact that makes the third model harder to remove for having been
 pinned. Spend the same effort on making the plan the wire format instead.
+
+## What the fixture cannot express
+
+Two scenario features have no encoding, and `encode_fixture` raises
+`UnsupportedScenarioError` rather than dropping them. Both are limits of the fixture's own
+vocabulary, not of the engine behind it.
+
+| Feature                                                          | Why there is nowhere to put it                                                                                      |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| A `SeriesIndexedAmount` indexed by a series that is not an index | The fixture's `AmountSpec` indexes by inflation and rent levels only.                                               |
+| A `LevelSeriesKey` that is neither money nor an index            | Money series cross as currency quanta and index series as parts per billion; a key that is neither has no encoding. |
+
+Rates and per-unit values are not on this list. They are read off the parts-per-billion grid
+and rounded onto it, which is a single defined rule rather than an agreement between two
+implementations to be checked.

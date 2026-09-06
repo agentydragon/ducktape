@@ -47,10 +47,9 @@ from finance.augur.product.wire import (
     TerminalMetrics,
 )
 from finance.augur.rust.backend import RustEngine
-from finance.augur.sim.backend import CompiledRun, Engine, SimulationBackend
+from finance.augur.sim.backend import CompiledRun, Engine
 from finance.augur.sim.compiler.plan import compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.engine.jax_backend import JaxEngine
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.product_metrics import (
@@ -60,18 +59,6 @@ from finance.augur.sim.product_metrics import (
 )
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import HarvestPolicy, Scenario
-
-
-def engine_for(backend: SimulationBackend) -> Engine:
-    """The engine a deployment named.
-
-    One choice serves every product endpoint, because everything above the engine is shared:
-    the derived metrics, the terminal reduction and the percentile brackets are one reduction
-    over the base series, and the selected-rollout trace is one projection over the canonical
-    event frames. The choice is which engine produces the inputs, never which read model runs.
-    """
-
-    return RustEngine() if backend is SimulationBackend.RUST else JaxEngine()
 
 
 class ProductService:
@@ -89,13 +76,12 @@ class ProductService:
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
-        simulation_backend: SimulationBackend = SimulationBackend.JAX,
     ) -> None:
         if max_horizon_months <= 0:
             raise ValueError("max_horizon_months must be positive")
         if not models:
             raise ValueError("models must contain at least one preset")
-        self._engine = engine_for(simulation_backend)
+        self._engine: Engine = RustEngine()
         self._portfolio = portfolio
         self._initial_cash = initial_cash if isinstance(initial_cash, Decimal) else Decimal(str(initial_cash))
         self._primary_agent_id = primary_agent_id

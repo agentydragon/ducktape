@@ -340,7 +340,7 @@ log.
 
 Near term:
 
-- Keep the engine's own bracket math (`engine/jax_engine.py`) and jurisdiction
+- Keep the engine's own bracket math and jurisdiction
   YAML as the canonical runtime for the spike.
 - Add focused federal golden tests from hand calculations and, later,
   Tax-Calculator for sampled annual aggregate rows.

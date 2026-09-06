@@ -73,10 +73,11 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
+from finance.augur.rust.backend import RustEngine
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
-from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics
+from finance.augur.sim.testing.case import Case
 
 
 @dataclass
@@ -291,10 +292,9 @@ def test_jax_product_metrics_fail_when_holding_price_series_is_missing() -> None
         tax_profiles=[],
         horizon_months=1,
     )
-    with pytest.raises(ValueError, match=r"holding asset 'security:missing' has no modeled price series"):
-        simulate_with_external_series_and_product_metrics(
-            scenario, rollout_count=1, external_series=ExternalSeriesContext(), locations={}, primary_agent_id="agent_a"
-        )
+    case = Case(scenario=scenario, rollout_count=1, paths=ExternalSeriesContext())
+    with pytest.raises(ValueError, match="security:missing"):
+        RustEngine().product_metrics(case.compiled_run, primary_agent_id="agent_a")
 
 
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(

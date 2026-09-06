@@ -86,7 +86,6 @@ py_library(
         "//finance/augur/model:state_space",
         "//finance/augur/model:trained_private_equity",
         "//finance/augur/product:wire",
-        "//finance/augur/sim:backend",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -328,7 +327,6 @@ py_library(
         "//finance/augur/model:exogenous",
         "//finance/augur/product:scenarios",
         "//finance/augur/product:service",
-        "//finance/augur/sim:backend",
     ],
 )
 

@@ -6,15 +6,6 @@ package(
 )
 
 py_library(
-    name = "state_helpers",
-    srcs = ["state_helpers.py"],
-    deps = [
-        "@pypi//numpy",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "engine_acceptance",
     srcs = ["engine_acceptance.py"],
     deps = [
@@ -98,18 +89,6 @@ py_library(
         ":case",
         "//finance/augur/sim:events",
         "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "jax_result",
-    srcs = ["jax_result.py"],
-    deps = [
-        ":case",
-        ":simulation_result",
-        ":state_helpers",
-        "//finance/augur/sim/codec:plan",
-        "//finance/augur/sim/engine:jax_engine",
     ],
 )
 
@@ -281,6 +260,25 @@ py_library(
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "engine_edges",
+    srcs = ["engine_edges.py"],
+    deps = [
+        ":case",
+        ":simulation_result",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tlh_harvest",
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
