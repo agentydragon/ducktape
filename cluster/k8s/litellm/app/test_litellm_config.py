@@ -78,6 +78,42 @@ def test_hidden_model_aliases_target_served_models() -> None:
     assert all(alias["model"] in served for alias in aliases.values())
 
 
+# The shape segment names the LiteLLM request path an entry is served through
+# (model_rosters.py), so it must agree with the rest of the entry. `model_info.mode` picks the
+# path outright. A passthrough shape additionally pins the upstream handler: `ant-messages` is
+# LiteLLM's native Anthropic path and `oai-responses` its native Responses path, so an entry
+# named for one but wired to another provider is served over a bridge its name denies.
+# `oai-chat`/`oai-embeddings` pin only the mode -- they are the ordinary chat/embeddings paths,
+# whose upstream may speak OpenAI's wire (mistral) or be translated on to the provider's own
+# (gemini -> :generateContent).
+_PASSTHROUGH_UPSTREAM = {ApiShape.ANT_MESSAGES: "anthropic", ApiShape.OAI_RESPONSES: "openai"}
+_SHAPE_MODE = {
+    ApiShape.ANT_MESSAGES: "chat",
+    ApiShape.OAI_CHAT: "chat",
+    ApiShape.OAI_RESPONSES: "responses",
+    ApiShape.OAI_EMBEDDINGS: "embedding",
+}
+
+
+def test_shape_segment_matches_each_entry_serving_path() -> None:
+    scheme_entries = [
+        entry for entry in _load_config("proxy-config.yaml")["model_list"] if entry["model_name"].count("/") == 2
+    ]
+    shapes_seen = set()
+    for entry in scheme_entries:
+        name = entry["model_name"]
+        shape = ApiShape(name.split("/")[1])
+        shapes_seen.add(shape)
+        assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
+        upstream = entry["litellm_params"]["model"].split("/")[0]
+        expected = _PASSTHROUGH_UPSTREAM.get(shape)
+        if expected is None:
+            assert upstream not in _PASSTHROUGH_UPSTREAM.values(), name
+        else:
+            assert upstream == expected, name
+    assert shapes_seen == set(ApiShape)
+
+
 # haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
 # whose model choice lives outside the baked-config and Terraform pins above. The runner
 # hardcodes wire_api="responses" (haku/runner/codex/options.py), so the model

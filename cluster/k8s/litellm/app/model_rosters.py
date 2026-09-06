@@ -1,12 +1,12 @@
 """Shared model rosters and exposed-name derivations referenced by LiteLLM cross-configuration tests.
 
 Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
-upstream account/provider, the API shape LiteLLM exposes the entry under, then the
-upstream model:
+upstream account/provider, the LiteLLM request path the entry is served through, then
+the upstream model:
 
 - `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
-  CLIProxyAPI, on the Anthropic Messages wire (Claude Code clients) and the OpenAI
-  Responses wire (Codex clients)
+  CLIProxyAPI, which serves it on both the Anthropic Messages and the OpenAI Responses
+  wire; the two entries pick between them
 - `anthropic-max20/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude
   OAuth session, on the Anthropic Messages wire (a different upstream session on the same
   pod as `chatgpt/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
@@ -16,13 +16,24 @@ upstream model:
 - `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
 - `mistral/oai-chat/*` — Mistral API key
 
+The shape segment is a serving-path fact, not a client contract. LiteLLM routes on
+`model_name` alone and takes the request shape from whichever endpoint the client calls,
+translating between the two rather than rejecting a mismatch — the laptop `gemini-claude`
+wrapper runs Claude Code's `/v1/messages` traffic against `google/oai-chat/*`. Nor does it
+promise the upstream speaks that wire: `ant-messages` and `oai-responses` are passthroughs,
+while `google/oai-*` is translated on to Google's own `:generateContent` /
+`:batchEmbedContents`. What it does decide is which translator does the work — load-bearing
+wherever one account is served over two wires, as `chatgpt/{ant-messages,oai-responses}/*`
+is so CLIProxyAPI translates Claude Code's tool calls instead of LiteLLM's own Messages
+bridge (<nix/home/claude_code/codex-claude.nix>).
+
 A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
 oai-embeddings): the shape segment names a wire protocol, and wire protocols are
 identified by their definer — the bare nouns are unique only in today's snapshot
 ("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
 distinct wire shapes answering to the same nouns). The definer prefix is NOT the
 provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
-PROTOCOL it speaks, and they vary independently — `chatgpt/ant-messages/*` is the
+PROTOCOL the path is, and they vary independently — `chatgpt/ant-messages/*` is the
 ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
 (ant, oai; future goog, coh, ...) so a provider slug can never stutter against a
 definer name (openai/openai-chat).
@@ -57,7 +68,7 @@ class Provider(StrEnum):
 
 
 class ApiShape(StrEnum):
-    """Second scheme segment: the API shape LiteLLM exposes the entry under, as `<definer>-<protocol>`."""
+    """Second scheme segment: the LiteLLM request path the entry is served through, as `<definer>-<protocol>`."""
 
     ANT_MESSAGES = "ant-messages"
     OAI_RESPONSES = "oai-responses"
