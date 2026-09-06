@@ -2,7 +2,7 @@
 
 Investigation: [#5213](https://github.com/agentydragon/ducktape/issues/5213).
 Current measurements and causal limits live in
-[the September 5 investigation note](github_graphql_attribution_2026_09_05.md).
+[the September 5 investigation note](attribution_2026_09_05.md).
 This file describes the launch and capture contract, not a second incident log.
 
 ## One normal launch route

@@ -120,7 +120,7 @@ traffic coverage. These are recorder gaps, not evidence of GitHub using QUIC.
 [PR #5665](https://github.com/agentydragon/ducktape/pull/5665) adds retained
 established-socket snapshots under the existing host opt-ins. It does not
 provide HTTP costs, fix UDP capture, or observe pod namespaces. See its
-`debug/github_recorder_coverage_2026_09_06.md` for measured scope and validation.
+`debug/github_graphql_exhaustion/recorder_coverage_2026_09_06.md` for measured scope and validation.
 
 ### Hubble
 

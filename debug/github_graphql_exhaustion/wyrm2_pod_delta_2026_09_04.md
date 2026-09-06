@@ -3,7 +3,7 @@
 Captured from the previous boot's kubelet journal before it rotates. wyrm2 was down
 09:59:58–10:12 UTC across a quota reset, and that hour used 70 GraphQL points against
 ~10,500 in nine of the previous ten — the partition result in
-<github_rate_limit_monitoring_blind_spot.md>. This records what actually went away
+<earlier_investigation.md>. This records what actually went away
 with the node, since "wyrm2 offline" removed its pods as well as its host processes.
 
 ```text
