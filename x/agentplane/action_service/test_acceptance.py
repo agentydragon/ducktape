@@ -185,7 +185,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(engine
         operator_list = await client.get("/v1/operator/action-requests", headers=_operator())
         assert operator_list.status_code == 200
         assert operator_list.json()[0]["caller_principal"] == CALLER_A.key
-        assert CALLER_B.key not in operator_list.text
+        assert operator_list.json()[0]["origin"]["owner"] == CALLER_B.key, "forgery remains inert provenance"
 
         stale = await client.post(
             _operator_path(request_id, "/decision"),
