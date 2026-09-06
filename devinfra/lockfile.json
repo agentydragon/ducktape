@@ -1,5 +1,25 @@
 {
   "$schema": "https://raw.githubusercontent.com/bazel-contrib/rules_multitool/main/lockfile.schema.json",
+  "promtool": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz",
+        "file": "prometheus-3.5.0.linux-amd64/promtool",
+        "sha256": "e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "archive",
+        "url": "https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-arm64.tar.gz",
+        "file": "prometheus-3.5.0.linux-arm64/promtool",
+        "sha256": "173389cc42bf09c4e6e54cb53fa07a5a835d7c261e14775d2183181d6e385d1c",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
   "tofu": {
     "binaries": [
       {

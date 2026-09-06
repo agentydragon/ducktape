@@ -34,13 +34,46 @@ spec:
               check the connection recorder and pod flow metrics against the same
               window.
         - alert: GitHubGraphQLQuotaExhausted
-          expr: github_graphql_rate_remaining == 0
-          for: 15m
+          # Latch a sampled zero across the hourly reset and Alertmanager's 30s
+          # group_wait. Aggregate replacement/overlapping targets by account.
+          # A zero entirely between the unchanged 1m scrapes is not observable.
+          expr: min by (github_account) (min_over_time(github_graphql_rate_remaining[5m])) == 0
           labels:
             severity: warning
           annotations:
-            summary: "GitHub GraphQL quota for {{ $labels.github_account }} is exhausted"
+            summary: "GitHub GraphQL quota for {{ $labels.github_account }} was exhausted in the last 5 minutes"
             description: >
-              Every GraphQL call for this account is failing with 403. REST is
-              unaffected and reports this bucket as full, so tooling that checks
-              `/rate_limit` will disagree.
+              A retained observation reported zero remaining points. Ordinary
+              GraphQL operations can fail until reset; rate-only probes may still
+              work, and HTTP status varies. This alert remains active briefly
+              after reset. Exhaustion entirely between the one-minute scrapes
+              cannot be detected. REST `/rate_limit` can disagree with this bucket.
+        - alert: GitHubGraphQLQuotaObservationsMissing
+          # up has no github_account label. Keep the two expected account/job
+          # mappings explicit so disappearance of discovery itself is detected.
+          # TargetDown owns explicit scrape failures (including upstream fetch
+          # errors, which the exporter exposes as HTTP 502). Only suppress when
+          # ALL current targets are down: a failed old pod must not hide a healthy
+          # replacement that returns no quota gauge.
+          expr: |
+            (
+              absent_over_time(github_graphql_rate_remaining{github_account="agentydragon"}[5m])
+              unless on ()
+              (max(up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring"}) == 0)
+            )
+            or
+            (
+              absent_over_time(github_graphql_rate_remaining{github_account="agentydragon-agent"}[5m])
+              unless on ()
+              (max(up{job="github-graphql-rate-exporter-agentydragon-agent",namespace="monitoring"}) == 0)
+            )
+          labels:
+            severity: warning
+          annotations:
+            summary: "GitHub GraphQL quota observations for {{ $labels.github_account }} are missing"
+            description: >
+              No remaining-quota sample has been retained for five minutes.
+              Check discovery, Alloy collection/remote write, and the exporter
+              for this account. Missing observations cannot establish that quota
+              stayed nonzero. Explicitly failed scrapes are covered separately by
+              TargetDown after ten minutes.

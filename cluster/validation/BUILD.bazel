@@ -165,6 +165,23 @@ py_library(
 )
 
 py_test(
+    name = "test_github_quota_rules",
+    srcs = ["test_github_quota_rules.py"],
+    data = [
+        "testdata/github_quota_rules.yaml",
+        "//cluster/k8s:monitoring/rules/github-quota-prometheus-rule.yaml",
+        "//cluster/k8s:monitoring/rules/roaming-node-prometheus-rule.yaml",
+        "@multitool//tools/promtool",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_k8s",
     srcs = ["test_k8s.py"],
     deps = [
