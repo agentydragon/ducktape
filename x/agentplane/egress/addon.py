@@ -91,9 +91,13 @@ class EgressAddon:
             logger.info("identity rejected for the agent view: %s", error.reason)
             flow.response = _refusal(error.reason)
             return
+        sandbox_uid = sandbox.metadata.uid
+        if sandbox_uid is None:
+            flow.response = _refusal(DenyReason.SANDBOX_UNKNOWN)
+            return
         try:
             response = self._rules_api.request(
-                flow.request.path, sandbox_name=sandbox.metadata.name, sandbox_uid=sandbox.metadata.uid
+                flow.request.path, sandbox_name=sandbox.metadata.name, sandbox_uid=sandbox_uid
             )
         except SandboxNotCurrentError:
             # The index changed between hop authentication and projection. Never answer for a
