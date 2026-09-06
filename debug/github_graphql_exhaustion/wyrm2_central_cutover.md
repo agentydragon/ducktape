@@ -203,8 +203,13 @@ connection task carries its validated DNS answer set; the actual numeric socket
 destination must belong to it. This retains hostname-based reuse and rejects DNS
 changes before the socket connects. Runtime startup requires the guarded loop.
 Tests cover repeated requests beyond the five-connection limit and DNS changes to
-both private and different public addresses. Candidate validation and Desktop
-recovery are not yet complete.
+both private and different public addresses. All eight sequential requests now
+complete with one upstream dial, and both rebinding cases fail before any origin
+dial. The runtime, destination, and capture tests plus changed-library type/lint
+aspects pass ([invocation](https://app.buildbuddy.io/invocation/6a3cde5a-3603-485c-b836-a341c59f9218)).
+The operator permits a larger pool if needed; no increase is currently included,
+because it would defer the same starvation without repairing connection reuse.
+PR CI, deployment, and Desktop recovery are not yet verified.
 
 ## Acceptance
 
