@@ -18,6 +18,7 @@ from x.agentplane.action_service.models import (
     ActionState,
     DecisionInput,
     Principal,
+    PrincipalRole,
 )
 from x.agentplane.action_service.service import ActionService
 
@@ -74,6 +75,8 @@ def create_app(service: ActionService, authenticator: Authenticator) -> FastAPI:
         principal: Annotated[Principal, Depends(_principal)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
+        if principal.role is not PrincipalRole.CALLER:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "operator identities cannot submit ActionRequests")
         return await action_service.submit(body, principal)
 
     @app.get("/v1/action-requests", response_model=list[ActionRequestView])
