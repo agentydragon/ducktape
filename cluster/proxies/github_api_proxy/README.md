@@ -59,7 +59,10 @@ redaction. Session metadata follows the limited schema in
 `github_api_proxy_capture_write_failures_total{channel}`, emits a fixed error message,
 and makes `/healthz` and the authenticated readiness probe fail until restart;
 failed raw flows are not queued indefinitely in memory. Inspect incomplete capture
-data before restarting after a storage failure.
+data before restarting after a storage failure. This is an observation-loss alarm,
+not forced session termination: readiness failure prevents new Service routing,
+but existing CONNECT streams can continue with capture gaps. Metrics remain
+available and the exact cloud endpoint block remains active.
 
 `/metrics` exposes bounded configured-client/route/status request counters,
 authentication outcomes, explicit observed GraphQL cost sums, and cost-observation
