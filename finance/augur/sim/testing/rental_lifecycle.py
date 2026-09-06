@@ -1,18 +1,17 @@
-"""Sim-layer e2e tests for landlord rental income + lifecycle events.
+"""A landlord's rental: what the money does, and what the tax code makes of it.
 
-Each test builds a `Scenario` directly, calls
-`simulate_with_external_series`, decodes the result, and asserts against
-event frames + state history. Exogenous series are constants so the
-expected cashflow is exact-math predictable.
+The scenarios are exact by construction — exogenous series are held flat or stepped, so
+every expected cashflow, deduction and gain is arithmetic a reader can redo rather than a
+band. That matters most for the tax cases: depreciation, the mortgage-interest split, §1250
+recapture and §121 all turn on which month a thing became true, and a test that only checked
+"roughly falls" would not notice a year-long offset.
 
-Scope: the sim layer takes rent, management fees, and leasing fees as already-lowered
-dollar amounts on already-windowed transfers. It has no notion of `vacancy_pct`,
-`management_fee_pct`, `fraction_rented`, or a leasing-fee cadence — the product layer
-folds those into the amounts and month windows before the scenario reaches here. Tests
-for that lowering belong in `finance/augur/product/service_test.py`
-(`test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denominated_fees`,
-`test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees`); a test here
-that fed a percentage in and asserted the same product back could not fail for any bug.
+Scope: this level takes rent, management fees and leasing fees as already-lowered dollar
+amounts on already-windowed transfers. It has no notion of `vacancy_pct`,
+`management_fee_pct`, `fraction_rented` or a leasing-fee cadence — the product layer folds
+those into the amounts and month windows before a scenario reaches an engine. Tests for that
+lowering belong in `finance/augur/product/service_test.py`; one here that fed a percentage in
+and asserted the same product back could not fail for any bug.
 """
 
 from __future__ import annotations
@@ -23,10 +22,8 @@ from decimal import Decimal
 import numpy as np
 import polars as pl
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
-from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import mortgage_monthly_payment
@@ -56,8 +53,9 @@ from finance.augur.sim.scenario import (
     SetRentedFractionEvent,
     TaxProfile,
 )
-from finance.augur.sim.simulate import simulate_with_external_series
-from finance.augur.sim.testing.state_helpers import capital_gains_ytd, cash_balances, property_state, rollout_status
+from finance.augur.sim.testing.case import Case
+from finance.augur.sim.testing.fixtures import SeriesPaths
+from finance.augur.sim.testing.simulation_result import Backend
 
 # Constants mirroring the product translator. Kept in-test to avoid
 # cross-package import dependencies from the sim layer.
@@ -68,30 +66,28 @@ RENT_SERIES_KEY = RentKey(location_id=LocationId("test_location"))
 SF_HOME_VALUE_KEY = HomeValueKey(location_id=LocationId("san_francisco"))
 
 
-def _flat_series(*, key: LevelSeriesKey, value: float, months: int, rollouts: int) -> ExternalSeriesContext:
-    """Build an exogenous bundle with one series held flat at `value`."""
+def _flat_series(*, key: LevelSeriesKey, value: float, months: int, rollouts: int) -> SeriesPaths:
+    """One series held flat at `value` for every rollout and month."""
 
-    return ExternalSeriesContext.from_level_blocks(
-        [(key, np.full((rollouts, months), value, dtype=np.float64))], rollout_count=rollouts, horizon_months=months - 1
-    )
+    return {key: np.full((rollouts, months), value, dtype=np.float64)}
 
 
-def _multi_series(*, levels_by_series: dict[LevelSeriesKey, dict[int, list[float]]]) -> ExternalSeriesContext:
-    """Build an exogenous bundle with multiple series, indexed by (key, rollout) -> levels.
+def _multi_series(*, levels_by_series: dict[LevelSeriesKey, dict[int, list[float]]]) -> SeriesPaths:
+    """Several series, indexed by (key, rollout) -> levels.
 
     `levels_by_series[key][rollout]` is a list of length `horizon_months + 1` (the engine
     indexes external_values up through the horizon end).
     """
 
     rollout_count = max(rollout for by_rollout in levels_by_series.values() for rollout in by_rollout) + 1
-    horizon_months = max(len(levels) for by_rollout in levels_by_series.values() for levels in by_rollout.values()) - 1
-    blocks = []
+    snapshots = max(len(levels) for by_rollout in levels_by_series.values() for levels in by_rollout.values())
+    paths: SeriesPaths = {}
     for key, by_rollout in levels_by_series.items():
-        matrix = np.full((rollout_count, horizon_months + 1), np.nan, dtype=np.float64)
+        matrix = np.full((rollout_count, snapshots), np.nan, dtype=np.float64)
         for rollout_index, levels in by_rollout.items():
             matrix[rollout_index, : len(levels)] = levels
-        blocks.append((key, matrix))
-    return ExternalSeriesContext.from_level_blocks(blocks, rollout_count=rollout_count, horizon_months=horizon_months)
+        paths[key] = matrix
+    return paths
 
 
 def _mortgage_balance_and_interest_after_payments(
@@ -188,51 +184,79 @@ def _rental_scenario(
     )
 
 
-def _run(scenario: Scenario, rollouts: int = 1, rent_level: float = 1):
-    """Run the scenario against a flat rent series at `rent_level` for all rollouts/months."""
+SAN_FRANCISCO = Location(
+    location_id="san_francisco",
+    display_name="San Francisco, CA",
+    jurisdiction_ids=["federal_us", "california"],
+    annual_property_tax_rate=0.01180,
+    annual_special_assessment=Decimal(0),
+)
+SAN_FRANCISCO_LOCATIONS = {"san_francisco": SAN_FRANCISCO}
 
-    ctx = _flat_series(key=RENT_SERIES_KEY, value=rent_level, months=scenario.horizon_months + 1, rollouts=rollouts)
-    return simulate_with_external_series(scenario, external_series=ctx, rollout_count=rollouts, locations={})
+
+def rental_case(
+    scenario: Scenario, *, series: SeriesPaths, rollout_count: int = 1, locations: Mapping[str, Location] | None = None
+) -> Case:
+    return Case(
+        scenario=scenario,
+        rollout_count=rollout_count,
+        series=series,
+        locations=locations if locations is not None else {},
+    )
 
 
-class TestRentalIncome:
-    def test_rental_income_flows_monthly_at_constant_rent(self):
+def flat_rent_case(scenario: Scenario) -> Case:
+    """The scenario against a rent index held flat, which is what makes rent its base amount."""
+
+    return rental_case(
+        scenario, series=_flat_series(key=RENT_SERIES_KEY, value=1, months=scenario.horizon_months + 1, rollouts=1)
+    )
+
+
+class _RentalAcceptance:
+    """Inherit and supply `backend`. Add nothing unless the engine owes something extra."""
+
+    @pytest.fixture
+    def backend(self) -> Backend:
+        raise NotImplementedError("an acceptance module names the engine it runs")
+
+
+class RentalIncomeAcceptance(_RentalAcceptance):
+    def test_rental_income_flows_monthly_at_constant_rent(self, backend: Backend) -> None:
         """A recurring transfer fires once per month across its whole window and moves its
         configured amount into the recipient's account."""
 
         scenario = _rental_scenario(horizon_months=12, monthly_rent=5_000)
-        run = _run(scenario)
-        transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
+        result = backend(flat_rent_case(scenario))
+        transfers = result.events.transfers.filter(pl.col("cause_id") == "rental_income:p1")
         assert transfers["month_index"].sort().to_list() == list(range(12))
         assert (transfers["amount_quanta"] / 100).to_list() == pytest.approx([5_000] * 12)
-        terminal_owner_cash = cash_balances(run).filter(
-            (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == 12)
-        )
+        terminal_owner_cash = result.cash.filter((pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == 12))
         assert (terminal_owner_cash["balance_quanta"] / 100)[0] == pytest.approx(100_000 + 60_000)
 
-    def test_zero_amount_recurring_transfer_still_fires_but_moves_no_cash(self):
+    def test_zero_amount_recurring_transfer_still_fires_but_moves_no_cash(self, backend: Backend) -> None:
         """A transfer scheduled with a zero amount is a scheduled event, not an absent one:
         it logs a row every month of its window and leaves both balances untouched."""
 
         scenario = _rental_scenario(horizon_months=12, monthly_rent=0)
-        run = _run(scenario)
-        transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
+        result = backend(flat_rent_case(scenario))
+        transfers = result.events.transfers.filter(pl.col("cause_id") == "rental_income:p1")
         assert transfers["month_index"].sort().to_list() == list(range(12))
         assert (transfers["amount_quanta"] / 100).to_list() == pytest.approx([0] * 12)
-        terminal = cash_balances(run).filter(pl.col("month_index") == 12)
+        terminal = result.cash.filter(pl.col("month_index") == 12)
         balances = dict(zip(terminal["agent_id"].to_list(), (terminal["balance_quanta"] / 100).to_list(), strict=True))
         assert balances[OWNER_AGENT_ID] == pytest.approx(100_000)
         assert balances[TENANT_AGENT_ID] == pytest.approx(0)
 
-    def test_rental_income_indexed_by_rent_series(self):
+    def test_rental_income_indexed_by_rent_series(self, backend: Backend) -> None:
         # Rent series doubles at month 12 (annual adjustment period).
         scenario = _rental_scenario(horizon_months=24, monthly_rent=5_000)
         # Build a per-month rent series: 1.0 for months 0..11, 2.0 for months 12..24.
         levels = [1.0] * 12 + [2.0] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: levels}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations={})
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations={}))
         transfers = (
-            run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
+            result.events.transfers.filter(pl.col("cause_id") == "rental_income:p1")
             .sort("month_index")
             .select("month_index", "amount_quanta")
         )
@@ -242,28 +266,28 @@ class TestRentalIncome:
         assert amounts[12:] == pytest.approx([10_000] * 12)
 
 
-class TestManagementFee:
-    def test_owner_paid_recurring_transfer_debits_payer_and_credits_payee(self):
+class ManagementFeeAcceptance(_RentalAcceptance):
+    def test_owner_paid_recurring_transfer_debits_payer_and_credits_payee(self, backend: Backend) -> None:
         """A recurring transfer running out of the owner's account alongside the incoming rent
         settles against the right two ledgers: the agency's balance is built entirely from the
         fee, and the owner keeps rent minus fee."""
 
         scenario = _rental_scenario(horizon_months=12, monthly_rent=5_000, monthly_management_fee=380)
-        run = _run(scenario)
-        mgmt = run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1")
+        result = backend(flat_rent_case(scenario))
+        mgmt = result.events.transfers.filter(pl.col("cause_id") == "management_fee:p1")
         assert mgmt["month_index"].sort().to_list() == list(range(12))
         assert (mgmt["amount_quanta"] / 100).to_list() == pytest.approx([380] * 12)
         assert mgmt["from_agent_id"].unique().to_list() == [OWNER_AGENT_ID]
         assert mgmt["to_agent_id"].unique().to_list() == [MGMT_AGENT_ID]
 
-        terminal = cash_balances(run).filter(pl.col("month_index") == 12)
+        terminal = result.cash.filter(pl.col("month_index") == 12)
         balances = dict(zip(terminal["agent_id"].to_list(), (terminal["balance_quanta"] / 100).to_list(), strict=True))
         assert balances[MGMT_AGENT_ID] == pytest.approx(4_560)
         assert balances[OWNER_AGENT_ID] == pytest.approx(100_000 + 60_000 - 4_560)
 
 
-class TestRentalLifecycleCashflows:
-    def test_windowed_recurring_transfers_fire_only_within_their_own_month_ranges(self):
+class RentalLifecycleCashflowsAcceptance(_RentalAcceptance):
+    def test_windowed_recurring_transfers_fire_only_within_their_own_month_ranges(self, backend: Backend) -> None:
         """The product layer lowers a changing rented fraction into several non-overlapping
         `RecurringTransfer` windows, each with its own already-scaled amount (that lowering is
         tested in `product/service_test.py`). What the engine owes: each window fires in exactly
@@ -315,33 +339,35 @@ class TestRentalLifecycleCashflows:
             tax_profiles=[],
             horizon_months=12,
         )
-        run = simulate_with_external_series(
-            scenario,
-            external_series=_flat_series(key=RENT_SERIES_KEY, value=1, months=13, rollouts=1),
-            rollout_count=1,
-            locations={},
+        result = backend(
+            rental_case(
+                scenario,
+                series=_flat_series(key=RENT_SERIES_KEY, value=1, months=13, rollouts=1),
+                rollout_count=1,
+                locations={},
+            )
         )
 
-        rent = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1").sort("month_index")
+        rent = result.events.transfers.filter(pl.col("cause_id") == "rental_income:p1").sort("month_index")
         assert rent["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
         assert (rent["amount_quanta"] / 100).to_list() == pytest.approx([1_500] * 3 + [4_500] * 3 + [3_000] * 4)
 
-        management_fee = run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1").sort("month_index")
+        management_fee = result.events.transfers.filter(pl.col("cause_id") == "management_fee:p1").sort("month_index")
         assert management_fee["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
         assert (management_fee["amount_quanta"] / 100).to_list() == pytest.approx([120] * 3 + [360] * 3 + [240] * 4)
 
 
-class TestLeasingFee:
-    def test_scheduled_transfers_fire_once_in_their_own_month_at_their_own_amount(self):
+class LeasingFeeAcceptance(_RentalAcceptance):
+    def test_scheduled_transfers_fire_once_in_their_own_month_at_their_own_amount(self, backend: Backend) -> None:
         """Distinct amounts per month so a mis-indexed schedule cannot pass: a scheduled
         transfer fires in the single month it names, and no other month sees one."""
 
         scenario = _rental_scenario(
             horizon_months=60, monthly_rent=5_000, leasing_fees_by_month={0: 5_000, 24: 6_000, 48: 7_000}
         )
-        run = _run(scenario)
+        result = backend(flat_rent_case(scenario))
         leasing = (
-            run.events_log.transfers.filter(pl.col("cause_id").str.starts_with("leasing_fee:p1"))
+            result.events.transfers.filter(pl.col("cause_id").str.starts_with("leasing_fee:p1"))
             .sort("month_index")
             .select("month_index", "amount_quanta")
         )
@@ -349,7 +375,7 @@ class TestLeasingFee:
         assert (leasing["amount_quanta"] / 100).to_list() == pytest.approx([5_000, 6_000, 7_000])
 
 
-class TestRentalIncomeTaxation:
+class RentalIncomeTaxationAcceptance(_RentalAcceptance):
     """Phase 2.0: rental income transfers carry income_category='ordinary', so they accrue
     into the owner's taxable ordinary income at year-end. Schedule E deductions and
     MID/SALT scaling are deferred to follow-up commits; rental income is currently
@@ -391,24 +417,24 @@ class TestRentalIncomeTaxation:
             horizon_months=horizon_months,
         )
 
-    def test_rental_income_accrues_into_ordinary_ytd(self):
+    def test_rental_income_accrues_into_ordinary_ytd(self, backend: Backend) -> None:
         # $4,000/mo × 12 = $48,000 gross rental income → ordinary income line on tax_breakdowns.
         scenario = self._taxed_rental_scenario(monthly_rent=4_000)
-        run = _run(scenario)
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        result = backend(flat_rent_case(scenario))
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(48_000, abs=1e-6)
 
-    def test_rental_income_generates_tax_accruals_at_year_end(self):
+    def test_rental_income_generates_tax_accruals_at_year_end(self, backend: Backend) -> None:
         scenario = self._taxed_rental_scenario(monthly_rent=4_000)
-        run = _run(scenario)
-        accruals = run.events_log.tax_accruals.sort("jurisdiction_id")
+        result = backend(flat_rent_case(scenario))
+        accruals = result.events.tax_accruals.sort("jurisdiction_id")
         assert accruals.height == 2  # federal + CA
         # Accruals fire at month 11 (year-end).
         assert all(month == 11 for month in accruals["month_index"].to_list())
         # Both jurisdictions should levy positive tax on $48k of ordinary income.
         assert all(amount > 0 for amount in (accruals["amount_quanta"] / 100).to_list())
 
-    def test_management_fee_deducts_from_taxable_ordinary_income(self):
+    def test_management_fee_deducts_from_taxable_ordinary_income(self, backend: Backend) -> None:
         """Schedule E: a management fee transfer with deduction_category='ordinary'
         should subtract from the owner's ordinary_income_ytd, reducing taxable income."""
 
@@ -461,13 +487,13 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        run = _run(scenario)
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        result = backend(flat_rent_case(scenario))
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         # Gross rental: 12 × $5,000 = $60,000. Management fee: 12 × $500 = $6,000.
         # Net ordinary income exposed to brackets = $54,000.
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(54_000, abs=1e-6)
 
-    def test_obligation_deduction_decrements_payer_ordinary_ytd(self):
+    def test_obligation_deduction_decrements_payer_ordinary_ytd(self, backend: Backend) -> None:
         """Schedule E on obligations: a paid RecurringObligation with
         deduction_category='ordinary' and deductible_fraction=1.0 decrements the payer's
         ordinary_income_ytd by the full settled amount."""
@@ -528,11 +554,11 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        run = _run(scenario)
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        result = backend(flat_rent_case(scenario))
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(67_200, abs=1e-6)
 
-    def test_depreciation_accrues_monthly_and_deducts_as_schedule_e(self, san_francisco_location: Location):
+    def test_depreciation_accrues_monthly_and_deducts_as_schedule_e(self, backend: Backend) -> None:
         """§168 monthly depreciation accrues for rented property and reduces taxable ordinary
         income at year-end. Building basis = $500k × 0.80 = $400k; rented_fraction = 1.0;
         annual depreciation = $400k / 27.5 ≈ $14,545.45."""
@@ -592,18 +618,16 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 13}, SF_HOME_VALUE_KEY: {0: [1] * 13}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
         # Cumulative depreciation grows monotonically; at month 12 (post-horizon snapshot) it's
         # accrued 12 months worth = $400,000 / 27.5 = $14,545.45.
-        terminal_dep = property_state(run).filter(pl.col("month_index") == 12)
+        terminal_dep = result.properties.filter(pl.col("month_index") == 12)
         assert terminal_dep.height == 1
         # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(45_454.55, abs=0.02)
 
-    def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self, san_francisco_location: Location):
+    def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self, backend: Backend) -> None:
         """StartRentingEvent at month 12 → depreciation accrues only from month 12 onward.
         24-month horizon, $400k building basis, 12 months of rental → annual depreciation
         in year 1 = 0; in year 2 (after start) = $400k / 27.5 = $14,545.45."""
@@ -665,10 +689,8 @@ class TestRentalIncomeTaxation:
             horizon_months=24,
         )
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: [1] * 25}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
-        breakdowns = list(run.events_log.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
+        breakdowns = list(result.events.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
         # Year 0 (month 11) federal_us: rented_fraction=0 the whole year, no rental income, no
         # depreciation → ordinary_income = $0.
         year_0_federal = next(b for b in breakdowns if b["month_index"] == 11 and b["jurisdiction_id"] == "federal_us")
@@ -678,20 +700,18 @@ class TestRentalIncomeTaxation:
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
         assert year_1_federal["ordinary_income_quanta"] / 100 == pytest.approx(45_454.55, abs=0.05)
 
-    def test_lifecycle_start_renting_redirects_mortgage_interest_from_mid_to_schedule_e(
-        self, san_francisco_location: Location
-    ):
+    def test_lifecycle_start_renting_redirects_mortgage_interest_from_mid_to_schedule_e(self, backend: Backend) -> None:
         """At start-of-rental, MID drops to 0 for the now-rented portion of mortgage interest,
         and Schedule E picks it up. Comparison: same scenario with rented_fraction=0 throughout
         vs. with StartRentingEvent at month 0 setting rented_fraction=1.0 — the second case
         should yield zero MID line."""
 
         breakdowns_owner = self._mortgage_lifecycle_breakdown(
-            start_renting_at=None, locations={"san_francisco": san_francisco_location}
+            backend, start_renting_at=None, locations=SAN_FRANCISCO_LOCATIONS
         )
         # NOTE: StartRentingEvent must fire strictly after purchase (month 0), so use month 1.
         breakdowns_rent = self._mortgage_lifecycle_breakdown(
-            start_renting_at=1, locations={"san_francisco": san_francisco_location}
+            backend, start_renting_at=1, locations=SAN_FRANCISCO_LOCATIONS
         )
         # Owner-occupied: positive MID
         assert breakdowns_owner["federal_us"]["mortgage_interest_deduction_quanta"] / 100 > 0
@@ -702,7 +722,9 @@ class TestRentalIncomeTaxation:
             < breakdowns_owner["federal_us"]["mortgage_interest_deduction_quanta"] / 100 * 0.15
         )
 
-    def _mortgage_lifecycle_breakdown(self, *, start_renting_at: int | None, locations: dict[str, Location]) -> dict:
+    def _mortgage_lifecycle_breakdown(
+        self, backend: Backend, *, start_renting_at: int | None, locations: dict[str, Location]
+    ) -> dict:
         end_month = 11
         purchase_price = 500_000
         lifecycle_events = (
@@ -776,10 +798,10 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
-        return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=locations))
+        return {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
 
-    def test_lifecycle_stop_renting_halts_depreciation(self, san_francisco_location: Location):
+    def test_lifecycle_stop_renting_halts_depreciation(self, backend: Backend) -> None:
         """StopRentingEvent at month 12 → depreciation accrues months 0-11 only.
         Year 0 ordinary: $60k rent - $14.5k dep = $45.5k.
         Year 1 ordinary: $0 rent (no more rental income), no dep → $0.
@@ -840,16 +862,14 @@ class TestRentalIncomeTaxation:
             horizon_months=24,
         )
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: [1] * 25}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
-        breakdowns = list(run.events_log.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
+        breakdowns = list(result.events.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
         year_0_federal = next(b for b in breakdowns if b["month_index"] == 11 and b["jurisdiction_id"] == "federal_us")
         assert year_0_federal["ordinary_income_quanta"] / 100 == pytest.approx(45_454.55, abs=0.05)
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
         assert year_1_federal["ordinary_income_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
-    def test_capital_improvement_bumps_basis_and_accelerates_depreciation(self, san_francisco_location: Location):
+    def test_capital_improvement_bumps_basis_and_accelerates_depreciation(self, backend: Backend) -> None:
         """CapitalImprovementEvent at month 6 bumps building basis by $100k.
         Building basis after improvement = $400k + $100k = $500k.
         Monthly depreciation after month 6 = $500k / 27.5 / 12 ≈ $1,515.15
@@ -912,17 +932,15 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         # 6 months at $400k/27.5/12 + 6 months at $500k/27.5/12
         # = 6 × 1212.12 + 6 × 1515.15 = 7272.73 + 9090.91 = 16363.64
         expected_depreciation = 6 * (400_000 / 27.5 / 12) + 6 * (500_000 / 27.5 / 12)
         expected_ordinary = 60_000 - expected_depreciation
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(expected_ordinary, abs=0.05)
 
-    def test_same_month_rent_fraction_and_capex_apply_before_depreciation(self, san_francisco_location: Location):
+    def test_same_month_rent_fraction_and_capex_apply_before_depreciation(self, backend: Backend) -> None:
         """Non-sale lifecycle events in the same month all apply before that month's
         depreciation accrual.
 
@@ -987,24 +1005,20 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        rented_rows = run.events_log.set_rented_fraction_events.to_dicts()
-        capex_rows = run.events_log.capital_improvement_events.to_dicts()
+        rented_rows = result.events.set_rented_fraction_events.to_dicts()
+        capex_rows = result.events.capital_improvement_events.to_dicts()
         assert [(row["month_index"], row["rented_fraction"]) for row in rented_rows] == [(6, 1)]
         assert [(row["month_index"], row["amount_quanta"] / 100) for row in capex_rows] == [(6, 100_000)]
 
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         expected_depreciation = 6 * (500_000 / 27.5 / 12)
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(
             60_000 - expected_depreciation, abs=0.05
         )
 
-    def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(
-        self, san_francisco_location: Location
-    ):
+    def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(self, backend: Backend) -> None:
         """Sale of a fully-rented property after 12 months of depreciation.
         Building basis $400k → $400k / 27.5 ≈ $14,545.45/yr depreciation.
         After 12mo cumulative depreciation = $14,545.45.
@@ -1016,29 +1030,23 @@ class TestRentalIncomeTaxation:
 
         scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 14}, SF_HOME_VALUE_KEY: {0: [1] * 14}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
         # Verify the sale fired: capital_gain_ytd has zero LTCG, ordinary_ytd has zero recapture
         # because the property sold for less than adjusted basis (loss). No gain to recapture.
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         # Federal LTCG: 0
         assert breakdowns["federal_us"]["ltcg_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         # Property is frozen after sale - the next year's depreciation should not accrue.
         # Verify by counting depreciation accruals: only 12 months should have happened.
 
-    def test_property_sale_requires_home_value_series(self, san_francisco_location: Location):
+    def test_property_sale_requires_home_value_series(self, backend: Backend) -> None:
         scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
-        ctx = ExternalSeriesContext()
-
         with pytest.raises(
             KeyError, match=r"property sale for property_id 'p1'.*home-value series 'home_value:san_francisco'"
         ):
-            simulate_with_external_series(
-                scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-            )
+            backend(rental_case(scenario, series={}, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-    def test_property_sale_at_gain_routes_recapture_and_ltcg(self, san_francisco_location: Location):
+    def test_property_sale_at_gain_routes_recapture_and_ltcg(self, backend: Backend) -> None:
         """Sale at month 12 with home value appreciation. Horizon 24mo so year 1 tax accrual
         (month 23) captures the sale-year LTCG.
 
@@ -1053,13 +1061,11 @@ class TestRentalIncomeTaxation:
         # Home value series steps up at month 12.
         levels = [1] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
         # Year 1 tax breakdown (month 23) captures the LTCG.
         breakdowns_y1 = [
             row
-            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            for row in result.events.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 23 and row["jurisdiction_id"] == "federal_us"
         ]
         assert len(breakdowns_y1) == 1
@@ -1067,8 +1073,8 @@ class TestRentalIncomeTaxation:
         assert b["ltcg_quanta"] / 100 == pytest.approx(205_000, abs=1)
 
     def test_multi_rollout_property_sale_keeps_sale_tax_and_mortgage_amounts_rollout_scoped(
-        self, san_francisco_location: Location
-    ):
+        self, backend: Backend
+    ) -> None:
         """A single sale event with divergent home-value rollouts must not smear sale math
         across rollouts.
 
@@ -1161,9 +1167,7 @@ class TestRentalIncomeTaxation:
                 SF_HOME_VALUE_KEY: home_values_by_rollout,
             }
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=2, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=2, locations=SAN_FRANCISCO_LOCATIONS))
 
         payoff, _ = _mortgage_balance_and_interest_after_payments(
             principal=mortgage_principal,
@@ -1191,7 +1195,7 @@ class TestRentalIncomeTaxation:
 
         sale_rows = {
             row["rollout_index"]: row
-            for row in run.events_log.property_sale_events.sort("rollout_index").iter_rows(named=True)
+            for row in result.events.property_sale_events.sort("rollout_index").iter_rows(named=True)
         }
         assert set(sale_rows) == {0, 1}
         for rollout_index, expected in expected_by_rollout.items():
@@ -1202,7 +1206,7 @@ class TestRentalIncomeTaxation:
 
         federal_sale_year = {
             row["rollout_index"]: row
-            for row in run.events_log.tax_breakdowns.filter(
+            for row in result.events.tax_breakdowns.filter(
                 (pl.col("month_index") == 47) & (pl.col("jurisdiction_id") == "federal_us")
             ).iter_rows(named=True)
         }
@@ -1210,8 +1214,8 @@ class TestRentalIncomeTaxation:
         assert federal_sale_year[1]["ltcg_quanta"] / 100 == pytest.approx(2_000, abs=1)
 
     def test_multi_taxpayer_property_tax_schedule_e_mid_and_sale_routing_are_owner_scoped(
-        self, san_francisco_location: Location
-    ):
+        self, backend: Backend
+    ) -> None:
         """Two owners with two properties should keep real-estate tax/accounting channels
         isolated by property owner.
 
@@ -1373,11 +1377,9 @@ class TestRentalIncomeTaxation:
                 SF_HOME_VALUE_KEY: {0: [1] * sale_month + [1.4] * (horizon + 1 - sale_month)},
             }
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        property_tax_rows = run.events_log.obligation_settlements.filter(
+        property_tax_rows = result.events.obligation_settlements.filter(
             pl.col("obligation_type") == "property_tax"
         ).sort("agent_id", "month_index")
         alice_property_tax = property_tax_rows.filter(pl.col("agent_id") == "alice")
@@ -1402,7 +1404,7 @@ class TestRentalIncomeTaxation:
         property_tax_year_0 = 11 * monthly_property_tax
         federal_year_0 = {
             row["agent_id"]: row
-            for row in run.events_log.tax_breakdowns.filter(
+            for row in result.events.tax_breakdowns.filter(
                 (pl.col("month_index") == 11) & (pl.col("jurisdiction_id") == "federal_us")
             ).iter_rows(named=True)
         }
@@ -1419,7 +1421,7 @@ class TestRentalIncomeTaxation:
 
         sale_rows = {
             row["property_id"]: row
-            for row in run.events_log.property_sale_events.sort("property_id").iter_rows(named=True)
+            for row in result.events.property_sale_events.sort("property_id").iter_rows(named=True)
         }
         alice_recapture = sale_month * (purchase_price * 0.80 / 27.5 / 12)
         assert sale_rows["alice_rental"]["realized_gain_quanta"] / 100 == pytest.approx(194_363.64, abs=1)
@@ -1433,14 +1435,14 @@ class TestRentalIncomeTaxation:
 
         federal_sale_year = {
             row["agent_id"]: row
-            for row in run.events_log.tax_breakdowns.filter(
+            for row in result.events.tax_breakdowns.filter(
                 (pl.col("month_index") == 35) & (pl.col("jurisdiction_id") == "federal_us")
             ).iter_rows(named=True)
         }
         assert federal_sale_year["alice"]["ltcg_quanta"] / 100 == pytest.approx(158_000, abs=1)
         assert federal_sale_year["bob"]["ltcg_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
-    def test_property_tied_recurring_obligation_stops_after_property_sale(self, san_francisco_location: Location):
+    def test_property_tied_recurring_obligation_stops_after_property_sale(self, backend: Backend) -> None:
         """Property-keyed HOA/insurance/maintenance-style obligations stop when the property sells."""
 
         sale_month = 12
@@ -1473,14 +1475,10 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_KEY: {0: [1] * (scenario.horizon_months + 1)}, SF_HOME_VALUE_KEY: {0: levels}}
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        accruals = run.events_log.obligation_accruals.filter(pl.col("obligation_type") == "hoa_dues").sort(
-            "month_index"
-        )
-        settlements = run.events_log.obligation_settlements.filter(pl.col("obligation_type") == "hoa_dues").sort(
+        accruals = result.events.obligation_accruals.filter(pl.col("obligation_type") == "hoa_dues").sort("month_index")
+        settlements = result.events.obligation_settlements.filter(pl.col("obligation_type") == "hoa_dues").sort(
             "month_index"
         )
         expected_months = list(range(sale_month))
@@ -1490,7 +1488,7 @@ class TestRentalIncomeTaxation:
             lambda q: q / 100, return_dtype=pl.Float64
         ).to_list() == pytest.approx([monthly_hoa] * sale_month)
 
-        terminal_hoa_cash = cash_balances(run).filter(
+        terminal_hoa_cash = result.cash.filter(
             (pl.col("agent_id") == "hoa") & (pl.col("month_index") == scenario.horizon_months)
         )
         assert terminal_hoa_cash.get_column("balance_quanta").map_elements(
@@ -1499,7 +1497,7 @@ class TestRentalIncomeTaxation:
 
         federal_y0 = next(
             row
-            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            for row in result.events.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 11 and row["jurisdiction_id"] == "federal_us"
         )
         expected_depreciation = 400_000 / 27.5
@@ -1507,9 +1505,7 @@ class TestRentalIncomeTaxation:
             12 * 5_000 - expected_depreciation - monthly_hoa * sale_month, abs=0.05
         )
 
-    def test_property_cashflows_stop_after_property_sale_but_generic_transfers_continue(
-        self, san_francisco_location: Location
-    ):
+    def test_property_cashflows_stop_after_property_sale_but_generic_transfers_continue(self, backend: Backend) -> None:
         """Rental and management cashflows are property-domain flows, not generic transfers."""
 
         sale_month = 12
@@ -1594,11 +1590,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_KEY: {0: [1] * (scenario.horizon_months + 1)}, SF_HOME_VALUE_KEY: {0: levels}}
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        transfers = run.events_log.transfers
+        transfers = result.events.transfers
         rent = transfers.filter(pl.col("cause_id") == "rental_income:p1").sort("month_index")
         management = transfers.filter(pl.col("cause_id") == "management_fee:p1").sort("month_index")
         lease_at_purchase = transfers.filter(pl.col("cause_id") == "leasing_fee:p1:m0")
@@ -1625,7 +1619,7 @@ class TestRentalIncomeTaxation:
 
         federal_y0 = next(
             row
-            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            for row in result.events.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 11 and row["jurisdiction_id"] == "federal_us"
         )
         expected_depreciation = 400_000 / 27.5
@@ -1633,9 +1627,7 @@ class TestRentalIncomeTaxation:
             12 * monthly_rent - 12 * monthly_management_fee - leasing_fee - expected_depreciation, abs=0.05
         )
 
-    def test_section_1250_recapture_taxed_at_lesser_of_marginal_or_cap_low_bracket(
-        self, san_francisco_location: Location
-    ):
+    def test_section_1250_recapture_taxed_at_lesser_of_marginal_or_cap_low_bracket(self, backend: Backend) -> None:
         """IRS Unrecaptured §1250 Gain Worksheet rule (low-bracket case).
 
         Sale at month 12 (year 2). The recapture lands in year 2 tax accruals; year 2
@@ -1650,17 +1642,15 @@ class TestRentalIncomeTaxation:
         scenario = self._sale_scenario(horizon=24, sale_month=12)
         levels = [1] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
         federal_y2 = next(
             row
-            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            for row in result.events.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 23 and row["jurisdiction_id"] == "federal_us"
         )
         california_y2 = next(
             row
-            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            for row in result.events.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 23 and row["jurisdiction_id"] == "california"
         )
         recapture = 14_545.45
@@ -1688,7 +1678,7 @@ class TestRentalIncomeTaxation:
             205_000 + recapture - california_y2["standard_deduction_quanta"] / 100, abs=1
         )
 
-    def test_section_1250_recapture_caps_at_25pct_when_marginal_exceeds(self, san_francisco_location: Location):
+    def test_section_1250_recapture_caps_at_25pct_when_marginal_exceeds(self, backend: Backend) -> None:
         """High-bracket case: federal 25% §1250 cap binds when marginal ≥ 25%.
 
         Same sale scenario, but the owner also earns enough wage income in year 2 to
@@ -1700,12 +1690,10 @@ class TestRentalIncomeTaxation:
         scenario = self._sale_scenario(horizon=24, sale_month=12, year2_wage=250_000)
         levels = [1] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
         federal_y2 = next(
             row
-            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            for row in result.events.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 23 and row["jurisdiction_id"] == "federal_us"
         )
         recapture = 14_545.45
@@ -1719,7 +1707,7 @@ class TestRentalIncomeTaxation:
         # the 25% cap — the LTCG arithmetic is exercised elsewhere.
         assert federal_y2["capital_gain_tax_quanta"] / 100 >= section_1250_tax + 0.20 * 100_000  # rough lower bound
 
-    def test_section_121_exclusion_after_24_owner_occupied_months(self, san_francisco_location: Location):
+    def test_section_121_exclusion_after_24_owner_occupied_months(self, backend: Backend) -> None:
         """Owner-occupied for ≥ 24 of the last 60 months → up to $250k of post-recapture
         gain is excluded from LTCG (single-filer cap).
 
@@ -1771,11 +1759,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
         # Sale event surfaces in property_sale_events frame.
-        sale_rows = run.events_log.property_sale_events.to_dicts()
+        sale_rows = result.events.property_sale_events.to_dicts()
         assert len(sale_rows) == 1
         sale = sale_rows[0]
         # Gross = $500k × 1.4 × 0.94 = $658k. Realized gain = $658k - $500k = $158k.
@@ -1797,7 +1783,7 @@ class TestRentalIncomeTaxation:
     )
     def test_section_121_uses_24_of_trailing_60_months(
         self,
-        san_francisco_location: Location,
+        backend: Backend,
         primary_start_month: int,
         primary_end_month: int,
         expected_exclusion_usd: float,
@@ -1849,21 +1835,19 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=horizon,
         )
-        home_values = [1] * sale_month + [1.4]
+        home_values = [1] * sale_month + [1.4] * (horizon + 1 - sale_month)
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        sale = run.events_log.property_sale_events.to_dicts()[0]
+        sale = result.events.property_sale_events.to_dicts()[0]
         assert sale["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
         assert sale["depreciation_recapture_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(expected_exclusion_usd, abs=1)
         assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(expected_ltcg_usd, abs=1)
 
-        post_sale_ltcg = capital_gains_ytd(run).filter(
+        post_sale_ltcg = result.capital_gains.filter(
             (pl.col("agent_id") == OWNER_AGENT_ID)
             & (pl.col("classification") == "ltcg")
             & (pl.col("month_index") == sale_month + 1)
@@ -1872,7 +1856,7 @@ class TestRentalIncomeTaxation:
         actual_ltcg = 0 if post_sale_ltcg.is_empty() else float(post_sale_ltcg.get_column("gain_quanta").sum()) / 100
         assert actual_ltcg == pytest.approx(expected_ltcg_usd, abs=1)
 
-    def test_section_121_does_not_apply_to_unassigned_non_rented_property(self, san_francisco_location: Location):
+    def test_section_121_does_not_apply_to_unassigned_non_rented_property(self, backend: Backend) -> None:
         purchase_price = 500_000
         sale_month = 30
         horizon = 36
@@ -1913,16 +1897,14 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        sale = run.events_log.property_sale_events.to_dicts()[0]
+        sale = result.events.property_sale_events.to_dicts()[0]
         assert sale["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
 
-    def test_primary_residence_event_starts_section_121_qualifying_months(self, san_francisco_location: Location):
+    def test_primary_residence_event_starts_section_121_qualifying_months(self, backend: Backend) -> None:
         purchase_price = 500_000
         sale_month = 30
         horizon = 36
@@ -1964,11 +1946,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        primary_rows = run.events_log.set_primary_residence_events.to_dicts()
+        primary_rows = result.events.set_primary_residence_events.to_dicts()
         assert primary_rows == [
             {
                 "rollout_index": 0,
@@ -1978,13 +1958,13 @@ class TestRentalIncomeTaxation:
                 "is_primary_residence": True,
             }
         ]
-        sale = run.events_log.property_sale_events.to_dicts()[0]
+        sale = result.events.property_sale_events.to_dicts()[0]
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(158_000, abs=1)
         assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
     def test_same_month_primary_residence_assignment_fires_before_sale_but_does_not_accrue_use(
-        self, san_francisco_location: Location
-    ):
+        self, backend: Backend
+    ) -> None:
         sale_month = 30
         scenario = self._sale_scenario(horizon=36, sale_month=sale_month, cumulative_depreciation_eligible=False)
         scenario = Scenario.model_validate(
@@ -2003,11 +1983,9 @@ class TestRentalIncomeTaxation:
                 SF_HOME_VALUE_KEY: {0: home_values},
             }
         )
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        assert run.events_log.set_primary_residence_events.to_dicts() == [
+        assert result.events.set_primary_residence_events.to_dicts() == [
             {
                 "rollout_index": 0,
                 "month_index": sale_month,
@@ -2016,11 +1994,11 @@ class TestRentalIncomeTaxation:
                 "is_primary_residence": True,
             }
         ]
-        sale = run.events_log.property_sale_events.to_dicts()[0]
+        sale = result.events.property_sale_events.to_dicts()[0]
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
 
-    def test_section_121_does_not_apply_without_owner_occupied_months(self, san_francisco_location: Location):
+    def test_section_121_does_not_apply_without_owner_occupied_months(self, backend: Backend) -> None:
         """Same sale at month 30, but the property has been 100% rented the entire time.
         Owner-occupied months = 0, so §121 does not apply. The depreciation recapture +
         LTCG flow remains intact."""
@@ -2028,16 +2006,14 @@ class TestRentalIncomeTaxation:
         scenario = self._sale_scenario(horizon=36, sale_month=30)
         home_values = [1] * 30 + [1.4] * 7
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 37}, SF_HOME_VALUE_KEY: {0: home_values}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
-        sale = run.events_log.property_sale_events.to_dicts()[0]
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
+        sale = result.events.property_sale_events.to_dicts()[0]
         # §121 should be exactly zero — never owner-occupied.
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         # Recapture should be positive (30 months of depreciation × $400k / 27.5 / 12 ≈ $36,363).
         assert sale["depreciation_recapture_quanta"] / 100 == pytest.approx(36_363.64, abs=1)
 
-    def test_lifecycle_event_frames_logged_for_each_kind(self, san_francisco_location: Location):
+    def test_lifecycle_event_frames_logged_for_each_kind(self, backend: Backend) -> None:
         """All three lifecycle event kinds appear in their respective frames, one row per
         (rollout, event)."""
 
@@ -2080,28 +2056,26 @@ class TestRentalIncomeTaxation:
             horizon_months=24,
         )
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: [1] * 25}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
-        rented_rows = run.events_log.set_rented_fraction_events.to_dicts()
+        rented_rows = result.events.set_rented_fraction_events.to_dicts()
         assert len(rented_rows) == 1
         assert rented_rows[0]["month_index"] == 6
         assert rented_rows[0]["rented_fraction"] == 1
         assert rented_rows[0]["property_id"] == "p1"
 
-        capex_rows = run.events_log.capital_improvement_events.to_dicts()
+        capex_rows = result.events.capital_improvement_events.to_dicts()
         assert len(capex_rows) == 1
         assert capex_rows[0]["month_index"] == 8
         assert capex_rows[0]["amount_quanta"] / 100 == pytest.approx(50_000)
         assert capex_rows[0]["property_id"] == "p1"
 
-        sale_rows = run.events_log.property_sale_events.to_dicts()
+        sale_rows = result.events.property_sale_events.to_dicts()
         assert len(sale_rows) == 1
         assert sale_rows[0]["month_index"] == 12
         assert sale_rows[0]["property_id"] == "p1"
 
-    def test_same_month_property_sale_rejects_rented_fraction_event(self):
+    def test_same_month_property_sale_rejects_rented_fraction_event(self, backend: Backend) -> None:
         scenario = self._sale_scenario(horizon=13, sale_month=12)
         with pytest.raises(ValueError, match="same-month sale lifecycle ordering is ambiguous"):
             Scenario.model_validate(
@@ -2114,7 +2088,7 @@ class TestRentalIncomeTaxation:
                 }
             )
 
-    def test_same_month_property_sale_rejects_capital_improvement_event(self):
+    def test_same_month_property_sale_rejects_capital_improvement_event(self, backend: Backend) -> None:
         scenario = self._sale_scenario(horizon=13, sale_month=12)
         with pytest.raises(ValueError, match="same-month sale lifecycle ordering is ambiguous"):
             Scenario.model_validate(
@@ -2208,7 +2182,7 @@ class TestRentalIncomeTaxation:
             horizon_months=horizon,
         )
 
-    def test_depreciation_does_not_accrue_when_not_rented(self, san_francisco_location: Location):
+    def test_depreciation_does_not_accrue_when_not_rented(self, backend: Backend) -> None:
         """No rental → no depreciation accrual → no Schedule E deduction."""
 
         end_month = 11
@@ -2265,26 +2239,24 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         # No depreciation → ordinary income equals gross paycheck income: $60,000.
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(60_000, abs=1e-6)
 
     def test_mortgage_interest_deducts_full_for_owner_occupied_and_scales_for_partial_rental(
-        self, san_francisco_location: Location
-    ):
+        self, backend: Backend
+    ) -> None:
         """MID applies to the owner-fraction of mortgage interest; the rented-fraction share
         deducts as Schedule E rental interest. The MID compile-time scaling and the engine's
         year-end Schedule E rental-interest hook combine to make rented_fraction × interest
         deductible under either MID or Schedule E depending on which yields the better total."""
 
         owner_breakdown = self._mortgage_scenario_breakdown(
-            rented_fraction=0, locations={"san_francisco": san_francisco_location}
+            backend, rented_fraction=0, locations=SAN_FRANCISCO_LOCATIONS
         )
         rented_breakdown = self._mortgage_scenario_breakdown(
-            rented_fraction=1, locations={"san_francisco": san_francisco_location}
+            backend, rented_fraction=1, locations=SAN_FRANCISCO_LOCATIONS
         )
         # Whether the property is fully owner-occupied or fully rented, the same dollar amount
         # of mortgage interest reduces ordinary income — just via different mechanisms (MID +
@@ -2293,7 +2265,9 @@ class TestRentalIncomeTaxation:
         assert owner_breakdown["federal_us"]["mortgage_interest_deduction_quanta"] / 100 > 0
         assert rented_breakdown["federal_us"]["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
-    def _mortgage_scenario_breakdown(self, *, rented_fraction: float, locations: dict[str, Location]) -> dict:
+    def _mortgage_scenario_breakdown(
+        self, backend: Backend, *, rented_fraction: float, locations: dict[str, Location]
+    ) -> dict:
         end_month = 11
         purchase_price = 600_000
         scenario = Scenario(
@@ -2362,12 +2336,12 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 13}, SF_HOME_VALUE_KEY: {0: [1] * 13}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
-        return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=locations))
+        return {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
 
     def test_property_tax_routes_owner_fraction_to_salt_and_rented_fraction_to_schedule_e(
-        self, san_francisco_location: Location
-    ):
+        self, backend: Backend
+    ) -> None:
         """Per-property `rented_fraction=0.75` should:
         - route 25% of property tax to SALT (owner-use portion)
         - route 75% of property tax to Schedule E (rented-use portion deduction).
@@ -2454,16 +2428,14 @@ class TestRentalIncomeTaxation:
         )
         # Series needs home_value:san_francisco too for property purchase.
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 13}, SF_HOME_VALUE_KEY: {0: [1] * 13}})
-        run = simulate_with_external_series(
-            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
-        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
         # Debug: surface any rollout failure before asserting on tax flows.
-        status = rollout_status(run)
+        status = result.rollout_status
         assert status["status"][0] != "failed", (
             f"rollout failed at month {status['failed_month'][0]}; "
-            f"failures: {run.events_log.rollout_failures.to_dicts()}"
+            f"failures: {result.events.rollout_failures.to_dicts()}"
         )
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
         # Gross rent: 12 × $4,000 = $48,000. Property tax fires at months 1..11 (11 payments;
         # month 0 is the purchase month, no tax that month) → $7,200 × 11/12 = $6,600.
         # rented_fraction=0.75 → $4,950 routes to Schedule E + $1,650 routes to SALT.
@@ -2473,73 +2445,9 @@ class TestRentalIncomeTaxation:
         # observable through ordinary_income decreasing relative to the rental income.)
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(43_050, abs=1e-6)
 
-    def test_obligation_deductible_fraction_scales_deduction(self):
-        """Partial rental: HOA dues are only deductible up to the rented fraction (0.5
-        in this test → only $200 of the $400/mo HOA deducts each month)."""
 
-        end_month = 11
-        # Gross rental $30,000/yr (50% rented); HOA $400/mo, 50% deductible → $200/mo × 12 = $2,400.
-        # Net ordinary income = $30,000 - $2,400 = $27,600.
-        scenario = Scenario(
-            agents=[
-                Agent(agent_id=OWNER_AGENT_ID),
-                Agent(agent_id=TENANT_AGENT_ID),
-                Agent(agent_id="hoa"),
-                Agent(agent_id="irs"),
-            ],
-            initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=100000),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
-                InitialAccountBalance(agent_id="hoa", account_id="checking", balance=0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
-            ],
-            recurring_transfers=[
-                RecurringTransfer(
-                    start_month=0,
-                    end_month=end_month,
-                    cause_id="rental_income:p1",
-                    from_agent_id=TENANT_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id=OWNER_AGENT_ID,
-                    to_account_id="checking",
-                    amount=SeriesIndexedAmount(base_amount=2500, series=RENT_SERIES_KEY, adjustment_period_months=12),
-                    income_category=ORDINARY_INCOME,
-                )
-            ],
-            recurring_obligations=[
-                RecurringObligation(
-                    start_month=0,
-                    end_month=end_month,
-                    obligation_id="hoa_dues",
-                    obligation_type="hoa_dues",
-                    agent_id=OWNER_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id="hoa",
-                    to_account_id="checking",
-                    amount_due=SeriesIndexedAmount(
-                        base_amount=400, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
-                    deduction_category="ordinary",
-                    deductible_fraction=0.5,
-                )
-            ],
-            tax_profiles=[
-                TaxProfile(
-                    agent_id=OWNER_AGENT_ID,
-                    filing_status=FilingStatus.SINGLE,
-                    jurisdiction_ids=["federal_us", "california"],
-                    tax_authority_agent_id="irs",
-                )
-            ],
-            horizon_months=12,
-        )
-        run = _run(scenario)
-        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
-        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(27_600, abs=1e-6)
-
-
-class TestRentalCashflowReconciliation:
-    def test_owner_terminal_cash_reconciles_with_the_transfers_the_engine_logged(self):
+class RentalCashflowReconciliationAcceptance(_RentalAcceptance):
+    def test_owner_terminal_cash_reconciles_with_the_transfers_the_engine_logged(self, backend: Backend) -> None:
         """Two independent engine outputs must agree: netting every logged transfer row that
         touches the owner has to reproduce the change in the owner's cash ledger. A flow that is
         logged but never settled — or settled but never logged — breaks this even though each
@@ -2557,19 +2465,15 @@ class TestRentalCashflowReconciliation:
             monthly_management_fee=380,
             leasing_fees_by_month={0: 5_000},
         )
-        run = _run(scenario)
-        transfers = run.events_log.transfers
+        result = backend(flat_rent_case(scenario))
+        transfers = result.events.transfers
         logged_net = float(
             transfers.filter(pl.col("to_agent_id") == OWNER_AGENT_ID)["amount_quanta"].sum() / 100
         ) - float(transfers.filter(pl.col("from_agent_id") == OWNER_AGENT_ID)["amount_quanta"].sum() / 100)
         # cash_balances has snapshot_months = horizon + 1, so terminal state is at month_index == horizon.
-        cash = cash_balances(run).filter(
+        cash = result.cash.filter(
             (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == scenario.horizon_months)
         )
         assert cash.height == 1
         assert cash["balance_quanta"][0] / 100 - initial_cash == pytest.approx(logged_net, abs=0.01)
         assert cash["balance_quanta"][0] / 100 == pytest.approx(initial_cash + 47_440, rel=1e-6)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
