@@ -6,13 +6,17 @@ the Rust engine does not, so that a reader deciding whether Rust can serve a wor
 not have to derive the answer from a `UnsupportedScenarioError` traceback.
 
 Each entry says where the boundary is enforced, because that is what has to move for the gap
-to close. Three kinds:
+to close. Two kinds:
 
 - **Refused at the fixture** — `fixture_encoder.py` raises `UnsupportedScenarioError` rather
-  than encoding a scenario feature the fixture cannot express. Loud, and never silent.
-- **Refused at the engine** — the fixture carries it and `engine/validation.rs` rejects it.
+  than encoding a scenario feature the fixture cannot express, or a value it cannot represent
+  exactly. Loud, and never silent.
 - **Answered differently** — both engines run it and disagree. There is exactly one, and
   `differential/known_divergence_test.py` pins both answers.
+
+Behaviour neither engine models is not a parity gap and is not here; those live in
+[../../TODO.md](../../TODO.md) and [../../sim/TODO.md](../../sim/TODO.md) with the rest of
+the modelling backlog.
 
 A gap leaves this file when the capability lands, not when it is planned. Sequencing, gates
 and what is reachable from a live product request are the plan's business
@@ -38,19 +42,6 @@ path carries it at full `float64` precision:
 | `PropertySaleEvent.closing_cost_pct`                           | parts per billion, both the charged and the retained fraction   |
 | `BondHolding.annual_coupon_rate` for an inflation-indexed bond | the period rate must be the exact PPB scaling of the annual one |
 | `InitialLot` per-unit basis                                    | `basis × quantity_scale` must divide evenly by `units`          |
-
-## Behaviour the engine does not model
-
-Neither engine's fixture is the constraint here; the Rust engine has not been written to do
-these at all.
-
-- Tax facts and deduction policy beyond what the differential suites cover. The README's
-  "Covered behavior" list is the positive statement; anything not on it is unmodelled.
-- Mortgage contracts other than the fixed-rate purchase mortgage — no refinance, no
-  adjustable rate, no second lien.
-- Property-tax policy beyond purchase-price assessment plus a fixed location special
-  assessment. No reassessment on transfer, no assessed-value growth cap.
-- Liquidity policy beyond the target-allocation cash band.
 
 ## Answered differently
 
