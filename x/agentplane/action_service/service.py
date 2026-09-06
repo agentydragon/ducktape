@@ -97,9 +97,10 @@ class ActionService:
         self._tasks.discard(task)
         if task.cancelled():
             return
-        error = task.exception()
-        if error is not None:
-            logger.exception("action dispatch task failed", exc_info=error)
+        if task.exception() is not None:
+            # Raw adapter/database exceptions can contain request or provider material. The durable
+            # state machine carries the safe classification; logs record only that coordination failed.
+            logger.error("action dispatch coordination failed; request will not be retried")
 
     async def _dispatch_once(self, request_id: UUID) -> None:
         if not await self._store.claim_execution(request_id):
