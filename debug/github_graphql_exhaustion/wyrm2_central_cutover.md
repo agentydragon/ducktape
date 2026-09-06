@@ -218,8 +218,11 @@ The deployed repair and remaining acceptance boundary are described below.
 as `eb58b4860859cbcea0dbbb0e975e1e6bff0874dd`. Its PR Bazel CI passed all six
 proxy test targets, including unprivileged image startup and capture persistence
 ([invocation](https://app.buildbuddy.io/invocation/1fcfd631-c446-5217-a7a1-c18fed08d2e7)).
-Pre-commit, Gazelle, and CodeQL passed; the separate Nix wheel check was still
-running at this checkpoint, not proven successful.
+Pre-commit, Gazelle, and CodeQL passed. The separate
+[Nix wheel check](https://github.com/agentydragon/ducktape/actions/runs/34020583002)
+later hit its 40-minute job timeout at “Check generated command policies,”
+before artifact build/import validation; GitHub reports the run as cancelled.
+That check is not a pass and was not investigated further during wind-down.
 
 Two superseded devel runs were cancelled, not failed. Successor
 `589e2c75224ab98f78d94e12f8d3bb9b01aad641` retained the proxy source, passed
