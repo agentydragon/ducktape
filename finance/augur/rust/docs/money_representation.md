@@ -1,0 +1,41 @@
+# Money representation
+
+Money in this engine is an `i64` count of the scenario's declared currency quantum.
+`Money(123)` is $1.23 under a one-cent quantum and CHF 1.15 under a five-rappen one;
+the quantum itself never enters Rust. Every rounding happens in `mul_div_round_half_up`,
+which multiplies in `i128` and rounds half away from zero, and its contract is pinned
+by the property suite in `money_proptest.rs` rather than by sampled examples.
+
+## Why not a decimal crate
+
+A fixed-point or decimal crate is the obvious thing to reach for, and two were costed.
+Neither fits, for the same reason:
+
+**The quantum is not a decimal exponent.** `Currency.quantum` is an exact `Decimal`, and
+CHF's five rappen and MGA's fifths are supported and tested. A decimal fixed-point type
+parameterises on a power of ten, so it cannot represent a five-hundredths quantum at all.
+Adopting one would mean narrowing the authoring surface to currencies whose subdivision
+is a power of ten — a real loss of coverage, bought with a dependency.
+
+**The engine has no scale to track anyway.** Scale-in-the-type is what these crates sell,
+and it solves a problem this engine does not have: a `Money` here is dimensionless
+inside the simulation. Its scale is fixed by the scenario and never changes under any
+operation, because every monetary operation is money times a dimensionless fraction
+(`Ppb`, `Bps`, `Ratio`) or money apportioned by a ratio of like quantities. The only
+genuine scale is a lot's `quantity_scale`, and it already travels in the type, on `Units`.
+
+Specifics on the two that were costed:
+
+- **`primitive_fixed_point_decimal`** is the closest fit — the fastest of the crates in
+  its author's comparison, with an out-of-band runtime scale and a `checked_mul_ratio`
+  matching this engine's `a × b / c` shape. Its `Rounding::Round` turns out to be half
+  away from zero, symmetric in sign, computed by widening to `i128` and range-checking
+  back: the same rule and the same method as `mul_div_round_half_up`. Adopting it would
+  move no number, which is also the reason it buys nothing.
+- **`rust_decimal`** is already a workspace dependency, but it is arbitrary-precision
+  decimal, not a quantum count. Money would stop being an integer at the wire boundary
+  that `fixture.rs` exists to keep integral.
+
+The rounding rule is not negotiable independently of this: half away from zero is what
+makes negating an operand negate the result, which the tax and give-back paths rely on.
+Half-even would break that symmetry.

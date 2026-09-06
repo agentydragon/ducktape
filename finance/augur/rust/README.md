@@ -130,11 +130,11 @@ ledger entirely in currency quanta. The shared differential fixtures cover
 drawdown versus flat paths, year-end tax facts, two-stage partial liquidation,
 and target-allocation sale give-back.
 
-Initial lots store total basis, but that total must imply an exact
-integer-currency-quantum basis per whole unit:
-`basis × quantity_scale` must divide evenly by `units`. The Rust validator and
-`fixture_encoder` both refuse an inexact lot rather than letting one engine hold
-the per-unit basis and the other a floored total.
+Initial lots store total basis and never a per-unit figure. A sale apportions
+the basis a lot still holds by the units leaving it, so selling a lot down in
+pieces consumes exactly what it held -- no divisibility precondition, and no
+remainder stranded in an emptied lot. What money is and why it is not a decimal
+crate: <docs/money_representation.md>.
 
 Bond coupon rates use the same parts-per-billion contract and must round-trip
 exactly through the legacy Python/JAX `float64` boundary. Nominal coupons round
