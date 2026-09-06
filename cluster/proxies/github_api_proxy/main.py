@@ -8,6 +8,7 @@ from pathlib import Path
 from aiohttp import web
 
 from cluster.proxies.github_api_proxy.config import Settings
+from cluster.proxies.github_api_proxy.destinations import OriginLoop
 from cluster.proxies.github_api_proxy.metrics import Metrics
 from cluster.proxies.github_api_proxy.runtime import create_master
 
@@ -35,7 +36,7 @@ def main() -> None:
     # Mitmproxy's verbose diagnostics can include arbitrary destination URLs. Metrics
     # and the private capture are the observation channels; do not log request data.
     logging.basicConfig(level=logging.CRITICAL)
-    asyncio.run(run(Settings.model_validate_json(args.config.read_bytes())))
+    asyncio.run(run(Settings.model_validate_json(args.config.read_bytes())), loop_factory=OriginLoop)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # Wyrm2 central proxy cutover
 
-Cutover checkpoint: 2026-09-06 06:26 UTC; compatibility evidence through 06:52 UTC.
+Cutover checkpoint: 2026-09-06 06:26 UTC; compatibility evidence through 07:49 UTC.
 Wyrm2 uses the central proxy, but the migration
 is not accepted: Desktop has incomplete conversation history and “Failed to
 fetch” errors. A response-buffering defect is identified below; full Desktop
@@ -118,7 +118,7 @@ retries and `/api/organizations/:org/mcp/v2/bootstrap` also had unfinished SSE.
 The watch route is shared live-update plumbing, not a per-conversation endpoint.
 
 Mitmproxy 12.2.3 defaults to buffering response headers and bodies until EOF;
-the deployed runtime does not enable event streaming. A gate-based regression
+the pre-#5699 runtime did not enable event streaming. A gate-based regression
 reproduced this: the origin sends an event but waits for client receipt before
 closing, while the unchanged proxy withholds even the headers
 ([failing invocation](https://app.buildbuddy.io/invocation/0212ec6e-80f3-4424-b141-f2e567d6768d)).
@@ -127,7 +127,89 @@ streamed bodies for terminal capture. Both before-EOF cases, all 32 runtime
 cases and five capture cases pass; changed libraries also passed their aspects
 ([passing invocation](https://app.buildbuddy.io/invocation/41a7b5ba-1938-48ff-98bf-01b0dfcc0a71)).
 This proves the buffering defect and its synthetic correction, not Desktop
-recovery: the candidate is not yet deployed or verified against the reported UI.
+recovery. The deployed candidate and remaining symptoms are described below.
+
+## Streaming deployment and remaining failure
+
+[#5699](https://github.com/agentydragon/ducktape/pull/5699) merged as
+`50b8f3111384b973997e7aa75cfdb75b44135a8b`. Its devel CI was superseded, not
+failed; successor `956c496caf04f23f234749b8d53424b5893ab106` retained the tested
+proxy source and [published its image](https://github.com/agentydragon/ducktape/actions/runs/34018009405/job/101445754412).
+Flux applied image-update commit `540cd90e9c9f9c44e9a94f779c907ab42ca9f8ea`;
+the application Kustomization was Ready and Healthy at 07:14:18 UTC.
+
+- Running image: `devel-20260906070647-956c496`, digest
+  `sha256:b7b4a5103a00320d458e41c66a8f3a039b237354ee82fedc84763594a48739de`.
+  Installed runfiles contain the SSE header hook and `store_streamed_bodies=True`.
+  The new pod had no restarts; the existing local Squid also had no restarts.
+- Central capture retained pre-deployment records and remained append-only,
+  owner-only. Natural batch-route requests still returned 429. Open or aborted
+  SSE bodies are not an incremental capture; terminal raw records alone cannot
+  demonstrate whether an in-flight request exists or a client received data.
+- An unauthenticated seven-second GET of the public
+  [Wikimedia event stream](https://wikitech.wikimedia.org/wiki/Event_Platform/EventStreams_HTTP_Service)
+  through the installed Squid and central proxy returned HTTP 200/H2 with normal
+  certificate verification, `text/event-stream`, and 365,955 bytes. First byte
+  arrived in 0.655 seconds, before the deliberate time limit closed the stream.
+  Its body was discarded. This verifies streaming through the deployed stack,
+  not Claude rendering or authenticated history.
+- At 07:14:33 UTC the previously affected conversation returned recent event
+  records through 07:14:32.950 UTC. The operator later reported it briefly
+  matched the phone, but a 07:24 reload again looked stale, followed by some
+  arriving deltas. Another old conversation's send remained pending for at
+  least 1 minute 47 seconds. Desktop compatibility is therefore still failing.
+- Local logs show session-loading timeouts at 07:18–07:19 UTC, 45
+  `Failed to fetch` entries at 07:23:21, and another burst at 07:24:12–07:24:15.
+  `ERR_NETWORK_CHANGED` coincides with the bursts; this remains insufficient
+  to assign the new proxy regression to routine host pod-interface churn.
+
+The approved authenticated history replay count remains six, not twenty;
+no additional Claude replay or message send was made for this checkpoint.
+
+## Connection-pool starvation
+
+The operator's built-in 30-second Desktop Net Log at 07:34:11–07:34:41 UTC
+exposes a different failure from the earlier network-change bursts. History GETs
+and event POSTs send HTTP/2 headers immediately, then receive no response headers
+within the recording. Synthetic batch-route responses still arrive, and separate
+WebSockets upgrade and exchange frames. The recording has no
+`ERR_NETWORK_CHANGED`. Two session-detail requests abort after fifteen seconds;
+their duplicate cache waiters report `ERR_CACHE_RACE`, then issue requests that
+also wait for headers. The cache race is not established as the initiating fault.
+
+The proxy source supplies a concrete mechanism:
+
+1. `PublicOrigins.server_connect` replaces the logical hostname in
+   `Server.address` with its validated IP.
+2. Mitmproxy 12.2.3 `GetHttpConnection.connection_spec_matches` compares the
+   request's hostname against `Server.address`. The existing sockets no longer
+   match, so later requests open new ones instead of reusing keep-alive sockets.
+3. `ConnectionHandler.open_connection` holds a per-address semaphore of five
+   throughout each socket's lifetime, not just its handshake. Five idle sockets
+   therefore occupy every slot and subsequent requests wait for a socket to close.
+
+An eight-request nested-TLS regression on the unchanged implementation times out
+waiting for headers ([invocation](https://app.buildbuddy.io/invocation/48397ad5-c988-4aa6-abd0-6ec568719ed3)).
+The deployed route independently reproduces the predicted boundary: eight
+unauthenticated `GET https://claude.ai/robots.txt` transfers using one curl
+connection return five HTTP 200s (167, 65, 54, 62, 92 ms), then three transfers
+with no headers or body before their three-second limits. Curl reports no new
+client connections after the first request. Bodies were discarded; no session
+credential, user message, or GitHub request was involved.
+
+The candidate preserves `Server.address` and moves numeric dial enforcement to
+the application's public `SelectorEventLoop.sock_connect` hook. Each mitmproxy
+connection task carries its validated DNS answer set; the actual numeric socket
+destination must belong to it. This retains hostname-based reuse and rejects DNS
+changes before the socket connects. Runtime startup requires the guarded loop.
+Tests cover repeated requests beyond the five-connection limit and DNS changes to
+both private and different public addresses. All eight sequential requests now
+complete with one upstream dial, and both rebinding cases fail before any origin
+dial. The runtime, destination, and capture tests plus changed-library type/lint
+aspects pass ([invocation](https://app.buildbuddy.io/invocation/6a3cde5a-3603-485c-b836-a341c59f9218)).
+The operator permits a larger pool if needed; no increase is currently included,
+because it would defer the same starvation without repairing connection reuse.
+PR CI, deployment, and Desktop recovery are not yet verified.
 
 ## Acceptance
 

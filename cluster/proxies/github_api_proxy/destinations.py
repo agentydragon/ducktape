@@ -1,9 +1,30 @@
 import asyncio
 import ipaddress
 import socket
+from collections.abc import Buffer
+from contextvars import ContextVar
 
 from mitmproxy import http
 from mitmproxy.proxy.server_hooks import ServerConnectionHookData
+
+checked_destinations: ContextVar[frozenset[tuple[str, int]] | None] = ContextVar("checked_destinations", default=None)
+
+
+class OriginLoop(asyncio.SelectorEventLoop):
+    async def sock_connect(self, sock: socket.socket, address: tuple[object, ...] | str | Buffer) -> None:
+        if (checked := checked_destinations.get()) is not None:
+            # asyncio resolves before this public hook. Check the actual numeric
+            # dial target without changing mitmproxy's hostname-based pool key.
+            if (
+                not isinstance(address, tuple)
+                or len(address) not in (2, 4)
+                or not isinstance(address[0], str)
+                or not isinstance(address[1], int)
+                or (address[0], address[1]) not in checked
+            ):
+                raise OSError("Proxy destination changed after validation")
+            ipaddress.ip_address(address[0])
+        await super().sock_connect(sock, address)
 
 
 def public_address(address: str) -> bool:
@@ -53,6 +74,8 @@ class PublicOrigins:
         return list(dict.fromkeys(str(result[4][0]) for result in results))
 
     async def server_connect(self, data: ServerConnectionHookData) -> None:
+        # Child connection tasks can inherit context from an older connection.
+        checked_destinations.set(frozenset())
         server = data.server
         if server.error is not None:
             return
@@ -74,9 +97,5 @@ class PublicOrigins:
         except (OSError, ValueError, TimeoutError):
             server.error = "Proxy destination resolution failed"
             return
-        # server_connect precedes asyncio.open_connection. Pin the checked numeric
-        # result so DNS cannot change between validation and the actual socket dial.
-        # Preserve certificate identity even though the transport now uses an IP.
-        if server.tls and server.sni is None:
-            server.sni = host
-        server.address = (addresses[0], port)
+        # Mitmproxy awaits this hook and its dial in the same connection task.
+        checked_destinations.set(frozenset((address, port) for address in addresses))
