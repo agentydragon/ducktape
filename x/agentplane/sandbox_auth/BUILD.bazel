@@ -1,0 +1,44 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "principal",
+    srcs = ["principal.py"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_library(
+    name = "http",
+    srcs = ["http.py"],
+    deps = [
+        ":principal",
+        "@pypi//fastapi",
+    ],
+)
+
+py_test(
+    name = "test_principal",
+    srcs = ["test_principal.py"],
+    deps = [
+        ":principal",
+        "//:conftest",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http",
+    srcs = ["test_http.py"],
+    deps = [
+        ":http",
+        ":principal",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

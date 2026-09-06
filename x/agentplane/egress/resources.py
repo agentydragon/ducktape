@@ -25,7 +25,6 @@ CREDENTIALS_PLURAL = "egresscredentials"
 SANDBOX_GROUP = "agents.x-k8s.io"
 SANDBOX_VERSION = "v1beta1"
 SANDBOXES_PLURAL = "sandboxes"
-SANDBOX_KIND = "Sandbox"
 
 
 class _Wire(BaseModel):

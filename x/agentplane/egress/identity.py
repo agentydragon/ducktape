@@ -19,16 +19,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
 
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.egress.resources import SANDBOX_KIND
+from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
 
-POD_NAME_CLAIM = "authentication.kubernetes.io/pod-name"
-POD_UID_CLAIM = "authentication.kubernetes.io/pod-uid"
 _CACHE_SWEEP_SIZE = 256
 
 
@@ -80,13 +77,12 @@ class PodIdentityVerifier:
         cache_seconds: float,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        self._authentication = authentication
-        self._core_v1 = core_v1
-        self._namespace = namespace
-        self._audience = audience
         self._cache_seconds = cache_seconds
         self._clock = clock
         self._cache: dict[str, _CachedIdentity] = {}
+        self._resolver = SandboxPrincipalResolver(
+            authentication=authentication, core_v1=core_v1, audience=audience, namespaces=frozenset({namespace})
+        )
 
     async def identify(self, token: str, source_ip: str) -> PodIdentity:
         key = hashlib.sha256(token.encode()).hexdigest()
@@ -114,46 +110,22 @@ class PodIdentityVerifier:
         self._cache[key] = _CachedIdentity(identity=identity, expires_at=now + ttl)
 
     async def _verify(self, token: str) -> PodIdentity:
-        review = await self._authentication.create_token_review(
-            k8s_client.V1TokenReview(spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[self._audience]))
-        )
-        status = review.status
-        if status is None or not status.authenticated:
-            raise IdentityRejectedError(
-                DenyReason.TOKEN_REJECTED, f"TokenReview rejected the token: {status and status.error}"
-            )
-        if self._audience not in (status.audiences or []):
-            raise IdentityRejectedError(DenyReason.TOKEN_REJECTED, "token audience is not the proxy's")
-        user = status.user
-        if user is None or not (user.username or "").startswith(f"system:serviceaccount:{self._namespace}:"):
-            raise IdentityRejectedError(
-                DenyReason.TOKEN_REJECTED, "token is not a ServiceAccount of the proxy's namespace"
-            )
-        extra = user.extra or {}
-        pod_names, pod_uids = extra.get(POD_NAME_CLAIM, []), extra.get(POD_UID_CLAIM, [])
-        if len(pod_names) != 1 or len(pod_uids) != 1:
-            raise IdentityRejectedError(DenyReason.TOKEN_REJECTED, "token is not bound to one Pod")
-        pod_name, pod_uid = pod_names[0], pod_uids[0]
         try:
-            pod = await self._core_v1.read_namespaced_pod(pod_name, self._namespace)
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                raise IdentityRejectedError(DenyReason.POD_MISMATCH, f"Pod {pod_name} is gone") from error
-            raise
-        if pod.metadata.uid != pod_uid:
-            raise IdentityRejectedError(
-                DenyReason.POD_MISMATCH, f"Pod {pod_name} was replaced since the token was issued"
-            )
+            principal, pod = await self._resolver.resolve_with_pod(token)
+        except SandboxPrincipalRejectedError as error:
+            reason = {
+                RejectionReason.TOKEN_REJECTED: DenyReason.TOKEN_REJECTED,
+                RejectionReason.POD_MISMATCH: DenyReason.POD_MISMATCH,
+                RejectionReason.SANDBOX_UNKNOWN: DenyReason.SANDBOX_UNKNOWN,
+            }[error.reason]
+            raise IdentityRejectedError(reason, str(error)) from error
         pod_ip = pod.status.pod_ip if pod.status is not None else None
         if not pod_ip:
-            raise IdentityRejectedError(DenyReason.POD_MISMATCH, f"Pod {pod_name} has no address yet")
-        owners = [
-            owner
-            for owner in pod.metadata.owner_references or []
-            if owner.kind == SANDBOX_KIND and owner.controller is True
-        ]
-        if len(owners) != 1:
-            raise IdentityRejectedError(DenyReason.SANDBOX_UNKNOWN, f"Pod {pod_name} is not controlled by one Sandbox")
+            raise IdentityRejectedError(DenyReason.POD_MISMATCH, f"Pod {principal.pod_name} has no address yet")
         return PodIdentity(
-            pod_name=pod_name, pod_uid=pod_uid, pod_ip=pod_ip, sandbox_name=owners[0].name, sandbox_uid=owners[0].uid
+            pod_name=principal.pod_name,
+            pod_uid=principal.pod_uid,
+            pod_ip=pod_ip,
+            sandbox_name=principal.sandbox_name,
+            sandbox_uid=principal.sandbox_uid,
         )

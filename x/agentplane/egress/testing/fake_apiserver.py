@@ -19,18 +19,17 @@ from typing import Any
 from aiohttp import web
 from more_itertools import one
 
-from x.agentplane.egress.identity import POD_NAME_CLAIM, POD_UID_CLAIM
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
     GROUP,
     POLICIES_PLURAL,
     SANDBOX_GROUP,
-    SANDBOX_KIND,
     SANDBOX_VERSION,
     SANDBOXES_PLURAL,
     VERSION,
 )
+from x.agentplane.sandbox_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, SANDBOX_KIND
 
 NAMESPACE = "agentplane-egress-test"
 SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"
