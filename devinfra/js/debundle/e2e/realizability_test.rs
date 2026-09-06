@@ -13,6 +13,40 @@ use std::path::Path;
 use analysis::{BindingReport, DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;
 
+#[test]
+fn unclaimed_interleaved_statements_preserve_order() {
+    for (mode, destination) in [
+        (unassigned_mode_inline(), "static/app/entry.js"),
+        (
+            unassigned_mode_catchall_file(None),
+            "static/app/modules/residual/unhandled.js",
+        ),
+        (
+            unassigned_mode_catchall_file(Some("rest")),
+            "static/app/modules/rest.js",
+        ),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                r#"console.log("before");
+const a = console.log("middle");
+console.log("after", a);
+export { a };
+"#,
+                vec![],
+            )
+            .with_unassigned_mode(mode),
+        );
+        assert_entry_output(&fixture, "before\nmiddle\nafter undefined\n");
+        assert_module_source(
+            &fixture.out_root,
+            destination,
+            &["before", "middle", "after"],
+            &[],
+        );
+    }
+}
+
 fn binding_names(members: &[BindingReport]) -> Vec<String> {
     members
         .iter()

@@ -19,16 +19,25 @@ fn rejects_duplicate_export_from_source() {
     // `export const`, the other from a `export { … as av }` of a
     // separate local. swc parses this fine; the runtime spec rejects
     // it at module-link time.
-    let opts = FixtureOpts::new(
-        r#"export const av = 1;
+    for (mode, file) in [
+        (unassigned_mode_inline(), "entry.js"),
+        (
+            unassigned_mode_catchall_file(None),
+            "modules/residual/unhandled.js",
+        ),
+    ] {
+        let opts = FixtureOpts::new(
+            r#"export const av = 1;
 const helper = 2;
 export { helper as av };
 console.log(av, helper);
 "#,
-        vec![],
-    );
-    expect_rejection_containing_all(
-        opts,
-        &["validate_emitted_exports", "duplicate", "`av`", "entry.js"],
-    );
+            vec![],
+        )
+        .with_unassigned_mode(mode);
+        expect_rejection_containing_all(
+            opts,
+            &["validate_emitted_exports", "duplicate", "`av`", file],
+        );
+    }
 }
