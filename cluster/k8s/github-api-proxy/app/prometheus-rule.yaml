@@ -1,0 +1,58 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: github-api-proxy
+  namespace: github-api-proxy
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: github-api-proxy
+      rules:
+        - alert: GitHubProxyCaptureWriteFailed
+          expr: max by (channel) (github_api_proxy_capture_write_failures_total{namespace="github-api-proxy"}) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Central GitHub proxy capture has lost {{ $labels.channel }} observations"
+            description: >
+              A private capture append failed. Readiness stays false until a
+              controlled restart, but existing connections may continue and the
+              quota mitigation remains active. Inspect storage and preserve the
+              incomplete evidence before restarting; do not count this interval
+              as complete observation coverage.
+        - alert: GitHubProxyMetricsScrapeFailed
+          expr: max(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}) == 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Central GitHub proxy metrics cannot be scraped"
+            description: >
+              All discovered proxy metrics targets have failed for two minutes.
+              Check the Pod, private metrics listener and Alloy network path.
+        - alert: GitHubProxyMetricsMissing
+          expr: absent_over_time(up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}[5m])
+          labels:
+            severity: warning
+          annotations:
+            summary: "Central GitHub proxy observations are missing"
+            description: >
+              No proxy scrape result has been retained for five minutes. Check
+              Pod discovery, the PodMonitor, Alloy collection and remote write.
+              Missing telemetry cannot establish a healthy proxy or quiet quota.
+        - alert: GitHubProxyCaptureStorageLow
+          expr: |
+            kubelet_volume_stats_available_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
+            /
+            kubelet_volume_stats_capacity_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
+            < 0.15
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Central GitHub proxy capture storage reports less than 15% available"
+            description: >
+              Captures append without automatic deletion. Check the storage
+              driver's reported capacity and arrange expansion or explicit
+              evidence retention; do not delete investigation files blindly.

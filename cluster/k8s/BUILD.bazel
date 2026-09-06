@@ -63,6 +63,7 @@ exports_files(
         "clickhouse/schema/flux-kustomization.yaml",
         "clickhouse/schema/kustomization.yaml",
         "clickhouse/schema/schema-job.yaml",
+        "github-api-proxy/app/prometheus-rule.yaml",
         "kustomization.yaml",
         "monitoring/rules/github-quota-prometheus-rule.yaml",
         "monitoring/rules/roaming-node-prometheus-rule.yaml",

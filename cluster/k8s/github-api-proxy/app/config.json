@@ -1,0 +1,12 @@
+{
+  "proxy_hostname": "github-proxy.allegedly.works",
+  "credential_files": ["/run/github-api-proxy/clients/wyrm2.json", "/run/github-api-proxy/clients/rugged.json"],
+  "proxy_tls_cert_file": "/run/github-api-proxy/outer-tls/tls.crt",
+  "proxy_tls_key_file": "/run/github-api-proxy/outer-tls/tls.key",
+  "interception_ca_cert_file": "/run/github-api-proxy/interception-ca/tls.crt",
+  "interception_ca_key_file": "/run/github-api-proxy/interception-ca/tls.key",
+  "confdir": "/run/github-api-proxy/work",
+  "capture_path": "/var/lib/github-api-proxy/raw.flows",
+  "session_ws_events": "/var/lib/github-api-proxy/sessions.jsonl",
+  "block_cloud_github_batch": true
+}

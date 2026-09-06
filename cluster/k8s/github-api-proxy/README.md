@@ -7,9 +7,13 @@ credentials, or network authorization boundary for workstation traffic.
 
 ## Transport and identity
 
-`github-proxy.allegedly.works:443` is an authenticated HTTPS forward proxy.
-The shared Gateway passes the TLS stream through a hostname-specific TLSRoute;
-an ordinary HTTPRoute is not assumed to forward CONNECT requests.
+`github-proxy.allegedly.works:8443` is the configured authenticated HTTPS forward
+proxy endpoint. A dedicated TLS-only Gateway passes the stream through a
+hostname-specific TLSRoute; an ordinary HTTPRoute is not assumed to forward
+CONNECT requests. Port 8443 avoids changing the shared Gateway's listeners:
+its wildcard HTTPS and exact TLS-passthrough listeners on port 443 already report
+`ProtocolConflict` on the deployed Cilium version. See the
+[upstream overlapping-listener report](https://github.com/cilium/cilium/issues/47590).
 
 There are two distinct certificate roles:
 
@@ -53,8 +57,8 @@ the corresponding host's runtime secret together; do not create a second copy.
 
 ## Migration gate and cleanup
 
-The central runtime and host trampoline are being implemented independently.
-This directory is not evidence of deployment. Preserve the working local
+The central runtime and host trampoline are separate changes.
+Committed manifests are not evidence of a successful rollout. Preserve the working local
 mitigation until all of these are verified on the actual central route:
 
 1. Correct credentials and both TLS trust chains work; wrong or missing
@@ -74,3 +78,42 @@ rugged or wyrm2 migrated successfully.
 
 Successful migration is not resolution of quota exhaustion. Account-wide quota
 and observation coverage still require the agreed multi-day acceptance window.
+
+## Central deployment
+
+Root Flux owns `app/` through the `github-api-proxy` Kustomization, after the
+identity/credentials, registry credentials, storage, monitoring, Gateway and
+Reloader dependencies. The Deployment starts from a verified published runtime
+image; Forgejo image automation tracks subsequent devel releases. Verify the
+reconciled revision, actual image digest, Pod startup, individual Gateway listener
+and TLSRoute conditions, and the authenticated route before migrating a client.
+
+Capture storage uses the replicated `seaweedfs-ovh` class and an initial 100-GiB
+claim. The app must run one writer with a Recreate rollout strategy. The PVC is
+excluded from Flux pruning: removing the app must not delete investigation
+evidence. There is no automatic capture rotation or deletion; inspect storage use
+and arrange explicit retention before unattended long-term operation.
+
+Only the TLS proxy port is routed publicly. A PodMonitor targets the separate
+metrics port directly so readiness failure does not remove it from observation.
+The runtime disables readiness after a capture write failure; do not configure
+a liveness probe that restarts and clears this evidence-loss signal. Investigate
+storage and incomplete captures before a controlled restart. Established
+connections are not terminated by a readiness change; the exact-route mitigation
+and metrics remain active. The rule set separately detects capture-write errors,
+failed scrapes, missing targets and low reported volume space. Validate actual
+storage-driver metrics and notification delivery during rollout, not just rule
+installation.
+
+Reloader watches the mounted configuration and Secrets. Certificate renewal or
+credential rotation therefore causes a Recreate rollout; capture appends across
+that restart. One writer is intentional. The image's Python launcher needs a
+writable filesystem; the Pod has no privilege escalation, capabilities or
+ServiceAccount token, but does not claim a read-only root filesystem. Working
+signing PEMs live in a small memory-backed volume, not the evidence PVC.
+
+Egress is public HTTP/HTTPS plus cluster DNS, not arbitrary cluster access. The
+runtime must also reject private/loopback destinations and pin validated DNS
+answers; network policy alone cannot fence the Pod's own loopback. Our cluster
+node identities are intentionally not allowed, so even public
+`*.allegedly.works` origins are outside this proxy's egress scope.
