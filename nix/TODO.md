@@ -71,6 +71,21 @@ Consider whether `nix/nixos/hosts/rugged` should switch from the current single 
 
 Evaluate whether console TTY password prompts can show visual feedback (for example `*` per keystroke) on NixOS hosts. This is not a standard NixOS knob like `sudo` `pwfeedback`; TTY login goes through `agetty` into `login`/PAM, so this likely requires a downstream package override or alternate login program. Scope and risks need review before implementing.
 
+## Guard the Claude Code gateway wrappers against LiteLLM model-name drift
+
+`gemini-claude.nix` named `google/oai-chat/gemini-3.1-pro-preview` long after
+`GEMINI_MODELS` dropped it, and nothing caught it (PR #5717) — LiteLLM 403s an
+unallowlisted name during auth, so the team's flash-lite fallback never sees it. The
+wrappers under `nix/home/claude_code/` are the last consumers naming models outside the
+roster and Terraform pins; `haku-console` is already covered by
+`test_console_codex_harnesses_use_oai_responses_wire_models`.
+
+Two ways to close it: add the wrappers to `//cluster/k8s/litellm/app:test_litellm_config`'s
+`data` and parse `model`/`haikuModel` out, asserting both are served by `proxy-config.yaml`
+and admitted by the consuming key (cheap, but introduces nix parsing from a Python test); or
+generate a JSON roster from `cluster/k8s/litellm/app/model_rosters.py` that the wrappers
+`importJSON`, so the name is never retyped (real SSOT, wider change).
+
 ## Roll out drivefs to remaining hosts
 
 The per-host `cache.allegedly.works/{main,gaffer}` reader credentials and Nix
