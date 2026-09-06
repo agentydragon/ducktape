@@ -1,8 +1,10 @@
 # BuildBuddy hosted remote-run authentication
 
-Status: **analysis only; no implementation is selected.** The local HTTP/gRPC transport is proven
-in [`../egress/SPEC.md`](../egress/SPEC.md). This note isolates the remaining `bb remote` seam and
-the security meaning of the smallest feasible workaround.
+Status: **local HTTP/gRPC substitution landed in PR
+[#5650](https://github.com/agentydragon/ducktape/pull/5650); hosted `bb remote` remains a deferred
+design decision with no implementation selected.** The implemented local transport is canonical in
+[`../egress/SPEC.md`](../egress/SPEC.md). This note isolates the remaining hosted-run seam and the
+security meaning of the smallest feasible workaround.
 
 ## Outcome and boundary
 

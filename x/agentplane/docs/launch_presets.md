@@ -1,7 +1,8 @@
 # Sandbox and Thread presets
 
-Status: **implemented in PR #5648, pending merge/deployment evidence**. This is an
-integration-app feature, not a new Agentplane runtime authority.
+Status: **implemented by PR [#5648](https://github.com/agentydragon/ducktape/pull/5648)**.
+The focused tests and build landed; the configured manual staging acceptance remains useful deployment
+evidence. This is an integration-app feature, not a new Agentplane runtime authority.
 
 ## Outcome
 
@@ -125,9 +126,9 @@ it must not silently apply only half of the preset.
 Initialization is visible in the Sandbox lifecycle (`Initializing workspace`) and a failed required
 bootstrap prevents the Thread launch action until the operator retries or creates a fresh Sandbox.
 
-## First implementation slice
+## Implemented first slice
 
-**P0 behavior**
+**Observed P0 behavior**
 
 1. Define app-owned `SandboxPreset` and `ThreadPreset` configuration for `public-coder`.
 2. Resolve a preset plus explicit overrides without changing the existing no-preset launch path.
@@ -136,16 +137,16 @@ bootstrap prevents the Thread launch action until the operator retries or create
 5. Add the preset selector and inherited-default presentation to the existing UI.
 6. Add the one-action Sandbox-plus-Thread launch path.
 
-**Needed support**
+**Remaining support / deployment evidence**
 
 - Durable app records for preset revisions, Sandbox bindings, and Thread launch provenance.
 - A runner initialization operation with idempotence and bounded result reporting.
 - Reconciliation for changed preset revisions where the runtime supports it.
 - A dedicated `public-coder` egress policy and a real acceptance fixture.
 
-**Acceptance test**
+**Live acceptance target**
 
-Launch `public-coder` through the integration app, override at least the model and standing
+After the landed images are deployed, launch `public-coder` through the integration app, override at least the model and standing
 instructions, and verify that:
 
 - the Sandbox receives the selected effective egress policy and runner configuration;

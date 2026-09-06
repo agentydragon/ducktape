@@ -1,61 +1,57 @@
 # Agentplane task DAG
 
-This is the single project overview for Agentplane work. It is a dependency map, not a workflow
-engine or a request to build every future subsystem. Each active box is a coherent package with a
-named acceptance test; completed work is recorded as evidence, not kept as an open task. Edges are
-real dependencies. Packages without an edge are intended to proceed in parallel, with whoever lands
-second rebasing.
+This is the authoritative project overview for Agentplane. It records landed behavior as evidence and
+keeps only work with a current user-visible outcome or a named design gate in the active path. Edges
+are real dependencies; packages without an edge may proceed independently. Labels mean:
 
-The implemented contracts live with the app, runner, egress proxy, acceptance suite, and durable
-notes under [`../docs/`](../docs/). This directory contains only current design gates, active work,
-and deferred work.
+- **P0 behavior**: the next user-visible behavior;
+- **needed support**: implementation needed to prove that behavior;
+- **observed evidence**: already landed or measured; and
+- **deferred**: deliberately outside the current slice.
 
-## Outcome already reached
+## Current truth on `devel`
 
-The first functioning product is landed: Rai can open the integration app, create a Sandbox running
-Claude or Codex, send an Input, watch response and tool activity, detach and return to history,
-suspend and resume with the conversation intact, and read raw native frames. The app persists
-trajectories beyond Sandbox lifetime. Sandboxes hold no upstream credential: model and tool traffic
-leave through the sidecar, and the central proxy substitutes the real value.
+**Observed evidence — workload authentication and LLM ingress landed.** PR
+[#5685](https://github.com/agentydragon/ducktape/pull/5685) added the generic
+`authenticatedWorkloadToken` credential source. PR
+[#5696](https://github.com/agentydragon/ducktape/pull/5696) added the shared immutable
+`SandboxPrincipal` resolver. PR [#5698](https://github.com/agentydragon/ducktape/pull/5698) added and
+wired the independently deployable authenticated LLM ingress. Staging runners present only the
+`agentplane-credential-agentplane-workload` placeholder; central egress substitutes the authenticated
+Pod-bound bearer for the selected destination, which resolves the live Sandbox and forwards
+provider-native traffic to LiteLLM with a server-held virtual key. The compatibility audience is
+still `agentplane-egress`; `agentplane-workload` remains a possible coordinated rename, not missing
+P0 behavior. See [`../docs/workload_authentication.md`](../docs/workload_authentication.md).
 
-The current app also already has named Thread persistence and the conversation/timeline UI needed
-for this slice. These are completed foundations, not pending DAG packages.
+**Observed evidence — the standalone Action Service landed.** PR
+[#5700](https://github.com/agentydragon/ducktape/pull/5700) made the service the PostgreSQL owner of
+`ActionRequest`, `Decision`, `Execution`, state events, and a pending-decision outbox reference. The
+current caller envelope accepts exactly a 1–200 character `idempotency_key`, a 1–240 character
+`capability`, a JSON-object `arguments`, and optional JSON-object `origin`/`correlation`; extra
+top-level fields are rejected, and origin/correlation are untrusted provenance. Workload callers can read their own redacted records; the operator surface can read all
+and issue an expected-version, idempotent human allow/deny Decision. Allow auto-dispatches exactly
+one Execution; there are no blind retries, and unsafe restart state becomes `execution_unknown`.
 
-## Current status
+The only accepted capability is `agentplane:v0.echo`. `EchoExecutor` returns
+`{"echo": <arguments>}` in-process and exists only to prove the coordinator seam, redaction,
+single-execution claim, and recovery behavior. It is not a production action definition, backend,
+MCP adapter, HTTP adapter, worker protocol, or credential-bearing executor. No real backend is wired
+because the Action schema and Executor wiring contracts below have not been decided or tested.
 
-**Launch presets are in review**, not an unstarted task: PR #5648 carries the first vertical slice
-for app-owned `SandboxPreset` and `ThreadPreset` defaults, the public-coder definition, runner-owned
-bootstrap execution, UI, and a manual acceptance target. Once it lands and deploys, run the live
-acceptance target; do not extend the preset abstraction before that evidence.
+**Observed evidence — launch presets landed.** PR
+[#5648](https://github.com/agentydragon/ducktape/pull/5648) landed the app-owned `SandboxPreset` and
+`ThreadPreset` first slice, including `public-coder`, runner initialization, UI selection, and the
+manual live acceptance target. Broader capability profiles remain deferred; see
+[`../docs/launch_presets.md`](../docs/launch_presets.md) and [`profiles.md`](profiles.md).
 
-**The product noun and core unit are now decided:** the durable object is `ActionRequest`, one
-logical intent with at most one Execution, with automatic dispatch after an allow Decision. The
-remaining operation gate is the event/delivery contract: pending-turn behavior, sensitive-field
-handling, standing grants, uncertain execution reconciliation, and the MCP adapter boundary. The
-accepted decisions and open questions are in [`operations_and_access.md`](operations_and_access.md).
-
-**Authentication and credential propagation is an implementation gate:**
-[`authentication_and_credentials.md`](authentication_and_credentials.md) uses one sidecar-only,
-Pod-bound KSA workload token with a shared first-party audience for both central ingress and selected
-destination authentication. Central validates it once, retains the authenticated bearer as request
-or CONNECT-tunnel context, and exposes it through the generic dynamic EgressCredential source
-`authenticatedWorkloadToken`. EgressPolicy plus exact placeholder/target substitution—not proxy
-service cases—selects whether LLM Proxy, Action Service, or another trusted recipient receives it.
-Those services directly validate it through one shared live `WorkloadPrincipal` resolver. PR #5658
-is superseded, #5657 is incomplete/superseded, and #5662 is paused/reference-only; standalone Action
-Service remains blocked until this shared-token substitution path and its end-to-end evidence land.
-
-**BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
-Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
-`x-buildbuddy-api-key`, and that the existing `wholeValue` target substitutes its placeholder across
-HTTP, unary gRPC, and bidirectional gRPC with trailers intact. `bb remote` remains outside the safe
-slice because it also embeds the key in the Bazel command executed on BuildBuddy's hosted runner.
-That nested process is beyond Agentplane egress and needs a runner-side credential reference or
-separate broker; it is not evidence for another proxy matcher.
-
-Independently ready now: trajectory search (`T3`), proxy rollout survivability, and sidecar-only
-credential security acceptance. They are separate slices with different write surfaces and do not
-depend on the preset deployment or operation-contract decision.
+**Active review — egress rules API boundary.** Draft PR
+[#5701](https://github.com/agentydragon/ducktape/pull/5701) is still in review. Its current head moves
+the agent-facing rules URL from the reserved non-DNS name to
+`https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules`, extracts `RulesApi` and
+`RulesProjection`, and keeps the response contract. The central proxy still recognizes that Service
+DNS host before policy/DNS handling and dispatches locally against the same enforcement index; it
+does not dial its Service or run a separate Deployment. A separate host remains blocked on an honest
+non-recursive routing and destination-auth bootstrap, not on serialization extraction.
 
 ## DAG
 
@@ -63,208 +59,160 @@ depend on the preset deployment or operation-contract decision.
 flowchart TB
     classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
     classDef active fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
-    classDef ready fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e,stroke-width:2px
-    classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
+    classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    F0["First functioning Agentplane<br/>Sandbox + runner + app + native capture"]:::completed
-    J["Credentialless egress<br/>sidecar, central proxy, substitution, model endpoint"]:::completed
-    T1["Trajectory persistence<br/>events under Threads beyond Sandbox lifetime"]:::completed
-    T2["Named Threads + timeline UI<br/>name persistence and live conversation view"]:::completed
+    F0["Observed evidence<br/>Sandbox + runner + app + trajectories"]:::completed
+    AUTH["Observed evidence<br/>workload-token substitution + SandboxPrincipal"]:::completed
+    LLM["Observed evidence<br/>authenticated LLM ingress"]:::completed
+    ACTION0["Observed evidence<br/>standalone Action Service + human Decision path<br/>fixture echo only"]:::completed
+    PRESETS["Observed evidence<br/>launch presets first slice"]:::completed
 
-    LP["Launch presets in review<br/>SandboxPreset → ThreadPreset,<br/>public-coder, runner bootstrap, UI"]:::active
-    BB["BuildBuddy auth contract in review<br/>HTTP + unary/bidirectional gRPC substitution;<br/>hosted bb remote boundary remains"]:::active
+    AS["Action schema contract<br/>definition, name/version, params, result/error,<br/>redaction and evolution"]:::decision
+    EW["Executor wiring contract<br/>registration, dispatch, credentials, delivery,<br/>claim/idempotency/health + first adapter"]:::decision
+    DEL["Pending/result delivery contract<br/>outbox drain, Thread event, notification,<br/>withdrawal and unknown reconciliation"]:::decision
+    ACTION1["P0 behavior<br/>one real named Action executes once<br/>and returns a safe result"]:::active
 
-    OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
-    OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
-    MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
-    AUTH["Authentication/credential design gate<br/>one Pod-bound workload bearer;<br/>generic dynamic substitution + destination validation"]:::decision
-    OPI["Standalone Action Service slice<br/>one ActionRequest/Decision/Execution;<br/>one adapter + originating-Thread delivery"]:::ready
+    ER["Active review #5701<br/>egress rules boundary + Service DNS transition"]:::active
+    DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
+    T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
+    PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
 
-    T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
-    PR["Proxy rollout survivability<br/>reproduce active-turn impact and fix/drain contract"]:::ready
-    SEC["Credential boundary acceptance<br/>sidecar-only secret access and bypass rejection"]:::ready
+    BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
+    DT["Deferred<br/>driver-provided declarations/background control"]:::future
+    AG["Deferred<br/>durable Agent identity + cross-agent read policy"]:::future
+    PROD["Milestone<br/>production-capable governed action execution"]:::milestone
 
-    AGD["Rai decision<br/>durable Agent identity and ownership<br/>separate from Sandbox and Thread"]:::decision
-    DATAD["Rai decision<br/>cross-agent data-read policy<br/>metadata, search, events, raw frames"]:::decision
-    XREAD["Cross-agent reads<br/>tier-scoped trajectory access and audit"]:::future
+    F0 --> ACTION0
+    AUTH --> LLM
+    AUTH --> ACTION0
+    ACTION0 --> AS
+    ACTION0 --> EW
+    ACTION0 --> DEL
+    AS --> ACTION1
+    EW --> ACTION1
+    DEL --> ACTION1
+    ACTION1 --> PROD
 
-    DT["Rai decision<br/>driver-provided tools/background work<br/>protocol shape and first consumer"]:::decision
-    N["Story 2: trusted orchestrator, untrusted fleet<br/>tiers, public-only delegation, channel judge"]:::future
-    O["Story 3: orchestrator with specialists<br/>fleet view, wake-ups, scoped reads"]:::future
-    HK["Story 4: Haku lives here<br/>long-lived Agent identity and git-backed memory"]:::future
-    UI["Story 5: agentic UI<br/>Haku-authored pages and event inputs"]:::future
-    L["Credentialed production readiness<br/>runner auth, freshness, replay, rotation"]:::future
-    V["Stronger runtime evaluation<br/>only if threat model requires it"]:::future
-    W["Hardened Kubernetes/Authentik deployment"]:::future
-    F["Product milestone<br/>findable, governed, reliable Agentplane"]:::milestone
+    AUTH --> ER
+    AUTH --> DEDUPE
+    F0 --> T3
+    F0 --> PR
+    ER -. independent cleanup .-> PROD
+    DEDUPE -. independent support .-> PROD
+    T3 -. independent product work .-> PROD
+    PR -. independent reliability .-> PROD
 
-    F0 --> LP
-    F0 --> OPD
-    J --> OPD
-    J --> BB
-    T1 --> OPD
-    T1 --> T3
-    J --> PR
-    J --> SEC
-    OPD --> OPS
-    OPD --> MCPD
-    OPS --> OPI
-    MCPD --> OPI
-    J --> AUTH
-    AUTH --> OPI
-    T1 --> OPI
-    T3 --> F
-    OPI --> F
-    PR --> F
-    SEC --> L
-    BB --> L
-    OPD --> DT
-    T1 --> AGD
-    AGD --> DATAD
-    T3 --> XREAD
-    DATAD --> XREAD
-    OPI --> N
-    XREAD --> N
-    DT --> N
-    N --> O
-    XREAD --> O
-    T3 --> O
-    N --> HK
-    AGD --> HK
-    HK --> UI
-    L --> W
-    OPD --> L
-    L --> V
+    AS --> DT
+    EW --> DT
+    ACTION1 --> AG
 ```
 
-Legend: green is completed evidence; bold blue is active work or in review; light blue is ready to
-start; orange diamonds are Rai decisions/design gates; gray is future work; purple is a milestone.
-A completed item leaves the active queue even when it supplies an edge.
+The critical path to production action execution is `ACTION0 -> AS + EW + DEL -> ACTION1`. Egress
+introspection cleanup, shared FastAPI/auth deduplication, trajectory search, and proxy survivability
+can proceed without waiting for those gates. Their independence must not be described as evidence
+that the current echo-only Action Service can execute production work.
 
-## Work packages and acceptance
+## Named gates and acceptance evidence
 
-- **`LP` launch presets:** PR #5648. The integration app owns the preset defaults and Sandbox
-  association; explicit fields override; the runner executes configured bootstrap source; the UI
-  selects presets and exposes editable inherited Thread defaults. Acceptance is the configured
-  `public-coder` live target after deployment, including GitHub egress, bootstrap persistence,
-  instructions, and per-Thread override behavior. Follow-up revision history and rollout semantics
-  wait for live evidence.
-- **`BB` BuildBuddy auth contract:** PR #5650 establishes the complete
-  `x-buildbuddy-api-key` HTTP/gRPC metadata value and reuses the existing whole-header target. Its
-  fake-stack test exercises HTTP, a unary REAPI-shaped call, and a bidirectional BES-shaped stream
-  through sidecar, hosted mitmproxy, and upstream TLS, preserving multiple messages and trailers.
-  `bb remote` remains blocked at the hosted runner, which receives a nested Bazel command outside
-  Agentplane's fence. The focused test and build passed in BuildBuddy invocations
-  `e96f0276-2075-4fff-bb32-9815fd9ee500` and `58eb6493-79a3-4101-9cd8-c09c3074c856`.
-- **`OPD` accepted request model:** Rai accepted `ActionRequest` as the product noun, one logical
-  intent with at most one Execution as the durable unit, invariant request shape, automatic dispatch
-  after an allow Decision, authoritative final Decisions from a future LLM judge, and no cryptographic
-  signing requirement in v0. The accepted decisions and boundaries are recorded in
-  [`operations_and_access.md`](operations_and_access.md); implementation is still deferred.
-- **`OPS` decision/event contract:** settle pending behavior, Decision delivery, withdrawal,
-  expiry/no-expiry, one-request versus standing-grant semantics, sensitive-field handling, uncertain
-  execution reconciliation without replay, and the machine envelope. The smallest acceptance is a
-  hand-authored lifecycle and replay example
-  that makes each transition and agent-visible input unambiguous.
-- **`MCPD` MCP boundary:** decide whether the first MCP server is trusted external infrastructure,
-  where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
-  Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
-  built before this gate.
-- **`AUTH` authentication and credential design:** implement
-  [`authentication_and_credentials.md`](authentication_and_credentials.md) before standalone Action
-  Service lands. Project one sidecar-only Pod-bound KSA token with the shared first-party workload
-  audience (prefer `agentplane-workload`, with migration from `agentplane-egress`). The sidecar adds
-  it as `Proxy-Authorization`; central validates it once, correlates the live Pod/Sandbox, and makes
-  the successfully authenticated bearer available only as the dynamic EgressCredential source
-  `authenticatedWorkloadToken`. An ordinary EgressPolicy `credentialRef` plus exact placeholder
-  target selects host/method/path and substitutes that request/tunnel's bearer after TLS interception;
-  neither proxy has LLM/Action cases, and P0 needs no second token, sideband, or per-CONNECT token
-  selector. LLM Proxy and Action Service directly validate the shared audience through the same live
-  `WorkloadPrincipal` authenticator/resolver and apply service policy. Acceptance uses two Pods to
-  prove per-Pod substitution and destination Sandbox resolution, placeholder-only harness visibility,
-  fail-closed bypass/forgery/target behavior, replay containment topology, and token-free logs.
-- **`OPI` standalone Action Service vertical slice:** one independently deployable Action Service
-  takes agent intent through policy/Decision to the single Execution/result and later Thread
-  delivery. Preserve the accepted invariant ActionRequest, at most one Execution, and automatic
-  dispatch after allow. V0 read scope is caller-own plus operator-all within the existing operator
-  scope; the standalone service is the canonical state owner, while the integration app is the
-  browser BFF. It is not a potentially colocated Action Hub. Push approval is a notification adapter
-  over the same Decision path, not a second authority. Implementation remains blocked on `AUTH`.
-- **`T3` trajectory search:** search persisted text and action evidence, answer “what happened,”
-  “why,” and “which Thread,” and link to raw frames. Scope is the caller's already-authorized
-  trajectory surface; cross-agent visibility is not silently included.
-- **`PR` proxy survivability:** reproduce a proxy rollout during a live model turn, then implement
-  only the smallest graceful-drain/recovery or persistence change the reproduction demands. A
-  passing ordinary health check is not acceptance.
-- **`SEC` credential boundary:** deployed acceptance proves the runner receives placeholders only,
-  the real credential is sidecar/proxy-only, and direct runner-to-central requests or alternate
-  paths are rejected. Keep this separate from the preset feature.
-- **`AGD` Agent identity:** Rai decides what durable product Agent means and how it maps to an opaque
-  authorization principal. It must not be inferred from Sandbox or Thread IDs.
-- **`DATAD` cross-agent read policy:** V0 is intentionally caller-own plus operator-all within
-  the existing operator scope, with redaction of credentials and private reviewer/notification data.
-  The remaining decision is the minimum data scopes and authority boundary for reading another
-  Agent's trajectories. Candidate scopes are metadata, derived summary, search results, full events,
-  raw native frames, and action request/result projections. No cross-agent scope inventory should be
-  built until a real consumer exists.
-- **`XREAD` cross-agent reads:** only after `AGD`, `DATAD`, and `T3`; enforce caller/target/scope at
-  the read boundary and audit the result without making Agentplane a universal identity registry.
-- **`DT` driver tools/background:** provider evidence exists, but protocol shape waits for a real
-  consumer. It now also depends on the operation/MCP boundary so tool invocation is not designed as
-  a second incompatible request model.
-- **`L` credentialed readiness:** runner-port authentication, credential freshness/replay defence,
-  rotation, and acceptance escape tests. BuildBuddy's fake-stack acceptance proves local-client
-  transport and substitution, not production-key scope, freshness, rotation, or revocation. Hosted
-  `bb remote` credential delivery remains a distinct external-boundary requirement.
+### `AS` — Action schema contract
 
-## Decisions and ownership rules
+**P0 behavior:** a caller can submit one stable, reviewable, versioned Action whose parameters are
+validated before a Decision or dispatch, and whose result/error can be safely replayed.
 
-- The Sandbox and Thread runtime remains Agentplane's concern; named presets and their UI remain an
-  integration-app concern.
-- An ActionRequest/Decision system must not make Agentplane runtime own every external protocol.
-  The decision authority owns allow/deny/referral and grants; adapters own MCP/HTTP/
-  Kubernetes/host execution; the conversation app owns operator presentation; the trajectory store
-  preserves evidence.
-- The independently deployable Action Service is the canonical owner of ActionRequest lifecycle and
-  access checks; the existing trajectory store may hold detailed evidence by reference, but raw
-  trajectory links cannot bypass the service's ACL. The integration app is the authenticated
-  browser BFF, and push notifications are delivery adapters that return through the same Decision
-  Authority.
-- An Agent is a future product identity, distinct from a Sandbox (runtime infrastructure), Thread
-  (interaction context), and authorization principal (policy subject). Cross-agent reads require an
-  explicit mapping and data-read policy.
-- Egress remains enforced by the existing proxy and target policy. A preset or operation adapter
-  cannot bypass it or turn a placeholder into a reusable credential. One sidecar-only Pod-bound
-  workload token authenticates the hop to central; central validates it once and may reuse only that
-  successful authenticated token value through `authenticatedWorkloadToken` when the selected
-  EgressPolicy rule and exact EgressCredential target request it. The raw header is never blindly
-  copied. LLM Proxy and Action Service directly validate the received shared-audience bearer with the
-  same `WorkloadPrincipal` authenticator/resolver and apply service policy; central identity and
-  proxy-derived headers are not caller proof. The shared-audience replay tradeoff is contained in P0
-  by trusted recipients, network/listener isolation, source-Pod correlation, short Pod-bound tokens,
-  and destination authorization. Kubernetes API use later requires the API server to accept that
-  audience or a future distinct projected API-audience source; API RoleBindings do not authorize
-  ordinary services.
-- Do not add persistence schemas, controllers, policy DSLs, MCP registries, or permission matrices
-  before the first acceptance test that needs them. Preserve whole evidence payloads rather than
-  duplicating derivable hashes, lengths, manifests, or parsed mirrors.
-- Existing completed foundations — T2 named Threads, the timeline app, native capture, credentialless
-  egress, and trajectory persistence — are not reopened as tasks. New work must name the observed
-  failure or user behavior it proves.
+**Needed support / decisions:**
 
-## Deferred until the gates resolve
+1. Define **Action** as the code-owned capability definition and **ActionRequest** as one immutable
+   invocation of that definition. Keep the existing request lifecycle and one-logical-intent model.
+2. Choose a stable capability/action name plus definition version. Decide whether the version is in
+   the name or a separate required field, and what identity participates in idempotency comparison.
+3. Define parameter representation and validation. **Recommendation:** begin with a deliberately
+   small JSON-compatible typed contract compiled into the service/adapters; use JSON Schema only if
+   the first real adapter needs features the smaller contract cannot express.
+4. Define the result and stable error envelope, including which backend/provider details are safe to
+   persist and return.
+5. Define sensitivity annotations and recursive redaction for inputs, results, errors, Decision
+   views, events, logs, and replay fixtures. Name what is reference-only versus reviewable content.
+6. Define compatibility/evolution: whether old definitions remain executable, replay-only, or
+   rejected; how a request pins its definition; and which changes are breaking.
+7. Choose definition ownership. **Recommendation:** static code-owned adapter definitions loaded at
+   startup. Alternatives are service configuration or a registry; neither should be built until a
+   current adapter or independent authoring workflow requires it.
 
-- general capability/access profiles;
-- arbitrary preset inheritance and a preset editor;
-- cross-agent rooms, subscriptions, and delegation graphs;
-- Haku Console/Matrix migration;
-- provider migration and multi-agent hosting;
-- stronger isolation runtimes unless the threat-model decision requires them; and
-- a private-Haku policy model until Rai accepts an access and data boundary that does not depend on
-  routine approval clicks.
+**Acceptance evidence:** one hand-authored Action definition and request/result/error transcript;
+positive validation/replay tests; negative tests for unknown name/version, missing/extra/wrong-type
+parameters, incompatible evolution, malformed result/error, and sensitive values in every
+projection/log path. Tests must prove replay uses the pinned definition without executing a backend.
 
-See [`operations_and_access.md`](operations_and_access.md) for the detailed operation, MCP, Agent
-identity, and cross-agent data-access design discussion. See [`launch_presets.md`](launch_presets.md)
-for the completed preset contract and live acceptance target.
+### `EW` — Executor wiring contract
+
+**P0 behavior:** one accepted and allowed ActionRequest selects exactly one healthy configured
+Executor, crosses a defined credential boundary, and produces one durable result or explicit unknown
+outcome without replay.
+
+**Needed support / decisions:**
+
+1. Define how `(action name, definition version)` selects an Executor and how capability/definition
+   registration is validated at startup. Duplicate, missing, or incompatible registrations fail
+   startup or request admission; they do not fall through at dispatch time.
+2. Define adapter/backend configuration and validation, including what is static code/config and what
+   may be changed without rebuilding.
+3. Choose in-process execution versus a separate worker/process for the first adapter, and record the
+   failure/isolation property that justifies the choice. **Recommendation:** use an in-process,
+   code-owned adapter only if its SDK/transport can uphold the credential and no-retry boundary;
+   otherwise choose a separate worker before adding a generic worker framework.
+4. Define the credential and Kubernetes ServiceAccount boundary. State which process may receive a
+   real credential, how central egress or native workload identity is used, and what the Action
+   Service itself must never possess.
+5. Define dispatch transport and result/event delivery back to the Action Service, including how a
+   worker proves which request it is completing.
+6. Preserve the landed exactly-one claim: one Execution row, atomic claim before dispatch, no retry
+   after dispatch may have begun, and `execution_unknown` after ambiguous loss. Define adapter-specific
+   reconciliation only when an authoritative status lookup exists; reconciliation never starts a
+   second effect.
+7. Define idempotency-key behavior at request admission and at the backend boundary. A backend key
+   may reduce duplicate effects but does not weaken the service's no-retry rule.
+8. Define executor health and capability discovery as startup/readiness evidence, not a broad dynamic
+   registry.
+9. Select one concrete first adapter and write its acceptance fixture before implementation.
+   Minimum evidence: the named Action validates, allow auto-dispatches once, the configured backend
+   receives the exact intended payload and credential identity, duplicate Decision/start paths do
+   not call it twice, success and safe failure are delivered, and ambiguous transport loss becomes
+   unknown without retry.
+
+`agentplane:v0.echo` remains explicitly fixture-only and cannot satisfy this gate.
+
+### `DEL` — pending, result, and notification delivery contract
+
+**P0 behavior:** submission remains non-blocking; a pending human Decision and the eventual
+Decision/Execution result reach the originating Thread through one durable, redacted event path.
+
+**Needed support:** define outbox draining and acknowledgement, idle/active/gone Thread delivery,
+withdrawal before execution, notification deep links/callback idempotency, sensitive payload
+projection, and what an agent receives for `execution_unknown`. The landed outbox row proves only a
+safe pending reference exists; no consumer currently delivers it.
+
+**Acceptance evidence:** a scripted replay covering submit -> pending -> allow/deny -> one execution
+or no execution -> later Thread input, including process restart and duplicate notification callback.
+
+## Preserved decisions
+
+These are observed product decisions and must not be reopened by the schema or wiring gates:
+
+- `ActionRequest` is one logical intent with an invariant request shape.
+- `Decision` and `Execution` are separate durable records.
+- One ActionRequest may create at most one Execution.
+- A final allow Decision may auto-dispatch; there is no universal agent `commit` step.
+- The v0 DecisionProvider is human/operator-backed.
+- Dispatch is never blindly retried; ambiguity becomes `execution_unknown`.
+- Caller-own and operator-all reads remain the v0 access scope, with credential-shaped data redacted.
+
+## Deferred
+
+- capability matrices or a broad Agent identity/privilege framework;
+- MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
+- production executor implementation in this planning PR;
+- per-destination workload audiences until recipient isolation is required;
+- broad profiles beyond the landed launch-preset slice; and
+- cryptographic Decision signing until Decisions cross a boundary that requires it.

@@ -1,335 +1,191 @@
-# Agent operations, approvals, and cross-agent data access
+# Agent operations, approvals, and access
 
-Status: **design discussion; v0 product decisions recorded, implementation contract still open**.
-This note prevents the next approval feature from turning Agentplane into a monolith before the
-remaining lifecycle, data-handling, and authority boundaries are settled.
+Status: **the v0 ActionRequest lifecycle and standalone Action Service are implemented; Action
+schema, Executor wiring, and delivery remain explicit design gates.** The authoritative dependency
+map and acceptance criteria are in [`task_dag.md`](task_dag.md).
 
-## Why the current “ask” name is provisional
+## Accepted vocabulary and decisions
 
-Haku Console's `tool_call` is a useful precedent but is too narrow as the Agentplane product noun:
-an operation may invoke an MCP server, use HTTP egress, request Kubernetes authority, read a
-trajectory, or ask another service to do work. Conversely, a human approval is only one possible
-outcome of an operation and is not the operation itself.
+- **Action**: a named, versioned capability definition. Its exact schema/ownership is still the
+  `AS` design gate.
+- **ActionRequest**: one immutable caller intent to invoke an Action with structured arguments.
+- **Decision**: an authorization disposition over one ActionRequest.
+- **Execution**: the at-most-one concrete run created after an allow Decision.
+- **Executor**: the adapter/process that performs that run. Its selection and boundary are still the
+  `EW` design gate.
+- **Delivery**: the pending/Decision/Execution event returned to the originating Thread. Its durable
+  path is still the `DEL` design gate.
 
-Working vocabulary:
+Preserve these already accepted decisions:
 
-- **ActionRequest**: an agent-originated intent to invoke a named capability with structured input.
-- **Decision**: an authorization disposition over an ActionRequest.
-- **Execution**: the one concrete run permitted for an allowed ActionRequest.
-- **Delivery**: the machine-readable receipt, state update, result, denial, or pending event sent
-  back to the originating Thread.
-- **DecisionProvider / Decision Authority**: the component that evaluates and issues a final
-  Decision, whether automatically, through a human action, or through an LLM judge.
+- `ActionRequest` is the product noun; do not create a separate “ask” or approval-only request type.
+- A request is one logical intent and may produce at most one Execution.
+- Decision and Execution are separate durable records.
+- The request shape does not change based on whether review is automatic or human.
+- A final allow Decision auto-dispatches; the agent does not self-approve or issue a universal
+  `commit` step.
+- The v0 DecisionProvider is human/operator-backed.
+- There are no blind execution retries. If dispatch may have started and the result is unknown, the
+  terminal projection is `execution_unknown` unless an adapter can reconcile through an
+  authoritative status read without starting another effect.
+- Caller-own and operator-all reads are the v0 scope. Cross-agent reads and standing grants are
+  separate deferred products.
 
-The accepted product noun is **`ActionRequest`** (or simply `Request` in a scoped API), and the
-UI can use “action”. It says “the agent intends this effect”
-without claiming that a harness-level tool call, an authorization decision, or an execution has
-already happened. `Operation` remains a reasonable internal term for an adapter operation, but it is
-too easy to confuse with implementation-level calls. Do not use “ask” or “tool call” in this wire
-contract.
+## Observed evidence on `devel`
 
-A human approval is not a different request shape. Every ActionRequest has the same capability,
-arguments, provenance, and correlation fields whether the eventual decision is automatic, human,
-LLM-assisted, or denied. The request is submitted to the hub; the decision route is an explicit
-recorded transition, not a schema branch known by the agent in advance.
+PR [#5700](https://github.com/agentydragon/ducktape/pull/5700) landed an independently deployable
+Action Service, not an in-process “Action Hub” inside the integration app. It owns its own PostgreSQL
+schema and is the canonical state owner for ActionRequests, Decisions, Executions, state events, and
+pending-decision outbox references. The integration app/BFF and future notification surfaces are
+clients.
 
-The accepted v0 model separates all three concerns: ActionRequest (intent), Decision
-(authorization disposition), and Execution (the one concrete run). This is slightly more
-machinery than one status field, but it matches the desired distinction between waiting for a
-decision, being denied, and actually running.
+### Current ActionRequest contract
 
-### Accepted v0 decisions
-
-- The product noun is **`ActionRequest`**; do not use “ask” or “tool call” in this contract.
-- An ActionRequest is one logical intent and may result in at most one Execution.
-- The request shape is invariant: the agent does not choose a different schema based on whether the
-  request is expected to be auto-allowed or human-reviewed.
-- After a final `allow` Decision, the Action Hub automatically dispatches the request. There is no
-  agent self-approval or universal `commit` step in v0.
-- An LLM judge is allowed to issue the final Decision when that provider is implemented and returns
-  a decision. If it abstains or refers the request, the request remains `decision_pending` and can
-  follow another route; the hub does not downgrade a judge's final verdict to a mere suggestion.
-- V0 records Decision issuer and provenance, but does not require cryptographic signing. Signing can
-  be added when Decisions cross a trust boundary or replay protection requires it.
-
-## Semantics to settle before implementation
-
-### What an ActionRequest means
-
-An ActionRequest is one logical agent intent and may result in at most one Execution. There are no
-request-level retries: if execution fails or is cancelled, that request is terminal and a new
-ActionRequest is required to try again. Duplicate dispatch must be prevented by the hub's
-idempotency/correlation checks rather than handled by creating another Execution. If the connection is
-lost after dispatch may have begun, the hub must not replay blindly; it records `execution_unknown` and
-may reconcile through an adapter's authoritative status query without starting a second Execution.
-
-Every ActionRequest should preserve the upstream adapter payload as the evidence-bearing body. A
-normalized mirror of every MCP argument or provider-specific field is not justified yet.
-
-### Lifecycle
-
-Use one immutable request payload plus separate decision and execution projections:
-
-```text
-ActionRequest accepted
-  -> decision_pending
-  -> allowed              [Decision: allow]
-  -> denied               [Decision: deny]
-
-allowed
-  -> dispatching -> running
-                 -> execution_unknown
-running
-  -> succeeded | failed | cancelled
-execution_unknown
-  -> reconciled to succeeded | failed
-
-decision_pending
-  -> cancelled | withdrawn
-```
-
-`decision_pending` means no authority has issued a final disposition yet; the UI may explain that
-this is waiting on policy, an LLM judge, or a human, but those are routes, not request schemas.
-`allowed` is an authorization result, not a claim that execution has started. `denied` is an
-authorization outcome; `failed` means execution began and did not complete; `cancelled` means an
-actor withdrew work. Reserve `rejected` for hub-level refusal before a valid request exists (bad
-schema, missing identity, or duplicate idempotency key), rather than using it interchangeably with
-policy denial.
-
-The durable evidence is an append-only sequence containing the ActionRequest, Decision event(s),
-and at most one Execution event sequence. The hub can maintain a current projection for UI and agent
-delivery, but it must not collapse “pending decision,” “denied,” and “running” into one overloaded
-queue state. `execution_unknown` is an outcome-uncertainty state, not permission to retry.
-
-Potential `expired` state is deliberately undecided. Haku's current approval machinery has no
-expiry, while credentials and execution attempts may still have independent time limits. Do not add
-an expiry state merely because it is conventional.
-
-Remaining questions for Rai:
-
-- Can the originating agent continue while an ActionRequest is `decision_pending`?
-- Is the Decision delivered as a later Thread input only, or may a blocked native turn be resumed?
-- Is withdrawal agent-controlled, operator-controlled, or both?
-- How can each first adapter reconcile an `execution_unknown` result without replaying the action?
-- Is a standing grant a different object, or a Decision that creates a reusable grant?
-
-The v0 direction is otherwise fixed: submission returns a receipt immediately and never blocks the
-agent; a later Decision is delivered as an event/input; withdrawal is available before execution
-starts; one allow Decision covers one logical ActionRequest and its single possible Execution;
-standing authority is a separate grant owned by the existing grants/access machinery; and an allowed request
-automatically dispatches with explicit `dispatching` and `running` events.
-
-### Agent-facing UX
-
-The agent-facing result should be a stable machine envelope independent of whether the adapter is
-HTTP, Kubernetes, host execution, or MCP. It should distinguish at least:
+`POST /v1/action-requests` accepts exactly:
 
 ```json
 {
-  "kind": "action_receipt",
-  "request_id": "ar_...",
-  "state": "decision_pending",
-  "decision_route": "human",
-  "capability": "mcp:github.search_repositories",
-  "input": { "...": "..." },
-  "message": "The operator has been notified; continue other work.",
-  "decision": null
+  "idempotency_key": "caller-stable-key",
+  "capability": "agentplane:v0.echo",
+  "arguments": { "text": "hello" },
+  "origin": {},
+  "correlation": {}
 }
 ```
 
-The final shape is open. In particular, decide whether the agent receives the full input again,
-which could contain sensitive data, or only a redacted/reference form. The human UI needs the full
-reviewable operation; the agent may need less.
+- `idempotency_key` is a required 1–200 character string, unique per authenticated caller. Reusing
+  it with the same envelope returns the original request; reusing it with a different envelope
+  conflicts.
+- `capability` is a required 1–240 character string and must be advertised by the configured
+  Executor.
+- `arguments` is a required JSON object but has no capability-specific schema yet.
+- `origin` and `correlation` are optional JSON objects stored only as untrusted provenance. They do
+  not establish Sandbox, Thread, Agent, owner, role, or operator authority.
+- Extra top-level fields are rejected.
+- Workload identity comes only from the shared destination-side `SandboxPrincipal` resolver. Two
+  Pods using the same ServiceAccount remain distinct callers through their live Sandbox UIDs.
+- Credential-shaped keys are recursively redacted from caller/operator projections, execution
+  results/errors, and pending outbox payloads; the present heuristic is not yet an Action definition
+  sensitivity contract.
 
-The ActionRequest should be usable for an MCP server without making MCP the core abstraction:
+### Current Decision and Execution behavior
 
-```text
-Agent Thread -> Action Hub -> Decision Authority -> MCP Executor -> MCP server/tool
-                         -> Decision / result / Execution events
-```
+The separate operator route issues a human `allow` or `deny` with expected-version and idempotency
+checks. A winning allow creates one Execution row and schedules automatic dispatch. The store
+atomically moves the only Execution from `pending_dispatch` to `dispatching` before invoking the
+Executor. A restart resumes only work that provably remained `pending_dispatch`; `dispatching` or
+`running` work becomes `execution_unknown`. Executor exceptions are projected through a stable safe
+classification and are not retried.
 
-An MCP adapter owns server discovery, tool schema, transport, and MCP-specific errors. The policy
-authority decides access and approval; Agentplane does not become an MCP registry or a universal
-protocol translator.
-
-## Authority boundary
-
-Keep the hub, decision issuers, and executors separate even if the first deployment colocates them:
-
-- **Agentplane runtime**: Sandbox and Thread lifecycle, native runner protocol, and delivery to a
-  Thread when a product layer asks it to deliver an event.
-- **Action Hub / Action Coordinator**: accepts and durably records ActionRequests, validates
-  correlation/idempotency, routes them to a DecisionProvider, persists Decision artifacts, dispatches
-  allowed requests to an Executor, and delivers state changes. It is the durable coordinator, not
-  the policy authority. V0 artifacts carry issuer and provenance fields but do not require
-  cryptographic signatures.
-- **DecisionProvider / Decision Authority**: evaluates a request and issues an allow, deny, or
-  referral/pending result. The provider may be an automatic policy evaluator, an LLM judge, or a
-  human-review adapter. A final Decision names its issuer, basis, request reference, constraints,
-  and provenance. When an LLM judge is implemented as the selected provider, its final allow/deny
-  result is authoritative; an abstention/referral remains pending rather than becoming an implicit
-  denial. Cryptographic signing is deferred from v0 and can be added when the artifact crosses a
-  trust boundary or replay protection requires it.
-- **Execution adapter / Executor**: MCP/HTTP/Kubernetes/host-specific invocation and result
-  translation. It receives an allowed request and creates at most one Execution record; it does not
-  retry or reinterpret approval policy. A failed Execution is terminal for that ActionRequest.
-- **Integration/conversation app**: current operator-facing review and presentation, if it owns the
-  first Action UX. Human action should enter through a DecisionProvider rather than directly mutating
-  hub state.
-- **Trajectory store**: durable event evidence and request references, without becoming the policy
-  engine or decision issuer.
-
-This gives the requested independent rollout seam: the hub can remain stable while a policy evaluator,
-LLM judge, or human-review surface is replaced. The first vertical slice may implement the interfaces
-in one deployment, but it must preserve the boundaries and record the issuer of every final Decision.
-The hub consumes the Decision result; it does not silently convert a provider's final verdict into a
-mere recommendation.
-Do not add a generic controller, policy DSL, or MCP gateway until one real consumer requires it.
-
-## V0 storage and read scope
-
-The useful first boundary is exactly the one Rai suggested:
-
-- the **caller** can read its own ActionRequests, Decisions, and safe result projections;
-- the **human operator** can read and decide on every request in the operator's existing Agentplane
-  scope; and
-- no caller can read another caller's requests or results until Agent identity and cross-agent read
-  policy are designed.
-
-“Own” should be derived from the authenticated origin Thread/caller principal recorded when the
-ActionRequest is submitted, not from a caller-provided `owner_id`. For v0, the caller's read surface
-should include the original request and its final result/error, with protected credential values,
-private reviewer notes, and notification delivery metadata redacted. Operator access can see the
-full reviewable request and decision context, but still must not expose proxy-held secrets. Operator
-reads and decisions should be auditable from the beginning; this is a small event field, not a new
-permission framework.
-
-The Action Hub is the **canonical owner of ActionRequest state**. Store there:
-
-- the immutable request envelope and provenance;
-- Decision events and issuer metadata;
-- the single Execution lifecycle and compact result/error envelope; and
-- references to larger trajectory or blob content when storing it inline would be inappropriate.
-
-Do not duplicate the canonical request and result in the integration app's own tables. The existing
-trajectory store may retain the detailed event/content evidence, but the Action Hub owns the access
-check and returns an authorized projection or follows a reference; a raw trajectory link must not
-become an ACL bypass.
-
-This is a logical service boundary, not a requirement to deploy a microservice in v0. The Action Hub
-and its first DecisionProvider can live in the integration app process and use its PostgreSQL
-connection, behind interfaces that make a later extraction possible. Split it into a separately
-rolled service only when another writer/consumer, independent availability, or an actual rollout
-conflict makes that boundary valuable. The integration app should remain the browser-facing BFF:
-verify the existing operator identity, call the hub over an authenticated service channel, and never
-let the browser write decisions or assert an arbitrary principal.
-
-## Human UI and push approvals
-
-Push approval is a delivery channel, not a second policy authority. The Action Hub should publish a
-small pending-decision notification event to a notification adapter/outbox. The notification should
-contain an opaque request reference and a redacted summary or deep link, never the full sensitive
-request by default.
-
-An approve/deny button from push should return through the DecisionProvider/Authority with:
-
-- the authenticated operator or notification recipient identity;
-- the request ID and the expected current version/state;
-- the intended verdict; and
-- an idempotency key or one-time channel action reference.
-
-The hub rechecks that the request is still `decision_pending`, that the actor may decide it, and that
-no prior Decision won the race. A stale, duplicated, or conflicting callback becomes a harmless
-no-op/error rather than a second Decision. This preserves the same Decision path for the frontend
-and for future Haku Console push notifications.
-
-The first web UI can therefore be:
+The current lifecycle proven by tests is:
 
 ```text
-browser -> integration app BFF -> Action Hub -> Decision Authority
+decision_pending -> allowed -> dispatching -> running -> succeeded | failed | execution_unknown
+decision_pending -> denied
 ```
 
-and the future push path can be:
+Withdrawal, notification delivery, originating-Thread delivery, adapter-specific reconciliation,
+and cancellation after dispatch are not implemented by this slice.
 
-```text
-Action Hub -> notification adapter -> push provider
-push callback -> Decision Authority -> Action Hub
+### Fixture-only executor
+
+`EchoExecutor` advertises only `agentplane:v0.echo` and returns:
+
+```json
+{ "echo": { "...": "the submitted arguments" } }
 ```
 
-No approval bearer token should be a guessable request ID or an unrestricted URL. If the push provider
-cannot carry the existing operator session, use a short-lived, single-use, verdict-bound channel
-reference that the authority redeems and then invalidates. V0 Decision records need not be
-cryptographically signed, but push callbacks still need authentication, replay protection, and
-current-state checks.
+It runs in the Action Service process and performs no external effect. It proves request admission,
+human Decision, automatic single dispatch, result projection, redaction, and recovery. It does not
+prove a production Action definition, schema validation, backend configuration, credential boundary,
+worker transport, capability discovery, health reporting, MCP integration, or real result delivery.
+It must remain described and named as a fixture.
 
-## Data access and cross-agent reads
+## Open gate: Action schema contract (`AS`)
 
-Reading a Thread or trajectory is not the same permission as invoking an external tool. A future
-cross-agent read needs a policy over at least:
+Before a real adapter is implemented, decide and test:
 
-```text
-requesting principal
-  -> target principal / Thread / data scope
-  -> operation (list metadata, search text, read events, read raw frames)
-```
+- Action versus ActionRequest: the definition is not the invocation;
+- stable action/capability name and versioning, including how requests pin a definition;
+- parameter representation and validation;
+- stable result and error schema;
+- sensitivity/redaction annotations for review, persistence, delivery, logs, and replay;
+- compatibility and evolution rules; and
+- definition ownership.
 
-Raw frames and search results can carry private data, so “can read the Thread record” is not enough
-as a future policy statement. The system may need separate scopes for metadata, derived summaries,
-full events, raw native frames, and content-bearing payloads. Do not implement those scopes before a
-real cross-agent read consumer establishes the minimum useful boundary.
+**Recommendation:** start with static, code-owned definitions beside code-owned adapters, validated
+at startup. Use a small JSON-compatible typed contract unless the first adapter demonstrates a need
+for full JSON Schema. Service configuration and a registry remain alternatives, not P0 machinery.
 
-Agentplane currently has no durable **Agent** entity. A Sandbox is runtime infrastructure and a
-Thread is interaction context; neither is a sufficient long-lived identity for statements such as
-“Haku may read Public Coder's past conversations.” Before cross-agent reads, decide whether an Agent
-is:
+**Required evidence:** one hand-authored definition plus request/result/error transcript; positive
+validation and offline replay; negative tests for unknown name/version, malformed parameters,
+extra/missing/wrong-type values, incompatible definition evolution, malformed result/error, and
+sensitive data appearing in any projection or log. Replay must not execute a backend.
 
-- an integration-app-owned identity that may own multiple Sandboxes and Threads;
-- an authorization principal supplied by an external access controller; or
-- both, with a stable product identity linked to an opaque authorization principal.
+## Open gate: Executor wiring contract (`EW`)
 
-Recommendation: keep Agent identity separate from authorization principal, as with the existing
-runtime vocabulary. Let the integration app or Agent Console own the mapping from product Agent to
-opaque access principal; let the access authority decide read permissions. Agentplane should expose
-stable Thread/Sandbox references and enforce a decision at its read boundary, not invent a global
-identity and permission registry.
+Before the echo fixture is replaced or supplemented, decide and test:
 
-Cross-agent reads are therefore a later design package with two prerequisites:
+- how action name/version selects an Executor;
+- capability/definition registration and duplicate/missing/incompatible startup failure;
+- adapter/backend configuration and startup validation;
+- in-process versus separate worker/process, justified by the first adapter's failure and isolation
+  needs;
+- the credential and Kubernetes ServiceAccount boundary;
+- dispatch transport and how results/events return to the Action Service;
+- exactly-one claim, no-retry, and unknown-outcome semantics across process/network loss;
+- request and backend idempotency-key behavior;
+- executor health and capability discovery; and
+- one concrete first adapter acceptance fixture.
 
-1. a stable Agent identity and ownership model; and
-2. a data-scope/read-policy contract owned outside Agentplane runtime.
+**Recommendation:** keep the first adapter code-owned and in-process only if its transport can keep
+credentials in the correct process and uphold the no-retry boundary. Otherwise use a separate
+worker for that adapter; do not build a general worker/controller framework first.
 
-Until then, T3 search is scoped to the caller's own authorized trajectory surface, and no API should
-pretend that a Sandbox name is an Agent identity.
+**Required evidence:** after one allow, the selected configured backend receives exactly one intended
+payload under the intended credential identity; duplicate submission/Decision/start paths do not
+invoke it twice; safe success/failure returns through the service; ambiguous loss records unknown
+without replay; invalid or unhealthy registration fails before dispatch. The concrete backend target
+and credential owner require Rai's choice before implementation.
 
-## MCP and access gating questions
+## Open gate: pending/result delivery (`DEL`)
 
-Before wrapping MCP servers, decide:
+The landed `action_outbox` row contains only request ID and capability for a new pending request. It
+proves that a credential-safe durable notification reference can be written transactionally; there
+is no outbox consumer, notification callback path, or originating-Thread delivery yet.
 
-- whether the MCP server is trusted infrastructure or runs inside the Sandbox;
-- whether policy gates server reachability, individual tool calls, or both;
-- whether tool schemas and arguments are visible to the operator and to the agent;
-- whether an approval authorizes one tool call, a server/tool pair, or a parameterized grant;
-- how server-originated content is labeled and protected from prompt injection;
-- whether MCP results are copied into the Thread, the trajectory, or both;
-- how retries and duplicate tool calls are correlated.
+Settle and test:
 
-Recommendation: begin with a trusted adapter outside the Sandbox, individual structured tool
-invocations, explicit capability names, and one-operation decisions. Let the MCP server remain the
-execution authority for its own semantics; let the access authority gate the adapter before it
-calls the server.
+- non-blocking receipt and later input to an idle, active, or resumed Thread;
+- outbox claim/acknowledgement and process-restart replay;
+- redacted pending/Decision/result/error envelopes;
+- withdrawal before Execution starts;
+- duplicate/stale notification callbacks through the same human DecisionProvider; and
+- agent-visible treatment of `execution_unknown` and any adapter-specific status reconciliation.
 
-## Implementation gates
+Standing grants remain separate objects owned by access/grants machinery. They are not an alternate
+Execution count or an Action definition field.
 
-Do not implement the first approval feature until the remaining gates are resolved:
+## Authority boundaries
 
-- pending-turn behavior and later-input delivery;
-- single-request versus standing-grant semantics;
-- the minimum machine envelope and sensitive-field handling; and
-- whether the first MCP adapter belongs in the integration app or an external access/adapter layer.
+- **Action Service:** canonical lifecycle/state owner and access check.
+- **DecisionProvider:** issues a final allow/deny; v0 is the human operator path.
+- **Executor:** owns backend-specific invocation and result translation, never policy reinterpretation.
+- **Integration app/BFF:** authenticates the browser/operator and calls the operator API; it does not
+  duplicate Action state.
+- **Agentplane runtime:** owns Sandbox/Thread lifecycle and eventually delivers a product event to a
+  Thread; it does not own every external protocol.
+- **Trajectory store:** may preserve larger evidence by reference but cannot bypass Action Service
+  read authorization.
+- **Notification adapter:** delivers a redacted reference and returns operator intent through the
+  same DecisionProvider; it is not a second authority.
 
-The v0 product decisions already accepted are the `ActionRequest` noun, logical-intent durability,
-automatic dispatch after allow, authoritative final decisions from an implemented LLM judge, and no
-cryptographic signing requirement in v0.
+## Deferred
 
-After those choices, the first implementation should be one end-to-end adapter and one acceptance
-scenario, not a universal access framework.
+- MCP registry or universal protocol translation;
+- capability matrices, general Agent privileges, and cross-agent permissions;
+- standing-grant design inside the ActionRequest lifecycle;
+- LLM DecisionProvider and cryptographic Decision signatures;
+- dynamic definition authoring/registry;
+- production executor implementation in this docs-only change; and
+- broad external-access policy beyond the first concrete adapter.

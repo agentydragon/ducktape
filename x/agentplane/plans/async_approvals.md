@@ -1,138 +1,95 @@
-# Asynchronous approvals
+# Asynchronous approvals and delivery
 
-Status: **provisional design notes pending the operation-contract gate.** Builds on the runner
-protocol and the app's bridge, and is the work behind story 1 (`OPI` in
-[`task_dag.md`](task_dag.md)), following the current direction that external events arrive as
-Thread inputs. Nothing here is built yet; the product noun, lifecycle, MCP boundary, and data
-handling must first be settled in [`operations_and_access.md`](operations_and_access.md). The
-harness behaviors it relies on are pinned by [`../harness_tests/`](../harness_tests/).
+Status: **the human Decision path is implemented; pending/result delivery and notification handling
+remain open.** This plan is the `DEL` gate in [`task_dag.md`](task_dag.md), not a second request or
+tool lifecycle.
 
-## Decisions
+## Preserved decisions
 
-- **Native harness approvals stay off.** Both harnesses run allow-everything inside the sandbox
-  (Claude `can_use_tool` auto-allowed, Codex `approval_policy = "never"`). The sandbox is the
-  blast radius; a sandbox-local action needs no human. Two facts rule native prompts out as the
-  approval channel: they block the turn with no "come back later" answer, and a harness can only
-  execute an approved action if it holds the credential, which the model's own shell can then read.
-  Codex's decline additionally carries no text the model sees.
-- **Haku console stays the credential holder and approval broker** for operations that need the
-  operator's credential; where the target's own RBAC can scope the agent, it gets a delegated
-  identity instead ([`external_access.md`](external_access.md)). Anything that leaves the
-  sandbox is a Haku tool call. Credentials are injected server-side at execution; the tool result
-  is the message channel, which both harnesses pass to the model verbatim.
-- **Submission never blocks.** A call that is not auto-approved returns a stub immediately. The
-  agent keeps working, withdraws if the ask becomes moot, and learns the decision as a later thread
-  input rather than by polling.
-- **No expiry.** A pending call waits as long as the agent wants it to; `withdraw_tool_call` is the
-  agent's lever. Withdrawing pending calls of a thread that is archived for good is a follow-up.
+- Native harness approval prompts remain off. Sandboxes are the harness blast radius; a
+  credential-bearing action must execute outside the harness rather than handing the credential to
+  a native prompt path.
+- `ActionRequest` is the invariant request shape for both human-reviewed and future auto-decided
+  actions.
+- Submission is non-blocking. A caller receives a durable `decision_pending` receipt and may
+  continue; the Decision/result should arrive later as a machine-readable Thread input.
+- Decision and Execution are separate. An allow auto-dispatches at most one Execution; a deny creates
+  none.
+- The v0 DecisionProvider is human/operator-backed.
+- There are no blind retries. An ambiguous in-flight loss becomes `execution_unknown`.
+- Push/UI approval is a delivery channel into the same DecisionProvider, never a second authority.
+- Standing grants are separate access objects, not repeated Executions of one ActionRequest.
 
-## Tool contract
+## Observed evidence from the landed Action Service
 
-One schema shape for every Haku tool, auto-approved or not:
+PR [#5700](https://github.com/agentydragon/ducktape/pull/5700) proves:
 
-- **Input:** the upstream tool's own argument schema plus one optional `rationale` string, the
-  agent's own "why I am doing this" for the approval view and the audit row. No `title`, no
-  `wait_for_result_ms`, no separate envelope for gated tools.
-- **Result:** one envelope for every tool.
+- a workload-authenticated caller can submit one request and read only its own redacted state;
+- an independently authenticated operator can list/read all requests and issue `allow` or `deny`;
+- expected-version checks reject stale decisions;
+- provider/issuer/idempotency checks make duplicate same decisions harmless and conflicting reuse an
+  error;
+- concurrent duplicate Decisions produce one winning Decision and at most one Execution;
+- allow auto-dispatches while deny does not;
+- the state event sequence is durable and ordered;
+- unsafe restart state becomes `execution_unknown` instead of replaying; and
+- each new pending request writes a durable outbox reference containing only `request_id` and
+  `capability`, not arguments or credentials.
 
-```json
-{
-  "tool_call_id": "tc_01J...",
-  "status": "pending",
-  "submitted_at": "2026-09-02T08:14:03Z",
-  "now": "2026-09-02T08:14:03Z",
-  "message": "Not auto-approved; the operator has been notified. Pending means unanswered, not refused: answers usually take hours. Keep working; the decision and any result arrive as a later input. Use get_tool_call to check early or withdraw_tool_call if this is no longer needed."
-}
-```
+That evidence stops at the Action Service boundary. `NullNotificationOutbox.wake()` has no delivery
+behavior, no process drains `action_outbox`, and no event is injected into a Thread.
 
-| `status`    | Meaning                                              | Carries                 |
-| ----------- | ---------------------------------------------------- | ----------------------- |
-| `completed` | Auto-approved or approved, executed, result attached | `result`                |
-| `pending`   | Waiting for the operator                             | timestamps, message     |
-| `running`   | Approved, execution in progress                      | `decided_at`            |
-| `denied`    | Operator or policy refused                           | `decided_at`, `message` |
-| `withdrawn` | Agent retracted it                                   | `withdrawal_reason`     |
-| `failed`    | Approved but execution failed                        | `error`                 |
+## Open delivery contract
 
-Timestamps are data the model reads instead of inferring: `submitted_at` and `now` on every
-response, so "pending for two minutes" is read as the operator not looking yet, not as a refusal.
-An operator-presence field is undecided: "queue last viewed" has no clear meaning when approvals
-come from notification buttons rather than the queue view. If one is added, the honest candidate is
-the time of the operator's last decision on any call, which every approval channel updates.
+### P0 behavior
 
-Lifecycle tools:
+A caller submits an ActionRequest, continues work, and later receives one durable, redacted input
+that says whether the request remains pending, was denied, or executed and produced a result/error.
+The same state is visible to the operator without a second lifecycle.
 
-- `get_tool_call(tool_call_id, wait_for = "approval" | "completion", wait_ms)`: the long poll,
-  returning as soon as the named state is reached or `wait_ms` elapses. `completion` implies
-  `approval`. This is the exception path, for checking early or after a resume; the normal path is
-  the decision arriving as input.
-- `withdraw_tool_call(tool_call_id, reason)`: the agent's only lifecycle action.
+### Needed support
 
-Auto-approved calls return `completed` with the upstream result inside `result`. They lose the exact
-upstream response shape; the one contract for every tool is worth that.
+1. **Outbox claim and acknowledgement.** Define which process drains pending rows, how it claims work,
+   when `delivered_at` is written, and how restart redelivery remains idempotent.
+2. **Thread destination.** Define the authoritative origin reference needed to address a Thread.
+   Current `origin`/`correlation` are untrusted provenance and cannot silently become authorization or
+   routing truth.
+3. **Thread-state delivery.** Pin idle/live, idle/resumed, and active-turn behavior against the runner
+   contracts. A later input is the default; do not reintroduce a blocked native approval prompt.
+4. **Machine envelope.** Define the minimum receipt/Decision/Execution fields, version, redaction,
+   and references. The Action schema gate owns capability-specific input/result sensitivity.
+5. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
+   the final event. Do not add post-dispatch cancellation unless the first adapter can prove its
+   semantics.
+6. **Notification adapter.** Send only an opaque request reference and redacted summary/deep link.
+   Approve/deny callbacks must authenticate the operator, bind the intended verdict, include an
+   idempotency/current-version check, and call the existing Decision route.
+7. **Unknown outcome.** Define the agent-visible message for `execution_unknown` and whether the
+   concrete adapter exposes an authoritative status lookup. Status reconciliation may update the
+   existing Execution; it never starts another one.
+8. **Batching.** If several events target one Thread together, preserve each event and ordering while
+   using one later input. Do not build urgency classes before an observed need.
 
-## Decision delivery
+### Acceptance evidence
 
-A Haku decision (approved, denied with reason, completed with result, failed) becomes a thread
-input delivered by Agentplane. The delivery path follows thread state, and each path is pinned by a
-scripted test:
+Use a scripted scenario with the fixture executor first, then repeat it for the first real adapter:
 
-| Thread state        | Delivery                                                                     | Pinned by                   |
-| ------------------- | ---------------------------------------------------------------------------- | --------------------------- |
-| idle, process alive | new `user` frame / `turn/start`                                              | `test_turns.py` baseline    |
-| idle, process gone  | `--resume` / `thread/resume`, then the input                                 | `test_turns.py` idle resume |
-| turn active         | Claude: appended to the running tool's result; Codex: joins the running turn | `test_active_turn.py`       |
+1. submit returns `decision_pending` without blocking;
+2. a durable outbox row survives a delivery-process restart;
+3. a redacted pending notification is sent once logically despite duplicate delivery attempts;
+4. allow and deny callbacks race through the same DecisionProvider, with one final Decision;
+5. allow produces exactly one Execution and deny produces none;
+6. the originating idle/live, idle/resumed, and active Thread receives the defined envelope;
+7. duplicate callback/outbox delivery does not create a second Decision, Execution, or Thread event;
+8. sensitive arguments, reviewer reason, credentials, and backend exception text do not cross their
+   allowed projections; and
+9. ambiguous dispatch loss reaches the Thread as `execution_unknown` without backend replay.
 
-The injected input rides the same channel as the operator's own words, so it carries an
-unmistakable machine envelope the system prompt explains, for example an `<agentplane-event>`
-element with `kind`, `tool_call_id`, `status`, and the result or reason inside. A denial reason is
-the one place the operator's words travel; the envelope attributes them correctly.
+## Deferred
 
-## Notification batcher
-
-Decisions are one source among several that want to reach a thread: GitHub activity, Matrix
-messages, subscriptions. A batcher sits in front of thread input:
-
-- collects events per thread, tagged with source, kind, and ids;
-- debounces with one constant window of a few seconds after the first event, then delivers one
-  input carrying every held event in arrival order; no urgency levels, since an event that misses
-  the window simply rides the next input;
-- never merges events, so each item keeps its own ids and the model can act on them separately.
-
-Five approvals clicked in one sitting arrive as one input, not five turns.
-
-## Policy evaluation
-
-Haku decides auto-approval; this section records the evaluation shape the redesign should keep,
-independent of where the rules are written.
-
-- One input document per request: actor, access profile, server, tool, arguments, plus resolved
-  facts (derived target repository, its visibility, Kubernetes SAR verdicts, label existence).
-- Facts are resolved in a phase between parsing the call and evaluating rules, by typed resolvers
-  with I/O; rules are pure over input plus facts. A fact that cannot be resolved is a named
-  `unknown` value the rules must treat as manual, never an exception that skips the rule.
-- One decision document: `approve | manual | deny`, matched policy ids, reasons. Logged with its
-  input so decisions replay.
-- Partial evaluation derives two things the registry currently hand-maintains: which facts a call
-  needs (evaluate with facts unknown; the residual names the concrete keys) and a tool's static mode
-  (evaluate with arguments and facts unknown; no residual means unconditional pass-through, a
-  residual means conditional, undefined means manual).
-- The same engine answers three callers: Haku tool calls, native permission prompts the Agentplane
-  bridge must acknowledge, and grant requests.
-
-Verified with OPA 1.20 on a Haku-shaped Rego policy: the residual for a public-repository rule with
-facts unknown is `data.facts.github.visibility["agentydragon/ducktape"] = "public"`, the exact
-lookup to run before deciding. Partial evaluation cannot see through a top-level rule built from
-`count()` and `else`, so the queries target the leaf `approve`/`deny` sets and Python assembles the
-outcome. Whether the rules live in Rego (sidecar or WASM) or stay in typed Python is a later choice;
-the input, facts, decision split is what to keep either way.
-
-## Burn-down
-
-1. Haku console: uniform argument schema with optional `rationale`; uniform result envelope; drop
-   the gated-tool envelope and `wait_for_result_ms`.
-2. Haku console: `get_tool_call` gains `wait_for` and `wait_ms`.
-3. Haku console: decision events (approved, denied, completed, failed) published for Agentplane.
-4. Agentplane: decision delivery by thread state with the machine envelope; system prompt text.
-5. Agentplane: notification batcher with per-thread debounce.
-6. Follow-up: withdraw pending calls of an archived thread with reason `thread archived`.
+- expiry merely because queues conventionally expire;
+- operator-presence heuristics;
+- LLM DecisionProvider or policy DSL;
+- standing-grant issuance through ActionRequest;
+- a general notification bus or subscription framework; and
+- cross-agent delivery before Agent identity and read policy exist.

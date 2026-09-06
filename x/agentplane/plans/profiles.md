@@ -1,7 +1,7 @@
 # Profiles
 
-Status: **replaced by the launch-presets design**. The scoped implementation is documented in
-[`launch_presets.md`](launch_presets.md); this file remains as the record of why a broad
+Status: **deferred after the launch-presets first slice landed**. The scoped implementation is
+documented in [`../docs/launch_presets.md`](../docs/launch_presets.md); this file remains as the record of why a broad
 capability profile is not the first abstraction.
 
 A broad profile would be the preset a sandbox runs under — "public coder", "Haku" — including

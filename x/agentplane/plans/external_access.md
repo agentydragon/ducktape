@@ -1,9 +1,10 @@
 # Agent access to external systems
 
-Status: **design notes feeding the access-control decisions (`AA`, `AB`) in
-[`task_dag.md`](task_dag.md).** One vocabulary for how an agent reaches a third-party system,
-the rule for choosing, and what each choice costs. Companion to
-[`async_approvals.md`](async_approvals.md), which covers the brokered path's approval protocol.
+Status: **deferred access-model notes, not on the current Action implementation path.** The next
+concrete work is the Action schema and Executor wiring gates in [`task_dag.md`](task_dag.md). This
+file preserves the delegated-versus-brokered vocabulary for choosing the first real adapter without
+turning that adapter into a broad identity, grant, or privilege framework. Companion to
+[`async_approvals.md`](async_approvals.md), which covers the still-open delivery path.
 
 ## Two base models
 
