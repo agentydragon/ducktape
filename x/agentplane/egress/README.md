@@ -81,6 +81,35 @@ BuildBuddy's hosted runner. That nested Bazel process is outside Agentplane egre
 would remain inert there. Do not configure credentialless `bb remote` until BuildBuddy offers a
 runner-side credential reference or Agentplane owns an equivalent broker at that boundary.
 
+## Authenticated workload credentials
+
+For a trusted first-party destination that directly validates the Sandbox Pod's projected workload
+token, an `EgressCredential` may resolve the bearer already authenticated on the sidecar-to-central
+hop. This remains ordinary policy and target substitution: there is no destination-specific branch,
+second token, sideband, or unconditional `Authorization` injection.
+
+```yaml
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: agentplane-workload
+spec:
+  description: Calling Sandbox Pod workload identity for trusted first-party services.
+  source:
+    authenticatedWorkloadToken: {}
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+```
+
+The sidecar still presents the existing configured workload audience (`agentplane-egress` in the
+current deployment). Central strips `Proxy-Authorization`, validates and binds its bearer to the
+live Sandbox, and substitutes it only when the selected rule names this credential and the request
+presents exactly `Authorization: Bearer agentplane-credential-agentplane-workload`. Missing, stale,
+or mismatched authenticated context fails closed. Audience migration is a separate deployment
+change, not part of this source.
+
 Authoritative evidence is pinned to BuildBuddy source commit
 [`6fc01488`](https://github.com/buildbuddy-io/buildbuddy/tree/6fc01488a60d69832f86eff154ac985e1170653e):
 the [authentication guide](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/docs/guide-auth.md)

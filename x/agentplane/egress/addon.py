@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from ipaddress import ip_address
 
@@ -19,8 +20,18 @@ from mitmproxy.proxy import server_hooks
 
 from x.agentplane.egress.agent_view import agent_view
 from x.agentplane.egress.decisions import DecisionRecord, DecisionRing, Outcome
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
-from x.agentplane.egress.policy import CONNECT, Allowed, Decision, Denied, DenyReason, EgressRequest, Index, evaluate
+from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier
+from x.agentplane.egress.policy import (
+    CONNECT,
+    Allowed,
+    AuthenticatedWorkloadContext,
+    Decision,
+    Denied,
+    DenyReason,
+    EgressRequest,
+    Index,
+    evaluate,
+)
 from x.agentplane.egress.resources import Sandbox
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
 
@@ -40,6 +51,14 @@ DENIED_HEADER = "x-agentplane-egress"
 # without an upstream, and the inner request is answered from the index.
 SELF_HOST = "egress.agentplane.internal"
 RULES_PATH = "/v1/rules"
+
+
+@dataclass(frozen=True)
+class _AuthenticatedConnection:
+    """A bearer associated with a client connection only after successful verification."""
+
+    token: str = field(repr=False)
+    identity: PodIdentity
 
 
 def _refusal(reason: DenyReason) -> http.Response:
@@ -70,10 +89,10 @@ class EgressAddon:
         self._ring = ring
         self._resolver = resolver
         self._clock = clock
-        self._tokens: dict[str, str] = {}
+        self._authenticated: dict[str, _AuthenticatedConnection] = {}
 
     def client_disconnected(self, client: connection.Client) -> None:
-        self._tokens.pop(client.id, None)
+        self._authenticated.pop(client.id, None)
 
     def _self_request(self, flow: http.HTTPFlow) -> bool:
         """Whether this is addressed to the proxy itself rather than through it."""
@@ -87,7 +106,7 @@ class EgressAddon:
         try:
             sandbox = await self._sandbox_of(flow)
         except IdentityRejectedError as error:
-            logger.info("identity rejected for the agent view: %s", error)
+            logger.info("identity rejected for the agent view: %s", error.reason)
             flow.response = _refusal(error.reason)
             return
         view = agent_view(self._index, sandbox, self._clock())
@@ -109,20 +128,22 @@ class EgressAddon:
         if flow.response is not None and flow.response.status_code >= 200:
             flow.response.stream = True
 
-    def _take_token(self, flow: http.HTTPFlow) -> str | None:
-        """The bearer token of this request, or the one its connection's CONNECT carried."""
+    def _token_for_authentication(self, flow: http.HTTPFlow) -> str | None:
+        """A presented bearer, or one retained only after this connection authenticated before."""
         client_id = flow.client_conn.id
         header: str | None = flow.request.headers.get("proxy-authorization")
         if header is None:
-            return self._tokens.get(client_id)
+            authenticated = self._authenticated.get(client_id)
+            return authenticated.token if authenticated is not None else None
         # For this proxy only, never for the upstream: removed even when malformed.
         del flow.request.headers["proxy-authorization"]
+        # A new hop credential must stand on its own. It can never fall back to an earlier tunnel's
+        # authenticated state when malformed or rejected.
+        self._authenticated.pop(client_id, None)
         scheme, _, token = header.partition(" ")
         token = token.strip()
         if scheme.lower() != "bearer" or not token:
-            self._tokens.pop(client_id, None)
             return None
-        self._tokens[client_id] = token
         return token
 
     async def _admit_self_tunnel(self, flow: http.HTTPFlow) -> None:
@@ -134,7 +155,7 @@ class EgressAddon:
         try:
             await self._sandbox_of(flow)
         except IdentityRejectedError as error:
-            logger.info("identity rejected for the agent view's tunnel: %s", error)
+            logger.info("identity rejected for the agent view's tunnel: %s", error.reason)
             flow.response = _refusal(error.reason)
             return
         # No response is what admits a CONNECT; the inner request is answered by `_serve_self`.
@@ -142,16 +163,36 @@ class EgressAddon:
 
     async def _sandbox_of(self, flow: http.HTTPFlow) -> Sandbox:
         """The live Sandbox this connection's token proves, or IdentityRejectedError saying why not."""
-        token = self._take_token(flow)
+        sandbox, _ = await self._authenticate(flow)
+        return sandbox
+
+    async def _authenticate(self, flow: http.HTTPFlow) -> tuple[Sandbox, AuthenticatedWorkloadContext]:
+        """Authenticate this hop or tunnel context and bind its bearer to the resulting Sandbox."""
+        client_id = flow.client_conn.id
+        previous = (
+            self._authenticated.get(client_id) if flow.request.headers.get("proxy-authorization") is None else None
+        )
+        token = self._token_for_authentication(flow)
         if token is None:
             raise IdentityRejectedError(DenyReason.TOKEN_MISSING, "no bearer token in Proxy-Authorization")
-        identity = await self._verifier.identify(token, _peer_ip(flow))
+        try:
+            identity = await self._verifier.identify(token, _peer_ip(flow))
+        except IdentityRejectedError:
+            self._authenticated.pop(client_id, None)
+            raise
+        if previous is not None and previous.identity != identity:
+            self._authenticated.pop(client_id, None)
+            raise IdentityRejectedError(DenyReason.POD_MISMATCH, "authenticated tunnel identity changed")
         sandbox = self._index.sandboxes.get(identity.sandbox_name)
         if sandbox is None or sandbox.metadata.uid != identity.sandbox_uid:
+            self._authenticated.pop(client_id, None)
             raise IdentityRejectedError(
                 DenyReason.SANDBOX_UNKNOWN, f"Sandbox {identity.sandbox_name} is not in the index"
             )
-        return sandbox
+        self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity)
+        return sandbox, AuthenticatedWorkloadContext(
+            bearer=token, sandbox_name=identity.sandbox_name, sandbox_uid=identity.sandbox_uid, pod_uid=identity.pod_uid
+        )
 
     async def _gate(self, flow: http.HTTPFlow) -> None:
         flow.response = _refusal(DenyReason.UNAVAILABLE)
@@ -174,13 +215,15 @@ class EgressAddon:
         pin: Pin | None = None
         decision: Decision
         try:
-            sandbox = await self._sandbox_of(flow)
+            sandbox, authenticated_workload = await self._authenticate(flow)
             sandbox_name = sandbox.metadata.name
-            decision = evaluate(self._index, sandbox, egress, self._clock())
+            decision = evaluate(
+                self._index, sandbox, egress, self._clock(), authenticated_workload=authenticated_workload
+            )
             if isinstance(decision, Allowed):
                 pin = await self._resolver.pin(egress.host, egress.port, internal=decision.cluster_internal)
         except IdentityRejectedError as error:
-            logger.info("identity rejected for %s %s:%d: %s", egress.method, egress.host, egress.port, error)
+            logger.info("identity rejected for %s %s:%d: %s", egress.method, egress.host, egress.port, error.reason)
             decision = Denied(error.reason)
         except UpstreamRefusedError as error:
             logger.info("upstream refused for %s %s:%d: %s", egress.method, egress.host, egress.port, error)

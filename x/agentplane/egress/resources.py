@@ -15,7 +15,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from kubernetes_asyncio import client as k8s_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -116,10 +116,27 @@ Target = Annotated[
 ]
 
 
-class CredentialSource(_Wire):
-    """Where the real value comes from. One source exists; the object shape admits others later."""
+class AuthenticatedWorkloadTokenSource(_Wire):
+    """The bearer retained from this request's successful workload authentication."""
 
-    secret_ref: SecretKeyRef = Field(alias="secretRef")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+
+class CredentialSource(_Wire):
+    """Exactly one tagged source for the value substituted at a declared target."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    secret_ref: SecretKeyRef | None = Field(default=None, alias="secretRef")
+    authenticated_workload_token: AuthenticatedWorkloadTokenSource | None = Field(
+        default=None, alias="authenticatedWorkloadToken"
+    )
+
+    @model_validator(mode="after")
+    def _one_source(self) -> CredentialSource:
+        if (self.secret_ref is None) == (self.authenticated_workload_token is None):
+            raise ValueError("source must set exactly one of secretRef or authenticatedWorkloadToken")
+        return self
 
 
 class CredentialSpec(_Wire):

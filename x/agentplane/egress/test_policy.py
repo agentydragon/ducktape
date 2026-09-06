@@ -11,6 +11,7 @@ import pytest_bazel
 
 from x.agentplane.egress.policy import (
     Allowed,
+    AuthenticatedWorkloadContext,
     Decision,
     Denied,
     DenyReason,
@@ -24,6 +25,7 @@ from x.agentplane.egress.policy import (
 from x.agentplane.egress.presentation import HeaderRewrite
 from x.agentplane.egress.resources import (
     ActiveReason,
+    AuthenticatedWorkloadTokenSource,
     BasicPasswordTarget,
     BasicUsernameTarget,
     BindingSpec,
@@ -63,6 +65,17 @@ def credential(name: str, *targets: Target, key: str = "token") -> EgressCredent
         spec=CredentialSpec(
             source=CredentialSource(secret_ref=SecretKeyRef(name="pat", key=key)),
             description=f"the {name} test credential",
+            targets=list(targets),
+        ),
+    )
+
+
+def workload_credential(name: str, *targets: Target) -> EgressCredential:
+    return EgressCredential(
+        metadata=ObjectMeta(name=name, generation=1),
+        spec=CredentialSpec(
+            source=CredentialSource(authenticated_workload_token=AuthenticatedWorkloadTokenSource()),
+            description=f"the {name} calling workload",
             targets=list(targets),
         ),
     )
@@ -345,6 +358,63 @@ def test_one_credential_is_substituted_at_whichever_target_the_request_uses() ->
     git = evaluate(BASE_INDEX, SANDBOX, request(authorization=basic(f"x-access-token:{PLACEHOLDER}")), NOW)
     rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"x-access-token:{SECRET_VALUE}"),)),)
     assert git == Allowed("b", "github", 0, rewritten)
+
+
+def test_authenticated_workload_source_substitutes_only_the_validated_context_bearer() -> None:
+    dynamic = workload_credential("agentplane-workload", BEARER)
+    dynamic_rule = GITHUB_RULE.model_copy(update={"credential_ref": CredentialRef(name=dynamic.metadata.name)})
+    scoped = index(
+        policies=[policy("workload", dynamic_rule)],
+        bindings=[binding("b", policies=["workload"])],
+        credentials=[dynamic],
+    )
+    token = "pod-a-authenticated-workload-token"
+    decision = evaluate(
+        scoped,
+        SANDBOX,
+        request(authorization=f"Bearer {dynamic.placeholder}"),
+        NOW,
+        authenticated_workload=AuthenticatedWorkloadContext(
+            bearer=token,
+            sandbox_name=SANDBOX.metadata.name,
+            sandbox_uid=SANDBOX.metadata.uid or "",
+            pod_uid="pod-a-uid",
+        ),
+    )
+    assert decision == Allowed("b", "workload", 0, (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {token}",)),))
+
+
+def test_authenticated_workload_source_fails_without_authenticated_context() -> None:
+    dynamic = workload_credential("agentplane-workload", BEARER)
+    dynamic_rule = GITHUB_RULE.model_copy(update={"credential_ref": CredentialRef(name=dynamic.metadata.name)})
+    scoped = index(
+        policies=[policy("workload", dynamic_rule)],
+        bindings=[binding("b", policies=["workload"])],
+        credentials=[dynamic],
+    )
+    egress = request(authorization=f"Bearer {dynamic.placeholder}")
+    assert evaluate(scoped, SANDBOX, egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+    stale = AuthenticatedWorkloadContext(
+        bearer="stale-token",
+        sandbox_name=SANDBOX.metadata.name,
+        sandbox_uid="an-old-sandbox-uid",
+        pod_uid="an-old-pod-uid",
+    )
+    assert evaluate(scoped, SANDBOX, egress, NOW, authenticated_workload=stale) == Denied(
+        DenyReason.CREDENTIAL_UNAVAILABLE
+    )
+
+
+def test_credential_source_requires_exactly_one_known_tag() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        CredentialSource()
+    with pytest.raises(ValueError, match="exactly one"):
+        CredentialSource(
+            secret_ref=SecretKeyRef(name="pat", key="token"),
+            authenticated_workload_token=AuthenticatedWorkloadTokenSource(),
+        )
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        CredentialSource.model_validate({"forgedSource": {}})
 
 
 def test_a_basic_username_target_takes_the_half_before_the_first_colon() -> None:

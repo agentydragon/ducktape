@@ -292,6 +292,17 @@ def credential(
     }
 
 
+def authenticated_workload_credential(
+    name: str, *, targets: list[dict[str, Any]], description: str = "the calling workload's authenticated bearer"
+) -> dict[str, Any]:
+    return {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "EgressCredential",
+        "metadata": {"name": name},
+        "spec": {"source": {"authenticatedWorkloadToken": {}}, "description": description, "targets": targets},
+    }
+
+
 def binding(
     name: str, *, subjects: list[dict[str, Any]], policies: list[str], expires_at: str | None = None
 ) -> dict[str, Any]:

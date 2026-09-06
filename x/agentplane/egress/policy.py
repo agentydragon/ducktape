@@ -97,6 +97,19 @@ class EgressRequest:
 
 
 @dataclass(frozen=True)
+class AuthenticatedWorkloadContext:
+    """Credential material retained only after central authenticated this request or tunnel."""
+
+    bearer: str = field(repr=False)
+    sandbox_name: str
+    sandbox_uid: str
+    pod_uid: str
+
+    def is_bound_to(self, sandbox: Sandbox) -> bool:
+        return self.sandbox_name == sandbox.metadata.name and self.sandbox_uid == sandbox.metadata.uid
+
+
+@dataclass(frozen=True)
 class Allowed:
     binding: str
     policy: str
@@ -258,7 +271,13 @@ def _resolves(rule: Rule, presented: Collection[str]) -> bool:
     return rule.credential_ref is not None and set(presented) == {rule.credential_ref.name}
 
 
-def evaluate(index: Index, sandbox: Sandbox, request: EgressRequest, now: datetime) -> Decision:
+def evaluate(
+    index: Index,
+    sandbox: Sandbox,
+    request: EgressRequest,
+    now: datetime,
+    authenticated_workload: AuthenticatedWorkloadContext | None = None,
+) -> Decision:
     """Fail closed: only a matching rule admits, and the placeholder the request presents picks which.
 
     A request presenting a known placeholder is decided by a matching rule naming exactly that
@@ -286,9 +305,16 @@ def evaluate(index: Index, sandbox: Sandbox, request: EgressRequest, now: dateti
     match = resolving[0]
     # `_resolves` admitted exactly one presented credential, and every presented one is in the index.
     credential = index.credentials[one(presented)]
-    secret_ref = credential.spec.source.secret_ref
-    secret = index.secrets.get(secret_ref.name)
-    value = secret.data.get(secret_ref.key) if secret is not None else None
+    source = credential.spec.source
+    if (secret_ref := source.secret_ref) is not None:
+        secret = index.secrets.get(secret_ref.name)
+        value = secret.data.get(secret_ref.key) if secret is not None else None
+    else:
+        value = (
+            authenticated_workload.bearer
+            if authenticated_workload is not None and authenticated_workload.is_bound_to(sandbox)
+            else None
+        )
     if value is None:
         return Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     return Allowed(
