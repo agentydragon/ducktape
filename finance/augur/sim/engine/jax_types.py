@@ -16,15 +16,7 @@ from finance.augur.sim.output import DenseFinalOutput
 
 @partial(
     jax.tree_util.register_dataclass,
-    data_fields=(
-        "month",
-        "quantity",
-        "same_pool_prior",
-        "capital_gain_map",
-        "tlh_policy_lot_mask",
-        "price_fixed",
-        "price_series",
-    ),
+    data_fields=("month", "quantity", "same_pool_prior", "capital_gain_map", "tlh_policy_lot_mask", "price_series"),
     meta_fields=("proceeds_slot", "buffer_index", "ordered_lots"),
 )
 @dataclass(frozen=True)
@@ -36,7 +28,6 @@ class _AssetSaleProgram:
     same_pool_prior: Int64[Array, " scheduled_sale prior_sale"]
     capital_gain_map: Int64[Array, " scheduled_sale capital_gain_profile"]
     tlh_policy_lot_mask: Int64[Array, " harvest_policy lot"]
-    price_fixed: Int64[Array, " scheduled_sale"]
     price_series: Int64[Array, " scheduled_sale"]
     proceeds_slot: tuple[int, ...]
     buffer_index: tuple[int, ...]

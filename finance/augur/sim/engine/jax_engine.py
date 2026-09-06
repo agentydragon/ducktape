@@ -418,7 +418,6 @@ def _asset_sale_program(plan: CompiledSimulation) -> _AssetSaleProgram:
         same_pool_prior=jnp.asarray(same_pool_prior),
         capital_gain_map=jnp.asarray(capital_gain_map),
         tlh_policy_lot_mask=jnp.asarray(tlh_policy_lot_mask),
-        price_fixed=jnp.asarray([int(sales.price_fixed[sale]) for sale in sale_rows], dtype=jnp.int64),
         price_series=jnp.asarray([int(sales.price_series[sale]) for sale in sale_rows], dtype=jnp.int64),
         proceeds_slot=tuple(int(sales.proceeds_slot[sale]) for sale in sale_rows),
         buffer_index=tuple(sale_rows),
@@ -1931,17 +1930,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 [asset_sales.tlh_policy_lot_mask.T @ t_policy, jnp.ones((1, r), dtype=jnp.int64)], axis=0
             )
 
-            # Per-sale price: fixed if set, else the sampled series at this month. Guarded on the static
-            # series count (and the series index clamped) so fixed-only sales never gather an empty cube.
-            if external_money_values.shape[0] > 0:
-                safe_series = jnp.where(asset_sales.price_series >= 0, asset_sales.price_series, 0)
-                unit_price = jnp.where(
-                    (asset_sales.price_series >= 0)[:, None],
-                    external_money_values[safe_series, :, month],
-                    asset_sales.price_fixed[:, None],
-                )  # (N, R)
-            else:
-                unit_price = jnp.broadcast_to(asset_sales.price_fixed[:, None], (n_asset_sales, r))
+            unit_price = external_money_values[asset_sales.price_series, :, month]  # (N, R)
             proceeds = _value_quanta_from_quantity(
                 sold, unit_price[:, None, :], scale_pad[asset_sale_ordered_lots][:, :, None]
             )  # (N, P, R)

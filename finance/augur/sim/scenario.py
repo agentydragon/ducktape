@@ -529,11 +529,9 @@ class ScheduledAssetSale(BaseModel):
     Proceeds = `quantity * unit_price` are credited to
     `proceeds_account_id`.
 
-    `price_per_unit` is optional: when supplied the sale uses
-    that price uniformly across rollouts (useful for deterministic
-    tests). When `None`, the per-rollout per-month price comes from
-    the scenario's `SeriesModelBundle` — the canonical case once external
-    series integration is in play."""
+    The price is the asset's own sampled level at that month, per rollout — a
+    sale cannot name its own. A seller who could fix the price would be immune
+    to the market path, which is the one thing every rollout exists to vary."""
 
     month: int
     cause_id: str
@@ -542,7 +540,6 @@ class ScheduledAssetSale(BaseModel):
     asset: AssetKey
     quantity: float
     proceeds_account_id: str
-    price_per_unit: CurrencyAmount | None = None
 
 
 class SleeveTarget(BaseModel):

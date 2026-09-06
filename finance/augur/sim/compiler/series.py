@@ -78,8 +78,7 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     for recurring_obligation in scenario.recurring_obligations:
         _add_amount_series_key(recurring_obligation.amount_due, add)
     for sale in scenario.scheduled_asset_sales:
-        if sale.price_per_unit is None:
-            add(asset_price_key(sale.asset))
+        add(asset_price_key(sale.asset))
     for policy in scenario.target_allocation_policies:
         for sleeve in policy.sleeves:
             add(asset_price_key_or_none(sleeve.asset))
@@ -166,8 +165,7 @@ def collect_level_series_keys(
     for recurring_obligation in scenario.recurring_obligations:
         _add_amount_series_key(recurring_obligation.amount_due, add)
     for sale in scenario.scheduled_asset_sales:
-        if sale.price_per_unit is None:
-            add(asset_price_key(sale.asset))
+        add(asset_price_key(sale.asset))
     for policy in scenario.target_allocation_policies:
         for sleeve in policy.sleeves:
             add(asset_price_key_or_none(sleeve.asset))

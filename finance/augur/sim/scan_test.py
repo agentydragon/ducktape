@@ -186,11 +186,11 @@ def _gain(run, agent_id: str, classification: str, month_index: int) -> int:
     return int(rows.item()) if len(rows) else 0
 
 
-def test_scheduled_sale_scan() -> None:
+def test_scheduled_sale_scan(constant_price_bundle) -> None:
     # A long-term capital-gain sale: 100 SP500 units bought 24 months pre-horizon at $80, sold at
     # month 3 for $120 — exercises the scan's FIFO lot matching, proceeds credit, and capital-gain
     # classification. No tax profiles, so the year-end pass never runs and the scenario routes through
-    # the scan. Deterministic fixed price keeps the assertion exact across rollouts.
+    # the scan. A flat price series keeps the assertion exact across rollouts.
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
@@ -213,10 +213,10 @@ def test_scheduled_sale_scan() -> None:
                 source_account_id="brokerage",
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 quantity=100.0,
-                price_per_unit=120,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SP500_SYMBOL: 120.0}),
         tax_profiles=[],
         horizon_months=6,
     )

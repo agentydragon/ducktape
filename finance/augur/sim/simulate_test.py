@@ -502,7 +502,6 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     quantity=1.0,
                     proceeds_account_id="checking",
-                    price_per_unit=100,
                 )
             ],
             tax_profiles=[],
@@ -521,7 +520,6 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     quantity=1.0,
                     proceeds_account_id="checking",
-                    price_per_unit=100,
                 )
             ],
             tax_profiles=[],
@@ -1242,7 +1240,7 @@ def test_combined_one_off_and_recurring() -> None:
     assert alice_final == 15000.0
 
 
-def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
+def test_initial_lot_partial_sale_consumes_units_credits_proceeds(constant_price_bundle) -> None:
     """L4 part A — single-lot scenario. Alice has 100 units of VTI
     bought 24 months pre-horizon at $80/unit (so cost basis $8000).
     At month 3 she sells 30 units at $120/unit; proceeds = $3600
@@ -1269,10 +1267,10 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=30.0,
-                price_per_unit=120,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 120.0}),
         tax_profiles=[],
         horizon_months=6,
     )
@@ -1312,7 +1310,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
     assert disp["proceeds_quanta"] / 100 == 3600.0
 
 
-def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
+def test_initial_lot_full_sale_zeros_remaining_quantity(constant_price_bundle) -> None:
     """Selling all 100 units exhausts the lot. Remaining quantity
     drops to 0; the lot row persists in the asset_lots frame with
     `remaining_quantity = 0` (lots are not deleted on full
@@ -1337,10 +1335,10 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit=150,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 150.0}),
         tax_profiles=[],
         horizon_months=3,
     )
@@ -1357,7 +1355,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
     assert disp["cost_basis_consumed_quanta"] / 100 == 9000.0
 
 
-def test_asset_sale_scales_across_rollouts() -> None:
+def test_asset_sale_scales_across_rollouts(constant_price_bundle) -> None:
     """The lot frame fans across rollouts identically when inputs
     are deterministic; the disposition resolution is vectorized
     over the rollout dimension."""
@@ -1381,10 +1379,10 @@ def test_asset_sale_scales_across_rollouts() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=20.0,
-                price_per_unit=110,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 110.0}),
         tax_profiles=[],
         horizon_months=2,
     )
@@ -1399,7 +1397,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
     assert end_state.get_column("remaining_quantity").unique().to_list() == [30.0]
 
 
-def test_fifo_sale_crossing_two_lots() -> None:
+def test_fifo_sale_crossing_two_lots(constant_price_bundle) -> None:
     """L4 part B — multi-lot FIFO crossing. Alice has two lots of
     VTI: lot A (older, 6 months pre-horizon, 100 units @ $80) and
     lot B (month 2, 50 units @ $100). At month 8 she sells 120
@@ -1433,10 +1431,10 @@ def test_fifo_sale_crossing_two_lots() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=120.0,
-                price_per_unit=200,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 200.0}),
         tax_profiles=[],
         horizon_months=10,
     )
@@ -1480,7 +1478,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
     )
 
 
-def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
+def test_same_month_scheduled_sales_consume_lots_sequentially(constant_price_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
@@ -1509,7 +1507,6 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=70.0,
-                price_per_unit=150,
                 proceeds_account_id="checking",
             ),
             ScheduledAssetSale(
@@ -1518,10 +1515,10 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=70.0,
-                price_per_unit=150,
                 proceeds_account_id="checking",
             ),
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 150.0}),
         tax_profiles=[],
         horizon_months=2,
     )
@@ -1550,7 +1547,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
     assert final_cash == pytest.approx(21_000.0)
 
 
-def test_fifo_holding_period_classification_per_disposition() -> None:
+def test_fifo_holding_period_classification_per_disposition(constant_price_bundle) -> None:
     """The disposition log carries `purchase_month_index` and
     sale-time `month_index` so downstream tax classification can
     compute holding period = sale - purchase per disposition row.
@@ -1584,10 +1581,10 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("btc")),
                 quantity=2.5,
-                price_per_unit=60000,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("btc"): 60_000.0}),
         tax_profiles=[],
         horizon_months=7,
     )
@@ -1609,7 +1606,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
     assert short_disp["units_sold"] == 0.5
 
 
-def test_sales_of_two_different_assets_are_independent() -> None:
+def test_sales_of_two_different_assets_are_independent(constant_price_bundle) -> None:
     """Two sales at different months on different assets resolve
     against their own lots independently. Tests that the
     `(agent, asset)` filter in FIFO doesn't bleed across assets."""
@@ -1641,7 +1638,6 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=4.0,
-                price_per_unit=150,
                 proceeds_account_id="checking",
             ),
             ScheduledAssetSale(
@@ -1650,10 +1646,10 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("qqq")),
                 quantity=3.0,
-                price_per_unit=250,
                 proceeds_account_id="checking",
             ),
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 150.0, SecuritySymbol("qqq"): 250.0}),
         tax_profiles=[],
         horizon_months=6,
     )
@@ -1676,7 +1672,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
     )
 
 
-def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
+def test_scheduled_sale_consumes_only_source_account_fifo_pool(constant_price_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
@@ -1708,10 +1704,10 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 source_account_id="taxable",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=8.0,
-                price_per_unit=100,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 100.0}),
         tax_profiles=[],
         horizon_months=2,
     )
@@ -1730,7 +1726,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
     ]
 
 
-def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
+def test_scheduled_sale_oversell_raises_without_partial_disposition(constant_price_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
@@ -1753,10 +1749,10 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
                 source_account_id="taxable",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=6.0,
-                price_per_unit=100,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 100.0}),
         tax_profiles=[],
         horizon_months=2,
     )
@@ -1766,8 +1762,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
 
 
 def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_bundle) -> None:
-    """L5 — when a ScheduledAssetSale omits `price_per_unit`,
-    the engine reads the per-month price from the scenario's
+    """L5 — a sale reads the per-month price from the scenario's
     SeriesModelBundle. With a Deterministic model the price is identical
     across rollouts; the sale's proceeds reflect the configured
     month-N price."""
@@ -1965,7 +1960,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     assert ytd_values[12] == 0.0
 
 
-def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule() -> None:
+def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule(constant_price_bundle) -> None:
     """L8 — Alice gets $50k W-2 wages, plus sells a long-held VTI
     lot (24 months pre-horizon) for a $20k gain at month 6.
 
@@ -2017,10 +2012,10 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit=280,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 280.0}),
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
@@ -2053,7 +2048,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     assert row["gain_quanta"] / 100 == pytest.approx(20_000.0, abs=0.02)
 
 
-def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
+def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics(constant_price_bundle) -> None:
     """Pinned deterministic e2e: wages + a long-held asset sale +
     federal/CA year tax + estimated-tax safe harbor + true-up.
 
@@ -2101,10 +2096,10 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit=280,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 280.0}),
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
@@ -2171,7 +2166,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     assert final_lot.get_column("remaining_quantity").item() == 0.0
 
 
-def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
+def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics(constant_price_bundle) -> None:
     """Pinned tax aggregation e2e: wages plus two asset sales.
 
     Alice earns $50,000.04 after cent-rounded monthly paychecks, sells one
@@ -2226,7 +2221,6 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit=200,
                 proceeds_account_id="checking",
             ),
             ScheduledAssetSale(
@@ -2235,10 +2229,10 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("ixus")),
                 quantity=10.0,
-                price_per_unit=200,
                 proceeds_account_id="checking",
             ),
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 200.0, SecuritySymbol("ixus"): 200.0}),
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
@@ -3201,49 +3195,6 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
     ]
     assert result.events_log.transfers.is_empty()
     assert result.events_log.rollout_failures.height == 2
-
-
-def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundle) -> None:
-    """If `ScheduledAssetSale.price_per_unit` is set the engine
-    uses that scalar; sampled series is ignored for that sale. This is the
-    test-fixture path used in L4 tests; still valid in the
-    external-series-aware engine."""
-    scenario = Scenario(
-        agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
-        initial_lots=[
-            InitialLot(
-                lot_id="seed",
-                agent_id="alice",
-                asset=SecurityKey(symbol=SecuritySymbol("vti")),
-                purchase_month_index=0,
-                quantity=10.0,
-                cost_basis_per_unit=50,
-            )
-        ],
-        scheduled_asset_sales=[
-            ScheduledAssetSale(
-                month=1,
-                cause_id="fixed_sale",
-                agent_id="alice",
-                asset=SecurityKey(symbol=SecuritySymbol("vti")),
-                quantity=3.0,
-                price_per_unit=99,
-                proceeds_account_id="checking",
-            )
-        ],
-        external_series=deterministic_series_bundle([10.0, 10.0, 10.0]),
-        tax_profiles=[],
-        horizon_months=2,
-    )
-
-    result = simulate(scenario, rollout_count=1, locations={})
-    assert (
-        result.events_log.lot_dispositions.get_column("proceeds_quanta")
-        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
-        .item()
-        == 3.0 * 99.0
-    )
 
 
 def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_location: Location) -> None:

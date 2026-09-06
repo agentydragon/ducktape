@@ -18,7 +18,10 @@ import jax
 import numpy as np
 import pytest_bazel
 
+from finance.augur.model.deterministic import Constant
+from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.engine.jax_engine import _build_program, _program_impl, run_jax_scan
 from finance.augur.sim.external_series import materialize_external_series
@@ -110,10 +113,12 @@ def _sale_scenario() -> Scenario:
                 source_account_id="brokerage",
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 quantity=100.0,
-                price_per_unit=120,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=SeriesModelBundle.independent(
+            asset_prices=AssetPriceGroups(security={SP500_SYMBOL: Constant(value=120.0)})
+        ),
         tax_profiles=[],
         horizon_months=6,
     )
@@ -185,8 +190,9 @@ def test_cost_basis_sweep_takes_effect() -> None:
 
 
 def test_asset_sale_price_sweep_takes_effect() -> None:
+    # A sale is priced off the sampled cube, so the price sweep is the cube: +$1,000 per unit.
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
-        return replace(p, sales=replace(p.sales, price_fixed=p.sales.price_fixed + np.int64(1_000)))
+        return replace(p, external_money_values=p.external_money_values + np.int64(100_000))
 
     _assert_value_sweep_takes_effect(_sale_scenario(), perturb, lambda b: b.state.cash)
 
@@ -371,7 +377,7 @@ def test_asset_sale_program_owns_values_and_fifo_topology() -> None:
     count = int((plan.sales.month >= 0).sum())
 
     leaves, tree = jax.tree_util.tree_flatten(sales)
-    assert len(leaves) == 7
+    assert len(leaves) == 6
     assert all(isinstance(leaf, jax.Array) for leaf in leaves)
     assert np.array_equal(sales.quantity, plan.sales.quantity[:count])
     assert sales.proceeds_slot == tuple(int(slot) for slot in plan.sales.proceeds_slot[:count])
@@ -380,7 +386,7 @@ def test_asset_sale_program_owns_values_and_fifo_topology() -> None:
     assert not hasattr(program.dynamic.operands, "sale_qty_t")
     assert not hasattr(program.static.structure, "sale_olots")
 
-    value_sweep = replace(plan, sales=replace(plan.sales, price_fixed=plan.sales.price_fixed + np.int64(1_000)))
+    value_sweep = replace(plan, sales=replace(plan.sales, quantity=plan.sales.quantity // np.int64(2)))
     assert cast(Any, jax.tree_util.tree_structure(_build_program(value_sweep).dynamic.asset_sales)) == tree
 
     topology_change = _reroute_asset_sale(plan)

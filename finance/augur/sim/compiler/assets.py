@@ -11,15 +11,14 @@ from jaxtyping import Int64
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import asset_price_key
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, AssetTable, StringTable
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.scenario import Scenario
 
 
 @dataclass(frozen=True)
 class SaleCompileOutput:
-    """Scheduled asset-sale plumbing. One row per scheduled sale. `price_fixed[i]` is
-    NaN when the sale price comes from a sampled series — `price_series[i]` is that
-    series index, NO_CODE otherwise."""
+    """Scheduled asset-sale plumbing. One row per scheduled sale. `price_series[i]` is
+    the index of the level series the sale is priced off."""
 
     cause: Int64[np.ndarray, " month scheduled_sale"]
     month: Int64[np.ndarray, " scheduled_sale"]
@@ -30,7 +29,6 @@ class SaleCompileOutput:
     quantity_scale: Int64[np.ndarray, " scheduled_sale"]
     proceeds_account: Int64[np.ndarray, " scheduled_sale"]
     proceeds_slot: Int64[np.ndarray, " scheduled_sale"]
-    price_fixed: Int64[np.ndarray, " scheduled_sale"]
     price_series: Int64[np.ndarray, " scheduled_sale"]
 
 
@@ -42,10 +40,6 @@ def compile_sales(
     series_index_by_id: dict[LevelSeriesKey, int],
 ) -> SaleCompileOutput:
     count = len(scenario.scheduled_asset_sales)
-
-    def currency_amount(value: object) -> np.int64:
-        return currency_amount_to_quanta(value, quantum=scenario.currency.quantum)
-
     cause = np.full((int(scenario.horizon_months), max(1, count)), NO_CODE, dtype=np.int64)
     month = np.full(max(1, count), NO_CODE, dtype=np.int64)
     agent = np.zeros(max(1, count), dtype=np.int64)
@@ -55,7 +49,6 @@ def compile_sales(
     quantity_scale = np.ones(max(1, count), dtype=np.int64)
     proceeds_account = np.zeros(max(1, count), dtype=np.int64)
     proceeds_slot = np.full(max(1, count), NO_CODE, dtype=np.int64)
-    price_fixed = np.zeros(max(1, count), dtype=np.int64)
     price_series = np.full(max(1, count), NO_CODE, dtype=np.int64)
     for idx, sale in enumerate(scenario.scheduled_asset_sales):
         cause[sale.month, idx] = strings.require(sale.cause_id)
@@ -67,10 +60,7 @@ def compile_sales(
         quantity[idx] = quantity_to_quanta(sale.quantity, scale=int(quantity_scale[idx]))
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
         proceeds_slot[idx] = account_slot_by_key.resolve(sale.agent_id, sale.proceeds_account_id)
-        if sale.price_per_unit is not None:
-            price_fixed[idx] = currency_amount(sale.price_per_unit)
-        else:
-            price_series[idx] = series_index_by_id[asset_price_key(sale.asset)]
+        price_series[idx] = series_index_by_id[asset_price_key(sale.asset)]
     return SaleCompileOutput(
         cause=cause,
         month=month,
@@ -81,6 +71,5 @@ def compile_sales(
         quantity_scale=quantity_scale,
         proceeds_account=proceeds_account,
         proceeds_slot=proceeds_slot,
-        price_fixed=price_fixed,
         price_series=price_series,
     )

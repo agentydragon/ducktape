@@ -188,7 +188,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
     assert result.events_log.rollout_failures.is_empty()
 
 
-def test_scheduled_sale_oversell_validation() -> None:
+def test_scheduled_sale_oversell_validation(constant_price_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
@@ -211,10 +211,10 @@ def test_scheduled_sale_oversell_validation() -> None:
                 source_account_id="taxable",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=6.0,
-                price_per_unit=100,
                 proceeds_account_id="checking",
             )
         ],
+        external_series=constant_price_bundle({SecuritySymbol("vti"): 100.0}),
         tax_profiles=[],
         horizon_months=2,
     )

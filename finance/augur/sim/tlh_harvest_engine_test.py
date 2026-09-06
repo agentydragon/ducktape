@@ -195,12 +195,11 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
         source_account_id="brokerage",
         asset=SecurityKey(symbol=SecuritySymbol("gainco")),
         quantity=100.0,
-        price_per_unit=400,  # $30k short-term gain
         proceeds_account_id="checking",
     )
     # SP500 sleeve drops then recovers so harvesting books meaningful losses through the year.
     sp500_levels = [1.0, 0.85, 0.85, 0.9, 0.9, 0.9, 0.95] + [0.95] * 7
-    gain_levels = [400.0] * 14
+    gain_levels = [400.0] * 14  # $400 against a $100 basis: a $30k short-term gain at the month-6 sale.
     external_series = ExternalSeriesContext.from_level_blocks(
         [
             (SecurityKey(symbol=SP500_SYMBOL), np.asarray([sp500_levels], dtype=np.float64)),
@@ -241,7 +240,6 @@ def test_give_back_makes_sale_gain_larger_by_cumulative_harvest_and_is_bounded()
         source_account_id="brokerage",
         asset=SecurityKey(symbol=SP500_SYMBOL),
         quantity=1000.0,
-        price_per_unit=1,
         proceeds_account_id="checking",
     )
     external_series = _sp500_levels([levels])
@@ -296,7 +294,6 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
             source_account_id="brokerage",
             asset=SecurityKey(symbol=SP500_SYMBOL),
             quantity=500.0,
-            price_per_unit=1,
             proceeds_account_id="checking",
         ),
         ScheduledAssetSale(
@@ -306,7 +303,6 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
             source_account_id="brokerage",
             asset=SecurityKey(symbol=SP500_SYMBOL),
             quantity=500.0,
-            price_per_unit=1,
             proceeds_account_id="checking",
         ),
     ]
