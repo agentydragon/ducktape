@@ -1,6 +1,6 @@
 # Central proxy migration
 
-Implementation checkpoint: 2026-09-06 04:53 UTC. This is not a quota-resolution
+Implementation checkpoint: 2026-09-06 05:07 UTC. This is not a quota-resolution
 or client-migration claim.
 
 ## Landed and verified
@@ -29,14 +29,10 @@ host Secrets exist with the expected `credentials.json` key. Its Bazel,
 Pre-commit and Gazelle checks passed; this is not a claim that all checks
 completed. Real proxy authentication remains a deployment gate.
 
-The default-off relay is published in
-[#5689](https://github.com/agentydragon/ducktape/pull/5689), head
-`1902306c3bf61cfdaa8630d8322ad7250a868802`; the rebase onto the merged runtime
-is published, GitHub reports it mergeable without conflicts, and fresh CI is
-running. A CodeQL
-finding in the synthetic TLS fixture was repaired by setting its explicit
-TLS 1.2 minimum; the pre-rebase head's Bazel CI passed and CodeQL no longer reported
-that failure. It passed 11
+The default-off relay [#5689](https://github.com/agentydragon/ducktape/pull/5689)
+merged at 05:03:14 UTC as `78370f3a55243aed403c56f6a7e6992cb460f54f`.
+Its Bazel, Gazelle, Pre-commit, CodeQL and FHS/NixOS client checks passed;
+the artifact/import check was still running at merge. It passed 11
 real Squid 7.6/OpenSSL integration
 cases, including nested TLS, parent authentication, rejected bad certificates
 and names, no direct fallback, and old-to-new app-private CA migration:
@@ -88,11 +84,20 @@ uses the published image above, one capture writer and Recreate rollouts. Storag
 must retain evidence on app removal. Capture-write failure must remain observable
 without a liveness restart erasing the sticky readiness failure.
 
-The deployment change now connects the app to root Flux, the registry credential
-reflection allowlist and Forgejo image automation. It remains unmerged at this
+Deployment [#5691](https://github.com/agentydragon/ducktape/pull/5691) connects
+the app to root Flux, the registry credential reflection allowlist and Forgejo
+image automation. It remains unmerged at this
 checkpoint. Verify rollout, individual listener and route conditions, every
 resolved endpoint address on port 8443, private metrics, captures and actual
 client authentication before changing the working host proxy.
+
+Its first CI run caught a missing explicit Goldilocks namespace decision.
+Recommendations are now enabled with VPA update mode `off`: resource advice
+must not automatically resize or evict the capture writer. The corrected cluster
+integration, Flux-build, generator-namespace and proxy-alert tests all passed:
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/f981fc8d-bf9c-4cce-a8f1-a70f44c729b4).
+Runtime configuration lives in native `app/config.json`, mounted through a
+generated ConfigMap; Kustomize updates the Deployment reference on config changes.
 
 The actual alert expressions passed upstream promtool scenarios for healthy
 operation, sticky capture failure, scrape failure, disappearance, replacement
@@ -117,16 +122,14 @@ cancelled, not passed. No blind rerun was triggered.
 
 ## Finish order
 
-1. Finish default-off relay CI and merge; the runtime image is already published
-   and credentials have reconciled.
-2. Publish, land and reconcile the central Deployment, networking and metrics. Verify
+1. Land and reconcile the central Deployment, networking and metrics. Verify
    the dedicated listener and route conditions, then authenticated nested TLS,
    exact-route blocking, raw credential redaction and incremental capture.
-3. Pin the verified public CA and opt in wyrm2/rugged declaratively. Activate
+2. Pin the verified public CA and opt in wyrm2/rugged declaratively. Activate
    only a reachable host whose real relay/Desktop/OAuth route can be checked.
-4. Remove only that verified host's obsolete local interceptor, owned overrides,
+3. Remove only that verified host's obsolete local interceptor, owned overrides,
    old temporary package bridge, unused local signing keys and owned GC roots.
    Preserve captures, Desktop profile/sign-in and any operator replacements.
-5. Continue account-wide quota and observation-coverage review for the agreed
+4. Continue account-wide quota and observation-coverage review for the agreed
    multi-day window. Migration by itself does not establish absence of quota
    exhaustions or capture completeness.
