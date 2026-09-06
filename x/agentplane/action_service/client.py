@@ -1,4 +1,4 @@
-"""Small client boundary for BFFs, external harnesses, and managed-sandbox relays."""
+"""Small client boundary for BFFs, external harnesses, and trusted gateway components."""
 
 from __future__ import annotations
 
@@ -16,7 +16,13 @@ class AccessTokenProvider(Protocol):
 
 
 class ProjectedTokenFile:
-    """Relay-only token source: re-read kubelet's short-lived projection for every service call."""
+    """Trusted-component token source: re-read kubelet's rotating projection for every call.
+
+    This is not a runner-side secret or a mandate for a separate Action Relay. In a managed Sandbox,
+    the existing egress sidecar/substitution gateway remains the transport boundary. If that path
+    presents a distinct downstream Action Service token, only the trusted component holding that
+    projection uses this helper.
+    """
 
     def __init__(self, path: Path) -> None:
         self._path = path

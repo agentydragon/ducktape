@@ -58,7 +58,7 @@ async def test_token_review_maps_only_named_subjects_and_roles() -> None:
         )
 
 
-async def test_projected_token_is_re_read_per_call_and_never_enters_the_body(tmp_path: Path) -> None:
+async def test_trusted_projected_token_is_re_read_per_call_and_never_enters_the_body(tmp_path: Path) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("first-token")
     seen: list[httpx.Request] = []

@@ -20,9 +20,10 @@ class Authenticator(Protocol):
 class KubernetesTokenAuthenticator:
     """Map audience-bound ServiceAccount tokens to caller or operator principals.
 
-    A managed Sandbox mounts its projected token only into a local relay. The runner calls that
-    relay without token material; the relay re-reads the projected token and calls this service.
-    BFFs may use a separately configured operator ServiceAccount. A reviewed but unmapped subject
+    A managed Sandbox already reaches external services through its pod-local egress sidecar and
+    central substitution gateway. The runner holds no Action Service token; that existing trusted
+    path may present a distinct downstream token to this service. BFFs may use a separately
+    configured operator ServiceAccount. A reviewed but unmapped subject
     is refused, so choosing this service's audience is not itself authorization.
     """
 
