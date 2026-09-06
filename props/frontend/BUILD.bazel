@@ -213,3 +213,35 @@ test_suite(
         "//props/frontend/src/pages:visual_SnapshotDetail",
     ],
 )
+
+# Knob ablation test: tests each hermetic rendering knob individually
+# Run locally:  bazel test //props/frontend:knob_ablation --test_env=EXECUTION_ENV=local
+# Run on RBE:   bazel test //props/frontend:knob_ablation --test_env=EXECUTION_ENV=rbe
+# Results go to TEST_UNDECLARED_OUTPUTS_DIR (bazel-testlogs/.../test.outputs/)
+js_test(
+    name = "knob_ablation",
+    timeout = "eternal",
+    data = [
+        "tests/fonts/Inter.woff2",
+        "tests/fonts/fonts.conf",
+        "tests/harness/index.html",
+        "tests/harness/test-fonts.css",
+        ":harness_bundle",
+        ":harness_js",
+        ":node_modules/pixelmatch",
+        ":node_modules/pngjs",
+        ":node_modules/puppeteer",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    entry_point = "tests/knob_ablation.mjs",
+    env = {
+        "HARNESS_PATH": "$(rootpath :harness_js)",
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath tests/fonts/fonts.conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+    },
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
+)
