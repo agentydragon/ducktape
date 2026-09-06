@@ -41,7 +41,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ingress
-          image: git.allegedly.works/ducktape-ci/agentplane-llm-ingress:devel-placeholder # {"$imagepolicy": "flux-system:agentplane-llm-ingress"}
+          image: git.allegedly.works/ducktape-ci/agentplane-llm-ingress:devel-20260906070654-956c496 # {"$imagepolicy": "flux-system:agentplane-llm-ingress"}
           imagePullPolicy: IfNotPresent
           args:
             - --namespace=agentplane-staging
