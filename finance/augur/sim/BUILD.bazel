@@ -674,18 +674,3 @@ py_library(
         "//finance/augur/sim/compiler:plan",
     ],
 )
-
-py_test(
-    name = "test_obligation_deduction_e2e",
-    srcs = ["test_obligation_deduction_e2e.py"],
-    deps = [
-        ":conftest",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim/testing:jax_result",
-        "//finance/augur/sim/testing:rental_lifecycle",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)

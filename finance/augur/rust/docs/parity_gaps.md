@@ -20,12 +20,11 @@ and what is reachable from a live product request are the plan's business
 
 ## Scenario features the fixture cannot express
 
-| Feature                                               | Where JAX has it                                         | Refusal                                                                                                                                                                        |
-| ----------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A scheduled sale at an authored price per unit        | `ScheduledAssetSale.price_per_unit`                      | Rust prices every sale off the asset's own sampled series, so a fixed price has nowhere to go.                                                                                 |
-| A partial deduction on an obligation with no property | `ScheduledObligation.deductible_fraction`                | `ObligationSpec` takes the fraction from the gating property's runtime rented share; without a property there is no field for it. A `deductible_fraction` of 1.0 encodes fine. |
-| An amount indexed by a series that is not an index    | `SeriesIndexedAmount` over an arbitrary `LevelSeriesKey` | The fixture's `AmountSpec` indexes by inflation and rent levels only.                                                                                                          |
-| A level series with no fixture representation         | any `LevelSeriesKey`                                     | Money series cross as currency quanta and index series as parts per billion; a key that is neither has no encoding.                                                            |
+| Feature                                            | Where JAX has it                                         | Refusal                                                                                                             |
+| -------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| A scheduled sale at an authored price per unit     | `ScheduledAssetSale.price_per_unit`                      | Rust prices every sale off the asset's own sampled series, so a fixed price has nowhere to go.                      |
+| An amount indexed by a series that is not an index | `SeriesIndexedAmount` over an arbitrary `LevelSeriesKey` | The fixture's `AmountSpec` indexes by inflation and rent levels only.                                               |
+| A level series with no fixture representation      | any `LevelSeriesKey`                                     | Money series cross as currency quanta and index series as parts per billion; a key that is neither has no encoding. |
 
 ## Values that must be exactly representable
 

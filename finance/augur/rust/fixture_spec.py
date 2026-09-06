@@ -17,7 +17,7 @@ from typing import Any
 from more_itertools import one
 
 # The fixture schema `fixture.rs` accepts. Bumped there and here together.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def account_ref(agent_id: str, account_id: str) -> dict[str, str]:

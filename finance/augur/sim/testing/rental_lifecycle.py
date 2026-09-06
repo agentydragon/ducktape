@@ -2445,6 +2445,70 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
         # observable through ordinary_income decreasing relative to the rental income.)
         assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(43_050, abs=1e-6)
 
+    def test_obligation_deductible_fraction_scales_deduction(self, backend: Backend) -> None:
+        """Partial rental: HOA dues are only deductible up to the rented fraction (0.5
+        in this test → only $200 of the $400/mo HOA deducts each month)."""
+
+        end_month = 11
+        # Gross rental $30,000/yr (50% rented); HOA $400/mo, 50% deductible → $200/mo × 12 = $2,400.
+        # Net ordinary income = $30,000 - $2,400 = $27,600.
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="hoa"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=100000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="hoa", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount=SeriesIndexedAmount(base_amount=2500, series=RENT_SERIES_KEY, adjustment_period_months=12),
+                    income_category=ORDINARY_INCOME,
+                )
+            ],
+            recurring_obligations=[
+                RecurringObligation(
+                    start_month=0,
+                    end_month=end_month,
+                    obligation_id="hoa_dues",
+                    obligation_type="hoa_dues",
+                    agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id="hoa",
+                    to_account_id="checking",
+                    amount_due=SeriesIndexedAmount(
+                        base_amount=400, series=RENT_SERIES_KEY, adjustment_period_months=12
+                    ),
+                    deduction_category="ordinary",
+                    deductible_fraction=0.5,
+                )
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        result = backend(flat_rent_case(scenario))
+        breakdowns = {row["jurisdiction_id"]: row for row in result.events.tax_breakdowns.iter_rows(named=True)}
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(27_600, abs=1e-6)
+
 
 class RentalCashflowReconciliationAcceptance(_RentalAcceptance):
     def test_owner_terminal_cash_reconciles_with_the_transfers_the_engine_logged(self, backend: Backend) -> None:

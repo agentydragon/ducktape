@@ -164,6 +164,10 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             std::iter::once(obligation.month),
         )?;
         validate_deduction_category(obligation.deduction_category.as_deref())?;
+        validate_deductible_fraction(
+            &obligation.obligation_id,
+            obligation.deductible_fraction_ppb,
+        )?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
     }
@@ -198,6 +202,10 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                     .min(fixture.scenario.horizon_months - 1),
         )?;
         validate_deduction_category(obligation.deduction_category.as_deref())?;
+        validate_deductible_fraction(
+            &obligation.obligation_id,
+            obligation.deductible_fraction_ppb,
+        )?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
     }
@@ -1390,6 +1398,20 @@ fn validate_amount_index_level(
             rollout,
             month,
             value,
+        });
+    }
+    Ok(())
+}
+
+fn validate_deductible_fraction(
+    obligation_id: &str,
+    deductible_fraction_ppb: i64,
+) -> Result<(), SimulationError> {
+    if !(0..=RATE_SCALE).contains(&deductible_fraction_ppb) {
+        return Err(SimulationError::InvalidDeductibleFraction {
+            obligation_id: obligation_id.into(),
+            deductible_fraction_ppb,
+            scale: RATE_SCALE,
         });
     }
     Ok(())
