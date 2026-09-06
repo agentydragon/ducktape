@@ -26,15 +26,9 @@
 # session passes through the MITM and lands in the flow file, so run the wrappers
 # for measurement sessions rather than leaving them on.
 #
-# The point is to exonerate as much as to attribute. GraphQL responses carry
-# `data.rateLimit.cost`, and the exporter records the account-wide `used` delta over
-# the same window. Summing the first and subtracting from the second gives the
-# residual: points spent by something that did not pass through this proxy. A large
-# residual says the consumer is not the client being measured — which matters,
-# because every attribution in the investigation so far has come from correlating
-# spikes against whatever processes happened to be running, and two of them were
-# wrong. A proxied client that spends 40 points while the account loses 5000 has
-# been cleared, and that is a result worth as much as a positive.
+# Request records preserve explicit GraphQL cost when the response includes it.
+# Missing cost is unknown. The account-wide `x-ratelimit-used` header is not a
+# request cost; differences also include concurrent callers and possible penalties.
 {
   config,
   lib,
@@ -140,10 +134,10 @@ in
         exec claude-desktop "$@"
       '')
 
-      # Summarise a capture: request count and total GraphQL cost per client.
+      # Offline JSONL metadata only; no request/response bodies or auth headers.
       (pkgs.writeShellScriptBin "github-api-proxy-report" ''
-        exec ${pkgs.mitmproxy}/bin/mitmdump -nr ${stateDir}/github.flows \
-          --set flow_detail=1 "$@"
+        exec ${pkgs.mitmproxy}/bin/mitmdump -q -nr ${stateDir}/github.flows \
+          -s ${../../../devinfra/github_api_capture/report.py} "$@"
       '')
     ];
   };
