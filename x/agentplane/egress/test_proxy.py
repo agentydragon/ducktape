@@ -163,7 +163,7 @@ class ProxyUnderTest:
                 self.url(path, tls=tls),
                 proxy=f"http://127.0.0.1:{self.proxy_port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
-                ssl=client_tls_context(self.interception_ca) if tls else None,
+                ssl=client_tls_context(self.interception_ca) if tls else False,
                 headers=headers,
             ) as response,
         ):
