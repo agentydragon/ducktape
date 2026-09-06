@@ -47,7 +47,7 @@ PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # endpoint reports each target's header, the shape of its value and its scheme, so an agent does not
 # have to guess that GitHub wants `Bearer` -- both harnesses sent the placeholder bare and were
 # refused when it did not.
-RULES_URL = "https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules"
+RULES_URL = "http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
@@ -70,7 +70,8 @@ PROBE = textwrap.dedent(f"""\
     You are inside a sandbox whose outbound network goes through a proxy. Work out what it lets you
     do, then report. Do all four steps, and do not stop early if one fails -- a failure is a result.
 
-    1. Ask the proxy what you are allowed to reach: GET {RULES_URL}. It answers with the policies
+    1. Ask the proxy what you are allowed to reach: GET {RULES_URL} with Authorization: Bearer
+       agentplane-credential-agentplane-workload (a known inert placeholder). It answers with the policies
        that apply to you. Some rules name a credential you do not hold: a placeholder, and every
        target it may be presented at -- a header and the shape of its value -- which the proxy
        swaps for the real value on its way out.

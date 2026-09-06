@@ -124,24 +124,27 @@ show the interactive-session form; and the
 [`bb remote` implementation](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/cli/remotebazel/remotebazel.go)
 both appends the key to the local outgoing gRPC context and retains it in the nested Bazel command.
 
-## Why the rules API remains in the central process
+## Rules API
 
-The API has a transport-neutral projection boundary, but a separate Deployment would add more
-special machinery than it removes today. Agents address the current staging proxy Service at
-`https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
-existing HTTP(S) proxy, exactly as they address ordinary HTTPS destinations. The central proxy
-recognizes that host before policy evaluation or DNS resolution and dispatches it locally to
-`RulesApi`; it must never resolve or dial its own Service backend, which would recurse through the
-same proxy Service.
+Agents send an ordinary proxied HTTP `GET` to
+`http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` with
+`Authorization: Bearer agentplane-credential-agentplane-workload`. The placeholder is inert and
+published in nonsecret runner instructions. The default `egress-rules` policy binds this exact
+host, method, and path to the existing `agentplane-workload` credential's `schemeToken` target.
+Central applies normal exact-placeholder substitution using the authenticated sidecar workload
+context; no rules-specific proxy dispatch or credential injection mode is involved.
 
-The zero-header `GET` learns its identity only from the authenticated CONNECT hop. `RulesApi`
-receives the proven Sandbox name and UID and resolves them again against the proxy's current
-enforcement index; request headers and bodies are not identity inputs. Routing the request to a
-separate backend would require new authentication bootstrap machinery, such as special
-Authorization injection or a pre-known credential placeholder, and could report an informer
-snapshot different from the proxy actually enforcing the policies. Neither is justified here.
-No sidecar credential, `egress-view` hostname, integration-app authority, or LLM/Action branch is
-introduced.
+Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
+proxy. Central resolves and dials the API like any other cluster-internal policy destination.
+The FastAPI endpoint independently validates ordinary `Authorization` through
+`SandboxPrincipalAuthenticator` (TokenReview and live Pod/Sandbox resolution). The API sees central's
+source address, not the Sandbox Pod address; proxy-hop identity and caller metadata are not API
+identity authorities. Missing or forged destination auth fails closed.
+
+The API shares the central process's current enforcement `Index` through `RulesProjection`, which
+checks the authenticated Sandbox UID and returns only the redacted field allowlist. Operator
+`/decisions` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
+admits the agent API from central egress only. Service target-port separation prevents recursion.
 
 ## ServiceAccount permissions
 

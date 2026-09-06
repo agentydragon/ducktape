@@ -1,27 +1,26 @@
-"""The agent-facing egress rules API, separated from the proxy transport that currently hosts it.
-
-The projection boundary accepts only the Sandbox identity already proven by the transport and
-returns the deliberately redacted model from ``agent_view``. It does not accept a resource object,
-request headers, or a request body as identity input. A future destination service can put its
-``SandboxPrincipal`` through the same ``for_sandbox`` seam after authenticating the ordinary
-Authorization bearer at that destination.
-"""
+"""Destination-authenticated HTTP API for a Sandbox's redacted effective egress rules."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+import asyncio
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request, status
 
 from x.agentplane.egress.agent_view import AgentEgressView, agent_view
 from x.agentplane.egress.policy import Index
+from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 HOST = "agentplane-egress.agentplane-staging.svc.cluster.local"
 PATH = "/v1/rules"
+URL = f"http://{HOST}{PATH}"
 
 
 class SandboxNotCurrentError(Exception):
-    """The proven Sandbox no longer exists under the same UID in the current policy index."""
+    """The authenticated Sandbox no longer exists under the same UID in the policy index."""
 
 
 class RulesProjection:
@@ -38,25 +37,45 @@ class RulesProjection:
         return agent_view(self._index, sandbox, self._clock())
 
 
-@dataclass(frozen=True)
-class RulesResponse:
-    status: int
-    body: bytes
-    content_type: str
+def create_rules_app(authenticate: SandboxPrincipalAuthenticator, projection: RulesProjection) -> FastAPI:
+    """Create the ordinary destination API; request metadata is never an identity authority."""
+    app = FastAPI(title="agentplane-egress-rules")
+
+    @app.get(PATH, response_model=AgentEgressView)
+    async def rules(request: Request) -> AgentEgressView:
+        verified = await authenticate(request)
+        try:
+            return projection.for_sandbox(verified.sandbox_name, verified.sandbox_uid)
+        except SandboxNotCurrentError as error:
+            # Match the authenticator's deliberately generic response. The object name and UID may
+            # have changed after TokenReview/live Pod resolution; neither belongs in the response.
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
+            ) from error
+
+    return app
 
 
-class RulesApi:
-    """The locally dispatched Service-DNS host/path contract over the projection backend."""
+class _EmbeddedServer(uvicorn.Server):
+    """Uvicorn hosted inside the proxy process, whose outer lifecycle owns signal handling."""
 
-    def __init__(self, projection: RulesProjection) -> None:
-        self._projection = projection
+    @contextmanager
+    def capture_signals(self) -> Iterator[None]:
+        yield
 
-    @staticmethod
-    def serves(host: str) -> bool:
-        return host.lower() == HOST
 
-    def request(self, path: str, *, sandbox_name: str, sandbox_uid: str) -> RulesResponse:
-        if path != PATH:
-            return RulesResponse(status=404, body=b"", content_type="text/plain")
-        view = self._projection.for_sandbox(sandbox_name, sandbox_uid)
-        return RulesResponse(status=200, body=view.model_dump_json().encode(), content_type="application/json")
+@asynccontextmanager
+async def serve_rules_api(app: FastAPI, host: str, port: int) -> AsyncIterator[None]:
+    """Run the agent API alongside mitmproxy until the central process shuts down."""
+    server = _EmbeddedServer(uvicorn.Config(app, host=host, port=port, access_log=False))
+    task = asyncio.create_task(server.serve(), name="egress-rules-api")
+    try:
+        while not server.started:
+            if task.done():
+                await task
+                raise RuntimeError("rules API exited before accepting connections")
+            await asyncio.sleep(0.01)
+        yield
+    finally:
+        server.should_exit = True
+        await task

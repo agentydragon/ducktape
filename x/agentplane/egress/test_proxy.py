@@ -13,7 +13,7 @@ import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from ipaddress import ip_network
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 
 import aiohttp
@@ -25,6 +25,7 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
 from mitmproxy import connection, http
 from more_itertools import one
 
+from util.net import pick_free_port
 from x.agentplane.egress.addon import DENIED_HEADER, EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.conftest import (
@@ -48,7 +49,13 @@ from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerif
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.resources import TargetMethod, placeholder_of
-from x.agentplane.egress.rules_api import HOST as RULES_HOST, PATH as RULES_PATH, RulesApi, RulesProjection
+from x.agentplane.egress.rules_api import (
+    HOST as RULES_HOST,
+    PATH as RULES_PATH,
+    RulesProjection,
+    create_rules_app,
+    serve_rules_api,
+)
 from x.agentplane.egress.sidecar import SidecarRelay
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
@@ -75,7 +82,9 @@ from x.agentplane.egress.testing.tls import (
     server_tls_context,
     write_ca,
 )
-from x.agentplane.egress.upstream import Network, UpstreamResolver
+from x.agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
+from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
 @dataclass
@@ -138,6 +147,9 @@ class ProxyUnderTest:
     index: Index
     upstream: RecordingUpstream
     addon: EgressAddon
+    fake: FakeApiServer
+    resolver: ServiceMappingResolver
+    agent_api_port: int
 
     def url(self, path: str, *, tls: bool = True) -> str:
         scheme = "https" if tls else "http"
@@ -153,20 +165,58 @@ class ProxyUnderTest:
         body: bytes | None = None,
         proxy_port: int | None = None,
     ) -> Response:
-        """A request to the Service DNS rules name, locally answered by the central proxy."""
+        """An ordinary HTTP request policy-routed through central to the agent API listener."""
+        await self.install_rules_route()
         async with (
             aiohttp.ClientSession() as session,
             session.request(
                 "GET",
-                f"https://{RULES_HOST}{path}",
+                f"http://{RULES_HOST}{path}",
                 proxy=f"http://127.0.0.1:{proxy_port or self.proxy_port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
-                ssl=client_tls_context(self.interception_ca),
-                headers=headers,
+                headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"} if headers is None else headers,
                 data=body,
             ) as response,
         ):
             return Response(status=response.status, headers=dict(response.headers), body=await response.read())
+
+    async def install_rules_route(self) -> None:
+        if RULES_POLICY in self.index.policies:
+            return
+        self.fake.put(
+            CREDENTIALS_PLURAL,
+            authenticated_workload_credential(
+                WORKLOAD_CREDENTIAL,
+                targets=[{"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
+            ),
+        )
+        self.fake.put(
+            POLICIES_PLURAL,
+            policy(
+                RULES_POLICY,
+                [
+                    {
+                        "hosts": [RULES_HOST],
+                        "methods": ["GET"],
+                        "paths": [RULES_PATH],
+                        "clusterInternal": True,
+                        "credentialRef": {"name": WORKLOAD_CREDENTIAL},
+                    }
+                ],
+            ),
+        )
+        current = self.fake.objects[BINDINGS_PLURAL][BINDING]
+        policies = [*current["spec"]["policies"]]
+        if RULES_POLICY not in policies:
+            policies.append(RULES_POLICY)
+        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=policies))
+        await self.index.wait_for(
+            lambda: (
+                WORKLOAD_CREDENTIAL in self.index.credentials
+                and RULES_POLICY in self.index.policies
+                and RULES_POLICY in self.index.bindings[BINDING].spec.policies
+            )
+        )
 
     async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
         async with (
@@ -186,6 +236,36 @@ class ProxyUnderTest:
 def exempt_networks() -> frozenset[Network]:
     """The scripted upstream listens on loopback, which the proxy refuses unless told otherwise."""
     return frozenset({ip_network("127.0.0.0/8"), ip_network("::1/128")})
+
+
+class ServiceMappingResolver(UpstreamResolver):
+    """Map Service port 80 to a local targetPort only after production policy pins port 80."""
+
+    def __init__(self, *, agent_api_port: int, exempt: frozenset[Network]) -> None:
+        super().__init__(exempt=exempt)
+        self.agent_api_port = agent_api_port
+        self.pin_calls: list[tuple[str, int, bool]] = []
+
+    async def pin(self, host: str, port: int, *, internal: bool = False) -> Pin:
+        self.pin_calls.append((host, port, internal))
+        return await super().pin(host, port, internal=internal)
+
+    async def _resolve(self, host: str, port: int) -> list[Address]:
+        if host.lower() == RULES_HOST:
+            return [ip_address("127.0.0.1")]
+        return await super()._resolve(host, port)
+
+    def redirect(self, server: connection.Server) -> None:
+        assert server.address is not None
+        host, port = server.address[:2]
+        if host.lower() == RULES_HOST and port == 80:
+            pin = self.pinned(host, port)
+            if pin is None:
+                server.error = f"no pinned address for {host}:{port}"
+                return
+            server.address = (str(pin.address), self.agent_api_port)
+            return
+        super().redirect(server)
 
 
 @pytest.fixture
@@ -208,16 +288,24 @@ async def proxy(
     informer_task = asyncio.create_task(informer(index, api_client).run())
     try:
         await index.wait_for(lambda: index.synced)
+        agent_api_port = pick_free_port()
+        agent_api = create_rules_app(
+            SandboxPrincipalAuthenticator(
+                SandboxPrincipalResolver(
+                    authentication=AuthenticationV1Api(api_client),
+                    core_v1=CoreV1Api(api_client),
+                    audience=AUDIENCE,
+                    namespaces=frozenset({SANDBOX_NAMESPACE}),
+                )
+            ),
+            RulesProjection(index),
+        )
+        resolver = ServiceMappingResolver(agent_api_port=agent_api_port, exempt=exempt_networks)
         async with (
+            serve_rules_api(agent_api, host="127.0.0.1", port=agent_api_port),
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
-                addon := EgressAddon(
-                    index=index,
-                    verifier=verifier,
-                    ring=ring,
-                    resolver=UpstreamResolver(exempt=exempt_networks),
-                    rules_api=RulesApi(RulesProjection(index)),
-                ),
+                addon := EgressAddon(index=index, verifier=verifier, ring=ring, resolver=resolver),
                 confdir=tmp_path / "confdir",
                 extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
             ) as server,
@@ -232,6 +320,9 @@ async def proxy(
                 index=index,
                 upstream=upstream,
                 addon=addon,
+                fake=fake,
+                resolver=resolver,
+                agent_api_port=agent_api_port,
             )
     finally:
         informer_task.cancel()
@@ -242,6 +333,7 @@ BINDING = f"{SANDBOX_A}-{GITHUB_POLICY}"
 WORKLOAD_CREDENTIAL = "agentplane-workload"
 WORKLOAD_PLACEHOLDER = placeholder_of(WORKLOAD_CREDENTIAL)
 WORKLOAD_POLICY = "first-party-workload"
+RULES_POLICY = "egress-rules"
 
 
 def denial(response: Response, reason: DenyReason) -> bool:
@@ -708,20 +800,17 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
     assert all(SECRET_VALUE not in str(d) and PLACEHOLDER not in str(d) for d in decisions)
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
-    """The Service DNS request is locally dispatched under the existing hop identity, never dialled."""
+    """The Service DNS request is forwarded to the separate destination listener."""
     response = await proxy.get_rules(RULES_PATH)
 
     assert response.status == 200, response.body
-    assert proxy.upstream.requests == [], "the central proxy forwarded its locally served rules route"
+    assert proxy.upstream.requests == []
+    assert (RULES_HOST, 80, True) in proxy.resolver.pin_calls
     view = json.loads(response.body)
     assert view["sandbox"] == SANDBOX_A
     credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
-    presented = one(c for c in credentials if c is not None)
+    presented = one(c for c in credentials if c is not None and c["placeholder"] == PLACEHOLDER)
     assert presented["placeholder"] == PLACEHOLDER, view
     # The targets, not the placeholder alone: without the scheme a sandbox sends the placeholder
     # bare and the upstream refuses the substituted value.
@@ -730,7 +819,8 @@ async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest)
 
 
 async def test_a_sandbox_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
-    """The deployed path: ordinary HTTPS proxying to loopback, then the authenticated central hop."""
+    """Ordinary HTTP via loopback and central, then independent destination TokenReview."""
+    before = proxy.fake.token_reviews
     token_file = proxy.tmp_path / "rules-sidecar-token"
     token_file.write_text(TOKEN_A)
     async with SidecarRelay(
@@ -740,12 +830,19 @@ async def test_a_sandbox_reads_rules_through_its_loopback_sidecar(proxy: ProxyUn
 
     assert response.status == 200, response.body
     assert json.loads(response.body)["sandbox"] == SANDBOX_A
+    assert proxy.fake.token_reviews == before + 2, "central and API each validate independently"
+    assert proxy.resolver.pin_calls == [(RULES_HOST, 80, True)], "one forward, no recursion"
+    assert all(value not in response.body.decode() for value in (TOKEN_A, SECRET_VALUE))
 
 
 async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: ProxyUnderTest) -> None:
     response = await proxy.get_rules(
         RULES_PATH,
-        headers={"X-Agentplane-Sandbox": SANDBOX_B, "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}",
+            "X-Agentplane-Sandbox": SANDBOX_B,
+            "Content-Type": "application/json",
+        },
         body=json.dumps({"sandbox": SANDBOX_B, "sandbox_uid": POD_B_UID}).encode(),
     )
 
@@ -754,17 +851,45 @@ async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: Pro
 
 
 async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
-    """Refused at the CONNECT, before a handshake it would learn nothing from."""
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get_rules(RULES_PATH, token=None)
+    response = await proxy.get_rules(RULES_PATH, token=None)
 
-    assert refused.value.status == 403
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_MISSING}"
+    assert denial(response, DenyReason.TOKEN_MISSING)
 
 
 async def test_the_proxys_own_service_name_serves_nothing_else(proxy: ProxyUnderTest) -> None:
-    """One local path, so the proxy Service name cannot become an accidental surface."""
+    """The ordinary policy admits only the rules path, not operator routes."""
     response = await proxy.get_rules("/")
 
-    assert response.status == 404, response.body
+    assert denial(response, DenyReason.NO_RULE)
+
+
+@pytest.mark.parametrize("authorization", [None, "Bearer forged-destination", f"Bearer {WORKLOAD_PLACEHOLDER}-wrong"])
+async def test_rules_destination_auth_is_required_after_the_authenticated_hop(
+    proxy: ProxyUnderTest, authorization: str | None
+) -> None:
+    response = await proxy.get_rules(
+        RULES_PATH, headers={} if authorization is None else {"Authorization": authorization}
+    )
+
+    assert response.status == 401
+    assert json.loads(response.body) == {"detail": "invalid workload bearer"}
+
+
+async def test_rules_unbound_placeholder_is_not_forwarded(proxy: ProxyUnderTest) -> None:
+    await proxy.install_rules_route()
+    proxy.fake.put(
+        POLICIES_PLURAL,
+        policy(
+            RULES_POLICY, [{"hosts": [RULES_HOST], "methods": ["GET"], "paths": [RULES_PATH], "clusterInternal": True}]
+        ),
+    )
+    await proxy.index.wait_for(lambda: proxy.index.policies[RULES_POLICY].spec.rules[0].credential_ref is None)
+
+    response = await proxy.get_rules(RULES_PATH)
+
+    assert denial(response, DenyReason.PLACEHOLDER_UNRESOLVED)
+    assert proxy.resolver.pin_calls == []
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

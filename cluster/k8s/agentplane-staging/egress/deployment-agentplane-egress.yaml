@@ -57,6 +57,7 @@ spec:
             - --credentials-namespace=agentplane-egress-credentials
             - --listen-port=8888
             - --admin-port=8081
+            - --agent-api-port=8082
             - --ca-cert=/etc/agentplane-egress/ca/tls.crt
             - --ca-key=/etc/agentplane-egress/ca/tls.key
             - --confdir=/var/lib/agentplane-egress
@@ -69,6 +70,9 @@ spec:
               protocol: TCP
             - name: admin
               containerPort: 8081
+              protocol: TCP
+            - name: agent-api
+              containerPort: 8082
               protocol: TCP
           # /healthz is 200 once the watches have synced; before that the proxy refuses everything.
           readinessProbe:

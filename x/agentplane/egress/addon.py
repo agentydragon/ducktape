@@ -32,7 +32,6 @@ from x.agentplane.egress.policy import (
     evaluate,
 )
 from x.agentplane.egress.resources import Sandbox
-from x.agentplane.egress.rules_api import RulesApi, SandboxNotCurrentError
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
 
 logger = logging.getLogger(__name__)
@@ -69,42 +68,17 @@ class EgressAddon:
         verifier: PodIdentityVerifier,
         ring: DecisionRing,
         resolver: UpstreamResolver,
-        rules_api: RulesApi,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
         self._verifier = verifier
         self._ring = ring
         self._resolver = resolver
-        self._rules_api = rules_api
         self._clock = clock
         self._authenticated: dict[str, _AuthenticatedConnection] = {}
 
     def client_disconnected(self, client: connection.Client) -> None:
         self._authenticated.pop(client.id, None)
-
-    async def _serve_rules(self, flow: http.HTTPFlow) -> None:
-        """Serve the rules API after the same hop authentication every request requires."""
-        try:
-            sandbox = await self._sandbox_of(flow)
-        except IdentityRejectedError as error:
-            logger.info("identity rejected for the agent view: %s", error.reason)
-            flow.response = _refusal(error.reason)
-            return
-        sandbox_uid = sandbox.metadata.uid
-        if sandbox_uid is None:
-            flow.response = _refusal(DenyReason.SANDBOX_UNKNOWN)
-            return
-        try:
-            response = self._rules_api.request(
-                flow.request.path, sandbox_name=sandbox.metadata.name, sandbox_uid=sandbox_uid
-            )
-        except SandboxNotCurrentError:
-            # The index changed between hop authentication and projection. Never answer for a
-            # replaced Sandbox or fall back to caller-supplied identity metadata.
-            flow.response = _refusal(DenyReason.SANDBOX_UNKNOWN)
-            return
-        flow.response = http.Response.make(response.status, response.body, {"content-type": response.content_type})
 
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on the CONNECT flow makes mitmproxy refuse the tunnel.
@@ -139,21 +113,6 @@ class EgressAddon:
         if scheme.lower() != "bearer" or not token:
             return None
         return token
-
-    async def _admit_rules_tunnel(self, flow: http.HTTPFlow) -> None:
-        """Open the tunnel to the rules API name, having proved the sandbox at the CONNECT.
-
-        Identity is checked here rather than only on the inner request so a caller that cannot prove
-        one is refused before a TLS handshake it would learn nothing from.
-        """
-        try:
-            await self._sandbox_of(flow)
-        except IdentityRejectedError as error:
-            logger.info("identity rejected for the agent view's tunnel: %s", error.reason)
-            flow.response = _refusal(error.reason)
-            return
-        # No response is what admits a CONNECT; the inner request is answered by `_serve_rules`.
-        flow.response = None
 
     async def _sandbox_of(self, flow: http.HTTPFlow) -> Sandbox:
         """The live Sandbox this connection's token proves, or IdentityRejectedError saying why not."""
@@ -191,15 +150,6 @@ class EgressAddon:
     async def _gate(self, flow: http.HTTPFlow) -> None:
         flow.response = _refusal(DenyReason.UNAVAILABLE)
         request = flow.request
-        if self._rules_api.serves(request.host):
-            # The agent addresses the proxy's Kubernetes Service DNS name through its existing
-            # HTTP(S) proxy. Dispatch it locally before policy evaluation or resolution: the central
-            # proxy must never resolve or dial its own Service and recurse back into itself.
-            if request.method == CONNECT:
-                await self._admit_rules_tunnel(flow)
-            else:
-                await self._serve_rules(flow)
-            return
         egress = EgressRequest(
             method=request.method,
             host=request.host,

@@ -16,3 +16,4 @@ resources:
   - egresscredential-agentplane-workload.yaml
   - egresspolicy-litellm.yaml
   - egresspolicy-agentplane-actions.yaml
+  - egresspolicy-egress-rules.yaml
