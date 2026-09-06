@@ -6,4 +6,5 @@ resources:
   - gateway.yaml
   - networkpolicy.yaml
   - podmonitor.yaml
+  - prometheus-rule.yaml
   - service.yaml

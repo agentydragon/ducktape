@@ -95,7 +95,19 @@ Only the TLS proxy port is routed publicly. A PodMonitor targets the separate
 metrics port directly so readiness failure does not remove it from observation.
 The runtime disables readiness after a capture write failure; do not configure
 a liveness probe that restarts and clears this evidence-loss signal. Investigate
-storage and incomplete captures before a controlled restart.
+storage and incomplete captures before a controlled restart. Established
+connections are not terminated by a readiness change; the exact-route mitigation
+and metrics remain active. The rule set separately detects capture-write errors,
+failed scrapes, missing targets and low reported volume space. Validate actual
+storage-driver metrics and notification delivery during rollout, not just rule
+installation.
+
+Reloader watches the mounted configuration and Secrets. Certificate renewal or
+credential rotation therefore causes a Recreate rollout; capture appends across
+that restart. One writer is intentional. The image's Python launcher needs a
+writable filesystem; the Pod has no privilege escalation, capabilities or
+ServiceAccount token, but does not claim a read-only root filesystem. Working
+signing PEMs live in a small memory-backed volume, not the evidence PVC.
 
 Egress is public HTTP/HTTPS plus cluster DNS, not arbitrary cluster access. The
 runtime must also reject private/loopback destinations and pin validated DNS

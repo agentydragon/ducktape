@@ -1,0 +1,135 @@
+rule_files:
+  - github-proxy.yaml
+evaluation_interval: 1m
+tests:
+  - name: healthy scrape capture and storage do not alert
+    interval: 1m
+    input_series:
+      - series: up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy",pod="healthy"}
+        values: 1+0x10
+      - series: github_api_proxy_capture_write_failures_total{namespace="github-api-proxy",pod="healthy",channel="raw"}
+        values: 0+0x10
+      - series: github_api_proxy_capture_write_failures_total{namespace="github-api-proxy",pod="healthy",channel="session_ws"}
+        values: 0+0x10
+      - series: kubelet_volume_stats_available_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
+        values: 20+0x10
+      - series: kubelet_volume_stats_capacity_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
+        values: 100+0x10
+      - series: github_api_proxy_capture_write_failures_total{namespace="unrelated",channel="raw"}
+        values: 1+0x10
+      - series: kubelet_volume_stats_available_bytes{namespace="github-api-proxy",persistentvolumeclaim="unrelated"}
+        values: 0+0x10
+      - series: kubelet_volume_stats_capacity_bytes{namespace="github-api-proxy",persistentvolumeclaim="unrelated"}
+        values: 100+0x10
+    promql_expr_test:
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+
+  - name: a capture failure stays visible despite healthy scrapes and no new failures
+    interval: 1m
+    input_series:
+      - series: up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy",pod="running"}
+        values: 1+0x10
+      - series: github_api_proxy_capture_write_failures_total{namespace="github-api-proxy",pod="running",channel="raw"}
+        values: 0 1+0x9
+      - series: github_api_proxy_capture_write_failures_total{namespace="github-api-proxy",pod="running",channel="session_ws"}
+        values: 0+0x10
+    promql_expr_test:
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 0m
+        exp_samples: []
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 1m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubProxyCaptureWriteFailed",alertstate="firing",channel="raw",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubProxyCaptureWriteFailed",alertstate="firing",channel="raw",severity="warning"}
+            value: 1
+
+  - name: failed scrapes alert after two minutes but are not missing discovery
+    interval: 1m
+    input_series:
+      - series: up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy",pod="failed"}
+        values: 0+0x10
+    promql_expr_test:
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 1m
+        exp_samples: []
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 2m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubProxyMetricsScrapeFailed",alertstate="firing",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubProxyMetricsScrapeFailed",alertstate="firing",severity="warning"}
+            value: 1
+
+  - name: vanished discovery alerts five minutes after the last sample
+    interval: 1m
+    input_series:
+      - series: up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy",pod="gone"}
+        values: 1 stale
+      - series: up{namespace="github-api-proxy",job="unrelated"}
+        values: 1+0x6
+      - series: up{namespace="unrelated",job="github-api-proxy/github-api-proxy"}
+        values: 1+0x6
+    promql_expr_test:
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 4m
+        exp_samples: []
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubProxyMetricsMissing",alertstate="firing",namespace="github-api-proxy",job="github-api-proxy/github-api-proxy",severity="warning"}
+            value: 1
+
+  - name: a healthy replacement clears the alert despite a still discovered failed target
+    interval: 1m
+    input_series:
+      - series: up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy",pod="old"}
+        values: 0+0x10
+      - series: up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy",pod="replacement"}
+        values: _ _ _ 1+0x7
+    promql_expr_test:
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 2m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubProxyMetricsScrapeFailed",alertstate="firing",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 3m
+        exp_samples: []
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+
+  - name: reported free storage must remain below fifteen percent for five minutes
+    interval: 1m
+    input_series:
+      - series: up{namespace="github-api-proxy",job="github-api-proxy/github-api-proxy"}
+        values: 1+0x8
+      - series: kubelet_volume_stats_available_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
+        values: 15 15 14+0x5 15
+      - series: kubelet_volume_stats_capacity_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
+        values: 100+0x8
+    promql_expr_test:
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 1m
+        exp_samples: []
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 6m
+        exp_samples: []
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 7m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubProxyCaptureStorageLow",alertstate="firing",namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname=~"GitHubProxy.*",alertstate="firing"}
+        eval_time: 8m
+        exp_samples: []

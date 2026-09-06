@@ -165,6 +165,22 @@ py_library(
 )
 
 py_test(
+    name = "test_github_proxy_rules",
+    srcs = ["test_github_proxy_rules.py"],
+    data = [
+        "testdata/github_proxy_rules.yaml",
+        "//cluster/k8s:github-api-proxy/app/prometheus-rule.yaml",
+        "@multitool//tools/promtool",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_github_quota_rules",
     srcs = ["test_github_quota_rules.py"],
     data = [

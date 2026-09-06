@@ -265,6 +265,20 @@ compromised, regenerate only that host's entry and coordinate central and client
 reload. These layers do not expose a proxy or migrate a workstation; the
 authenticated runtime and verified client activation remain separate changes.
 
+The runtime layer `github-api-proxy` additionally depends on replicated
+SeaweedFS storage, monitoring CRDs, the Gateway/Cilium foundation, Reloader and
+`forgejo-images`. Its image-pull credential is the existing narrow reflected
+registry Secret, not a new registry user or password. Only the corresponding
+plaintext reflection allowlists change; that specific SOPS file deliberately
+uses `mac_only_encrypted: true`.
+
+Server TLS, interception CA and both client credential files are mounted only
+in the central Pod. Reloader restarts the single Recreate-managed writer when
+mounted configuration or Secrets change. The separate TLS-only Gateway uses
+port 8443; metrics are private. The capture PVC opts out of Flux pruning so
+removing the runtime does not delete investigation evidence. A verified image
+publication and actual authenticated route are required before client cutover.
+
 ## L7: NixOS Worker Integration
 
 wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.
