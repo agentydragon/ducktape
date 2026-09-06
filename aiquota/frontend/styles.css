@@ -94,32 +94,22 @@ main {
 }
 
 .page-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
+  align-items: center;
   border-bottom: 1px solid var(--border);
-  padding-bottom: 24px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
   margin-bottom: 24px;
-}
-
-.eyebrow {
-  color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  margin: 0;
+  padding-bottom: 20px;
 }
 
 h1 {
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-size: clamp(1.6rem, 3.5vw, 2.25rem);
+  letter-spacing: -0.03em;
   line-height: 1.05;
-  letter-spacing: -0.035em;
-  margin: 8px 0 6px;
+  margin: 0;
 }
 
-.lede,
 .empty,
 .aside,
 .freshness,
@@ -128,29 +118,38 @@ footer {
   color: var(--muted);
 }
 
-.lede {
-  margin: 0;
-}
-
-button {
-  background: var(--accent);
-  border: 0;
-  border-radius: 9px;
-  color: var(--bg);
+.refresh {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
   cursor: pointer;
-  font: inherit;
-  font-weight: 700;
-  padding: 10px 16px;
-  white-space: nowrap;
+  display: flex;
+  height: 38px;
+  justify-content: center;
+  padding: 0;
+  width: 38px;
 }
 
-button:hover:not(:disabled) {
-  filter: brightness(1.08);
+.refresh:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-button:disabled {
+.refresh:disabled {
+  color: var(--accent);
   cursor: progress;
-  opacity: 0.6;
+}
+
+.refresh[aria-busy="true"] svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .providers {
@@ -427,11 +426,6 @@ footer {
 @media (max-width: 560px) {
   main {
     padding: 28px 16px 40px;
-  }
-
-  .page-heading {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .providers {

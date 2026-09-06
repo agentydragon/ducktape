@@ -61,13 +61,17 @@ export function Dashboard({
   return (
     <main id="app">
       <header className="page-heading">
-        <div>
-          <p className="eyebrow">aiquota</p>
-          <h1>Subscription headroom</h1>
-          <p className="lede">How much of each AI subscription is spent, and how fast it is going.</p>
-        </div>
-        <button type="button" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? "Refreshing…" : "Refresh"}
+        <h1>AI quota</h1>
+        <button
+          type="button"
+          className="refresh"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-busy={refreshing}
+          aria-label="Refresh"
+          title="Refresh"
+        >
+          <RefreshIcon />
         </button>
       </header>
       {error && <p className="notice">{error}</p>}
@@ -85,6 +89,26 @@ export function Dashboard({
         </footer>
       )}
     </main>
+  );
+}
+
+/** The conventional circular arrow; the button is icon-only, so its label lives in aria-label. */
+function RefreshIcon(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
   );
 }
 
