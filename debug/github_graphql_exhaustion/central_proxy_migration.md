@@ -1,7 +1,9 @@
 # Central proxy migration
 
-Implementation checkpoint: 2026-09-06 05:37 UTC. This is not a quota-resolution
-or client-migration claim.
+Server implementation checkpoint: 2026-09-06 05:37 UTC. Client-state statements
+below describe that checkpoint. The subsequent [wyrm2 cutover](wyrm2_central_cutover.md)
+replaced local MITM with the central relay, but Desktop compatibility remains
+unresolved. Neither checkpoint establishes quota resolution.
 
 ## Landed and verified
 
@@ -16,7 +18,7 @@ or client-migration claim.
   Its SHA-256 fingerprint is
   `6F:51:AD:39:F5:B9:7D:B7:E2:FB:6D:96:50:91:70:7F:74:CC:05:CB:1F:DB:90:6E:36:D2:A1:8E:3B:54:0C:55`.
 
-The existing wyrm2 local proxy and exact-route mitigation remain active. No
+At this server checkpoint the wyrm2 local proxy and exact-route mitigation remained active. No
 Desktop restart, trust-store migration, capture deletion or local-proxy cleanup
 was performed at this checkpoint.
 

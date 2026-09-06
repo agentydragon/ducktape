@@ -3,10 +3,11 @@
 Tracking issue: [#5213](https://github.com/agentydragon/ducktape/issues/5213).
 
 The observed large burn is causally linked to Claude Desktop's cloud-mediated
-GitHub batch-status route. An exact-route temporary block is verified on wyrm2;
-rugged has a source opt-in but no verified rollout. The investigation remains
-open: the exact refresh trigger and upstream work are partly unobserved, and
-the required multi-day exhaustion-free acceptance window is not complete.
+GitHub batch-status route. Wyrm2 now uses the central exact-route block through
+a local relay, but Desktop compatibility remains broken; rugged has a source
+opt-in but no verified rollout. The investigation remains open: the exact
+refresh trigger and upstream work are partly unobserved, and the required
+multi-day exhaustion-free acceptance window is not complete.
 
 - [Attribution and controlled block/reversal](attribution_2026_09_05.md):
   measurements, source evidence, competing explanations, and remaining experiments.
@@ -16,6 +17,8 @@ the required multi-day exhaustion-free acceptance window is not complete.
 - [Central migration](central_proxy_migration.md): verified server rollout and
   real relay canary, host cutover gates, local mitigation retirement and remaining
   monitoring limitations.
+- [Wyrm2 cutover](wyrm2_central_cutover.md): installed relay, preserved captures,
+  restored launcher search and unresolved Desktop history/fetch regression.
 - [Acceptance monitoring](acceptance_monitoring.md): exact retained-metric
   queries, coverage requirements, historical gaps, and notification limitations.
 - [Notification delivery](notification_delivery.md): the source-specific ntfy
