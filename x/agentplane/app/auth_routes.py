@@ -8,6 +8,7 @@ therefore cannot lose.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import cast
 
@@ -46,6 +47,11 @@ async def callback(request: Request) -> RedirectResponse:
     try:
         client = _oauth(request).create_client(CLIENT_NAME)
         token = await client.authorize_access_token(request)
+    except json.JSONDecodeError as error:
+        logger.warning("OIDC token exchange returned a non-JSON response")
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, "Identity provider returned an invalid response; please retry."
+        ) from error
     except OAuthError as error:
         # The message can carry a value from the query string, so only the code is logged.
         logger.warning("OIDC callback refused: %s", error.error)

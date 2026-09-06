@@ -8,13 +8,15 @@ the same app: one port, one guard, two credentials.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import httpx
 import pytest
 import pytest_bazel
+from starlette.responses import Response
+from starlette.routing import Route
 
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
@@ -40,8 +42,12 @@ SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
 
+
 # Serves the app accepting tokens from exactly the subjects passed, yielding its base URL.
-ServeApp = Callable[[frozenset[str]], AbstractAsyncContextManager[str]]
+class ServeApp(Protocol):
+    def __call__(
+        self, subjects: frozenset[str], *, reject_token_exchange: bool = False
+    ) -> AbstractAsyncContextManager[str]: ...
 
 
 @pytest.fixture
@@ -57,7 +63,7 @@ def serve(
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
 
     @asynccontextmanager
-    async def serving(subjects: frozenset[str]) -> AsyncIterator[str]:
+    async def serving(subjects: frozenset[str], *, reject_token_exchange: bool = False) -> AsyncIterator[str]:
         private_key, public_key = generate_rsa_keypair()
         idp_port, app_port = pick_free_port(), pick_free_port()
         idp_url, app_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{app_port}"
@@ -68,6 +74,12 @@ def serve(
             subject=SUBJECT,
             extra_id_token_claims={"preferred_username": OPERATOR},
         )
+        if reject_token_exchange:
+
+            async def reject_token(_request: Any) -> Response:
+                return Response(status_code=403)
+
+            idp.routes.insert(0, Route("/token", reject_token, methods=["POST"]))
         oidc = OIDCSettings(
             issuer=idp_url,
             client_id="agentplane",
@@ -115,6 +127,17 @@ async def test_logout_drops_the_session(browser: httpx.AsyncClient, served: str)
     assert (await browser.post("/auth/logout", headers={"Origin": served})).url.path == "/"
     assert (await browser.get("/auth/me")).status_code == 401
     assert (await browser.get("/sandboxes")).status_code == 401
+
+
+async def test_a_non_json_token_exchange_failure_is_reported_as_an_upstream_error(serve: ServeApp) -> None:
+    async with (
+        serve(frozenset({AGENT}), reject_token_exchange=True) as app_url,
+        httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser,
+    ):
+        refused = await browser.get("/auth/login")
+
+    assert refused.status_code == 502
+    assert refused.json() == {"detail": "Identity provider returned an invalid response; please retry."}
 
 
 async def test_an_unsafe_method_from_another_origin_is_refused(browser: httpx.AsyncClient, served: str) -> None:
