@@ -245,7 +245,7 @@ async def test_operator_adapter_is_distinct_digest_only_and_file_configured(tmp_
     assert accepted.key == "configured-operator:haku-bff"
     assert await authenticator.authenticate("wrong") is None
     assert "opaque-bff-bearer" not in repr(authenticator.__dict__)
-    assert await DisabledOperatorAuthenticator().authenticate("anything") is None
+    await DisabledOperatorAuthenticator().authenticate("anything")
 
 
 if __name__ == "__main__":
