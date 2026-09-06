@@ -545,7 +545,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
                     buyer_account_id="checking",
                     seller_agent_id="seller",
                     purchase_price=500000,
-                    down_payment=100000,
+                    down_payment=500000,
                 )
             ],
             tax_profiles=[],
@@ -569,12 +569,73 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
                     buyer_account_id="checking",
                     seller_agent_id="seller",
                     purchase_price=500000,
-                    down_payment=100000,
+                    down_payment=500000,
                 )
             ],
             tax_profiles=[],
             horizon_months=2,
         )
+
+
+@pytest.mark.parametrize(
+    ("down_payment", "mortgage_principal"),
+    [
+        pytest.param(100000, None, id="cash-buyer-covers-a-fifth-of-the-price"),
+        pytest.param(100000, 300000, id="down-payment-plus-mortgage-leaves-a-gap"),
+        pytest.param(200000, 400000, id="down-payment-plus-mortgage-overshoots"),
+    ],
+)
+def test_scheduled_property_purchase_rejects_terms_that_do_not_fund_the_price(
+    down_payment: int, mortgage_principal: int | None
+) -> None:
+    # The seller receives the down payment and the buyer books `price - principal` of equity, so
+    # terms that do not add up to the price would conjure equity (or destroy it) at settlement.
+    with pytest.raises(ValidationError, match=r"property purchase 'buy_home' is not funded"):
+        ScheduledPropertyPurchase(
+            month=0,
+            cause_id="buy_home",
+            property_id="home",
+            location_id="san_francisco",
+            buyer_agent_id="alice",
+            buyer_account_id="checking",
+            seller_agent_id="seller",
+            purchase_price=500000,
+            down_payment=down_payment,
+            mortgage=None
+            if mortgage_principal is None
+            else MortgageFinancing(
+                liability_id="mortgage",
+                lender_agent_id="lender",
+                principal=mortgage_principal,
+                annual_interest_rate=0.06,
+                term_months=360,
+            ),
+        )
+
+
+def test_scheduled_property_purchase_accepts_closing_costs_on_top_of_a_funded_price() -> None:
+    # Closing costs are the buyer's own expense, not part of what the seller is paid, so they are
+    # outside the identity: a purchase funded to the price stays valid however large they are.
+    purchase = ScheduledPropertyPurchase(
+        month=0,
+        cause_id="buy_home",
+        property_id="home",
+        location_id="san_francisco",
+        buyer_agent_id="alice",
+        buyer_account_id="checking",
+        seller_agent_id="seller",
+        purchase_price=500000,
+        down_payment=100000,
+        buyer_closing_cost=15000,
+        mortgage=MortgageFinancing(
+            liability_id="mortgage",
+            lender_agent_id="lender",
+            principal=400000,
+            annual_interest_rate=0.06,
+            term_months=360,
+        ),
+    )
+    assert purchase.buyer_closing_cost == 15000
 
 
 def test_scenario_rejects_out_of_horizon_scheduled_transfers() -> None:
