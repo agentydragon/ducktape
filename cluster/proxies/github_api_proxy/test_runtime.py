@@ -395,6 +395,20 @@ async def test_connect_authority_rejected_before_tunnel(proxy: Harness, target: 
     assert proxy.origins.dials == 0
 
 
+async def test_denied_connect_does_not_authorize_later_outer_request(proxy: Harness) -> None:
+    async with asyncio.timeout(5):
+        reader, writer = await proxy.connect()
+        try:
+            assert (await request(reader, writer, method="CONNECT", target="localhost:443", auth=authorization()))[
+                0
+            ] == 403
+            assert (await request(reader, writer, method="GET", target="http://mitm.it/", auth=None))[0] == 407
+        finally:
+            writer.close()
+            await writer.wait_closed()
+    assert proxy.origins.dials == 0
+
+
 @pytest.mark.parametrize(
     "target",
     [

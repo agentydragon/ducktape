@@ -55,8 +55,12 @@ class Authenticate:
         return client
 
     def http_connect(self, flow: http.HTTPFlow) -> None:
-        if (client := self.authenticate(flow, connect=True)) is not None:
-            self.tunnels[flow.client_conn] = client
+        self.authenticate(flow, connect=True)
+
+    def http_connected(self, flow: http.HTTPFlow) -> None:
+        # This hook runs only for successful CONNECT, after destination policy.
+        # A denied tunnel must not authorize another outer HTTP request.
+        self.tunnels[flow.client_conn] = flow.metadata[CLIENT_METADATA_KEY]
 
     def requestheaders(self, flow: http.HTTPFlow) -> None:
         if self.authenticate(flow, connect=False) is None:
