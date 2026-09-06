@@ -42,6 +42,7 @@ from finance.augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledTransfer,
 )
+from finance.augur.sim.testing.bonds import CPI_DOUBLING, bond_case
 from finance.augur.sim.testing.case import Case, flat, scenario
 from finance.augur.sim.testing.cash_conservation import (
     private_equity_tender_case,
@@ -190,6 +191,9 @@ def test_agent_facing_cash_excludes_the_external_account() -> None:
         pytest.param(target_allocation_sale_case, id="target-allocation-sale"),
         pytest.param(private_equity_tender_case, id="private-equity-tender"),
         pytest.param(property_sale_case, id="property-sale"),
+        # Not a disposal, but the one instrument that books income with no cash behind it:
+        # if accretion ever reached the cash tensor, this is where it would show.
+        pytest.param(lambda: bond_case(indexed=True, cpi=CPI_DOUBLING, maturity=12), id="inflation-indexed-bond"),
     ],
 )
 def test_a_disposal_does_not_mint_cash(case) -> None:

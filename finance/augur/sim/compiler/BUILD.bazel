@@ -313,3 +313,17 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "series_test",
+    srcs = ["series_test.py"],
+    deps = [
+        ":series",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:conftest",
+        "//finance/augur/sim/testing:bonds",
+        "@pypi//pytest_bazel",
+    ],
+)

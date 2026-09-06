@@ -10,6 +10,7 @@ import pytest_bazel
 
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.engine.jax_backend import JaxEngine
+from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
@@ -62,6 +63,18 @@ class TestJaxCashConservation(CashConservationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_jax
+
+
+class TestJaxBonds(BondAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_jax
+
+
+class TestJaxBondValue(BondValueAcceptance):
+    @pytest.fixture
+    def engine(self) -> Engine:
+        return JaxEngine()
 
 
 class TestJaxFrozenRollout(FrozenRolloutAcceptance):
