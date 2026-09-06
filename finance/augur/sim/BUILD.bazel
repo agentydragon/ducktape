@@ -667,27 +667,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_property_stakes_e2e",
-    size = "medium",
-    srcs = ["test_property_stakes_e2e.py"],
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":locations",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "bench_scenario",
     srcs = ["bench_scenario.py"],

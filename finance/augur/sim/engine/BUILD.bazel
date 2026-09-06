@@ -129,6 +129,9 @@ py_library(
 
 py_test(
     name = "jax_backend_test",
+    # Every acceptance case is its own scenario shape and so its own XLA compile, and the
+    # 36-month property lifecycle is the longest of them.
+    size = "medium",
     srcs = ["jax_backend_test.py"],
     deps = [
         ":jax_backend",
@@ -140,6 +143,7 @@ py_test(
         "//finance/augur/sim/testing:frozen_rollout",
         "//finance/augur/sim/testing:income_sources",
         "//finance/augur/sim/testing:jax_result",
+        "//finance/augur/sim/testing:property_stakes",
         "//finance/augur/sim/testing:rollout_independence",
         "//finance/augur/sim/testing:simulation_result",
         "//finance/augur/sim/testing:tax_statute",
