@@ -78,9 +78,10 @@ is a useful phone-off observation, not a causal verdict: the earlier burst
 regime was intermittent, and no phone-on rechallenge has been performed.
 
 The socket log still observed the original Desktop network process at
-17:39:19; by 17:41:30 both original Desktop PIDs were absent. Later quiet
-samples therefore do not keep Desktop state constant and cannot be presented
-as a phone-only intervention. At 17:41:59 the account had used 56 points.
+17:39:19, and a host-namespace `ps` check confirmed both original PIDs alive
+at approximately 17:43:50. A sandboxed `ps` had hidden those processes; it was
+not evidence of their exit. System observations must use the host namespace.
+At 17:41:59 the account had used 56 points, and at 17:43:13 it had used 63.
 
 ## Proven coverage defects
 
@@ -156,6 +157,11 @@ That supersedes the temporary URI-handler experiment as the implementation
 direction: preserve the normal app profile, use app-private certificate trust,
 and make the command, desktop actions, and OAuth handler resolve to the same
 proxied package. Do not change the other hosts' defaults.
+
+There is an additional mechanism behind the failed temporary handler: Desktop
+registers itself as the default protocol client at startup, using the normal
+`com.anthropic.Claude.desktop` identity. That overwrites a competing temporary
+handler. Wrapping the normal package entry addresses that mechanism directly.
 
 A sanitized read of the existing flow file found 37 GraphQL requests from
 `claude-code/2.1.245`, spanning September 4 12:41:35–20:23:23 UTC. All 37 lacked
