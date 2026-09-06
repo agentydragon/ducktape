@@ -73,3 +73,82 @@ Save stream and verifies the open flow is absent, then verifies the completed ra
 flow after close/shutdown. Appending closes the metadata file each time for immediate
 reader visibility; this is not an fsync/power-loss durability guarantee. Neither
 this addon nor its tests activate live capture, modify messages, or contact an account.
+
+## Client transport
+
+<../../nix/home/modules/github-api-proxy.nix> owns the loopback proxy and the
+normal Claude Desktop executable, desktop actions, and OAuth URI launch routes.
+The application profile and sign-in state stay in their normal locations.
+
+### Remote mode
+
+`ducktape.githubApiProxy.remote.enable` defaults to `false`. When enabled, the
+same `github-api-proxy.service` runs Squid as a transport-only relay, replacing
+local interception. It authenticates to one HTTPS parent, verifies the parent's
+hostname against the standard CA bundle, and never falls back to an origin.
+Only the central service intercepts or captures. The relay has no disk/content
+cache, access/flow logs, or signing key. Local capture reports are not installed.
+
+`remote.credentialsFile` must name an owner-only runtime file, not a Nix-store
+path. Its JSON object contains exactly one client identifier matching
+`[A-Za-z0-9._-]{1,64}` and a 32-byte lowercase hexadecimal password:
+
+```json
+{
+  "example-desktop": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+For the per-host SOPS Kubernetes Secret, Home Manager can select
+`key = "stringData/credentials.json"` and pass `config.sops.secrets.<name>.path`.
+Use the host's own file and recipient; do not install another host's credentials.
+The renderer writes Squid's secret-bearing configuration into the service's
+owner-only runtime directory. Credentials never enter the Nix store, arguments,
+or logs. Squid diagnostics can echo configuration, so its output is discarded;
+unit status and the bounded authenticated launcher probe expose failure.
+
+`remote.caCertificate` is a verified, pinned **public** central interception CA
+PEM. It is distinct from the public roots used for the outer HTTPS proxy hop.
+Desktop trusts it only through the existing app-private NSS mount; proxied CLI
+processes receive a private combined bundle. Do not fetch-and-trust a certificate
+at startup or modify global browser trust. The private signing key stays central.
+
+The launcher probes `http://mitm.it/` through the relay. The central endpoint must
+answer this request only after outer TLS and Basic authentication, with a bounded
+constant `200` response and no origin request. A listening local socket alone is
+not readiness. Missing credentials, rejected authentication, unavailable parents,
+and untrusted or mismatched certificates fail closed.
+
+The relay is not a host firewall: applications that do not select this proxy and
+Chromium's normal loopback bypass remain outside its coverage.
+The authenticated identifier names the configured credential, not a process.
+Desktop and opt-in `claude-proxied` sessions share this relay and credential.
+
+### Migration and retirement
+
+Do not activate remote mode until the central authenticated readiness and real
+application route are verified. Set `blockCloudGithubBatch = false` locally;
+central interception owns any remaining mitigation policy.
+
+After central end-to-end verification, inventory and remove only the owned local
+service overrides (including the temporary `80`/`90` overrides), profile bridge,
+unused local CA signing keys, and diagnostic Nix GC roots. Verify exact targets
+and get approval before deletion. Preserve raw investigation captures and the
+normal Desktop profile/sign-in. Verify that the single service now runs only the
+transport relay and no old local MITM process remains. Once all actual consumers
+have migrated, remove the local-interception mode and its unused dependencies.
+
+### Validation
+
+`bbr test //devinfra/github_api_capture:test_relay_config` runs real Squid on RBE
+against a synthetic TLS-authenticated parent and independent HTTPS origin.
+It checks successful nested TLS and authenticated readiness, no leaked parent
+authorization at the origin, rejection of wrong credentials or bad parent TLS,
+and absence of direct origin fallback when the parent is unavailable.
+
+The test image uses Debian `squid-openssl` `7.6-2`, pinned by the generated
+`squid.lock.json`; the host service uses the repository-pinned Nix Squid `7.6`.
+The test also executes the actual CA preparation script against an old bundle
+and NSS nickname before switching to a new certificate with an old timestamp.
+Validate the rendered Home Manager unit and the pinned host binary before rollout
+as well.

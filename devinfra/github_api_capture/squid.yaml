@@ -1,0 +1,10 @@
+# Regenerate: bb run @github_relay_squid//:lock
+version: 1
+sources:
+  - channel: forky main
+    url: https://snapshot.debian.org/archive/debian/20260905T000000Z
+archs:
+  - amd64
+packages:
+  - squid-openssl
+  - libnss3-tools

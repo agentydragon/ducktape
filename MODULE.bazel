@@ -357,6 +357,14 @@ use_repo(image_pins, "excalidraw", "excalidraw_linux_amd64", "freecad_test", "fr
 # Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
+# OpenSSL Squid, matching the TLS backend of the Nix client relay.
+apt.install(
+    name = "github_relay_squid",
+    lock = "//devinfra/github_api_capture:squid.lock.json",
+    manifest = "//devinfra/github_api_capture:squid.yaml",
+)
+use_repo(apt, "github_relay_squid")
+
 # E2E test container: git + JDK layered on python:3.13-slim base.
 apt.install(
     name = "trixie_e2e",

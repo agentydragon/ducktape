@@ -1,4 +1,47 @@
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+exports_files([
+    "squid.yaml",
+    "squid.lock.json",
+])
+
+oci_image(
+    name = "squid_test_image",
+    testonly = True,
+    base = "@debian_trixie_slim_linux_amd64",
+    tars = ["@github_relay_squid//:flat"],
+)
+
+oci_layout_rloc(
+    name = "squid_image",
+    testonly = True,
+    image = ":squid_test_image",
+)
+
+py_test(
+    name = "test_relay_config",
+    size = "medium",
+    srcs = ["test_relay_config.py"],
+    data = [
+        "prepare_trust.sh",
+        ":squid_image",
+    ],
+    requires_docker = True,
+    deps = [
+        ":relay_config",
+        "//:conftest",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//cryptography",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
 
 py_library(
     name = "report",
@@ -84,4 +127,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "relay_config",
+    srcs = ["relay_config.py"],
 )
