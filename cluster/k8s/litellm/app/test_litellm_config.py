@@ -78,15 +78,14 @@ def test_hidden_model_aliases_target_served_models() -> None:
     assert all(alias["model"] in served for alias in aliases.values())
 
 
-# The shape segment names the LiteLLM request path an entry is served through
-# (model_rosters.py), so it must agree with the rest of the entry. `model_info.mode` picks the
-# path outright. A passthrough shape additionally pins the upstream handler: `ant-messages` is
-# LiteLLM's native Anthropic path and `oai-responses` its native Responses path, so an entry
-# named for one but wired to another provider is served over a bridge its name denies.
-# `oai-chat`/`oai-embeddings` pin only the mode -- they are the ordinary chat/embeddings paths,
-# whose upstream may speak OpenAI's wire (mistral) or be translated on to the provider's own
-# (gemini -> :generateContent).
-_PASSTHROUGH_UPSTREAM = {ApiShape.ANT_MESSAGES: "anthropic", ApiShape.OAI_RESPONSES: "openai"}
+# The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so it must agree
+# with the entry's own wiring: `litellm_params.model`'s prefix selects the upstream handler and
+# `model_info.mode` the endpoint. `ant-messages` and `oai-responses` name that wire exactly, so
+# they pin the prefix too -- an entry named for one but wired to another provider claims a wire
+# it does not speak. `oai-chat`/`oai-embeddings` pin only the mode: mistral honours the name,
+# while the google entries are the known misnomer model_rosters.py records, so requiring an
+# OpenAI-wire upstream here would reject the config as it stands.
+_NAMED_UPSTREAM = {ApiShape.ANT_MESSAGES: "anthropic", ApiShape.OAI_RESPONSES: "openai"}
 _SHAPE_MODE = {
     ApiShape.ANT_MESSAGES: "chat",
     ApiShape.OAI_CHAT: "chat",
@@ -95,7 +94,7 @@ _SHAPE_MODE = {
 }
 
 
-def test_shape_segment_matches_each_entry_serving_path() -> None:
+def test_shape_segment_matches_each_entry_upstream_wire() -> None:
     scheme_entries = [
         entry for entry in _load_config("proxy-config.yaml")["model_list"] if entry["model_name"].count("/") == 2
     ]
@@ -106,9 +105,9 @@ def test_shape_segment_matches_each_entry_serving_path() -> None:
         shapes_seen.add(shape)
         assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
         upstream = entry["litellm_params"]["model"].split("/")[0]
-        expected = _PASSTHROUGH_UPSTREAM.get(shape)
+        expected = _NAMED_UPSTREAM.get(shape)
         if expected is None:
-            assert upstream not in _PASSTHROUGH_UPSTREAM.values(), name
+            assert upstream not in _NAMED_UPSTREAM.values(), name
         else:
             assert upstream == expected, name
     assert shapes_seen == set(ApiShape)

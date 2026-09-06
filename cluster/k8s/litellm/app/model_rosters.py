@@ -1,8 +1,8 @@
 """Shared model rosters and exposed-name derivations referenced by LiteLLM cross-configuration tests.
 
 Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
-upstream account/provider, the LiteLLM request path the entry is served through, then
-the upstream model:
+upstream account/provider, the wire LiteLLM speaks to that provider, then the upstream
+model:
 
 - `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
   CLIProxyAPI, which serves it on both the Anthropic Messages and the OpenAI Responses
@@ -16,16 +16,16 @@ the upstream model:
 - `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
 - `mistral/oai-chat/*` — Mistral API key
 
-The shape segment is a serving-path fact, not a client contract. LiteLLM routes on
-`model_name` alone and takes the request shape from whichever endpoint the client calls,
-translating between the two rather than rejecting a mismatch — the laptop `gemini-claude`
-wrapper runs Claude Code's `/v1/messages` traffic against `google/oai-chat/*`. Nor does it
-promise the upstream speaks that wire: `ant-messages` and `oai-responses` are passthroughs,
-while `google/oai-*` is translated on to Google's own `:generateContent` /
-`:batchEmbedContents`. What it does decide is which translator does the work — load-bearing
-wherever one account is served over two wires, as `chatgpt/{ant-messages,oai-responses}/*`
-is so CLIProxyAPI translates Claude Code's tool calls instead of LiteLLM's own Messages
-bridge (<nix/home/claude_code/codex-claude.nix>).
+The shape is the OUTBOUND wire — the request LiteLLM makes to the provider, never the
+request a client makes to LiteLLM. Nothing about the inbound side is pinned: LiteLLM routes
+on `model_name` alone, takes the incoming shape from whichever endpoint the client called,
+and translates rather than rejecting a mismatch, so every entry is reachable from
+`/v1/messages`, `/v1/chat/completions` and `/v1/responses` alike — the laptop
+`gemini-claude` wrapper runs Claude Code's `/v1/messages` traffic against
+`google/oai-chat/*`. What the shape does decide is which translator does the work,
+load-bearing wherever one account is served over two wires:
+`chatgpt/{ant-messages,oai-responses}/*` exists so CLIProxyAPI translates Claude Code's
+tool calls instead of LiteLLM's own Messages bridge (<nix/home/claude_code/codex-claude.nix>).
 
 A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
 oai-embeddings): the shape segment names a wire protocol, and wire protocols are
@@ -33,7 +33,7 @@ identified by their definer — the bare nouns are unique only in today's snapsh
 ("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
 distinct wire shapes answering to the same nouns). The definer prefix is NOT the
 provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
-PROTOCOL the path is, and they vary independently — `chatgpt/ant-messages/*` is the
+PROTOCOL that wire is, and they vary independently — `chatgpt/ant-messages/*` is the
 ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
 (ant, oai; future goog, coh, ...) so a provider slug can never stutter against a
 definer name (openai/openai-chat).
@@ -50,7 +50,12 @@ The provider segment rides in front, not behind, because key allowlists match
 `model_name` prefixes (the `anthropic-api/ant-messages/*` wildcard in
 tf/gitops/litellm-keys/main.tf). Deliberately not renamed: the raw upstream model slugs
 inside the exposed names, the groq entries, and the self-hosted Ollama entries, whose
-`-openai-chat`/`-ollama-native` wire suffixes have no account to name.
+`-openai-chat`/`-ollama-native` wire suffixes have no account to name. Known misnomer: the
+`google/oai-*` entries speak Google's own `:generateContent` / `:batchEmbedContents`
+upstream, not an OpenAI wire — LiteLLM's `gemini/` provider translates on from OpenAI
+chat/embeddings — so they want the `goog` definer. Renaming them rewrites the gemini key
+allowlists (tf/gitops/litellm-keys/main.tf), public-coder-agent's OpenClaw catalog, and the
+`gemini-embedding-2` compatibility alias its durable index still reads.
 """
 
 from enum import StrEnum
@@ -68,7 +73,7 @@ class Provider(StrEnum):
 
 
 class ApiShape(StrEnum):
-    """Second scheme segment: the LiteLLM request path the entry is served through, as `<definer>-<protocol>`."""
+    """Second scheme segment: the wire LiteLLM speaks upstream for the entry, as `<definer>-<protocol>`."""
 
     ANT_MESSAGES = "ant-messages"
     OAI_RESPONSES = "oai-responses"
