@@ -29,6 +29,7 @@ from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.deductions import DeductionAcceptance
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
+from finance.augur.sim.testing.engine_edges import HarvestAcceptance, ScanPhaseAcceptance, ValidationEdgeAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.private_equity import PrivateEquityAcceptance
@@ -199,6 +200,24 @@ class TestRustPropertyCarryingCost(PropertyCarryingCostAcceptance):
 
 
 class TestRustRolloutFailure(RolloutFailureAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustScanPhase(ScanPhaseAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustValidationEdge(ValidationEdgeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustHarvest(HarvestAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust

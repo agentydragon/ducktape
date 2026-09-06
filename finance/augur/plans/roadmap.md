@@ -94,7 +94,7 @@ bbr test //augur:visual_test  # when rendering changed
 Sim runtime/tax/property slices:
 
 ```bash
-bbr test //augur/sim:simulate_test //augur/sim:test_rental_lifecycle_e2e //augur/sim:validation_edge_test
+bbr test //augur/rust:backend_test //augur/sim:scenario_test
 ```
 
 Broader Augur spiral:

@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -304,45 +304,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_cash_conservation_e2e",
-    srcs = ["test_cash_conservation_e2e.py"],
-    deps = [
-        ":conftest",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim/codec:plan",
-        "//finance/augur/sim/engine:jax_engine",
-        "//finance/augur/sim/testing:bonds",
-        "//finance/augur/sim/testing:case",
-        "//finance/augur/sim/testing:cash_conservation",
-        "//finance/augur/sim/testing:fixtures",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_target_allocation_e2e",
-    size = "medium",
-    srcs = ["test_target_allocation_e2e.py"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim/codec:plan",
-        "//finance/augur/sim/engine:jax_engine",
-        "//finance/augur/sim/testing:case",
-        "//finance/augur/sim/testing:target_allocation",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "scenario",
     srcs = ["scenario.py"],
@@ -403,33 +364,8 @@ py_test(
 )
 
 py_library(
-    name = "simulate",
-    srcs = ["simulate.py"],
-    deps = [
-        ":external_series",
-        ":locations",
-        ":output",
-        ":product_metrics",
-        ":scenario",
-        "//finance/augur/sim/codec:plan",
-        "//finance/augur/sim/compiler:plan",
-        "//finance/augur/sim/engine:__init__",
-    ],
-)
-
-py_library(
     name = "enums",
     srcs = ["enums.py"],
-)
-
-py_library(
-    name = "output",
-    srcs = ["output.py"],
-    visibility = ["//finance/augur/sim:inside_the_simulator"],
-    deps = [
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
 )
 
 py_library(
@@ -437,90 +373,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = ["@pypi//jax"],
-)
-
-SIMULATE_TEST_DEPS = [
-    "//finance/augur/sim/testing:state_helpers",
-    ":conftest",
-    ":external_series",
-    ":scenario",
-    ":simulate",
-    "//finance/augur:frames",
-    "//finance/augur/model:exogenous",
-    "//finance/augur/model:gbm",
-    "//finance/augur/model:level_series_groups",
-    "//finance/augur/model:private_equity_bundle",
-    "//finance/augur/model:private_equity_protocol",
-    "//finance/augur/model:series",
-    "//finance/augur/model:series_model",
-    "@pypi//numpy",
-    "@pypi//polars",
-    "@pypi//pydantic",
-    "@pypi//pytest",
-    "@pypi//pytest_bazel",
-]
-
-py_test(
-    name = "scan_test",
-    size = "medium",
-    srcs = ["scan_test.py"],
-    data = [":jurisdiction_data"],
-    deps = [
-        ":conftest",
-        ":locations",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "tlh_harvest_engine_test",
-    size = "medium",
-    srcs = ["tlh_harvest_engine_test.py"],
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":scenario",
-        ":simulate",
-        ":tlh_harvest",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "validation_edge_test",
-    size = "small",
-    srcs = ["validation_edge_test.py"],
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":scenario",
-        ":simulate",
-        ":tlh_harvest",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_library(
@@ -533,90 +385,6 @@ py_library(
         "//finance/augur/model:level_series_groups",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
-    ],
-)
-
-py_library(
-    name = "bench",
-    srcs = ["bench.py"],
-    deps = [
-        ":bench_scenario",
-        ":simulate",
-    ],
-)
-
-py_binary(
-    name = "bench_bin",
-    main_module = "finance.augur.sim.bench",
-    deps = [":bench"],
-)
-
-py_library(
-    name = "profile_rollout",
-    srcs = ["profile_rollout.py"],
-    deps = [
-        ":bench_scenario",
-        ":external_series",
-        ":locations",
-        ":scenario",
-        ":simulate",
-        "//finance/augur/model:deterministic",
-        "//finance/augur/model:level_series_groups",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-        "@pypi//jax",
-    ],
-)
-
-py_binary(
-    name = "profile_rollout_bin",
-    main_module = "finance.augur.sim.profile_rollout",
-    deps = [":profile_rollout"],
-)
-
-py_test(
-    name = "bench_test",
-    size = "medium",
-    srcs = ["bench_test.py"],
-    deps = [
-        ":bench_scenario",
-        ":conftest",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:deterministic",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-        "//finance/augur/sim/testing:state_helpers",
-        "@pypi//polars",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "jax_engine_reuse_test",
-    size = "medium",
-    srcs = ["jax_engine_reuse_test.py"],
-    data = [":jurisdiction_data"],
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":locations",
-        ":output",
-        ":runtime",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:deterministic",
-        "//finance/augur/model:level_series_groups",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-        "//finance/augur/sim/compiler:plan",
-        "//finance/augur/sim/engine:jax_engine",
-        "@pypi//jax",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -11,8 +11,8 @@ existing engine.
   rounding.
 - Every monetary change is a balanced compound journal entry. Entries are
   validated and applied atomically; signed debits sum to zero.
-- Exogenous paths are materialized once into a strict integer fixture. Rust and
-  Python/JAX consume the same fixture bytes; Rust does not resample paths.
+- Exogenous paths are sampled in Python and materialized once into a strict
+  integer fixture. Rust does not resample paths.
 - Independent rollouts execute in parallel with Rayon and are collected by
   deterministic rollout index.
 - Obligations sharing one payer/source account settle all-or-none, matching the
@@ -23,11 +23,9 @@ existing engine.
   implementation. The compact path does not allocate every monthly snapshot or
   journal and is suitable for 100,000-rollout workloads.
 
-`simulate_dense(...)` is the Python/JAX compatibility-output path: it retains
-every monthly state snapshot and every event record behind the canonical
-frames, but deliberately omits Rust's additional balanced journal
-because Python/JAX has no matching output channel. `simulate(...)` remains the
-strictly larger forensic path with that journal, while
+`simulate_dense(...)` retains every monthly state snapshot and every event
+record behind the canonical frames, but omits the balanced journal.
+`simulate(...)` is the strictly larger forensic path with that journal, while
 `simulate_summaries(...)` retains only fixed-size terminal summaries. Dense
 performance comparisons must use `simulate_dense(...)`, not the compact path.
 
@@ -174,26 +172,21 @@ does not use.
 series plus the per-rollout failure month, under the compact capture mode — no monthly
 snapshot, journal, or event trace. `backend.py` wraps it as the product API's
 `ProductMetricArrays` and `ProductProjectionSummaries`, composing the derived metrics and
-the percentile fan with `product/metric_composition.py` and `product/quantiles.py`, the
-same code the JAX backend runs. Design, and the two JAX behaviours the Rust engine matches
-deliberately rather than corrects: [docs/product_metrics.md](docs/product_metrics.md).
+the percentile fan with `product/metric_composition.py` and `product/quantiles.py`.
+Design, and two behaviours inherited from the engine this one replaced and kept deliberately
+rather than corrected: [docs/product_metrics.md](docs/product_metrics.md).
 
 `fixture_encoder.py` is what connects that to a live request: a `Scenario` and its
 `CompiledSimulation` become the strict integer fixture, taking money straight out of
-`external_money_values` and quantizing index levels to the same parts per billion JAX rounds
-them to before any multiplication.
+`external_money_values` and quantizing index levels to parts per billion before any
+multiplication.
 
-Which engine serves is `Config.simulation_backend`, defaulting to JAX. It covers all four
-projection endpoints, the selected rollout included: `ProductService` holds an `Engine`
-(<../sim/backend.py>) rather than branching per call site, and everything above that contract
-is written once — the derived metrics, the terminal reduction, the percentile brackets, and
-the rollout projection, which reads the canonical event frames both engines emit rather than
-either one's output layout. So a Rust answer equals a JAX answer by construction.
-
-Two differential suites hold that: `product_scenario_test.py` answers one `ScenarioKey`
-against the fixture deployment's own portfolio and sampled model identically on both
-backends, funded and after ruin; `rollout_projection_test.py` renders one selected rollout's
-causal trace from each engine's frames and compares them.
+This engine serves all four projection endpoints, the selected rollout included.
+`ProductService` holds an `Engine` (<../sim/backend.py>) rather than reaching for this
+package directly, so everything above that contract — the derived metrics, the terminal
+reduction, the percentile brackets, and the rollout projection — is written against the
+canonical event frames rather than against this engine's output layout. The seam is what
+makes a second engine possible; it is not evidence that one exists.
 
 A scenario the fixture cannot express is refused rather than encoded without it. The live
 case is a purchased property: its recurring HOA, insurance and maintenance obligations carry
@@ -211,11 +204,8 @@ cross as JSON text because that is the simulator's input contract; results cross
 integers, so the fan workload never pays for a dense JSON round trip. `simulator_cli`
 remains for out-of-process forensic runs.
 
-What the JAX engine models and this one does not — refused scenario features, values the
-integer fixture cannot represent, and the one thing the two engines answer differently:
-[docs/parity_gaps.md](docs/parity_gaps.md). How much of it a live product
-request can reach, and in what order it closes, is the plan's:
-[plans/rust_as_default.md](plans/rust_as_default.md) § Coverage.
+Scenario features the fixture cannot express are refused rather than encoded without them:
+[docs/fixture_boundary.md](docs/fixture_boundary.md) § What the fixture cannot express.
 
 ## Layout
 
@@ -227,9 +217,8 @@ the shared state through `use super::*`, and expose to the root only what it cal
 anything a module uses alone stays private to it, which the single 7.5k-line file could
 not express.
 
-The Rust/JAX differential harness and its suites live in `differential/`, one suite per
-policy family; the Rust half of the throughput benchmark lives in `benchmark/`. The
-feature-rich scenario both measure is not Rust's and lives in
+The Rust half of the throughput benchmark lives in `benchmark/`. The
+feature-rich scenario it measures is not Rust's and lives in
 <../benchmark/scenario.py>; `benchmark/fixture.py` here only writes it out as the integer
 document, which the standalone binary needs on disk and the in-process bindings do not.
 

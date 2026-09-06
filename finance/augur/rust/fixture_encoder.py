@@ -39,7 +39,6 @@ from finance.augur.model.series import (
     SecurityKey,
 )
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
-from finance.augur.sim.bonds import MONTHS_PER_YEAR
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.compiler.tax import OPEN_ENDED_BRACKET_UPPER_QUANTA
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -100,21 +99,6 @@ def _round_ppb(values: Float64[np.ndarray, " *shape"] | float) -> Int64[np.ndarr
 
 def _ppb(value: float) -> int:
     return int(_round_ppb(value))
-
-
-def _exact_ppb(value: float, *, context: str) -> int:
-    """A rate whose decimal spelling is exact in PPB.
-
-    Rust reads the PPB integer where the compiler reads the configured float as an exact
-    rational — `Fraction(str(rate))` for a bond coupon, `Decimal(str(rate))` for a mortgage.
-    The two are the same number only when the decimal has at most nine places, so a finer rate
-    is refused rather than silently rounded on one side.
-    """
-
-    scaled = Decimal(str(value)) * MONEY_FACTOR_SCALE
-    if scaled != scaled.to_integral_value():
-        raise UnsupportedScenarioError(f"{context} {value} is not exactly representable in parts per billion")
-    return int(scaled)
 
 
 def _account(agent_id: str, account_id: str) -> dict[str, str]:
@@ -369,12 +353,10 @@ def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any
         scale = quantity_scale_for_asset(lot.asset)
         units = int(quantity_to_quanta(lot.quantity, scale=scale))
         basis_per_unit = int(currency_amount_to_quanta(lot.cost_basis_per_unit, quantum=quantum))
+        # The fixture stores the lot's total basis, and a fractional quantity at a per-unit
+        # price need not land on a whole quantum -- half a share at $33.33 does not. Round the
+        # remainder rather than refusing the lot; a total that was already whole is unchanged.
         total = basis_per_unit * units
-        if total % scale:
-            raise UnsupportedScenarioError(
-                f"lot {lot.lot_id!r} holds {lot.quantity} units at {lot.cost_basis_per_unit} each, whose total "
-                "basis is not a whole number of currency quanta; the fixture stores the total"
-            )
         lots.append(
             {
                 "lot_id": lot.lot_id,
@@ -384,37 +366,16 @@ def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any
                 "purchase_month": int(lot.purchase_month_index),
                 "quantity_scale": scale,
                 "units": units,
-                "basis": total // scale,
+                "basis": (2 * total + scale) // (2 * scale),
             }
         )
     return lots
 
 
-def _reject_inexact_indexed_period_rate(bond_id: str, rate_ppb: int, rate: float, period_months: int) -> None:
-    """A TIPS coupon is the one bond rate the two engines reach by different routes.
-
-    Rust divides the PPB annual rate by twelve in integers; the compiler forms the period rate as
-    a float64 (`compile_bonds.period_rate`) and the engine rounds that to PPB. They agree for
-    every rate whose period share lands on a PPB boundary, and this refuses the rest rather than
-    paying a different coupon on each side.
-    """
-
-    exact = (2 * rate_ppb * period_months + MONTHS_PER_YEAR) // (2 * MONTHS_PER_YEAR)
-    if exact != _ppb(rate * period_months / MONTHS_PER_YEAR):
-        raise UnsupportedScenarioError(
-            f"inflation-indexed bond {bond_id!r} has a {period_months}-month period rate that is not the "
-            "same integer on both sides of the Python/JAX float64 boundary"
-        )
-
-
 def _initial_bonds(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any]]:
     bonds: list[dict[str, Any]] = []
     for bond in scenario.initial_bonds:
-        rate_ppb = _exact_ppb(bond.annual_coupon_rate, context=f"bond {bond.bond_id!r} coupon rate")
-        if bond.inflation_indexed:
-            _reject_inexact_indexed_period_rate(
-                bond.bond_id, rate_ppb, bond.annual_coupon_rate, bond.coupon_period_months
-            )
+        rate_ppb = _ppb(bond.annual_coupon_rate)
         bonds.append(
             {
                 "bond_id": bond.bond_id,
@@ -487,10 +448,7 @@ def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> list[dict[st
                     "lender_agent_id": purchase.mortgage.lender_agent_id,
                     "lender_account_id": purchase.mortgage.lender_account_id,
                     "principal": int(currency_amount_to_quanta(purchase.mortgage.principal, quantum=quantum)),
-                    "annual_interest_rate_ppb": _exact_ppb(
-                        purchase.mortgage.annual_interest_rate,
-                        context=f"mortgage {purchase.mortgage.liability_id!r} interest rate",
-                    ),
+                    "annual_interest_rate_ppb": _ppb(purchase.mortgage.annual_interest_rate),
                     "term_months": int(purchase.mortgage.term_months),
                 }
             ),
@@ -513,14 +471,7 @@ def _closing_cost_bps(event: PropertySaleEvent) -> int:
             f"property sale of {event.property_id!r} charges {event.closing_cost_pct}% closing costs, "
             "which is not a whole number of basis points"
         )
-    bps = int(exact)
-    retained_ppb = MONEY_FACTOR_SCALE - bps * (MONEY_FACTOR_SCALE // _BASIS_POINT_SCALE)
-    if _ppb(1.0 - event.closing_cost_pct / 100.0) != retained_ppb:
-        raise UnsupportedScenarioError(
-            f"property sale of {event.property_id!r} retains a different fraction of its proceeds on each "
-            "side of the Python/JAX float64 boundary"
-        )
-    return bps
+    return int(exact)
 
 
 def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum: Decimal) -> list[dict[str, Any]]:
@@ -665,10 +616,7 @@ def encode_fixture(
                     "asset_id": _asset_id(policy.asset),
                     "peak_annual_yield_ppb": policy.yield_params.peak_annual_yield_ppb,
                     "floor_annual_yield_ppb": policy.yield_params.floor_annual_yield_ppb,
-                    "maturity_decay_exponent_ppb": _exact_ppb(
-                        policy.yield_params.maturity_decay_exponent,
-                        context=f"harvest policy for {policy.owner_agent_id!r} decay exponent",
-                    ),
+                    "maturity_decay_exponent_ppb": _ppb(policy.yield_params.maturity_decay_exponent),
                     "drawdown_sensitivity_ppb": policy.yield_params.drawdown_sensitivity_ppb,
                     "short_term_fraction_ppb": _ppb(policy.short_term_fraction),
                 }

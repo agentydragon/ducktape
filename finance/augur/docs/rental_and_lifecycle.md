@@ -138,5 +138,5 @@ Useful focused targets:
 
 ```bash
 bazelisk test --config=rbe //augur/product:service_test //augur/api:config_test //augur/api:catalog_test //augur:browser_shell_test --test_output=errors
-bazelisk test --config=rbe //augur/sim:simulate_test //augur/sim:test_rental_lifecycle_e2e --test_output=errors
+bazelisk test --config=rbe //augur/rust:backend_test --test_output=errors
 ```
