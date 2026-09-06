@@ -16,6 +16,7 @@ import pytest_bazel
 from finance.augur.rust.backend import RustEngine
 from finance.augur.rust.result import run_rust
 from finance.augur.sim.backend import Engine
+from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
@@ -67,6 +68,18 @@ class TestRustCashConservation(CashConservationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust
+
+
+class TestRustBonds(BondAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustBondValue(BondValueAcceptance):
+    @pytest.fixture
+    def engine(self) -> Engine:
+        return RustEngine()
 
 
 class TestRustFrozenRollout(FrozenRolloutAcceptance):
