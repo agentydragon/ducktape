@@ -66,39 +66,15 @@ pub(super) fn source_chunk_imports_for_moved_body(
     needed: BTreeMap<Id, &RuntimeImportInfo>,
     imported_overrides: &BTreeMap<Id, String>,
 ) -> Result<Vec<ModuleItem>> {
-    let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
     let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(needed.len());
     for (local_id, info) in needed {
-        let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
-            source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
-        {
-            let target_path = join_module_path(&[&target_chunk_id, &target_entry_file]);
-            let mut rel = relative_module_path(&dest_dir, &target_path);
-            if !rel.starts_with('.') {
-                rel = format!("./{rel}");
-            }
-            rel
-        } else if info.src.starts_with('.') {
-            // Relative specifier that didn't resolve through the chunk
-            // artifact (e.g. it points at an extra_files asset). Walk up
-            // to the chunk root then re-attach `info.src`. Naive string
-            // concatenation can yield non-canonical spellings like
-            // `".././foo.js"` when `info.src` itself starts with `./`,
-            // so normalize before emitting.
-            let depth = std::path::Path::new(dest_target_file)
-                .parent()
-                .map(|parent| parent.iter().count())
-                .unwrap_or(0);
-            let raw = format!("{}{}", "../".repeat(depth), info.src);
-            let mut rel = normalize_relative_module_specifier(&raw);
-            if !rel.starts_with('.') {
-                rel = format!("./{rel}");
-            }
-            rel
-        } else {
-            // Bare specifier (npm package etc.) — pass through unchanged.
-            info.src.clone()
-        };
+        let rewritten_source = source_chunk_import_for_target(
+            source_import_cache,
+            source_chunk_id,
+            source_runtime_file,
+            dest_target_file,
+            &info.src,
+        )?;
         // Boundary-rename name mapping from the vendor plan overrides
         // the recorded imported name with the vendor chunk's public
         // export name.
@@ -109,6 +85,48 @@ pub(super) fn source_chunk_imports_for_moved_body(
         pairs.push((rewritten_source, specifier));
     }
     Ok(group_specifiers_into_import_decls(pairs))
+}
+
+pub(super) fn source_chunk_import_for_target(
+    source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
+    source_chunk_id: &str,
+    source_runtime_file: &str,
+    dest_target_file: &str,
+    source: &str,
+) -> Result<String> {
+    let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
+    Ok(
+        if let Some((target_chunk_id, target_entry_file, _path)) =
+            source_import_cache.resolve(source, source_chunk_id, source_runtime_file)?
+        {
+            let target_path = join_module_path(&[&target_chunk_id, &target_entry_file]);
+            let mut rel = relative_module_path(&dest_dir, &target_path);
+            if !rel.starts_with('.') {
+                rel = format!("./{rel}");
+            }
+            rel
+        } else if source.starts_with('.') {
+            // Relative specifier that didn't resolve through the chunk
+            // artifact (e.g. it points at an extra_files asset). Walk up
+            // to the chunk root then re-attach `source`. Naive string
+            // concatenation can yield non-canonical spellings like
+            // `".././foo.js"` when `source` itself starts with `./`,
+            // so normalize before emitting.
+            let depth = std::path::Path::new(dest_target_file)
+                .parent()
+                .map(|parent| parent.iter().count())
+                .unwrap_or(0);
+            let raw = format!("{}{}", "../".repeat(depth), source);
+            let mut rel = normalize_relative_module_specifier(&raw);
+            if !rel.starts_with('.') {
+                rel = format!("./{rel}");
+            }
+            rel
+        } else {
+            // Bare specifier (npm package etc.) — pass through unchanged.
+            source.to_string()
+        },
+    )
 }
 
 /// Consolidate `(rewritten_source, specifier)` pairs into `ImportDecl`
