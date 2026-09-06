@@ -91,9 +91,17 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         assert (
             await client.post("/v1/action-requests", json=envelope, headers={"x-caller-principal": CALLER.key})
         ).status_code == 401
+        assert (
+            await client.post("/v1/action-requests", json=envelope, headers=_auth("operator-token"))
+        ).status_code == 403
 
-        submitted = await client.post("/v1/action-requests", json=envelope, headers=_auth("caller-token"))
+        submitted, concurrent_duplicate = await asyncio.gather(
+            client.post("/v1/action-requests", json=envelope, headers=_auth("caller-token")),
+            client.post("/v1/action-requests", json=envelope, headers=_auth("caller-token")),
+        )
         assert submitted.status_code == 202
+        assert concurrent_duplicate.status_code == 202
+        assert concurrent_duplicate.json()["id"] == submitted.json()["id"]
         pending = submitted.json()
         request_id = pending["id"]
         assert pending["state"] == "decision_pending"

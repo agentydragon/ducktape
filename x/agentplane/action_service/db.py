@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, select
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -166,31 +166,41 @@ class ActionStore:
         if body.capability not in supported_capabilities:
             raise UnknownCapabilityError(body.capability)
         async with self._sessions.begin() as session:
-            existing = await session.scalar(
-                select(ActionRequestRow).where(
-                    ActionRequestRow.caller_principal == principal.key,
-                    ActionRequestRow.idempotency_key == body.idempotency_key,
+            now = datetime.now(UTC)
+            request_id = uuid4()
+            inserted_id = await session.scalar(
+                pg_insert(ActionRequestRow)
+                .values(
+                    id=request_id,
+                    idempotency_key=body.idempotency_key,
+                    capability=body.capability,
+                    arguments=body.arguments,
+                    origin=body.origin,
+                    correlation=body.correlation,
+                    caller_principal=principal.key,
+                    state=ActionState.DECISION_PENDING.value,
+                    version=1,
+                    created_at=now,
+                    updated_at=now,
                 )
+                .on_conflict_do_nothing(index_elements=["caller_principal", "idempotency_key"])
+                .returning(ActionRequestRow.id)
             )
-            if existing is not None:
+            if inserted_id is None:
+                existing = await session.scalar(
+                    select(ActionRequestRow).where(
+                        ActionRequestRow.caller_principal == principal.key,
+                        ActionRequestRow.idempotency_key == body.idempotency_key,
+                    )
+                )
+                if existing is None:
+                    raise RuntimeError("conflicting ActionRequest disappeared")
                 if not _same_request(existing, body):
                     raise ActionConflictError("request idempotency key was already used for another envelope")
                 return await self._view(session, existing, principal), False
-            now = datetime.now(UTC)
-            row = ActionRequestRow(
-                idempotency_key=body.idempotency_key,
-                capability=body.capability,
-                arguments=body.arguments,
-                origin=body.origin,
-                correlation=body.correlation,
-                caller_principal=principal.key,
-                state=ActionState.DECISION_PENDING.value,
-                version=1,
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(row)
-            await session.flush()
+            row = await session.get(ActionRequestRow, inserted_id)
+            if row is None:
+                raise RuntimeError("inserted ActionRequest is unreadable")
             _record_event(session, row, now)
             session.add(
                 OutboxRow(
