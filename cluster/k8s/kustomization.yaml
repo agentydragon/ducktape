@@ -125,6 +125,7 @@ resources:
   - agentplane-staging/llm-ingress/flux-kustomization.yaml
   - agentplane-staging/app/flux-kustomization.yaml
   - agentplane-staging/egress/flux-kustomization.yaml
+  - agentplane-staging/actions/flux-kustomization.yaml
 
   # --- kyverno ---
   - kyverno/app/flux-kustomization.yaml

@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+  labels:
+    app.kubernetes.io/name: agentplane-actions
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-actions
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-actions
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      serviceAccountName: agentplane-actions
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
+          imagePullPolicy: Always
+          env: &database-env
+            - name: AGENTPLANE_ACTIONS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-actions-db-app
+                  key: username
+            - name: AGENTPLANE_ACTIONS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-actions-db-app
+                  key: password
+            - name: AGENTPLANE_ACTIONS_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-actions-db-app
+                  key: host
+            - name: AGENTPLANE_ACTIONS_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-actions-db-app
+                  key: port
+            - name: AGENTPLANE_ACTIONS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-actions-db-app
+                  key: dbname
+            - name: AGENTPLANE_ACTIONS_DATABASE_URL
+              value: "postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext: &container-security
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: actions
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service:devel # {"$imagepolicy": "flux-system:agentplane-action-service"}
+          imagePullPolicy: Always
+          args:
+            - --host=0.0.0.0
+            - --port=8080
+            - --token-audience=agentplane-egress
+          env: *database-env
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext: *container-security

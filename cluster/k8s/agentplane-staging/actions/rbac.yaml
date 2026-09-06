@@ -1,0 +1,47 @@
+# Destination-side SandboxPrincipal resolution: TokenReview proves the Pod-bound bearer, then the
+# live Pod owner reference proves the Sandbox. No Thread/Agent reads and no Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-actions
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-actions
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-actions-token-reviewer
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-actions-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-actions-token-reviewer
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-actions
+    namespace: agentplane-staging

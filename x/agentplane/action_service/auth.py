@@ -1,64 +1,61 @@
-"""Replaceable bearer authentication; v0 production adapter uses Kubernetes TokenReview."""
+"""Distinct workload and operator authentication adapters for the Action Service."""
 
 from __future__ import annotations
 
-import logging
+import hashlib
+import hmac
+from pathlib import Path
 from typing import Protocol
 
-from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import AuthenticationV1Api
-
 from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.sandbox_auth.principal import SandboxPrincipal
 
-logger = logging.getLogger(__name__)
 
+class OperatorAuthenticator(Protocol):
+    """Replaceable BFF/operator boundary; deliberately separate from SandboxPrincipal auth."""
 
-class Authenticator(Protocol):
     async def authenticate(self, token: str) -> Principal | None: ...
 
 
-class KubernetesTokenAuthenticator:
-    """Map audience-bound ServiceAccount tokens to caller or operator principals.
+class DisabledOperatorAuthenticator:
+    """Fail closed when a deployment has not configured its operator/BFF adapter."""
 
-    A managed Sandbox mounts its projected token only into a local relay. The runner calls that
-    relay without token material; the relay re-reads the projected token and calls this service.
-    BFFs may use a separately configured operator ServiceAccount. A reviewed but unmapped subject
-    is refused, so choosing this service's audience is not itself authorization.
+    async def authenticate(self, token: str) -> None:
+        del token
+
+
+class ConfiguredOperatorBearerAuthenticator:
+    """Minimal v0 adapter for one explicitly configured BFF bearer.
+
+    This is not workload identity and does not map Kubernetes ServiceAccount subject lists. The raw
+    bearer is read once from a mounted file and only its digest is retained. Replace this adapter
+    with the BFF's authoritative session/JWT verifier without changing the Action Service domain.
     """
 
-    def __init__(
-        self,
-        authentication: AuthenticationV1Api,
-        *,
-        audience: str,
-        caller_subjects: frozenset[str],
-        operator_subjects: frozenset[str],
-    ) -> None:
-        overlap = caller_subjects & operator_subjects
-        if overlap:
-            raise ValueError(f"subjects cannot be both caller and operator: {sorted(overlap)}")
-        self._authentication = authentication
-        self._audience = audience
-        self._caller_subjects = caller_subjects
-        self._operator_subjects = operator_subjects
+    def __init__(self, *, token_digest: bytes, subject: str) -> None:
+        if not token_digest:
+            raise ValueError("token_digest must not be empty")
+        if not subject:
+            raise ValueError("subject must not be empty")
+        self._token_digest = token_digest
+        self._subject = subject
+
+    @classmethod
+    def from_file(cls, path: Path, *, subject: str) -> ConfiguredOperatorBearerAuthenticator:
+        token = path.read_bytes().strip()
+        if not token:
+            raise ValueError("operator bearer file must not be empty")
+        return cls(token_digest=hashlib.sha256(token).digest(), subject=subject)
 
     async def authenticate(self, token: str) -> Principal | None:
-        review = await self._authentication.create_token_review(
-            k8s_client.V1TokenReview(spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[self._audience]))
-        )
-        status = review.status
-        if status is None or not status.authenticated or status.user is None or not status.user.username:
-            logger.info("TokenReview refused a token: %s", status and status.error)
+        presented = hashlib.sha256(token.encode()).digest()
+        if not hmac.compare_digest(presented, self._token_digest):
             return None
-        if self._audience not in (status.audiences or []):
-            logger.info("TokenReview returned the wrong audience: %s", status.audiences)
-            return None
-        subject = str(status.user.username)
-        if subject in self._caller_subjects:
-            role = PrincipalRole.CALLER
-        elif subject in self._operator_subjects:
-            role = PrincipalRole.OPERATOR
-        else:
-            logger.warning("TokenReview authenticated an unmapped Action Service subject: %s", subject)
-            return None
-        return Principal(issuer="kubernetes", subject=subject, role=role)
+        return Principal(issuer="configured-operator", subject=self._subject, role=PrincipalRole.OPERATOR)
+
+
+def workload_principal(principal: SandboxPrincipal) -> Principal:
+    """Derive durable ownership only from the destination-resolved live Sandbox identity."""
+    return Principal(
+        issuer="kubernetes-sandbox", subject=f"{principal.namespace}:{principal.sandbox_uid}", role=PrincipalRole.CALLER
+    )

@@ -1,0 +1,16 @@
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - agentplane-actions.agentplane-staging.svc.cluster.local
+      clusterInternal: true
+      methods: [GET, POST]
+      paths:
+        - /v1/action-requests
+        - /v1/action-requests/**
+      credentialRef:
+        name: agentplane-workload

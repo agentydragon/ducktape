@@ -15,3 +15,4 @@ resources:
   - egresspolicy-github-public.yaml
   - egresscredential-agentplane-workload.yaml
   - egresspolicy-litellm.yaml
+  - egresspolicy-agentplane-actions.yaml

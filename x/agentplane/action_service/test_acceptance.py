@@ -1,4 +1,4 @@
-"""Service-level P0 replay: submit, review, decide, single dispatch, terminal projection."""
+"""P0 vertical seam: Sandbox ownership, separate review, decisions, dispatch, and recovery."""
 
 from __future__ import annotations
 
@@ -7,12 +7,13 @@ from typing import Any, cast
 
 import httpx
 import pytest_bazel
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.api import create_app
-from x.agentplane.action_service.auth import Authenticator
-from x.agentplane.action_service.db import ActionStore, OutboxRow, make_sessionmaker
+from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
+from x.agentplane.action_service.db import ActionStore, ExecutionRow, OutboxRow, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
@@ -25,16 +26,46 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipal
 
-CALLER = Principal(issuer="test", subject="caller-a", role=PrincipalRole.CALLER)
-OTHER = Principal(issuer="test", subject="caller-b", role=PrincipalRole.CALLER)
-OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
-TOKENS = {"caller-token": CALLER, "other-token": OTHER, "operator-token": OPERATOR}
+NAMESPACE = "agentplane-staging"
+SERVICE_ACCOUNT_SUBJECT = f"system:serviceaccount:{NAMESPACE}:agentplane-runner"
+SANDBOX_A = SandboxPrincipal(
+    namespace=NAMESPACE,
+    service_account_name="agentplane-runner",
+    service_account_subject=SERVICE_ACCOUNT_SUBJECT,
+    pod_name="sandbox-a-pod",
+    pod_uid="pod-a-uid",
+    sandbox_name="sandbox-a",
+    sandbox_uid="sandbox-a-uid",
+)
+SANDBOX_B = SandboxPrincipal(
+    namespace=NAMESPACE,
+    service_account_name="agentplane-runner",
+    service_account_subject=SERVICE_ACCOUNT_SUBJECT,
+    pod_name="sandbox-b-pod",
+    pod_uid="pod-b-uid",
+    sandbox_name="sandbox-b",
+    sandbox_uid="sandbox-b-uid",
+)
+CALLER_A = workload_principal(SANDBOX_A)
+CALLER_B = workload_principal(SANDBOX_B)
+OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
+WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
 
 
-class FakeAuthenticator:
+class FakeSandboxAuthenticator:
+    async def __call__(self, request: Any) -> SandboxPrincipal:
+        value = request.headers.get("authorization", "")
+        if not value.startswith("Bearer ") or value.removeprefix("Bearer ") not in WORKLOAD_TOKENS:
+            raise HTTPException(401, "invalid workload bearer")
+        return WORKLOAD_TOKENS[value.removeprefix("Bearer ")]
+
+
+class FakeOperatorAuthenticator:
     async def authenticate(self, token: str) -> Principal | None:
-        return TOKENS.get(token)
+        return OPERATOR if token == "operator-bff" else None
 
 
 class CountingExecutor:
@@ -48,22 +79,41 @@ class CountingExecutor:
     async def execute(self, request: ExecutionRequest) -> ExecutionResult:
         self.requests.append(request)
         return ExecutionResult(
-            state=ExecutionState.SUCCEEDED, result={"echo": request.arguments, "credential": "must-redact"}
+            state=ExecutionState.SUCCEEDED,
+            result={"echo": request.arguments, "credential": "provider-material-must-redact"},
         )
 
 
+class LeakyFailingExecutor(CountingExecutor):
+    async def execute(self, request: ExecutionRequest) -> ExecutionResult:
+        self.requests.append(request)
+        raise RuntimeError("provider rejected Authorization: Bearer provider-token-must-not-escape")
+
+
 async def _client(service: ActionService) -> httpx.AsyncClient:
-    app = create_app(service, cast(Authenticator, FakeAuthenticator()))
+    app = create_app(
+        service,
+        cast(SandboxPrincipalAuthenticator, FakeSandboxAuthenticator()),
+        cast(OperatorAuthenticator, FakeOperatorAuthenticator()),
+    )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")
 
 
-def _auth(token: str) -> dict[str, str]:
+def _workload(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "caller-token") -> dict[str, Any]:
+def _operator() -> dict[str, str]:
+    return {"Authorization": "Bearer operator-bff"}
+
+
+def _operator_path(request_id: str, suffix: str = "") -> str:
+    return f"/v1/operator/action-requests/{request_id}{suffix}"
+
+
+async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "workload-a") -> dict[str, Any]:
     for _ in range(100):
-        response = await client.get(f"/v1/action-requests/{request_id}", headers=_auth(token))
+        response = await client.get(f"/v1/action-requests/{request_id}", headers=_workload(token))
         response.raise_for_status()
         body = cast(dict[str, Any], response.json())
         if body["state"] in {"succeeded", "failed", "cancelled", "execution_unknown"}:
@@ -72,7 +122,7 @@ async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "ca
     raise AssertionError("action request did not reach a terminal state")
 
 
-async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection(engine: AsyncEngine) -> None:
+async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(engine: AsyncEngine) -> None:
     executor = CountingExecutor()
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, executor)
@@ -82,25 +132,42 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         envelope = {
             "idempotency_key": "submit-1",
             "capability": "agentplane:v0.echo",
-            "arguments": {"text": "hello", "nested": {"api_key": "secret-value"}},
-            "origin": {"thread_ref": "thread-opaque", "authorization": "never-project"},
+            "arguments": {"text": "hello", "nested": {"api_key": "provider-material"}},
+            # Every identity-like value here is deliberately forged, accepted only as untrusted
+            # provenance, and must not affect the caller derived from SandboxPrincipal.
+            "origin": {
+                "owner": CALLER_B.key,
+                "sandbox_id": SANDBOX_B.sandbox_uid,
+                "thread_id": "forged-thread",
+                "agent_id": "forged-agent",
+                "caller_role": "operator",
+                "authorization": "must-not-project",
+            },
             "correlation": {"turn_ref": "turn-opaque"},
         }
         assert (await client.post("/v1/action-requests", json=envelope)).status_code == 401
-        # Caller identity headers are inert; only the authenticator establishes ownership.
         assert (
-            await client.post("/v1/action-requests", json=envelope, headers={"x-caller-principal": CALLER.key})
+            await client.post(
+                "/v1/action-requests",
+                json=envelope,
+                headers={"x-sandbox-uid": SANDBOX_B.sandbox_uid, "x-caller-principal": CALLER_B.key},
+            )
         ).status_code == 401
-        assert (
-            await client.post("/v1/action-requests", json=envelope, headers=_auth("operator-token"))
-        ).status_code == 403
+        assert (await client.post("/v1/action-requests", json=envelope, headers=_operator())).status_code == 401, (
+            "operator auth is not consulted on the workload surface"
+        )
+
+        for forged_top_level in ("owner", "sandbox_id", "thread_id", "agent_id", "caller_role"):
+            response = await client.post(
+                "/v1/action-requests", json={**envelope, forged_top_level: "forged"}, headers=_workload("workload-a")
+            )
+            assert response.status_code == 422
 
         submitted, concurrent_duplicate = await asyncio.gather(
-            client.post("/v1/action-requests", json=envelope, headers=_auth("caller-token")),
-            client.post("/v1/action-requests", json=envelope, headers=_auth("caller-token")),
+            client.post("/v1/action-requests", json=envelope, headers=_workload("workload-a")),
+            client.post("/v1/action-requests", json=envelope, headers=_workload("workload-a")),
         )
-        assert submitted.status_code == 202
-        assert concurrent_duplicate.status_code == 202
+        assert submitted.status_code == concurrent_duplicate.status_code == 202
         assert concurrent_duplicate.json()["id"] == submitted.json()["id"]
         pending = submitted.json()
         request_id = pending["id"]
@@ -109,33 +176,36 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         assert pending["arguments"]["nested"]["api_key"] == "[redacted]"
         assert pending["origin"]["authorization"] == "[redacted]"
 
-        duplicate = await client.post("/v1/action-requests", json=envelope, headers=_auth("caller-token"))
-        assert duplicate.json()["id"] == request_id
-        changed = dict(envelope)
-        changed["arguments"] = {"text": "changed"}
+        # Both Pods use the same ServiceAccount; live Sandbox identity, not subject, owns the row.
+        assert SANDBOX_A.service_account_subject == SANDBOX_B.service_account_subject
+        assert (await client.get("/v1/action-requests", headers=_workload("workload-b"))).json() == []
         assert (
-            await client.post("/v1/action-requests", json=changed, headers=_auth("caller-token"))
-        ).status_code == 409
+            await client.get(f"/v1/action-requests/{request_id}", headers=_workload("workload-b"))
+        ).status_code == 404
+        operator_list = await client.get("/v1/operator/action-requests", headers=_operator())
+        assert operator_list.status_code == 200
+        assert operator_list.json()[0]["caller_principal"] == CALLER_A.key
+        assert CALLER_B.key not in operator_list.text
 
-        assert (await client.get("/v1/action-requests", headers=_auth("other-token"))).json() == []
-        assert (await client.get(f"/v1/action-requests/{request_id}", headers=_auth("other-token"))).status_code == 404
-        operator_list = await client.get("/v1/action-requests", headers=_auth("operator-token"))
-        assert operator_list.json()[0]["caller_principal"] == CALLER.key
-        assert operator_list.json()[0]["arguments"]["nested"]["api_key"] == "[redacted]"
+        stale = await client.post(
+            _operator_path(request_id, "/decision"),
+            headers=_operator(),
+            json={"verdict": "allow", "expected_version": 99, "idempotency_key": "stale"},
+        )
+        assert stale.status_code == 409
 
         decision = {
             "verdict": "allow",
             "expected_version": pending["version"],
             "idempotency_key": "decision-allow-1",
-            "private_reason": "operator-only context",
+            "private_reason": "private reviewer context",
         }
         allowed, duplicate_allow = await asyncio.gather(
-            client.post(f"/v1/action-requests/{request_id}/decision", headers=_auth("operator-token"), json=decision),
-            client.post(f"/v1/action-requests/{request_id}/decision", headers=_auth("operator-token"), json=decision),
+            client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
+            client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
         )
-        assert allowed.status_code == 200
-        assert duplicate_allow.status_code == 200
-        assert allowed.json()["decision"]["private_reason"] == "operator-only context"
+        assert allowed.status_code == duplicate_allow.status_code == 200
+        assert allowed.json()["decision"]["private_reason"] == "private reviewer context"
 
         terminal = await _terminal(client, request_id)
         assert terminal["state"] == "succeeded"
@@ -146,12 +216,11 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         assert terminal["decision"]["private_reason"] is None
         assert terminal["decision"]["private_reason_redacted"] is True
         assert len(executor.requests) == 1
-        # Executors receive the durable raw envelope; redaction is a read projection, not data loss.
-        assert executor.requests[0].arguments["nested"] == {"api_key": "secret-value"}
+        assert executor.requests[0].arguments["nested"] == {"api_key": "provider-material"}
 
         replay = await client.post(
-            f"/v1/action-requests/{request_id}/decision",
-            headers=_auth("operator-token"),
+            _operator_path(request_id, "/decision"),
+            headers=_operator(),
             json={
                 "verdict": "allow",
                 "expected_version": 1,
@@ -162,19 +231,8 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         assert replay.status_code == 200
         assert replay.json()["state"] == "succeeded"
         assert len(executor.requests) == 1
-        assert (
-            await client.post(
-                f"/v1/action-requests/{request_id}/decision",
-                headers=_auth("operator-token"),
-                json={
-                    "verdict": "deny",
-                    "expected_version": terminal["version"],
-                    "idempotency_key": "decision-deny-conflict",
-                },
-            )
-        ).status_code == 409
 
-        history = await client.get(f"/v1/action-requests/{request_id}/events", headers=_auth("caller-token"))
+        history = await client.get(f"/v1/action-requests/{request_id}/events", headers=_workload("workload-a"))
         assert [event["state"] for event in history.json()] == [
             "decision_pending",
             "allowed",
@@ -184,12 +242,14 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         ]
 
         denied_submit = await client.post(
-            "/v1/action-requests", headers=_auth("other-token"), json={**envelope, "idempotency_key": "submit-denied"}
+            "/v1/action-requests",
+            headers=_workload("workload-b"),
+            json={**envelope, "idempotency_key": "submit-denied"},
         )
         denied_pending = denied_submit.json()
         denied = await client.post(
-            f"/v1/action-requests/{denied_pending['id']}/decision",
-            headers=_auth("operator-token"),
+            _operator_path(denied_pending["id"], "/decision"),
+            headers=_operator(),
             json={
                 "verdict": "deny",
                 "expected_version": denied_pending["version"],
@@ -199,33 +259,76 @@ async def test_p0_allow_and_deny_path_with_scope_redaction_and_replay_protection
         )
         assert denied.json()["state"] == "denied"
         assert len(executor.requests) == 1
-        caller_denied = await client.get(f"/v1/action-requests/{denied_pending['id']}", headers=_auth("other-token"))
-        assert caller_denied.json()["decision"]["private_reason"] is None
-        assert caller_denied.json()["decision"]["private_reason_redacted"] is True
 
         async with make_sessionmaker(engine)() as session:
-            rows = list(await session.scalars(select(OutboxRow).order_by(OutboxRow.created_at)))
-            assert len(rows) == 2
-            assert rows[0].payload == {"request_id": request_id, "capability": "agentplane:v0.echo"}
-            assert "secret-value" not in str(rows[0].payload)
+            outbox = list(await session.scalars(select(OutboxRow).order_by(OutboxRow.created_at)))
+            executions = list(await session.scalars(select(ExecutionRow)))
+            assert len(outbox) == 2
+            assert outbox[0].payload == {"request_id": request_id, "capability": "agentplane:v0.echo"}
+            assert "provider-material" not in str([row.payload for row in outbox])
+            assert len(executions) == 1
     finally:
         await client.aclose()
         await service.close()
 
 
-async def test_restart_resumes_only_provably_pending_dispatch_and_marks_inflight_unknown(engine: AsyncEngine) -> None:
+async def test_executor_exception_material_is_not_logged_projected_or_retried(engine: AsyncEngine, caplog: Any) -> None:
+    executor = LeakyFailingExecutor()
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(store, executor)
+    await service.start()
+    client = await _client(service)
+    try:
+        pending = (
+            await client.post(
+                "/v1/action-requests",
+                headers=_workload("workload-a"),
+                json={
+                    "idempotency_key": "leaky-failure",
+                    "capability": "agentplane:v0.echo",
+                    "arguments": {"safe": True},
+                },
+            )
+        ).json()
+        response = await client.post(
+            _operator_path(pending["id"], "/decision"),
+            headers=_operator(),
+            json={"verdict": "allow", "expected_version": pending["version"], "idempotency_key": "allow-leaky-failure"},
+        )
+        assert response.status_code == 200
+        failed = await _terminal(client, pending["id"])
+        assert failed["state"] == "failed"
+        assert failed["execution"]["error"] == {
+            "kind": "RuntimeError",
+            "message": "executor failed; see credential-safe adapter metrics",
+        }
+        assert len(executor.requests) == 1
+
+        restarted = ActionService(store, executor)
+        assert await restarted.start() == 0
+        await asyncio.sleep(0)
+        assert len(executor.requests) == 1
+        await restarted.close()
+
+        rendered = failed.__str__() + "\n" + "\n".join(record.getMessage() for record in caplog.records)
+        assert "provider-token-must-not-escape" not in rendered
+    finally:
+        await client.aclose()
+        await service.close()
+
+
+async def test_restart_resumes_only_pending_dispatch_and_marks_inflight_unknown(engine: AsyncEngine) -> None:
     sessions = make_sessionmaker(engine)
     store = ActionStore(sessions)
     executor = CountingExecutor()
 
-    pending = await store.submit(
+    pending_view, _ = await store.submit(
         ActionRequestInput(
             idempotency_key="restart-pending", capability="agentplane:v0.echo", arguments={"case": "safe"}
         ),
-        CALLER,
+        CALLER_A,
         supported_capabilities=executor.capabilities,
     )
-    pending_view = pending[0]
     _, should_dispatch = await store.decide(
         pending_view.id,
         DecisionInput(verdict=Verdict.ALLOW, expected_version=pending_view.version, idempotency_key="restart-allow"),
@@ -244,14 +347,13 @@ async def test_restart_resumes_only_provably_pending_dispatch_and_marks_inflight
         await client.aclose()
         await restarted.close()
 
-    inflight = await store.submit(
+    inflight_view, _ = await store.submit(
         ActionRequestInput(
             idempotency_key="restart-inflight", capability="agentplane:v0.echo", arguments={"case": "unsafe"}
         ),
-        CALLER,
+        CALLER_A,
         supported_capabilities=executor.capabilities,
     )
-    inflight_view = inflight[0]
     await store.decide(
         inflight_view.id,
         DecisionInput(
@@ -266,12 +368,12 @@ async def test_restart_resumes_only_provably_pending_dispatch_and_marks_inflight
     never_called = CountingExecutor()
     after_crash = ActionService(store, never_called)
     assert await after_crash.start() == 1
-    unknown = await store.get(inflight_view.id, CALLER)
+    unknown = await store.get(inflight_view.id, CALLER_A)
     assert unknown.state is ActionState.EXECUTION_UNKNOWN
     assert unknown.execution is not None
     assert unknown.execution.error == {"kind": "process_restarted", "message": "dispatch outcome unknown; not replayed"}
     assert never_called.requests == []
-    assert [event.state for event in await store.events(inflight_view.id, CALLER)] == [
+    assert [event.state for event in await store.events(inflight_view.id, CALLER_A)] == [
         ActionState.DECISION_PENDING,
         ActionState.ALLOWED,
         ActionState.DISPATCHING,

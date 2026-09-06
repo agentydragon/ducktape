@@ -1,0 +1,30 @@
+# Canonical ActionRequest state is isolated from the integration app's trajectory database. CNPG
+# creates a separate database, owner, and agentplane-actions-db-app credential for this service.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: agentplane-actions-db
+  namespace: agentplane-staging
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+  storage:
+    storageClass: local-path-ovh-ssd
+    size: 2Gi
+  monitoring:
+    enablePodMonitor: true
+  bootstrap:
+    initdb:
+      database: agentplane_actions
+      owner: agentplane_actions

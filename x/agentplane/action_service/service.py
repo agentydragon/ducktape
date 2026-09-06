@@ -107,10 +107,12 @@ class ActionService:
         try:
             request = await self._store.mark_running(request_id)
             result = await self._executor.execute(request)
-        except ExecutionOutcomeUnknownError as error:
+        except ExecutionOutcomeUnknownError:
+            # Adapter exception text can contain provider responses or credentials. Persist and
+            # return only the stable classification; the service never projects raw exceptions.
             result = ExecutionResult(
                 state=ExecutionState.EXECUTION_UNKNOWN,
-                error={"kind": "execution_outcome_unknown", "message": str(error)},
+                error={"kind": "execution_outcome_unknown", "message": "execution outcome is unknown; not replayed"},
             )
         except asyncio.CancelledError:
             # A graceful stop can record uncertainty. A hard process loss leaves RUNNING behind;
@@ -126,7 +128,10 @@ class ActionService:
             )
             raise
         except Exception as error:  # a failed executor call is terminal; this request is never retried
+            # Do not retain exception text: provider SDK errors routinely echo Authorization or
+            # request material. The exception class is enough to diagnose the adapter category.
             result = ExecutionResult(
-                state=ExecutionState.FAILED, error={"kind": type(error).__name__, "message": str(error)}
+                state=ExecutionState.FAILED,
+                error={"kind": type(error).__name__, "message": "executor failed; see credential-safe adapter metrics"},
             )
         await self._store.finish_execution(request_id, result)

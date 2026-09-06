@@ -16,7 +16,7 @@ py_library(
     srcs = ["auth.py"],
     deps = [
         ":models",
-        "@pypi//kubernetes_asyncio",
+        "//x/agentplane/sandbox_auth:principal",
     ],
 )
 
@@ -48,6 +48,7 @@ py_library(
         ":db",
         ":models",
         ":service",
+        "//x/agentplane/sandbox_auth:http",
         "@pypi//fastapi",
     ],
 )
@@ -82,6 +83,8 @@ py_library(
         ":auth",
         ":db",
         ":service",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -179,6 +182,9 @@ py_test(
         ":models",
         ":service",
         "//:conftest",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -189,12 +195,16 @@ py_test(
     name = "test_boundaries",
     srcs = ["test_boundaries.py"],
     deps = [
+        ":api",
         ":auth",
         ":client",
-        ":conftest",
         ":models",
+        ":service",
         "//:conftest",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
