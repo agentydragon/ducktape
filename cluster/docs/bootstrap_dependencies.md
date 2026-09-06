@@ -256,9 +256,14 @@ CA private key. Clients require a verified copy of its public certificate before
 migration. If the CA Secret is lost or its key deliberately rotated, recreate it
 and update client trust before moving traffic; do not silently accept a new root.
 
-This identity layer does not expose a proxy, issue client passwords, or migrate a
-workstation. The authenticated runtime and per-host SOPS distribution are
-separate dependent changes.
+`github-api-proxy-secrets` depends on that namespace/identity layer and decrypts
+the per-host `cluster/k8s/github-api-proxy/secrets/{wyrm2,rugged}-credentials.sops.yaml`
+sources. Each contains one JSON client-ID/password mapping. Recipients are admin,
+cluster-secrets and the matching host's user key; each Home Manager relay consumes
+that same source rather than a duplicated credential. If one password is lost or
+compromised, regenerate only that host's entry and coordinate central and client
+reload. These layers do not expose a proxy or migrate a workstation; the
+authenticated runtime and verified client activation remain separate changes.
 
 ## L7: NixOS Worker Integration
 

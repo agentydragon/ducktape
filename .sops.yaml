@@ -257,6 +257,24 @@ creation_rules:
           - *iguana-agentydragon
           - *gecko-agentydragon
 
+  # Central workstation proxy credentials: one SSOT per host, read by Flux and
+  # only that host's user-level transport relay. Hosts cannot decrypt each other.
+  - path_regex: cluster/k8s/github-api-proxy/secrets/wyrm2-credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+
+  - path_regex: cluster/k8s/github-api-proxy/secrets/rugged-credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *rugged-agentydragon
+
   # Cluster, Props, and Wayback deployment secrets (Flux + admin can decrypt).
   - path_regex: (cluster/k8s|props/deploy/secrets|loom/wayback/deploy/secrets)/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$

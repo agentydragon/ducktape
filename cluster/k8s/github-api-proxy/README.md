@@ -34,13 +34,22 @@ callback identity must remain unchanged.
 
 ## Credential ownership
 
-The planned SOPS sources are `secrets/wyrm2-credentials.sops.yaml` and
+The SOPS sources are `secrets/wyrm2-credentials.sops.yaml` and
 `secrets/rugged-credentials.sops.yaml` beneath this directory. Each is one Secret
 whose `stringData.credentials.json` contains a single fixed-client-ID/password
 mapping. Flux and the corresponding host's user identity consume that same file;
 one host is not granted decryption of the other's credential. The central runtime
 reads both mounted JSON files and rejects duplicate IDs. Secrets stay out of the
 Nix store, command arguments, metrics and ordinary logs.
+
+Client IDs are `wyrm2-desktop` and `rugged-desktop`. Each password is independently
+generated from 32 random bytes, encoded as 64 lowercase hexadecimal characters.
+These are credential labels, not process identities: an opt-in CLI sharing the
+same host relay uses that host's credential too.
+Home Manager reads `stringData/credentials.json` from the corresponding SOPS file
+into a mode-0600 runtime secret. Publishing the encrypted source does not activate
+the host relay. Rotate one host's source, reconcile the central Secret and reload
+the corresponding host's runtime secret together; do not create a second copy.
 
 ## Migration gate and cleanup
 
