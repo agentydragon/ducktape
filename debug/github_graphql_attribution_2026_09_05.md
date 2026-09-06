@@ -6,17 +6,24 @@ The corresponding UTC date after 17:00 is September 6.
 
 ## Current conclusion
 
-The personal GraphQL bucket exhausted again at **17:22:42**. The responsible
-caller is still unidentified. Instrumentation coverage defects are proven;
-neither an IP match nor the absence of a new connection identifies or excludes
-a request-level consumer. Earlier claims that Desktop, CLI, or the cluster were
-conclusively cleared exceed their controls.
+**The Desktop cloud batch-status route is causally implicated in the observed
+large burn.** Blocking only its POST endpoint for two minutes intercepted 76
+natural requests while the personal counter rose by just one point. After
+automatic pass-through restoration, the counter rose by 651 points within
+thirteen seconds and exhausted again forty seconds after restoration.
 
-**New leading candidate:** the proxied Desktop exposed a cloud-mediated
-GitHub route, `claude.ai/v1/code/github/batch-branch-status`, whose request
-fan-out aligns with a fresh post-control burn. This is invisible to a
-report restricted to `api.github.com`. See the live cloud-route section
-below. An endpoint-specific causal block has been proposed but not performed.
+The route is `claude.ai/v1/code/github/batch-branch-status`, not a direct local
+request to `api.github.com`. GitHub-only interception/reporting therefore
+missed it. Source analysis and captured repeated terminal-PR replies identify
+avoidable polling as a candidate mechanism; they do not establish every
+upstream GraphQL operation or the exact renderer refresh trigger.
+
+This is not proof of the sole consumer or every historical exhaustion. Earlier
+claims that Desktop, CLI, or the cluster were conclusively cleared exceed
+their controls. The operator approved a temporary exact-route mitigation,
+including reboot persistence until explicitly disabled, on wyrm2 and rugged.
+**Do not call this solved until at least several days, preferably one week,
+of covered post-mitigation quota windows without exhaustion.**
 
 This investigation read issue #5213 and all 21 comments available at session
 start, related #5596 and its comments, and both the tracked historical note and
@@ -203,8 +210,9 @@ scoped runtime bridge to the declarative host change, not a full NixOS
 activation. Other hosts and the dirty primary checkout were not changed.
 Desktop booted with the original profile, no fresh TLS errors, and verified
 loopback proxy sockets. Desktop and URI launches reused the same main PID.
-Authenticated Desktop GitHub traffic still needs an active Code/PR view;
-successful startup is not that proof.
+The operator subsequently opened a GitHub-backed view and confirmed GitHub
+data in the app. The captured requests below supply authenticated traffic
+proof beyond successful startup.
 
 The raw capture is now owner-only (directory `0700`, file `0600`).
 [PR #5670](https://github.com/agentydragon/ducktape/pull/5670) makes those
@@ -235,11 +243,11 @@ were incomplete/aborted in the capture. There were also seven cloud
 These are cloud-mediated GitHub operations, not direct local GraphQL requests.
 
 | Cloud batch request group (UTC) | Request count | Nearby observed personal debit |
-| --- | ---: | --- |
-| 00:52:30 | 56 | +644 by 00:52:35 |
-| 00:52:50 | 35 | +470 by 00:52:50 |
-| 00:53:13–00:53:16 | 58 | +575 by 00:53:17 |
-| 00:53:32 | 56 | +356 at 00:53:32 |
+| ------------------------------- | ------------: | ------------------------------ |
+| 00:52:30                        |            56 | +644 by 00:52:35               |
+| 00:52:50                        |            35 | +470 by 00:52:50               |
+| 00:53:13–00:53:16               |            58 | +575 by 00:53:17               |
+| 00:53:32                        |            56 | +356 at 00:53:32               |
 
 Payload **shape**, without publishing its private values: 267 requests
 contained one repository branch and one session; 19 contained no branches
@@ -263,32 +271,139 @@ and stopped; this is a real observation gap, not zero usage. A bounded probe
 at 00:55:58 read `used:2220`. The resumed sampler uses a per-probe timeout
 and explicit failure markers. Usage was 2277 at 01:04:15 UTC.
 
-Public Claude frontend bundles contain the batch endpoint's query hook;
-the installed native `app.asar` did not contain that endpoint string. Bundles
-with differing focus/refetch/deduplication behavior exist in the capture and
-cache. Cache presence alone does not establish which revision ran, so a
-specific active frontend bug still needs caller/version proof.
+### Completed two-minute intervention and reversal
 
-The next causal test is a two-minute, exact-endpoint proxy block while the
-app remains open, followed by automatic pass-through restoration. No block
-has been applied. It requires a one-time proxy restart to load the temporary
-addon, preserving the existing capture and first establishing a pass-through
-baseline. Starting mitmproxy again with its current bare `-w` path would
-truncate the evidence: use a fresh experimental stream or verified append
-mode. Query timings alone are not a completed causal experiment.
+All times in this subsection are September 6 UTC. Desktop stayed open with
+the same profile and main PID. A one-time proxy restart at 01:10:02 loaded an
+initially pass-through addon and opened a separate private experimental flow
+stream, preserving the original capture. A pass-through baseline showed
+`used:3004` at 01:11:32, 3654 at 01:12:19, and 3667 by 01:13:30.
+
+The exact match was POST, host `claude.ai`, and pathname
+`/v1/code/github/batch-branch-status`, **excluding the query string**. Matching
+the entire path including `?caller=...` would miss most observed traffic.
+Thirty-six scope/expiry test cases passed before the live test.
+
+| Phase (UTC)               | Endpoint observation                               | Independent account counter  |
+| ------------------------- | -------------------------------------------------- | ---------------------------- |
+| 01:14:32.476–01:16:32.476 | 76 natural Desktop requests blocked with 429       | 3667 → 3668                  |
+| 01:16:36.438              | First natural batch success after automatic expiry | 3668 at 01:16:35             |
+| 01:16:40                  | Batch traffic passing again                        | 3860                         |
+| 01:16:45                  | Continued batch fan-out                            | 4319: +651 after restoration |
+| 01:17:12                  | Continued batch fan-out                            | 5051, remaining 0            |
+| 01:18:31                  | Before cleanup                                     | 6380                         |
+
+One additional unauthenticated synthetic probe returned 429 at 01:15:05;
+it is excluded from the 76 natural requests. The operator refreshed Desktop
+during the block: 58 blocked requests arrived at 01:16:24, then two at
+01:16:27. Other app traffic remained live: 67 other `claude.ai` HTTP 200s,
+three 304s, and two successful calls each to GitHub `compare-refs` and
+installation-status. There were no direct `api.github.com` flows during the
+block. Neither transition required another proxy or Desktop restart.
+
+The observed debit during the block was **one**, not literally zero. Direct
+samples at 01:15:27–01:16:19 read 3667, then 01:16:24/30 read 3668.
+The independent Mimir series retained two samples inside the block, both
+3667, at Unix times 1788657298.191 and 1788657358.191. Its actual scrape cadence
+is once per minute, not fifteen seconds. The direct sampler has gaps between
+bounded runs, including 01:13:56–01:15:27; missing data is not a quiet period.
+
+After expiry and before cleanup the capture contained 309 batch attempts:
+290 HTTP 200 and 19 incomplete. The first groups were 31 successes at
+01:16:36, 30 at 01:16:51, and 58 at 01:17:08. This intervention/reversal is
+stronger evidence than timestamp correlation, but still does not allocate
+account-wide charges to individual cloud POSTs or exclude other consumers.
+
+At 01:18:39 the experimental addon/marker were removed and the proxy resumed
+the original capture with verified append mode. The experimental file remains
+private and intact. A narrowly owned runtime systemd append override protects
+the original capture until declarative host activation. The source append
+fix is merged as [#5673](https://github.com/agentydragon/ducktape/pull/5673).
+
+### Candidate frontend mechanism and remaining visibility boundary
+
+The fixed 289-request window splits into 149 `epitaxy-repopr`, 118
+`epitaxy-cichecks`, 15 `epitaxy-discover-repos`, four untagged, two `ccd-sidebar`,
+and one `sessions-provider` call. The dominant Epitaxy helper directly posts
+singletons, bypassing the shared batch-query hook. Its 120-second stale time,
+deduplication, and 25-item batching therefore do not coalesce these callers.
+
+The inspected PR hooks poll at thirty seconds and also refresh on focus or
+visibility changes. Cloud CI hooks use five seconds while checks are initially
+absent, then thirty seconds. All 65 successful captured CI replies already
+had nonempty checks, so that empty-check warmup does not explain the observed
+successful-repeat cadence. There were 100 PR repeats and 33 CI repeats
+10–20 seconds after the previous successful reply; median successful request
+latencies were 0.916 and 1.462 seconds respectively.
+
+The cloud CI mapper drops PR state, while its consumer reads `prState` to
+stop terminal polling and propagate terminal state. Its active observer can
+also suppress companion PR polling. Of 65 successful CI replies, 56 already
+reported merged/closed PRs; 29 were followed by an identical request, 26 within
+10–20 seconds. Those 29 requests are a measured candidate suppression
+opportunity, **not a measured fraction of GraphQL points saved**.
+
+Candidate vendor fix: preserve normalized `prState`, keep PR-number-safe
+state propagation, suppress terminal automatic interval/focus/unhide refresh,
+and retain explicit manual refresh. Shared scheduling/caching across singleton
+observers is a separate improvement. Focus/unhide refresh can persist even
+when an interval stops, so missing state alone is not proven to explain every
+repeat. No remote frontend bundle was modified.
+
+The installed native `app.asar` lacks the endpoint string. Public frontend
+source reproduces the singleton mechanism and state omission across inspected
+variants, but cache URLs and imports do not prove an executing asset hash.
+Renderer initiator stacks, query-client/key lifecycle, and focus/visibility
+timelines remain the visibility boundary for the precise 10–20-second trigger.
+Reproducible source: [singleton helper](https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c0547825d-DBs1L6EK.js)
+(SHA256 `8ca4ebb100f806d1295d8106f0ef90bd42e9a60ec100f5f9c9e8420e13c86dd9`),
+[older CI hook](https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/c360a9e1c-DacXJRFm.js),
+and [visibility-gated CI hook](https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/ca80fca8d-C3-_3TMY.js).
+
+## Temporary mitigation and acceptance window
+
+[PR #5675](https://github.com/agentydragon/ducktape/pull/5675) adds a default-off
+exact-route block with explicit wyrm2/rugged opt-ins and routes rugged's normal
+Desktop through the same wrapper. It retains private append-only startup,
+thirty-second heartbeat, blocked-count, and shutdown events. Other hosts and
+other paths are unchanged. The expected tradeoff is stale/unavailable automatic
+Desktop cloud GitHub status, not a block of all Claude or GitHub traffic.
+
+The operator explicitly approved persistence across reboots until the temporary
+mitigation is disabled. Configuration publication is not host activation;
+record the verified live start separately. Do not claim rugged is protected
+merely because its source configuration opted in.
+
+The scoped **wyrm2 runtime mitigation started at 01:35:27.490 UTC**, before
+the reset observed at 01:35:46. The normal Desktop PID remained unchanged.
+A synthetic caller-tagged POST returned 429 at 01:35:28.189; this is one known
+non-application increment in the block counter. Private mode-0600 heartbeats
+arrived at 01:35:57 and 01:36:27. No natural batch attempt had arrived by those
+heartbeats, so synthetic success alone is not representative app-use proof.
+The account was zero used after reset through 01:36:59. Rugged has source
+configuration only; no live activation was performed there.
+
+Start the acceptance clock at a clean hourly reset after verified mitigation,
+with independent account-counter and mitigation coverage. Check after 48 hours;
+prefer seven days without any exhaustion before declaring resolved. Coverage
+gaps, exporter failures, a missing proxy, or no representative Desktop use are
+not evidence of success. Record minimum remaining, last exhaustion, reset
+boundaries, passed/blocked route counts, and coverage, not just a single
+post-reset reading. A healthy minute-scraped counter can still miss a brief
+end-of-window exhaustion; retain the stronger direct/error evidence when present.
 
 ## Next experiments and independent follow-ups
 
-1. Implement the requested always-proxied normal Desktop on wyrm2; verify
-   application operation, the actual browser callback, and captured GitHub
-   requests. Correlate request/error timing with the independent quota counter.
-   Preserve the normal profile so the fresh diagnostic profile's different
-   sessions/workload do not become an attribution control by accident.
-2. Observe the post-17:34:13 reset with the phone force-stopped. Keep the
-   control's limits explicit; do not infer causation from a quiet interval.
-3. For a candidate disablement, change only that caller, record process/socket
-   state, and compare several burst intervals. Do not stop active operator
-   sessions without approval.
+1. Verify standing mitigation, capture heartbeats and the next clean reset;
+   maintain the covered multi-day acceptance window above. The normal-profile
+   proxy, authenticated traffic proof, and two-minute reversal are complete.
+2. Capture bounded renderer initiator/focus/visibility evidence to distinguish
+   refresh amplifiers without deleting sessions or changing the normal profile.
+   A selective `epitaxy-*` caller block versus allowed sidebar/provider batches
+   is a possible later experiment, not an already tested fix.
+3. Keep phone-control limits explicit: recurrence while the app remained
+   force-stopped shows active phone use is not necessary for this recurrence;
+   it does not exclude all previously triggered server-side activity.
 4. [#5666](https://github.com/agentydragon/ducktape/issues/5666): pilot attributed
    HTTP proxying for the three GitHub-provider Terraform runners, then assess
    node-level interception. Require keep-alive, bypass, loss, and runtime trust
@@ -302,12 +417,13 @@ GitHub documents a shared user budget across PAT/OAuth/user tokens, a separate
 installation-token budget, and additional charges for timed-out GraphQL
 operations. Moving controlled workloads to installation authentication can
 isolate their reliability, but is not identification or correction of the
-unknown personal-bucket consumer. See [GitHub's quota documentation](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api).
+personal-bucket burn. See [GitHub's quota documentation](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api).
 
 Source ordering for Hubble: [v1.19.6 monitor consumer](https://github.com/cilium/cilium/blob/v1.19.6/pkg/hubble/monitor/consumer.go),
 [flow-metric callback](https://github.com/cilium/cilium/blob/v1.19.6/pkg/hubble/cell/hubbleintegration.go#L261-L265),
 then [observer history ring](https://github.com/cilium/cilium/blob/v1.19.6/pkg/hubble/observer/local_observer.go#L175-L214).
 
-**No claim of resolution:** the source of the recurring large debit is open.
-The instrumentation PRs were published for review, not deployed during these
-controls.
+**No claim of resolution:** endpoint attribution is strong, the exact upstream
+work and renderer refresh trigger remain partly unobserved, and the multi-day
+acceptance window is not complete. The Hubble/socket instrumentation PRs were
+published for review, not deployed during these controls.

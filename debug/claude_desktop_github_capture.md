@@ -10,8 +10,10 @@ This file describes the launch and capture contract, not a second incident log.
 Wyrm2 selects `ducktape.githubApiProxy.desktopPackage` instead of the raw
 Claude Desktop package. The normal command, explicit `claude-desktop-proxied`
 alias, desktop actions, and `claude://` handler all use the same absolute
-wrapper. Other hosts keep their existing package selections. The regular
-Claude Code CLI is not made always-proxied by this Desktop-only change.
+wrapper. [PR #5675](https://github.com/agentydragon/ducktape/pull/5675) adds
+rugged to this explicit package selection and opts both hosts into the temporary
+cloud GitHub mitigation below. Other hosts keep their existing selections.
+The regular Claude Code CLI is not made always-proxied by this Desktop-only change.
 
 The wrapper preserves the normal `~/.config/Claude` profile and sign-in state.
 It starts the user proxy service and checks its listener via mitmproxy's local
@@ -92,3 +94,33 @@ unmerged configuration fix protects the live file.
 Always-on capture currently has no age/size rotation. Bounded retention or
 narrower recording is a separate operational decision; no existing evidence
 was deleted and the recording scope was not silently narrowed during rollout.
+
+## Temporary cloud GitHub mitigation
+
+PR #5675 adds an independently default-off block for POST requests to host
+`claude.ai`, pathname `/v1/code/github/batch-branch-status` before the query
+string. Wyrm2 and rugged explicitly opt in; unrelated routes remain allowed.
+The operator approved reboot persistence until explicitly disabled. This is a
+temporary status-polling degradation while attribution and the multi-day quota
+acceptance window continue, not the final upstream polling fix.
+
+On wyrm2 the scoped live bridge is the owned persistent user-service override
+`~/.config/systemd/user/github-api-proxy.service.d/90-cloud-github-block.conf`.
+Its generated command preserves append mode. Private append-only
+`~/.local/state/github-api-proxy/cloud-github-block-events.jsonl` records
+startup, thirty-second heartbeat, cumulative blocked count, and shutdown.
+It contains no request bodies, session IDs, credentials, or raw query strings.
+Separate process lifetimes and known synthetic probes when computing totals.
+
+The earlier runtime append guard also remains at
+`/run/user/1001/systemd/user/github-api-proxy.service.d/80-graphql-5213-append.conf`.
+After reviewed NixOS activation, verify declarative append mode and the intended
+block value, then remove **both owned overrides**, not just `90`: otherwise
+`80` overrides the newly declarative service with its older pass-through
+command. Preserve any operator replacement and reload the user manager.
+
+Before host activation, removing the verified owned `90` override, reloading,
+and restarting intentionally restores the append-safe `80` pass-through
+command. That is the live rollback; it does not remove captures or app data.
+Source rollback disables the block opt-in but keeps the proxy/capture wrapper.
+Rugged has no verified runtime bridge or activation in this investigation.
