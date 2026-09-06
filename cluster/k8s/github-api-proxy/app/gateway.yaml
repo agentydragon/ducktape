@@ -1,0 +1,35 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: github-api-proxy
+  namespace: github-api-proxy
+  annotations:
+    description: "Dedicated TLS-only listener; avoids overlapping the shared wildcard HTTPS listener on port 443."
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: proxy-tls
+      hostname: github-proxy.allegedly.works
+      port: 8443
+      protocol: TLS
+      tls:
+        mode: Passthrough
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: github-api-proxy
+  namespace: github-api-proxy
+spec:
+  parentRefs:
+    - name: github-api-proxy
+      sectionName: proxy-tls
+  hostnames:
+    - github-proxy.allegedly.works
+  rules:
+    - backendRefs:
+        - name: github-api-proxy
+          port: 443

@@ -7,9 +7,13 @@ credentials, or network authorization boundary for workstation traffic.
 
 ## Transport and identity
 
-`github-proxy.allegedly.works:443` is an authenticated HTTPS forward proxy.
-The shared Gateway passes the TLS stream through a hostname-specific TLSRoute;
-an ordinary HTTPRoute is not assumed to forward CONNECT requests.
+`github-proxy.allegedly.works:8443` is the planned authenticated HTTPS forward
+proxy endpoint. A dedicated TLS-only Gateway passes the stream through a
+hostname-specific TLSRoute; an ordinary HTTPRoute is not assumed to forward
+CONNECT requests. Port 8443 avoids changing the shared Gateway's listeners:
+its wildcard HTTPS and exact TLS-passthrough listeners on port 443 already report
+`ProtocolConflict` on the deployed Cilium version. See the
+[upstream overlapping-listener report](https://github.com/cilium/cilium/issues/47590).
 
 There are two distinct certificate roles:
 
@@ -74,3 +78,27 @@ rugged or wyrm2 migrated successfully.
 
 Successful migration is not resolution of quota exhaustion. Account-wide quota
 and observation coverage still require the agreed multi-day acceptance window.
+
+## Central deployment preparation
+
+The `app/` manifests are not connected to root Flux yet. Runtime image publication,
+the Deployment, and its reconciliation layer are still required before exposure.
+Do not apply this directory manually or treat prepared manifests as a live route.
+
+Capture storage uses the replicated `seaweedfs-ovh` class and an initial 100-GiB
+claim. The app must run one writer with a Recreate rollout strategy. The PVC is
+excluded from Flux pruning: removing the app must not delete investigation
+evidence. There is no automatic capture rotation or deletion; inspect storage use
+and arrange explicit retention before unattended long-term operation.
+
+Only the TLS proxy port is routed publicly. A PodMonitor targets the separate
+metrics port directly so readiness failure does not remove it from observation.
+The runtime disables readiness after a capture write failure; do not configure
+a liveness probe that restarts and clears this evidence-loss signal. Investigate
+storage and incomplete captures before a controlled restart.
+
+Egress is public HTTP/HTTPS plus cluster DNS, not arbitrary cluster access. The
+runtime must also reject private/loopback destinations and pin validated DNS
+answers; network policy alone cannot fence the Pod's own loopback. Our cluster
+node identities are intentionally not allowed, so even public
+`*.allegedly.works` origins are outside this proxy's egress scope.

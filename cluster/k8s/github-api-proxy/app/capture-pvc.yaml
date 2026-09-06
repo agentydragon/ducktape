@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: github-api-proxy-capture
+  namespace: github-api-proxy
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+    description: "Private investigation evidence. Retain on app removal; deletion requires explicit evidence-retention review."
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 100Gi

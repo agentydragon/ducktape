@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: github-api-proxy
+  namespace: github-api-proxy
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: github-api-proxy
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
