@@ -64,6 +64,8 @@ exports_files(
         "clickhouse/schema/kustomization.yaml",
         "clickhouse/schema/schema-job.yaml",
         "kustomization.yaml",
+        "monitoring/rules/github-quota-prometheus-rule.yaml",
+        "monitoring/rules/roaming-node-prometheus-rule.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
 )

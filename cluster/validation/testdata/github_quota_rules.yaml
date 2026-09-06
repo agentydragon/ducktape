@@ -1,0 +1,160 @@
+rule_files:
+  - github-quota.yaml
+  - roaming-node.yaml
+evaluation_interval: 1m
+tests:
+  - name: a sampled zero immediately before reset fires and stays latched
+    interval: 1m
+    input_series:
+      - series: github_graphql_rate_remaining{github_account="agentydragon",pod="old"}
+        values: 1 0 stale
+      - series: github_graphql_rate_remaining{github_account="agentydragon",pod="new"}
+        values: _ _ 5000+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing"}
+        eval_time: 1m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing",github_account="agentydragon",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing",github_account="agentydragon",severity="warning"}
+            value: 1
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing"}
+        eval_time: 6m
+        exp_samples: []
+
+  - name: no observed zero does not alert even across reset
+    interval: 1m
+    input_series:
+      - series: github_graphql_rate_remaining{github_account="agentydragon"}
+        values: 3 2 1 5000 4999 4998
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing"}
+        eval_time: 5m
+        exp_samples: []
+
+  - name: overlapping targets produce one exhaustion alert per account
+    interval: 1m
+    input_series:
+      - series: github_graphql_rate_remaining{github_account="agentydragon",pod="old"}
+        values: 0+0x5
+      - series: github_graphql_rate_remaining{github_account="agentydragon",pod="new"}
+        values: 5000+0x5
+      - series: github_graphql_rate_remaining{github_account="agentydragon-agent"}
+        values: 0+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing",github_account="agentydragon",severity="warning"}
+            value: 1
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaExhausted",alertstate="firing",github_account="agentydragon-agent",severity="warning"}
+            value: 1
+
+  - name: vanished discovery alerts after the last sample leaves the window
+    interval: 1m
+    input_series:
+      - series: github_graphql_rate_remaining{github_account="agentydragon"}
+        values: 5000 stale
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring"}
+        values: 1 stale
+      - series: github_graphql_rate_remaining{github_account="agentydragon-agent"}
+        values: 5000+0x6
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 4m
+        exp_samples: []
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing",github_account="agentydragon",severity="warning"}
+            value: 1
+
+  - name: both expected accounts absent even without discovery history
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing",github_account="agentydragon",severity="warning"}
+            value: 1
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing",github_account="agentydragon-agent",severity="warning"}
+            value: 1
+
+  - name: successful scrapes without a gauge are not healthy observations
+    interval: 1m
+    input_series:
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring"}
+        values: 1+0x5
+      - series: github_graphql_rate_remaining{github_account="agentydragon-agent"}
+        values: 5000+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing",github_account="agentydragon",severity="warning"}
+            value: 1
+
+  - name: explicit failed scrapes remain owned by generic TargetDown
+    interval: 1m
+    input_series:
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring",service="github-graphql-rate-exporter-agentydragon"}
+        values: 0+0x11
+      - series: github_graphql_rate_remaining{github_account="agentydragon-agent"}
+        values: 5000+0x11
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+      - expr: ALERTS{alertname="TargetDown",alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: ALERTS{alertname="TargetDown",alertstate="firing",job="github-graphql-rate-exporter-agentydragon",namespace="monitoring",service="github-graphql-rate-exporter-agentydragon",severity="warning"}
+            value: 1
+
+  - name: old failed target does not hide a healthy replacement missing its gauge
+    interval: 1m
+    input_series:
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring",pod="old"}
+        values: 0+0x5
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring",pod="new"}
+        values: 1+0x5
+      - series: github_graphql_rate_remaining{github_account="agentydragon-agent"}
+        values: 5000+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing",github_account="agentydragon",severity="warning"}
+            value: 1
+
+  - name: replacement observations cover a stale failed old target
+    interval: 1m
+    input_series:
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring",pod="old"}
+        values: 0+0x5
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring",pod="new"}
+        values: 1+0x5
+      - series: github_graphql_rate_remaining{github_account="agentydragon",pod="new"}
+        values: 5000+0x5
+      - series: github_graphql_rate_remaining{github_account="agentydragon-agent"}
+        values: 5000+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 5m
+        exp_samples: []
+
+  - name: failed personal target cannot suppress the other account
+    interval: 1m
+    input_series:
+      - series: up{job="github-graphql-rate-exporter-agentydragon",namespace="monitoring"}
+        values: 0+0x5
+      - series: up{job="github-graphql-rate-exporter-agentydragon-agent",namespace="monitoring"}
+        values: 1+0x5
+    promql_expr_test:
+      - expr: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: ALERTS{alertname="GitHubGraphQLQuotaObservationsMissing",alertstate="firing",github_account="agentydragon-agent",severity="warning"}
+            value: 1
