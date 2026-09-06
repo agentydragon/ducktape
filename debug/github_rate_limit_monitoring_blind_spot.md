@@ -1,6 +1,13 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **the burn is reproducible on demand, and its shape matches neither documented
+Current status: **unresolved**. The [September 5 evening control](github_graphql_attribution_2026_09_05.md)
+records a fresh exhaustion, the phone-off experiment, and proven monitoring
+gaps. It supersedes this historical narrative's universal cadence, Desktop
+proxy-switch, Hubble keep-alive, and missing-query-cost claims. Statements below
+describe successive hypotheses and are not all still supported. GraphQL quota
+alerts now exist in `cluster/k8s/monitoring/rules/github-quota-prometheus-rule.yaml`.
+
+Historical status: **the burn is reproducible on demand, and its shape matches neither documented
 consumer.** Sampled at 5-second resolution on 2026-09-05, the personal bucket takes
 **~150-point bursts every ~35-40 seconds** — 235 points/minute, 2.8x budget — rather than
 the ~2200/min fast consumer or the metronomic 60/min floor recorded below. That retires
