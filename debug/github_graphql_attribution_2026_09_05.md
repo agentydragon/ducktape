@@ -77,6 +77,11 @@ these first four minutes. The ordinary Desktop PIDs remained running. This
 is a useful phone-off observation, not a causal verdict: the earlier burst
 regime was intermittent, and no phone-on rechallenge has been performed.
 
+The socket log still observed the original Desktop network process at
+17:39:19; by 17:41:30 both original Desktop PIDs were absent. Later quiet
+samples therefore do not keep Desktop state constant and cannot be presented
+as a phone-only intervention. At 17:41:59 the account had used 56 points.
+
 ## Proven coverage defects
 
 ### Host recorder
@@ -145,6 +150,13 @@ handler still launched ordinary Claude. Opening a window is not successful
 authenticated request capture; callback routing needs to target the same
 isolated profile. The permanent wrapper fix is being validated separately.
 
+The operator subsequently requested **always proxying normal Claude Desktop
+on wyrm2**, rather than maintaining competing normal/diagnostic launchers.
+That supersedes the temporary URI-handler experiment as the implementation
+direction: preserve the normal app profile, use app-private certificate trust,
+and make the command, desktop actions, and OAuth handler resolve to the same
+proxied package. Do not change the other hosts' defaults.
+
 A sanitized read of the existing flow file found 37 GraphQL requests from
 `claude-code/2.1.245`, spanning September 4 12:41:35–20:23:23 UTC. All 37 lacked
 explicit `rateLimit.cost`; the capture contained no Desktop GraphQL requests.
@@ -153,10 +165,11 @@ header increase on one response cannot be assigned to that request.
 
 ## Next experiments and independent follow-ups
 
-1. Finish isolated Desktop callback routing, authenticate through the actual
-   wrapper, and verify both application operation and captured GitHub requests.
-   Correlate request/error timing with the independent quota counter. A fresh
-   profile may not reproduce the ordinary profile's sessions or workload.
+1. Implement the requested always-proxied normal Desktop on wyrm2; verify
+   application operation, the actual browser callback, and captured GitHub
+   requests. Correlate request/error timing with the independent quota counter.
+   Preserve the normal profile so the fresh diagnostic profile's different
+   sessions/workload do not become an attribution control by accident.
 2. Observe the post-17:34:13 reset with the phone force-stopped. Keep the
    control's limits explicit; do not infer causation from a quiet interval.
 3. For a candidate disablement, change only that caller, record process/socket
