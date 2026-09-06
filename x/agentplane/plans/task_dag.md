@@ -35,13 +35,15 @@ handling, standing grants, uncertain execution reconciliation, and the MCP adapt
 accepted decisions and open questions are in [`operations_and_access.md`](operations_and_access.md).
 
 **Authentication and credential propagation is an implementation gate:**
-[`authentication_and_credentials.md`](authentication_and_credentials.md) separates the
-`Proxy-Authorization` `agentplane-egress` hop token consumed by central from end-to-end destination
-authentication forwarded through it. Central authenticates and governs the egress hop; Action Service
-and LLM Proxy validate their destination KSA token through the same live `WorkloadPrincipal`
-resolver, while Kubernetes API uses native RBAC. PR #5658 is superseded, #5657 is
-incomplete/superseded, and #5662 is paused/reference-only; no Action Service implementation lands
-before the destination-credential transport seam and its end-to-end evidence are implemented.
+[`authentication_and_credentials.md`](authentication_and_credentials.md) uses one sidecar-only,
+Pod-bound KSA workload token with a shared first-party audience for both central ingress and selected
+destination authentication. Central validates it once, retains the authenticated bearer as request
+or CONNECT-tunnel context, and exposes it through the generic dynamic EgressCredential source
+`authenticatedWorkloadToken`. EgressPolicy plus exact placeholder/target substitution—not proxy
+service cases—selects whether LLM Proxy, Action Service, or another trusted recipient receives it.
+Those services directly validate it through one shared live `WorkloadPrincipal` resolver. PR #5658
+is superseded, #5657 is incomplete/superseded, and #5662 is paused/reference-only; standalone Action
+Service remains blocked until this shared-token substitution path and its end-to-end evidence land.
 
 **BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
 Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
@@ -77,7 +79,7 @@ flowchart TB
     OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
     OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
-    AUTH["Authentication/credential design gate<br/>hop auth ≠ destination auth;<br/>destination-authoritative validation"]:::decision
+    AUTH["Authentication/credential design gate<br/>one Pod-bound workload bearer;<br/>generic dynamic substitution + destination validation"]:::decision
     OPI["Standalone Action Service slice<br/>one ActionRequest/Decision/Execution;<br/>one adapter + originating-Thread delivery"]:::ready
 
     T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
@@ -170,16 +172,19 @@ A completed item leaves the active queue even when it supplies an edge.
   where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
   Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
   built before this gate.
-- **`AUTH` authentication and credential design:** accept and implement
-  [`authentication_and_credentials.md`](authentication_and_credentials.md) before Action Service
-  implementation lands. Managed Sandboxes keep the loopback sidecar and
-  `Proxy-Authorization: Bearer <agentplane-egress>` hop token. Central validates that hop and
-  enforces egress target/policy; it forwards or narrowly injects a separate sidecar-only destination
-  token without validating it as destination identity. Action Service and LLM Proxy validate their
-  destination token directly through the shared live `WorkloadPrincipal` authenticator/resolver;
-  Kubernetes API uses native validation and RBAC. P0 may bind one configured credential per CONNECT
-  `host:port`; ambiguous shared endpoints require a dedicated local route or adapter. Standalone
-  Action Service remains blocked until this transport seam and end-to-end evidence exist.
+- **`AUTH` authentication and credential design:** implement
+  [`authentication_and_credentials.md`](authentication_and_credentials.md) before standalone Action
+  Service lands. Project one sidecar-only Pod-bound KSA token with the shared first-party workload
+  audience (prefer `agentplane-workload`, with migration from `agentplane-egress`). The sidecar adds
+  it as `Proxy-Authorization`; central validates it once, correlates the live Pod/Sandbox, and makes
+  the successfully authenticated bearer available only as the dynamic EgressCredential source
+  `authenticatedWorkloadToken`. An ordinary EgressPolicy `credentialRef` plus exact placeholder
+  target selects host/method/path and substitutes that request/tunnel's bearer after TLS interception;
+  neither proxy has LLM/Action cases, and P0 needs no second token, sideband, or per-CONNECT token
+  selector. LLM Proxy and Action Service directly validate the shared audience through the same live
+  `WorkloadPrincipal` authenticator/resolver and apply service policy. Acceptance uses two Pods to
+  prove per-Pod substitution and destination Sandbox resolution, placeholder-only harness visibility,
+  fail-closed bypass/forgery/target behavior, replay containment topology, and token-free logs.
 - **`OPI` standalone Action Service vertical slice:** one independently deployable Action Service
   takes agent intent through policy/Decision to the single Execution/result and later Thread
   delivery. Preserve the accepted invariant ActionRequest, at most one Execution, and automatic
@@ -231,12 +236,17 @@ A completed item leaves the active queue even when it supplies an edge.
   (interaction context), and authorization principal (policy subject). Cross-agent reads require an
   explicit mapping and data-read policy.
 - Egress remains enforced by the existing proxy and target policy. A preset or operation adapter
-  cannot bypass it or turn a placeholder into a reusable credential.
-  `Proxy-Authorization: Bearer <agentplane-egress>` authenticates only sidecar to central and is
-  consumed there. Destination authentication remains in the destination's end-to-end auth field:
-  LLM Proxy and Action Service validate their KSA tokens with the same `WorkloadPrincipal`
-  authenticator/resolver, and Kubernetes API applies native RBAC. Central need not TokenReview the
-  destination token, and central identity or proxy-derived context headers are not caller proof.
+  cannot bypass it or turn a placeholder into a reusable credential. One sidecar-only Pod-bound
+  workload token authenticates the hop to central; central validates it once and may reuse only that
+  successful authenticated token value through `authenticatedWorkloadToken` when the selected
+  EgressPolicy rule and exact EgressCredential target request it. The raw header is never blindly
+  copied. LLM Proxy and Action Service directly validate the received shared-audience bearer with the
+  same `WorkloadPrincipal` authenticator/resolver and apply service policy; central identity and
+  proxy-derived headers are not caller proof. The shared-audience replay tradeoff is contained in P0
+  by trusted recipients, network/listener isolation, source-Pod correlation, short Pod-bound tokens,
+  and destination authorization. Kubernetes API use later requires the API server to accept that
+  audience or a future distinct projected API-audience source; API RoleBindings do not authorize
+  ordinary services.
 - Do not add persistence schemas, controllers, policy DSLs, MCP registries, or permission matrices
   before the first acceptance test that needs them. Preserve whole evidence payloads rather than
   duplicating derivable hashes, lengths, manifests, or parsed mirrors.
