@@ -35,11 +35,13 @@ handling, standing grants, uncertain execution reconciliation, and the MCP adapt
 accepted decisions and open questions are in [`operations_and_access.md`](operations_and_access.md).
 
 **Authentication and credential propagation is an implementation gate:**
-[`authentication_and_credentials.md`](authentication_and_credentials.md) keeps Action Service and
-LLM Proxy behind the existing per-Sandbox sidecar and central egress proxy, separates hop identity
-from destination credentials and service authorization, and defines the bounded future seam for
-Pod ServiceAccount tokens. PRs #5657, #5658, and #5662 are not merge-ready; no Action Service
-implementation lands before this design is accepted.
+[`authentication_and_credentials.md`](authentication_and_credentials.md) keeps the
+`agentplane-egress` token on the sidecar-to-central hop, then substitutes a separate sidecar-only,
+destination-audience token for the Pod's actual ServiceAccount. Action Service and LLM Proxy both
+validate that token directly through the same live `WorkloadPrincipal` resolver. PR #5658 is
+superseded, #5657 is incomplete/superseded, and #5662 is paused/reference-only; no Action Service
+implementation lands before this design and its transport/authentication seam are accepted and
+proven.
 
 **BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
 Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
@@ -75,8 +77,8 @@ flowchart TB
     OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
     OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
-    AUTH["Authentication/credential design gate<br/>shared proven workload context;<br/>bounded destination credentials"]:::decision
-    OPI["ActionRequest vertical slice<br/>one adapter, decision UI, machine delivery<br/>to the originating Thread"]:::ready
+    AUTH["Authentication/credential design gate<br/>destination KSA token substitution;<br/>shared WorkloadPrincipal validation"]:::decision
+    OPI["Standalone Action Service slice<br/>one ActionRequest/Decision/Execution;<br/>one adapter + originating-Thread delivery"]:::ready
 
     T3["T3 trajectory search and lookup<br/>find what happened, why, and which Thread"]:::ready
     PR["Proxy rollout survivability<br/>reproduce active-turn impact and fix/drain contract"]:::ready
@@ -168,19 +170,22 @@ A completed item leaves the active queue even when it supplies an edge.
   where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
   Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
   built before this gate.
-- **`AUTH` authentication and credential design:** accept
+- **`AUTH` authentication and credential design:** accept and implement
   [`authentication_and_credentials.md`](authentication_and_credentials.md) before Action Service
-  implementation. Managed Sandboxes reuse the loopback sidecar and `agentplane-egress` hop token;
-  the central proxy derives workload context and applies exact credential bindings, while each
-  destination owns service authorization. Native destination-audience KSA tokens remain deferred
-  until the sidecar-to-central encrypted credential relay and CONNECT selection seam exist.
-- **`OPI` ActionRequest vertical slice:** one real adapter from agent intent through
-  policy/Decision to the single Execution/result and later Thread delivery. V0 read scope is
-  caller-own plus operator-all within the existing operator scope; the Action Hub is the canonical
-  state store, while the integration app is the browser BFF. The operation layer may initially be
-  colocated with the integration app, but the test must keep runtime lifecycle, access authority,
-  adapter, and trajectory responsibilities separable. Push approval is a notification adapter over
-  the same Decision path, not a second authority.
+  implementation lands. Managed Sandboxes keep the loopback sidecar and `agentplane-egress` hop
+  token, while trusted Pod configuration projects one sidecar-only destination token for each
+  audience and exact credential binding. The central proxy validates matching Pod UID and
+  ServiceAccount proofs, then substitutes the destination token. Action Service and LLM Proxy each
+  validate it directly through the shared live `WorkloadPrincipal` authenticator/resolver and apply
+  service policy. P0 permits one configured credential per CONNECT `host:port`; ambiguous shared
+  endpoints require a dedicated local route or adapter and remain deferred.
+- **`OPI` standalone Action Service vertical slice:** one independently deployable Action Service
+  takes agent intent through policy/Decision to the single Execution/result and later Thread
+  delivery. Preserve the accepted invariant ActionRequest, at most one Execution, and automatic
+  dispatch after allow. V0 read scope is caller-own plus operator-all within the existing operator
+  scope; the standalone service is the canonical state owner, while the integration app is the
+  browser BFF. It is not a potentially colocated Action Hub. Push approval is a notification adapter
+  over the same Decision path, not a second authority. Implementation remains blocked on `AUTH`.
 - **`T3` trajectory search:** search persisted text and action evidence, answer “what happened,”
   “why,” and “which Thread,” and link to raw frames. Scope is the caller's already-authorized
   trajectory surface; cross-agent visibility is not silently included.
@@ -216,17 +221,20 @@ A completed item leaves the active queue even when it supplies an edge.
   The decision authority owns allow/deny/referral and grants; adapters own MCP/HTTP/
   Kubernetes/host execution; the conversation app owns operator presentation; the trajectory store
   preserves evidence.
-- The Action Hub is the canonical owner of ActionRequest lifecycle and access checks; the existing
-  trajectory store may hold detailed evidence by reference, but raw trajectory links cannot bypass
-  the hub's ACL. The integration app is the authenticated browser BFF, and push notifications are
-  delivery adapters that return through the same Decision Authority.
+- The independently deployable Action Service is the canonical owner of ActionRequest lifecycle and
+  access checks; the existing trajectory store may hold detailed evidence by reference, but raw
+  trajectory links cannot bypass the service's ACL. The integration app is the authenticated
+  browser BFF, and push notifications are delivery adapters that return through the same Decision
+  Authority.
 - An Agent is a future product identity, distinct from a Sandbox (runtime infrastructure), Thread
   (interaction context), and authorization principal (policy subject). Cross-agent reads require an
   explicit mapping and data-read policy.
 - Egress remains enforced by the existing proxy and target policy. A preset or operation adapter
-  cannot bypass it or turn a placeholder into a reusable credential. LLM Proxy and Action Service
-  consume the same proxy-derived workload context but apply service-specific authorization; the
-  `agentplane-egress` hop token is never forwarded as their destination credential.
+  cannot bypass it or turn a placeholder into a reusable credential. The `agentplane-egress` token
+  authenticates only sidecar to central. LLM Proxy and Action Service receive separate
+  destination-audience tokens for the Pod's actual ServiceAccount, validate them directly with the
+  same `WorkloadPrincipal` authenticator/resolver, and apply service-specific authorization. Central
+  identity or context headers are not caller proof.
 - Do not add persistence schemas, controllers, policy DSLs, MCP registries, or permission matrices
   before the first acceptance test that needs them. Preserve whole evidence payloads rather than
   duplicating derivable hashes, lengths, manifests, or parsed mirrors.
