@@ -153,7 +153,7 @@ pkgs.dockerTools.buildLayeredImage {
   maxLayers = 100;
 
   fakeRootCommands = ''
-    mkdir -p home/openclaw tmp etc/ssl/certs usr/bin
+    mkdir -p home/openclaw tmp etc/ssl/certs usr/bin lib64 lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
     chmod 1777 tmp
     chown -R 1000:1000 home/openclaw
 
@@ -172,6 +172,26 @@ pkgs.dockerTools.buildLayeredImage {
     group: files
     hosts: files dns
     NSS
+
+    # Bazel's rules_js repository setup may execute its hermetic pnpm/Node
+    # toolchain during local `bb run` analysis. Those upstream binaries are
+    # FHS-linked rather than Nix-patched, so the minimal dockerTools rootfs
+    # needs the standard dynamic linker and the small shared-library surface
+    # they expect. Keep this aligned with x/nix_rbe_image instead of adding a
+    # mutable host pnpm installation or disabling update_pnpm_lock.
+    ln -sf ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 lib64/ld-linux-x86-64.so.2
+    for dir in \
+      ${pkgs.stdenv.cc.cc.lib}/lib \
+      ${pkgs.glibc}/lib \
+      ${pkgs.zlib}/lib \
+      ${pkgs.openssl.out}/lib; do
+      for lib in "$dir"/lib*.so*; do
+        if [ -e "$lib" ]; then
+          ln -sf "$lib" lib/x86_64-linux-gnu/
+          ln -sf "$lib" usr/lib/x86_64-linux-gnu/
+        fi
+      done
+    done
 
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-certificates.crt
     # pre-commit generates Bash hooks beginning `#!/usr/bin/env bash`. Nix packages use absolute
