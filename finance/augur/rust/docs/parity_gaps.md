@@ -22,7 +22,6 @@ and what is reachable from a live product request are the plan's business
 
 | Feature                                            | Where JAX has it                                         | Refusal                                                                                                             |
 | -------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| A scheduled sale at an authored price per unit     | `ScheduledAssetSale.price_per_unit`                      | Rust prices every sale off the asset's own sampled series, so a fixed price has nowhere to go.                      |
 | An amount indexed by a series that is not an index | `SeriesIndexedAmount` over an arbitrary `LevelSeriesKey` | The fixture's `AmountSpec` indexes by inflation and rent levels only.                                               |
 | A level series with no fixture representation      | any `LevelSeriesKey`                                     | Money series cross as currency quanta and index series as parts per billion; a key that is neither has no encoding. |
 

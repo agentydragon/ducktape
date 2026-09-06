@@ -41,7 +41,7 @@ it through `rust/backend_test.py`, which asserts nothing of its own.
 
 ## Coverage: which refusals a real request can reach
 
-`encode_fixture` raises `UnsupportedScenarioError` at ten sites. One is still reachable from
+`encode_fixture` raises `UnsupportedScenarioError` at eight sites. One is still reachable from
 what the product API accepts:
 
 - **`MortgageFinancing.annual_rate_pct`**, via `_exact_ppb` on `annual_rate_pct / 100.0`.
@@ -54,8 +54,7 @@ The rest cannot fire on a product request, because the wire is narrower than the
 model underneath it:
 
 - `SpendIndex` offers only `none` and `inflation`, so no amount can be indexed by a series
-  the fixture does not carry;
-- the scenario builder never fixes a `price_per_unit` on a scheduled sale.
+  the fixture does not carry.
 
 Three more are portfolio- and catalog-side rather than request-side — exact per-unit lot
 basis, bond coupon rate, TIPS period rate — and need their own pass over what the portfolio

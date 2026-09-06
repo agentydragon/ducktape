@@ -565,13 +565,6 @@ def encode_fixture(
     if plan.horizon_months != int(scenario.horizon_months):
         raise ValueError(f"plan horizon {plan.horizon_months} does not match scenario {scenario.horizon_months}")
     quantum = scenario.currency.quantum
-    for sale in scenario.scheduled_asset_sales:
-        if sale.price_per_unit is not None:
-            raise UnsupportedScenarioError(
-                f"scheduled sale {sale.cause_id!r} fixes a price per unit; the Rust engine prices every "
-                "sale off the asset's own sampled series"
-            )
-
     lifecycle = scenario.property_lifecycle_events
     return {
         "schema_version": FIXTURE_SCHEMA_VERSION,

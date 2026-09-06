@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import jax
 import pytest
 
-from finance.augur.model.deterministic import Deterministic
+from finance.augur.model.deterministic import Constant, Deterministic
 from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
@@ -37,6 +37,25 @@ def deterministic_series_bundle() -> DeterministicSeriesModelBundleFactory:
         # callers take the default. No flat LevelSeriesKey map is constructed.
         return SeriesModelBundle.independent(
             asset_prices=AssetPriceGroups(security={symbol: Deterministic(levels=list(levels))})
+        )
+
+    return build
+
+
+ConstantPriceBundleFactory = Callable[[Mapping[SecuritySymbol, float]], SeriesModelBundle]
+
+
+@pytest.fixture
+def constant_price_bundle() -> ConstantPriceBundleFactory:
+    """Asset prices every rollout and month holds flat.
+
+    A sale is priced off its asset's own sampled series, so a test that wants an exact
+    expected proceeds figure pins the series rather than the sale.
+    """
+
+    def build(prices: Mapping[SecuritySymbol, float]) -> SeriesModelBundle:
+        return SeriesModelBundle.independent(
+            asset_prices=AssetPriceGroups(security={symbol: Constant(value=price) for symbol, price in prices.items()})
         )
 
     return build
