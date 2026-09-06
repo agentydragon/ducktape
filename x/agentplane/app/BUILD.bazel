@@ -398,6 +398,7 @@ py_test(
         "@pypi//itsdangerous",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )
 
