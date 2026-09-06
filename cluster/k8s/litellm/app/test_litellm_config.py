@@ -78,6 +78,47 @@ def test_hidden_model_aliases_target_served_models() -> None:
     assert all(alias["model"] in served for alias in aliases.values())
 
 
+# The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so it must agree
+# with the entry's own wiring: `litellm_params.model`'s prefix selects the upstream handler and
+# `model_info.mode` the endpoint. Every shape whose wire has exactly one provider prefix serving
+# it here pins that prefix, so an entry cannot claim a wire it does not speak -- the check that
+# catches naming a Google-wire entry `oai-chat`. `oai-chat` itself is the open one: any
+# OpenAI-compatible chat provider satisfies it (mistral today, groq or another tomorrow), so it
+# pins the mode and only rules out the prefixes another shape already names.
+_NAMED_UPSTREAM = {
+    ApiShape.ANT_MESSAGES: "anthropic",
+    ApiShape.OAI_RESPONSES: "openai",
+    ApiShape.GOOG_GENERATE: "gemini",
+    ApiShape.GOOG_EMBED: "gemini",
+}
+_SHAPE_MODE = {
+    ApiShape.ANT_MESSAGES: "chat",
+    ApiShape.OAI_CHAT: "chat",
+    ApiShape.OAI_RESPONSES: "responses",
+    ApiShape.GOOG_GENERATE: "chat",
+    ApiShape.GOOG_EMBED: "embedding",
+}
+
+
+def test_shape_segment_matches_each_entry_upstream_wire() -> None:
+    scheme_entries = [
+        entry for entry in _load_config("proxy-config.yaml")["model_list"] if entry["model_name"].count("/") == 2
+    ]
+    shapes_seen = set()
+    for entry in scheme_entries:
+        name = entry["model_name"]
+        shape = ApiShape(name.split("/")[1])
+        shapes_seen.add(shape)
+        assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
+        upstream = entry["litellm_params"]["model"].split("/")[0]
+        expected = _NAMED_UPSTREAM.get(shape)
+        if expected is None:
+            assert upstream not in _NAMED_UPSTREAM.values(), name
+        else:
+            assert upstream == expected, name
+    assert shapes_seen == set(ApiShape)
+
+
 # haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
 # whose model choice lives outside the baked-config and Terraform pins above. The runner
 # hardcodes wire_api="responses" (haku/runner/codex/options.py), so the model

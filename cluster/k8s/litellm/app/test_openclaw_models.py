@@ -49,7 +49,7 @@ def _litellm_models() -> dict[str, dict]:
     return {entry["model_name"]: entry for entry in config["model_list"]}
 
 
-_OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) for model in GEMINI_MODELS]
+_OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model) for model in GEMINI_MODELS]
 
 
 def test_litellm_config_has_a_route_per_declared_codex_model() -> None:

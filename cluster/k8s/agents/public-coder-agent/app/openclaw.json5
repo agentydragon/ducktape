@@ -200,7 +200,7 @@
           },
           {
             contextWindow: 1048576,
-            id: "google/oai-chat/gemini-3.7-flash",
+            id: "google/goog-generate/gemini-3.7-flash",
             input: ["text", "image"],
             maxTokens: 65536,
             name: "Gemini 3.7 Flash (Google AI via LiteLLM)",
@@ -208,7 +208,7 @@
           },
           {
             contextWindow: 1048576,
-            id: "google/oai-chat/gemini-3.5-flash-lite",
+            id: "google/goog-generate/gemini-3.5-flash-lite",
             input: ["text", "image"],
             maxTokens: 65536,
             name: "Gemini 3.5 Flash-Lite (Google AI via LiteLLM)",

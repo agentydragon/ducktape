@@ -365,21 +365,21 @@ model_list:
       api_key: os.environ/GROQ_API_KEY
     model_info:
       mode: audio_transcription
-  - model_name: google/oai-chat/gemini-3.7-flash
+  - model_name: google/goog-generate/gemini-3.7-flash
     litellm_params:
       model: gemini/gemini-3.7-flash
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: google/oai-chat/gemini-3.5-flash-lite
+  - model_name: google/goog-generate/gemini-3.5-flash-lite
     litellm_params:
       model: gemini/gemini-3.5-flash-lite
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: google/oai-embeddings/gemini-embedding-2
+  - model_name: google/goog-embed/gemini-embedding-2
     litellm_params:
       model: gemini/gemini-embedding-2
       api_key: os.environ/GEMINI_API_KEY
@@ -393,7 +393,7 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       mode: embedding
-  - model_name: google/oai-embeddings/gemini-embedding-001
+  - model_name: google/goog-embed/gemini-embedding-001
     litellm_params:
       model: gemini/gemini-embedding-001
       api_key: os.environ/GEMINI_API_KEY
