@@ -124,3 +124,39 @@ and restarting intentionally restores the append-safe `80` pass-through
 command. That is the live rollback; it does not remove captures or app data.
 Source rollback disables the block opt-in but keeps the proxy/capture wrapper.
 Rugged has no verified runtime bridge or activation in this investigation.
+
+The generated override and its pinned runtime are protected from garbage
+collection by two owned indirect GC roots in the private state directory:
+`cloud-github-block-gcroot` and `cloud-github-block-runtime-gcroot`. Remove these
+only after normal activation owns the intended service and both overrides have
+been retired. Merely placing a Nix-store symlink in a service drop-in does not
+make the generated artifact a GC root. Capture/event files are not cleanup targets.
+
+## Central HTTPS proxy compatibility boundary
+
+The operator's preferred central replacement is an HTTPS forward-proxy hostname
+with SOPS-managed passwords; Nebula is not required. No central service or
+client migration has been deployed. Keep the verified local block until the
+central route has authenticated, captured, and blocked real Desktop traffic.
+
+A synthetic loopback probe of installed mitmproxy 12.2.3 established HTTPS-proxy
+TLS, authenticated CONNECT, and intercepted HTTPS with both certificate checks
+enabled. Correct test credentials returned 200; absent/wrong credentials
+returned 407. The fixture answered locally without contacting an external
+origin; the disposable listener was stopped afterwards.
+
+Built-in proxy authentication removes `Proxy-Authorization` from forwarded
+requests but retains the plaintext password in `flow.metadata["proxyauth"]`.
+The probe confirmed both behaviors. A central raw-capture writer must scrub
+that metadata before persistence, retaining only an approved client identifier.
+
+Installed Desktop 1.40609.1 does not register proxy-login handlers. Electron
+42.10.0's `net.fetch` takes a per-request authentication path: adding only an
+`app.on("login")` handler does not cover its GitHub client. Chromium also ignores
+credentials embedded in manual proxy URLs. A transport-only local relay or
+tested Desktop packaging authentication wiring is still required; neither is
+implemented. Existing packaging does not modify `app.asar`.
+
+Source: [Electron fetch implementation](https://github.com/electron/electron/blob/v42.10.0/lib/browser/api/net-fetch.ts),
+[request authentication callback](https://github.com/electron/electron/blob/v42.10.0/lib/common/api/net-client-request.ts#L469),
+and [Chromium proxy credentials](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md#proxy-credentials-in-manual-proxy-settings).
