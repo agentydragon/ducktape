@@ -1,156 +1,440 @@
+/*
+ * One tint variable per card drives the dot, the spine and the meter fill, so a provider's
+ * urgency is stated once (in pace.ts) and shown consistently. Tints keep the GNOME
+ * extension's vocabulary — cool / ok / warn / hot / unknown / stale / error — because the
+ * panel icon and this page are read as the same signal.
+ */
 :root {
-  color: #e8ecf2;
-  background: #10141c;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light dark;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-sunken: #eef0f4;
+  --border: #dfe3ea;
+  --text: #10141c;
+  --muted: #5d6779;
+  --accent: #0d8f7c;
+  --track: #e2e6ee;
+  --tick: #7c8798;
+
+  --cool: #2f7fd4;
+  --ok: #0d8f7c;
+  --warn: #b8860b;
+  --hot: #d92b36;
+  --unknown: #8b95a6;
+  --stale: #8b95a6;
+  --error: #d92b36;
+
+  --shadow: 0 1px 2px rgb(16 20 28 / 6%), 0 8px 24px rgb(16 20 28 / 4%);
 }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e121a;
+    --surface: #171d28;
+    --surface-sunken: #131922;
+    --border: #2a3140;
+    --text: #e8ecf2;
+    --muted: #97a2b6;
+    --accent: #71d4c2;
+    --track: #2b3445;
+    --tick: #8492a8;
+
+    --cool: #5ea8f0;
+    --ok: #71d4c2;
+    --warn: #f4c95d;
+    --hot: #fb7185;
+    --unknown: #78849a;
+    --stale: #78849a;
+    --error: #fb7185;
+
+    --shadow: none;
+  }
+}
+
+.tint-cool {
+  --tint: var(--cool);
+}
+.tint-ok {
+  --tint: var(--ok);
+}
+.tint-warn {
+  --tint: var(--warn);
+}
+.tint-hot {
+  --tint: var(--hot);
+}
+.tint-unknown {
+  --tint: var(--unknown);
+}
+.tint-stale {
+  --tint: var(--stale);
+}
+.tint-error {
+  --tint: var(--error);
+}
+
 * {
   box-sizing: border-box;
 }
+
 body {
   margin: 0;
   min-width: 320px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
+
 main {
-  max-width: 1050px;
+  max-width: 1080px;
   margin: auto;
-  padding: 56px 28px;
+  padding: 48px 24px 64px;
 }
+
 .page-heading {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  border-bottom: 1px solid #2c3443;
-  padding-bottom: 28px;
-  margin-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 24px;
+  margin-bottom: 24px;
 }
+
 .eyebrow {
-  color: #71d4c2;
-  font-size: 0.75rem;
+  color: var(--accent);
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.15em;
-  margin: 0 0 8px;
-}
-h1 {
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   margin: 0;
-  letter-spacing: -0.05em;
 }
-.page-heading p:not(.eyebrow),
-footer,
+
+h1 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  margin: 8px 0 6px;
+}
+
+.lede,
+.empty,
+.aside,
+.freshness,
 .window-meta,
-.empty {
-  color: #98a4b8;
+footer {
+  color: var(--muted);
 }
+
+.lede {
+  margin: 0;
+}
+
 button {
-  background: #71d4c2;
+  background: var(--accent);
   border: 0;
-  border-radius: 8px;
-  color: #0b2422;
+  border-radius: 9px;
+  color: var(--bg);
   cursor: pointer;
   font: inherit;
-  font-weight: 750;
-  padding: 10px 15px;
+  font-weight: 700;
+  padding: 10px 16px;
+  white-space: nowrap;
 }
-button:hover {
-  background: #a0e5d8;
+
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 .providers {
+  /* Cards size to their own content: a provider that collapsed to one line should not leave a
+     card's worth of empty space because a neighbour has two windows. */
+  align-items: start;
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
 }
+
 .provider-card {
-  background: #171d28;
-  border: 1px solid #2c3443;
-  border-radius: 12px;
-  padding: 20px;
-}
-.provider-card header,
-.window-heading,
-.window-meta {
+  --tint: var(--unknown);
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 16px 18px 12px;
+  position: relative;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 12px;
-}
-h2 {
-  font-size: 1rem;
-  margin: 0 0 20px;
-  text-transform: capitalize;
-}
-.window + .window {
-  border-top: 1px solid #2c3443;
-  margin-top: 18px;
-  padding-top: 18px;
-}
-.window-heading {
-  font-size: 0.9rem;
-}
-.meter {
-  background: #2b3445;
-  border-radius: 999px;
-  height: 8px;
-  margin: 10px 0;
   overflow: hidden;
 }
-.meter span {
-  background: #71d4c2;
-  display: block;
-  height: 100%;
-  border-radius: inherit;
+
+/* Tinted spine: the card's state is legible before any text is read. */
+.provider-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--tint);
 }
-.meter.warning span {
-  background: #f4c95d;
+
+.provider-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-.meter.critical span {
-  background: #fb7185;
+
+h2 {
+  align-items: center;
+  display: flex;
+  font-size: 0.95rem;
+  gap: 8px;
+  letter-spacing: 0.01em;
+  margin: 0;
 }
-.window-meta,
-footer {
-  font-size: 0.78rem;
+
+.dot {
+  background: var(--tint);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tint) 22%, transparent);
+  height: 9px;
+  width: 9px;
 }
+
 .badges {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
-.status {
-  font-size: 0.72rem;
-  padding: 3px 7px;
+
+.badge {
   border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 650;
+  padding: 3px 8px;
+  white-space: nowrap;
 }
-.status.error,
-.notice,
+
+.badge.resets {
+  background: color-mix(in srgb, var(--cool) 16%, transparent);
+  color: var(--cool);
+}
+
+.badge.stale {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+.badge.error,
+.badge.over-plan {
+  background: color-mix(in srgb, var(--hot) 16%, transparent);
+  color: var(--hot);
+}
+
 .error-copy {
-  color: #fda4af;
+  color: var(--error);
+  font-size: 0.8rem;
+  margin: 0;
 }
-.status.error {
-  background: #4c1d2b;
-}
-.status.reset {
-  color: #a5d8ff;
-  background: #172554;
-}
-.known-expiries {
-  color: #98a4b8;
+
+.aside,
+.freshness,
+.empty {
   font-size: 0.78rem;
-  margin: -8px 0 16px;
+  margin: 0;
 }
+
+.window {
+  display: grid;
+  gap: 7px;
+}
+
+.window + .window {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.window-head {
+  align-items: baseline;
+  display: flex;
+  font-size: 0.85rem;
+  justify-content: space-between;
+}
+
+.window-label {
+  font-weight: 650;
+}
+
+.window-used {
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/*
+ * Fill = quota spent; tick = window elapsed; the hatched or shaded span between them is the
+ * pace deviation. Ahead of pace the overshoot is hatched over the fill, behind pace the
+ * surplus is a faint band of empty track.
+ */
+.meter {
+  background: var(--track);
+  border-radius: 999px;
+  height: 10px;
+  position: relative;
+}
+
+.meter-fill {
+  background: var(--tint);
+  border-radius: 999px;
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  top: 0;
+}
+
+.meter-deviation {
+  bottom: 0;
+  position: absolute;
+  top: 0;
+}
+
+.meter-deviation.ahead {
+  background: repeating-linear-gradient(135deg, rgb(255 255 255 / 42%) 0 2px, transparent 2px 5px);
+}
+
+.meter-deviation.behind {
+  background: color-mix(in srgb, var(--tint) 22%, transparent);
+}
+
+.meter-tick {
+  background: var(--tick);
+  border-radius: 2px;
+  bottom: -3px;
+  position: absolute;
+  top: -3px;
+  transform: translateX(-1px);
+  width: 2px;
+}
+
+.window-meta {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  gap: 10px;
+}
+
+.pace {
+  color: var(--tint);
+  font-weight: 700;
+}
+
+.exhausted {
+  color: var(--hot);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.over-plan-block {
+  background: color-mix(in srgb, var(--hot) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hot) 28%, transparent);
+  border-radius: 10px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.over-plan-headline {
+  color: var(--hot);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.over-plan-windows {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.burn {
+  background: var(--surface-sunken);
+  border-radius: 9px;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+}
+
+.burn.in-peak {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.burn-summary {
+  font-size: 0.78rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.burn-schedule {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  gap: 2px 10px;
+  margin: 0;
+}
+
+.burn-schedule span {
+  white-space: nowrap;
+}
+
+.freshness {
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
 .notice {
-  background: #351a25;
-  border: 1px solid #713044;
-  border-radius: 8px;
-  padding: 12px;
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
+  border-radius: 9px;
+  color: var(--error);
+  margin: 0 0 20px;
+  padding: 12px 14px;
 }
+
 footer {
+  font-size: 0.75rem;
   margin-top: 24px;
 }
+
 @media (max-width: 560px) {
   main {
-    padding: 28px 18px;
+    padding: 28px 16px 40px;
   }
+
   .page-heading {
-    align-items: start;
+    align-items: flex-start;
     flex-direction: column;
+  }
+
+  .providers {
+    grid-template-columns: 1fr;
   }
 }

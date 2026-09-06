@@ -6,8 +6,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import SecretStr
 
-from aiquota.models import AllQuotas
-from aiquota.render.view_model import AllQuotasView, to_view
+from aiquota.render.view_model import AllQuotasView
 
 
 def build_router(*, url: str | None, bearer_token: SecretStr | None) -> APIRouter:
@@ -24,7 +23,7 @@ def build_router(*, url: str | None, bearer_token: SecretStr | None) -> APIRoute
                     headers={"Authorization": f"Bearer {bearer_token.get_secret_value()}"},
                 )
             response.raise_for_status()
-            return to_view(AllQuotas.model_validate_json(response.content))
+            return AllQuotasView.model_validate_json(response.content)
         except httpx.HTTPStatusError as error:
             raise HTTPException(
                 status_code=502, detail=f"aiquota returned HTTP {error.response.status_code}"

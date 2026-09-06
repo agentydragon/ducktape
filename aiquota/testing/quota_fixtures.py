@@ -52,10 +52,7 @@ def _last_output_result(node: dict[str, Any]) -> FetchSuccess | FetchError:
     error = node.get("error")
     if error is not None:
         return FetchError(error=str(error))
-    return FetchSuccess(
-        windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
-        extra_spend=_extra_spend(node.get("extraSpend")),
-    )
+    return _success(node)
 
 
 def _last_success(node: object, *, now: datetime) -> SuccessfulProviderFetch | None:
@@ -65,12 +62,15 @@ def _last_success(node: object, *, now: datetime) -> SuccessfulProviderFetch | N
         raise ValueError("lastSuccess must be a mapping")
     age = node.get("ageSeconds")
     fetched_at = now - timedelta(seconds=float(age)) if age is not None else now
-    return SuccessfulProviderFetch(
-        fetched_at=fetched_at,
-        result=FetchSuccess(
-            windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
-            extra_spend=_extra_spend(node.get("extraSpend")),
-        ),
+    return SuccessfulProviderFetch(fetched_at=fetched_at, result=_success(node))
+
+
+def _success(node: dict[str, Any]) -> FetchSuccess:
+    return FetchSuccess(
+        windows=[window for window in (_window(node.get("short")), _window(node.get("long"))) if window],
+        extra_spend=_extra_spend(node.get("extraSpend")),
+        available_reset_credits=node.get("availableResetCredits"),
+        available_reset_credit_expiries=node.get("availableResetCreditExpiries", []),
     )
 
 

@@ -1,3 +1,4 @@
+load("@rules_python//python:defs.bzl", "py_binary")
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -16,4 +17,31 @@ filegroup(
     testonly = True,
     srcs = glob(["fixtures/*.yaml"]),
     visibility = ["//aiquota:__subpackages__"],
+)
+
+py_library(
+    name = "export_web_fixtures",
+    testonly = True,
+    srcs = ["export_web_fixtures.py"],
+    deps = [
+        ":quota_fixtures",
+        "//aiquota:models",
+        "//aiquota:pace",
+        "//aiquota/render:format_lib",
+        "//aiquota/render:view_model_lib",
+        "//util/bazel:runfiles",
+    ],
+)
+
+# Generates the browser dashboard's scenes and rendered-string goldens; run by
+# //aiquota/frontend's fixture genrule.
+py_binary(
+    name = "export_web_fixtures_bin",
+    testonly = True,
+    # keep: the scenario YAML the exporter reads from its own runfiles.
+    data = [":fixtures"],
+    imports = ["../.."],
+    main_module = "aiquota.testing.export_web_fixtures",
+    visibility = ["//aiquota/frontend:__pkg__"],
+    deps = [":export_web_fixtures"],
 )

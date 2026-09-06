@@ -6,6 +6,7 @@ from datetime import UTC, datetime, tzinfo
 from aiquota.models import AllQuotas, ExtraSpend, FetchSuccess, QuotaWindow, SuccessfulProviderFetch
 from aiquota.pace import compute_pace, is_exhausted
 from aiquota.render.format import (
+    display_used_percent,
     format_age,
     format_burn,
     format_duration,
@@ -198,16 +199,11 @@ def _active_windows_line(windows: list[QuotaWindow]) -> str:
 
 def _active_window_part(window: QuotaWindow) -> str:
     label = format_window_label(window)
-    return f"{label}: {_display_used_percent(window):>3d}% ↻ {format_duration(window.reset_seconds)}"
-
-
-def _display_used_percent(w: QuotaWindow) -> int:
-    rounded = round(w.used_percent)
-    return rounded if is_exhausted(w) else min(rounded, 99)
+    return f"{label}: {display_used_percent(window):>3d}% ↻ {format_duration(window.reset_seconds)}"
 
 
 def _window_row(w: QuotaWindow) -> _WindowRow:
-    used = f"{_display_used_percent(w):>3d}%"
+    used = f"{display_used_percent(w):>3d}%"
     if is_exhausted(w):
         return _WindowRow(
             label=format_window_label(w),

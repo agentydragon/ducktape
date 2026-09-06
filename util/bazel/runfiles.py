@@ -32,3 +32,16 @@ def get_required_path(rlocation: str) -> Path:
     if not (path := Path(resolved)).exists():
         raise RuntimeError(f"Resolved path does not exist: {path}")
     return path
+
+
+def find_path(rlocation: str) -> Path | None:
+    """Resolve a runfiles path, or None when the running target did not package it.
+
+    For an asset a library uses when its binary ships it and does without otherwise — the
+    absence is a valid state of the caller's contract, not a failure to report.
+    """
+    resolved = _get_runfiles().Rlocation(rlocation)
+    if not resolved:
+        return None
+    path = Path(resolved)
+    return path if path.exists() else None
