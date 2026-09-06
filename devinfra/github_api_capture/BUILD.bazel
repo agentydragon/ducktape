@@ -80,24 +80,6 @@ py_test(
 )
 
 py_library(
-    name = "block_cloud_github",
-    srcs = ["block_cloud_github.py"],
-    deps = ["@pypi//mitmproxy"],
-)
-
-py_test(
-    name = "test_block_cloud_github",
-    srcs = ["test_block_cloud_github.py"],
-    deps = [
-        ":block_cloud_github",
-        "//:conftest",
-        "@pypi//mitmproxy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "session_ws_metadata",
     srcs = ["session_ws_metadata.py"],
     visibility = ["//cluster/proxies/github_api_proxy:__pkg__"],

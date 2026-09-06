@@ -33,6 +33,13 @@ an explicit upstream trust bundle; otherwise normal system trust applies. Outer
 TLS always serves the dedicated proxy certificate, including for unexpected SNI;
 only inner destination TLS uses the interception CA. No TLS verification is disabled.
 
+The mitigation answers authenticated `POST` requests to
+`https://claude.ai/v1/code/github/batch-branch-status` with HTTP 429 and
+`Retry-After: 3600`; caller query parameters do not bypass the match. Other routes
+remain unaffected. Set `block_cloud_github_batch=false` centrally to disable it;
+host relays have no mitigation policy. Blocking can leave branch/PR status stale
+and is containment, not a repair of the upstream poller.
+
 CONNECT and absolute-form HTTP require Basic authentication inside outer TLS.
 CONNECT caches only the validated client ID on that client connection; independent
 HTTP requests authenticate separately. Missing/wrong/duplicate credentials and

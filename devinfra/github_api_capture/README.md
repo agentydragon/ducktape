@@ -1,6 +1,6 @@
 # GitHub request metadata
 
-`github-api-proxy-report` reads saved mitmproxy flows without replaying requests.
+`report.py` reads saved mitmproxy flows without replaying requests.
 The addon can also be loaded into a live mitmproxy process. It emits JSONL only
 for `api.github.com`, retaining timestamps, method, path without query parameters,
 user agent, exact query SHA-256, status, GitHub request ID, GraphQL error type/code,
@@ -21,6 +21,15 @@ alone cannot prove bypass traffic. Error metadata is retained even on HTTP 200.
 
 The source `github.flows` remains a raw capture containing sensitive unrelated
 application traffic. This metadata report does not make the source safe to publish.
+For offline inspection, load both retained report addons with mitmproxy:
+
+```bash
+mitmdump -q -nr /path/to/capture.flows \
+  -s devinfra/github_api_capture/report.py \
+  -s devinfra/github_api_capture/cloud_report.py
+```
+
+The host relay does not install mitmproxy or a local capture-report command.
 
 ## Cloud-mediated GitHub calls
 
@@ -37,8 +46,9 @@ to them. HTTP 200 likewise does not prove every upstream GitHub operation succee
 
 ## Optional incremental session WebSocket metadata
 
-`session_ws_metadata.py` is a **default-off, unwired addon**. It is not enabled by
-the capture service or report command. Explicit startup opt-in requires both
+As a standalone mitmproxy addon, `session_ws_metadata.py` is default-off.
+The central proxy runtime uses its metadata writer; the host relay and offline
+report command do not enable live observation. Standalone startup opt-in requires both
 `record_cloud_session_ws=true` and `cloud_session_ws_events=<private JSONL path>`
 when loading this script with mitmproxy. Changing these options requires restart;
 this is not an instruction to restart an existing capture.
@@ -80,14 +90,14 @@ this addon nor its tests activate live capture, modify messages, or contact an a
 normal Claude Desktop executable, desktop actions, and OAuth URI launch routes.
 The application profile and sign-in state stay in their normal locations.
 
-### Remote mode
+### Authenticated relay
 
-`ducktape.githubApiProxy.remote.enable` defaults to `false`. When enabled, the
-same `github-api-proxy.service` runs Squid as a transport-only relay, replacing
-local interception. It authenticates to one HTTPS parent, verifies the parent's
+`ducktape.githubApiProxy.enable` defaults to `false`. When enabled,
+`github-api-proxy.service` runs Squid as a transport-only relay and requires the
+`remote` parent, credential and public CA settings. It authenticates to one HTTPS parent, verifies the parent's
 hostname against the standard CA bundle, and never falls back to an origin.
 Only the central service intercepts or captures. The relay has no disk/content
-cache, access/flow logs, or signing key. Local capture reports are not installed.
+cache, access/flow logs, signing key, or local mitigation mode.
 
 `remote.credentialsFile` must name an owner-only runtime file, not a Nix-store
 path. Its JSON object contains exactly one client identifier matching
@@ -147,9 +157,9 @@ the launcher never downloads a replacement. The cluster Certificate owner is
 
 ### Migration and retirement
 
-Do not activate remote mode until the central authenticated readiness and real
-application route are verified. Set `blockCloudGithubBatch = false` locally;
-central interception owns any remaining mitigation policy.
+Do not activate the relay until the central authenticated readiness and real
+application route are verified. Mitigation is controlled only by the
+[central proxy configuration](../../cluster/proxies/github_api_proxy/README.md).
 
 Both hosts use NixOS-inline Home Manager: the normal deployment owner is
 `nixosConfigurations.<host>`, not a standalone `home-manager switch`. Build and
@@ -162,8 +172,9 @@ service overrides (including the temporary `80`/`90` overrides), profile bridge,
 unused local CA signing keys, and diagnostic Nix GC roots. Verify exact targets
 and get approval before deletion. Preserve raw investigation captures and the
 normal Desktop profile/sign-in. Verify that the single service now runs only the
-transport relay and no old local MITM process remains. Once all actual consumers
-have migrated, remove the local-interception mode and its unused dependencies.
+transport relay and no old local MITM process remains. The source module no longer
+supports local interception; retained runtime overrides must still be retired
+explicitly after their consumers migrate.
 
 The known wyrm2 override targets are
 `~/.config/systemd/user/github-api-proxy.service.d/90-cloud-github-block.conf`

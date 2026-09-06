@@ -1,32 +1,7 @@
-# Request-level visibility into what Claude Code and Claude Desktop send to the
-# GitHub API.
-#
-# The connection recorder (<../../nixos/modules/github-api-recorder.nix>) counts
-# TCP connections, which cannot distinguish a process that opens one socket and
-# sends three requests from one that opens one socket and sends three thousand.
-# Both products keep HTTP/2 connections alive; connection counts alone cannot
-# establish either one's contribution to the shared account quota.
-#
-# CLEANUP(added 2026-09-04): remove once that note names the consumers and the
-# upstream issues are resolved.
-#
-# `claude-proxied` opts a CLI session into capture. Hosts may select desktopPackage
-# to route the normal Desktop command, launcher actions, and URI callbacks through
-# the proxy while retaining the normal app profile.
-#
-# In local mode everything is decrypted, deliberately. Earlier versions decrypted only
-# api.github.com; that narrowness blinded this instrument and the connection
-# recorder in the same place at the same time, and hours of "nothing else touches
-# the API" turned out to mean "nothing else touches the four addresses we happened
-# to list". Operator's call, on the operator's own machine: capture everything and
-# filter at analysis time. Remote mode only transports traffic to the central
-# interceptor and never writes a local raw capture. In local mode, Anthropic API traffic from a proxied
-# session passes through the MITM and lands in the flow file. Always-proxied hosts
-# accumulate this sensitive raw capture continuously, without size/age rotation.
-#
-# Request records preserve explicit GraphQL cost when the response includes it.
-# Missing cost is unknown. The account-wide `x-ratelimit-used` header is not a
-# request cost; differences also include concurrent callers and possible penalties.
+# Transport-only relay to the central GitHub-observation proxy. Interception,
+# capture and mitigation policy belong to the central service.
+# `claude-proxied` opts a CLI session in; desktopPackage covers the normal Desktop
+# command, launcher actions and URI callbacks without changing the app profile.
 {
   config,
   lib,
@@ -36,11 +11,8 @@
 }:
 let
   cfg = config.ducktape.githubApiProxy;
-  confDir = "${config.xdg.configHome}/github-api-proxy";
   stateDir = "${config.xdg.stateHome}/github-api-proxy";
-  captureFile = "${stateDir}/github.flows";
-  caCert =
-    if cfg.remote.enable then "${cfg.remote.caCertificate}" else "${confDir}/mitmproxy-ca-cert.pem";
+  caCert = "${cfg.remote.caCertificate}";
   proxyUrl = "http://127.0.0.1:${toString cfg.port}";
   desktopNssDir = "${stateDir}/claude-desktop/nssdb";
   rawDesktop = ducktapePackages.claude-desktop;
@@ -122,18 +94,15 @@ let
 in
 {
   options.ducktape.githubApiProxy = {
-    enable = lib.mkEnableOption "local intercepting proxy for GitHub API request accounting";
-
-    blockCloudGithubBatch = lib.mkEnableOption "temporary mitigation for cloud GitHub batch polling fan-out";
+    enable = lib.mkEnableOption "transport-only relay to the central GitHub API proxy";
 
     port = lib.mkOption {
       type = lib.types.port;
       default = 8788;
-      description = "Loopback port shared by local capture and remote relay modes.";
+      description = "Loopback relay port.";
     };
 
     remote = {
-      enable = lib.mkEnableOption "a transport-only relay to the central HTTPS forward proxy";
       host = lib.mkOption {
         type = lib.types.strMatching "[A-Za-z0-9.-]+";
         description = "HTTPS parent hostname, verified against its TLS certificate.";
@@ -164,97 +133,44 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = !(cfg.remote.enable && cfg.blockCloudGithubBatch);
-        message = "Remote GitHub proxy mode requires blockCloudGithubBatch=false; central policy owns interception.";
-      }
-      {
-        assertion = !cfg.remote.enable || !(lib.hasPrefix builtins.storeDir cfg.remote.credentialsFile);
+        assertion = !(lib.hasPrefix builtins.storeDir cfg.remote.credentialsFile);
         message = "GitHub proxy credentials must be a runtime secret outside the Nix store.";
       }
     ];
     systemd.user.services.github-api-proxy = {
-      Unit.Description =
-        if cfg.remote.enable then
-          "Transport relay to the central GitHub API proxy"
-        else
-          "Intercepting proxy for GitHub API request accounting";
+      Unit.Description = "Transport relay to the central GitHub API proxy";
       Install.WantedBy = [ "default.target" ];
-      Service =
-        if cfg.remote.enable then
-          {
-            Type = "simple";
-            UMask = "0077";
-            RuntimeDirectory = "github-api-relay";
-            RuntimeDirectoryMode = "0700";
-            ExecStartPre = lib.escapeShellArgs [
-              "${pkgs.python3}/bin/python3"
-              "${../../../devinfra/github_api_capture/relay_config.py}"
-              "--host"
-              cfg.remote.host
-              "--port"
-              (toString cfg.remote.port)
-              "--listen-port"
-              (toString cfg.port)
-              "--credentials-file"
-              cfg.remote.credentialsFile
-              "--ca-bundle"
-              "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-              "--output"
-              relayConfig
-            ];
-            ExecStart = "${pkgs.squid}/bin/squid -N -f ${relayConfig}";
-            # Squid parser/fatal diagnostics can echo its secret-bearing cache_peer.
-            # Health is the authenticated launcher probe plus the unit exit status.
-            StandardOutput = "null";
-            StandardError = "null";
-            LimitCORE = 0;
-            NoNewPrivileges = true;
-            Restart = "on-failure";
-            RestartSec = 10;
-          }
-        else
-          {
-            Type = "simple";
-            UMask = "0077";
-            ExecStartPre = toString (
-              pkgs.writeShellScript "github-api-proxy-prepare" ''
-                set -euo pipefail
-                ${pkgs.coreutils}/bin/install -d -m 0700 -- ${lib.escapeShellArg stateDir} ${lib.escapeShellArg confDir}
-                # UMask does not restrict an existing capture.
-                if [ -f ${lib.escapeShellArg captureFile} ]; then
-                  ${pkgs.coreutils}/bin/chmod 0600 -- ${lib.escapeShellArg captureFile}
-                fi
-              ''
-            );
-            # No --allow-hosts: everything is decrypted. Flows land in a file rather
-            # than stdout so `mitmdump -nr` can replay and aggregate them afterwards.
-            ExecStart = lib.escapeShellArgs (
-              [
-                "${pkgs.mitmproxy}/bin/mitmdump"
-                "--listen-host"
-                "127.0.0.1"
-                "--listen-port"
-                (toString cfg.port)
-                "--set"
-                "confdir=${confDir}"
-                "-w"
-                # + preserves existing flows when the service restarts.
-                "+${captureFile}"
-                "--set"
-                "flow_detail=0"
-              ]
-              ++ lib.optionals cfg.blockCloudGithubBatch [
-                "-s"
-                (toString ../../../devinfra/github_api_capture/block_cloud_github.py)
-                "--set"
-                "block_cloud_github_batch=true"
-                "--set"
-                "cloud_github_block_events=${stateDir}/cloud-github-block-events.jsonl"
-              ]
-            );
-            Restart = "on-failure";
-            RestartSec = 10;
-          };
+      Service = {
+        Type = "simple";
+        UMask = "0077";
+        RuntimeDirectory = "github-api-relay";
+        RuntimeDirectoryMode = "0700";
+        ExecStartPre = lib.escapeShellArgs [
+          "${pkgs.python3}/bin/python3"
+          "${../../../devinfra/github_api_capture/relay_config.py}"
+          "--host"
+          cfg.remote.host
+          "--port"
+          (toString cfg.remote.port)
+          "--listen-port"
+          (toString cfg.port)
+          "--credentials-file"
+          cfg.remote.credentialsFile
+          "--ca-bundle"
+          "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+          "--output"
+          relayConfig
+        ];
+        ExecStart = "${pkgs.squid}/bin/squid -N -f ${relayConfig}";
+        # Squid parser/fatal diagnostics can echo its secret-bearing cache_peer.
+        # Health is the authenticated launcher probe plus the unit exit status.
+        StandardOutput = "null";
+        StandardError = "null";
+        LimitCORE = 0;
+        NoNewPrivileges = true;
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
     };
 
     home.packages = [
@@ -266,14 +182,6 @@ in
       '')
 
       desktopLauncher
-    ]
-    ++ lib.optionals (!cfg.remote.enable) [
-      # Offline JSONL metadata only; no request/response bodies or auth headers.
-      (pkgs.writeShellScriptBin "github-api-proxy-report" ''
-        exec ${pkgs.mitmproxy}/bin/mitmdump -q -nr ${lib.escapeShellArg captureFile} \
-          -s ${../../../devinfra/github_api_capture/report.py} \
-          -s ${../../../devinfra/github_api_capture/cloud_report.py} "$@"
-      '')
     ];
   };
 }

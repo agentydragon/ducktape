@@ -23,7 +23,6 @@
   ducktape.githubApiProxy = {
     enable = true;
     remote = {
-      enable = true;
       host = "github-proxy.allegedly.works";
       port = 8443;
       credentialsFile = config.sops.secrets.github_api_proxy_credentials.path;
