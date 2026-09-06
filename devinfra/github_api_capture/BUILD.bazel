@@ -53,3 +53,35 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "session_ws_metadata",
+    srcs = ["session_ws_metadata.py"],
+    visibility = ["//cluster/proxies/github_api_proxy:__pkg__"],
+    deps = ["@pypi//mitmproxy"],
+)
+
+py_test(
+    name = "test_session_ws_metadata",
+    srcs = ["test_session_ws_metadata.py"],
+    deps = [
+        ":session_ws_metadata",
+        "//:conftest",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_ws_metadata_integration",
+    srcs = ["test_session_ws_metadata_integration.py"],
+    deps = [
+        ":session_ws_metadata",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

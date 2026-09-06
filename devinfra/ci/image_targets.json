@@ -109,6 +109,11 @@
       "test": "//cluster/exporters/github_graphql_rate_limit/...",
       "registry": "forgejo"
     },
+    "github-api-proxy": {
+      "target": "//cluster/proxies/github_api_proxy:image",
+      "test": "//cluster/proxies/github_api_proxy:tests",
+      "registry": "forgejo"
+    },
     "haku-console": {
       "target": "//haku/console:server_image",
       "test": "//haku/console/..."
