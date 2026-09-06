@@ -101,9 +101,13 @@ a liveness probe that restarts and clears this evidence-loss signal. Investigate
 storage and incomplete captures before a controlled restart. Established
 connections are not terminated by a readiness change; the exact-route mitigation
 and metrics remain active. The rule set separately detects capture-write errors,
-failed scrapes, missing targets and low reported volume space. Validate actual
-storage-driver metrics and notification delivery during rollout, not just rule
-installation.
+failed scrapes, missing targets, a high collection physical storage budget and
+missing budget inputs. The budget compares deduplicated SeaweedFS normal-volume
+bytes (including replicas) with the PVC storage request; it does not measure free
+space or guarantee writes. Partial volume-server telemetry loss can undercount
+it. See the [storage metric investigation](../../../debug/github_graphql_exhaustion/central_capture_storage.md)
+for accounting and coverage limits. Validate retained metrics and notification
+delivery during rollout, not just rule installation.
 
 Reloader watches the mounted configuration and Secrets. Certificate renewal or
 credential rotation therefore causes a Recreate rollout; capture appends across

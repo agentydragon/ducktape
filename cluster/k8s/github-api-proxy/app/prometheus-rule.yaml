@@ -41,18 +41,58 @@ spec:
               No proxy scrape result has been retained for five minutes. Check
               Pod discovery, the PodMonitor, Alloy collection and remote write.
               Missing telemetry cannot establish a healthy proxy or quiet quota.
-        - alert: GitHubProxyCaptureStorageLow
+        - record: github_api_proxy:capture_collection_physical_storage_budget:ratio
           expr: |
-            kubelet_volume_stats_available_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
-            /
-            kubelet_volume_stats_capacity_bytes{namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"}
-            < 0.15
+            sum by (namespace, persistentvolumeclaim) (
+              label_replace(
+                sum by (collection) (
+                  max by (collection, instance) (
+                    SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal"}
+                  )
+                ),
+                "volumename", "$1", "collection", "(.+)"
+              )
+              * on (volumename) group_left(namespace, persistentvolumeclaim)
+                max by (volumename, namespace, persistentvolumeclaim) (
+                  kube_persistentvolumeclaim_info{
+                    namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture",
+                    storageclass="seaweedfs-ovh"
+                  }
+                )
+            )
+            / on (namespace, persistentvolumeclaim)
+              (
+                max by (namespace, persistentvolumeclaim) (
+                  kube_persistentvolumeclaim_resource_requests_storage_bytes{
+                    namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
+                  }
+                ) > 0
+              )
+        - alert: GitHubProxyCaptureCollectionStorageBudgetHigh
+          expr: github_api_proxy:capture_collection_physical_storage_budget:ratio > 0.85
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "Central GitHub proxy capture storage reports less than 15% available"
+            summary: "Central GitHub proxy collection exceeds 85% of its physical storage budget"
             description: >
-              Captures append without automatic deletion. Check the storage
-              driver's reported capacity and arrange expansion or explicit
-              evidence retention; do not delete investigation files blindly.
+              Reported normal-volume bytes, including replicas, exceed 85% of
+              the PVC storage request. This is an operational budget, not free
+              space or guaranteed write capacity. Captures append without
+              automatic deletion. Check volume-server telemetry and arrange
+              explicit retention or expansion; preserve investigation evidence.
+        - alert: GitHubProxyCaptureStorageBudgetInputsMissing
+          expr: |
+            absent(github_api_proxy:capture_collection_physical_storage_budget:ratio{
+              namespace="github-api-proxy",persistentvolumeclaim="github-api-proxy-capture"
+            })
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Central GitHub proxy collection storage budget cannot be observed"
+            description: >
+              The collection byte metric, PVC-to-collection mapping or positive
+              PVC storage request is missing. Check SeaweedFS volume-server
+              scrapes and kube-state-metrics. Absence is not zero usage. Partial
+              volume-server loss can still undercount a present budget ratio.
