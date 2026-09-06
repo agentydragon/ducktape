@@ -80,17 +80,23 @@ def test_hidden_model_aliases_target_served_models() -> None:
 
 # The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so it must agree
 # with the entry's own wiring: `litellm_params.model`'s prefix selects the upstream handler and
-# `model_info.mode` the endpoint. `ant-messages` and `oai-responses` name that wire exactly, so
-# they pin the prefix too -- an entry named for one but wired to another provider claims a wire
-# it does not speak. `oai-chat`/`oai-embeddings` pin only the mode: mistral honours the name,
-# while the google entries are the known misnomer model_rosters.py records, so requiring an
-# OpenAI-wire upstream here would reject the config as it stands.
-_NAMED_UPSTREAM = {ApiShape.ANT_MESSAGES: "anthropic", ApiShape.OAI_RESPONSES: "openai"}
+# `model_info.mode` the endpoint. Every shape whose wire has exactly one provider prefix serving
+# it here pins that prefix, so an entry cannot claim a wire it does not speak -- the check that
+# catches naming a Google-wire entry `oai-chat`. `oai-chat` itself is the open one: any
+# OpenAI-compatible chat provider satisfies it (mistral today, groq or another tomorrow), so it
+# pins the mode and only rules out the prefixes another shape already names.
+_NAMED_UPSTREAM = {
+    ApiShape.ANT_MESSAGES: "anthropic",
+    ApiShape.OAI_RESPONSES: "openai",
+    ApiShape.GOOG_GENERATE: "gemini",
+    ApiShape.GOOG_EMBED: "gemini",
+}
 _SHAPE_MODE = {
     ApiShape.ANT_MESSAGES: "chat",
     ApiShape.OAI_CHAT: "chat",
     ApiShape.OAI_RESPONSES: "responses",
-    ApiShape.OAI_EMBEDDINGS: "embedding",
+    ApiShape.GOOG_GENERATE: "chat",
+    ApiShape.GOOG_EMBED: "embedding",
 }
 
 

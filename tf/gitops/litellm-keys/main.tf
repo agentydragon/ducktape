@@ -100,8 +100,8 @@ locals {
   embedding_client_models = [
     # Compatibility alias for public-coder-agent's existing durable index.
     "gemini-embedding-2",
-    "google/oai-embeddings/gemini-embedding-2",
-    "google/oai-embeddings/gemini-embedding-001",
+    "google/goog-embed/gemini-embedding-2",
+    "google/goog-embed/gemini-embedding-001",
   ]
   # Google Gemini models (GEMINI_MODELS in model_rosters.py) fronted through the
   # `gemini/` provider. Current generation only -- see that module for why the
@@ -109,18 +109,18 @@ locals {
   # minor version are excluded. Consumed by the laptop gemini-claude alias and
   # public-coder-agent.
   gemini_client_models = [
-    "google/oai-chat/gemini-3.7-flash",
-    "google/oai-chat/gemini-3.5-flash-lite",
+    "google/goog-generate/gemini-3.7-flash",
+    "google/goog-generate/gemini-3.5-flash-lite",
   ]
   # Shared by agents only through an expiring Haku Console Kubernetes grant. This
   # is intentionally an exact, cheap-model-only set rather than a provider-wide
   # prefix or wildcard. The Ollama names cover every model/context/protocol variant
   # emitted by the main proxy config; Mistral is the API-key-verified chat roster.
   cheap_experiments_models = [
-    "google/oai-chat/gemini-3.7-flash",
-    "google/oai-chat/gemini-3.5-flash-lite",
-    "google/oai-embeddings/gemini-embedding-2",
-    "google/oai-embeddings/gemini-embedding-001",
+    "google/goog-generate/gemini-3.7-flash",
+    "google/goog-generate/gemini-3.5-flash-lite",
+    "google/goog-embed/gemini-embedding-2",
+    "google/goog-embed/gemini-embedding-001",
     "mistral/oai-chat/codestral-2508",
     "mistral/oai-chat/codestral-latest",
     "mistral/oai-chat/magistral-medium-latest",
@@ -451,7 +451,7 @@ resource "litellm_team" "gemini_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["google/oai-chat/gemini-3.5-flash-lite"]
+        fallback_models = ["google/goog-generate/gemini-3.5-flash-lite"]
       }
     ]
   }

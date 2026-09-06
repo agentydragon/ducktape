@@ -24,8 +24,8 @@ in
 import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenEnvVar = "GEMINI_LITELLM_KEY";
-  model = "google/oai-chat/gemini-3.7-flash";
-  haikuModel = "google/oai-chat/gemini-3.5-flash-lite";
+  model = "google/goog-generate/gemini-3.7-flash";
+  haikuModel = "google/goog-generate/gemini-3.5-flash-lite";
   disallowedTools = [
     "WebFetch"
     "WebSearch"
