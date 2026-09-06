@@ -37,6 +37,7 @@ let
   cfg = config.ducktape.githubApiProxy;
   confDir = "${config.xdg.configHome}/github-api-proxy";
   stateDir = "${config.xdg.stateHome}/github-api-proxy";
+  captureFile = "${stateDir}/github.flows";
   caCert = "${confDir}/mitmproxy-ca-cert.pem";
   proxyUrl = "http://127.0.0.1:${toString cfg.port}";
   desktopNssDir = "${stateDir}/claude-desktop/nssdb";
@@ -135,7 +136,17 @@ in
       Install.WantedBy = [ "default.target" ];
       Service = {
         Type = "simple";
-        ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p ${stateDir} ${confDir}";
+        UMask = "0077";
+        ExecStartPre = toString (
+          pkgs.writeShellScript "github-api-proxy-prepare" ''
+            set -euo pipefail
+            ${pkgs.coreutils}/bin/install -d -m 0700 -- ${lib.escapeShellArg stateDir} ${lib.escapeShellArg confDir}
+            # UMask does not restrict an existing capture.
+            if [ -f ${lib.escapeShellArg captureFile} ]; then
+              ${pkgs.coreutils}/bin/chmod 0600 -- ${lib.escapeShellArg captureFile}
+            fi
+          ''
+        );
         # No --allow-hosts: everything is decrypted. Flows land in a file rather
         # than stdout so `mitmdump -nr` can replay and aggregate them afterwards.
         ExecStart = lib.escapeShellArgs [
@@ -148,7 +159,7 @@ in
           "confdir=${confDir}"
           "-w"
           # + preserves existing flows when the service restarts.
-          "+${stateDir}/github.flows"
+          "+${captureFile}"
           "--set"
           "flow_detail=0"
         ];
@@ -167,7 +178,7 @@ in
 
       # Offline JSONL metadata only; no request/response bodies or auth headers.
       (pkgs.writeShellScriptBin "github-api-proxy-report" ''
-        exec ${pkgs.mitmproxy}/bin/mitmdump -q -nr ${stateDir}/github.flows \
+        exec ${pkgs.mitmproxy}/bin/mitmdump -q -nr ${lib.escapeShellArg captureFile} \
           -s ${../../../devinfra/github_api_capture/report.py} "$@"
       '')
     ];
