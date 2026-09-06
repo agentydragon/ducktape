@@ -15,6 +15,7 @@ use super::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
 };
+use super::imports_runtime::source_chunk_import_for_target;
 use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
 };
@@ -878,6 +879,20 @@ fn lower_single_plan(inputs: LowerSinglePlanInputs<'_>) -> Result<LoweredModuleO
         let mut cache = source_import_cache
             .lock()
             .expect("source_import_cache poisoned");
+        // Imports peeled with their atomic unit still use source-chunk URLs.
+        // Rebase those before adding imports already emitted for this target.
+        for item in &mut body {
+            if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+                let source = source_chunk_import_for_target(
+                    &mut cache,
+                    chunk_id,
+                    entry_file,
+                    &plan.target_file,
+                    &str_value(&import.src),
+                )?;
+                set_str_value(&mut import.src, source);
+            }
+        }
         source_chunk_imports_for_moved_body(
             &mut cache,
             chunk_id,
