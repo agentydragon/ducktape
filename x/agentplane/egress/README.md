@@ -23,7 +23,8 @@ bbr test //x/agentplane/egress/...
   globally reachable, and pinned so the dial goes to the address checked.
 - `informer.py`: list-and-watch of the five kinds into the `Index`, and the binding status
   writes.
-- `rules_api.py`: the stable `egress.agentplane.internal/v1/rules` API and the narrow
+- `rules_api.py`: the agent-facing
+  `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   Sandbox-name/UID-to-redacted-projection boundary; `addon.py` is only its current authenticated
   proxy transport as well as the mitmproxy gate for ordinary egress. `decisions.py` is the ring and
   JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
@@ -125,20 +126,22 @@ both appends the key to the local outgoing gRPC context and retains it in the ne
 
 ## Why the rules API remains in the central process
 
-The API now has a transport-neutral projection boundary, but a separate Deployment would add more
-special machinery than it removes today. The stable hostname is deliberately non-DNS-routable, and
-the existing zero-header `GET` learns its identity from the authenticated CONNECT hop. Routing that
-same request to an ordinary destination would require a new hostname-to-Service mapping plus either
-sidecar/proxy-specific Authorization injection or a newly required, pre-known credential
-placeholder. The former recreates the special case at a less trustworthy boundary; the latter
-changes the bootstrap request contract. An independently watching service could also report a
-different informer snapshot from the proxy that is authoritatively enforcing the policies.
+The API has a transport-neutral projection boundary, but a separate Deployment would add more
+special machinery than it removes today. Agents address the current staging proxy Service at
+`https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
+existing HTTP(S) proxy, exactly as they address ordinary HTTPS destinations. The central proxy
+recognizes that host before policy evaluation or DNS resolution and dispatches it locally to
+`RulesApi`; it must never resolve or dial its own Service backend, which would recurse through the
+same proxy Service.
 
-For now, the proxy transports the request to `RulesApi`, which accepts only the already-proven
-Sandbox name and UID and resolves them again against the proxy's current enforcement index. A future
-service can reuse `RulesProjection.for_sandbox` after destination-side `SandboxPrincipal`
-authentication when an ordinary non-recursive route and authentication bootstrap exist. No
-`egress-view` hostname or integration-app authority is introduced.
+The zero-header `GET` learns its identity only from the authenticated CONNECT hop. `RulesApi`
+receives the proven Sandbox name and UID and resolves them again against the proxy's current
+enforcement index; request headers and bodies are not identity inputs. Routing the request to a
+separate backend would require new authentication bootstrap machinery, such as special
+Authorization injection or a pre-known credential placeholder, and could report an informer
+snapshot different from the proxy actually enforcing the policies. Neither is justified here.
+No sidecar credential, `egress-view` hostname, integration-app authority, or LLM/Action branch is
+introduced.
 
 ## ServiceAccount permissions
 

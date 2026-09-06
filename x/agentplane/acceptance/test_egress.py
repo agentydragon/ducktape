@@ -47,7 +47,7 @@ PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # endpoint reports each target's header, the shape of its value and its scheme, so an agent does not
 # have to guess that GitHub wants `Bearer` -- both harnesses sent the placeholder bare and were
 # refused when it did not.
-RULES_URL = "https://egress.agentplane.internal/v1/rules"
+RULES_URL = "https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.

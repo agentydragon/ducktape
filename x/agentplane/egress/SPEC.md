@@ -76,8 +76,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 ## Upstream address
 
 - **A sandbox can read the rules that apply to it**, at
-  `https://egress.agentplane.internal/v1/rules` through the same proxy it sends everything else
-  through. The answer names the sandbox and the policies an active binding grants it: each rule's
+  `https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
+  existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
+  sandbox and the policies an active binding grants it: each rule's
   hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
   `description`, and every target — which is what a client needs to build the value and to know whose
   credential it is spending, since a header name and a placeholder leave open both whether the value
@@ -87,12 +88,14 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   does not appear here until someone writes it in.
   The stable API and projection are isolated behind a narrow rules boundary that accepts only the
   already-proven Sandbox name and UID, then resolves that exact UID against the same current index
-  the proxy enforces. Request headers and bodies are not identity inputs. The name is reserved and
-  resolves nowhere: nothing is dialled for it, no rule can admit it, and identity is proved at the
-  CONNECT exactly as it is for egress, because `Proxy-Authorization` is hop-by-hop and a plain
-  request would arrive with none. The central process remains the backend until the unchanged,
-  zero-header bootstrap request can reach an ordinary destination without a routing loop or a new
-  sidecar/proxy header-injection special case; the integration app is not in this path.
+  the proxy enforces. Request headers and bodies are not identity inputs. Although the public
+  agent-facing host is the proxy's standard Kubernetes Service DNS name, the central proxy matches
+  it before policy evaluation or resolution and dispatches it locally to `RulesApi`: it never
+  resolves or dials its own Service backend, so this route cannot recurse. Identity is proved at the
+  CONNECT exactly as it is for egress, because `Proxy-Authorization` is hop-by-hop and the inner
+  zero-header request carries none. The central process remains the backend until that unchanged
+  bootstrap request can reach a separate destination without a routing loop or new credential or
+  Authorization-injection machinery; the integration app and the LLM/Action paths are not involved.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;

@@ -19,7 +19,8 @@ thread_presets:
     instructions: >-
       Work as a public-repository coding agent. Keep private cluster data out of the workspace and
       outputs. Outbound access is policy-controlled; discover the GitHub credential placeholder and
-      its required presentation from https://egress.agentplane.internal/v1/rules rather than asking
+      its required presentation from
+      https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules rather than asking
       for or printing a credential.
 sandbox_presets:
   public-coder:

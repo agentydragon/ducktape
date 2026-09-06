@@ -23,6 +23,7 @@ def api() -> RulesApi:
 def test_the_stable_host_and_response_contract_are_owned_by_the_api_boundary() -> None:
     rules = api()
 
+    assert HOST == "agentplane-egress.agentplane-staging.svc.cluster.local"
     assert rules.serves(HOST.upper())
     response = rules.request(PATH, sandbox_name="sb", sandbox_uid="sb-uid")
 

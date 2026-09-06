@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from x.agentplane.egress.agent_view import AgentEgressView, agent_view
 from x.agentplane.egress.policy import Index
 
-HOST = "egress.agentplane.internal"
+HOST = "agentplane-egress.agentplane-staging.svc.cluster.local"
 PATH = "/v1/rules"
 
 
@@ -46,7 +46,7 @@ class RulesResponse:
 
 
 class RulesApi:
-    """The stable host/path contract over a transport-neutral projection backend."""
+    """The locally dispatched Service-DNS host/path contract over the projection backend."""
 
     def __init__(self, projection: RulesProjection) -> None:
         self._projection = projection

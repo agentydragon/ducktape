@@ -153,7 +153,7 @@ class ProxyUnderTest:
         body: bytes | None = None,
         proxy_port: int | None = None,
     ) -> Response:
-        """A request to the stable rules name, answered by its in-process API backend."""
+        """A request to the Service DNS rules name, locally answered by the central proxy."""
         async with (
             aiohttp.ClientSession() as session,
             session.request(
@@ -713,11 +713,11 @@ if __name__ == "__main__":
 
 
 async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
-    """The placeholder a sandbox must present is knowable from inside the sandbox, over the one
-    listener it can reach, under the identity it already proves for every request."""
+    """The Service DNS request is locally dispatched under the existing hop identity, never dialled."""
     response = await proxy.get_rules(RULES_PATH)
 
     assert response.status == 200, response.body
+    assert proxy.upstream.requests == [], "the central proxy forwarded its locally served rules route"
     view = json.loads(response.body)
     assert view["sandbox"] == SANDBOX_A
     credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
@@ -763,8 +763,8 @@ async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: 
     assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_MISSING}"
 
 
-async def test_the_proxys_own_name_serves_nothing_else(proxy: ProxyUnderTest) -> None:
-    """One path, so the reserved name cannot become an accidental surface."""
+async def test_the_proxys_own_service_name_serves_nothing_else(proxy: ProxyUnderTest) -> None:
+    """One local path, so the proxy Service name cannot become an accidental surface."""
     response = await proxy.get_rules("/")
 
     assert response.status == 404, response.body

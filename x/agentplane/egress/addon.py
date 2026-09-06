@@ -192,9 +192,9 @@ class EgressAddon:
         flow.response = _refusal(DenyReason.UNAVAILABLE)
         request = flow.request
         if self._rules_api.serves(request.host):
-            # The stable bootstrap name is not DNS-routable. Nothing leaves the proxy process, so
-            # there is no egress decision or upstream dial to record; RulesApi owns the API and
-            # projection contract rather than this transport hook.
+            # The agent addresses the proxy's Kubernetes Service DNS name through its existing
+            # HTTP(S) proxy. Dispatch it locally before policy evaluation or resolution: the central
+            # proxy must never resolve or dial its own Service and recurse back into itself.
             if request.method == CONNECT:
                 await self._admit_rules_tunnel(flow)
             else:
