@@ -112,3 +112,18 @@ py_library(
         "//finance/augur/sim/engine:jax_engine",
     ],
 )
+
+py_library(
+    name = "frozen_rollout",
+    srcs = ["frozen_rollout.py"],
+    deps = [
+        ":case",
+        ":simulation_result",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//pytest",
+    ],
+)
