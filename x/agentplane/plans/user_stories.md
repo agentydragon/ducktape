@@ -21,8 +21,11 @@ Standing under it:
   exact origins or namespaces plus verbs, a duration and a rationale, manual approval under the
   agent policy, `get_tool_call` for the long poll, `withdraw_tool_call`. The agent working on
   Agentplane lives this story from the agent's side every time it needs a key it does not hold.
-- [`async_approvals.md`](async_approvals.md): submission never blocks, no expiry, the decision
-  arrives as a thread input, one envelope for every tool, a batcher so five clicks are one input.
+- The standalone Action Service landed in PR
+  [#5700](https://github.com/agentydragon/ducktape/pull/5700): one invariant ActionRequest, a separate
+  human Decision, automatic at-most-one Execution, caller-own/operator-all reads, and no blind retry.
+- [`async_approvals.md`](async_approvals.md): submission remains non-blocking; the open work is
+  draining the landed pending outbox and delivering redacted Decision/result events to a Thread.
 - [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
   express the boundary, brokered credential where it cannot, agent-requested grants, and the
   revocation gate (placeholder token, substitution only while the ledger and the apiserver agree).
@@ -44,21 +47,17 @@ Standing under it:
 
 Missing:
 
-- **A settled operation/approval contract.** A sandboxed agent's request (this token for this call,
-  this verb on this namespace, this command on this host) needs a first-class object the app stores
-  and shows, with rationale and exact operation, distinct from the Haku `tool_call` it may become.
-  The product noun, lifecycle, pending-turn behavior, MCP wrapping, and authority split are not
-  decided yet; see [`operations_and_access.md`](operations_and_access.md). Do not implement an
-  Agentplane-wide “ask” object until those gates are resolved.
-- **Delivery to Rai.** A notification with approve and deny buttons that answer the operation;
-  the app's
-  inbox is the fallback view, never the primary one.
-- **The decision as an input.** The batcher and the `<agentplane-event>` envelope from
-  [`async_approvals.md`](async_approvals.md), delivered by the bridge on the paths the scripted
-  tests pin.
-- **Per-operation versus standing grant.** One ask, two possible answers. The standing answer is
-  an `EgressBinding` or a Kubernetes binding, both of which the app can already mint and revoke;
-  the single-operation answer has no mechanism at all, and it is the one an ask usually wants.
+- **Action schema contract.** Decide the named/versioned Action definition, parameter validation,
+  result/error and sensitivity contracts, and compatibility rules. The landed echo capability is a
+  fixture, not a production definition.
+- **Executor wiring contract.** Select and validate one concrete adapter/backend, process and
+  credential boundary, dispatch/result transport, health discovery, and exactly-one/no-retry
+  behavior across loss.
+- **Delivery to Rai and the Thread.** Drain the durable pending outbox, send a redacted notification
+  with approve/deny through the same DecisionProvider, and deliver the Decision/result as a later
+  machine input on the runner paths the tests pin.
+- **Standing grants as a separate product.** An `EgressBinding` or Kubernetes binding can represent
+  reusable authority; it is not another outcome or repeated Execution of one ActionRequest.
 
 ## 2. Trusted orchestrator, untrusted fleet
 
