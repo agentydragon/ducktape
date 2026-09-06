@@ -25,6 +25,7 @@
   # the burn is observed. The Desktop package below always uses this proxy;
   # CLI sessions opt in through `claude-proxied`.
   ducktape.githubApiProxy.enable = true;
+  ducktape.githubApiProxy.blockCloudGithubBatch = true;
 
   ducktape.attic = {
     enable = true;
