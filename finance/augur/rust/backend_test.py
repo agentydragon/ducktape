@@ -18,6 +18,7 @@ from finance.augur.rust.result import run_rust
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
+from finance.augur.sim.testing.deductions import DeductionAcceptance
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
@@ -75,6 +76,12 @@ class TestRustPropertyStakes(PropertyStakeAcceptance):
 
 
 class TestRustPrivateEquity(PrivateEquityAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustDeductions(DeductionAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust

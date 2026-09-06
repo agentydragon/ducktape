@@ -250,3 +250,18 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "deductions",
+    srcs = ["deductions.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":simulation_result",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)
