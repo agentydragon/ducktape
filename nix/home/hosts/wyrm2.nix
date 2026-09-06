@@ -21,7 +21,7 @@
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/wyrm2-forgejo.sops.key;
 
   # Request-level accounting for the GitHub GraphQL drain investigated in
-  # <debug/github_rate_limit_monitoring_blind_spot.md>. Host-scoped: wyrm2 is where
+  # <debug/github_graphql_exhaustion/README.md>. Host-scoped: wyrm2 is where
   # the burn is observed. The Desktop package below always uses this proxy;
   # CLI sessions opt in through `claude-proxied`.
   ducktape.githubApiProxy.enable = true;

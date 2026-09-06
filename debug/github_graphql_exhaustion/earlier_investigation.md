@@ -1,8 +1,8 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Current status: **unresolved**. The [September 5 evening control](github_graphql_attribution_2026_09_05.md)
-records a fresh exhaustion, the phone-off experiment, and proven monitoring
-gaps. It supersedes this historical narrative's universal cadence, Desktop
+Current status and evidence: [investigation entry point](README.md) and
+[September 5 controls](attribution_2026_09_05.md). They supersede this
+historical narrative's universal cadence, Desktop
 proxy-switch, Hubble keep-alive, and missing-query-cost claims. Statements below
 describe successive hypotheses and are not all still supported. GraphQL quota
 alerts now exist in `cluster/k8s/monitoring/rules/github-quota-prometheus-rule.yaml`.
@@ -1105,7 +1105,7 @@ auth.allegedly.works,cache.allegedly.works,chat.allegedly.works,git.allegedly.wo
 ```
 
 Every `*.allegedly.works` name resolves to the same five node ExternalIPs
-(<../cluster/docs/cilium_network_policy.md>), which is the worst possible input: nine
+(<../../cluster/docs/cilium_network_policy.md>), which is the worst possible input: nine
 names behind five IPs is a subset space of up to 512 values per IP, minted continuously
 as the cache turns over. One workload went from ~12 distinct destinations to **75**, 45 of
 them name-combinations. Unlike pod IPs recycling within a podCIDR, this does not saturate.
