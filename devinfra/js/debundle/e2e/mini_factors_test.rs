@@ -120,7 +120,7 @@ fn mini_factor_dir_exists(out_root: &Path) -> bool {
 fn mini_factors_peels_entry_with_leading_import() {
     let mut opts = FixtureOpts::new("import { a } from './dep.js'; console.log(a);", vec![]);
     opts.unassigned_mode = unassigned_mode_mini_factors();
-    opts.extra_chunks = &[("static/dep.js", "export const a = 1;")];
+    opts.extra_chunks = &[("static/dep", "export const a = 1;")];
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "1\n");
 }
