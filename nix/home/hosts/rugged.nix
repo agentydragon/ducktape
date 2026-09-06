@@ -19,6 +19,11 @@
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/rugged-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/rugged-github.sops.key;
 
+  ducktape.githubApiProxy = {
+    enable = true;
+    blockCloudGithubBatch = true;
+  };
+
   ducktape.attic = {
     enable = true;
     sopsFile = ../../../secrets/hosts/rugged-attic.yaml;
@@ -97,7 +102,7 @@
 
   home.packages = [
     ducktapePackages.bebas-neue-font
-    ducktapePackages.claude-desktop
+    config.ducktape.githubApiProxy.desktopPackage
     ducktapePackages.chatgpt
     pkgs.freerdp # RDP client for wyrm2's xrdp over Nebula (used by the wyrm2-rdp desktop entry)
     pkgs.moonlight-qt # Sunshine client (GPU stream) for wyrm2 when logged in

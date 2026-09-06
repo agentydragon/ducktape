@@ -35,3 +35,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "block_cloud_github",
+    srcs = ["block_cloud_github.py"],
+    deps = ["@pypi//mitmproxy"],
+)
+
+py_test(
+    name = "test_block_cloud_github",
+    srcs = ["test_block_cloud_github.py"],
+    deps = [
+        ":block_cloud_github",
+        "//:conftest",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

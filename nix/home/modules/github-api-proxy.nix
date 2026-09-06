@@ -116,6 +116,8 @@ in
   options.ducktape.githubApiProxy = {
     enable = lib.mkEnableOption "local intercepting proxy for GitHub API request accounting";
 
+    blockCloudGithubBatch = lib.mkEnableOption "temporary mitigation for cloud GitHub batch polling fan-out";
+
     port = lib.mkOption {
       type = lib.types.port;
       default = 8788;
@@ -149,20 +151,30 @@ in
         );
         # No --allow-hosts: everything is decrypted. Flows land in a file rather
         # than stdout so `mitmdump -nr` can replay and aggregate them afterwards.
-        ExecStart = lib.escapeShellArgs [
-          "${pkgs.mitmproxy}/bin/mitmdump"
-          "--listen-host"
-          "127.0.0.1"
-          "--listen-port"
-          (toString cfg.port)
-          "--set"
-          "confdir=${confDir}"
-          "-w"
-          # + preserves existing flows when the service restarts.
-          "+${captureFile}"
-          "--set"
-          "flow_detail=0"
-        ];
+        ExecStart = lib.escapeShellArgs (
+          [
+            "${pkgs.mitmproxy}/bin/mitmdump"
+            "--listen-host"
+            "127.0.0.1"
+            "--listen-port"
+            (toString cfg.port)
+            "--set"
+            "confdir=${confDir}"
+            "-w"
+            # + preserves existing flows when the service restarts.
+            "+${captureFile}"
+            "--set"
+            "flow_detail=0"
+          ]
+          ++ lib.optionals cfg.blockCloudGithubBatch [
+            "-s"
+            (toString ../../../devinfra/github_api_capture/block_cloud_github.py)
+            "--set"
+            "block_cloud_github_batch=true"
+            "--set"
+            "cloud_github_block_events=${stateDir}/cloud-github-block-events.jsonl"
+          ]
+        );
         Restart = "on-failure";
         RestartSec = 10;
       };
