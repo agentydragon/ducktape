@@ -16,12 +16,14 @@ import pytest_bazel
 from finance.augur.rust.backend import RustEngine
 from finance.augur.rust.result import run_rust
 from finance.augur.sim.backend import Engine
+from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.property_stakes import PropertyStakeAcceptance
 from finance.augur.sim.testing.rollout_independence import RolloutIndependenceAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
+from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
 from finance.augur.sim.testing.tax_statute import TaxStatuteAcceptance
 
 
@@ -50,6 +52,18 @@ class TestRustIncomeSources(IncomeSourceAcceptance):
 
 
 class TestRustPropertyStakes(PropertyStakeAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustTargetAllocation(TargetAllocationAcceptance):
+    @pytest.fixture
+    def backend(self) -> Backend:
+        return run_rust
+
+
+class TestRustCashConservation(CashConservationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust

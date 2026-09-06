@@ -155,3 +155,34 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "cash_conservation",
+    srcs = ["cash_conservation.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":simulation_result",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "target_allocation",
+    srcs = ["target_allocation.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":simulation_result",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+        "@pypi//pytest",
+    ],
+)
