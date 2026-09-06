@@ -1,10 +1,11 @@
 # Wyrm2 central proxy cutover
 
-Cutover checkpoint: 2026-09-06 06:26 UTC; compatibility evidence through 08:36 UTC.
+Cutover checkpoint: 2026-09-06 06:26 UTC; operator acceptance checkpoint 08:43 UTC.
 Wyrm2 uses the central proxy. The response-buffering and connection-reuse defects
 described below are repaired in the deployed image, with passing live transport
-checks. Full Desktop history and message-send recovery still need operator
-verification, so the migration is not yet accepted. Keep the exact-route mitigation.
+checks. The operator test-drove Desktop, confirmed it works, and requested a
+wind-down with another 1–2 weeks of observation. Functionality is accepted;
+quota reliability is not yet established. Keep the exact-route mitigation.
 
 - Host opt-in #5692 merged as `8f3c3ff323e59980053b31145d69c1856f29efe6`.
   Its built NixOS generation is
@@ -253,16 +254,43 @@ These are separate deployment observations, not an attribution of the original
 Desktop stalls to host interface churn. No unrelated service or host network
 was changed to clear the blocker.
 
-The operator was asked to reload Desktop and retry an affected older
-conversation and a message send. The transport checks do not prove rendering,
-full history synchronization, or successful ordinary use. Those results are
-still pending; neither the cutover nor the multi-day quota goal is accepted.
+## Operator acceptance and wind-down
+
+At the 08:43 UTC checkpoint the operator said they were satisfied that Desktop
+works, after test-driving a new conversation, and requested winding down active
+debugging while retaining another 1–2 weeks of observation. This is user-visible
+acceptance, not a claim that every old conversation was exhaustively checked.
+
+A body-free scan of a fixed 95,959,269-byte capture prefix, covering requests
+started after the replacement process at 08:30:33 through 08:42:34 UTC, found
+178 successful history-event GETs and 18 successful event POSTs. The latest
+POSTs completed in 0.16–0.90 seconds. All eight public canary GETs share one
+recorded client connection and one recorded upstream connection. There were
+93 blocked batch attempts, including one known synthetic probe. No authenticated
+history replay was added; its count remains six.
+
+The capture is not error-free: twelve watch streams ended with `peer closed`
+after receiving HTTP 200, and four finite requests closed before headers around
+08:37:51–08:38:08 UTC. These finite closures occurred within 0.09–0.35 seconds,
+not the previous pool stall. Their initiator was not established; do not label
+them harmless reloads without further evidence. Retain this as a follow-up lead
+if user-visible failures recur, not grounds for more intervention after the
+operator accepted the application. Open flows and rendering remain outside
+terminal-capture coverage.
+
+The latest retained quota sample checked during the test drive was
+08:40:58.191 UTC: 51 used, 4,949 remaining. The new pod was Ready with zero
+restarts. [Acceptance monitoring](acceptance_monitoring.md) defines the longer
+confirmation window; #5213 remains open. No more active experiments or rollout
+changes are planned during this wind-down.
 
 ## Acceptance
 
-Verify full history and ordinary Desktop use before accepting the cutover or
-retiring unused old signing keys and four owned GC roots. Rugged has not been
-live-verified or activated. Quiet quota while Desktop is broken is not
+The operator accepted Desktop functionality; retain the working setup during
+observation. Unused old signing keys and four owned GC roots remain deferred
+cleanup, with ownership checks required before removal. Old local interception
+is no longer active. Rugged has not been live-verified or activated.
+Quiet quota while Desktop was broken is not
 representative acceptance. The operator also archived many old conversations
 within the preceding couple of hours; reduced polling of archived conversations
 could contribute to the recent lower burn. The archive timing relative to each
