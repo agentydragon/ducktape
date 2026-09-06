@@ -3,7 +3,8 @@
 # EgressPolicy and EgressBinding resources, and substitutes credentials it reads from
 # agentplane-egress-credentials. It intercepts TLS with the CA in certificate-agentplane-egress-ca.yaml,
 # assembled into a writable confdir at startup (reloader restarts it when that Secret rotates).
-# One replica: the identity cache and the decision ring are in memory.
+# One replica with Recreate: the rules Service must reach the same enforcement Index, and
+# the identity cache and decision ring are in memory.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

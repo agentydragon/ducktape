@@ -44,14 +44,13 @@ because the Action schema and Executor wiring contracts below have not been deci
 manual live acceptance target. Broader capability profiles remain deferred; see
 [`../docs/launch_presets.md`](../docs/launch_presets.md) and [`profiles.md`](profiles.md).
 
-**Active review — egress rules API boundary.** Draft PR
-[#5701](https://github.com/agentydragon/ducktape/pull/5701) is still in review. Its current head moves
-the agent-facing rules URL from the reserved non-DNS name to
-`https://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules`, extracts `RulesApi` and
-`RulesProjection`, and keeps the response contract. The central proxy still recognizes that Service
-DNS host before policy/DNS handling and dispatches locally against the same enforcement index; it
-does not dial its Service or run a separate Deployment. A separate host remains blocked on an honest
-non-recursive routing and destination-auth bootstrap, not on serialization extraction.
+**Active review — egress rules API boundary.** PR
+[#5701](https://github.com/agentydragon/ducktape/pull/5701) makes
+`http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` an ordinary destination:
+normal policy and exact workload-placeholder substitution, then independent destination bearer
+validation through `SandboxPrincipalAuthenticator`. Service port 80 targets a separate API listener
+in the same process/Pod; port 8888 remains the forward proxy. `RulesProjection` shares the enforcement
+index and the redacted response contract. No local-dispatch branch or new credential mode is needed.
 
 ## DAG
 

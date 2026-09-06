@@ -167,14 +167,16 @@ class ProxyUnderTest:
     ) -> Response:
         """An ordinary HTTP request policy-routed through central to the agent API listener."""
         await self.install_rules_route()
+        outgoing = {"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"} if headers is None else dict(headers)
+        if token is not None:
+            outgoing["Proxy-Authorization"] = f"Bearer {token}"
         async with (
             aiohttp.ClientSession() as session,
             session.request(
                 "GET",
                 f"http://{RULES_HOST}{path}",
                 proxy=f"http://127.0.0.1:{proxy_port or self.proxy_port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
-                headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"} if headers is None else headers,
+                headers=outgoing,
                 data=body,
             ) as response,
         ):

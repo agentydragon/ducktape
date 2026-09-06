@@ -25,8 +25,8 @@ bbr test //x/agentplane/egress/...
   writes.
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
-  Sandbox-name/UID-to-redacted-projection boundary; `addon.py` is only its current authenticated
-  proxy transport as well as the mitmproxy gate for ordinary egress. `decisions.py` is the ring and
+  independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
+  ordinary mitmproxy policy/substitution gate. `decisions.py` is the ring and
   JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
@@ -145,6 +145,8 @@ The API shares the central process's current enforcement `Index` through `RulesP
 checks the authenticated Sandbox UID and returns only the redacted field allowlist. Operator
 `/decisions` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
 admits the agent API from central egress only. Service target-port separation prevents recursion.
+The single-replica `Recreate` Deployment keeps Service requests on the enforcing Pod; scaling to
+multiple replicas would require revisiting the same-index guarantee.
 
 ## ServiceAccount permissions
 
