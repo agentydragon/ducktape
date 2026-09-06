@@ -1,0 +1,25 @@
+# The shared SandboxPrincipal resolver reads only the live Pod named and UID-bound by TokenReview;
+# its controller Sandbox ownerReference supplies the Sandbox name and UID.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-llm-ingress-pod-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-llm-ingress-pod-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-llm-ingress-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-llm-ingress
+    namespace: agentplane-staging

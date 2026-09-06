@@ -4,7 +4,7 @@ metadata:
   name: agentplane-staging-egress
   namespace: ducktape-flux
   annotations:
-    description: Agentplane secure egress in agentplane-staging - the proxy Deployment with its identity, RBAC, interception CA and trust bundle, the GitHub PAT it substitutes, and the seed policy and binding for every managed Sandbox. The sandbox side (sidecar, proxy environment) is in the runner SandboxTemplate under ../app.
+    description: Agentplane secure egress in agentplane-staging - the proxy Deployment with its identity, RBAC, interception CA and trust bundle, substituted GitHub and workload identities, and the seed policy and binding for every managed Sandbox. The sandbox side (sidecar, proxy environment) is in the runner SandboxTemplate under ../app.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -18,6 +18,10 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: agentplane-staging-namespace
+      namespace: ducktape-flux
+    # Bring the authenticated destination up before changing the model policy away from direct
+    # LiteLLM. The app already depends on this egress Kustomization, so runner URLs change last.
+    - name: agentplane-staging-llm-ingress
       namespace: ducktape-flux
     - name: agentplane-crds # the seed's EgressPolicy and EgressBinding
       namespace: ducktape-flux

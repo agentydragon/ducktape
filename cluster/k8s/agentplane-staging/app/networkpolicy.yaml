@@ -1,8 +1,8 @@
 # Runner Pods reach DNS and the egress proxy's listener, which the sidecar relays
 # to; their port 7000 is open only to Pods in this namespace (the integration
-# app). Nothing else in either direction, the model endpoint included: LiteLLM is
-# reached through the proxy, which is what holds the key
-# (x/agentplane/app/README.md). The runner container can open TCP to the proxy
+# app). Nothing else in either direction, the model endpoint included: the authenticated LLM
+# ingress is reached through the proxy, and it alone holds the LiteLLM key
+# (x/agentplane/llm_ingress/README.md). The runner container can open TCP to the proxy
 # too - it shares the Pod's identity with the sidecar - but without the sidecar's
 # token the proxy refuses it (the ADR's accepted limit). The proxy is admitted on
 # its container port 8888 - cluster/docs/cilium_network_policy.md § Egress to a

@@ -45,15 +45,15 @@ spec:
               - matchPattern: "*"
     - toEntities:
         - kube-apiserver
-    # LiteLLM, which the litellm policy admits as a cluster-internal host. This is the runners'
-    # only path to a model: their own policy admits nothing but DNS and this proxy.
+    # The authenticated LLM ingress, which the litellm policy admits as a cluster-internal host.
+    # LiteLLM itself is reachable only from that ingress; central never receives its virtual key.
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: litellm
-            k8s:app.kubernetes.io/name: litellm
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-llm-ingress
       toPorts:
         - ports:
-            - port: "4000"
+            - port: "8080"
               protocol: TCP
     - toEntities:
         - world

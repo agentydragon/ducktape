@@ -1,9 +1,9 @@
-# The model endpoint. Every turn a sandbox takes goes through this rule, so a sandbox without it
-# has no agent at all — which is the point: the key is the proxy's, and a sandbox that cannot
-# reach LiteLLM cannot spend it either.
+# The authenticated model ingress. Every turn a sandbox takes goes through this rule, so a sandbox
+# without it has no agent at all. Central sends the caller's verified workload token to the ingress;
+# the ingress, not central or the runner, holds the LiteLLM key.
 #
-# `clusterInternal` because LiteLLM is a Service: the proxy refuses a host resolving to a private
-# address unless the rule says the host is inside the cluster and meant to be.
+# `clusterInternal` because the ingress is a Service: the proxy refuses a host resolving to a
+# private address unless the rule says the host is inside the cluster and meant to be.
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
@@ -12,8 +12,8 @@ metadata:
 spec:
   rules:
     - hosts:
-        - litellm.litellm.svc.cluster.local
+        - agentplane-llm-ingress.agentplane-staging.svc.cluster.local
       clusterInternal: true
       methods: [GET, POST]
       credentialRef:
-        name: litellm-cheap-experiments
+        name: agentplane-workload

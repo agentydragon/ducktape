@@ -1,0 +1,85 @@
+# Authenticated byte-streaming ingress between Agentplane central egress and the existing LiteLLM
+# deployment. It resolves only SandboxPrincipal, replaces the workload bearer with the single
+# cheap-experiments virtual key, and stamps verified Sandbox metadata for LiteLLM spend logs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentplane-llm-ingress
+  namespace: agentplane-staging
+  labels:
+    app.kubernetes.io/name: agentplane-llm-ingress
+  annotations:
+    secret.reloader.stakater.com/reload: litellm-key-cheap-experiments
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-llm-ingress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-llm-ingress
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      serviceAccountName: agentplane-llm-ingress
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ingress
+          image: git.allegedly.works/ducktape-ci/agentplane-llm-ingress:devel-placeholder # {"$imagepolicy": "flux-system:agentplane-llm-ingress"}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --namespace=agentplane-staging
+            - --token-audience=agentplane-egress
+            - --litellm-url=http://litellm.litellm.svc.cluster.local:4000
+            - --host=0.0.0.0
+            - --port=8080
+          env:
+            # The only real model credential in this service. The same cheap-experiments virtual
+            # key/model roster/budget already used by staging is preserved; runners never mount it.
+            - name: AGENTPLANE_LLM_INGRESS_LITELLM_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-cheap-experiments
+                  key: api-key
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

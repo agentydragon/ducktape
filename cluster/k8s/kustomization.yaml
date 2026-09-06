@@ -122,6 +122,7 @@ resources:
   - agentplane-staging/namespace/flux-kustomization.yaml
   - agentplane-staging/agent-rbac/flux-kustomization.yaml
   - agentplane-staging/db/flux-kustomization.yaml
+  - agentplane-staging/llm-ingress/flux-kustomization.yaml
   - agentplane-staging/app/flux-kustomization.yaml
   - agentplane-staging/egress/flux-kustomization.yaml
 
