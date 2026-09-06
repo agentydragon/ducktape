@@ -1,6 +1,6 @@
 # Central proxy migration
 
-Implementation checkpoint: 2026-09-06 04:22 UTC. This is not a quota-resolution
+Implementation checkpoint: 2026-09-06 04:43 UTC. This is not a quota-resolution
 or client-migration claim.
 
 ## Landed and verified
@@ -31,7 +31,10 @@ completed. Real proxy authentication remains a deployment gate.
 
 The default-off relay is published in
 [#5689](https://github.com/agentydragon/ducktape/pull/5689), head
-`331b2408040d4ca7e398f88ca2a7a7b02f2cc52c`; PR CI remains pending. It passed 11
+`a40bccd04ff26406663d1e431d9a006d5b793e60`; PR CI remains pending. A CodeQL
+finding in the synthetic TLS fixture was repaired by setting its explicit
+TLS 1.2 minimum; the new head's Bazel CI passed and CodeQL no longer reported
+that failure. It passed 11
 real Squid 7.6/OpenSSL integration
 cases, including nested TLS, parent authentication, rejected bad certificates
 and names, no direct fallback, and old-to-new app-private CA migration:
@@ -39,14 +42,20 @@ and names, no direct fallback, and old-to-new app-private CA migration:
 The generated Nix wrapper builds; actual host activation and the production Nix
 Squid binary's central-route check are still required.
 
-Central runtime verification is separate: its six Bazel test targets passed in
-[this invocation](https://app.buildbuddy.io/invocation/661cf0a2-0fc4-430c-8b23-2bdd29ab9a43),
+Central runtime is published in
+[#5690](https://github.com/agentydragon/ducktape/pull/5690), head
+`77379cc3b9301d0c16bb7723b2d20aa59e20fcdb`. Its final-head Bazel CI passed in
+[this invocation](https://app.buildbuddy.io/invocation/9949a020-fc03-55a8-86a5-8fbb428ce360),
 including the actual OCI entrypoint under UID 1000 (`--help`, not a full
 mounted-secret server boot). Authentication must precede origin
 dials, outer TLS must never use the interception CA, proxy credentials must not
 reach raw flows, and public-origin validation must reject local/private targets
 including DNS rebinding. Image publication and the real deployed route remain
-gates, not assumptions inferred from source tests.
+gates, not assumptions inferred from source tests. All CodeQL, Gazelle and
+Pre-commit checks passed; the artifact/import check remained running in its
+generated-command-policy Nix step. A denied CONNECT followed by a missing-auth
+HTTP request on the same open connection is also tested: the successful-tunnel
+credential cache must not be installed by a denied CONNECT.
 
 ## Gateway decision
 
@@ -64,6 +73,33 @@ PodMonitor, private capture PVC and egress policy are prepared under
 must use a published image, one capture writer and Recreate rollouts. Storage
 must retain evidence on app removal. Capture-write failure must remain observable
 without a liveness restart erasing the sticky readiness failure.
+
+The complete Deployment template is saved locally outside the repository at
+`/tmp/github-api-proxy-deployment-5213.yaml.in`. It deliberately has no usable
+image reference yet. Replace its publication marker with the verified registry
+tag before adding it to the app and wiring root Flux. Do not publish a guessed
+image tag or claim the directory deploys a running proxy.
+
+The actual alert expressions passed upstream promtool scenarios for healthy
+operation, sticky capture failure, scrape failure, disappearance, replacement
+and low storage. The final fixture uses the runtime's `session_ws` channel name:
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/5231c189-9909-493f-b3bf-6f6385833c3c).
+The initial runner failure was clone-local BuildBuddy metadata selecting an old
+unpublished notes branch. Correcting only this clone's default base to a local
+`devel` tracking `origin/devel` restored normal public-base plus patch execution;
+no private branch was pushed.
+
+Host opt-ins and public CA pin are built, committed locally in
+`/tmp/ducktape-github-proxy-host-optin-5213`, and deliberately unpublished until
+central-route verification. The activation report is
+`/tmp/github-proxy-host-optin-validation-20260906.md`. Full NixOS-inline Home
+Manager switching may include unrelated changes; a scoped canary is not proof
+of permanent declarative activation. Both existing `80`/`90` overrides and all
+four block/WebSocket GC roots require exact ownership checks before retirement.
+
+The older Hubble-loss PR #5664 remains mergeable without conflicts. Its Bazel,
+CodeQL, Gazelle and Pre-commit checks passed; its artifact/import check was
+cancelled, not passed. No blind rerun was triggered.
 
 ## Finish order
 
