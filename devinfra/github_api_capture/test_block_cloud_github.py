@@ -26,7 +26,10 @@ def test_exact_opt_in_block(
 ) -> None:
     events = tmp_path / "events.jsonl"
     monkeypatch.setattr(
-        ctx, "options", SimpleNamespace(block_cloud_github_batch=enabled, cloud_github_block_events=str(events)), raising=False
+        ctx,
+        "options",
+        SimpleNamespace(block_cloud_github_batch=enabled, cloud_github_block_events=str(events)),
+        raising=False,
     )
     addon = BlockCloudGithub()
     flow = http.HTTPFlow(
@@ -54,7 +57,10 @@ def test_exact_opt_in_block(
 def test_metadata_appends_and_identifies_process_lifetime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     events = tmp_path / "events.jsonl"
     monkeypatch.setattr(
-        ctx, "options", SimpleNamespace(block_cloud_github_batch=True, cloud_github_block_events=str(events)), raising=False
+        ctx,
+        "options",
+        SimpleNamespace(block_cloud_github_batch=True, cloud_github_block_events=str(events)),
+        raising=False,
     )
     addon = BlockCloudGithub()
     addon.record("started")
