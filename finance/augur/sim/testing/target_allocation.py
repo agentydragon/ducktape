@@ -212,6 +212,17 @@ class TargetAllocationAcceptance:
         assert _units(result, month=HORIZON) == {"stock": STOCK_UNITS, "bond": BOND_UNITS}
         assert _alice_cash(result)[-1] == 5_000_000
 
+    def test_landing_exactly_on_a_bound_is_inside_the_band(self, backend: Backend) -> None:
+        """The band is closed at both ends. Cash exactly at the floor has not crossed it, so
+        nothing is sold — an off-by-one here would trade every month the balance came to rest
+        on its trigger, which is the balance a refill leaves it at.
+        """
+
+        result = backend(cash_band_case(opening_cash=10_000, floor=10_000, ceiling=90_000))
+
+        assert _units(result, month=HORIZON) == {"stock": STOCK_UNITS, "bond": BOND_UNITS}
+        assert _alice_cash(result)[-1] == 1_000_000
+
     def test_crossing_the_floor_refills_to_the_ceiling(self, backend: Backend) -> None:
         """(s,S), through the engine. Cash below the floor is raised to the CEILING, not back
         to the floor — refilling to the floor would put the agent back at its trigger next

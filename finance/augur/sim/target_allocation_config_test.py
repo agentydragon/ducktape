@@ -1,8 +1,9 @@
 """What a target-allocation policy refuses to be configured as.
 
-Every check here is one a traced engine cannot make: the band's bounds may be CPI-indexed,
-so their monthly values are arrays and a traced value cannot drive a `raise`. Config time is
-the only place these can be caught, which is why they are worth their own tests.
+Every check here is one the engine cannot make for itself: the band's bounds may be
+CPI-indexed, so whether a band is inverted would otherwise depend on the path. Config time is
+the only place these can be caught for every path at once, which is why they are worth their
+own tests.
 """
 
 from __future__ import annotations

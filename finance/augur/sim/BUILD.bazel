@@ -65,7 +65,6 @@ py_test(
     srcs = ["locations_test.py"],
     data = [":location_data"],
     deps = [
-        ":conftest",
         ":locations",
         "//:conftest",
         "//finance/augur:conftest",
@@ -89,7 +88,6 @@ py_test(
     name = "jurisdictions_test",
     srcs = ["jurisdictions_test.py"],
     deps = [
-        ":conftest",
         ":jurisdictions",
         "//:conftest",
         "//finance/augur:conftest",
@@ -122,7 +120,6 @@ py_test(
     size = "small",
     srcs = ["fixed_point_test.py"],
     deps = [
-        ":conftest",
         ":fixed_point",
         "//:conftest",
         "//finance/augur:conftest",
@@ -137,7 +134,6 @@ py_test(
     name = "tlh_harvest_test",
     srcs = ["tlh_harvest_test.py"],
     deps = [
-        ":conftest",
         ":tlh_harvest",
         "//:conftest",
         "//finance/augur:conftest",
@@ -148,136 +144,8 @@ py_test(
 )
 
 py_library(
-    name = "actor_view",
-    srcs = ["actor_view.py"],
-    deps = [
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "actor_view_test",
-    size = "small",
-    srcs = ["actor_view_test.py"],
-    deps = [
-        ":actor_view",
-        ":conftest",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//jax",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "payment_policy",
-    srcs = ["payment_policy.py"],
-    deps = [
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-    ],
-)
-
-py_test(
-    name = "payment_policy_test",
-    size = "small",
-    srcs = ["payment_policy_test.py"],
-    deps = [
-        ":conftest",
-        ":payment_policy",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//jax",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "allocation",
-    srcs = ["allocation.py"],
-    deps = [
-        "@pypi//beartype",
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "allocation_test",
-    size = "medium",
-    srcs = ["allocation_test.py"],
-    deps = [
-        ":allocation",
-        ":conftest",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "cash_band",
     srcs = ["cash_band.py"],
-    deps = [
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-    ],
-)
-
-py_test(
-    name = "cash_band_test",
-    size = "small",
-    srcs = ["cash_band_test.py"],
-    deps = [
-        ":cash_band",
-        ":conftest",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//jax",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "target_allocation",
-    srcs = ["target_allocation.py"],
-    deps = [
-        ":actor_view",
-        ":allocation",
-        ":cash_band",
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "target_allocation_test",
-    size = "medium",
-    srcs = ["target_allocation_test.py"],
-    deps = [
-        ":actor_view",
-        ":conftest",
-        ":target_allocation",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//jax",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_library(
@@ -290,7 +158,6 @@ py_test(
     srcs = ["bonds_test.py"],
     deps = [
         ":bonds",
-        ":conftest",
         ":scenario",
         "//:conftest",
         "//finance/augur:conftest",
@@ -320,7 +187,6 @@ py_test(
     size = "small",
     srcs = ["target_allocation_config_test.py"],
     deps = [
-        ":conftest",
         ":scenario",
         "//:conftest",
         "//finance/augur:conftest",
@@ -350,7 +216,6 @@ py_test(
     name = "pricing_test",
     srcs = ["pricing_test.py"],
     deps = [
-        ":conftest",
         ":pricing",
         "//:conftest",
         "//finance/augur:conftest",
@@ -362,26 +227,6 @@ py_test(
 py_library(
     name = "enums",
     srcs = ["enums.py"],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["@pypi//jax"],
-)
-
-py_library(
-    name = "bench_scenario",
-    srcs = ["bench_scenario.py"],
-    deps = [
-        ":fixed_point",
-        ":scenario",
-        "//finance/augur/model:gbm",
-        "//finance/augur/model:level_series_groups",
-        "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
-    ],
 )
 
 py_library(
@@ -412,7 +257,6 @@ py_test(
     name = "scenario_test",
     srcs = ["scenario_test.py"],
     deps = [
-        ":conftest",
         ":scenario",
         "//:conftest",
         "//finance/augur:conftest",

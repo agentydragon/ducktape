@@ -275,13 +275,6 @@ recovery cashouts. Still missing:
 
 ## Refactor follow-ups
 
-- **Delete the orphaned `jnp` policy modules.** `sim/target_allocation.py`,
-  `payment_policy.py` and `bonds.py` have no importer outside their own tests,
-  and `allocation.py` and `actor_view.py` are reachable only through them. They
-  were written to run inside a jitted scan that no longer exists; their
-  docstrings still say so. Deleting them drops most of `sim/BUILD.bazel`'s
-  `@pypi//jax` deps. Check `cash_band.py` separately — `sim/scenario.py` imports
-  it, so part of it is live.
 - **`MetricSeries` / `MetricValue` need not be Protocols.** They exist in
   `product/metric_composition.py` only because two backends' array types (numpy
   host arrays and `jnp` device arrays) could not be named together. One backend
