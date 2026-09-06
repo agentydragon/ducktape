@@ -8,7 +8,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 - Every CONNECT and every request carries `Proxy-Authorization: Bearer <token>`, the Pod's
   projected ServiceAccount token with the proxy's audience, added by the sidecar. A tunnel's
-  inner requests inherit the tunnel's token.
+  inner requests inherit the tunnel's authenticated context. The proxy strips the hop header and
+  retains its bearer only after successful verification; malformed or rejected replacement headers
+  clear earlier connection context rather than falling back to it.
 - The token is proven by TokenReview against that audience. The Pod it is bound to is read live:
   its UID must equal the token's, its address must equal the connection's source, and its
   controller owner must be a Sandbox that the proxy's watch knows under the same UID. That
@@ -28,7 +30,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - A credential is an `EgressCredential`: where its real value comes from, and every exact location
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
-  A rule names a credential; the credential names the targets.
+  A rule names a credential; the credential names the targets. Its source is exactly one of
+  `secretRef`, preserving the central-held Secret behavior, or `authenticatedWorkloadToken`, the
+  bearer retained from successful authentication of this request or CONNECT tunnel. The latter is
+  resolved per request and must still be bound to the live Sandbox being decided; absent, stale, or
+  mismatched context refuses with `credential-unavailable`.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
   `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),
@@ -55,7 +61,10 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   that found it, at every target the request presents it in and no others — so a placeholder the
   proxy recognised is never one it forwards. A value of that header the request sent alongside and
   did not present the placeholder in is forwarded untouched. A credential whose Secret or key is
-  absent denies with `credential-unavailable` rather than forwarding.
+  absent, or whose authenticated workload context is unavailable or unbound, denies with
+  `credential-unavailable` rather than forwarding. `authenticatedWorkloadToken` never copies a raw
+  `Proxy-Authorization` value and never appends `Authorization`; the declared target and exact
+  placeholder presentation remain the only substitution authority.
 - Nothing else is forwarded: no binding, no rule, an unproven token, a Pod that does not match,
   an unknown Sandbox, or any failure to reach the API server all refuse. A refusal is `403`
   (`502` when the proxy itself could not decide) with an empty body and
@@ -105,7 +114,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   proxy's own, Sandboxes in the one their Pods run in, Secrets in the credentials namespace. A
   sandbox is therefore never in a namespace holding the rules that govern it or the credentials
   they substitute. The proxy's picture is kept equal to the API server's, and a rotated Secret is
-  substituted from the next request on without a restart.
+  substituted from the next request on without a restart. An authenticated workload source is
+  request context, not a Secret or another watched object.
 - Each binding's `status` is written by the proxy: `observedGeneration`, `resolvedPolicies`, and
   the `Active` condition — `True` with reason `Resolved` when the binding is unexpired and at
   least one policy resolved, otherwise `False` with reason `Expired` or `MissingPolicy`. A status is written only when it differs from what the API server holds.

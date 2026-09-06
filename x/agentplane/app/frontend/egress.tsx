@@ -49,7 +49,11 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
               {rule.credential
                 ? ` · ${rule.credential.name}: ${rule.credential.description} (${rule.credential.targets
                     .map((t) => (t.scheme ? `${t.header}: ${t.scheme} <credential>` : `${t.header} ${t.method}`))
-                    .join(", ")}, from ${rule.credential.secret}/${rule.credential.key})`
+                    .join(", ")}, from ${
+                    rule.credential.secret && rule.credential.key
+                      ? `${rule.credential.secret}/${rule.credential.key}`
+                      : "authenticated workload token"
+                  })`
                 : rule.missing_credential
                   ? ` · credential ${rule.missing_credential}: no such EgressCredential`
                   : " · no credential"}

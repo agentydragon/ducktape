@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ import pytest
 import pytest_bazel
 from aiohttp import web
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from mitmproxy import connection, http
 from more_itertools import one
 
 from x.agentplane.egress.addon import DENIED_HEADER, RULES_PATH, SELF_HOST, EgressAddon
@@ -30,7 +32,9 @@ from x.agentplane.egress.conftest import (
     GITHUB_POLICY,
     PLACEHOLDER,
     POD_A_IP,
+    POD_B_UID,
     SANDBOX_A,
+    SANDBOX_B,
     SCHEME,
     SECRET_NAME,
     SECRET_VALUE,
@@ -40,7 +44,7 @@ from x.agentplane.egress.conftest import (
     informer,
 )
 from x.agentplane.egress.decisions import DecisionRing
-from x.agentplane.egress.identity import PodIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.resources import TargetMethod, placeholder_of
@@ -54,6 +58,7 @@ from x.agentplane.egress.testing.fake_apiserver import (
     SECRETS_PLURAL,
     FakeApiServer,
     TokenVerdict,
+    authenticated_workload_credential,
     binding,
     credential,
     pod_for,
@@ -74,13 +79,17 @@ from x.agentplane.egress.upstream import Network, UpstreamResolver
 
 @dataclass
 class RecordingUpstream:
-    """An HTTPS upstream that records every request's method, path, and headers."""
+    """HTTP and HTTPS listeners that record every request's method, path, and headers."""
 
     port: int = 0
+    http_port: int = 0
     requests: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
 
     async def handle(self, request: web.Request) -> web.Response:
-        self.requests.append((request.method, request.path_qs, {k.lower(): v for k, v in request.headers.items()}))
+        headers = {k.lower(): v for k, v in request.headers.items()}
+        self.requests.append((request.method, request.path_qs, headers))
+        if request.path == "/workload/requires-auth" and "authorization" not in headers:
+            return web.Response(status=401, text="authentication required")
         return web.Response(text="upstream ok")
 
 
@@ -91,9 +100,12 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
     app.router.add_route("*", "/{tail:.*}", upstream.handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0, ssl_context=server_tls_context(cert_path, key_path))
-    await site.start()
+    https_site = web.TCPSite(runner, "127.0.0.1", 0, ssl_context=server_tls_context(cert_path, key_path))
+    await https_site.start()
     upstream.port = one(runner.addresses)[1]
+    http_site = web.TCPSite(runner, "127.0.0.1", 0)
+    await http_site.start()
+    upstream.http_port = one(address[1] for address in runner.addresses if address[1] != upstream.port)
     try:
         yield upstream
     finally:
@@ -124,9 +136,12 @@ class ProxyUnderTest:
     tmp_path: Path
     index: Index
     upstream: RecordingUpstream
+    addon: EgressAddon
 
-    def url(self, path: str) -> str:
-        return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
+    def url(self, path: str, *, tls: bool = True) -> str:
+        scheme = "https" if tls else "http"
+        port = self.upstream.port if tls else self.upstream.http_port
+        return f"{scheme}://{UPSTREAM_HOST}:{port}{path}"
 
     async def get_self(self, path: str, *, token: str | None = TOKEN_A) -> Response:
         """A request to the proxy's own name: tunnelled like any other, answered without an upstream."""
@@ -184,7 +199,7 @@ async def proxy(
         async with (
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
-                EgressAddon(
+                addon := EgressAddon(
                     index=index, verifier=verifier, ring=ring, resolver=UpstreamResolver(exempt=exempt_networks)
                 ),
                 confdir=tmp_path / "confdir",
@@ -200,6 +215,7 @@ async def proxy(
                 tmp_path=tmp_path,
                 index=index,
                 upstream=upstream,
+                addon=addon,
             )
     finally:
         informer_task.cancel()
@@ -207,10 +223,104 @@ async def proxy(
 
 
 BINDING = f"{SANDBOX_A}-{GITHUB_POLICY}"
+WORKLOAD_CREDENTIAL = "agentplane-workload"
+WORKLOAD_PLACEHOLDER = placeholder_of(WORKLOAD_CREDENTIAL)
+WORKLOAD_POLICY = "first-party-workload"
 
 
 def denial(response: Response, reason: DenyReason) -> bool:
     return response.status == 403 and response.headers[DENIED_HEADER] == f"denied; reason={reason}"
+
+
+def authentication_flow(client: connection.Client, proxy_authorization: str | None) -> http.HTTPFlow:
+    flow = http.HTTPFlow(client, connection.Server(address=(UPSTREAM_HOST, 80)))
+    headers = http.Headers()
+    if proxy_authorization is not None:
+        headers["Proxy-Authorization"] = proxy_authorization
+    flow.request = http.Request.make("GET", f"http://{UPSTREAM_HOST}/workload/context", headers=headers)
+    return flow
+
+
+@pytest.mark.parametrize(
+    ("replacement", "reason"),
+    [("Basic malformed", DenyReason.TOKEN_MISSING), ("Bearer rejected", DenyReason.TOKEN_REJECTED)],
+)
+async def test_rejected_replacement_clears_authenticated_connection_context(
+    proxy: ProxyUnderTest, replacement: str, reason: DenyReason
+) -> None:
+    client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
+    admitted = authentication_flow(client, f"Bearer {TOKEN_A}")
+    assert (await proxy.addon._sandbox_of(admitted)).metadata.name == SANDBOX_A
+    assert "proxy-authorization" not in admitted.request.headers
+
+    rejected = authentication_flow(client, replacement)
+    with pytest.raises(IdentityRejectedError) as refusal:
+        await proxy.addon._sandbox_of(rejected)
+    assert refusal.value.reason is reason
+    assert "proxy-authorization" not in rejected.request.headers
+
+    with pytest.raises(IdentityRejectedError) as after:
+        await proxy.addon._sandbox_of(authentication_flow(client, None))
+    assert after.value.reason is DenyReason.TOKEN_MISSING
+
+
+async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest) -> None:
+    client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
+    assert (await proxy.addon._sandbox_of(authentication_flow(client, f"Bearer {TOKEN_A}"))).metadata.name == SANDBOX_A
+
+    proxy.addon.client_disconnected(client)
+
+    with pytest.raises(IdentityRejectedError) as after:
+        await proxy.addon._sandbox_of(authentication_flow(client, None))
+    assert after.value.reason is DenyReason.TOKEN_MISSING
+
+
+async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest, *, bind_b: bool = False) -> None:
+    fake.put(
+        CREDENTIALS_PLURAL,
+        authenticated_workload_credential(
+            WORKLOAD_CREDENTIAL,
+            targets=[{"header": "Authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
+        ),
+    )
+    fake.put(
+        POLICIES_PLURAL,
+        policy(
+            WORKLOAD_POLICY,
+            [
+                {
+                    "hosts": [UPSTREAM_HOST],
+                    "methods": ["GET"],
+                    "paths": ["/workload/**"],
+                    "credentialRef": {"name": WORKLOAD_CREDENTIAL},
+                }
+            ],
+        ),
+    )
+    fake.put(
+        BINDINGS_PLURAL,
+        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, WORKLOAD_POLICY]),
+    )
+    if bind_b:
+        # A faithful second Pod identity reaching the in-process listener from the same loopback
+        # address. Its distinct Pod UID and token still go through TokenReview and live ownership.
+        fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_A_IP)
+        fake.put(
+            BINDINGS_PLURAL,
+            binding(
+                f"{SANDBOX_B}-{WORKLOAD_POLICY}",
+                subjects=[{"sandbox": {"name": SANDBOX_B}}],
+                policies=[WORKLOAD_POLICY],
+            ),
+        )
+    await proxy.index.wait_for(
+        lambda: (
+            WORKLOAD_CREDENTIAL in proxy.index.credentials
+            and WORKLOAD_POLICY in proxy.index.policies
+            and WORKLOAD_POLICY in proxy.index.bindings[BINDING].spec.policies
+            and (not bind_b or f"{SANDBOX_B}-{WORKLOAD_POLICY}" in proxy.index.bindings)
+        )
+    )
 
 
 async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnderTest) -> None:
@@ -220,6 +330,102 @@ async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnder
     assert (method, path) == ("GET", "/repos/o/r?ref=main")
     assert headers["authorization"] == f"Bearer {SECRET_VALUE}"
     assert "proxy-authorization" not in headers
+
+
+async def test_authenticated_workload_source_uses_each_https_tunnels_own_token(
+    fake: FakeApiServer, proxy: ProxyUnderTest
+) -> None:
+    await install_workload_credential(fake, proxy, bind_b=True)
+
+    for token, suffix in ((TOKEN_A, "a"), (TOKEN_B, "b")):
+        token_file = proxy.tmp_path / f"workload-sidecar-token-{suffix}"
+        token_file.write_text(token)
+        async with (
+            SidecarRelay(
+                proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
+            ) as sidecar,
+            aiohttp.ClientSession() as session,
+            session.get(
+                proxy.url(f"/workload/{suffix}"),
+                proxy=f"http://127.0.0.1:{sidecar.listen_port}",
+                ssl=client_tls_context(proxy.interception_ca),
+                headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"},
+            ) as response,
+        ):
+            assert (response.status, await response.read()) == (200, b"upstream ok")
+
+    assert [headers["authorization"] for _, _, headers in proxy.upstream.requests] == [
+        f"Bearer {TOKEN_A}",
+        f"Bearer {TOKEN_B}",
+    ]
+    assert all("proxy-authorization" not in headers for _, _, headers in proxy.upstream.requests)
+
+    view = await proxy.get_self(RULES_PATH)
+    assert view.status == 200
+    assert WORKLOAD_PLACEHOLDER in view.body.decode()
+    assert all(token not in view.body.decode() for token in (TOKEN_A, TOKEN_B))
+
+    async with (
+        aiohttp.ClientSession(f"http://127.0.0.1:{proxy.admin_port}") as admin,
+        admin.get("/decisions") as listing,
+    ):
+        decisions = await listing.text()
+    assert all(value not in decisions for value in (TOKEN_A, TOKEN_B, WORKLOAD_PLACEHOLDER))
+
+
+async def test_authenticated_workload_source_uses_validated_context_for_plain_http(
+    fake: FakeApiServer, proxy: ProxyUnderTest
+) -> None:
+    await install_workload_credential(fake, proxy)
+    token_file = proxy.tmp_path / "plain-http-sidecar-token"
+    token_file.write_text(TOKEN_A)
+
+    async with (
+        SidecarRelay(
+            proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
+        ) as sidecar,
+        aiohttp.ClientSession() as session,
+        session.get(
+            proxy.url("/workload/http", tls=False),
+            proxy=f"http://127.0.0.1:{sidecar.listen_port}",
+            headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"},
+        ) as response,
+    ):
+        assert (response.status, await response.read()) == (200, b"upstream ok")
+
+    _, _, headers = one(proxy.upstream.requests)
+    assert headers["authorization"] == f"Bearer {TOKEN_A}"
+    assert "proxy-authorization" not in headers
+
+
+async def test_authenticated_workload_source_does_not_apply_to_the_wrong_target(
+    fake: FakeApiServer, proxy: ProxyUnderTest
+) -> None:
+    await install_workload_credential(fake, proxy)
+
+    response = await proxy.get("/workload/requires-auth", headers={"X-Workload-Credential": WORKLOAD_PLACEHOLDER})
+
+    assert (response.status, response.body) == (401, b"authentication required")
+    _, _, headers = one(proxy.upstream.requests)
+    assert "authorization" not in headers
+    assert headers["x-workload-credential"] == WORKLOAD_PLACEHOLDER
+
+
+async def test_forged_proxy_authorization_never_becomes_dynamic_credential(
+    fake: FakeApiServer, proxy: ProxyUnderTest, caplog: pytest.LogCaptureFixture
+) -> None:
+    await install_workload_credential(fake, proxy)
+    forged = "forged-workload-bearer-value"
+    caplog.set_level(logging.INFO, logger="x.agentplane.egress.addon")
+
+    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
+        await proxy.get("/workload/forged", token=forged, headers={"Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}"})
+
+    assert refused.value.status == 403
+    assert refused.value.headers is not None
+    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_REJECTED}"
+    assert proxy.upstream.requests == []
+    assert forged not in caplog.text
 
 
 @asynccontextmanager
