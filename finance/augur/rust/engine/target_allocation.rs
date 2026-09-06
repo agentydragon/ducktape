@@ -304,7 +304,6 @@ pub(super) fn execute_target_allocation_buys(
         lot.spec.basis = spent;
         lot.units_remaining = Quantity(units);
         lot.basis_remaining = spent;
-        lot.basis_per_unit = Money(order.unit_price);
         buy_count[order.policy_index][order.sleeve_index] =
             used.checked_add(1).ok_or(ArithmeticError::Overflow {
                 operation: "target-allocation purchase count",
@@ -340,12 +339,11 @@ pub(super) fn execute_target_allocation_pool_sale(
         }
         let lot = &lots[index];
         let units = remaining.min(lot.units_remaining.0);
-        let basis = Money(mul_div_round_half_up(
-            lot.basis_per_unit.0,
-            units,
-            lot.spec.quantity_scale,
+        let basis = lot.basis_remaining.apportion(
+            Quantity(units),
+            lot.units_remaining,
             "target-allocation FIFO basis",
-        )?);
+        )?;
         let proceeds = Money(mul_div_round_half_up(
             units,
             price,

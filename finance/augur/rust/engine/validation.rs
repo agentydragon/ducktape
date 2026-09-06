@@ -228,11 +228,6 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                 basis: lot.basis.0,
             });
         }
-        if i128::from(lot.basis.0) * i128::from(lot.quantity_scale) % i128::from(lot.units.0) != 0 {
-            return Err(SimulationError::InexactLotBasis {
-                lot_id: lot.lot_id.clone(),
-            });
-        }
         if !lots.insert(lot.lot_id.clone()) {
             return Err(SimulationError::DuplicateLot {
                 lot_id: lot.lot_id.clone(),

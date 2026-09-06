@@ -391,7 +391,7 @@ pub(super) fn month_output(
         month,
         balances: account_balances(ledger, failed),
         income: income_states(&tax.income, failed),
-        lots: security_lot_states(lots, failed),
+        lots: security_lot_states(lots, failed)?,
         bonds: bond_states(fixture, rollout_id, month, failed)?,
         properties: property_states(properties, failed),
         mortgages: mortgage_states(mortgages, failed),
@@ -450,26 +450,42 @@ fn capital_gain_states(
         .collect()
 }
 
-fn security_lot_states(lots: &[LotState], failed: bool) -> Vec<SecurityLotState> {
+fn security_lot_states(
+    lots: &[LotState],
+    failed: bool,
+) -> Result<Vec<SecurityLotState>, ArithmeticError> {
     lots.iter()
-        .map(|lot| SecurityLotState {
-            lot_id: lot.spec.lot_id.clone(),
-            agent_id: lot.spec.agent_id.clone(),
-            account_id: lot.spec.account_id.clone(),
-            asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
-            purchase_month: lot.spec.purchase_month,
-            quantity_scale: lot.spec.quantity_scale,
-            units_remaining: if failed {
-                Quantity(0)
-            } else {
-                lot.units_remaining
-            },
-            basis_remaining: if failed {
-                Money(0)
-            } else {
-                lot.basis_remaining
-            },
-            cost_basis_per_unit: lot.basis_per_unit,
+        .map(|lot| {
+            Ok(SecurityLotState {
+                lot_id: lot.spec.lot_id.clone(),
+                agent_id: lot.spec.agent_id.clone(),
+                account_id: lot.spec.account_id.clone(),
+                asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
+                purchase_month: lot.spec.purchase_month,
+                quantity_scale: lot.spec.quantity_scale,
+                units_remaining: if failed {
+                    Quantity(0)
+                } else {
+                    lot.units_remaining
+                },
+                basis_remaining: if failed {
+                    Money(0)
+                } else {
+                    lot.basis_remaining
+                },
+                // Derived for the reader, not carried as state: it is exactly what the
+                // apportionment above would charge for one unit of what is left.
+                cost_basis_per_unit: PerUnit(if lot.units_remaining.0 == 0 {
+                    0
+                } else {
+                    mul_div_round_half_up(
+                        lot.basis_remaining.0,
+                        lot.spec.quantity_scale,
+                        lot.units_remaining.0,
+                        "reported per-unit basis",
+                    )?
+                }),
+            })
         })
         .collect()
 }

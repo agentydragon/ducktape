@@ -250,6 +250,7 @@ py_library(
     srcs = ["behaviour.py"],
     deps = [
         ":case",
+        ":fixtures",
         ":simulation_result",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:gbm",
