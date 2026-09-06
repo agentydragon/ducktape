@@ -2,9 +2,10 @@ import asyncio
 import base64
 import contextlib
 import json
+import socket
 import ssl
 import stat
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Buffer
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from mitmproxy.tools.dump import DumpMaster
 from prometheus_client import generate_latest
 
 from cluster.proxies.github_api_proxy.config import Settings
-from cluster.proxies.github_api_proxy.destinations import PublicOrigins
+from cluster.proxies.github_api_proxy.destinations import OriginLoop, PublicOrigins
 from cluster.proxies.github_api_proxy.metrics import Metrics
 from cluster.proxies.github_api_proxy.runtime import create_master
 from cluster.proxies.github_api_proxy.testing import certificates
@@ -27,12 +28,23 @@ PASSWORD = "test-private-password-alpha-0123456789"
 SECOND_PASSWORD = "test-private-password-beta-0123456789"
 
 
+class OriginLoopPolicy(asyncio.DefaultEventLoopPolicy):
+    def new_event_loop(self) -> OriginLoop:
+        return OriginLoop()
+
+
+@pytest.fixture(scope="session")
+def event_loop_policy() -> OriginLoopPolicy:
+    return OriginLoopPolicy()
+
+
 @dataclass
 class LocalOrigins:
     http_port: int
     https_port: int
     requests: list[tuple[str, str]] = field(default_factory=list)
     dials: int = 0
+    dns_answer: str = "93.184.216.34"
     ready: asyncio.Event = field(default_factory=asyncio.Event)
     finish_events: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -42,13 +54,9 @@ class LocalOrigins:
     def server_connect(self, data: ServerConnectionHookData) -> None:
         if data.server.error is not None:
             return
-        # Only this fixture redirects an already validated, numerically pinned
-        # public destination to loopback. Production has no private-origin switch.
         assert data.server.address is not None
-        assert data.server.address[0] == "93.184.216.34"
+        assert data.server.address[0] in {"api.github.com", "claude.ai"}
         assert data.server.address[1] in (80, 443)
-        self.dials += 1
-        data.server.address = ("127.0.0.1", self.https_port if data.server.tls else self.http_port)
         data.server.sni = "upstream.test"
 
     def responseheaders(self, flow: http.HTTPFlow) -> None:
@@ -111,6 +119,45 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
     second_credentials = tmp_path / "beta.json"
     second_credentials.write_text(json.dumps({"test-beta": SECOND_PASSWORD}))
     origins = LocalOrigins(0, 0)
+    client_port: int | None = None
+    original_connect = asyncio.SelectorEventLoop.sock_connect
+    original_resolve = socket.getaddrinfo
+
+    async def dial(
+        loop: asyncio.SelectorEventLoop, sock: socket.socket, address: tuple[object, ...] | str | Buffer
+    ) -> None:
+        # Only the fixture's socket boundary redirects approved numeric targets;
+        # the production loop's validation has already run and pool keys survive.
+        if address != ("127.0.0.1", client_port):
+            origins.dials += 1
+            if address not in (("93.184.216.34", 80), ("93.184.216.34", 443)):
+                raise OSError("Unexpected synthetic dial destination")
+            assert isinstance(address, tuple)
+            address = ("127.0.0.1", origins.https_port if address[1] == 443 else origins.http_port)
+        await original_connect(loop, sock, address)
+
+    def dns(
+        host: str | bytes | None,
+        port: str | bytes | int | None,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> list[
+        tuple[
+            socket.AddressFamily,
+            socket.SocketKind,
+            int,
+            str,
+            tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes],
+        ]
+    ]:
+        if host in {"api.github.com", "claude.ai"}:
+            host = origins.dns_answer
+        return original_resolve(host, port, family, type, proto, flags)
+
+    monkeypatch.setattr(asyncio.SelectorEventLoop, "sock_connect", dial)
+    monkeypatch.setattr(socket, "getaddrinfo", dns)
     runners = []
     for secure in (False, True):
         app = web.Application()
@@ -150,11 +197,10 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
             await origins.ready.wait()
         server = master.addons.get("proxyserver")
         assert isinstance(server, Proxyserver)
+        client_port = server.listen_addrs()[0][1]
         client_tls = ssl.create_default_context(cafile=str(outer.ca))
         client_tls.load_verify_locations(cafile=str(interception.ca))
-        yield Harness(
-            settings, master, origins, metrics, server.listen_addrs()[0][1], client_tls, outer.ca, interception.ca
-        )
+        yield Harness(settings, master, origins, metrics, client_port, client_tls, outer.ca, interception.ca)
     finally:
         master.shutdown()
         try:
@@ -331,6 +377,44 @@ async def test_event_stream_arrives_before_eof_and_is_captured(proxy: Harness, c
     assert captured[0].response.raw_content == b"data: first\n\ndata: last\n\n"
     assert "Proxy-Authorization" not in captured[0].request.headers
     assert "proxyauth" not in captured[0].metadata
+
+
+async def test_persistent_origin_connection_serves_past_connection_limit(proxy: Harness) -> None:
+    reader, writer = await proxy.connect()
+    try:
+        async with asyncio.timeout(5):
+            assert (await request(reader, writer, method="CONNECT", target="api.github.com:443", auth=authorization()))[
+                0
+            ] == 200
+            await writer.start_tls(proxy.client_tls, server_hostname="api.github.com")
+            # More than mitmproxy's five simultaneous upstream connections: idle
+            # keep-alive sockets must be reused, not strand subsequent requests.
+            for _ in range(8):
+                status, body = await request(reader, writer, method="GET", target="/graphql", auth=None)
+                assert status == 200
+                assert json.loads(body)["data"]["rateLimit"]["cost"] == 7
+        assert proxy.origins.dials == 1
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+@pytest.mark.parametrize("rebound", ["127.0.0.1", "8.8.8.8"])
+async def test_dns_change_after_validation_never_dials(proxy: Harness, rebound: str) -> None:
+    proxy.origins.dns_answer = rebound
+    reader, writer = await proxy.connect()
+    try:
+        async with asyncio.timeout(5):
+            assert (
+                await request(
+                    reader, writer, method="GET", target="http://api.github.com/graphql", auth=authorization()
+                )
+            )[0] == 502
+        assert proxy.origins.dials == 0
+        assert proxy.origins.requests == []
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
 @pytest.mark.parametrize("next_auth", [None, authorization(password="test-private-wrong")])

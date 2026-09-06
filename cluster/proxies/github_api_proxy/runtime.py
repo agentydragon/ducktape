@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from mitmproxy.tools.dump import DumpMaster
 from cluster.proxies.github_api_proxy.auth import Authenticate
 from cluster.proxies.github_api_proxy.capture import PrivateSave, SessionMetadata
 from cluster.proxies.github_api_proxy.config import Settings
-from cluster.proxies.github_api_proxy.destinations import PublicOrigins
+from cluster.proxies.github_api_proxy.destinations import OriginLoop, PublicOrigins
 from cluster.proxies.github_api_proxy.metrics import Metrics
 from cluster.proxies.github_api_proxy.tls import OuterTlsConfig
 
@@ -37,6 +38,8 @@ def private_pem(path: Path, cert_file: Path, key_file: Path, *, require_ca: bool
 
 
 def create_master(settings: Settings, metrics: Metrics) -> DumpMaster:
+    if not isinstance(asyncio.get_running_loop(), OriginLoop):
+        raise RuntimeError("The proxy requires its validated origin-dial event loop")
     credentials = settings.credentials()
     settings.confdir.mkdir(mode=0o700, parents=True, exist_ok=True)
     private_pem(

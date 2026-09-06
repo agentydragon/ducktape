@@ -52,9 +52,10 @@ CA content; the ordinary onboarding application is disabled.
 Only public web-origin ports 80 and 443 can be dialed. Every DNS answer must be
 globally routable and neither a special/transition address nor an address of the
 proxy hostname; mixed public/private answer sets fail closed. Resolution failures
-also fail closed. The checked numeric address is pinned before socket creation to
-prevent DNS rebinding; this deliberately uses the first answer rather than retrying
-alternate addresses. The upstream TLS identity is preserved. Deployment egress
+also fail closed. The runtime's event loop checks the actual numeric socket target
+against that connection task's validated DNS answers, rejecting any change before
+connect. Mitmproxy retains the logical hostname for connection reuse and upstream
+TLS identity. Starting the proxy without its guarded event loop is rejected. Deployment egress
 policy adds another boundary; it does not replace these checks. There is no runtime
 option for private origins. Synthetic tests alone redirect validated public IPs to
 loopback fixtures.
