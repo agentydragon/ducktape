@@ -347,9 +347,15 @@ resource "kubernetes_secret" "haku_console_claude" {
 # ============================================================================
 # Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
 # shared narrow client-key age key (the existing tf-runner
-# SOPS_AGE_KEY). The laptop tana-claude wrapper reads it via ducktape.sopsEnv
-# (TANA_LITELLM_KEY). The tana/ant-messages/* upstream reaches tana-litellm with the in-cluster master
-# key, so this scoped key never carries it.
+# SOPS_AGE_KEY). The laptop tana-claude wrapper reads it from its sops-nix secret file.
+# The tana/ant-messages/* upstream reaches tana-litellm with the in-cluster master key, so
+# this scoped key never carries it.
+#
+# Gotcha for every pinned key here: the value must start with `sk-`. LiteLLM rejects any
+# other bearer token before it looks the key up at all, as a guard against replayed token
+# hashes ("LiteLLM Virtual Key expected. Received=..., expected to start with 'sk-'",
+# proxy/auth/user_api_key_auth.py). A key minted without the prefix fails every request
+# with a 401 that names authentication rather than the key's shape.
 
 data "sops_file" "tana_clients_key" {
   source_file = "${path.module}/litellm-tana-clients-key.yaml"
@@ -383,7 +389,7 @@ resource "litellm_key" "tana_clients" {
 # ============================================================================
 # Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
 # shared narrow client-key age key. The laptop litellm-claude wrapper reads it via
-# ducktape.sopsEnv (CLAUDE_SUBSCRIPTION_LITELLM_KEY). CLIProxyAPI holds the Claude OAuth session, so this
+# its sops-nix secret file. CLIProxyAPI holds the Claude OAuth session, so this
 # scoped key never carries it.
 #
 # One deliberate difference from its sibling client keys: no team, so no `model = "*"`
@@ -462,7 +468,7 @@ resource "kubernetes_secret" "codex_clients_key" {
 # ============================================================================
 # Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with
 # the shared narrow client-key age key. The
-# laptop gemini-claude wrapper reads it via ducktape.sopsEnv (GEMINI_LITELLM_KEY). LiteLLM
+# laptop gemini-claude wrapper reads it from its sops-nix secret file. LiteLLM
 # reaches Google with the in-cluster GEMINI_API_KEY, so this scoped key never carries it.
 
 data "sops_file" "gemini_clients_key" {
