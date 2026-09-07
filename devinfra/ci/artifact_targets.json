@@ -97,7 +97,7 @@
     },
     "hakuctl": {
       "tests": "//haku/hakuctl/...",
-      "nixPackage": false
+      "nixPackage": true
     },
     "claude-hooks": {
       "tests": "//devinfra/claude/...",
