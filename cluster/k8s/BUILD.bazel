@@ -99,6 +99,7 @@ filegroup(
         "agents/public-coder-agent/app/agent-kubeconfig.yaml",
         "agents/public-coder-agent/app/deployment.yaml",
         "agents/public-coder-agent/app/networkpolicy-egress.yaml",
+        "agents/public-coder-agent/devbox/virtualmachine.yaml",
         "agents/public-coder-agent/k8s-reader/cluster-admin-ceiling.yaml",
         "agents/public-coder-agent/k8s-reader/cluster-metadata-reader.yaml",
         "agents/public-coder-agent/k8s-reader/extended-diagnostics-reader.yaml",

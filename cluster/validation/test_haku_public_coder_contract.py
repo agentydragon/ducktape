@@ -193,22 +193,27 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     assert {rule["host"] for rule in haku_secret["rules"]} == {"haku.allegedly.works", "haku-kubeapi.allegedly.works"}
     assert "KUBERNETES_READER_TOKEN" not in secrets_by_env
 
+    # Every actual proxy client's pod must carry labels the CNP admits, derived from the
+    # clients' own manifests rather than pinned here twice -- a client retired or revived
+    # without updating the CNP fails this on its own instead of relying on two hand-typed
+    # literals happening to be kept in sync (see e.g. the devbox retire/revive PRs).
     ingress_policy = yaml.safe_load((agent_dir / "proxy" / "cnp-ingress.yaml").read_text())
     ingress_rule = one(ingress_policy["spec"]["ingress"])
-    assert {frozenset(endpoint["matchLabels"].items()) for endpoint in ingress_rule["fromEndpoints"]} == {
-        frozenset(
-            {
-                "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
-                "k8s:app.kubernetes.io/name": "public-coder-agent",
-            }.items()
-        ),
-        frozenset(
-            {
-                "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
-                "k8s:kubevirt.io/domain": "public-coder-devbox",
-            }.items()
-        ),
-    }
+    allowed = {frozenset(endpoint["matchLabels"].items()) for endpoint in ingress_rule["fromEndpoints"]}
+
+    app_pod_labels = yaml.safe_load((agent_dir / "app" / "deployment.yaml").read_text())["spec"]["template"][
+        "metadata"
+    ]["labels"]
+    devbox_pod_labels = yaml.safe_load((agent_dir / "devbox" / "virtualmachine.yaml").read_text())["spec"]["template"][
+        "metadata"
+    ]["labels"]
+    for client_labels in (app_pod_labels, devbox_pod_labels):
+        # Cilium's matchLabels selects any pod whose labels are a superset of the rule, so a
+        # covering rule is one the client's actual labels satisfy -- not one matching them exactly.
+        actual = frozenset({"k8s:io.kubernetes.pod.namespace": "public-coder-agent"}.items()) | frozenset(
+            (f"k8s:{k}", v) for k, v in client_labels.items()
+        )
+        assert any(rule <= actual for rule in allowed), client_labels
     assert one(ingress_rule["toPorts"])["ports"] == [{"port": "8080", "protocol": "TCP"}]
 
     app_egress = yaml.safe_load((agent_dir / "app" / "networkpolicy-egress.yaml").read_text())
