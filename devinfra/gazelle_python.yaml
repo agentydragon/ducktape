@@ -39,7 +39,6 @@ manifest:
     anthropic: anthropic
     anyio: anyio
     apiclient: google_api_python_client
-    appdirs: appdirs
     apscheduler: apscheduler
     arch: arch
     argon2: argon2_cffi
@@ -52,7 +51,6 @@ manifest:
     attr: attrs
     attrs: attrs
     authlib: authlib
-    backoff: backoff
     bcrypt: bcrypt
     beancount: beancount
     beartype: beartype
@@ -62,7 +60,6 @@ manifest:
     botocore: botocore
     brotli: brotli
     bs4: beautifulsoup4
-    build: build
     cachetools: cachetools
     caio: caio
     canonicaljson: canonicaljson
@@ -70,8 +67,6 @@ manifest:
     cffi: cffi
     cfgv: cfgv
     charset_normalizer: charset_normalizer
-    chromadb: chromadb
-    chromadb_rust_bindings: chromadb
     claude_agent_sdk: claude_agent_sdk
     claude_code_sdk: claude_code_sdk
     click: click
@@ -81,7 +76,6 @@ manifest:
     compact_json: compact_json
     contourpy: contourpy
     coverage: coverage
-    crewai: crewai
     cryptography: cryptography
     cycler: cycler
     cyclopts: cyclopts
@@ -101,7 +95,6 @@ manifest:
     durationpy: durationpy
     e2e-tests: splitwise
     email_validator: email_validator
-    et_xmlfile: et_xmlfile
     exceptiongroup: exceptiongroup
     execnet: execnet
     executing: executing
@@ -113,7 +106,6 @@ manifest:
     fastuuid: fastuuid
     filelock: filelock
     flask: flask
-    flatbuffers: flatbuffers
     flexcache: flexcache
     flexparser: flexparser
     fontTools: fonttools
@@ -229,7 +221,6 @@ manifest:
     importlib_resources: importlib_resources
     iniconfig: iniconfig
     inspect_ai: inspect_ai
-    instructor: instructor
     inventree: inventree
     invoke: invoke
     ipykernel: ipykernel
@@ -250,7 +241,6 @@ manifest:
     jmespath: jmespath
     joserfc: joserfc
     json5: json5
-    json_repair: json_repair
     jsonlines: jsonlines
     jsonpatch: jsonpatch
     jsonpath_ng: jsonpath_ng
@@ -282,35 +272,6 @@ manifest:
     kiwisolver: kiwisolver
     kubernetes: kubernetes
     kubernetes_asyncio: kubernetes_asyncio
-    langchain_anthropic: langchain_anthropic
-    langchain_core: langchain_core
-    langchain_mcp_adapters: langchain_mcp_adapters
-    langchain_openai: langchain_openai
-    langgraph.cache.base: langgraph_checkpoint
-    langgraph.cache.memory: langgraph_checkpoint
-    langgraph.cache.redis: langgraph_checkpoint
-    langgraph.channels: langgraph
-    langgraph.checkpoint.base: langgraph_checkpoint
-    langgraph.checkpoint.memory: langgraph_checkpoint
-    langgraph.checkpoint.serde: langgraph_checkpoint
-    langgraph.config: langgraph
-    langgraph.constants: langgraph
-    langgraph.errors: langgraph
-    langgraph.func: langgraph
-    langgraph.graph: langgraph
-    langgraph.managed: langgraph
-    langgraph.prebuilt: langgraph_prebuilt
-    langgraph.pregel: langgraph
-    langgraph.runtime: langgraph
-    langgraph.store.base: langgraph_checkpoint
-    langgraph.store.memory: langgraph_checkpoint
-    langgraph.types: langgraph
-    langgraph.typing: langgraph
-    langgraph.utils: langgraph
-    langgraph.version: langgraph
-    langgraph.warnings: langgraph
-    langgraph_sdk: langgraph_sdk
-    langsmith: langsmith
     lark: lark
     ldap3: ldap3
     librt.base64: librt
@@ -369,16 +330,13 @@ manifest:
     numpy: numpy
     numpyro: numpyro
     oauthlib: oauthlib
-    onnxruntime: onnxruntime
     openai: openai
     openapi_pydantic: openapi_pydantic
-    openpyxl: openpyxl
     opentelemetry.attributes: opentelemetry_api
     opentelemetry.baggage: opentelemetry_api
     opentelemetry.context: opentelemetry_api
     opentelemetry.environment_variables: opentelemetry_api
     opentelemetry.exporter.otlp.proto.common: opentelemetry_exporter_otlp_proto_common
-    opentelemetry.exporter.otlp.proto.grpc: opentelemetry_exporter_otlp_proto_grpc
     opentelemetry.exporter.otlp.proto.http: opentelemetry_exporter_otlp_proto_http
     opentelemetry.metrics: opentelemetry_api
     opentelemetry.propagate: opentelemetry_api
@@ -398,10 +356,7 @@ manifest:
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
     opt_einsum: opt_einsum
-    orjson: orjson
-    ormsgpack: ormsgpack
     outcome: outcome
-    overrides: overrides
     packaging: packaging
     pandas: pandas
     pandocfilters: pandocfilters
@@ -411,8 +366,6 @@ manifest:
     pathlib_abc: pathlib_abc
     pathspec: pathspec
     patsy: patsy
-    pdfminer: pdfminer_six
-    pdfplumber: pdfplumber
     pexpect: pexpect
     pint: pint
     plaid: plaid_python
@@ -422,8 +375,6 @@ manifest:
     pluggy: pluggy
     polars: polars
     port_for: port_for
-    portalocker: portalocker
-    posthog: posthog
     pre_commit: pre_commit
     prometheus_client: prometheus_client
     prompt_toolkit: prompt_toolkit
@@ -443,7 +394,6 @@ manifest:
     pyarrow: pyarrow
     pyasn1: pyasn1
     pyasn1_modules: pyasn1_modules
-    pybase64: pybase64
     pycparser: pycparser
     pycrdt: pycrdt
     pydantic: pydantic
@@ -459,13 +409,7 @@ manifest:
     pylsqpack: pylsqpack
     pyparsing: pyparsing
     pypdf: pypdf
-    pypdfium2: pypdfium2
-    pypdfium2_cfg: pypdfium2
-    pypdfium2_cli: pypdfium2
-    pypdfium2_raw: pypdfium2
     pyperclip: pyperclip
-    pypika: pypika
-    pyproject_hooks: pyproject_hooks
     pyroute2: pyroute2
     pytest: pytest
     pytest_asyncio: pytest_asyncio
@@ -476,6 +420,7 @@ manifest:
     pytest_mock: pytest_mock
     pytest_playwright: pytest_playwright
     pytest_postgresql: pytest_postgresql
+    pytest_shard: pytest_shard
     pytest_timeout: pytest_timeout
     python_discovery: python_discovery
     python_multipart: python_multipart
@@ -492,7 +437,6 @@ manifest:
     regex: regex
     requests: requests
     requests_oauthlib: requests_oauthlib
-    requests_toolbelt: requests_toolbelt
     respx: respx
     rfc3339_validator: rfc3339_validator
     rfc3986_validator: rfc3986_validator
@@ -621,8 +565,6 @@ manifest:
     uritemplate: uritemplate
     urllib3: urllib3
     urwid: urwid
-    uuid_utils: uuid_utils
-    uv: uv
     uvicorn: uvicorn
     uvloop: uvloop
     virtualenv: virtualenv
@@ -639,7 +581,6 @@ manifest:
     wrapt: wrapt
     wsproto: wsproto
     xdist: pytest_xdist
-    xxhash: xxhash
     yaml: pyyaml
     yarl: yarl
     zipfile_zstd: zipfile_zstd
@@ -648,4 +589,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: df908c00a80b4ee524b88e4f1b2ab49b40e5c7634274467a999a36798a3fe707
+integrity: 939528d88b953866dcb5da858a27b68bcb36b36fdcd1bd694e66bb86e0c986c7

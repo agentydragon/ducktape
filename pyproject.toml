@@ -221,11 +221,15 @@ dependencies = [
     "pydantic-ai-slim[openai,anthropic,fastmcp]>=0.10",
     "openai-agents>=0.0.1",
     # crewai and the langgraph/langchain-* group backed the x/crewai and x/langgraph eval
-    # variants. Removed 2026-09-07: neither has a release compatible with mcp-sdk >=2.0
-    # (crewai requires mcp~=1.28.1; langchain-mcp-adapters requires mcp<2.0.0, tracked at
-    # langchain-ai/langchain-mcp-adapters#578), which blocked the #5786 migration. Restore
-    # once a compatible release ships -- the eval source under x/crewai and x/langgraph is
-    # untouched, just gazelle-excluded from x/BUILD.bazel.
+    # variants, deleted 2026-09-07 (see skills/info_gathering/evals/twenty_questions/x/
+    # {crewai,langgraph}.md): neither had a release compatible with mcp-sdk >=2.0 (crewai
+    # requires mcp~=1.28.1; langchain-mcp-adapters requires mcp<2.0.0, tracked at
+    # langchain-ai/langchain-mcp-adapters#578), which blocked the #5786 migration.
+
+    # cluster/k8s/litellm/app/test_openclaw_models.py parses .json5 config files directly.
+    # It rode in as crewai's transitive dependency until crewai was removed above -- pinned
+    # here explicitly now that nothing else pulls it in.
+    "json5",
 
     # git_commit_ai
     "mako>=1.3",
