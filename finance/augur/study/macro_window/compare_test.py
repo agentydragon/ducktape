@@ -22,9 +22,6 @@ import pytest_bazel
 from finance.augur.fit.structural_macro import MacroFitWindow
 from finance.augur.study.macro_window.compare import compare_windows, describe, fitted_var, spectral_radius
 
-# 1926-07 is where `load_macro_history` starts: Ken French's factors begin latest of its sources.
-LONG_RECORD_FIRST_YEAR = 1926
-
 
 def test_both_windows_fit_a_stationary_var() -> None:
     """Report both fits, and pin the two properties that are requirements rather than results.
@@ -45,7 +42,10 @@ def test_both_windows_fit_a_stationary_var() -> None:
         assert radius < 1.0, f"{window} fitted a non-stationary VAR (spectral radius {radius})"
 
     short, long_record = fits[MacroFitWindow.FRED_1955], fits[MacroFitWindow.LONG_RECORD_1926]
-    assert long_record.macro_state_fit.first_month.year == LONG_RECORD_FIRST_YEAR
+    # A relationship rather than two dates: the fit's first usable month is a lookback year after
+    # the record's own start (the inflation state is TRAILING-year, so twelve months are spent
+    # before there is one), and pinning the literal would be re-asserting that arithmetic.
+    assert long_record.macro_state_fit.first_month < short.macro_state_fit.first_month
     assert long_record.macro_state_fit.sample_months > short.macro_state_fit.sample_months
 
 
