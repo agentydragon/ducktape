@@ -24,7 +24,7 @@ from fastmcp.mcp_config import (
 )
 from fastmcp.server import FastMCP
 from mcp import types as mcp_types
-from pydantic import ValidationError
+from pydantic import AnyUrl, ValidationError
 
 from mcp_infra.compositor.mount import Mount
 from mcp_infra.compositor.rendering import render_compositor_instructions
@@ -647,7 +647,7 @@ class BaseCompositor(FastMCP):
         return mount.inproc_server
 
     async def read_resource_contents(
-        self, uri: mcp_types.AnyUrl
+        self, uri: AnyUrl
     ) -> list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]:
         """Read resource contents, converting from FastMCP's ResourceResult to MCP protocol types."""
         result = await self.read_resource(str(uri))

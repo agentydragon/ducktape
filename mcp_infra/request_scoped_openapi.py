@@ -1,9 +1,8 @@
 """Request-scoped HTTP clients for FastMCP OpenAPI tools.
 
-FastMCP 3.4.4 binds one ``httpx.AsyncClient`` to every ``OpenAPITool`` when
-the OpenAPI provider is constructed.  Unlike function-backed tools, those
-tools have no dependency-injection seam for choosing a client at invocation
-time.
+FastMCP binds one ``httpx2.AsyncClient`` to every ``OpenAPITool`` when the
+OpenAPI provider is constructed.  Unlike function-backed tools, those tools
+have no dependency-injection seam for choosing a client at invocation time.
 
 ``RequestScopedOpenAPIClients`` adapts each generated tool into a transformed
 tool whose client comes from FastMCP's call-scoped ``Depends`` resolver.  The
@@ -20,6 +19,7 @@ from copy import deepcopy
 from typing import Any, cast, overload
 
 import httpx
+import httpx2
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.providers.openapi import OpenAPITool
@@ -115,11 +115,11 @@ class RequestScopedOpenAPIClients(Transform):
         injected_client = Depends(client_provider)
 
         async def dispatch(
-            _fastmcp_request_scoped_http_client: httpx.AsyncClient = injected_client, **arguments: Any
+            _fastmcp_request_scoped_http_client: httpx2.AsyncClient = injected_client, **arguments: Any
         ) -> ToolResult:
-            # OpenAPITool has no public per-call client factory in FastMCP
-            # 3.4.4.  model_copy() preserves its generated route/director while
-            # ensuring this private client assignment is invocation-local.
+            # OpenAPITool has no public per-call client factory.  model_copy()
+            # preserves its generated route/director while ensuring this
+            # private client assignment is invocation-local.
             bound = tool.model_copy()
             # FastMCP's private field is annotated as its legacy httpx client;
             # this adapter deliberately supplies the compatible httpx2 wrapper.

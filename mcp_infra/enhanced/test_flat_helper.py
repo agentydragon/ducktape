@@ -49,7 +49,7 @@ async def test_flat_schema_and_typed_invocation(make_typed_mcp, echo_server):
         # Validate server advertises flat arguments (no nested 'input')
         tools = await sess.list_tools()
         tool = next(t for t in tools if t.name == "echo")
-        schema = tool.inputSchema or {}
+        schema = tool.input_schema or {}
         props = schema.get("properties", {})
         assert set(props.keys()) >= {"msg", "upper"}  # flat keys present
         # Ensure not wrapped
@@ -76,7 +76,7 @@ async def test_mcp_flat_model_backward_compatibility(list_tools_via_client):
 
     tools = await list_tools_via_client(legacy)
     tool = next(t for t in tools if t.name == "legacy_echo")
-    props = (tool.inputSchema or {}).get("properties", {})
+    props = (tool.input_schema or {}).get("properties", {})
     assert "msg" in props
     assert "upper" in props
     assert "input" not in props
@@ -93,7 +93,7 @@ async def test_tool_flat_explicit_models(list_tools_via_client):
 
     tools = await list_tools_via_client(mcp)
     tool = next(t for t in tools if t.name == "echo")
-    props = (tool.inputSchema or {}).get("properties", {})
+    props = (tool.input_schema or {}).get("properties", {})
     assert set(props) >= {"msg", "upper"}
 
 
