@@ -1,22 +1,20 @@
 """How the derived product metrics are built out of the base ones. The only place.
 
-The engine emits the base series directly from the scan carry. Product fan routes use
-those device arrays to select one metric, while selected-rollout detail copies all base
-series after the same reducer runs. The host only composes derived sums; it never
-re-values lots, properties, or bonds from dense output arrays.
+An engine emits the base series and nothing above them: the arithmetic relating metrics
+is defined once, here, and never re-derived by a caller. Nothing here re-values lots,
+properties, or bonds.
 
-The arithmetic relating metrics is defined once here. `numpy` arrays, `jnp` arrays and
-plain floats all support the operators used, so one definition serves the device fan
-selection and the selected-rollout host projection.
-
-`base` is a callable rather than a mapping to keep the engine's laziness: only the base
+`base` is a callable rather than a mapping to keep the reduction lazy: only the base
 series a requested metric actually needs get materialized.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, Self
+from typing import cast
+
+import numpy as np
+from numpy.typing import NDArray
 
 # What the simulation emits directly, before any metric is derived from another.
 BASE_METRIC_NAMES = (
@@ -34,32 +32,16 @@ DERIVED_METRIC_NAMES = ("home_equity_quanta", "liquid_net_worth_quanta", "net_wo
 METRIC_NAMES = (*BASE_METRIC_NAMES, *DERIVED_METRIC_NAMES)
 
 
-class MetricValue(Protocol):
-    """What a metric series has to support to be composed: adding and subtracting its own
-    kind. `numpy` arrays, `jnp` arrays and plain floats all qualify, which is the point —
-    the composition is written once and each backend supplies its own base series.
-    """
-
-    def __add__(self, other: Self, /) -> Self: ...
-    def __sub__(self, other: Self, /) -> Self: ...
-
-
-class MetricSeries(Protocol):
-    """What a metric's `(snapshot, rollout)` series has to support to be reduced to its
-    terminal samples.
-    """
-
-    def sum(self, axis: int) -> Self: ...
-    def __getitem__(self, index: int, /) -> Self: ...
-
-
-def terminal_series[T: MetricSeries](metric: str, series: T) -> T:
+def terminal_series(metric: str, series: NDArray[np.int64]) -> NDArray[np.int64]:
     """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
 
-    return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
+    # numpy declares both `sum` and integer indexing as returning `Any`; the dtype is the
+    # input's either way.
+    terminal = series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
+    return cast("NDArray[np.int64]", terminal)
 
 
-def compose_metric[T: MetricValue](name: str, base: Callable[[str], T]) -> T:
+def compose_metric(name: str, base: Callable[[str], NDArray[np.int64]]) -> NDArray[np.int64]:
     """One product metric, in terms of the base series `base` supplies.
 
     A base metric is returned as-is; a derived one is its defining sum. Raises on an unknown

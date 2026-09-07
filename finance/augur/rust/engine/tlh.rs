@@ -42,12 +42,10 @@ pub(super) fn execute_tlh_harvest(
         let price = series_value(fixture, &series_id, rollout_id, month)?;
         let prior_price = series_value(fixture, &series_id, rollout_id, month.saturating_sub(1))?;
         let market_value = policy_lots.iter().try_fold(Money(0), |total, lot| {
-            total.checked_add(Money(mul_div_round_half_up(
-                lot.units_remaining.0,
-                price,
-                lot.spec.quantity_scale,
+            total.checked_add(PerUnit(price).times(
+                Units::new(lot.units_remaining, lot.spec.quantity_scale),
                 "TLH market value",
-            )?))
+            )?)
         })?;
         let original_basis = policy_lots.iter().try_fold(Money(0), |total, lot| {
             total.checked_add(lot.basis_remaining)
@@ -88,20 +86,15 @@ pub(super) fn execute_tlh_harvest(
                 .max(0),
         );
         let gross = Money(
-            mul_div_round_half_up(
-                market_value.0,
-                fraction_ppb,
-                WIRE_RATE_SCALE,
-                "TLH gross harvest",
-            )?
-            .min(ceiling.0),
+            market_value
+                .scaled_by(Factor::parts_per_billion(fraction_ppb), "TLH gross harvest")?
+                .0
+                .min(ceiling.0),
         );
-        let short_term = Money(mul_div_round_half_up(
-            gross.0,
-            policy.short_term_fraction_ppb,
-            WIRE_RATE_SCALE,
+        let short_term = gross.scaled_by(
+            Factor::parts_per_billion(policy.short_term_fraction_ppb),
             "TLH short-term fraction",
-        )?);
+        )?;
         let long_term = gross.checked_sub(short_term)?;
         if short_term != Money(0) {
             record_capital_gain(
@@ -224,20 +217,18 @@ pub(super) fn tlh_give_back_for_pool_sale(
         if pre_sale_units <= 0 || sold_units <= 0 {
             continue;
         }
-        let total_give_back = Money(mul_div_round_half_up(
-            cumulative_harvest[policy_index].0,
-            sold_units,
-            pre_sale_units,
+        let total_give_back = cumulative_harvest[policy_index].apportion(
+            Quantity(sold_units),
+            Quantity(pre_sale_units),
             "TLH sale give-back",
-        )?);
+        )?;
         let mut allocated = Money(0);
         for (planned_index, item) in matching {
-            let amount = Money(mul_div_round_half_up(
-                total_give_back.0,
-                item.units.0,
-                sold_units,
+            let amount = total_give_back.apportion(
+                item.units,
+                Quantity(sold_units),
                 "TLH per-lot give-back",
-            )?);
+            )?;
             give_back[planned_index] = give_back[planned_index].checked_add(amount)?;
             allocated = allocated.checked_add(amount)?;
         }
@@ -300,12 +291,11 @@ pub(super) fn tlh_give_back_for_scheduled_sale(
             {
                 continue;
             }
-            let amount = Money(mul_div_round_half_up(
-                state.cumulative_start[policy_index].0,
-                item.units.0,
-                state.pre_sale_units[policy_index],
+            let amount = state.cumulative_start[policy_index].apportion(
+                item.units,
+                Quantity(state.pre_sale_units[policy_index]),
                 "TLH scheduled-sale give-back",
-            )?);
+            )?;
             give_back[planned_index] = give_back[planned_index].checked_add(amount)?;
             state.allocated[policy_index] = state.allocated[policy_index].checked_add(amount)?;
         }
