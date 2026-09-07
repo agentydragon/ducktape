@@ -379,6 +379,34 @@ resource "litellm_key" "tana_clients" {
 }
 
 # ============================================================================
+# max-clients — scoped key for laptop max-claude (Anthropic Max subscription via CLIProxyAPI)
+# ============================================================================
+# Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
+# shared narrow client-key age key. The laptop max-claude wrapper reads it via
+# ducktape.sopsEnv (MAX_LITELLM_KEY). CLIProxyAPI holds the Claude OAuth session, so this
+# scoped key never carries it.
+#
+# Two deliberate differences from its sibling client keys. No `anthropic-api/ant-messages/*`:
+# this lane exists to spend the subscription, and admitting the metered API would silently
+# bill it. And no team, so no `model = "*"` fallback: those exist on the tana/codex/gemini
+# lanes because Claude Code names Claude models a non-Claude lane cannot serve, which cannot
+# happen here -- the in-cluster haku_console_claude key below runs Claude Code on exactly
+# this roster with no fallback at all.
+
+data "sops_file" "max_clients_key" {
+  source_file = "${path.module}/litellm-max-clients-key.yaml"
+}
+
+resource "litellm_key" "max_clients" {
+  key_alias = "max-clients"
+  key       = data.sops_file.max_clients_key.data["litellm_max_key"]
+  models    = local.claude_client_models
+  metadata = {
+    consumer = "laptop-max-claude"
+  }
+}
+
+# ============================================================================
 # codex-clients — scoped key for laptop + agent-box + codex-pod codex-claude
 # ============================================================================
 # Same Pattern-B pinned key. The chatgpt/ant-messages/* upstream reaches CLIProxyAPI with the in-cluster
