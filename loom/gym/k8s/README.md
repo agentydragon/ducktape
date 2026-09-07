@@ -15,9 +15,10 @@ The `docker-ci-client` mTLS Secret is issued straight into `claude-sandbox` by
 cert-manager (`cluster/k8s/docker-ci/certificates.yaml`) and mounted by the Job —
 no manual create-secret step. The client private key never leaves the cluster.
 
-Prereqs: `docker-ci` Running on OVH; the `ghcr.io/agentydragon/{loom-gym-eval,wayback-proxy,loom-gym-sandbox}`
-images published (on merge to `devel`); the `docker-ci-client` Secret present
-(cert-manager); and the reflected `litellm-master-key` + `claude-forgejo-credentials`
+Prereqs: `docker-ci` Running on OVH; `git.allegedly.works/ducktape-ci/{loom-gym-eval,wayback-proxy}`
+and `ghcr.io/agentydragon/loom-gym-sandbox` images published (on merge to `devel`); the
+`docker-ci-client` Secret present (cert-manager); and the reflected `litellm-master-key`,
+`claude-forgejo-credentials`, and `forgejo-images-creds`
 secrets present in `claude-sandbox`.
 
 ## Run and fetch results

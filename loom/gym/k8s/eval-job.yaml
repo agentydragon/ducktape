@@ -17,17 +17,20 @@ spec:
       initContainers:
         # Stage the sandbox images into the docker-ci daemon under the bare
         # :latest tags the compose expects (x-local — no pull at sandbox-create
-        # time). The daemon has clean egress, so it does the GHCR pull; we retag.
+        # time). The daemon has clean egress, so it does the unauthenticated GHCR
+        # pull for loom-gym-sandbox; wayback-proxy is a private Forgejo package,
+        # so it needs a login first.
         - name: stage-images
           image: docker:27-cli
           command:
             - sh
             - -ceu
             - |
-              for img in wayback-proxy loom-gym-sandbox; do
-                docker pull "ghcr.io/agentydragon/$img:latest"
-                docker tag "ghcr.io/agentydragon/$img:latest" "$img:latest"
-              done
+              docker pull "ghcr.io/agentydragon/loom-gym-sandbox:latest"
+              docker tag "ghcr.io/agentydragon/loom-gym-sandbox:latest" "loom-gym-sandbox:latest"
+              echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+              docker pull "git.allegedly.works/ducktape-ci/wayback-proxy:latest"
+              docker tag "git.allegedly.works/ducktape-ci/wayback-proxy:latest" "wayback-proxy:latest"
           env:
             - name: DOCKER_HOST
               value: tcp://docker-ci.docker-ci.svc.cluster.local:2376
@@ -35,6 +38,16 @@ spec:
               value: "1"
             - name: DOCKER_CERT_PATH
               value: /certs
+            - name: FORGEJO_IMAGES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-images-creds
+                  key: username
+            - name: FORGEJO_IMAGES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-images-creds
+                  key: password
           volumeMounts:
             - name: certs
               mountPath: /certs
@@ -45,9 +58,14 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+      # wayback-proxy is staged into docker-ci above; the eval image itself is
+      # also a private Forgejo package — ducktape-ci credential reflected into
+      # this namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       containers:
         - name: eval
-          image: ghcr.io/agentydragon/loom-gym-eval:latest
+          image: git.allegedly.works/ducktape-ci/loom-gym-eval:latest
           args:
             - --model-id
             - glm-4.5

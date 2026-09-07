@@ -1,4 +1,4 @@
-vm_image: ghcr.io/agentydragon/firecracker-vm-pod:latest
+vm_image: git.allegedly.works/ducktape-ci/fc-vm-pod:latest
 base_rootfs_pvc: firecracker-base-rootfs
 node_selector:
   kubernetes.io/hostname: wyrm2
