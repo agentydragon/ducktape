@@ -1,0 +1,13 @@
+# The operator's own whole-genome sequencing data (VCF + indices now; the 30x CRAM once it's
+# copied in from Nebula) and analysis outputs. Single-writer, one-shot-job access pattern, so
+# ReadWriteOnce local storage is sufficient — no need for SeaweedFS's RWX CSI here.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: genome-analysis-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path-ovh-ssd
+  resources:
+    requests:
+      storage: 100Gi
