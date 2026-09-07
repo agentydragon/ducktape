@@ -31,7 +31,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any, TypeVar
 
-import httpx
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from pydantic import Field
@@ -161,7 +161,7 @@ def _format_exc(e: Exception) -> str:
     """
     if isinstance(e, MutationMayHaveAppliedError):
         return str(e)
-    if isinstance(e, httpx.HTTPStatusError):
+    if isinstance(e, httpx2.HTTPStatusError):
         status = e.response.status_code
         reason = e.response.reason_phrase
         method = e.request.method
@@ -176,9 +176,9 @@ def _format_exc(e: Exception) -> str:
 
 def _is_retryable(exc: BaseException) -> bool:
     """Whether an exception is transient and worth retrying (reads/GETs)."""
-    if isinstance(exc, httpx.TimeoutException):
+    if isinstance(exc, httpx2.TimeoutException):
         return True
-    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
+    return isinstance(exc, httpx2.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
 
 
 def _is_retryable_mutation(exc: BaseException) -> bool:
@@ -190,7 +190,7 @@ def _is_retryable_mutation(exc: BaseException) -> bool:
     retryable (matching prior behavior) — the request reached Grocy but was
     rejected, so no mutation was applied to duplicate.
     """
-    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
+    return isinstance(exc, httpx2.HTTPStatusError) and exc.response.status_code in {429, 500, 502, 503, 504}
 
 
 # ── Tool registration ────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ def register_batch_tools(
                 ):
                     with attempt:
                         return await fn()
-            except httpx.TimeoutException as e:
+            except httpx2.TimeoutException as e:
                 if mutation:
                     raise MutationMayHaveAppliedError(
                         f"{describe} timed out before Grocy responded; the mutation may or may not "
@@ -279,7 +279,7 @@ def register_batch_tools(
             logger.warning("best-effort follow-up failed: %s", label, exc_info=True)
             return None
 
-    async def _create_object(client: httpx.AsyncClient, path: str, body: dict[str, Any], *, describe: str) -> CreateOk:
+    async def _create_object(client: httpx2.AsyncClient, path: str, body: dict[str, Any], *, describe: str) -> CreateOk:
         async def _do() -> CreateOk:
             r = await client.post(path, json=body)
             r.raise_for_status()
@@ -539,23 +539,23 @@ def register_batch_tools(
             )
         return result
 
-    async def _best_effort_new_amount(client: httpx.AsyncClient, product_id: int) -> float | None:
+    async def _best_effort_new_amount(client: httpx2.AsyncClient, product_id: int) -> float | None:
         """Read current stock amount after a mutation. Best-effort, never retried."""
         return await _best_effort(f"new_amount for product {product_id}", lambda: _read_new_amount(client, product_id))
 
-    async def _read_new_amount(client: httpx.AsyncClient, product_id: int) -> float:
+    async def _read_new_amount(client: httpx2.AsyncClient, product_id: int) -> float:
         stock_r = await client.get(f"/stock/products/{product_id}")
         stock_r.raise_for_status()
         return float(stock_r.json()["stock_amount"])
 
-    async def _best_effort_entry_id(client: httpx.AsyncClient, product_id: int, stock_id: str) -> int | None:
+    async def _best_effort_entry_id(client: httpx2.AsyncClient, product_id: int, stock_id: str) -> int | None:
         """Resolve a new stock entry's ID from its opaque stock ID."""
         return await _best_effort(
             f"entry_id for stock_id={stock_id} (product {product_id})",
             lambda: _read_entry_id(client, product_id, stock_id),
         )
 
-    async def _read_entry_id(client: httpx.AsyncClient, product_id: int, stock_id: str) -> int | None:
+    async def _read_entry_id(client: httpx2.AsyncClient, product_id: int, stock_id: str) -> int | None:
         r = await client.get(f"/stock/products/{product_id}/entries", params={"query[]": f"stock_id={stock_id}"})
         r.raise_for_status()
         entries: list[dict[str, Any]] = r.json()
@@ -907,7 +907,7 @@ def register_batch_tools(
         return await _list_reference(client, EntityType.SHOPPING_LIST, detail, FullShoppingList)
 
     async def _simple_batch_create[T](
-        client: httpx.AsyncClient, items: list[T], entity_path: str, to_body: Callable[[T], dict[str, Any]]
+        client: httpx2.AsyncClient, items: list[T], entity_path: str, to_body: Callable[[T], dict[str, Any]]
     ) -> list[CreateOk | CreateError]:
         """Shared implementation for simple entity creation tools."""
 
@@ -1389,7 +1389,7 @@ def register_batch_tools(
         all_items: list[dict[str, Any]] = r.json()
         items = [i for i in all_items if int(i.get("shopping_list_id", 1)) == sl.id]
 
-        async def _delete(item_id: int) -> httpx.Response:
+        async def _delete(item_id: int) -> httpx2.Response:
             return await client.delete(f"/objects/shopping_list/{item_id}")
 
         responses = await asyncio.gather(*[_retry(functools.partial(_delete, int(i["id"]))) for i in items])

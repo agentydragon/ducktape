@@ -96,6 +96,14 @@ class FakeMcpServer:
         method = body["method"]
         if method == "notifications/initialized":
             return Response(status_code=202)
+        if method == "server/discover":
+            # This peer only speaks the legacy initialize handshake. A real legacy server
+            # answers an unrecognized method with a JSON-RPC error, not a transport failure --
+            # that's what lets the client's mode="auto" probe fall back to initialize() instead
+            # of treating the peer as broken (see mcp.client._probe.negotiate_auto).
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": body["id"], "error": {"code": -32601, "message": "Method not found"}}
+            )
         if method == "initialize":
             return JSONResponse(
                 {
@@ -227,6 +235,7 @@ async def test_http_session_discovery_call_and_shutdown(
         assert result.state is ExecutionState.SUCCEEDED
         assert result.result == {"echoed": "hi", "api_key": "test-only-backend-secret"}
         assert [post["method"] for post in fake_server.posts] == [
+            "server/discover",
             "initialize",
             "notifications/initialized",
             "tools/list",
@@ -240,7 +249,9 @@ async def test_http_session_discovery_call_and_shutdown(
         await executor.close()
     assert fake_server.requests[-1].method == "DELETE"
     assert all("authorization" not in request.headers for request in fake_server.requests)
-    for request in fake_server.requests[1:]:
+    # Neither `server/discover` nor `initialize` itself carries a session id -- the server only
+    # assigns one in the `initialize` response, echoed starting with the next request.
+    for request in fake_server.requests[2:]:
         assert request.headers["mcp-session-id"] == "test-http-session"
         assert request.headers["mcp-protocol-version"]
 

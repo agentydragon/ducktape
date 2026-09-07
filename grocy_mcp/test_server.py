@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
@@ -57,7 +57,7 @@ async def test_batch_client_dependency_failure_is_mcp_error_before_body() -> Non
     async with Client(mcp) as mcp_client:
         result = await mcp_client.call_tool_mcp("entities_list", {"entity_types": ["products"]})
 
-    assert result.isError is True
+    assert result.is_error is True
     assert "Backend authentication failed" in "\n".join(
         block.text for block in result.content if hasattr(block, "text")
     )
@@ -69,14 +69,14 @@ async def test_batch_client_dependency_is_hidden_and_lives_for_one_call() -> Non
     exited: list[GrocyClient] = []
     backend_requests: list[str] = []
 
-    async def backend(request: httpx.Request) -> httpx.Response:
+    async def backend(request: httpx2.Request) -> httpx2.Response:
         backend_requests.append(request.url.path)
-        return httpx.Response(200, json=[])
+        return httpx2.Response(200, json=[])
 
     @asynccontextmanager
     async def per_call_client() -> AsyncIterator[GrocyClient]:
         async with GrocyClient(
-            base_url="https://grocy.example.com/api", transport=httpx.MockTransport(backend)
+            base_url="https://grocy.example.com/api", transport=httpx2.MockTransport(backend)
         ) as client:
             entered.append(client)
             try:
@@ -91,7 +91,7 @@ async def test_batch_client_dependency_is_hidden_and_lives_for_one_call() -> Non
         result = await mcp_client.call_tool_mcp("entities_list", {"entity_types": ["products", "locations"]})
 
     assert all("client" not in schema.get("properties", {}) for schema in injected_schemas.values())
-    assert result.isError is False
+    assert result.is_error is False
     assert sorted(backend_requests) == ["/api/objects/locations", "/api/objects/products"]
     assert len(entered) == 1
     assert exited == entered

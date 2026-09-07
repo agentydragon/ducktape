@@ -18,6 +18,14 @@ py_library(
 )
 
 py_library(
+    name = "httpx2_mock",
+    testonly = True,
+    srcs = ["httpx2_mock.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//httpx2"],
+)
+
+py_library(
     name = "otel_tracing",
     testonly = True,
     srcs = ["otel_tracing.py"],
