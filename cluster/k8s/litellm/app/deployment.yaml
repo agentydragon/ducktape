@@ -128,6 +128,41 @@ spec:
                 secretKeyRef:
                   name: litellm-cliproxy-key
                   key: CLIPROXY_CLIENT_KEY
+            # Opts langfuse_otel into LiteLLM's OTel v2 path, which stamps
+            # trace-level input/output on the Langfuse root observation
+            # (BerriAI/litellm#39369) instead of only the nested LLM-call
+            # span. LITELLM_OTEL_V2 and content capture are both off by
+            # default.
+            #
+            # EXPORTERS below works around a real litellm bug, not config we
+            # actually want. Every OTel v2 preset
+            # (litellm/integrations/otel/presets/*.py) builds its config as
+            # `config_overrides or OpenTelemetryV2Config()`, and
+            # config_overrides is never populated for a callback-driven
+            # preset -- litellm_logging._maybe_construct_otel_v2 always calls
+            # the preset with zero args. OpenTelemetryV2Config's own
+            # model_validator folds OTEL_EXPORTER (default "console") into
+            # its `exporters` list whenever that list is still empty at
+            # construction, and the preset then *appends* its own exporter to
+            # whatever that produced rather than replacing it. So enabling
+            # content capture without this silently ALSO attaches a
+            # ConsoleSpanExporter that dumps full prompt/response content --
+            # for every request through this shared proxy, not just one
+            # tenant -- to pod stdout (confirmed live 2026-09-07, then
+            # reverted; see git log on this file). Setting the plural
+            # `exporters` field directly, instead of the singular
+            # OTEL_EXPORTER shorthand, bypasses that fold entirely so no
+            # console exporter is ever constructed; the endpoint below is an
+            # inert placeholder nothing is meant to answer on. Remove once
+            # litellm suppresses (or lets an operator suppress) the
+            # console/shorthand default for a preset that already resolved a
+            # real destination.
+            - name: LITELLM_OTEL_V2
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+              value: "span_only"
+            - name: EXPORTERS
+              value: '[{"kind":"otlp_http","endpoint":"http://127.0.0.1:1"}]'
             - name: LANGFUSE_OTEL_HOST
               value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
             - name: LANGFUSE_PUBLIC_KEY
