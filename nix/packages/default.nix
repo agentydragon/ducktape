@@ -23,15 +23,34 @@ let
         };
       in
       {
-        # Being part of this override set means anyio no longer matches nixpkgs'
-        # cached build (its dependency closure shifted under it), so it rebuilds from
-        # source here instead of substituting -- which runs its test suite, including
-        # a thread-count assertion nixpkgs already knows is racy under load (it
-        # disables the sibling test_multiple_threads for the same reason, citing
-        # NixOS/nixpkgs#448125) but hasn't yet disabled for test_single_thread.
+        # Any package pulled transitively into this override set no longer matches
+        # nixpkgs' cached build once the closure shifts under it, so it rebuilds from
+        # source here instead of substituting -- running its test suite for the first
+        # time in this closure and surfacing pre-existing flaky tests nixpkgs' own
+        # binary-cache users never exercise. Fix these the same way nixpkgs itself
+        # already does for known-racy cases (see anyio's own disabledTests below,
+        # which excludes the sibling test_multiple_threads for the identical reason):
+        # disable the specific flaky test with a comment, not doCheck = false wholesale.
         anyio = pyprev.anyio.overrideAttrs (old: {
+          # test_single_thread: thread-count assertion racy under load, same class as
+          # nixpkgs' own test_multiple_threads exclusion (NixOS/nixpkgs#448125).
           disabledTests = (old.disabledTests or [ ]) ++ [
             "test_single_thread"
+          ];
+        });
+        python-ulid = pyprev.python-ulid.overrideAttrs (old: {
+          # test_same_millisecond_overflow: writes directly to the shared
+          # ULID.provider singleton's mutable state and expects to observe its own
+          # write, order/isolation-dependent under this closure's rebuild.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_same_millisecond_overflow"
+          ];
+        });
+        tenacity = pyprev.tenacity.overrideAttrs (old: {
+          # test_sleeps: asserts an async retry-with-backoff run completes within
+          # 1.1s; scheduler jitter under this closure's rebuild load pushed it to 2s.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_sleeps"
           ];
         });
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
