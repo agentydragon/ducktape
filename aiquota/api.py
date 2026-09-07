@@ -23,7 +23,7 @@ from typing import Annotated, Protocol, cast
 import httpx
 import uvicorn
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
@@ -37,7 +37,8 @@ from aiquota.clickhouse import ClickHouseSnapshotSink
 from aiquota.config import Config, load as load_config
 from aiquota.models import AllQuotas, FetchSuccess, HistoryObservation
 from aiquota.providers.base import SupportsHistory
-from util.bazel.runfiles import get_required_path
+from aiquota.render.view_model import AllQuotasView, to_view
+from util.bazel.runfiles import find_path
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024
@@ -422,34 +423,6 @@ class BrowserOAuth:
         return f"{self.public_base_url.rstrip('/')}/auth/callback"
 
 
-def _with_remaining_percent(value: object) -> object:
-    """Add derived remaining percentage without changing aiquota's shared model."""
-
-    if not isinstance(value, dict):
-        return value
-    result = dict(value)
-    windows = result.get("windows")
-    if isinstance(windows, list):
-        result["windows"] = [
-            {**window, "remaining_percent": max(0.0, 100.0 - float(window["used_percent"]))}
-            if isinstance(window, dict) and isinstance(window.get("used_percent"), int | float)
-            else window
-            for window in windows
-        ]
-    return result
-
-
-def _normalized_payload(quotas: AllQuotas) -> dict[str, object]:
-    payload = quotas.model_dump(mode="json")
-    providers = cast(list[dict[str, object]], payload["providers"])
-    for provider in providers:
-        for key in ("last_output", "last_success"):
-            fetch = provider.get(key)
-            if isinstance(fetch, dict):
-                fetch["result"] = _with_remaining_percent(fetch.get("result"))
-    return payload
-
-
 def create_app(
     *,
     bearer_token: str,
@@ -493,9 +466,10 @@ def create_app(
         return PlainTextResponse(generate_latest(app_metrics.registry).decode(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/v1/quotas", dependencies=[Depends(_require_api_auth)])
-    async def quotas(service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
+    async def quotas(service: Annotated[SnapshotFetcher, Depends(_fetcher)], response: Response) -> AllQuotasView:
         snapshot = await service.fetch()
-        return JSONResponse(_normalized_payload(snapshot.quotas), headers=_CACHE_CONTROL)
+        response.headers.update(_CACHE_CONTROL)
+        return to_view(snapshot.quotas)
 
     @app.get("/v1/providers/{provider}/raw", dependencies=[Depends(_require_api_auth)])
     async def provider_raw(provider: str, service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
@@ -564,11 +538,14 @@ def create_app(
         )
 
     if frontend_dir is None:
-        try:
-            frontend_dir = get_required_path(_FRONTEND_INDEX).parent
-        except FileNotFoundError:
-            # Unit tests exercise the API library without packaging its SPA.
+        # Only the server binaries package the SPA. The API library is also imported without
+        # it — by its own tests, and by the OpenAPI exporter the frontend's types come from,
+        # which cannot depend on the bundle it generates types for.
+        index = find_path(_FRONTEND_INDEX)
+        if index is None:
             logger.warning("aiquota frontend bundle is not present in runfiles")
+        else:
+            frontend_dir = index.parent
     if frontend_dir is not None:
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 

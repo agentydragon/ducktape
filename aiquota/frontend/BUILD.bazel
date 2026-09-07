@@ -1,27 +1,87 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
+
+TSCONFIG = ":tsconfig"
 
 ts_config(
     name = "tsconfig",
     src = "tsconfig.json",
 )
 
+# Wire types generated from the API's own OpenAPI document, so the dashboard's idea of a
+# quota window is the Pydantic model rather than a hand-kept copy. Not checked in.
+js_openapi_schema(
+    name = "schema",
+    generator = "//aiquota:export_schema_bin",
+)
+
+ts_library(
+    name = "pace",
+    srcs = ["pace.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "format",
+    srcs = ["format.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":pace"],
+)
+
+ts_library(
+    name = "quotas",
+    srcs = ["quotas.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":schema"],
+)
+
+ts_library(
+    name = "dashboard",
+    srcs = ["dashboard.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":format",
+        ":pace",
+        ":quotas",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
 ts_library(
     name = "app",
-    srcs = [
-        "app.tsx",
-        "main.tsx",
-    ],
+    srcs = ["app.tsx"],
     isolated_typecheck = True,
-    tsconfig = ":tsconfig",
+    tsconfig = TSCONFIG,
     deps = [
+        ":dashboard",
+        ":quotas",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "main",
+    srcs = ["main.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":styles",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
-        "//:node_modules/date-fns",
         "//:node_modules/react",
         "//:node_modules/react-dom",
     ],
@@ -37,7 +97,162 @@ spa_bundle(
     entry_point = "main.tsx",
     jsx = "automatic",
     deps = [
-        ":app",
+        ":main",
         ":styles",
     ],
+)
+
+# ── Test fixtures ──────────────────────────────────────────────────────────────
+#
+# Generated from the scenario YAML the GNOME renders and the CLI snapshot also use, by the
+# Python that serves and renders it: `scenes.json` is exactly what `/v1/quotas` returns for
+# each scenario, `format_cases.json` what the Python renderers print for every window in them.
+
+genrule(
+    name = "web_fixtures",
+    testonly = True,
+    outs = [
+        "fixtures/scenes.json",
+        "fixtures/format_cases.json",
+    ],
+    cmd = "$(location //aiquota/testing:export_web_fixtures_bin) --scenes $(location fixtures/scenes.json) " +
+          "--format-cases $(location fixtures/format_cases.json)",
+    tools = ["//aiquota/testing:export_web_fixtures_bin"],
+)
+
+js_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = [":web_fixtures"],
+    tags = ["no-lint"],
+)
+
+# Single-file view so $(rootpath) resolves to one path.
+filegroup(
+    name = "scenes_json",
+    testonly = True,
+    srcs = ["fixtures/scenes.json"],
+)
+
+# ── Unit tests ─────────────────────────────────────────────────────────────────
+
+ts_library(
+    name = "format_test",
+    testonly = True,
+    srcs = ["format.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":fixtures",
+        ":format",
+        ":pace",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "quotas_test",
+    testonly = True,
+    srcs = ["quotas.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":quotas",
+        "//:node_modules/vitest",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "vitest_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "vitest.config.ts",
+        ":format_test",
+        ":quotas_test",
+        "//:node_modules/vitest",
+    ],
+)
+
+# ── Visual renders ─────────────────────────────────────────────────────────────
+#
+# One PNG per scenario per theme, published for PR visual review — the browser counterpart of
+# //aiquota/gnome:test_render. Browser rendering needs the RBE worker's display stack, so this
+# is a js_test rather than a `bazel run` binary.
+
+ts_library(
+    name = "screenshot_harness_lib",
+    testonly = True,
+    srcs = ["screenshots/harness.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":dashboard",
+        ":fixtures",
+        ":quotas",
+        ":styles",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+# A classic script (iife) so screenshots/index.html loads it from file:// without module CORS.
+esbuild(
+    name = "screenshot_bundle",
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "screenshots/harness.js",
+    format = "iife",
+    minify = False,
+    output = "screenshots/bundle.js",
+    output_css = "screenshots/bundle.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":screenshot_harness_lib"],
+)
+
+# Single-file views so $(rootpath) resolves to one path each.
+filegroup(
+    name = "screenshot_bundle_js",
+    testonly = True,
+    srcs = ["screenshots/bundle.js"],
+)
+
+filegroup(
+    name = "screenshot_bundle_css",
+    testonly = True,
+    srcs = ["screenshots/bundle.css"],
+)
+
+SCREENSHOT_DATA = [
+    "screenshots/index.html",
+    ":scenes_json",
+    ":screenshot_bundle_css",
+    ":screenshot_bundle_js",
+    "//util/testing/frontend_visual:capture",
+    "//util/testing/frontend_visual:fonts",
+    "//util/testing/frontend_visual:fonts_conf",
+    "//util/testing/frontend_visual:launcher",
+    "//util/testing/frontend_visual:visual_review_manifest",
+    "@playwright_browsers//:chromium-headless-shell",
+]
+
+js_test(
+    name = "screenshots",
+    size = "large",
+    data = SCREENSHOT_DATA,
+    entry_point = "screenshots/render.mjs",
+    env = {
+        "SCENES_JSON": "$(rootpath :scenes_json)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+        # Peak-burn hours and credit expiries render in the viewer's zone, which is the point
+        # of surfacing them; pin one so the renders do not depend on the worker's.
+        "TZ": "UTC",
+    },
+    no_copy_to_bin = SCREENSHOT_DATA,
 )

@@ -90,7 +90,6 @@ py_library(
 py_library(
     name = "api",
     srcs = ["api.py"],
-    data = ["//aiquota/frontend:bundle"],  # keep: SPA mounted by aiquota.api
     imports = [".."],
     deps = [
         ":cache",
@@ -98,6 +97,7 @@ py_library(
         ":config",
         ":models",
         "//aiquota/providers:base",
+        "//aiquota/render:view_model_lib",
         "//util/bazel:runfiles",
         "@pypi//authlib",
         "@pypi//fastapi",
@@ -135,6 +135,8 @@ py_binary(
 
 py_binary(
     name = "server",
+    # keep: the SPA aiquota.api mounts from runfiles; no module imports it.
+    data = ["//aiquota/frontend:bundle"],
     imports = [".."],
     main_module = "aiquota.api",
     visibility = ["//visibility:public"],
@@ -143,8 +145,18 @@ py_binary(
 
 aspect_py_binary(
     name = "server_bin",
+    data = ["//aiquota/frontend:bundle"],
     main = "api.py",
     deps = [":api"],
+)
+
+# Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
+py_binary(
+    name = "export_schema_bin",
+    imports = [".."],
+    main_module = "aiquota.export_schema",
+    visibility = ["//aiquota/frontend:__pkg__"],
+    deps = [":export_schema"],
 )
 
 py_image_layer(
@@ -310,4 +322,10 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [":aiquota_pkg"],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [":api"],
 )

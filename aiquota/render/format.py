@@ -3,6 +3,7 @@
 from datetime import datetime, tzinfo
 
 from aiquota.models import PaceResult, QuotaWindow
+from aiquota.pace import is_exhausted
 from aiquota.peak_windows import BurnStatus, PeakInterval
 
 
@@ -32,6 +33,16 @@ def format_window_duration(seconds: float) -> str:
 def format_window_label(window: QuotaWindow) -> str:
     duration = format_window_duration(window.window_seconds)
     return f"{window.name} ({duration})" if window.name else duration
+
+
+def display_used_percent(window: QuotaWindow) -> int:
+    """Usage as shown, capped below 100 until the window really is exhausted.
+
+    Rounding 99.6% to "100%" would claim a window is spent while calls still go through, so
+    only an exhausted window ever displays three digits.
+    """
+    rounded = round(window.used_percent)
+    return rounded if is_exhausted(window) else min(rounded, 99)
 
 
 def format_age(seconds: float) -> str:

@@ -132,14 +132,19 @@ async def test_quota_endpoints_require_bearer(client: httpx.AsyncClient, headers
     assert response.headers["www-authenticate"] == "Bearer"
 
 
-async def test_normalized_quotas_include_remaining_but_not_raw_payload(client: httpx.AsyncClient) -> None:
+async def test_quotas_serve_the_view_model_without_the_raw_payload(client: httpx.AsyncClient) -> None:
+    """The browser and the console both need the derived policy bits, not just the raw windows.
+
+    Re-deriving `currently_over_plan` per surface is what drifted before (aiquota/AGENTS.md),
+    so the endpoint serves the shared view model rather than the bare snapshot.
+    """
     response = await client.get("/v1/quotas", headers={"Authorization": "Bearer test-bearer"})
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    body = response.json()
-    window = body["providers"][0]["last_output"]["result"]["windows"][0]
-    assert window["used_percent"] == 45.0
-    assert window["remaining_percent"] == 55.0
+    provider = response.json()["providers"][0]
+    assert provider["last_output"]["result"]["windows"][0]["used_percent"] == 45.0
+    assert provider["currently_over_plan"] is False
+    assert provider["extra_status"] == "none"
     assert "internal_detail" not in response.text
 
 

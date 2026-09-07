@@ -22,8 +22,11 @@ Quota endpoints accept either a signed browser OAuth session or:
 Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
 ```
 
-`/v1/quotas` returns aiquota's normalized provider data plus
-`remaining_percent` for every quota window. `/raw` returns the response body
+`/v1/quotas` returns the shared view model (`aiquota/render/view_model.py`): each
+provider's normalized windows plus the derived policy bits every surface renders —
+`currently_over_plan`, `extra_status`, and the peak-burn schedule. Serving those rather
+than letting each client re-derive them is what keeps the CLI, GNOME popup, browser
+dashboard, and Haku Console from drifting (see AGENTS.md). `/raw` returns the response body
 from the provider's usage endpoint, with fetch status and content type. It also
 carries the bounded exact response bytes as base64, their full-body SHA-256 and
 original byte length. The exact-byte field is truncated only when the response
@@ -32,7 +35,11 @@ OAuth refresh responses, cookies, or credentials.
 
 ## Browser dashboard and OAuth API
 
-`https://aiquota.allegedly.works/` is a small React dashboard. aiquota owns an
+`https://aiquota.allegedly.works/` is a React dashboard rendering the same state as the
+CLI and the GNOME popup: per window a usage bar with a pace tick at the fraction of the
+window already elapsed, the reset countdown, pace deviation and forecast, plus banked
+resets, extra spend, and peak-burn hours. Its wire types are generated from this API's
+OpenAPI schema (`//aiquota/frontend:schema`). aiquota owns an
 Authentik OAuth authorization-code flow: `/auth/login` redirects to the
 `aiquota` OIDC provider, `/auth/callback` verifies the returned token, and a
 signed, HTTP-only app session gates both the frontend entry point and the
