@@ -81,9 +81,11 @@ Remaining:
 - [ ] **A bond FUND is not a ladder, and only the fund is sellable.**
       `bond_fund.constant_maturity_fund_paths` reproduces the return and the
       volatility of long-term corporates, but a constant-maturity fund never
-      matures, so it has no pull-to-par floor. Over a 30-year withdrawal that
-      difference is large — the fund's mark can be written down through a rate
-      rise and never recover, while a ladder repays principal on a date.
+      matures, so it has no pull-to-par floor: its mark can be written down
+      through a rate rise and never recover, while a ladder repays principal on
+      a date. How much that is worth over a 30-year withdrawal is unmeasured —
+      the Trinity all-bond row is NOT evidence of it, because the series that
+      study used is itself a constant-maturity construction.
       `BondHolding` models the ladder faithfully and is deliberately never
       marked, so a target allocation cannot sell it, which is why the fund
       exists at all. Closing this needs a bond a policy can sell AND that

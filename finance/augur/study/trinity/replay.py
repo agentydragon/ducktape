@@ -24,16 +24,15 @@ attribution:
   the standard one — `bond_fund.constant_maturity_fund_paths`, validated against Damodaran's
   published returns. Two conventions it inherits: annual-pay coupons, and repricing at the
   same maturity each month, so there is no roll-down return.
-- ***A constant-maturity fund never matures, and that is where the all-bond row goes.*** The
-  fund reproduces the asset class's return AND volatility (see `BOND_MATURITY_YEARS`), and the
-  equity-led rows land within a few points — but at 0% equity and a 3% withdrawal it survives
-  43% of windows against Table 3's 80%. Trinity's bonds are bonds: they pull to par and repay
-  principal on a date, which floors a portfolio that holds them to maturity. A fund's mark has
-  no such floor — it can be marked down through the 1960s-80s rate rise and never recover,
-  while the retiree sells into it every year. That is not a defect in the fund; it is the fund
-  being a different instrument from a ladder, and augur models the ladder separately
-  (`sim/scenario.py`'s `BondHolding`, which is deliberately never marked). Read the bond-heavy
-  rows as "what a bond FUND would have done", which is not what the paper measured.
+- ***The all-bond row is an OPEN DISCREPANCY, not an attributed difference.*** At 0% equity
+  and a 3% withdrawal this survives 43% of windows against Table 3's 80%, and no difference
+  named here accounts for it. Measured, on the paper's own arithmetic outside the simulator:
+  reinvesting the coupon instead of parking it is worth 11 points (42% -> 53%), the withdrawal
+  timing 2 (53% -> 51% at the other end of the year), and monthly rather than annual window
+  starts 3. Nothing left explains 27. The sleeve is not the suspect — see
+  `BOND_MATURITY_YEARS`, which is validated against the paper's own bond series. Treat the
+  bond-heavy rows as unreconciled: the equity-led ones, which is what a 4% rule is about, agree
+  to about a point.
 - *Windows start every month, not every year.* 474 of them against the paper's 41 — the same
   span, sampled 12x more finely, which makes each cell smoother rather than different.
 
@@ -151,8 +150,24 @@ UNIT_PRICE = Decimal(100)
 # 20 years is chosen against the asset class, NOT against the table below — fitting a maturity
 # to the result being reproduced would make the reproduction circular. Ibbotson report ~5.7%/yr
 # at ~8.5%/yr standard deviation for long-term corporates over 1926-1995; this fund on Moody's
-# Aaa realizes 5.65% at 8.85% at 20 years, against 5.79% at 6.66% at 10, so 20 is the maturity
-# that reproduces the asset class's second moment as well as its first.
+# 20 because it is the paper's own number, not a fitted one. Ibbotson & Sinquefield document
+# the series Trinity used (SBBI 1926-1987, "Description of the Basic Series"): monthly returns
+# for 1926-68 "calculated from yields assuming (at the beginning of each monthly holding
+# period) a 20-year maturity, a bond price equal to par, and a coupon equal to the yield",
+# income one-twelfth of the coupon. That is `constant_maturity_fund_paths` at maturity 20,
+# clause for clause. From 1969 it splices in the Salomon Long-Term High-Grade Corporate Bond
+# Index, whose maturity is a question rather than a definition.
+#
+# Both blocks were checked against that series' published annual returns (SBBI Exhibit A-3).
+# Fitting maturity to 1946-68 recovers exactly 20, which is what makes the method credible on
+# the block where the answer is not documented; there, 1969-85, the fit lands at 20-25 and
+# rejects anything short — the call and sinking-fund provisions of the era do not show up as a
+# shorter effective maturity. At 20 the sleeve runs 0.2-0.4 points per year under SBBI
+# compounded (4.99% against 5.17% over 1927-85) at a standard deviation of 7.9% against 8.8%.
+#
+# Do not shorten it to close the all-bond row. Maturity 10 lands that row on Table 3 almost
+# exactly, and is wrong: the same 10 misses the actual return series by half again as much as
+# 20 does, in both eras.
 BOND_MATURITY_YEARS = 20.0
 
 EQUITY_SPEC = EquitySpec(symbol=EQUITY, initial_price_usd=float(UNIT_PRICE))

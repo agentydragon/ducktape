@@ -121,8 +121,8 @@ def test_safemax_lands_where_table_3_puts_it(replay: Replay) -> None:
 
 
 def test_the_whole_table_lands_in_the_published_neighbourhood(replay: Replay) -> None:
-    """Every allocation that holds equity. The all-bond row is a different instrument and gets
-    its own test below — see the module docstring on funds versus ladders."""
+    """Every allocation that holds equity. The all-bond row sits outside any tolerance this
+    could set and gets its own directional test below — see the module docstring."""
 
     for equity_share, published in TABLE_3_SUCCESS_PERCENT.items():
         if equity_share == 0.0:
@@ -136,18 +136,18 @@ def test_the_whole_table_lands_in_the_published_neighbourhood(replay: Replay) ->
             )
 
 
-def test_an_all_bond_fund_never_beats_the_ladder_the_paper_priced(replay: Replay) -> None:
-    """The direction of a named methodology difference, asserted rather than tolerated.
+def test_the_all_bond_row_stays_under_the_published_one(replay: Replay) -> None:
+    """Pins the direction and the ceiling of an OPEN discrepancy — see the module docstring.
 
-    Trinity's bonds mature: they pull to par and repay principal on a date, which floors a
-    portfolio holding them to maturity. A constant-maturity fund has no such floor, so at every
-    withdrawal rate it can only do worse — never better. The gap is large (43% against 80% at a
-    3% withdrawal) and it is the instrument, not an error in the fund, which reproduces the
-    asset class's return and volatility both.
+    This row sits far below Table 3 (43% against 80% at a 3% withdrawal) for reasons not yet
+    accounted for. What is known is the sign: every difference measured so far — the coupon
+    parked in cash rather than reinvested, the start-of-year withdrawal — is a drag, so this
+    row can only come in under the paper's, never over.
 
-    Asserted as an inequality because that is the falsifiable part: the previous instrument
-    model over-distributed and put this row at 84% against the paper's 80%, which this catches
-    and a symmetric tolerance would not.
+    An inequality and not a tolerance, because the ceiling is the falsifiable half: the
+    previous instrument model over-distributed and put this row at 84% against the paper's 80%,
+    which this catches and a symmetric band would not. A floor would only pin the discrepancy
+    in place, and it is meant to close.
     """
 
     published = TABLE_3_SUCCESS_PERCENT[0.0]
