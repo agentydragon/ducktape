@@ -280,7 +280,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     )
     assert haku_proxy["spec"]["template"]["spec"]["serviceAccountName"] == "haku-kube-api-proxy"
     haku_proxy_container = one(haku_proxy["spec"]["template"]["spec"]["containers"])
-    assert haku_proxy_container["image"].startswith("ghcr.io/agentydragon/haku-kube-api-proxy:devel-")
+    assert haku_proxy_container["image"].startswith("git.allegedly.works/ducktape-ci/haku-kube-api-proxy:devel-")
     assert haku_proxy_container["readinessProbe"]["httpGet"]["path"] == "/healthz"
     route = one(obj for obj in proxy_objects if obj["kind"] == "HTTPRoute")
     assert route["spec"]["hostnames"] == ["haku-kubeapi.allegedly.works"]

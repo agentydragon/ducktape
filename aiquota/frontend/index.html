@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>aiquota — subscription headroom</title>
+    <!-- esbuild emits the CSS imported by main.tsx as a sibling main.css; spa_bundle copies
+         this shell verbatim, so an unreferenced stylesheet is served but never applied. -->
+    <link rel="stylesheet" href="/main.css" />
   </head>
   <body class="aiquota-scope">
     <div id="root"></div>

@@ -4,8 +4,12 @@ metadata:
   name: haku-console-static
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/haku-console-static
+  image: git.allegedly.works/ducktape-ci/haku-console-static
   interval: 5m
+  # Private Forgejo package — authenticate the scan with the ducktape-ci
+  # credential (reflected here from cluster/k8s/forgejo-images/).
+  secretRef:
+    name: forgejo-images-creds
 ---
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
@@ -16,6 +20,7 @@ spec:
   imageRepositoryRef:
     name: haku-console-static
   filterTags:
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical == chronological
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:

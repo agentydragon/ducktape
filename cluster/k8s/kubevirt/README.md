@@ -13,5 +13,8 @@ The local kustomizations reference the release URLs directly to avoid vendoring
 large generated upstream YAML. The hashes above are recorded so URL contents can
 be checked during upgrades.
 
-Workloads are initially constrained to non-control-plane OVH/Talos workers. The
-Proxmox KVM pool is intentionally not used while `wyrm2` is `NotReady`.
+Workloads are constrained to non-control-plane OVH/Talos/Proxmox workers via
+`workloads.nodePlacement` region affinity in `app/kubevirt.yaml`. `wyrm2`
+(region `proxmox`) is a nested-KVM-capable Proxmox guest — confirmed via
+`kvm_amd` `nested=1` on both `atlas` (L0) and `wyrm2` (L1) — and included in
+that affinity.

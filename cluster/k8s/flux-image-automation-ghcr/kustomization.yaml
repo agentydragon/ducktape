@@ -4,8 +4,3 @@ resources:
   - ducktape-write-source.yaml
   - image-update-automation.yaml
   - openclaw-image.yaml
-  - haku-console-image.yaml
-  - haku-egress-proxy-image.yaml
-  - haku-kube-api-proxy-image.yaml
-  - haku-console-static-image.yaml
-  - haku-indexer-image.yaml

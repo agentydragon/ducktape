@@ -45,6 +45,10 @@ spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       automountServiceAccountToken: false
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

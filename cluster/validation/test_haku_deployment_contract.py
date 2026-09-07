@@ -165,7 +165,7 @@ def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:
     assert migration_flux["spec"]["healthChecks"] == [
         {"apiVersion": "batch/v1", "kind": "Job", "name": "haku-console-migration", "namespace": "haku-console"}
     ]
-    assert {entry["name"] for entry in migration_flux["spec"]["dependsOn"]} == {"haku-console-db"}
+    assert {entry["name"] for entry in migration_flux["spec"]["dependsOn"]} == {"haku-console-db", "forgejo-images"}
     assert "haku-console-migration" in {entry["name"] for entry in console_flux["spec"]["dependsOn"]}
     root_kustomization = yaml.safe_load((k8s_dir / "kustomization.yaml").read_text(encoding="utf-8"))
     assert "haku/console/migration/flux-kustomization.yaml" in root_kustomization["resources"]

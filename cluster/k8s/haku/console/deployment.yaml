@@ -74,6 +74,10 @@ spec:
       # Secret, log, exec, or SandboxTemplate access.
       serviceAccountName: haku-console
       automountServiceAccountToken: true
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # Room for a graceful shutdown to hand chat-session leases back before SIGKILL: the app
       # bounds uvicorn's graceful wait to 10s (app.main), then the lifespan releases this
       # replica's leases. Must stay above that 10s plus lifespan teardown; the default 30s hid

@@ -66,7 +66,7 @@ spec:
               app.kubernetes.io/name: litellm
       containers:
         - name: litellm
-          image: litellm/litellm:1.90.2
+          image: litellm/litellm:1.100.0
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
             - name: http
@@ -128,6 +128,16 @@ spec:
                 secretKeyRef:
                   name: litellm-cliproxy-key
                   key: CLIPROXY_CLIENT_KEY
+            # Opts langfuse_otel into LiteLLM's OTel v2 logging path, which
+            # stamps trace-level input/output on the root observation
+            # (BerriAI/litellm#39369, in 1.100.0) -- without it, the legacy
+            # langfuse_otel logger this proxy previously ran leaves the root
+            # observation's input/output empty for /v1/responses,
+            # /v1/chat/completions, and /v1/messages traces.
+            - name: LITELLM_OTEL_V2
+              value: "true"
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+              value: "span_only"
             - name: LANGFUSE_OTEL_HOST
               value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
             - name: LANGFUSE_PUBLIC_KEY

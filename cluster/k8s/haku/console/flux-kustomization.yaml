@@ -22,7 +22,8 @@ spec:
     - name: haku-console-namespace # the console's own trusted namespace (not haku-sandbox)
       namespace: ducktape-flux
     # Forgejo registry credential must be reflected into haku-console (the matrix
-    # adapter's imagePullSecret) and flux-system (image scan) before that pod can pull.
+    # adapter, server, static, and migration imagePullSecrets) and flux-system
+    # (image scan) before those pods can pull.
     - name: forgejo-images
       namespace: ducktape-flux
     # Runtime namespace/template changes must become Ready before Console starts creating claims

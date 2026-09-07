@@ -39,21 +39,6 @@ spec:
       namespace: ducktape-flux
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-console
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: haku-egress-proxy
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: haku-kube-api-proxy
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: haku-console-static
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: haku-indexer
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: haku-openclaw-spike
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
