@@ -31,6 +31,18 @@ let
   # maxContextTokens to the model's real window so compaction math is correct; the value's SSOT
   # is cluster/k8s/litellm/app/model_rosters.py (CODEX_CONTEXT_WINDOW / GEMINI_CONTEXT_WINDOW) —
   # keep them in sync. maxOutputTokens caps output below the model's real max.
+  #
+  # gatewayDiscovery and the `[1m]` suffix convention (see litellm-claude.nix) don't compose.
+  # `[1m]` is stripped from the outbound `model:` field before the request goes out — it
+  # survives only as a client-side signal (1M context-window sizing, the
+  # `context-1m-2025-08-07` beta header) — so it can only ever be a value baked into `model`/
+  # `haikuModel` here, never a choice in the `/model` picker under gatewayDiscovery: the
+  # gateway's `/v1/models` roster can only list names it actually routes, and a `[1m]`-suffixed
+  # entry would be a slug added purely for one client's convention, routable to the exact same
+  # backend as its unsuffixed twin. Concretely: litellm-claude hardcodes `[1m]` onto its
+  # default Sonnet model, but switching to Opus or Fable mid-session via the discovered roster
+  # loses 1M context — there's no way to get both a friendly in-session model picker and a 1M
+  # variant of a model that isn't the wrapper's hardcoded default.
   envLines =
     lib.optional isDemo "IS_DEMO=1"
     ++ [
