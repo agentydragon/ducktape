@@ -12,6 +12,13 @@ Two-sleeve monthly-rebalanced portfolio, CPI-indexed monthly withdrawal, no taxe
 policy, over 3 horizons x 3 withdrawal rates x 2 bond sleeves, on both samplers. Levels are
 lower bounds and only the shape is meant to be read.
 
+Rebalancing here is CONTINUOUS: `x/allocation_sensitivity.py` holds the target weights as a
+weighted sum of the two sleeves' monthly returns, in its own arithmetic. It builds no
+`Scenario`, runs no policy and never reaches the engine, so no `rebalancing` rule applies to it
+and none of the findings below turn on one. What a band width costs is a separate question, and
+it belongs to lane 4 behind #5486 — a band-width arm trades on drift alone, so it is exactly the
+arm whose turnover is unpriced today.
+
 **1. Survival cannot rank allocations.** In **17 of 18** cells the survival-maximizing
 allocation beats its runner-up by 0-2 points against ±0-24 points of sampling error. Above
 roughly 40-60% equity survival saturates, so the metric has no gradient exactly where the
@@ -47,15 +54,8 @@ has to come from the fitted model, which is why lane 3 exists.
 
 ## Before the lanes
 
-Three things landed or were discovered after Plan 0 ran, and each is cheap enough that it
-should happen before any lane starts.
-
-**The published grid ran with drift rebalancing off.** It predates `rebalancing` becoming a
-required `CashflowOnly | DriftBand`, and every run that did not set the old nullable tolerance
-measured a never-rebalanced portfolio, whatever the report said. Re-run the grid with
-`DriftBand` at two band widths, against common random numbers, and see whether the answer
-moves. This is a few hours and it either validates the existing results or invalidates them;
-nothing below is worth doing until it is known which.
+Two things landed or were discovered after Plan 0 ran, and each is cheap enough that it should
+happen before any lane starts.
 
 **A downstream consumer imports the deleted JAX entry point.** It is pinned to a ducktape
 commit old enough to still have that engine, so it runs today and breaks on the next pin bump.
