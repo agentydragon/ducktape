@@ -74,7 +74,7 @@ class MacroFitWindow(StrEnum):
 
 
 @dataclass(frozen=True)
-class _MacroVarLevels:
+class MacroVarLevels:
     """The three percent series `fit_macro_var` reads, grouped so they travel together."""
 
     short_rate_percent: list[MonthlyLevel]
@@ -82,7 +82,7 @@ class _MacroVarLevels:
     cpi_level: list[MonthlyLevel]
 
 
-def _macro_var_levels(history: MacroHistory) -> _MacroVarLevels:
+def macro_var_levels(history: MacroHistory) -> MacroVarLevels:
     """`MacroHistory`'s aligned arrays as the percent series `fit_macro_var` reads.
 
     `MacroHistory` carries annualized DECIMALS and a term spread; `fit_macro_var` takes percent
@@ -91,7 +91,7 @@ def _macro_var_levels(history: MacroHistory) -> _MacroVarLevels:
     fit and the replay sampler cannot come to disagree about what the century was.
     """
 
-    return _MacroVarLevels(
+    return MacroVarLevels(
         short_rate_percent=[
             MonthlyLevel(month=month, value=rate * DECIMAL_TO_PERCENT)
             for month, rate in zip(history.months, history.short_rate.tolist(), strict=True)
@@ -123,7 +123,7 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
             )
             macro_source = f"{FRED_FEDFUNDS.provenance_label},{FRED_GS10.provenance_label},{FRED_CPI.provenance_label}"
         case MacroFitWindow.LONG_RECORD_1926:
-            levels = _macro_var_levels(load_macro_history(evidence_dir))
+            levels = macro_var_levels(load_macro_history(evidence_dir))
             macro_fit = fit_macro_var(
                 short_rate_percent=levels.short_rate_percent,
                 long_rate_percent=levels.long_rate_percent,

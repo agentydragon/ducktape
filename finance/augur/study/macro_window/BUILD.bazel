@@ -30,3 +30,36 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "holdout",
+    srcs = ["holdout.py"],
+    deps = [
+        "//finance/augur/fit:macro_var",
+        "//finance/augur/fit:scoring",
+        "//finance/augur/fit:structural_macro",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/model:structural_macro",
+        "//finance/augur/study/trinity:evidence_snapshot",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+    ],
+)
+
+py_test(
+    name = "holdout_test",
+    size = "medium",
+    srcs = ["holdout_test.py"],
+    # Manual for the same reason :compare_test is: it fetches the record from the public
+    # upstreams, and an upstream outage must not redden an unrelated PR. Run it by name when the
+    # window question is being decided.
+    tags = ["manual"],
+    deps = [
+        ":holdout",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
