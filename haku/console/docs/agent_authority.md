@@ -111,11 +111,18 @@ never approve themselves. Repository operations have no unscoped or `None` actor
 
 ## The FastMCP seam
 
-Haku supports one exact FastMCP version at a time. The adapter's sole private seam is `_code_store`
-read/delete during code exchange; protected claim, scope-translation, and transparent-refresh hooks
-are version-pinned. It does not replace route construction, registration, transaction storage,
-callback, PKCE, or token issuance. Adapter compatibility and mounted enrollment/token/refresh/
-revocation tests are mandatory before a repin.
+Haku supports one exact FastMCP version at a time. Two private seams cross it: `_code_store`
+read/delete during code exchange, and `install_operator_session_route_guard` patching the one
+FastMCP-constructed `/mcp` route wrapped in `RequireAuthMiddleware`, so a validated Operator
+browser session (an `HttpOnly` cookie, checked by Haku's own auth backend) can pass FastMCP's
+bearer-only guard while Agent and unauthenticated requests keep its original behavior unchanged
+(`haku/console/identity/fastmcp_adapter.py`'s `_HakuMcpRouteGuard`). Both assert the exact shape
+they depend on and raise instead of silently misrouting if FastMCP's internals no longer match.
+Protected claim, scope-translation, and transparent-refresh hooks are otherwise version-pinned.
+Neither seam replaces route construction, registration, transaction storage, callback, PKCE, or
+token issuance — they patch one already-constructed route's auth wrapper post hoc, not how FastMCP
+builds or registers it. Adapter compatibility and mounted enrollment/token/refresh/revocation tests
+are mandatory before a repin.
 
 ## The credential boundary
 
