@@ -112,7 +112,6 @@ h1 {
 
 .empty,
 .aside,
-.freshness,
 .window-meta,
 footer {
   color: var(--muted);
@@ -168,7 +167,7 @@ footer {
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: var(--shadow);
-  padding: 16px 18px 12px;
+  padding: 16px 18px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -210,10 +209,21 @@ h2 {
   width: 9px;
 }
 
-.badges {
+/* Everything about the reading itself — how fresh it is, and any warning about it. */
+.card-status {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  justify-content: flex-end;
+  /* Stays in the corner even when it is too wide to share the title's line and wraps below it. */
+  margin-left: auto;
+}
+
+.freshness {
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .badge {
@@ -241,7 +251,6 @@ h2 {
 }
 
 .aside,
-.freshness,
 .empty {
   font-size: 0.78rem;
   margin: 0;
@@ -399,13 +408,6 @@ h2 {
 
 .strip.over-plan .strip-line {
   color: var(--hot);
-}
-
-.freshness {
-  border-top: 1px solid var(--border);
-  font-size: 0.7rem;
-  margin-top: auto;
-  padding-top: 8px;
 }
 
 .notice {

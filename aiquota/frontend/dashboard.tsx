@@ -123,9 +123,14 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
           <span className={`dot tint-${tint}`} aria-hidden="true" />
           {PROVIDER_NAMES[provider.provider] ?? provider.provider}
         </h2>
-        <div className="badges">
-          {quota.staleSince !== null && <span className="badge stale">Stale</span>}
+        <div className="card-status">
+          {quota.staleSince !== null && (
+            <span className="badge stale">Stale · {formatAge((now - Date.parse(quota.staleSince)) / 1000)}</span>
+          )}
           {quota.error !== null && <span className="badge error">Error</span>}
+          <span className="freshness">
+            checked {formatAge((now - Date.parse(provider.last_output.fetched_at)) / 1000)} ago
+          </span>
         </div>
       </header>
 
@@ -153,7 +158,6 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {!overPlan && provider.extra_status === "informational" && quota.extraSpend && (
         <p className="aside">{extraSpendText(quota.extraSpend)} spent this month</p>
       )}
-      <p className="freshness">{freshness(provider, quota, now)}</p>
     </article>
   );
 }
@@ -332,10 +336,4 @@ function providerTint(provider: ProviderView, quota: EffectiveQuota, now: number
         : tintFor(computePace(math), window.used_percent, { isShort: isShortWindow(window, quota.windows) });
     })
   );
-}
-
-function freshness(provider: ProviderView, quota: EffectiveQuota, now: number): string {
-  const checked = `checked ${formatAge((now - Date.parse(provider.last_output.fetched_at)) / 1000)} ago`;
-  if (quota.staleSince === null) return checked;
-  return `${checked} · showing a snapshot ${formatAge((now - Date.parse(quota.staleSince)) / 1000)} old`;
 }
