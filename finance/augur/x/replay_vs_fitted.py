@@ -25,11 +25,10 @@ from pathlib import Path
 import numpy as np
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
-from finance.augur.model.historical_windows import HistoricalWindowsProviderConfig
+from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, HistoricalWindowsProviderConfig
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec, StructuralMacroProviderConfig
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
-from finance.evidence import sources
 
 HORIZON_MONTHS = 360
 EQUITY = EquitySpec(symbol="VOO", initial_price_usd=520.0)
@@ -38,9 +37,6 @@ BONDS = InstrumentSpec(symbol="CMF", maturity_years=5.5, initial_price_usd=56.0,
 # so the two percentile tables are read off the same number of paths.
 EQUITY_WEIGHTS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 PERCENTILES = (5, 25, 50, 75, 95)
-
-# What `load_macro_history` reads.
-EVIDENCE = (sources.FRENCH_FACTORS, sources.FRED_LTGOVTBD, sources.FRED_GS10, sources.FRED_CPI_NSA)
 
 
 def _total_return_index(price: np.ndarray, distribution: np.ndarray) -> np.ndarray:
@@ -85,7 +81,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     with tempfile.TemporaryDirectory() as raw:
         directory = Path(raw)
-        asyncio.run(snapshot_evidence(directory, EVIDENCE))
+        asyncio.run(snapshot_evidence(directory, MACRO_HISTORY_SOURCES))
 
         replay = HistoricalWindowsProviderConfig(
             evidence_dir=directory, equity=EQUITY, instruments=(BONDS,)

@@ -384,6 +384,18 @@ def splice_at_seam(
 
 DECIMAL_TO_PERCENT = 100.0
 
+MACRO_HISTORY_SOURCES = (
+    sources.FRENCH_FACTORS,
+    sources.FRED_LTGOVTBD,
+    sources.FRED_GS10,
+    sources.FRED_CPI_NSA,
+    sources.FRED_AAA,
+    sources.FRED_BAA,
+)
+"""Exactly what `load_macro_history` reads, so a caller materializing an evidence directory
+does not keep its own copy of the list. It lives here because adding a series to the record is
+the edit that invalidates one — and a caller that missed the edit fails at load, not at fetch."""
+
 
 def load_macro_history(evidence_dir: Path) -> MacroHistory:
     """Assemble the century-long record the historical-window sampler replays.

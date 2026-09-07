@@ -91,7 +91,11 @@ import numpy as np
 
 from finance.augur.model.bond_fund import YieldCurve
 from finance.augur.model.exogenous import ExogenousSamplingRequest
-from finance.augur.model.historical_windows import HistoricalWindowsModel, HistoricalWindowsProviderConfig
+from finance.augur.model.historical_windows import (
+    MACRO_HISTORY_SOURCES,
+    HistoricalWindowsModel,
+    HistoricalWindowsProviderConfig,
+)
 from finance.augur.model.series import (
     InflationKey,
     LevelSeriesKey,
@@ -119,7 +123,6 @@ from finance.augur.sim.scenario import (
     TargetAllocationPolicy,
 )
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
-from finance.evidence import sources
 
 logger = logging.getLogger(__name__)
 
@@ -178,14 +181,8 @@ BOND_SPEC = InstrumentSpec(
     yield_curve=YieldCurve.CORPORATE_AAA,
 )
 
-EVIDENCE = (
-    sources.FRENCH_FACTORS,
-    sources.FRED_LTGOVTBD,
-    sources.FRED_GS10,
-    sources.FRED_CPI_NSA,
-    sources.FRED_AAA,
-    sources.FRED_BAA,
-)
+EVIDENCE = MACRO_HISTORY_SOURCES
+"""The record `load_macro_history` assembles; the study replays all of it."""
 
 PUBLISHED_RATES = tuple(round(0.01 * percent, 2) for percent in range(3, 13))
 """The withdrawal rates Table 3 tabulates: 3% through 12%."""
