@@ -136,6 +136,22 @@ ts_library(
 )
 
 ts_library(
+    name = "conversations_page_test",
+    srcs = ["conversations_page.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":conversations_page",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//haku/console/frontend:client",
+    ],
+)
+
+ts_library(
     name = "conversations_page",
     srcs = ["conversations_page.tsx"],
     isolated_typecheck = True,
