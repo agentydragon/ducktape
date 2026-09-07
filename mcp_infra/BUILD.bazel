@@ -156,6 +156,7 @@ py_library(
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
@@ -168,6 +169,7 @@ py_library(
     deps = [
         ":prefix",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )

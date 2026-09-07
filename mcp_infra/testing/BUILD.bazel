@@ -54,6 +54,7 @@ py_library(
         "//openai_utils:model",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
     ],
 )
 

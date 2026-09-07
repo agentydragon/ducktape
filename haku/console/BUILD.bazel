@@ -393,6 +393,7 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//pytest",

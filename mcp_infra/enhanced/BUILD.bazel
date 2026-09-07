@@ -9,6 +9,7 @@ py_library(
         "//openai_utils:json_schema",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -56,6 +57,7 @@ py_test(
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",

@@ -30,6 +30,7 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )

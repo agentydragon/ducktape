@@ -17,6 +17,7 @@ py_library(
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//openai_agents",
     ],
 )
