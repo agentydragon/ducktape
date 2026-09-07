@@ -46,6 +46,13 @@ spec:
     # cross-node hops that can fail during early bootstrap.
     admissionController:
       replicas: 3
+      # All four controllers below carry this. Without a priority class they sort
+      # with ordinary workloads under kubelet eviction, and a node whose disk was
+      # filled by something else entirely evicts them for a few KiB apiece — which
+      # is how the background and cleanup controllers went down on 2026-09-07. The
+      # admission controller is the acute one: its webhook gates API writes, so
+      # losing it is a cluster-wide outage rather than degraded reporting.
+      priorityClassName: system-cluster-critical
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
       tolerations:
@@ -112,6 +119,7 @@ spec:
     backgroundController:
       enabled: true
       replicas: 1
+      priorityClassName: system-cluster-critical
       resources:
         limits:
           cpu: 200m
@@ -124,6 +132,7 @@ spec:
     cleanupController:
       enabled: true
       replicas: 1
+      priorityClassName: system-cluster-critical
       resources:
         limits:
           cpu: 100m
@@ -136,6 +145,7 @@ spec:
     reportsController:
       enabled: true
       replicas: 1
+      priorityClassName: system-cluster-critical
       resources:
         # No CPU limit: this controller syncs an informer cache over ALL resources
         # (--skipResourceFilters=true) + runs background scans; the object
