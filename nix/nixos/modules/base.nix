@@ -50,6 +50,18 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
+  # Git is installed system-wide by this module and by other NixOS modules.
+  # Keep its source and install test suites out of system rebuilds; runtime
+  # behavior is covered by the repository's Git-dependent integration checks.
+  nixpkgs.overlays = [
+    (final: prev: {
+      git = prev.git.overrideAttrs {
+        doCheck = false;
+        doInstallCheck = false;
+      };
+    })
+  ];
+
   # User - password should be set after first boot with `passwd`
   users.users.${username} = {
     isNormalUser = true;
