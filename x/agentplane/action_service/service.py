@@ -35,8 +35,6 @@ from x.agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     Executor,
-    NotificationOutbox,
-    NullNotificationOutbox,
     Principal,
     ProviderOutcome,
     ProviderVerdict,
@@ -104,7 +102,6 @@ class ActionService:
         store: ActionStore,
         executor: Executor,
         *,
-        outbox: NotificationOutbox | None = None,
         providers: Sequence[DecisionProvider] = (),
         provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
         executor_id: str | None = None,
@@ -115,7 +112,6 @@ class ActionService:
     ) -> None:
         self._store = store
         self._executor = executor
-        self._outbox = outbox or NullNotificationOutbox()
         self._providers = tuple(providers)
         self._provider_timeout_seconds = provider_timeout_seconds
         self._executor_id = executor_id or f"executor-{uuid4()}"
@@ -152,7 +148,6 @@ class ActionService:
         view, created = await self._store.submit(body, principal, supported_capabilities=self._executor.capabilities)
         if not created:
             return view
-        await self._outbox.wake()
         return await self._auto_decide(view, body, principal)
 
     async def _auto_decide(
@@ -220,8 +215,8 @@ class ActionService:
     async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
         return await self._store.get(request_id, principal)
 
-    async def events(self, request_id: UUID, principal: Principal) -> list[ActionEventView]:
-        return await self._store.events(request_id, principal)
+    async def events(self, request_id: UUID, principal: Principal, *, after_sequence: int = 0) -> list[ActionEventView]:
+        return await self._store.events(request_id, principal, after_sequence=after_sequence)
 
     async def decide(self, request_id: UUID, body: DecisionInput, principal: Principal) -> ActionRequestView:
         view, should_dispatch = await self._store.decide(request_id, body, principal, provider=self.HUMAN_PROVIDER)

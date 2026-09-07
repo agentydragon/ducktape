@@ -9,14 +9,34 @@ The v0 executable seam is deliberately small:
 - one invariant request envelope, with optional `origin` and `correlation` stored only as untrusted
   provenance;
 - caller-own and operator-all reads, recursively redacting credential-shaped fields;
-- one human operator Decision provider, with expected-version and idempotency protection;
+- a human operator Decision route, with expected-version and idempotency protection and a private,
+  operator-only `private_reason`, plus optional synchronous `DecisionProvider`s that run first and
+  carry a bounded caller-visible `reason_code`/`reason_description` instead;
 - automatic dispatch after allow, exactly one `Execution`, and no retry after dispatch may begin;
 - restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
   until its own bounded lease expires, then becomes `execution_unknown` and may later be reconciled
   by an authenticated late completion or an authoritative status lookup — see
   [`../docs/executor_liveness.md`](../docs/executor_liveness.md);
 - one explicit `agentplane:v0.echo` fixture executor proving the service boundary; and
-- a durable pending-decision outbox reference containing no request arguments.
+- a durable, restart-surviving Action event sequence as the result-delivery surface: a caller polls
+  `GET /v1/action-requests/{id}/events?after_sequence=<n>` from `decision_pending` to a terminal
+  state, and every submit/Decision/dispatch/terminal/`execution_unknown` transition appends exactly
+  one ordered event.
+
+## Delivery: polling, not an outbox
+
+The durable Action event sequence (`action_event`, exposed at `.../events`) is the first-slice
+result-delivery surface. `after_sequence` is the last sequence number the caller already holds;
+polling with it is a cheap, idempotent no-op once no new events exist, so a caller can safely poll
+from submission to a terminal state without missing or duplicating a transition.
+
+An earlier `action_outbox` table recorded a pending-decision delivery reference for a future push
+notifier. Nothing drains it — no consumer was ever wired into `main.py` — and it duplicated data
+already in `action_event`/`action_request`, so the service no longer writes to it. The table itself
+is left in the schema rather than dropped in a migration; a later cleanup can drop it once a real
+Event & Notification Hub proves it does not need this exact shape. The `.../events` polling surface
+above is not a prerequisite on that hub, and the hub is expected to consume the Action event sequence
+directly rather than an outbox.
 
 ## Action catalog
 

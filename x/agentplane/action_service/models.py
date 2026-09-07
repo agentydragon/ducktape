@@ -250,14 +250,3 @@ class DecisionProvider(Protocol):
     def name(self) -> str: ...
 
     async def decide(self, context: DecisionContext) -> ProviderOutcome: ...
-
-
-class NotificationOutbox(Protocol):
-    """A delivery adapter may drain durable outbox rows; it never decides a request."""
-
-    async def wake(self) -> None: ...
-
-
-class NullNotificationOutbox:
-    async def wake(self) -> None:
-        return None

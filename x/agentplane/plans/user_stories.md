@@ -24,8 +24,9 @@ Standing under it:
 - The standalone Action Service landed in PR
   [#5700](https://github.com/agentydragon/ducktape/pull/5700): one invariant ActionRequest, a separate
   human Decision, automatic at-most-one Execution, caller-own/operator-all reads, and no blind retry.
-- [`async_approvals.md`](async_approvals.md): submission remains non-blocking; the open work is
-  draining the landed pending outbox and delivering redacted Decision/result events to a Thread.
+- [`async_approvals.md`](async_approvals.md): submission remains non-blocking, and a caller can
+  already poll the durable Action event sequence from pending to a terminal state; the open work is
+  delivering those redacted Decision/result events into a Thread as a later machine input.
 - [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
   express the boundary, brokered credential where it cannot, agent-requested grants, and the
   revocation gate (placeholder token, substitution only while the ledger and the apiserver agree).
@@ -53,9 +54,9 @@ Missing:
 - **Executor wiring contract.** Select and validate one concrete adapter/backend, process and
   credential boundary, dispatch/result transport, health discovery, and exactly-one/no-retry
   behavior across loss.
-- **Delivery to Rai and the Thread.** Drain the durable pending outbox, send a redacted notification
-  with approve/deny through the same DecisionProvider, and deliver the Decision/result as a later
-  machine input on the runner paths the tests pin.
+- **Delivery to Rai and the Thread.** Send a redacted notification with approve/deny through the
+  same DecisionProvider, and deliver the Decision/result — already pollable from the durable Action
+  event sequence — as a later machine input on the runner paths the tests pin.
 - **Standing grants as a separate product.** An `EgressBinding` or Kubernetes binding can represent
   reusable authority; it is not another outcome or repeated Execution of one ActionRequest.
 
