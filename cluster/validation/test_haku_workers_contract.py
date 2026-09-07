@@ -206,7 +206,7 @@ def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
     forgejo_creds_eso = one(
         doc
         for doc in yaml.safe_load_all(
-            (k8s_dir / "haku" / "console" / "forgejo-images-creds-eso.yaml").read_text(encoding="utf-8")
+            (k8s_dir / "haku" / "console-namespace" / "forgejo-images-creds-eso.yaml").read_text(encoding="utf-8")
         )
         if doc.get("kind") == "ExternalSecret"
     )

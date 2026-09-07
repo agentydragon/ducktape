@@ -1,3 +1,7 @@
+# Lives in the namespace layer, not beside the console's workloads: the
+# haku-console-migration Job pulls a private Forgejo image, and the console layer
+# depends on that migration, so a credential shipped from the console layer would only
+# arrive after the Job that needs it had already timed out.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
