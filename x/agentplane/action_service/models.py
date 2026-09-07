@@ -86,6 +86,12 @@ class DecisionView(BaseModel):
     issuer: str
     private_reason: str | None
     private_reason_redacted: bool
+    reason_code: str | None = Field(
+        default=None, description="Bounded provider-authored reason code; absent for a human Decision."
+    )
+    reason_description: str | None = Field(
+        default=None, description="Bounded provider-authored explanation, safe for caller/operator projection."
+    )
     idempotency_key: str
     decided_at: datetime
 
@@ -154,6 +160,54 @@ class Executor(Protocol):
     def capabilities(self) -> frozenset[str]: ...
 
     async def execute(self, request: ExecutionRequest) -> ExecutionResult: ...
+
+
+class ProviderVerdict(StrEnum):
+    """A synchronous provider's own disposition; distinct from the aggregated Decision Verdict."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+    NO_OPINION = "no_opinion"
+
+
+class ProviderOutcome(BaseModel):
+    """One provider's authoritative outcome: bounded and safe for the Action audit/projection.
+
+    `reason_description` is a provider-authored explanation, never unrestricted chain of thought.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    verdict: ProviderVerdict
+    reason_code: str = Field(min_length=1, max_length=64)
+    reason_description: str | None = Field(default=None, max_length=500)
+
+
+class DecisionContext(BaseModel):
+    """Trusted evaluation input for a DecisionProvider.
+
+    Deliberately excludes `origin`/`correlation`: identity must come only from the authenticated
+    caller and, when resolvable, a verified Agent — never inferred from caller-controlled fields.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_id: UUID
+    capability: str
+    arguments: dict[str, JsonValue]
+    caller_principal: Principal
+    agent_identity: str | None = Field(
+        default=None, description="Verified Agent identity, when the deployment can resolve one."
+    )
+
+
+class DecisionProvider(Protocol):
+    """A synchronous non-human policy adapter; its outcome is authoritative within the provider."""
+
+    @property
+    def name(self) -> str: ...
+
+    async def decide(self, context: DecisionContext) -> ProviderOutcome: ...
 
 
 class NotificationOutbox(Protocol):

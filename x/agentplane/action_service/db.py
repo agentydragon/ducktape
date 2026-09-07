@@ -77,6 +77,8 @@ class DecisionRow(Base):
     provider: Mapped[str] = mapped_column(Text)
     issuer: Mapped[str] = mapped_column(Text)
     private_reason: Mapped[str | None] = mapped_column(Text)
+    reason_code: Mapped[str | None] = mapped_column(Text)
+    reason_description: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str] = mapped_column(Text)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -248,8 +250,63 @@ class ActionStore:
     async def decide(
         self, request_id: UUID, body: DecisionInput, principal: Principal, *, provider: str
     ) -> tuple[ActionRequestView, bool]:
+        """Human/operator Decision route: requires an authenticated operator Principal."""
         if principal.role is not PrincipalRole.OPERATOR:
             raise ActionNotFoundError(str(request_id))
+        return await self._commit_decision(
+            request_id,
+            principal,
+            verdict=body.verdict,
+            provider=provider,
+            issuer=principal.key,
+            idempotency_key=body.idempotency_key,
+            expected_version=body.expected_version,
+            private_reason=body.private_reason,
+        )
+
+    async def decide_by_provider(
+        self,
+        request_id: UUID,
+        caller_principal: Principal,
+        *,
+        verdict: Verdict,
+        provider: str,
+        idempotency_key: str,
+        expected_version: int,
+        reason_code: str,
+        reason_description: str | None,
+    ) -> tuple[ActionRequestView, bool]:
+        """Synchronous non-human DecisionProvider route: no operator identity, no private reason.
+
+        `caller_principal` only scopes the returned view (caller-own vs. operator-all projection);
+        the provider itself, not a human, is the decision's issuer.
+        """
+        return await self._commit_decision(
+            request_id,
+            caller_principal,
+            verdict=verdict,
+            provider=provider,
+            issuer=provider,
+            idempotency_key=idempotency_key,
+            expected_version=expected_version,
+            reason_code=reason_code,
+            reason_description=reason_description,
+        )
+
+    async def _commit_decision(
+        self,
+        request_id: UUID,
+        principal: Principal,
+        *,
+        verdict: Verdict,
+        provider: str,
+        issuer: str,
+        idempotency_key: str,
+        expected_version: int,
+        private_reason: str | None = None,
+        reason_code: str | None = None,
+        reason_description: str | None = None,
+    ) -> tuple[ActionRequestView, bool]:
         async with self._sessions.begin() as session:
             row = await session.scalar(
                 select(ActionRequestRow).where(ActionRequestRow.id == request_id).with_for_update()
@@ -259,37 +316,39 @@ class ActionStore:
             prior_key = await session.scalar(
                 select(DecisionRow).where(
                     DecisionRow.provider == provider,
-                    DecisionRow.issuer == principal.key,
-                    DecisionRow.idempotency_key == body.idempotency_key,
+                    DecisionRow.issuer == issuer,
+                    DecisionRow.idempotency_key == idempotency_key,
                 )
             )
             if prior_key is not None:
-                if prior_key.request_id != request_id or prior_key.verdict != body.verdict.value:
+                if prior_key.request_id != request_id or prior_key.verdict != verdict.value:
                     raise ActionConflictError("decision idempotency key was already used for another decision")
                 return await self._view(session, row, principal), False
-            if row.version != body.expected_version:
+            if row.version != expected_version:
                 raise ActionConflictError(
-                    f"request changed: expected version {body.expected_version}, current version {row.version}"
+                    f"request changed: expected version {expected_version}, current version {row.version}"
                 )
             if row.state != ActionState.DECISION_PENDING.value:
-                raise ActionConflictError(f"request is already {row.state}")
+                raise ActionConflictError(f"request was already decided; current state is {row.state}")
             now = datetime.now(UTC)
             session.add(
                 DecisionRow(
                     request_id=row.id,
-                    verdict=body.verdict.value,
+                    verdict=verdict.value,
                     provider=provider,
-                    issuer=principal.key,
-                    private_reason=body.private_reason,
-                    idempotency_key=body.idempotency_key,
+                    issuer=issuer,
+                    private_reason=private_reason,
+                    reason_code=reason_code,
+                    reason_description=reason_description,
+                    idempotency_key=idempotency_key,
                     decided_at=now,
                 )
             )
-            row.state = ActionState.ALLOWED.value if body.verdict is Verdict.ALLOW else ActionState.DENIED.value
+            row.state = ActionState.ALLOWED.value if verdict is Verdict.ALLOW else ActionState.DENIED.value
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
-            should_dispatch = body.verdict is Verdict.ALLOW
+            should_dispatch = verdict is Verdict.ALLOW
             if should_dispatch:
                 session.add(
                     ExecutionRow(request_id=row.id, state=ExecutionState.PENDING_DISPATCH.value, created_at=now)
@@ -463,6 +522,10 @@ def _decision_view(row: DecisionRow | None, *, operator: bool) -> DecisionView |
         issuer=row.issuer,
         private_reason=row.private_reason if operator else None,
         private_reason_redacted=bool(row.private_reason) and not operator,
+        # Bounded provider-authored evidence is safe for the Action audit/projection by contract
+        # (models.ProviderOutcome), unlike a human operator's free-text private_reason.
+        reason_code=row.reason_code,
+        reason_description=row.reason_description,
         idempotency_key=row.idempotency_key,
         decided_at=row.decided_at,
     )

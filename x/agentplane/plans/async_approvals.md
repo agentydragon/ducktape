@@ -1,6 +1,7 @@
 # Asynchronous approvals and delivery
 
-Status: **the human Decision path is implemented; pending/result delivery and notification handling
+Status: **the human Decision path and synchronous DecisionProvider aggregation are implemented;
+event/query API, human-provider notification, withdrawal, unknown-outcome, progress, and batching
 remain open.** This plan is the `DEL` gate in [`task_dag.md`](task_dag.md), not a second request or
 tool lifecycle.
 
@@ -46,6 +47,15 @@ PR [#5700](https://github.com/agentydragon/ducktape/pull/5700) proves:
 That evidence stops at the Action Service boundary. No originating-Thread consumer is required for
 this initial MCP execution slice.
 
+PR [#5732](https://github.com/agentydragon/ducktape/pull/5732) adds synchronous DecisionProvider
+aggregation on top of that: configured providers run concurrently to completion (never first-wins),
+deny dominates, otherwise allow, otherwise the request defers unchanged to the existing human path;
+a provider timeout/exception is `no_opinion`, never `allow`, with its raw text never persisted or
+logged; and human and auto-provider Decisions commit through the same optimistic-version/idempotency
+path, so whichever wins a race, the loser's stale callback surfaces as an explicit already-decided
+conflict rather than overriding the winner. No real policy provider or Thread notification is added;
+production still runs with zero configured providers.
+
 ## Open delivery contract
 
 ### P0 behavior
@@ -64,24 +74,20 @@ asynchronous human provider.
 2. **Machine envelope.** Define the minimum receipt/provider-outcome/Decision/Execution fields, reason
    codes, bounded explanations, redaction, and references. The Action schema gate owns projection
    rules, not a generic `sensitivity` field on every Action.
-3. **Provider aggregation.** Run configured synchronous policy providers with bounded deadlines;
-   a deny may short-circuit, but an allow is committed only after the configured providers have
-   answered without a deny. Provider failure or timeout is not an allow and routes to the human path
-   unless a stricter deployment policy explicitly fails closed.
-4. **Human provider contract.** Notify the human provider that a new ActionRequest needs a Decision,
+3. **Human provider contract.** Notify the human provider that a new ActionRequest needs a Decision,
    then let its authenticated UI/notification client call the Action Service's canonical decision
    endpoint. The endpoint returns a stale/already-decided result when another provider won; it never
    creates a parallel human lifecycle.
-5. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
+4. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
    the final event. Do not add post-dispatch cancellation unless the first adapter can prove its
    semantics.
-6. **Unknown outcome.** Define the Agent/API-visible state for `execution_unknown` and whether the
+5. **Unknown outcome.** Define the Agent/API-visible state for `execution_unknown` and whether the
    concrete adapter exposes an authoritative status lookup. Status reconciliation may update the
    existing Execution; it never starts another one.
-7. **Progress.** If an adapter is long-running, define bounded status/progress observations and
+6. **Progress.** If an adapter is long-running, define bounded status/progress observations and
    authorized output-so-far reads. Progress must be tied to the existing Execution and must not
    create a second claim, retry, or completion path.
-8. **Batching.** If several events target one Action API consumer together, preserve each event and
+7. **Batching.** If several events target one Action API consumer together, preserve each event and
    ordering in the Action event/query surface. Thread-specific batching belongs to the later Event &
    Notification Hub.
 

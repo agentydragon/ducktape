@@ -235,3 +235,21 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_decision_providers",
+    size = "medium",
+    srcs = ["test_decision_providers.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":db",
+        ":models",
+        ":service",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
