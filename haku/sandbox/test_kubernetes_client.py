@@ -30,6 +30,7 @@ from haku.sandbox.kubernetes_client import (
     WARM_POOL_ANNOTATION,
     CommandResult,
     KubernetesSandboxClient,
+    SandboxClaimClient,
     _exec_handshake_error,
 )
 from mcp_infra.exec.models import Exited
@@ -105,8 +106,13 @@ def _runner_result() -> CommandResult:
 
 
 def _client(environment: SandboxEnvironmentConfig, custom: Mock, core: Mock, runner: Mock) -> KubernetesSandboxClient:
+    claims = SandboxClaimClient(custom, core, environment.sandbox.namespace)
     return KubernetesSandboxClient(
-        environment, api_client=Mock(), custom_objects=custom, core_v1=core, exec_runner=runner, now=lambda: NOW
+        environment,
+        api_client=Mock(),
+        claims=claims,
+        exec_runner=runner,
+        now=lambda: NOW,
     )
 
 
@@ -144,8 +150,25 @@ async def test_provision_creates_named_delete_claim_and_adopts_ready_result(
     assert recorded[WARM_POOL_ANNOTATION] == environment.sandbox.warm_pool
     assert recorded[CONTAINER_ANNOTATION] == environment.sandbox.container
     assert recorded[DEFAULT_CWD_ANNOTATION] == environment.sandbox.default_cwd
+    assert "env" not in body["spec"]
     # Per-call and lifecycle budgets describe no property of the pod, so nothing records them.
     assert not [key for key in recorded if "ttl" in key or "timeout" in key or "bytes" in key]
+
+
+async def test_provision_passes_internal_env_into_new_claim(environment: SandboxEnvironmentConfig) -> None:
+    claim = _claim(environment, deadline=NOW + timedelta(hours=8))
+    custom = Mock()
+    custom.create_namespaced_custom_object = AsyncMock(return_value=claim)
+
+    await _client(environment, custom, Mock(), Mock())._create_or_adopt_claim(
+        "task-one", env={"HAKU_CONSOLE_TOKEN": "minted-token", "EXTRA": "value"}
+    )
+
+    body = custom.create_namespaced_custom_object.await_args.args[4]
+    assert body["spec"]["env"] == [
+        {"name": "HAKU_CONSOLE_TOKEN", "value": "minted-token"},
+        {"name": "EXTRA", "value": "value"},
+    ]
 
 
 async def test_provision_adopts_matching_claim_after_create_conflict(environment: SandboxEnvironmentConfig) -> None:

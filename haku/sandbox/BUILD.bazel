@@ -1,6 +1,17 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "claims",
+    srcs = ["claims.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "config",
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
@@ -22,6 +33,7 @@ py_library(
     srcs = ["kubernetes_client.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":claims",
         ":config",
         ":models",
         "//mcp_infra/exec:models",
@@ -29,6 +41,18 @@ py_library(
         "@pypi//aiohttp",
         "@pypi//fastmcp_slim",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_claims",
+    srcs = ["test_claims.py"],
+    deps = [
+        ":claims",
+        "//:conftest",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
