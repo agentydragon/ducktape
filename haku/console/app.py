@@ -25,6 +25,7 @@ from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -670,6 +671,8 @@ def create_app(
     # transport-local sessions; give every MCP request a fresh transport instead.
     mcp_asgi = console_mcp.http_app(path=MCP_PATH, stateless_http=True)
     install_operator_session_route_guard(mcp_asgi, path=MCP_PATH)
+    # See `mount.McpSessionManagerHealth` for why `/healthz` needs to watch this.
+    mcp_session_manager_health = mount.McpSessionManagerHealth()
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -776,8 +779,12 @@ def create_app(
         return response
 
     @app.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+    async def healthz() -> Response:
+        # See `mount.McpSessionManagerHealth`: a wedged /mcp session manager otherwise serves 500s
+        # forever without either probe noticing. Failing here lets Kubernetes recycle the pod.
+        if not mcp_session_manager_health.alive:
+            return JSONResponse({"status": "mcp_session_manager_dead"}, status_code=503)
+        return JSONResponse({"status": "ok"})
 
     # Prometheus scrape target. Deliberately absent from default.conf.template's proxied
     # `location`s: nginx serves the public origin, so an unproxied /metrics stays reachable only
@@ -873,7 +880,7 @@ def create_app(
     )
 
     # MCP server (streamable HTTP), mounted after the API routers and before the SPA.
-    mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi)
+    mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi, health=mcp_session_manager_health)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

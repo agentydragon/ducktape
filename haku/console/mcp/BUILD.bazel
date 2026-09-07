@@ -382,3 +382,16 @@ py_test(
         "@pypi//referencing",
     ],
 )
+
+py_test(
+    name = "test_mount",
+    srcs = ["test_mount.py"],
+    deps = [
+        ":mount",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

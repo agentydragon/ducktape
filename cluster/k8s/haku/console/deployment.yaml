@@ -513,13 +513,21 @@ spec:
               port: api
             failureThreshold: 60
             periodSeconds: 5
+          # httpGet /healthz, not tcpSocket: the port stays open even after FastMCP's
+          # StreamableHTTPSessionManager task group wedges (see
+          # haku/console/identity/fastmcp_adapter.py's `mcp_session_manager_liveness` docstring for
+          # the upstream bug), so a bare TCP check never notices a replica stuck 500ing every /mcp
+          # request. /healthz fails once that happens, so readiness pulls the replica out of the
+          # Service quickly and liveness restarts it.
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: api
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: api
             initialDelaySeconds: 5
             periodSeconds: 10
