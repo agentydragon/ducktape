@@ -4,26 +4,21 @@ Tools using `.flat_model()` whose input models only have basic typed fields with
 `Field(description=...)` and defaults. These could be plain FastMCP `@mcp.tool`
 functions with `Annotated[T, "description"]` parameters instead.
 
-## Convertible (16 tools)
+## Convertible (11 tools)
 
-| File                                       | Tool                       | Input model              |
-| ------------------------------------------ | -------------------------- | ------------------------ |
-| `git_commit_ai/agent_backend.py`           | `submit_commit_message`    | `CommitMessage`          |
-| `mcp_infra/compositor/resources_server.py` | `list_resources`           | none (zero-arg)          |
-| `mcp_infra/compositor/resources_server.py` | `list_templates`           | none (zero-arg)          |
-| `mcp_infra/compositor/resources_server.py` | `list_subscriptions`       | none (zero-arg)          |
-| `mcp_infra/compositor/resources_server.py` | `subscribe`                | `ResourcesSubscribeArgs` |
-| `mcp_infra/compositor/resources_server.py` | `unsubscribe`              | `ResourcesSubscribeArgs` |
-| `mcp_infra/compositor/resources_server.py` | `subscribe_list_changes`   | `ListSubscribeArgs`      |
-| `mcp_infra/compositor/resources_server.py` | `unsubscribe_list_changes` | `ListSubscribeArgs`      |
-| `mcp_infra/compositor/admin.py`            | `detach_server`            | `DetachServerArgs`       |
-| `git_commit_ai/git_ro/server.py`           | `rev_parse`                | `RevParseInput`          |
-| `mcp_infra/exec/seatbelt.py`               | `read_image`               | `ReadImageInput`         |
-| `mcp_infra/exec/direct.py`                 | `read_image`               | `ReadImageInput`         |
-| `mcp_infra/exec/bwrap.py`                  | `read_image`               | `ReadImageInput`         |
-| `mcp_infra/exec/docker/server.py`          | `read_image`               | `ReadImageInput`         |
-| `x/inop/prompt_feedback_mcp.py`            | `propose_prompt`           | `ProposePromptInput`     |
-| `agent_core_testing/echo_server.py`        | `echo`                     | `EchoInput`              |
+| File                                       | Tool                    | Input model          |
+| ------------------------------------------ | ----------------------- | -------------------- |
+| `git_commit_ai/agent_backend.py`           | `submit_commit_message` | `CommitMessage`      |
+| `mcp_infra/compositor/resources_server.py` | `list_resources`        | none (zero-arg)      |
+| `mcp_infra/compositor/resources_server.py` | `list_templates`        | none (zero-arg)      |
+| `mcp_infra/compositor/admin.py`            | `detach_server`         | `DetachServerArgs`   |
+| `git_commit_ai/git_ro/server.py`           | `rev_parse`             | `RevParseInput`      |
+| `mcp_infra/exec/seatbelt.py`               | `read_image`            | `ReadImageInput`     |
+| `mcp_infra/exec/direct.py`                 | `read_image`            | `ReadImageInput`     |
+| `mcp_infra/exec/bwrap.py`                  | `read_image`            | `ReadImageInput`     |
+| `mcp_infra/exec/docker/server.py`          | `read_image`            | `ReadImageInput`     |
+| `x/inop/prompt_feedback_mcp.py`            | `propose_prompt`        | `ProposePromptInput` |
+| `agent_core_testing/echo_server.py`        | `echo`                  | `EchoInput`          |
 
 ## Not convertible (18 tools)
 

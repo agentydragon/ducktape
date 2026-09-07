@@ -4,7 +4,6 @@ import json
 
 from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.mount_types import MountEvent
 from mcp_infra.prefix import MCPMountPrefix
 
 _SERVER_STATE_URI_TEMPLATE = "compositor://{server}/state"
@@ -73,13 +72,6 @@ class CompositorMetaServer(EnhancedFastMCP):
 
         # Instructions and capabilities are embedded in the per-server state (InitializeResult)
         # via server_state above; no separate resources are exposed to avoid duplication.
-
-        # Register mount change listener to emit notifications without container coupling
-        async def _on_mount_change(name: str, action: MountEvent) -> None:
-            # Always signal list-changed when mounts change
-            await self.broadcast_resource_list_changed()
-            # For new state availability or mount, update the per-server state resource
-            if action in (MountEvent.MOUNTED, MountEvent.STATE):
-                await self.broadcast_resource_updated(_SERVER_STATE_URI_TEMPLATE.format(server=name))
-
-        self._compositor.add_mount_listener(_on_mount_change)
+        #
+        # Mount changes are not pushed: callers re-read servers_list/server_state, which are
+        # always computed fresh from current compositor state.

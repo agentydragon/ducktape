@@ -13,22 +13,34 @@ from hamcrest import assert_that, contains_inanyorder, has_length
 from mcp_infra.compositor.resources_server import ResourcesListArgs
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.testing.notifications import enable_resources_caps
+
+
+def _make_origin_with_resource() -> EnhancedFastMCP:
+    # version="test" skips the slow importlib.metadata.version() lookup that hangs on
+    # os.stat() in the Nix environment.
+    origin = EnhancedFastMCP("origin", version="test")
+
+    @origin.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
+    async def foo_bar() -> str:
+        return "ok"
+
+    return origin
 
 
 @pytest.mark.asyncio
-async def test_list_resources_with_null_server_filter(compositor, origin_with_recorder, typed_resources_client):
+async def test_list_resources_with_null_server_filter(compositor, typed_resources_client):
     """Test that server=None lists resources from all servers."""
-    origin, _ = origin_with_recorder
+    origin = _make_origin_with_resource()
     await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # List resources with explicit server=None (should list all)
     result = await typed_resources_client.list_resources(ResourcesListArgs(server=None, uri_prefix=None))
 
-    # Should find resources from all mounted servers (resources, compositor_meta, origin)
-    assert_that(result.resources, has_length(3))
+    # Should find resources from every mounted server that advertises resources of its own.
+    # The "resources" server itself registers only tools, no resources, so it is absent here.
+    assert_that(result.resources, has_length(2))
     server_names: set[str] = {r.server for r in result.resources}
-    assert_that(list(server_names), contains_inanyorder("resources", "compositor_meta", "origin"))
+    assert_that(list(server_names), contains_inanyorder("compositor_meta", "origin"))
 
     # Verify the origin resource is present with unprefixed URI
     origin_resources = [r for r in result.resources if r.server == "origin"]
@@ -37,9 +49,9 @@ async def test_list_resources_with_null_server_filter(compositor, origin_with_re
 
 
 @pytest.mark.asyncio
-async def test_list_resources_filters_by_server_when_provided(compositor, origin_with_recorder, typed_resources_client):
+async def test_list_resources_filters_by_server_when_provided(compositor, typed_resources_client):
     """Test that server filter works when a specific server name is provided."""
-    origin, _ = origin_with_recorder
+    origin = _make_origin_with_resource()
     await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # Create a second server without resources
@@ -79,7 +91,6 @@ async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources
     async def baz() -> str:
         return "baz"
 
-    enable_resources_caps(server, subscribe=False)
     await compositor.mount_inproc(MCPMountPrefix("test"), server)
 
     # List all resources (no filter)

@@ -17,14 +17,11 @@ from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
 from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.resources_server import ResourcesServer
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
-from mcp_infra.testing.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
 from util.bazel.subprocess import python_env
 
@@ -124,33 +121,6 @@ def stdio_echo_spec() -> StdioMCPServer:
 
 
 @pytest.fixture
-def stdio_notifier_spec() -> StdioMCPServer:
-    """Launch notification-emitting server via -m as stdio spec."""
-    return StdioMCPServer(
-        command=sys.executable, args=["-m", "mcp_infra.testing.stdio_notifier"], env=python_env(inherit=False)
-    )
-
-
-@pytest.fixture
-def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
-    """Origin server with subscription recorder attached."""
-    # Workaround: Pass version="test" to skip slow importlib.metadata.version() lookup
-    # that hangs on os.stat() in Nix environment. Without this, MCP server initialization
-    # would call pkg_version("mcp") which triggers filesystem operations that timeout.
-    m = EnhancedFastMCP("origin", version="test")
-    recorder = install_subscription_recorder(m)
-
-    @m.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
-    async def foo_bar() -> str:
-        return "ok"
-
-    # Ensure this origin advertises resources.subscribe for gating and
-    # registers explicit handlers so subscribe/unsubscribe calls succeed.
-    enable_resources_caps(m, subscribe=True)
-    return m, recorder
-
-
-@pytest.fixture
 def make_compositor():
     """Async helper to open a Compositor and yield (Client, Compositor).
 
@@ -166,26 +136,5 @@ def make_compositor():
                 await comp.mount_inproc(MCPMountPrefix(name), srv)
             async with Client(comp) as sess:
                 yield sess, comp
-
-    return _open
-
-
-@pytest.fixture
-def make_buffered_client():
-    """Async helper to open a Compositor + Client with NotificationsBuffer.
-
-    Usage:
-        async with make_buffered_client({"name": server, ...}) as (client, comp, buf):
-            ...
-    """
-
-    @asynccontextmanager
-    async def _open(servers: dict[str, FastMCP]):
-        async with Compositor(version="1.0.0-test") as comp:
-            for name, srv in servers.items():
-                await comp.mount_inproc(MCPMountPrefix(name), srv)
-            buf = NotificationsBuffer(compositor=comp)
-            async with Client(comp, message_handler=buf.handler) as sess:
-                yield sess, comp, buf
 
     return _open
