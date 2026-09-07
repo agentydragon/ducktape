@@ -57,10 +57,18 @@ measured a never-rebalanced portfolio, whatever the report said. Re-run the grid
 moves. This is a few hours and it either validates the existing results or invalidates them;
 nothing below is worth doing until it is known which.
 
-**A downstream consumer still imports the deleted JAX entry point.** It cannot run at all, so
-the grid it published cannot currently be reproduced. Port it onto `RustEngine.product_metrics`
-and re-run the published grid unchanged. If the numbers move, the JAX-to-Rust migration changed
-answers, and that outranks everything in this file.
+**A downstream consumer imports the deleted JAX entry point.** It is pinned to a ducktape
+commit old enough to still have that engine, so it runs today and breaks on the next pin bump.
+The port is onto `RustEngine.product_terminal`, NOT `product_metrics`: the latter returns every
+base series as a `(snapshot, rollout)` array, which is the host-side slab that consumer went to
+the product path to avoid in the first place. Then re-run the published grid unchanged. If the
+numbers move, suspect the sampler before the engine — `structural_macro` was reworked over the
+same commits, and the two engines were held to exact integer equality on the failure vector and
+every product metric array until the JAX one was retired (`rust/README.md`).
+
+Note what that re-run can and cannot establish. It is a regression test of the port, not of the
+engine: engine equivalence was already CI-enforced, so a difference here is evidence about the
+sampler or about the port, and attributing it to the engine would be wrong.
 
 **The tier ladder's rungs were never sensitivity-tested.** Plan 0 varied the withdrawal rate but
 held the tier structure fixed. A less-trimmed lower tier, and an intermediate rung between the
