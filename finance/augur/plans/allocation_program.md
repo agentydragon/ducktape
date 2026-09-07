@@ -102,10 +102,15 @@ down.
    side: a total-return series with no dividend has no tax drag, which flatters equity by an
    amount nobody has measured.
 
-3. **The fitted model (#5509 -> #5487 -> #5488).** Finding 4 for the level, finding 6 for why
-   the replay cannot substitute. Fit on 1926-2026 first: it is the cheapest, the data is
-   already assembled by `load_macro_history`, and a model class cannot learn the Depression
-   from a sample that starts in 1955.
+3. **The fitted model (#5817 -> #5487 -> #5488).** Finding 4 for the level, finding 6 for why
+   the replay cannot substitute.
+
+   The window question that used to open this lane is answered and recorded in `model/SPEC.md`:
+   held out, the century forecasts inflation better and both rate states worse, at every horizon
+   past a month, so there is no window to switch to. #5817 is what that leaves — per-equation
+   windows, which the estimator already permits since it is one OLS per equation. Cheap, and it
+   establishes how much of the gap is explained by simply not pooling the pre-1951 peg before
+   #5488 spends a regime-switching class on it.
 
    #5487 is not optional and not a refinement. The model's `rate_beta` fits to zero, so it
    structurally cannot represent flight-to-quality — bonds rallying while equities fall is
