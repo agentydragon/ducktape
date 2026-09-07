@@ -4,40 +4,31 @@ metadata:
     name: haku-console-node-daemon-public-coder-devbox
     namespace: haku-console
     annotations:
-        description: Scoped routing credential for the public-coder-devbox outbound node daemon. It cannot create or approve work.
+        description: Scoped routing credential for the public-coder-devbox outbound node daemon. It cannot create or approve work. Same value as ../agents/public-coder-agent/devbox/hostexecd-token.sops.yaml -- update both if rotated.
 type: Opaque
 stringData:
-    token: ENC[AES256_GCM,data:VTRN179yg8AI9c4ABqijs/Wh0st4O2uQWUx4dnpQQ5gwl57XtVg170TsAGcLwdXcP5ixApYjt0WDWl2DB07xcA==,iv:l8RZE3lzzjkctwAXPWS8P1a7LWmIi4k81BwOnzPIoV4=,tag:b12IXhzQB5PO2mK6ZRnuPA==,type:str]
+    token: ENC[AES256_GCM,data:aFmJRYiINLkh05pKUtgLiBdn8jMq60N2nhvzL9tVf6wSuVabL/DCK7WWXuUPbGjqGEG2fBjjFrkUFxLntRevbg==,iv:zhPWmUoXYGJ+z0wAh3dep2glT9hKWkq3yUv4lmT6/DQ=,tag:xsnCbGRQ1XdOpn0Z+NytOw==,type:str]
 sops:
     age:
         - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBDVjR3eVRvQ2NiMDcrWGtv
-            ek5wK1NQZTdkZWRaYW1HSEtXN2dHcXBiM3lnCkxWTkZWYi9yS1lZSjd4c2pEMFdN
-            MzVSbTgxYVpSN3NVNi9OM0Zqblh6NU0KLS0tIGp3TXoxRUNUZGd4Z1pHSDQ3Mmtn
-            UFFKTXBMdk5DamFhbmR4K3lsQ1hrKzQKPzKjMwh2jWQ6hq/5vbYtxtA7edJY4GHM
-            Rp/nrXime4iQf2pGe1GO6kGnKesad7OgLtOMYve4dvJTJ2BbBzjX6Q==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBENSthbno4TkpXbEZ6UnVO
+            Y25lU2xHWGJyLzU2STNNblBjNzAvTUt5d0Y4Ck1DbzFwTGRzb1JTVmhLSXAvVTF1
+            aTlhRkRVT1FCZkRsbUFERmZZUE8wa0EKLS0tIDQrRFJKTnpIbkYxZFNoMTRiL0Jx
+            NzYwTU00SlFKUzVRL0pwcTJyU3c2OUkKc4ouETibj5ugUaa80keJypb3OE8HJ827
+            z992Cg6ufm9itj5PDtWPG8hvfHGvjlc3b/J3BTX+zJb9Yz9oBFLWIg==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
         - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBNTHhoUGE1YkxNZUpLYWNa
-            UmNBVUdUOE14a1d5Q2N0a0xVdlFpOExIZGxzCmtqeHdpZDZCSUEramJQYjZiemdM
-            aGRkT1pYSWJiTXBIUi8wZEt5VVdoOW8KLS0tIEtKbWxRVGxsOVF4Yy83UG80V1h2
-            WlQ4WEUxV0JtdktIYVVHN1ljMEZCZ2MK8FLNmJxmgeerjmmy+cM/XcKsgupR21Bq
-            fwRzbYrRotvvi4MhThKP76aVzNY8cEGFdA34gedC3Ys72urQGb215g==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6TmdEU3BuOGhiMGNuL0px
+            VGNPRTBKTHZIQytZbm5CMThtVUtVSzVzR3djCnQ4TitzMUR6UjU5SGMySXdSR09h
+            RHkwcWV3KzcvZFZ1dWRseGZFTFBtcUkKLS0tIHBLYzRmdWRiMlpraTh3bDIzV0pw
+            clNhdHl5Z0txSVIzZUorTFlmUjJiSE0KINljas3zCbLwS29rUWAfhvkeLmnf45Hm
+            1PhQn+wNhZ34Y638n73Yi0Rtj+wBmr2XN9Z6PSXYfdLxExWJpkGiug==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
-        - enc: |
-            -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBSeGpkdDI5VjdXbHcxVEFj
-            YkxXaENrMTdHdzRxSUtOUENMVVdPL2tuQjBVClE0UzgyanVLT1FQK0lwcW11d1ZF
-            U1BxdVNQTW0rTlpHbTdNZGFTQmwyakEKLS0tIEc5QUtHZ0JkUTBPMzJoeFFaYjFL
-            YTE3WXR6NjB4aGRWQzRpbHhNcjBUQzQKJKFQ0Q9+4r2KdgoRd8e8eSTl+pwFwgrP
-            M/6Af2n/CzVvMBJL5NQwn9ioaPKbH22oPXRXuDN7dijIWNxIbrLt0w==
-            -----END AGE ENCRYPTED FILE-----
-          recipient: age1uh0wnz6annhya9xsszjf5htslvdjx2k484s9l62uknlmdtxhmcfqtgf30q
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-09-07T00:42:21Z"
-    mac: ENC[AES256_GCM,data:suWtZsidmurJwDZ8EYirCoSCy34hot3wzuUUqyMmBtRQ4G9+IwmkvOZi9o2EnLDjUlLQxv1DIoon+OTTDJdMEc4sm2dVe2Lkp71bBxVTIddkqALLqhE9s4KwOkb04c+1HpBGR1IH3VGdVV2W0O8yXGnWdDH3iJdNwoGvh/ETuKM=,iv:Pk3lQzoQUdK8Mni76HK+FZbx+MXZ72g1HfeuVL/dlTI=,tag:wPpY/A4yAnd2eP1+5SZ2+A==,type:str]
+    lastmodified: "2026-09-07T00:53:55Z"
+    mac: ENC[AES256_GCM,data:sdBjh8+khcqYlDgdit5gyguI2kJ3rgIFMUKyIItRceDyM/M8y1Hg5U4K/t1d8IjmXj82cCLdN4MTLu/M2OGYUkPrgOgsQwDiCL9dSfFxhFnbWjQFYg0M2pHEI9Kq4YOc5vNFHfVXfxJBxSzXyF9bFhHcYk1vgE7F7Qs3pfGuIEI=,iv:Lk2bF0e4GxZJYdxVekTS6bABaFBAh70RZRUNUctnw2o=,tag:FzigFoMFNSpSOP0R6jopBA==,type:str]
     version: 3.13.3

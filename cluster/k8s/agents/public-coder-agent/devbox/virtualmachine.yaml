@@ -46,8 +46,8 @@ spec:
               serial: pcproxyca
               disk:
                 bus: virtio
-            - name: sops-age-key
-              serial: pcagekey
+            - name: hostexecd-token
+              serial: pctoken
               disk:
                 bus: virtio
           interfaces:
@@ -75,6 +75,6 @@ spec:
         - name: proxy-ca
           configMap:
             name: public-coder-agent-proxy-ca-cert
-        - name: sops-age-key
+        - name: hostexecd-token
           secret:
-            secretName: public-coder-devbox-sops-age-key
+            secretName: public-coder-devbox-hostexecd-token

@@ -23,8 +23,8 @@ let
   keys = import ../../../ssh-keys.nix;
   proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
-  sopsAgeKeyDevice = "/dev/disk/by-id/virtio-pcagekey";
-  sopsAgeKeyFile = "/etc/sops-age-identity.txt";
+  hostexecdTokenDevice = "/dev/disk/by-id/virtio-pctoken";
+  hostexecdTokenFile = "/etc/hostexecd-daemon-token.txt";
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
   proxyCaRuntimeDir = "/run/public-coder-devbox-proxy-ca";
 in
@@ -41,24 +41,21 @@ in
   # on every image update. sshd is left to generate its own ephemeral host key each boot, same as
   # any other fresh install.
   #
-  # What genuinely needs to persist is this VM's OWN sops decryption identity: hostexecd's daemon
-  # token (cluster/k8s/haku/console/node-daemon-public-coder-devbox.sops.yaml) is decrypted by
-  # sops-nix running *on this VM*, independently of Flux's own decryption of the same ciphertext
-  # into a Kubernetes Secret -- and that identity must stay the same across every ephemeral reboot
-  # for the committed ciphertext to keep decrypting. KubeVirt attaches that identity as its own
-  # (non-SSH) age keyfile via a small virtio disk; this service installs it before sops-nix needs
-  # it, so the image does not depend on cloud-init being present.
-  #
-  # NOTE: the `before`/`wantedBy` target here (sops-install-secrets.service) is sops-nix's actual
-  # decrypt unit as of the pinned nixpkgs/sops-nix release, but hasn't been exercised on a live
-  # boot from this session -- confirm with `systemctl list-units | grep sops` after first boot.
-  systemd.services.public-coder-devbox-sops-age-key = {
-    description = "Install the persisted public-coder-devbox sops age decryption identity";
+  # hostexecd's own daemon token (cluster/k8s/haku/console/node-daemon-public-coder-devbox.sops.yaml)
+  # needs no on-guest sops/age decryption either, unlike wyrm2/rugged/atlas: those are physical
+  # machines with no Kubernetes relationship to the cluster, so decrypting that committed ciphertext
+  # themselves via a persisted host-derived age identity is their only channel. This VM is a
+  # KubeVirt-managed guest Kubernetes already controls, so it gets the same treatment as the proxy
+  # CA below: Flux/kustomize-controller decrypts the token server-side (it already needs to, to
+  # materialize haku-console's own copy of it) and KubeVirt attaches the plaintext result as a small
+  # virtio disk. No local decryption identity to persist at all.
+  systemd.services.public-coder-devbox-hostexecd-token = {
+    description = "Install the public-coder-devbox hostexecd daemon token";
     wantedBy = [
-      "sops-install-secrets.service"
+      "hostexecd.service"
       "multi-user.target"
     ];
-    before = [ "sops-install-secrets.service" ];
+    before = [ "hostexecd.service" ];
     after = [ "local-fs.target" ];
     path = [
       pkgs.coreutils
@@ -70,7 +67,7 @@ in
     };
     script = ''
       set -eu
-      src="/run/public-coder-devbox-sops-age-key/source"
+      src="/run/public-coder-devbox-hostexecd-token/source"
       mkdir -p "$src"
       mounted=0
       for _ in $(seq 1 60); do
@@ -78,22 +75,20 @@ in
           mounted=1
           break
         fi
-        if mount -o ro "${sopsAgeKeyDevice}" "$src" 2>/dev/null; then
+        if mount -o ro "${hostexecdTokenDevice}" "$src" 2>/dev/null; then
           mounted=1
           break
         fi
         sleep 1
       done
       if [ "$mounted" -ne 1 ]; then
-        echo "KubeVirt sops age-key disk did not appear at ${sopsAgeKeyDevice}" >&2
+        echo "KubeVirt hostexecd-token disk did not appear at ${hostexecdTokenDevice}" >&2
         exit 1
       fi
-      install -Dm0600 "$src/key" "${sopsAgeKeyFile}"
+      install -Dm0600 "$src/token" "${hostexecdTokenFile}"
       umount "$src"
     '';
   };
-
-  sops.age.keyFile = sopsAgeKeyFile;
 
   # The VM is intentionally a root-administered build box. Its egress is
   # still enforced outside the guest by the Cilium policy on virt-launcher.
@@ -198,10 +193,17 @@ in
     enable = true;
     httpsProxy = proxyUrl;
     extraRootCertFile = "${proxyCaRuntimeDir}/ca-bundle.crt";
+    daemonTokenFile = hostexecdTokenFile;
   };
   systemd.services.hostexecd = {
-    requires = [ "public-coder-devbox-proxy-ca.service" ];
-    after = [ "public-coder-devbox-proxy-ca.service" ];
+    requires = [
+      "public-coder-devbox-proxy-ca.service"
+      "public-coder-devbox-hostexecd-token.service"
+    ];
+    after = [
+      "public-coder-devbox-proxy-ca.service"
+      "public-coder-devbox-hostexecd-token.service"
+    ];
   };
 
   # These are intentionally placeholders / non-secret routing settings. The

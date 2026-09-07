@@ -72,10 +72,26 @@ in
         `consoleUrl` is signed by a local CA the built-in roots don't know.
       '';
     };
+
+    daemonTokenFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Path to the plaintext per-node routing bearer, bypassing this module's own
+        `sops.secrets.hostexecd_daemon_token` declaration entirely. For a host with no
+        Kubernetes relationship to the cluster (wyrm2/rugged/atlas), decrypting the committed
+        `node-daemon-<host>.sops.yaml` locally via sops-nix is the only channel available, so
+        leave this unset. A KubeVirt-managed guest (public-coder-devbox) has a simpler one:
+        Flux/kustomize-controller already decrypts that same file server-side to materialize
+        haku-console's own copy of the token, and KubeVirt can attach a second Secret carrying
+        the identical value as a guest disk — no local sops/age identity needed on the guest at
+        all. Set this to wherever that disk is installed.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
-    sops.secrets.hostexecd_daemon_token = {
+    sops.secrets.hostexecd_daemon_token = lib.mkIf (cfg.daemonTokenFile == null) {
       sopsFile = daemonSecretFile;
       key = "stringData/token";
       owner = "root";
@@ -97,7 +113,12 @@ in
           "HOSTEXEC_ISSUER=${issuer}"
           "HOSTEXEC_JWKS_URL=${issuer}jwks/"
           "HOSTEXEC_CONSOLE_URL=${cfg.consoleUrl}"
-          "HOSTEXEC_DAEMON_TOKEN_FILE=${config.sops.secrets.hostexecd_daemon_token.path}"
+          "HOSTEXEC_DAEMON_TOKEN_FILE=${
+            if cfg.daemonTokenFile != null then
+              cfg.daemonTokenFile
+            else
+              config.sops.secrets.hostexecd_daemon_token.path
+          }"
           "RUST_LOG=info"
           # systemd's DefaultEnvironment PATH is a NixOS-minimal set (coreutils,
           # findutils, grep, sed, systemd) with no /run/current-system/sw/bin, so a bare
@@ -111,7 +132,11 @@ in
           "NO_PROXY=127.0.0.1,localhost"
         ]
         ++ lib.optionals (cfg.extraRootCertFile != null) [
-          "HOSTEXEC_EXTRA_ROOT_CERT_FILE=${cfg.extraRootCertFile}"
+          # SSL_CERT_FILE, not a hostexec-specific name: it's the same variable this host already
+          # sets for every other TLS client (see extraRootCertFile's own doc comment above for why
+          # main.rs still has to read it and call add_root_certificate() explicitly rather than
+          # relying on reqwest to honor it the way OpenSSL-based tools do).
+          "SSL_CERT_FILE=${cfg.extraRootCertFile}"
         ];
       };
     };

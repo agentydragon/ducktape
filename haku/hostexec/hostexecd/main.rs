@@ -40,10 +40,16 @@ struct Config {
     /// Extra PEM root certificate to trust, in addition to the built-in web roots. reqwest
     /// otherwise honors HTTP_PROXY/HTTPS_PROXY automatically, but a TLS-*intercepting* egress
     /// proxy (public-coder-devbox's iron-proxy) presents a leaf certificate signed by its own
-    /// interception CA rather than the console's real one, which rustls's bundled webpki roots do
-    /// not trust. Every other host (wyrm2/rugged/atlas) reaches the console directly and leaves
-    /// this unset.
-    #[arg(long, env = "HOSTEXEC_EXTRA_ROOT_CERT_FILE")]
+    /// interception CA rather than the console's real one. Read from SSL_CERT_FILE -- the same
+    /// variable this VM already sets for every other TLS client for exactly this reason -- rather
+    /// than a hostexec-specific name, even though reqwest doesn't read it on its own: workspace
+    /// Cargo feature unification compiles both TLS backends in, and if reqwest resolves to rustls
+    /// rather than native-tls, rustls-tls-webpki-roots bundles its trust list at compile time and
+    /// ignores this env var same as it ignores /etc/ssl/certs -- hence still reading the path
+    /// ourselves and calling add_root_certificate() explicitly below, which works regardless of
+    /// which backend is actually active. Every other host (wyrm2/rugged/atlas) reaches the console
+    /// directly and leaves this unset.
+    #[arg(long, env = "SSL_CERT_FILE")]
     extra_root_cert_file: Option<PathBuf>,
 }
 
