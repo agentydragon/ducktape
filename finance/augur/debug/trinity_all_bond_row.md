@@ -1,8 +1,11 @@
 # The Trinity all-bond row is 43% against a published 80%
 
-Open. The equity-holding rows of `study/trinity` land within about a point of Table 3 over
-3-4%; the 0%-equity row does not, and nothing named in `replay.py`'s attribution accounts for
-it. This records what has been ruled out, so the next attempt does not re-walk it.
+**Resolved: the cell has no resolution.** At a 3% withdrawal the 0%-equity row sits exactly
+where the mass of 30-year windows crosses the survival boundary, so roughly one point of it
+rides on one basis point a year of compound return. The apparent 27-point disagreement is
+about a quarter point a year in the bond sleeve's level, amplified about a hundredfold by a
+knife-edge statistic. Details in § What it actually is; the ruled-out sections below are kept
+because two plausible stories died there and neither should be re-walked.
 
 ## Ruled out: the fund is a fund and Trinity priced a ladder
 
@@ -61,12 +64,42 @@ hand arithmetic — augur's 43% against this 42% — so the sim is not the suspe
 Roughly 27 points remain, and they are not in: the instrument, the maturity, the coupon
 convention, the withdrawal timing, the window spacing, or the simulator.
 
-## Where to look next
+## What it actually is
 
-- The paper's success criterion for the terminal year. A 60-point drop between its 3% and 4%
-  all-bond cells is a cliff; ours drops 37. If a partially-funded final withdrawal counts as
-  success there and as failure here, that lands disproportionately on the marginal cell.
-- Annual versus monthly compounding of the withdrawal against the return.
-- Whether Table 3's all-bond row is reproducible from Ibbotson's data at all. The equity rows
-  reproduce; this one is the only cell family that does not, and the paper is a 6-page journal
-  article whose method section does not pin the arithmetic.
+Run the paper's own annual arithmetic — withdraw at the start of the year, earn that year's
+return on the rest — over the same 32 windows (1927-1958 starts), on three return series:
+
+| series                               | 3%  | 4%  | 5%  | 6%  |
+| ------------------------------------ | --- | --- | --- | --- |
+| SBBI Exhibit A-3 (what Trinity used) | 66% | 19% | 12% | 3%  |
+| augur's sleeve, maturity 20          | 47% | 19% | 12% | 3%  |
+| Table 3                              | 80% | 20% | 17% | 12% |
+
+**At 4%, 5% and 6% the sleeve matches the real series exactly.** Those cells are not near the
+boundary, so a level difference has nothing to flip. Only 3% moves, and it moves a lot: the
+sleeve compounds about 0.2 points a year under SBBI in real terms (median window -0.54%
+against -0.32%, worst -1.76% against -1.61%).
+
+How much a level difference is worth there, adding a flat spread to the curve:
+
+| spread | 3%  | 4%  | 5%  | 6%  | RMSE vs SBBI |
+| ------ | --- | --- | --- | --- | ------------ |
+| +0 bp  | 47% | 19% | 12% | 3%  | 2.81         |
+| +10 bp | 56% | 22% | 12% | 3%  | 2.81         |
+| +20 bp | 69% | 22% | 12% | 6%  | 2.81         |
+| +40 bp | 72% | 25% | 12% | 9%  | 2.82         |
+
+Twenty basis points a year buys 22 points of this cell and does not improve the sleeve's fit to
+the actual return series at all. That is the whole phenomenon: about one point of "success
+rate" per basis point per year, on 32 windows holding roughly two independent observations.
+
+The residual after that — SBBI's own 66% against Table 3's 80%, on a window set friendlier than
+the paper's — is 14 points, i.e. about 14 basis points a year. There is nothing left to explain.
+
+## The one thing still worth fixing
+
+The sleeve's 0.2 points a year is real and is not about this cell. The likely cause is the
+yield source: Moody's Aaa is a narrower, higher-grade universe than the Aaa-and-Aa composite
+Ibbotson priced, so its coupon is systematically light. Fix it against the return series, never
+against Table 3 — a spread tuned to move this cell is the same mistake as maturity 10, one
+level down.

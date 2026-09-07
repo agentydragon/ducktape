@@ -24,15 +24,26 @@ attribution:
   the standard one — `bond_fund.constant_maturity_fund_paths`, validated against Damodaran's
   published returns. Two conventions it inherits: annual-pay coupons, and repricing at the
   same maturity each month, so there is no roll-down return.
-- ***The all-bond row is an OPEN DISCREPANCY, not an attributed difference.*** At 0% equity
-  and a 3% withdrawal this survives 43% of windows against Table 3's 80%, and no difference
-  named here accounts for it. Measured, on the paper's own arithmetic outside the simulator:
-  reinvesting the coupon instead of parking it is worth 11 points (42% -> 53%), the withdrawal
-  timing 2 (53% -> 51% at the other end of the year), and monthly rather than annual window
-  starts 3. Nothing left explains 27. The sleeve is not the suspect — see
-  `BOND_MATURITY_YEARS`, which is validated against the paper's own bond series. Treat the
-  bond-heavy rows as unreconciled: the equity-led ones, which is what a 4% rule is about, agree
-  to about a point.
+- ***The all-bond row at 3% has almost no resolution, and its 43%-against-80% is mostly that.***
+  This cell sits exactly where the mass of 30-year windows crosses the survival boundary, so it
+  converts a level difference in the bond sleeve into a large-looking difference in "success
+  rate": adding 20 basis points a year to the curve moves it from 47% to 69% while changing the
+  sleeve's fit to the real return series not at all (RMSE 2.81 either way). Roughly one point of
+  this cell per basis point per year. Do not read it as a 27-point disagreement about anything;
+  read it as about a quarter point a year of compound return, which is the honest unit.
+
+  What that quarter point is: run the paper's arithmetic on the actual annual returns Trinity
+  used (SBBI Exhibit A-3) over the same 32 windows and the row is 66/19/12/3 across 3-6%,
+  against this sleeve's 47/19/12/3 and Table 3's 80/20/17/12. **At 4%, 5% and 6% the sleeve
+  matches the real series exactly** — those cells are not near the boundary, so nothing to
+  amplify. Only 3% moves. The sleeve compounds about 0.2 points a year under SBBI in real terms
+  (median window -0.54% against -0.32%), which is the level difference being amplified, and the
+  likely cause is the yield source: Moody's Aaa is a narrower, higher-grade universe than the
+  Aaa-and-Aa composite Ibbotson priced. That is worth fixing on its own terms, not to move this
+  cell.
+
+  The rest — SBBI's own 66% against Table 3's 80% — is 14 points, i.e. about 14 basis points a
+  year, on a friendlier window set than the paper's. It is not evidence of anything.
 - *Windows start every month, not every year.* 474 of them against the paper's 41 — the same
   span, sampled 12x more finely, which makes each cell smoother rather than different.
 
