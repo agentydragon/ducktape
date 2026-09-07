@@ -41,13 +41,20 @@ attribution:
   accumulates idle cash that Trinity would have reinvested.
 - *Withdrawals are taken at the start of each year*, which is the more demanding convention:
   the money leaves before that year's return is earned on it. The paper does not say which end
-  it withdraws at, and **that one choice accounts for the whole residual disagreement** —
-  measured, the two conventions BRACKET Table 3. Start-of-year lands below the published rate
-  in 25 of 40 equity-holding cells and above in 1 (mean -3.6 points); end-of-year lands above
-  in 21 and below in 5 (mean +1.8). Neither dominates: start-of-year is closer over 3-4%
-  (mean absolute deviation 1.0 against 2.5), end-of-year over the full 3-12% range (2.9
-  against 3.7). Start-of-year is kept because it is the conservative reading and the one a
-  retiree actually lives, not because it fits better.
+  it withdraws at, and the choice is worth more than every other difference here combined.
+  Shifting the whole schedule 11 months later — same real amounts, since the CPI reset lands
+  on the same month either way — moves this table from below Table 3 to above it: start-of-year
+  lands under the published rate in 25 of 40 equity-holding cells and over it in 1 (mean -3.6
+  points), end-of-year over in 21 and under in 5 (mean +1.8). The paper's own convention lies
+  between the two.
+
+  So the table's systematic pessimism is a convention and not an unexplained residual. It is
+  NOT a claim that timing is the only difference — the equity index, the missing roll-down and
+  the monthly window starts are all still in there, and pinning the timing exactly would leave
+  some of them. Neither reading dominates: start-of-year is closer over 3-4% (mean absolute
+  deviation 1.0 against 2.5), end-of-year over the full 3-12% range (2.9 against 3.7).
+  Start-of-year is kept because it is the conservative reading and the one a retiree actually
+  lives, not because it fits better.
 
 Taxes and transaction costs are absent from both, which is the paper's own statement of its
 method rather than a difference.
