@@ -15,9 +15,9 @@ Two LLM agents alternate turns:
 
 | Framework         | Language | Directory          | Status                                                                                               |
 | ----------------- | -------- | ------------------ | ---------------------------------------------------------------------------------------------------- |
-| PydanticAI        | Python   | `pydantic_ai/`     | Implemented                                                                                          |
+| PydanticAI        | Python   | `pydantic_ai/`     | Disabled: `pydantic-ai-slim`'s fastmcp toolset has no mcp-sdk >=2.0-compatible release (#5786)       |
 | LangGraph         | Python   | <langgraph.md>     | Removed: `langchain-mcp-adapters` has no mcp-sdk >=2.0-compatible release (#5786); doc summarizes it |
-| Agent Framework   | Python   | `agent_framework/` | Implemented (migrated from AutoGen, which is in maintenance mode)                                    |
+| Agent Framework   | Python   | `agent_framework/` | Disabled: `agent-framework-core`'s MCP tracing has no mcp-sdk >=2.0-compatible release (#5786)       |
 | CrewAI            | Python   | <crewai.md>        | Removed: `crewai` has no mcp-sdk >=2.0-compatible release (#5786); doc summarizes it                 |
 | OpenAI Agents SDK | Python   | `openai_agents/`   | Implemented                                                                                          |
 | Rig               | Rust     | `rig/`             | Implemented                                                                                          |

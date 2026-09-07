@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "functions",
@@ -38,77 +38,88 @@ py_library(
     ],
 )
 
-py_library(
-    name = "function_learning",
-    srcs = ["function_learning.py"],
-    deps = [
-        ":functions",
-        ":prompts",
-        ":result_types",
-        ":scoring",
-        "//skills:skill_spec",
-        "//skills/eval_infra:af_chat_client",
-        "//skills/eval_infra:eval_sandbox",
-        "//skills/eval_infra:skill_staging",
-        "//skills/eval_infra:termination",
-        "//skills/eval_infra:transcript",
-        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
-        "//skills/info_gathering:info_gathering_skill_spec",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:output",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//aiodocker",
-    ],
-)
-
-py_binary(
-    name = "function_learning_bin",
-    main_module = "skills.info_gathering.evals.function_learning.function_learning",
-    deps = [":function_learning"],
-)
-
-py_library(
-    name = "run_all_evals",
-    srcs = ["run_all_evals.py"],
-    deps = [
-        ":function_learning",
-        ":functions",
-        ":result_types",
-        "//skills/eval_infra:af_chat_client",
-        "//skills/eval_infra:eval_sandbox",
-        "//skills/eval_infra:skill_staging",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//aiodocker",
-        "@pypi//anyio",
-        "@pypi//pydantic",
-    ],
-)
-
-py_binary(
-    name = "run_all_evals_bin",
-    main_module = "skills.info_gathering.evals.function_learning.run_all_evals",
-    deps = [":run_all_evals"],
-)
-
-py_library(
-    name = "analyze",
-    srcs = ["analyze.py"],
-    deps = [
-        ":run_all_evals",
-        "@pypi//pandas",
-    ],
-)
-
-py_binary(
-    name = "analyze_bin",
-    main_module = "skills.info_gathering.evals.function_learning.analyze",
-    deps = [":analyze"],
-)
+# CLEANUP(added 2026-09-07): function_learning, run_all_evals, analyze and their tests/binaries
+#   are disabled -- agent_framework_core (latest release checked: 1.17.0) reads
+#   `initialize_result.protocolVersion` in its MCP span tracing (agent_framework/_mcp.py), which
+#   no longer exists under mcp-sdk >=2.0's snake_case InitializeResult (`protocol_version`); every
+#   MCP-backed agent_framework connection now raises AttributeError before completing. Tracked
+#   upstream: https://github.com/microsoft/agent-framework/issues (no fix as of the #5786
+#   mcp-sdk/fastmcp migration). functions/result_types/prompts/scoring and test_functions are
+#   unaffected (no agent_framework MCP path) and stay enabled. Restore once agent_framework_core
+#   ships a release compatible with mcp-sdk >=2.0's InitializeResult shape; source files are
+#   otherwise untouched.
+#
+# py_library(
+#     name = "function_learning",
+#     srcs = ["function_learning.py"],
+#     deps = [
+#         ":functions",
+#         ":prompts",
+#         ":result_types",
+#         ":scoring",
+#         "//skills:skill_spec",
+#         "//skills/eval_infra:af_chat_client",
+#         "//skills/eval_infra:eval_sandbox",
+#         "//skills/eval_infra:skill_staging",
+#         "//skills/eval_infra:termination",
+#         "//skills/eval_infra:transcript",
+#         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
+#         "//skills/info_gathering:info_gathering_skill_spec",
+#         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
+#         "@pypi//agent_framework_anthropic",
+#         "@pypi//agent_framework_claude",
+#         "@pypi//agent_framework_core",
+#         "@pypi//agent_framework_openai",
+#         "@pypi//aiodocker",
+#     ],
+# )
+#
+# py_binary(
+#     name = "function_learning_bin",
+#     main_module = "skills.info_gathering.evals.function_learning.function_learning",
+#     deps = [":function_learning"],
+# )
+#
+# py_library(
+#     name = "run_all_evals",
+#     srcs = ["run_all_evals.py"],
+#     deps = [
+#         ":function_learning",
+#         ":functions",
+#         ":result_types",
+#         "//skills/eval_infra:af_chat_client",
+#         "//skills/eval_infra:eval_sandbox",
+#         "//skills/eval_infra:skill_staging",
+#         "@pypi//agent_framework_anthropic",
+#         "@pypi//agent_framework_claude",
+#         "@pypi//agent_framework_core",
+#         "@pypi//agent_framework_openai",
+#         "@pypi//aiodocker",
+#         "@pypi//anyio",
+#         "@pypi//pydantic",
+#     ],
+# )
+#
+# py_binary(
+#     name = "run_all_evals_bin",
+#     main_module = "skills.info_gathering.evals.function_learning.run_all_evals",
+#     deps = [":run_all_evals"],
+# )
+#
+# py_library(
+#     name = "analyze",
+#     srcs = ["analyze.py"],
+#     deps = [
+#         ":run_all_evals",
+#         "@pypi//pandas",
+#     ],
+# )
+#
+# py_binary(
+#     name = "analyze_bin",
+#     main_module = "skills.info_gathering.evals.function_learning.analyze",
+#     deps = [":analyze"],
+# )
 
 py_test(
     name = "test_functions",
@@ -121,31 +132,31 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_function_learning",
-    srcs = ["test_function_learning.py"],
-    data = ["//third_party/containers:python_3_13_slim"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":function_learning",
-        ":functions",
-        ":result_types",
-        "//:conftest",
-        "//skills/eval_infra:eval_sandbox",
-        "//skills/eval_infra:skill_staging",
-        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
-        "//skills/info_gathering/evals:replay_client",
-        "//third_party/containers:rlocations",
-        "//util:oci",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//aiodocker",
-        "@pypi//pytest_bazel",
-    ],
-)
+# py_test(
+#     name = "test_function_learning",
+#     srcs = ["test_function_learning.py"],
+#     data = ["//third_party/containers:python_3_13_slim"],
+#     requires_docker = True,
+#     deps = [
+#         ":conftest",
+#         ":function_learning",
+#         ":functions",
+#         ":result_types",
+#         "//:conftest",
+#         "//skills/eval_infra:eval_sandbox",
+#         "//skills/eval_infra:skill_staging",
+#         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
+#         "//skills/info_gathering/evals:replay_client",
+#         "//third_party/containers:rlocations",
+#         "//util:oci",
+#         "@pypi//agent_framework_anthropic",
+#         "@pypi//agent_framework_claude",
+#         "@pypi//agent_framework_core",
+#         "@pypi//agent_framework_openai",
+#         "@pypi//aiodocker",
+#         "@pypi//pytest_bazel",
+#     ],
+# )
 
 py_library(
     name = "conftest",

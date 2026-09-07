@@ -378,7 +378,6 @@ py_test(
         ":service",
         "//:conftest",
         "//util/testing:asgi",
-        "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

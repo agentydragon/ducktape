@@ -1,63 +1,7 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-
-py_library(
-    name = "twenty_questions",
-    srcs = ["twenty_questions.py"],
-    deps = [
-        "//skills:skill_spec",
-        "//skills/eval_infra:af_chat_client",
-        "//skills/eval_infra:eval_sandbox",
-        "//skills/eval_infra:skill_staging",
-        "//skills/eval_infra:termination",
-        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
-        "//skills/info_gathering:info_gathering_skill_spec",
-        "//skills/info_gathering/evals/twenty_questions:prompts",
-        "//skills/info_gathering/evals/twenty_questions:result_types",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:output",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
-    ],
-)
-
-py_binary(
-    name = "twenty_questions_bin",
-    main_module = "skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions",
-    deps = [":twenty_questions"],
-)
-
-py_test(
-    name = "test_twenty_questions",
-    srcs = ["test_twenty_questions.py"],
-    data = ["//third_party/containers:python_3_13_slim"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":twenty_questions",
-        "//:conftest",
-        "//skills/eval_infra:eval_sandbox",
-        "//skills/eval_infra:skill_staging",
-        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
-        "//skills/info_gathering/evals:replay_client",
-        "//skills/info_gathering/evals/twenty_questions:conftest",
-        "//skills/info_gathering/evals/twenty_questions:result_types",
-        "//third_party/containers:rlocations",
-        "//util:oci",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["//skills/info_gathering/evals/twenty_questions/x/shared:conftest"],
-)
+# CLEANUP(added 2026-09-07): agent_framework_core has no release compatible with mcp-sdk >=2.0's
+#   InitializeResult shape (latest checked: 1.17.0 still reads the removed camelCase
+#   `protocolVersion` attribute in its MCP span tracing, agent_framework/_mcp.py -- raises
+#   AttributeError on every MCP-backed connection), which blocked the #5786 mcp-sdk/fastmcp
+#   migration. Restore these targets (and drop the `# gazelle:exclude agent_framework` in
+#   ../BUILD.bazel) once agent_framework_core ships a compatible release, then re-run gazelle.
+#   Source files in this directory are otherwise untouched.

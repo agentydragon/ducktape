@@ -1,48 +1,7 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-
-py_library(
-    name = "twenty_questions",
-    srcs = ["twenty_questions.py"],
-    deps = [
-        "//mcp_infra/exec/docker:server",
-        "//mcp_infra/exec/docker:types",
-        "//skills/eval_infra:docker_exec",
-        "//skills/eval_infra:eval_sandbox",
-        "//skills/eval_infra:skill_staging",
-        "//skills/info_gathering:info_gathering_skill_spec",
-        "//skills/info_gathering/evals/twenty_questions:prompts",
-        "//skills/info_gathering/evals/twenty_questions:result_types",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:output",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
-        "@pypi//pydantic",
-        "@pypi//pydantic_ai_slim",
-    ],
-)
-
-py_binary(
-    name = "twenty_questions_bin",
-    main_module = "skills.info_gathering.evals.twenty_questions.x.pydantic_ai.twenty_questions",
-    deps = [":twenty_questions"],
-)
-
-py_test(
-    name = "test_twenty_questions",
-    srcs = ["test_twenty_questions.py"],
-    deps = [
-        ":conftest",
-        ":twenty_questions",
-        "//:conftest",
-        "//skills/info_gathering/evals/twenty_questions:conftest",
-        "//skills/info_gathering/evals/twenty_questions:result_types",
-        "@pypi//pydantic_ai_slim",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["//skills/info_gathering/evals/twenty_questions/x/shared:conftest"],
-)
+# CLEANUP(added 2026-09-07): pydantic-ai-slim's fastmcp toolset has no release compatible with
+#   mcp-sdk >=2.0 -- `pydantic_ai.toolsets.fastmcp` unconditionally imports the removed
+#   `mcp.server.fastmcp` (renamed to `mcp.server.mcpserver.MCPServer` in mcp-sdk v2; see
+#   https://py.sdk.modelcontextprotocol.io/v2/migration/#fastmcp-renamed-to-mcpserver), which
+#   blocked the #5786 mcp-sdk/fastmcp migration. Restore these targets (and drop the
+#   `# gazelle:exclude pydantic_ai` in ../BUILD.bazel) once pydantic-ai-slim ships a compatible
+#   release, then re-run gazelle. Source files in this directory are otherwise untouched.
