@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # Docker fixtures that depend on debian-slim OCI image
 # Only include in tests that actually need Docker execution
@@ -107,5 +107,16 @@ py_library(
         ":remote_server",
         "@pypi//anyio",
         "@pypi//fastmcp_slim",
+    ],
+)
+
+py_test(
+    name = "test_wedge_repro",
+    srcs = ["test_wedge_repro.py"],
+    deps = [
+        ":wedge_repro",
+        "//:conftest",
+        "//mcp_infra:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
