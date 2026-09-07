@@ -25,6 +25,7 @@ and is not currently wired in.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -72,7 +73,16 @@ class MacroFitWindow(StrEnum):
     """
 
 
-def _macro_var_levels(history: MacroHistory) -> dict[str, list[MonthlyLevel]]:
+@dataclass(frozen=True)
+class _MacroVarLevels:
+    """The three percent series `fit_macro_var` reads, grouped so they travel together."""
+
+    short_rate_percent: list[MonthlyLevel]
+    long_rate_percent: list[MonthlyLevel]
+    cpi_level: list[MonthlyLevel]
+
+
+def _macro_var_levels(history: MacroHistory) -> _MacroVarLevels:
     """`MacroHistory`'s aligned arrays as the percent series `fit_macro_var` reads.
 
     `MacroHistory` carries annualized DECIMALS and a term spread; `fit_macro_var` takes percent
@@ -81,22 +91,22 @@ def _macro_var_levels(history: MacroHistory) -> dict[str, list[MonthlyLevel]]:
     fit and the replay sampler cannot come to disagree about what the century was.
     """
 
-    return {
-        "short_rate_percent": [
+    return _MacroVarLevels(
+        short_rate_percent=[
             MonthlyLevel(month=month, value=rate * DECIMAL_TO_PERCENT)
             for month, rate in zip(history.months, history.short_rate.tolist(), strict=True)
         ],
-        "long_rate_percent": [
+        long_rate_percent=[
             MonthlyLevel(month=month, value=(short + spread) * DECIMAL_TO_PERCENT)
             for month, short, spread in zip(
                 history.months, history.short_rate.tolist(), history.term_spread.tolist(), strict=True
             )
         ],
-        "cpi_level": [
+        cpi_level=[
             MonthlyLevel(month=month, value=level)
             for month, level in zip(history.months, history.cpi_level.tolist(), strict=True)
         ],
-    }
+    )
 
 
 def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitWindow) -> StructuralMacroFittedDefaults:
@@ -113,7 +123,12 @@ def fit_structural_macro_defaults(evidence_dir: Path, *, macro_window: MacroFitW
             )
             macro_source = f"{FRED_FEDFUNDS.provenance_label},{FRED_GS10.provenance_label},{FRED_CPI.provenance_label}"
         case MacroFitWindow.LONG_RECORD_1926:
-            macro_fit = fit_macro_var(**_macro_var_levels(load_macro_history(evidence_dir)))
+            levels = _macro_var_levels(load_macro_history(evidence_dir))
+            macro_fit = fit_macro_var(
+                short_rate_percent=levels.short_rate_percent,
+                long_rate_percent=levels.long_rate_percent,
+                cpi_level=levels.cpi_level,
+            )
             macro_source = ",".join(source.provenance_label for source in MACRO_HISTORY_SOURCES)
     equity_fit = fit_log_returns(read_french_market_levels(evidence_dir, FRENCH_FACTORS))
     beta_fit = fit_rate_beta(
