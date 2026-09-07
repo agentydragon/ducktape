@@ -45,14 +45,30 @@ ts_library(
     deps = [":schema"],
 )
 
+# The board is the shareable half: the Haku Console renders it from its own shell, so it must
+# stay free of page chrome and of anything that fetches.
+ts_library(
+    name = "board",
+    srcs = ["board.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":format",
+        ":pace",
+        ":quotas",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
 ts_library(
     name = "dashboard",
     srcs = ["dashboard.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":board",
         ":format",
-        ":pace",
         ":quotas",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -79,7 +95,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":app",
-        ":styles",
+        ":board_css",
+        ":page_css",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
@@ -87,9 +104,16 @@ ts_library(
     ],
 )
 
+# Split so an embedder takes the board's styles without the standalone page's body, margins
+# and title chrome. //haku/console/frontend imports board.css into its own stylesheet.
 js_library(
-    name = "styles",
-    srcs = ["styles.css"],
+    name = "board_css",
+    srcs = ["board.css"],
+)
+
+js_library(
+    name = "page_css",
+    srcs = ["page.css"],
 )
 
 spa_bundle(
@@ -97,8 +121,9 @@ spa_bundle(
     entry_point = "main.tsx",
     jsx = "automatic",
     deps = [
+        ":board_css",
         ":main",
-        ":styles",
+        ":page_css",
     ],
 )
 
@@ -187,10 +212,11 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":board_css",
         ":dashboard",
         ":fixtures",
+        ":page_css",
         ":quotas",
-        ":styles",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",

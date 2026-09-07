@@ -72,7 +72,7 @@ try {
         waitUntil: "networkidle0",
         timeout: WAIT_TIMEOUT_MS,
       });
-      await page.waitForSelector(".provider-card", { timeout: WAIT_TIMEOUT_MS });
+      await page.waitForSelector(".aiquota-card", { timeout: WAIT_TIMEOUT_MS });
       await waitForStable(page);
       if (escaped.length > 0) throw new Error(`requests escaped the harness:\n  ${escaped.join("\n  ")}`);
       if (pageErrors.length > 0) throw new Error(pageErrors.map((error) => error.stack ?? String(error)).join("\n"));

@@ -32,6 +32,11 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   Python-generated MCP result-schema catalog, and hosts account connect/disconnect, per-Agent
   auto-approval policy, Web Push registration, deployment commit links, and configured recall-index
   freshness.
+- `aiquota_panel.tsx` — the AI-quota side panel and its rail button. The quota rendering itself is
+  aiquota's own `//aiquota/frontend:board`, fed by the payload `aiquota_proxy.py` fetches, so the
+  console shows exactly what the standalone dashboard, the CLI and the GNOME popup show; the panel
+  frame, loading/error states and rail summary stay here. `styles.src.css` `@import`s the board's
+  stylesheet, which is class-prefixed and palette-scoped so it cannot restyle the console.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
   severed, shared by the embed shell (the `openLink` Agent UI bridge action) and the settings panel
   (the MCP OAuth popup).
