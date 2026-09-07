@@ -12,8 +12,12 @@ sample without changing what is being estimated.
 what each equation's own window buys it, so the marginals are close to settled by construction.
 The open question is the part that is NOT per-equation: the innovation covariance couples the
 equations, a correlation needs both residuals on the same months, and there is no reason a
-covariance estimated on the overlap has to sit well with rows estimated on different spans. The
-joint log density is where that would show up, so it is the number to read.
+covariance estimated on the overlap has to sit well with rows estimated on different spans.
+
+What the sweep in `covariance_span_test.py` actually established is a level up from that. The
+covariance span moves the first scorable origin, the origin set moves the ranking, and at ten
+years it moves it far enough to reverse which single window wins — so a result from here is a
+statement about a scoring period, not about a window. `model/SPEC.md` carries the numbers.
 
 Deliberately an experiment rather than a fitter: nothing here changes the shipped
 `fit_macro_var` surface, and the provenance question a mixed fit raises — `MacroVarFit`'s
@@ -59,7 +63,9 @@ class EquationWindows:
         return (self.short_rate, self.term_spread, self.inflation_rate)
 
 
-def fit_mixed_windows(path: MacroStatePath, windows: EquationWindows) -> MacroVarFit:
+def fit_mixed_windows(
+    path: MacroStatePath, windows: EquationWindows, *, covariance_start: date | None = None
+) -> MacroVarFit:
     """Estimate each row of `(c, A)` on its own window; estimate `L` on the span they share.
 
     The covariance is the one quantity that cannot be split. Its residuals are recomputed on the
@@ -67,7 +73,12 @@ def fit_mixed_windows(path: MacroStatePath, windows: EquationWindows) -> MacroVa
     equation's own residuals: those cover different months, and a covariance assembled from
     misaligned residuals would not be one.
 
-    `first_month` and `sample_months` on the result describe that COMMON span — the only window
+    `covariance_start` defaults to the overlap, where every row sits inside its own fitting
+    window. Starting it EARLIER is a real option rather than an error: the residuals there come
+    from applying a row's coefficients to months it was not fitted on, which is a harsher and
+    arguably more honest measure of its innovation scale. So it is a parameter, and swept.
+
+    `first_month` and `sample_months` on the result describe that covariance span — the only window
     the fit as a whole is jointly identified on. The per-equation windows are the argument, and
     the result does not carry them; a shipped version would need to.
     """
@@ -82,7 +93,13 @@ def fit_mixed_windows(path: MacroStatePath, windows: EquationWindows) -> MacroVa
         design = np.column_stack([np.ones(len(previous)), previous])
         coefficients[:, index], *_ = np.linalg.lstsq(design, current[:, index], rcond=None)
 
-    common = path.between(max(windows.starts), end)
+    common = path.between(covariance_start or max(windows.starts), end)
+    # The covariance needs its own guard: it is the one quantity whose span is not an equation
+    # window, so the loop above never checks it. Without this a late `covariance_start` estimates
+    # a 3x3 covariance off a handful of residuals at the early origins — numerically fine, and
+    # meaningless.
+    if len(common.months) < MINIMUM_MONTHS:
+        raise ValueError(f"covariance span from {common.months[0]} has {len(common.months)} states")
     previous, current = common.states[:-1], common.states[1:]
     design = np.column_stack([np.ones(len(previous)), previous])
     residuals = current - design @ coefficients
@@ -99,7 +116,9 @@ def fit_mixed_windows(path: MacroStatePath, windows: EquationWindows) -> MacroVa
     )
 
 
-def mixed_arm(*, rate_start: date, inflation_start: date) -> Arm:
+def mixed_arm(
+    *, rate_start: date, inflation_start: date, covariance_start: date | None = None, label: str = MIXED_ARM
+) -> Arm:
     """Each rate equation on `rate_start`, inflation on `inflation_start`.
 
     Which way round is not a free choice — it is what `holdout.py` measured: the rate equations
@@ -108,7 +127,11 @@ def mixed_arm(*, rate_start: date, inflation_start: date) -> Arm:
 
     windows = EquationWindows(short_rate=rate_start, term_spread=rate_start, inflation_rate=inflation_start)
     return Arm(
-        label=MIXED_ARM, shortest_window_start=max(windows.starts), fit=lambda path: fit_mixed_windows(path, windows)
+        # The covariance span counts: an arm is fittable only once EVERY span it needs is long
+        # enough, and a late `covariance_start` is the binding one.
+        label=label,
+        shortest_window_start=max(*windows.starts, covariance_start or windows.starts[0]),
+        fit=lambda path: fit_mixed_windows(path, windows, covariance_start=covariance_start),
     )
 
 
@@ -121,5 +144,33 @@ def compare_with_mixed(path: MacroStatePath) -> list[ArmScore]:
             single_window(LONG_ARM, path.months[0]),
             single_window(SHORT_ARM, FRED_WINDOW_START),
             mixed_arm(rate_start=FRED_WINDOW_START, inflation_start=path.months[0]),
+        ],
+    )
+
+
+def compare_covariance_spans(path: MacroStatePath) -> list[ArmScore]:
+    """Both single windows, and the mixed fit with its covariance on several spans.
+
+    The mixed fit beat the long record on every marginal at five years and lost to it on JOINT
+    density, which is a statement about correlation rather than about any one equation. The
+    covariance is the only part of the fit that is not per-equation, and its span was never
+    chosen — it defaulted to the overlap. This sweeps it.
+    """
+
+    long_start = path.months[0]
+    return score_arms(
+        path,
+        [
+            single_window(LONG_ARM, long_start),
+            single_window(SHORT_ARM, FRED_WINDOW_START),
+            *(
+                mixed_arm(
+                    rate_start=FRED_WINDOW_START,
+                    inflation_start=long_start,
+                    covariance_start=start,
+                    label=f"mixed, cov {start:%Y}",
+                )
+                for start in (long_start, date(1940, 1, 1), FRED_WINDOW_START, date(1975, 1, 1))
+            ),
         ],
     )
