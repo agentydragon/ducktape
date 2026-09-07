@@ -7,6 +7,11 @@ rendering rules:
 - **GNOME Shell extension** — `aiquota/gnome/extension.js` panel button + popup
 - **Browser dashboard** — `aiquota/frontend/` (React), served by the API
 
+The Haku Console's quota panel is not a fourth surface: it renders
+`//aiquota/frontend:board`, the dashboard's own component, from the payload its
+proxy already fetches. Keep it that way — the hand-written copy it replaced had
+drifted to a bare percentage bar.
+
 ## Keep the surfaces in lockstep
 
 The CLI default output, the GNOME popup and the dashboard are presentations of
@@ -36,6 +41,12 @@ The three surfaces are reviewed on the same scenarios
 (`render/test_human.py`), the extension renders them
 (`gnome/test_render.py`), and the dashboard renders them in both themes
 (`frontend:screenshots`). Add a scenario there and all three pick it up.
+
+**Anything the board renders must survive being embedded.** Its styles
+(`frontend/board.css`) are `aiquota-` prefixed with the palette scoped to
+`.aiquota-scope`, and the component neither fetches nor reads a clock — the host
+passes `now`. A bare element selector, a `:root` token or a `useEffect` fetch in
+there would reach into the console's page.
 
 ## Provider API quirks
 

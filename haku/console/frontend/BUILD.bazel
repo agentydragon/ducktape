@@ -677,6 +677,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//aiquota/frontend:board",
     ],
 )
 
@@ -980,6 +981,8 @@ js_run_binary(
     srcs = [
         "styles.src.css",
         ":tailwind_content_index",
+        # `@import`ed by styles.src.css: the quota board renders inside the console's shell.
+        "//aiquota/frontend:board_css",
     ],
     outs = ["generated/styles.css"],
     args = [

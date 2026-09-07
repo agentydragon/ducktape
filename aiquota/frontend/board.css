@@ -1,0 +1,353 @@
+/*
+ * The quota board's styles, written to survive being dropped into someone else's stylesheet:
+ * every class is `aiquota-` prefixed, there are no bare element selectors, and the palette is
+ * scoped to `.aiquota-scope` rather than `:root`, so embedding this cannot restyle the host or
+ * redefine its tokens. The Haku Console imports it beside its own (haku/console/frontend).
+ *
+ * One tint variable per card drives the dot, the spine and the meter fill, so a provider's
+ * urgency is stated once (in pace.ts) and shown consistently. Tints keep the GNOME extension's
+ * vocabulary — cool / ok / warn / hot / unknown / stale / error — because the panel icon and
+ * this board are read as the same signal.
+ */
+.aiquota-scope {
+  --aiquota-surface: #ffffff;
+  --aiquota-surface-sunken: #eef0f4;
+  --aiquota-border: #dfe3ea;
+  --aiquota-bg: #f6f7f9;
+  --aiquota-text: #10141c;
+  --aiquota-muted: #5d6779;
+  --aiquota-accent: #0d8f7c;
+  --aiquota-track: #e2e6ee;
+  --aiquota-tick: #7c8798;
+
+  --aiquota-cool: #2f7fd4;
+  --aiquota-ok: #0d8f7c;
+  --aiquota-warn: #b8860b;
+  --aiquota-hot: #d92b36;
+  --aiquota-unknown: #8b95a6;
+  --aiquota-stale: #8b95a6;
+  --aiquota-error: #d92b36;
+
+  --aiquota-shadow: 0 1px 2px rgb(16 20 28 / 6%), 0 8px 24px rgb(16 20 28 / 4%);
+}
+
+/*
+ * The console mounts this under Mantine's `defaultColorScheme="auto"`, which follows the same
+ * system preference, so host and board never disagree about the theme.
+ */
+@media (prefers-color-scheme: dark) {
+  .aiquota-scope {
+    --aiquota-surface: #171d28;
+    --aiquota-surface-sunken: #131922;
+    --aiquota-border: #2a3140;
+    --aiquota-bg: #0e121a;
+    --aiquota-text: #e8ecf2;
+    --aiquota-muted: #97a2b6;
+    --aiquota-accent: #71d4c2;
+    --aiquota-track: #2b3445;
+    --aiquota-tick: #8492a8;
+
+    --aiquota-cool: #5ea8f0;
+    --aiquota-ok: #71d4c2;
+    --aiquota-warn: #f4c95d;
+    --aiquota-hot: #fb7185;
+    --aiquota-unknown: #78849a;
+    --aiquota-stale: #78849a;
+    --aiquota-error: #fb7185;
+
+    --aiquota-shadow: none;
+  }
+}
+
+.aiquota-tint-cool {
+  --aiquota-tint: var(--aiquota-cool);
+}
+.aiquota-tint-ok {
+  --aiquota-tint: var(--aiquota-ok);
+}
+.aiquota-tint-warn {
+  --aiquota-tint: var(--aiquota-warn);
+}
+.aiquota-tint-hot {
+  --aiquota-tint: var(--aiquota-hot);
+}
+.aiquota-tint-unknown {
+  --aiquota-tint: var(--aiquota-unknown);
+}
+.aiquota-tint-stale {
+  --aiquota-tint: var(--aiquota-stale);
+}
+.aiquota-tint-error {
+  --aiquota-tint: var(--aiquota-error);
+}
+
+.aiquota-board,
+.aiquota-board *,
+.aiquota-board *::before {
+  box-sizing: border-box;
+}
+
+.aiquota-board {
+  color: var(--aiquota-text);
+  /* Cards size to their own content: a provider that collapsed to one line should not leave a
+     card's worth of empty space because a neighbour has two windows. */
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+}
+
+.aiquota-card {
+  --aiquota-tint: var(--aiquota-unknown);
+
+  background: var(--aiquota-surface);
+  border: 1px solid var(--aiquota-border);
+  border-radius: 14px;
+  box-shadow: var(--aiquota-shadow);
+  padding: 16px 18px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+/* Tinted spine: the card's state is legible before any text is read. */
+.aiquota-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--aiquota-tint);
+}
+
+.aiquota-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.aiquota-card-title {
+  align-items: center;
+  color: inherit;
+  display: flex;
+  font-size: 0.95rem;
+  font-weight: 700;
+  gap: 8px;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.aiquota-dot {
+  background: var(--aiquota-tint);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--aiquota-tint) 22%, transparent);
+  flex: none;
+  height: 9px;
+  width: 9px;
+}
+
+/* Everything about the reading itself — how fresh it is, and any warning about it. */
+.aiquota-card-status {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  /* Stays in the corner even when it is too wide to share the title's line and wraps below it. */
+  margin-left: auto;
+}
+
+.aiquota-freshness {
+  color: var(--aiquota-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.aiquota-badge {
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 650;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.aiquota-badge-stale {
+  background: color-mix(in srgb, var(--aiquota-warn) 18%, transparent);
+  color: var(--aiquota-warn);
+}
+
+.aiquota-badge-error {
+  background: color-mix(in srgb, var(--aiquota-hot) 16%, transparent);
+  color: var(--aiquota-hot);
+}
+
+.aiquota-error {
+  color: var(--aiquota-error);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.aiquota-aside,
+.aiquota-empty {
+  color: var(--aiquota-muted);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.aiquota-window {
+  display: grid;
+  gap: 7px;
+}
+
+.aiquota-window + .aiquota-window {
+  border-top: 1px solid var(--aiquota-border);
+  padding-top: 12px;
+}
+
+.aiquota-window-head {
+  align-items: baseline;
+  display: flex;
+  font-size: 0.85rem;
+  justify-content: space-between;
+}
+
+.aiquota-window-label {
+  font-weight: 650;
+}
+
+.aiquota-window-used {
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/*
+ * Fill = quota spent; tick = window elapsed; the hatched or shaded span between them is the
+ * pace deviation. Ahead of pace the overshoot is hatched over the fill, behind pace the
+ * surplus is a faint band of empty track.
+ */
+.aiquota-meter {
+  background: var(--aiquota-track);
+  border-radius: 999px;
+  height: 10px;
+  position: relative;
+}
+
+.aiquota-meter-fill {
+  background: var(--aiquota-tint);
+  border-radius: 999px;
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  top: 0;
+}
+
+.aiquota-meter-deviation {
+  bottom: 0;
+  position: absolute;
+  top: 0;
+}
+
+.aiquota-meter-deviation.aiquota-ahead {
+  background: repeating-linear-gradient(135deg, rgb(255 255 255 / 42%) 0 2px, transparent 2px 5px);
+}
+
+.aiquota-meter-deviation.aiquota-behind {
+  background: color-mix(in srgb, var(--aiquota-tint) 22%, transparent);
+}
+
+.aiquota-meter-tick {
+  background: var(--aiquota-tick);
+  border-radius: 2px;
+  bottom: -3px;
+  position: absolute;
+  top: -3px;
+  transform: translateX(-1px);
+  width: 2px;
+}
+
+.aiquota-window-meta {
+  color: var(--aiquota-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  gap: 10px;
+}
+
+.aiquota-pace {
+  color: var(--aiquota-tint);
+  font-weight: 700;
+}
+
+.aiquota-exhausted {
+  color: var(--aiquota-hot);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/*
+ * A provider fact that is not a quota window — banked resets, peak-burn hours, the over-plan
+ * notice — is a strip: a headline and, where there is one, a detail line under it. One shape
+ * so they read as a set, and so a single fact is never split between a status pill and a
+ * loose line of grey text.
+ */
+.aiquota-strip {
+  background: var(--aiquota-surface-sunken);
+  border-radius: 10px;
+  display: grid;
+  gap: 3px;
+  padding: 8px 11px;
+}
+
+.aiquota-strip-line {
+  font-size: 0.8rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.aiquota-strip-note {
+  color: var(--aiquota-muted);
+  font-size: 0.73rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* Whole intervals wrap as units; a range broken across lines is unreadable. */
+.aiquota-strip-note.aiquota-strip-intervals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.aiquota-strip-note.aiquota-strip-intervals span {
+  white-space: nowrap;
+}
+
+/* Credits in hand are headroom, so they are tinted only when there are actually some. */
+.aiquota-strip-resets {
+  background: color-mix(in srgb, var(--aiquota-cool) 12%, transparent);
+}
+
+.aiquota-strip-resets .aiquota-strip-line {
+  color: var(--aiquota-cool);
+}
+
+.aiquota-strip-peak {
+  background: color-mix(in srgb, var(--aiquota-warn) 14%, transparent);
+}
+
+.aiquota-strip-over-plan {
+  background: color-mix(in srgb, var(--aiquota-hot) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aiquota-hot) 28%, transparent);
+}
+
+.aiquota-strip-over-plan .aiquota-strip-line {
+  color: var(--aiquota-hot);
+}

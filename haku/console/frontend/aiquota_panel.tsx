@@ -1,155 +1,31 @@
-import { ActionIcon, Badge, Group, Loader, Progress, Stack, Text, Tooltip } from "@mantine/core";
+/**
+ * The console's AI-quota side panel: console chrome around aiquota's own board.
+ *
+ * The board (`//aiquota/frontend:board`) is the renderer aiquota's standalone dashboard uses,
+ * fed here by the payload `aiquota_proxy.py` already fetches — so the console cannot drift from
+ * the dashboard, the CLI and the GNOME popup the way a second hand-written copy did. What stays
+ * console-side is what the console owns: the panel frame, the loading and error states, and the
+ * rail button.
+ */
+
+// Reached by workspace-relative path: neither tsconfig declares `paths`, and the board is a
+// Bazel dep (//aiquota/frontend:board) rather than an npm package.
+import { QuotaBoard } from "../../../aiquota/frontend/board";
+import { ActionIcon, Group, Loader, Stack, Text, Tooltip } from "@mantine/core";
 import { useEffect, useMemo, useState } from "react";
 
 import type { AiquotaView } from "./client";
 import { AiquotaIcon, CloseIcon } from "./icons";
-import {
-  formatClockTime,
-  formatDurationShort,
-  formatWindowDuration,
-  parseTimestamp,
-  secondsUntil,
-  shortDate,
-} from "./time";
+import { formatClockTime, parseTimestamp } from "./time";
 
-type Window = NonNullable<NonNullable<AiquotaView["providers"][number]["last_success"]>["result"]["windows"]>[number];
-
-function windowLabel(window: Window): string {
-  const seconds = Math.round(window.window_seconds);
-  const length = formatWindowDuration(seconds);
-  return window.name ? window.name + " (" + length + ")" : length;
-}
-
-function statusColor(window: Window, short: boolean): string {
-  if (short && window.used_percent >= 85) return "red";
-  if (window.used_percent >= 95) return "red";
-  if (window.used_percent >= 80) return "yellow";
-  return "teal";
-}
-
-function effectiveWindows(provider: AiquotaView["providers"][number]): Window[] {
-  const result = provider.last_output.result;
-  if (result.kind === "success" && result.windows?.length) {
-    return result.windows.filter((window) => window.display);
-  }
-  return provider.last_success?.result.windows?.filter((window) => window.display) ?? [];
-}
-
-function effectiveResetCredits(provider: AiquotaView["providers"][number]): number | null {
-  const result = provider.last_output.result;
-  if (result.kind === "success" && (result.windows?.length || result.available_reset_credits != null)) {
-    return result.available_reset_credits ?? null;
-  }
-  return provider.last_success?.result.available_reset_credits ?? null;
-}
-
-function effectiveResetCreditExpiries(provider: AiquotaView["providers"][number]): string[] {
-  const result = provider.last_output.result;
-  if (result.kind === "success" && (result.windows?.length || result.available_reset_credits != null)) {
-    return result.available_reset_credit_expiries ?? [];
-  }
-  return provider.last_success?.result.available_reset_credit_expiries ?? [];
-}
-
-function QuotaWindowRow({ quotaWindow, short }: { quotaWindow: Window; short: boolean }): JSX.Element {
+/** Reset countdowns are the only thing that moves between fetches; tick them like a clock. */
+function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNow(Date.now()), 1000);
     return () => globalThis.clearInterval(timer);
   }, []);
-  const resetSeconds = quotaWindow.reset_at ? secondsUntil(quotaWindow.reset_at, now) : quotaWindow.reset_seconds;
-  const used = Math.max(0, Math.min(100, quotaWindow.used_percent));
-  return (
-    <div className="haku-aiquota-window">
-      <Group justify="space-between" gap="xs" wrap="nowrap">
-        <Text size="sm" fw={600} truncate>
-          {windowLabel(quotaWindow)}
-        </Text>
-        <Text size="sm" ff="monospace">
-          {Math.round(quotaWindow.used_percent)}%
-        </Text>
-      </Group>
-      <Progress value={used} color={statusColor(quotaWindow, short)} size="sm" radius="xl" />
-      <Group justify="space-between" gap="xs" wrap="nowrap">
-        <Text size="xs" c="dimmed">
-          {Math.round(100 - quotaWindow.used_percent)}% remaining
-        </Text>
-        <Text size="xs" c="dimmed" ff="monospace">
-          ↻ {formatDurationShort(resetSeconds)}
-        </Text>
-      </Group>
-    </div>
-  );
-}
-
-function ProviderSection({ provider }: { provider: AiquotaView["providers"][number] }): JSX.Element {
-  const windows = effectiveWindows(provider);
-  const resetCredits = effectiveResetCredits(provider);
-  const resetExpiryText = effectiveResetCreditExpiries(provider)
-    .map(shortDate)
-    .filter((expiry): expiry is string => expiry !== null)
-    .join(", ");
-  const result = provider.last_output.result;
-  const stale = provider.last_success !== null && (result.kind !== "success" || windows.length === 0);
-  return (
-    <section className="haku-aiquota-provider" aria-label={`${provider.provider} quota`}>
-      <Group justify="space-between" align="center" wrap="nowrap">
-        <Text fw={700}>{provider.provider}</Text>
-        <Group gap="xs" wrap="nowrap">
-          {resetCredits !== null && (
-            <Badge variant="light" color="blue">
-              {resetCredits} banked reset{resetCredits === 1 ? "" : "s"}
-            </Badge>
-          )}
-          {provider.currently_over_plan && (
-            <Badge color="red" variant="light">
-              Over plan
-            </Badge>
-          )}
-          {stale && (
-            <Badge color="yellow" variant="light">
-              Stale
-            </Badge>
-          )}
-          {result.kind === "error" && (
-            <Badge color="red" variant="light">
-              Error
-            </Badge>
-          )}
-        </Group>
-      </Group>
-      {result.kind === "error" && (
-        <Text size="xs" c="red">
-          {result.error}
-        </Text>
-      )}
-      {resetExpiryText && (
-        <Text size="xs" c="dimmed">
-          Known expiries: {resetExpiryText}
-        </Text>
-      )}
-      {windows.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          No quota data available.
-        </Text>
-      ) : (
-        <Stack gap="sm">
-          {windows.map((quotaWindow, index) => (
-            <QuotaWindowRow
-              key={`${quotaWindow.name ?? "window"}-${quotaWindow.window_seconds}`}
-              quotaWindow={quotaWindow}
-              short={index === 0}
-            />
-          ))}
-        </Stack>
-      )}
-      {provider.extra_status !== "none" && (
-        <Text size="xs" c="dimmed">
-          Extra spend {provider.extra_status}
-        </Text>
-      )}
-    </section>
-  );
+  return now;
 }
 
 export function AiquotaPanel({
@@ -163,6 +39,7 @@ export function AiquotaPanel({
   error: string | null;
   onClose?: () => void;
 }): JSX.Element {
+  const now = useNow();
   const fetchedAt = useMemo(() => (quotas ? parseTimestamp(quotas.fetched_at) : null), [quotas]);
   return (
     <section className="haku-shell-card haku-shell-side-panel haku-aiquota-panel" aria-label="AI quotas">
@@ -188,9 +65,7 @@ export function AiquotaPanel({
             No quota data available.
           </Text>
         )}
-        {quotas?.providers.map((provider) => (
-          <ProviderSection key={provider.provider} provider={provider} />
-        ))}
+        {quotas && <QuotaBoard quotas={quotas} now={now} />}
         {fetchedAt && (
           <Text size="xs" c="dimmed">
             Snapshot {formatClockTime(fetchedAt)}
@@ -201,8 +76,21 @@ export function AiquotaPanel({
   );
 }
 
-function railWindows(quotas: AiquotaView | null): Window[] {
-  return quotas?.providers.flatMap(effectiveWindows) ?? [];
+/**
+ * The rail's own summary: the worst usage across every provider, which is all a 32px glyph can
+ * say. Deliberately not the board's pace-aware tint — the rail answers "is anything close to
+ * full", and opening the panel answers why.
+ */
+function railUsedPercent(quotas: AiquotaView | null): number {
+  const used = (quotas?.providers ?? []).flatMap((provider) => {
+    const result = provider.last_output.result;
+    const windows =
+      result.kind === "success" && result.windows?.length
+        ? result.windows
+        : (provider.last_success?.result.windows ?? []);
+    return windows.filter((window) => window.display).map((window) => window.used_percent);
+  });
+  return used.length === 0 ? 0 : Math.max(...used);
 }
 
 export function AiquotaRailButton({
@@ -216,8 +104,7 @@ export function AiquotaRailButton({
   open: boolean;
   onClick: () => void;
 }): JSX.Element {
-  const windows = railWindows(quotas);
-  const used = windows.length === 0 ? 0 : Math.max(...windows.map((quotaWindow) => quotaWindow.used_percent));
+  const used = railUsedPercent(quotas);
   const color = used >= 95 ? "red" : used >= 80 ? "yellow" : "teal";
   return (
     <Tooltip label={open ? "Close AI quotas" : "Open AI quotas"} position="right" withArrow openDelay={350}>

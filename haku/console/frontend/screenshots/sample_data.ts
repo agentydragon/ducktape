@@ -570,66 +570,75 @@ export const SAMPLE_INDEX_STATUS: IndexStatus = {
   ],
 };
 
-export const SAMPLE_AIQUOTA: AiquotaView = {
-  fetched_at: "2026-08-30T17:05:00Z",
-  providers: [
-    {
-      provider: "Anthropic",
-      last_output: {
-        fetched_at: "2026-08-30T17:05:00Z",
-        result: {
-          kind: "success",
-          windows: [
-            {
-              name: "5-hour",
-              display: true,
-              used_percent: 61,
-              reset_seconds: 10_800,
-              window_seconds: 18_000,
-              reset_at: "2026-08-30T20:05:00Z",
-            },
-            {
-              name: "7-day",
-              display: true,
-              used_percent: 34,
-              reset_seconds: 345_600,
-              window_seconds: 604_800,
-              reset_at: "2026-09-04T17:05:00Z",
-            },
-          ],
-          extra_spend: { is_enabled: true, monthly_limit_usd: 100, used_usd: 18.42, utilization: 0.1842 },
+/**
+ * Quota state relative to the caller's clock, like `sampleRecentToolCalls` above: the board
+ * draws a window's elapsed fraction from `reset_at` against now, so absolute timestamps would
+ * render as a countdown hundreds of days long under the harness's frozen clock.
+ */
+export function sampleAiquota(nowMs: number): AiquotaView {
+  const at = (secondsFromNow: number): string => new Date(nowMs + secondsFromNow * 1000).toISOString();
+  const fetchedAt = at(-30);
+  return {
+    fetched_at: fetchedAt,
+    providers: [
+      {
+        provider: "Anthropic",
+        last_output: {
+          fetched_at: fetchedAt,
+          result: {
+            kind: "success",
+            windows: [
+              {
+                name: "5-hour",
+                display: true,
+                used_percent: 61,
+                reset_seconds: 10_800,
+                window_seconds: 18_000,
+                reset_at: at(10_800),
+              },
+              {
+                name: "7-day",
+                display: true,
+                used_percent: 34,
+                reset_seconds: 345_600,
+                window_seconds: 604_800,
+                reset_at: at(345_600),
+              },
+            ],
+            extra_spend: { is_enabled: true, monthly_limit_usd: 100, used_usd: 18.42, utilization: 18.42 },
+          },
         },
+        last_success: null,
+        currently_over_plan: false,
+        extra_status: "informational",
+        burn: null,
       },
-      last_success: null,
-      currently_over_plan: false,
-      extra_status: "informational",
-      burn: null,
-    },
-    {
-      provider: "OpenAI",
-      last_output: {
-        fetched_at: "2026-08-30T17:04:00Z",
-        result: {
-          kind: "success",
-          windows: [
-            {
-              name: "3-hour",
-              display: true,
-              used_percent: 87,
-              reset_seconds: 5_400,
-              window_seconds: 10_800,
-              reset_at: "2026-08-30T20:04:00Z",
-            },
-          ],
-          extra_spend: null,
-          available_reset_credits: 2,
-          available_reset_credit_expiries: ["2026-09-20T09:00:00Z"],
+      {
+        provider: "OpenAI",
+        last_output: {
+          fetched_at: at(-90),
+          result: {
+            kind: "success",
+            windows: [
+              {
+                name: "3-hour",
+                display: true,
+                used_percent: 87,
+                reset_seconds: 5_400,
+                window_seconds: 10_800,
+                reset_at: at(5_400),
+              },
+            ],
+            extra_spend: null,
+            available_reset_credits: 2,
+            available_reset_credit_expiries: [at(21 * 86_400)],
+          },
         },
+        last_success: null,
+        currently_over_plan: false,
+        extra_status: "none",
+        burn: null,
       },
-      last_success: null,
-      currently_over_plan: false,
-      extra_status: "none",
-      burn: null,
-    },
-  ],
-};
+    ],
+  };
+}

@@ -16,7 +16,7 @@ import type { ConsoleNavigationView, ConsoleView } from "../routing";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
 import { hakuTheme } from "../theme";
 import { toastError, toastSuccess } from "../toast";
-import { SAMPLE_AIQUOTA, SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
+import { sampleAiquota, SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
 
 const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};
@@ -52,7 +52,7 @@ function ConsoleScene({
 }
 
 const chromeProps: ShellChromeProps = {
-  aiquota: SAMPLE_AIQUOTA,
+  aiquota: sampleAiquota(Date.now()),
   aiquotaLoading: false,
   aiquotaError: null,
   aiquotaOpen: false,

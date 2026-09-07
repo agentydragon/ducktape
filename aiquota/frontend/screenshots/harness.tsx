@@ -16,7 +16,8 @@ import { Dashboard } from "../dashboard";
 import type { QuotasView } from "../quotas";
 import scenes from "../fixtures/scenes.json";
 
-import "../styles.css";
+import "../board.css";
+import "../page.css";
 
 // A JSON module's `kind: "success"` widens to `string`, which no amount of shape agreement
 // will make assignable to the tagged union — hence the cast rather than a plain annotation.

@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @import "@mantine/core/styles.css";
 @import "@mantine/notifications/styles.css";
+/* The AI-quota board, rendered in the side panel. Its classes are all `aiquota-` prefixed and
+   its palette is scoped to `.aiquota-scope`, so it neither restyles the console nor reads the
+   console's tokens. Source: aiquota/frontend/board.css. */
+@import "../../../aiquota/frontend/board.css";
 
 /* Tailwind v4 scans the class names listed in this generated index (see BUILD:
    tailwind_content_index) so utility classes used in the .tsx survive the build. */
@@ -1280,18 +1284,4 @@
   min-height: 0;
   overflow: auto;
   padding: 1rem;
-}
-
-.haku-aiquota-provider {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--haku-border);
-}
-
-.haku-aiquota-window {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
 }

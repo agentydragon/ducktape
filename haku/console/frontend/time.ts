@@ -1,14 +1,4 @@
-import {
-  differenceInMilliseconds,
-  differenceInSeconds,
-  format,
-  formatDistanceStrict,
-  formatDuration,
-  intervalToDuration,
-  minutesToMilliseconds,
-  parseISO,
-  secondsToMilliseconds,
-} from "date-fns";
+import { differenceInMilliseconds, format, formatDistanceStrict, minutesToMilliseconds, parseISO } from "date-fns";
 
 /** Shared concise formatting for wall-clock instants in the console. `date-fns` owns the wording
  * and rounding; relative values are useful while triaging live state, and the complete locale
@@ -39,30 +29,4 @@ export function formatTimestamp(value: string, nowMs: number = Date.now()): Time
 
 export function formatClockTime(value: Date): string {
   return format(value, "p");
-}
-
-export function formatDurationShort(seconds: number): string {
-  const duration = formatDuration(
-    intervalToDuration({ start: 0, end: secondsToMilliseconds(Math.max(0, Math.round(seconds))) }),
-    {
-      format: ["days", "hours", "minutes"],
-      delimiter: " ",
-    }
-  );
-  return duration || "0 minutes";
-}
-
-export function formatWindowDuration(seconds: number): string {
-  const duration = formatDuration(
-    intervalToDuration({ start: 0, end: secondsToMilliseconds(Math.max(0, Math.round(seconds))) }),
-    {
-      format: ["days", "hours"],
-      delimiter: " ",
-    }
-  );
-  return duration || "0 hours";
-}
-
-export function secondsUntil(value: string, nowMs: number = Date.now()): number {
-  return Math.max(0, differenceInSeconds(parseTimestamp(value), new Date(nowMs), { roundingMethod: "round" }));
 }
