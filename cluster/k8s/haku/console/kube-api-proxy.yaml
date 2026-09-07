@@ -60,6 +60,10 @@ spec:
       automountServiceAccountToken: true
       enableServiceLinks: true
       terminationGracePeriodSeconds: 20
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -68,7 +72,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: proxy
-          image: ghcr.io/agentydragon/haku-kube-api-proxy:devel-20260829121345-68f6de3 # {"$imagepolicy": "flux-system:haku-kube-api-proxy"}
+          image: git.allegedly.works/ducktape-ci/haku-kube-api-proxy:devel-20260829121345-68f6de3 # {"$imagepolicy": "flux-system:haku-kube-api-proxy"}
           env:
             # Public TLS keeps the original Agent bearer encrypted on the proxy-to-Console hop.
             # Redirects are rejected and any timeout/malformed response fails the request closed.

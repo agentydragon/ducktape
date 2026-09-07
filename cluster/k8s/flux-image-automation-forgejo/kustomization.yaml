@@ -22,6 +22,11 @@ resources:
   - codex-pod-image.yaml
   - iron-proxy-image.yaml
   - haku-matrix-adapter-image.yaml
+  - haku-egress-proxy-image.yaml
+  - haku-kube-api-proxy-image.yaml
+  - haku-indexer-image.yaml
+  - haku-console-image.yaml
+  - haku-console-static-image.yaml
   - grocy-user-perms-provisioner-image.yaml
   - osm-mcp-image.yaml
   - cpap-gateway-image.yaml

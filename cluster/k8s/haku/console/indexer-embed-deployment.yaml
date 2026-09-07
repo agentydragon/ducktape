@@ -45,6 +45,10 @@ spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       automountServiceAccountToken: false
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -52,7 +56,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: indexer
-          image: ghcr.io/agentydragon/haku-indexer:devel-20260831224251-1b82360 # {"$imagepolicy": "flux-system:haku-indexer"}
+          image: git.allegedly.works/ducktape-ci/haku-indexer:devel-20260831224251-1b82360 # {"$imagepolicy": "flux-system:haku-indexer"}
           imagePullPolicy: Always
           args: ["--role=embed"]
           env:

@@ -34,11 +34,13 @@
     },
     "haku-egress-proxy": {
       "target": "//haku/egress:proxy_image",
-      "test": "//haku/egress/..."
+      "test": "//haku/egress/...",
+      "registry": "forgejo"
     },
     "haku-kube-api-proxy": {
       "target": "//haku/kube_api_proxy:image",
-      "test": "//haku/kube_api_proxy/..."
+      "test": "//haku/kube_api_proxy/...",
+      "registry": "forgejo"
     },
     "loki-read-proxy": {
       "target": "//cluster/proxies/loki_read_proxy:image",
@@ -116,15 +118,18 @@
     },
     "haku-console": {
       "target": "//haku/console:server_image",
-      "test": "//haku/console/..."
+      "test": "//haku/console/...",
+      "registry": "forgejo"
     },
     "haku-console-static": {
       "target": "//haku/console:static_image",
-      "test": "//haku/console/..."
+      "test": "//haku/console/...",
+      "registry": "forgejo"
     },
     "haku-indexer": {
       "target": "//haku/console:indexer_image",
-      "test": "//haku/console/..."
+      "test": "//haku/console/...",
+      "registry": "forgejo"
     },
     "haku-matrix-adapter": {
       "target": "//haku/console/channels/matrix:adapter_image",

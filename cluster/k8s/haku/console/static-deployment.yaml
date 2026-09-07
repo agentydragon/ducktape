@@ -27,6 +27,10 @@ spec:
       # namespace default ServiceAccount is not useful to nginx, so do not mount
       # its bearer token.
       automountServiceAccountToken: false
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -34,7 +38,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: static
-          image: ghcr.io/agentydragon/haku-console-static:devel-20260907013915-7ac7821 # {"$imagepolicy": "flux-system:haku-console-static"}
+          image: git.allegedly.works/ducktape-ci/haku-console-static:devel-20260907013915-7ac7821 # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
           env:
             # The nginx entrypoint renders /etc/nginx/templates/default.conf.template

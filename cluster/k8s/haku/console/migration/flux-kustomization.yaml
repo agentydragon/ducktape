@@ -15,6 +15,10 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
+    # Forgejo registry credential must be reflected into haku-console before the
+    # migration Job can pull its image.
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: haku-console-db
       namespace: ducktape-flux
   healthChecks:

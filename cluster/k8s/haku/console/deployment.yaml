@@ -74,6 +74,10 @@ spec:
       # Secret, log, exec, or SandboxTemplate access.
       serviceAccountName: haku-console
       automountServiceAccountToken: true
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # Room for a graceful shutdown to hand chat-session leases back before SIGKILL: the app
       # bounds uvicorn's graceful wait to 10s (app.main), then the lifespan releases this
       # replica's leases. Must stay above that 10s plus lifespan teardown; the default 30s hid
@@ -107,7 +111,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260907015305-7a762c9 # {"$imagepolicy": "flux-system:haku-console"}
+          image: git.allegedly.works/ducktape-ci/haku-console:devel-20260907015305-7a762c9 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -540,7 +544,7 @@ spec:
         # any decision-path error; the fenced-workload-facing listener is 8888, published by
         # egress-proxy-service.yaml for the force-proxy fence.
         - name: egress-proxy
-          image: ghcr.io/agentydragon/haku-egress-proxy:devel-20260830171036-98f3785 # {"$imagepolicy": "flux-system:haku-egress-proxy"}
+          image: git.allegedly.works/ducktape-ci/haku-egress-proxy:devel-20260830171036-98f3785 # {"$imagepolicy": "flux-system:haku-egress-proxy"}
           imagePullPolicy: Always
           env:
             - name: HAKU_EGRESS_DECIDE_URL

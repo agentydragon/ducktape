@@ -79,7 +79,7 @@ vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularie
 
 ## haku-indexer — recall-index maintenance, separately deployed
 
-`haku-indexer` (image `ghcr.io/agentydragon/haku-indexer` from `//haku/console:indexer_image`)
+`haku-indexer` (image `git.allegedly.works/ducktape-ci/haku-indexer` from `//haku/console:indexer_image`)
 runs the two maintenance stages of `haku/console/recall_index_sync.py` as one binary in
 role-flagged Deployments. The chunk role is one Deployment per logical index of the
 `recall_indexes` registry: `indexer-chunk-<index>-deployment.yaml` runs `--role=chunk` mounting
@@ -243,7 +243,7 @@ The public Tana OAuth facade remains available for external MCP clients but is n
 ## Colocated egress proxy (#4942, #4670)
 
 The Console-authorized HTTP egress fence's proxy runs as the `egress-proxy` **sidecar** in this
-Deployment (embedded mitmproxy adapter `haku/egress`, image `ghcr.io/agentydragon/haku-egress-proxy`),
+Deployment (embedded mitmproxy adapter `haku/egress`, image `git.allegedly.works/ducktape-ci/haku-egress-proxy`),
 gating every fenced-workload request against Console's decision endpoint. Colocation is #4670's ruled
 topology; two guarantees are structural:
 
