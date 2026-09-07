@@ -97,10 +97,26 @@ main {
   align-items: center;
   border-bottom: 1px solid var(--border);
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 10px 16px;
   justify-content: space-between;
   margin-bottom: 24px;
   padding-bottom: 20px;
+}
+
+/* When the snapshot line is too wide to sit beside the title it wraps below it, still in the
+   corner, rather than pushing the refresh control off the row. */
+.page-status {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.snapshot {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: right;
 }
 
 h1 {
@@ -112,8 +128,7 @@ h1 {
 
 .empty,
 .aside,
-.window-meta,
-footer {
+.window-meta {
   color: var(--muted);
 }
 
@@ -417,11 +432,6 @@ h2 {
   color: var(--error);
   margin: 0 0 20px;
   padding: 12px 14px;
-}
-
-footer {
-  font-size: 0.75rem;
-  margin-top: 24px;
 }
 
 @media (max-width: 560px) {

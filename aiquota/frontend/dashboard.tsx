@@ -62,17 +62,25 @@ export function Dashboard({
     <main id="app">
       <header className="page-heading">
         <h1>AI quota</h1>
-        <button
-          type="button"
-          className="refresh"
-          onClick={onRefresh}
-          disabled={refreshing}
-          aria-busy={refreshing}
-          aria-label="Refresh"
-          title="Refresh"
-        >
-          <RefreshIcon />
-        </button>
+        <div className="page-status">
+          {quotas && (
+            <span className="snapshot">
+              Snapshot {new Date(quotas.fetched_at).toLocaleString()} ·{" "}
+              {formatAge((now - Date.parse(quotas.fetched_at)) / 1000)} ago
+            </span>
+          )}
+          <button
+            type="button"
+            className="refresh"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-busy={refreshing}
+            aria-label="Refresh"
+            title="Refresh"
+          >
+            <RefreshIcon />
+          </button>
+        </div>
       </header>
       {error && <p className="notice">{error}</p>}
       <section className="providers" aria-live="polite">
@@ -82,12 +90,6 @@ export function Dashboard({
           <p className="empty">{error ? "No snapshot loaded." : "Loading quota data…"}</p>
         )}
       </section>
-      {quotas && (
-        <footer>
-          Snapshot {new Date(quotas.fetched_at).toLocaleString()} ·{" "}
-          {formatAge((now - Date.parse(quotas.fetched_at)) / 1000)} ago
-        </footer>
-      )}
     </main>
   );
 }
