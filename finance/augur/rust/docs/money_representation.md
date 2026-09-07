@@ -51,6 +51,25 @@ where it fails: mortgage amortization compounds over 360 months, and a rational'
 exponentially in the exponent. That path stays fixed-point at `CONTRACT_SCALE`, deliberately,
 because wide fixed-point is the right representation for iterated multiplication.
 
+## What stays a bare integer, and why
+
+Thirteen call sites still hand `mul_div_round_half_up` three integers, and they are meant to.
+They are not money times a multiplier; they are arithmetic _within_ the fixed-point rate
+domain, where the operands are rates and the result is a rate:
+
+- the TLH harvest curve -- an embedded-gain and a drawdown derived as rates, fed through
+  `pow_half_ppb` and `mul_ppb`. Exponentiation is where a rational's terms explode, and the
+  curve's inputs are clamped to the grid, so they belong on it.
+- mortgage amortization at `CONTRACT_SCALE`, for the same reason over 360 periods.
+- `pe_sellable_units`, which composes two rates: as a rational the numerator would be 10^18 at
+  the entirely ordinary "100% of 100%", and overflow an `i64`.
+- the mortgage-interest deduction, which accumulates across mortgages in `i128` and rounds
+  once at the end rather than per mortgage.
+
+The dividing line is whether the value becomes money at the end of the operation. Where it
+does, a `Factor` states it and one rounding closes it. Where a rate is an input to more rate
+arithmetic, fixed point is the right representation and the raw call is the honest spelling.
+
 The rounding rule is not negotiable independently of this: half away from zero is what
 makes negating an operand negate the result, which the tax and give-back paths rely on.
 Half-even would break that symmetry.

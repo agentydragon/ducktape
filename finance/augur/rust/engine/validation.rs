@@ -215,7 +215,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
     for lot in &fixture.scenario.initial_lots {
         validate_identifier("lot", &lot.lot_id)?;
         validate_identifier("asset", &lot.asset_id)?;
-        if lot.quantity_scale <= 0 {
+        if !is_quantity_scale(lot.quantity_scale) {
             return Err(SimulationError::InvalidQuantityScale {
                 lot_id: lot.lot_id.clone(),
                 quantity_scale: lot.quantity_scale,
@@ -621,7 +621,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
         let mut assets = BTreeSet::new();
         for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
             validate_identifier("target-allocation asset", &sleeve.asset_id)?;
-            if sleeve.weight <= 0 || sleeve.quantity_scale <= 0 {
+            if sleeve.weight <= 0 || !is_quantity_scale(sleeve.quantity_scale) {
                 return Err(SimulationError::InvalidTargetAllocationPolicy {
                     agent_id: policy.agent_id.clone(),
                     account_id: policy.account_id.clone(),

@@ -60,12 +60,8 @@ pub(super) fn execute_distributions(
             rollout_id,
             month,
         )?;
-        let total_amount = Money(mul_div_round_half_up(
-            per_unit,
-            units,
-            scale,
-            "security distribution",
-        )?);
+        let total_amount =
+            PerUnit(per_unit).times(Units::new(Quantity(units), scale), "security distribution")?;
         for (slice_index, slice) in distribution.tax_character.iter().enumerate() {
             let amount = total_amount.scaled_by(
                 Factor::parts_per_billion(slice.fraction_ppb),

@@ -475,16 +475,14 @@ fn security_lot_states(
                 },
                 // Derived for the reader, not carried as state: it is exactly what the
                 // apportionment above would charge for one unit of what is left.
-                cost_basis_per_unit: PerUnit(if lot.units_remaining.0 == 0 {
-                    0
+                cost_basis_per_unit: if lot.units_remaining.0 == 0 {
+                    PerUnit(0)
                 } else {
-                    mul_div_round_half_up(
-                        lot.basis_remaining.0,
-                        lot.spec.quantity_scale,
-                        lot.units_remaining.0,
+                    lot.basis_remaining.per_unit(
+                        Units::new(lot.units_remaining, lot.spec.quantity_scale),
                         "reported per-unit basis",
                     )?
-                }),
+                },
             })
         })
         .collect()

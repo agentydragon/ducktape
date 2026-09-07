@@ -104,12 +104,12 @@ pub(super) fn execute_private_equity(
         };
 
         if forced_recovery > 0 && units_held > 0 {
-            let recovery_price = mul_div_round_half_up(
-                forced_recovery,
-                quantity_scale,
-                units_held,
-                "private-equity recovery price",
-            )?;
+            let recovery_price = Money(forced_recovery)
+                .per_unit(
+                    Units::new(Quantity(units_held), quantity_scale),
+                    "private-equity recovery price",
+                )?
+                .0;
             execute_target_allocation_pool_sale(
                 fixture,
                 ledger,
@@ -129,13 +129,13 @@ pub(super) fn execute_private_equity(
         }
         let units_after_recovery = pe_units_held(lots, &candidates)?;
         if forced_sale > 0 && mark > 0 && units_after_recovery > 0 {
-            let forced_target = mul_div_round_half_up(
-                units_after_recovery,
-                forced_sale,
-                WIRE_RATE_SCALE,
-                "private-equity forced-sale quantity",
-            )?
-            .min(units_after_recovery);
+            let forced_target = Quantity(units_after_recovery)
+                .scaled_by(
+                    Factor::parts_per_billion(forced_sale),
+                    "private-equity forced-sale quantity",
+                )?
+                .0
+                .min(units_after_recovery);
             execute_target_allocation_pool_sale(
                 fixture,
                 ledger,
@@ -214,12 +214,10 @@ pub(super) fn execute_private_equity(
                 units_held: Quantity(units_after_forced),
                 sellable_units: Quantity(sellable),
                 target_units: Quantity(target),
-                proceeds: Money(mul_div_round_half_up(
-                    target,
-                    mark,
-                    quantity_scale,
+                proceeds: PerUnit(mark).times(
+                    Units::new(Quantity(target), quantity_scale),
                     "private-equity opportunity proceeds",
-                )?),
+                )?,
             })?;
         }
         if target > 0 {
@@ -346,12 +344,10 @@ fn private_equity_liquid_net_worth(
         else {
             continue;
         };
-        total = total.checked_add(Money(mul_div_round_half_up(
-            lot.units_remaining.0,
-            price,
-            lot.spec.quantity_scale,
+        total = total.checked_add(PerUnit(price).times(
+            Units::new(lot.units_remaining, lot.spec.quantity_scale),
             "private-equity liquid lot value",
-        )?))?;
+        )?)?;
     }
     Ok(total)
 }

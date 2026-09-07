@@ -90,12 +90,12 @@ pub(super) fn execute_target_allocation_sales(
             })?;
             let value = if price > 0 {
                 sleeve_lots.iter().try_fold(0_i64, |sum, lot| {
-                    let lot_value = mul_div_round_half_up(
-                        lot.units_remaining.0,
-                        price,
-                        lot.spec.quantity_scale,
-                        "target-allocation sleeve value",
-                    )?;
+                    let lot_value = PerUnit(price)
+                        .times(
+                            Units::new(lot.units_remaining, lot.spec.quantity_scale),
+                            "target-allocation sleeve value",
+                        )?
+                        .0;
                     sum.checked_add(lot_value)
                         .ok_or(ArithmeticError::Overflow {
                             operation: "target-allocation sleeve value total",
@@ -269,12 +269,10 @@ pub(super) fn execute_target_allocation_buys(
             .iter()
             .position(|lot| lot.spec.lot_id == lot_id)
             .expect("validated purchase slot must be preallocated");
-        let spent = Money(mul_div_round_half_up(
-            units,
-            order.unit_price,
-            sleeve.quantity_scale,
+        let spent = PerUnit(order.unit_price).times(
+            Units::new(Quantity(units), sleeve.quantity_scale),
             "target-allocation purchase value",
-        )?);
+        )?;
         let cause_id = format!(
             "{}_buy_m{month}_security:{}",
             policy.cause_id_prefix, sleeve.asset_id
@@ -344,12 +342,10 @@ pub(super) fn execute_target_allocation_pool_sale(
             lot.units_remaining,
             "target-allocation FIFO basis",
         )?;
-        let proceeds = Money(mul_div_round_half_up(
-            units,
-            price,
-            lot.spec.quantity_scale,
+        let proceeds = PerUnit(price).times(
+            Units::new(Quantity(units), lot.spec.quantity_scale),
             "target-allocation sale proceeds",
-        )?);
+        )?;
         let realized_gain = proceeds.checked_sub(basis)?;
         total_proceeds = total_proceeds.checked_add(proceeds)?;
         total_gain = total_gain.checked_add(realized_gain)?;

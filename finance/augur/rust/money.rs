@@ -73,6 +73,24 @@ pub struct Factor {
 /// validators that bound a wire field against "one" have any business naming this.
 pub const WIRE_RATE_SCALE: i64 = 1_000_000_000;
 
+/// Whether `scale` is a quantity scale the engine will accept: a positive power of ten.
+///
+/// Every producer emits one -- a satoshi, a gwei, the default millionth of a unit -- and the
+/// arithmetic assumes it: `Units` divides by the scale, and Augur reports a quantity as
+/// `quanta / scale`, which is only a decimal figure a person can read back when the scale is
+/// a power of ten. Accepting an arbitrary positive integer declared a domain wider than
+/// anything writes or reads.
+pub fn is_quantity_scale(scale: i64) -> bool {
+    let mut remaining = scale;
+    if remaining <= 0 {
+        return false;
+    }
+    while remaining % 10 == 0 {
+        remaining /= 10;
+    }
+    remaining == 1
+}
+
 impl Factor {
     pub const ONE: Self = Self {
         numerator: 1,
@@ -182,6 +200,19 @@ impl Money {
         mul_div_round_half_up(self.0, factor.numerator(), factor.denominator(), operation).map(Self)
     }
 
+    /// What one unit of `units` costs, if this amount is what all of them cost.
+    ///
+    /// The inverse of `PerUnit::times`, and the operation that has to be spelled rather than
+    /// stored: a per-unit figure derived once and multiplied back does not re-total, which is
+    /// why a lot keeps its basis and reports this only when asked.
+    pub fn per_unit(
+        self,
+        units: Units,
+        operation: &'static str,
+    ) -> Result<PerUnit, ArithmeticError> {
+        mul_div_round_half_up(self.0, units.scale, units.raw, operation).map(PerUnit)
+    }
+
     pub fn checked_neg(self) -> Result<Self, ArithmeticError> {
         self.0
             .checked_neg()
@@ -189,6 +220,20 @@ impl Money {
             .ok_or(ArithmeticError::Overflow {
                 operation: "money negation",
             })
+    }
+}
+
+impl Quantity {
+    /// This quantity times a dimensionless multiplier, rounded half away from zero.
+    ///
+    /// The counterpart of `Money::scaled_by`: a forced-sale fraction takes a share of the
+    /// units held the same way a tax rate takes a share of an amount.
+    pub fn scaled_by(
+        self,
+        factor: Factor,
+        operation: &'static str,
+    ) -> Result<Self, ArithmeticError> {
+        mul_div_round_half_up(self.0, factor.numerator(), factor.denominator(), operation).map(Self)
     }
 }
 

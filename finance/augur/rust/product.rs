@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::fixture::{BondState, Fixture, MortgageState, PropertyState};
 use crate::ledger::{AccountRef, Ledger};
-use crate::money::{Factor, Money, mul_div_round_half_up};
+use crate::money::{Factor, Money, PerUnit, Quantity, Units};
 
 /// Base metrics per snapshot, in `metric_composition.BASE_METRIC_NAMES` order.
 pub const BASE_METRIC_NAMES: [&str; 7] = [
@@ -261,12 +261,12 @@ pub fn snapshot_metrics(
             },
         };
         let price = series_at(fixture, series_row, rollout, snapshot)?;
-        let value = mul_div_round_half_up(
-            lot.units_remaining,
-            price,
-            lot.quantity_scale,
-            "product holding value",
-        )?;
+        let value = PerUnit(price)
+            .times(
+                Units::new(Quantity(lot.units_remaining), lot.quantity_scale),
+                "product holding value",
+            )?
+            .0;
         metrics[slot] =
             metrics[slot]
                 .checked_add(value)
