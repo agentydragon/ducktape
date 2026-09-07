@@ -39,10 +39,15 @@ attribution:
 - *Coupons sit in cash until the next withdrawal.* augur's allocation policy refills a cash
   band but never invests a surplus, so a bond sleeve yielding more than the withdrawal rate
   accumulates idle cash that Trinity would have reinvested.
-- *Withdrawals are taken at the start of each year.* The paper does not say which end of the
-  year it withdraws at, and the two are not equivalent — a start-of-year withdrawal is the
-  more demanding, since the money leaves before that year's return is earned on it. The
-  size of the difference here has not been measured.
+- *Withdrawals are taken at the start of each year*, which is the more demanding convention:
+  the money leaves before that year's return is earned on it. The paper does not say which end
+  it withdraws at, and **that one choice accounts for the whole residual disagreement** —
+  measured, the two conventions BRACKET Table 3. Start-of-year lands below the published rate
+  in 25 of 40 equity-holding cells and above in 1 (mean -3.6 points); end-of-year lands above
+  in 21 and below in 5 (mean +1.8). Neither dominates: start-of-year is closer over 3-4%
+  (mean absolute deviation 1.0 against 2.5), end-of-year over the full 3-12% range (2.9
+  against 3.7). Start-of-year is kept because it is the conservative reading and the one a
+  retiree actually lives, not because it fits better.
 
 Taxes and transaction costs are absent from both, which is the paper's own statement of its
 method rather than a difference.
