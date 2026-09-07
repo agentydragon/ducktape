@@ -11,6 +11,7 @@ configMapGenerator:
       disableNameSuffixHash: true
 
 resources:
+  - forgejo-images-creds-eso.yaml
   - rbac-executor.yaml
   - deployment.yaml
   - service.yaml

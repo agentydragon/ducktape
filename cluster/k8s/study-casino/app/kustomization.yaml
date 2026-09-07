@@ -5,6 +5,7 @@ kind: Kustomization
 # runtime objects. The CNPG cluster lives in the sibling `db/`
 # Kustomization (layer 1.5).
 resources:
+  - forgejo-images-creds-eso.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml

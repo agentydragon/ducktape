@@ -17,11 +17,13 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: haku-openclaw-spike-namespace
     - name: haku-egress-proxy
       namespace: ducktape-flux
-    # Reflector mirrors forgejo-images-creds here; forgejo-images dependsOn
-    # reflector, so this one entry covers the source secret and the mirror.
+    # forgejo-images-creds-eso.yaml extracts the source Secret from the
+    # forgejo-images namespace, so it must exist first.
     - name: forgejo-images
       namespace: ducktape-flux
     - name: flux-image-automation-forgejo

@@ -22,6 +22,8 @@ spec:
       name: inventree
       namespace: inventree
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
     - name: inventree # InvenTree HelmRelease is fully deployed

@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: haku-console
 
 resources:
+  - forgejo-images-creds-eso.yaml
   - agent-diagnostics-rbac.yaml
   - deployment.yaml
   - serviceaccount.yaml

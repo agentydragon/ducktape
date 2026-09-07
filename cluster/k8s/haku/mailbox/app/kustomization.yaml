@@ -4,6 +4,7 @@ kind: Kustomization
 # rotator's publication point); everything else carries namespace: haku-mailbox
 # explicitly.
 resources:
+  - forgejo-images-creds-eso.yaml
   - certificate.yaml
   - haku-mailbox-admin.sops.yaml
   - deployment.yaml

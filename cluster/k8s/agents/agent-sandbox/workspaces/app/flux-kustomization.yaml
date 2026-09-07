@@ -17,6 +17,10 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: agent-sandbox-controller # CRDs + controller
       namespace: ducktape-flux
     - name: agent-workspaces-namespace

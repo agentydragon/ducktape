@@ -26,8 +26,6 @@ from cluster.validation.kustomize import KustomizeBuildResult
 
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
-_REFLECTION_ALLOWED_NAMESPACES = "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"
-_REFLECTION_AUTO_NAMESPACES = "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"
 _FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, SandboxTemplateResource)
 
 
@@ -220,26 +218,11 @@ def _forgejo_images(resource: CronJobResource | PodTemplateWorkloadResource | Sa
 
 
 def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str]:
-    """Every rendered Forgejo image workload namespace is covered by the reflected pull secret."""
-    credential_annotations = {
-        (
-            resource.metadata.annotations.get(_REFLECTION_ALLOWED_NAMESPACES, ""),
-            resource.metadata.annotations.get(_REFLECTION_AUTO_NAMESPACES, ""),
-        )
+    """Every rendered Forgejo image workload namespace has its own forgejo-images-creds ExternalSecret."""
+    namespaces_with_credential = {
+        resource.namespace
         for _, resource in _rendered_or_source_resources(cluster)
-        if isinstance(resource, SecretResource)
-        and resource.name == _FORGEJO_CREDENTIAL_SECRET
-        and resource.namespace == "forgejo-images"
-    }
-    if not credential_annotations:
-        return [f"Secret forgejo-images/{_FORGEJO_CREDENTIAL_SECRET} is not present in rendered resources"]
-    if len(credential_annotations) > 1:
-        return [f"Secret forgejo-images/{_FORGEJO_CREDENTIAL_SECRET} has inconsistent reflection allowlists"]
-
-    allowed, auto = next(iter(credential_annotations))
-    allowlists = {
-        _REFLECTION_ALLOWED_NAMESPACES: {item.strip() for item in allowed.split(",") if item.strip()},
-        _REFLECTION_AUTO_NAMESPACES: {item.strip() for item in auto.split(",") if item.strip()},
+        if isinstance(resource, ExternalSecretResource) and resource.name == _FORGEJO_CREDENTIAL_SECRET
     }
     errors: list[str] = []
     for origin, resource in _rendered_or_source_resources(cluster):
@@ -248,13 +231,12 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
         images = _forgejo_images(resource)
         if not images:
             continue
-        for annotation, namespaces in allowlists.items():
-            if resource.namespace not in namespaces:
-                errors.append(
-                    f"{origin}: {resource.kind} '{resource.namespace}/{resource.name}' runs Forgejo image(s) "
-                    f"{', '.join(sorted(images))}, but namespace '{resource.namespace}' is missing from "
-                    f"{annotation} on Secret forgejo-images/{_FORGEJO_CREDENTIAL_SECRET}"
-                )
+        if resource.namespace not in namespaces_with_credential:
+            errors.append(
+                f"{origin}: {resource.kind} '{resource.namespace}/{resource.name}' runs Forgejo image(s) "
+                f"{', '.join(sorted(images))}, but namespace '{resource.namespace}' has no "
+                f"ExternalSecret named {_FORGEJO_CREDENTIAL_SECRET}"
+            )
     return errors
 
 

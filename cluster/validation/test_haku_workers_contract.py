@@ -200,22 +200,19 @@ def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
     assert adapter["metadata"]["namespace"] in reflection_namespaces.split(",")
 
     # The image is a private Forgejo package: the pod's pull secret must be the ducktape-ci
-    # credential, whose reflection source must both name that Secret and grant this namespace —
-    # and the Flux scan must authenticate the same repository with the same credential.
+    # credential, provisioned in this namespace by its own ExternalSecret against the scoped
+    # store — and the Flux scan must authenticate the same repository with the same credential.
     pull_secret = one(adapter_pod["imagePullSecrets"])["name"]
-    registry_creds = one(
+    forgejo_creds_eso = one(
         doc
         for doc in yaml.safe_load_all(
-            (k8s_dir / "forgejo-images" / "registry-creds.sops.yaml").read_text(encoding="utf-8")
+            (k8s_dir / "haku" / "console" / "forgejo-images-creds-eso.yaml").read_text(encoding="utf-8")
         )
-        if doc.get("kind") == "Secret"
+        if doc.get("kind") == "ExternalSecret"
     )
-    assert registry_creds["metadata"]["name"] == pull_secret
-    for scope in ("allowed", "auto"):
-        namespaces = registry_creds["metadata"]["annotations"][
-            f"reflector.v1.k8s.emberstack.com/reflection-{scope}-namespaces"
-        ]
-        assert adapter["metadata"]["namespace"] in namespaces.split(",")
+    assert forgejo_creds_eso["metadata"]["name"] == pull_secret
+    assert forgejo_creds_eso["metadata"]["namespace"] == adapter["metadata"]["namespace"]
+    assert forgejo_creds_eso["spec"]["secretStoreRef"]["name"] == "kubernetes-forgejo-images-secret-store"
     image_repository = one(
         document
         for document in yaml.safe_load_all(

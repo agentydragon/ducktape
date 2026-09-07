@@ -18,6 +18,8 @@ spec:
       name: sops-age-cluster-secrets
   timeout: 30m
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
     - name: forgejo-images
