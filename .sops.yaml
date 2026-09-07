@@ -804,6 +804,17 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # claude-subscription-clients virtual key (laptop litellm-claude — laptop-only). Reuses the narrow
+  # litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
+  - path_regex: tf/gitops/litellm-keys/litellm-claude-subscription-clients-key\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *litellm-clients
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # codex-clients virtual key (laptop + agent-box codex-claude; codex-pod receives it via
   # the reflected kubernetes_secret, not sops). Reuses the narrow litellm-clients key.
   - path_regex: tf/gitops/litellm-keys/litellm-codex-clients-key\.yaml$

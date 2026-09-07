@@ -371,10 +371,36 @@ resource "litellm_team" "tana_clients" {
 resource "litellm_key" "tana_clients" {
   key_alias = "tana-clients"
   key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
-  models    = concat(["anthropic-api/ant-messages/*"], local.tana_client_models)
+  models    = local.tana_client_models
   team_id   = litellm_team.tana_clients.id
   metadata = {
     consumer = "laptop-tana-claude"
+  }
+}
+
+# ============================================================================
+# claude-subscription-clients — scoped key for the laptop litellm-claude wrapper
+# ============================================================================
+# Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
+# shared narrow client-key age key. The laptop litellm-claude wrapper reads it via
+# ducktape.sopsEnv (CLAUDE_SUBSCRIPTION_LITELLM_KEY). CLIProxyAPI holds the Claude OAuth session, so this
+# scoped key never carries it.
+#
+# One deliberate difference from its sibling client keys: no team, so no `model = "*"`
+# fallback. Those exist on the tana/codex/gemini lanes because Claude Code names Claude
+# models a non-Claude lane cannot serve, which cannot happen here -- the in-cluster
+# haku_console_claude key runs Claude Code on exactly this roster with no fallback at all.
+
+data "sops_file" "claude_subscription_clients_key" {
+  source_file = "${path.module}/litellm-claude-subscription-clients-key.yaml"
+}
+
+resource "litellm_key" "claude_subscription_clients" {
+  key_alias = "claude-subscription-clients"
+  key       = data.sops_file.claude_subscription_clients_key.data["litellm_claude_subscription_key"]
+  models    = local.claude_client_models
+  metadata = {
+    consumer = "laptop-litellm-claude"
   }
 }
 
@@ -405,7 +431,7 @@ resource "litellm_team" "codex_clients" {
 resource "litellm_key" "codex_clients" {
   key_alias = "codex-clients"
   key       = data.sops_file.codex_clients_key.data["litellm_codex_key"]
-  models    = concat(["anthropic-api/ant-messages/*"], local.codex_client_models)
+  models    = local.codex_client_models
   team_id   = litellm_team.codex_clients.id
   metadata = {
     consumer = "laptop-codex-claude, agent-box-codex, codex-pod"
@@ -460,7 +486,7 @@ resource "litellm_team" "gemini_clients" {
 resource "litellm_key" "gemini_clients" {
   key_alias = "gemini-clients"
   key       = data.sops_file.gemini_clients_key.data["litellm_gemini_key"]
-  models    = concat(["anthropic-api/ant-messages/*"], local.gemini_client_models)
+  models    = local.gemini_client_models
   team_id   = litellm_team.gemini_clients.id
   metadata = {
     consumer = "laptop-gemini-claude"
