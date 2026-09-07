@@ -41,6 +41,12 @@ spec:
                   fieldPath: spec.nodeName
             - name: VECTOR_LOG
               value: warn
+            # ${NODE_NAME} in vector.toml's sink labels is config-file env var
+            # interpolation, which Vector disables by default. Safe here: vector.toml
+            # is static repo-committed content, NODE_NAME is a non-secret downward-API
+            # value, and it's only ever used as a label string (never a path/command).
+            - name: VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION
+              value: "true"
           readinessProbe:
             tcpSocket:
               host: 127.0.0.1
