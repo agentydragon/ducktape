@@ -20,7 +20,7 @@ CONFIGURED_CATALOG_YAML = textwrap.dedent("""
       description: Read access to public GitHub repositories.
       executor:
         kind: mcp
-        owner_summary: Connected as Rai's GitHub account via the configured MCP server.
+        description: Connected as Rai's GitHub account via the configured MCP server.
         config:
           server_url: https://github-mcp.internal.example
           account_secret_ref: github-mcp-account
@@ -40,7 +40,7 @@ CONFIGURED_CATALOG_YAML = textwrap.dedent("""
       available: false
       executor:
         kind: mcp
-        owner_summary: Not yet connected.
+        description: Not yet connected.
       actions:
         list_events:
           description: List upcoming events.
@@ -62,7 +62,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
     assert github.title == "GitHub"
     assert github.available is True
     assert github.executor_kind == "mcp"
-    assert github.owner_summary == "Connected as Rai's GitHub account via the configured MCP server."
+    assert github.executor_description == "Connected as Rai's GitHub account via the configured MCP server."
     assert [action.id for action in github.actions] == ["github.get_file"]
     assert github.actions[0].description == "Read one file's contents from a public repository."
     assert github.actions[0].input_schema["required"] == ["owner", "repo", "path"]
@@ -104,9 +104,9 @@ def test_unknown_group_or_action_fails_clearly(group_key: str, action_key: str) 
 @pytest.mark.parametrize(
     "bad_yaml",
     [
-        "github.public:\n  title: x\n  description: x\n  executor: {kind: mcp, owner_summary: x}\n",
-        "Github:\n  title: x\n  description: x\n  executor: {kind: mcp, owner_summary: x}\n",
-        "github:\n  title: x\n  description: x\n  executor: {kind: mcp, owner_summary: x}\n"
+        "github.public:\n  title: x\n  description: x\n  executor: {kind: mcp, description: x}\n",
+        "Github:\n  title: x\n  description: x\n  executor: {kind: mcp, description: x}\n",
+        "github:\n  title: x\n  description: x\n  executor: {kind: mcp, description: x}\n"
         "  actions:\n    Get-File:\n      description: x\n",
     ],
 )

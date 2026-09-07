@@ -31,7 +31,8 @@ follows the same `AGENTPLANE_ACTIONS_CONFIG_FILE`-mounted-YAML convention as the
 process picks it up on restart — sufficient because ActionGroup/executor bindings change at
 operator/deploy cadence, not per-request, and the app's existing `Recreate`-strategy Deployment
 already restarts on every config change. `ExecutorBinding.config` (backend/account material) is
-never exposed by any discovery view; only `owner_summary`, a human-authored description, is.
+never exposed by any discovery view; only `ExecutorBinding.description`, a human-authored summary of
+the executor (e.g. account/credential ownership), is.
 
 Neither the catalog nor its discovery API selects an Executor or gates `ActionRequest` submission —
 that remains `db.ActionStore.submit`'s `supported_capabilities` check against the wired `Executor`.

@@ -393,7 +393,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                 description="Read access to public GitHub repositories.",
                 executor=ExecutorBinding(
                     kind="mcp",
-                    owner_summary="Connected as Rai's GitHub account.",
+                    description="Connected as Rai's GitHub account.",
                     config={"account_secret_ref": "github-mcp-account"},
                 ),
                 actions={
@@ -418,7 +418,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                 "title": "GitHub",
                 "description": "Read access to public GitHub repositories.",
                 "executor_kind": "mcp",
-                "owner_summary": "Connected as Rai's GitHub account.",
+                "executor_description": "Connected as Rai's GitHub account.",
                 "available": True,
                 "actions": [
                     {

@@ -13,7 +13,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
-Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=100)]
+Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
 
 
 class ActionDefinition(BaseModel):
@@ -21,7 +21,9 @@ class ActionDefinition(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    description: str = Field(min_length=1, max_length=2000)
+    description: str = Field(
+        min_length=1, max_length=20_000, description="Tool description; some MCP servers write long ones."
+    )
     input_schema: dict[str, JsonValue] = Field(
         default_factory=dict,
         description="A small JSON-Schema-shaped parameter contract, opaque to this catalog. Execution "
@@ -35,8 +37,10 @@ class ExecutorBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: str = Field(min_length=1, max_length=100, description="Executor adapter kind, e.g. 'mcp' or 'hostexec'.")
-    owner_summary: str = Field(
-        min_length=1, max_length=500, description="Agent-visible account/credential ownership summary."
+    description: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="Agent-visible executor description, e.g. account/credential ownership.",
     )
     config: dict[str, JsonValue] = Field(
         default_factory=dict,
@@ -74,7 +78,7 @@ class ActionGroupView(BaseModel):
     title: str
     description: str
     executor_kind: str
-    owner_summary: str
+    executor_description: str
     available: bool
     actions: list[ActionView]
 
@@ -124,7 +128,7 @@ def _group_view(group_key: str, group: ActionGroup) -> ActionGroupView:
         title=group.title,
         description=group.description,
         executor_kind=group.executor.kind,
-        owner_summary=group.executor.owner_summary,
+        executor_description=group.executor.description,
         available=group.available,
         actions=[_action_view(group_key, name, action) for name, action in group.actions.items()],
     )
