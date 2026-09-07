@@ -140,6 +140,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext, materialize
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     Agent,
+    CashflowOnly,
     DistributionTaxSlice,
     InitialAccountBalance,
     InitialLot,
@@ -312,6 +313,7 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
         else [],
         target_allocation_policies=[
             TargetAllocationPolicy(
+                rebalancing=CashflowOnly(),
                 agent_id=RETIREE,
                 account_id=CHECKING,
                 source_account_ids=(BROKERAGE,),

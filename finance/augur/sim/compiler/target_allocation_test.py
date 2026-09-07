@@ -17,6 +17,7 @@ from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, AssetTable
 from finance.augur.sim.compiler.target_allocation import compile_target_allocation_policies
 from finance.augur.sim.scenario import (
     Agent,
+    CashflowOnly,
     InitialAccountBalance,
     Scenario,
     SeriesIndexedAmount,
@@ -37,6 +38,7 @@ def _policy(**overrides: object) -> TargetAllocationPolicy:
             "sleeves": [SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
             "cash_floor": 10_000,
             "cash_ceiling": 50_000,
+            "rebalancing": CashflowOnly(),
             **overrides,
         }
     )

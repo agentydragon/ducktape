@@ -22,8 +22,11 @@ import polars as pl
 import pytest
 
 from finance.augur.sim.scenario import (
+    CashflowOnly,
+    DriftBand,
     FixedAmount,
     InitialLot,
+    RebalancingRule,
     RecurringObligation,
     Scenario,
     SleeveTarget,
@@ -41,6 +44,11 @@ STOCK_UNITS, BOND_UNITS = 900.0, 100.0
 QUANTA_PER_UNIT = 100
 
 
+# One shared instance rather than a call in a default argument (ruff B008). `CashflowOnly` is
+# frozen, so every case that does not name a rebalancing rule can hold the same value.
+_CASHFLOW_ONLY = CashflowOnly()
+
+
 def cash_band_case(
     *,
     opening_cash: Decimal | int,
@@ -52,7 +60,7 @@ def cash_band_case(
     income: Decimal | int = 0,
     rent_months: tuple[int, int | None] = (1, None),
     purchase_slots: int = 0,
-    rebalance_tolerance: float | None = None,
+    rebalancing: RebalancingRule = _CASHFLOW_ONLY,
     income_end_month: int | None = None,
     weights: tuple[int, int] = (1, 1),
 ) -> Case:
@@ -74,7 +82,7 @@ def cash_band_case(
             rent_months=rent_months,
             income=income,
             purchase_slots=purchase_slots,
-            rebalance_tolerance=rebalance_tolerance,
+            rebalancing=rebalancing,
             income_end_month=income_end_month,
             weights=weights,
         ),
@@ -97,7 +105,7 @@ def cash_band_scenario(
     income: Decimal | int = 0,
     rent_months: tuple[int, int | None] = (1, None),
     purchase_slots: int = 0,
-    rebalance_tolerance: float | None = None,
+    rebalancing: RebalancingRule = _CASHFLOW_ONLY,
     income_end_month: int | None = None,
     weights: tuple[int, int] = (1, 1),
 ) -> Scenario:
@@ -143,7 +151,7 @@ def cash_band_scenario(
                 cash_floor=floor,
                 cash_ceiling=ceiling,
                 purchase_slots_per_sleeve=purchase_slots,
-                rebalance_tolerance=rebalance_tolerance,
+                rebalancing=rebalancing,
             )
         ],
         tax_profiles=[],
@@ -437,7 +445,11 @@ class TargetAllocationAcceptance:
 
         result = backend(
             cash_band_case(
-                opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=0.25
+                opening_cash=50_000,
+                floor=10_000,
+                ceiling=90_000,
+                purchase_slots=1,
+                rebalancing=DriftBand(tolerance=0.25),
             )
         )
         units = _units(result, month=1)
@@ -458,7 +470,11 @@ class TargetAllocationAcceptance:
 
         result = backend(
             cash_band_case(
-                opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=0.25
+                opening_cash=50_000,
+                floor=10_000,
+                ceiling=90_000,
+                purchase_slots=1,
+                rebalancing=DriftBand(tolerance=0.25),
             )
         )
         trades = result.events.lot_dispositions.filter(pl.col("agent_id") == "alice").to_dicts()
@@ -471,7 +487,13 @@ class TargetAllocationAcceptance:
         100% tolerance leaves it exactly where an unconfigured policy would."""
 
         with_tolerance = backend(
-            cash_band_case(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=1.0)
+            cash_band_case(
+                opening_cash=50_000,
+                floor=10_000,
+                ceiling=90_000,
+                purchase_slots=1,
+                rebalancing=DriftBand(tolerance=1.0),
+            )
         )
         without = backend(cash_band_case(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1))
 

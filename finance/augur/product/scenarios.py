@@ -34,6 +34,7 @@ from finance.augur.sim.scenario import (
     Agent,
     BondHolding,
     CapitalImprovementEvent,
+    CashflowOnly,
     Currency,
     DistributionTaxSlice,
     FilingStatus,
@@ -885,6 +886,7 @@ def _target_allocation_policies_from_funding_policy(
     targeted = {sleeve.asset for sleeve in sleeves}
     return [
         TargetAllocationPolicy(
+            rebalancing=CashflowOnly(),
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,
             source_account_ids=tuple(dict.fromkeys(lot.account_id for lot in initial_lots if lot.asset in targeted)),

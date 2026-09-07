@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from finance.augur.model.series import LocationId, RentKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.scenario import (
     Agent,
+    CashflowOnly,
     DistributionTaxSlice,
     InitialAccountBalance,
     InitialLot,
@@ -140,12 +141,14 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
             initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=100)],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
                     cash_ceiling=0,
                 ),
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("qqq")), weight=1)],

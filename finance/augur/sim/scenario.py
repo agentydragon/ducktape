@@ -554,6 +554,42 @@ class SleeveTarget(BaseModel):
     weight: PositiveInt
 
 
+class CashflowOnly(BaseModel):
+    """Only cash moving in or out shifts the account toward its target.
+
+    A withdrawal takes more from the overweight sleeves and a deposit puts more into the
+    underweight ones, so the portfolio drifts back whenever money moves. A month with no cash
+    need trades nothing, however far the sleeves have drifted.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["cashflow_only"] = "cashflow_only"
+
+
+class DriftBand(BaseModel):
+    """Trade on drift alone: sell the overweight sleeves down, buy the underweight ones up.
+
+    Not the cash band. `cash_floor`/`cash_ceiling` say how much cash to hold; this band says how
+    far a sleeve may stray from its own target before the policy trades in a month with no cash
+    need at all.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["drift_band"] = "drift_band"
+    tolerance: NonNegativeFloat = Field(
+        description=(
+            "Drift, relative to a sleeve's own target, at which the policy trades. 0.25 is the "
+            "'25' of the standard 5/25 rule. `0.0` is a real setting, not a disabled one: it "
+            "rebalances whenever anything is off by a cent."
+        )
+    )
+
+
+type RebalancingRule = Annotated[CashflowOnly | DriftBand, Field(discriminator="kind")]
+
+
 class TargetAllocationPolicy(BaseModel):
     """Funding policy for one agent cash account: hold cash in a band, sell toward a target.
 
@@ -566,10 +602,15 @@ class TargetAllocationPolicy(BaseModel):
     Refilling to the floor would put the agent back at its trigger next month, making it a
     forced seller into every dip — which is the risk this whole model exists to price.
 
-    **The ceiling is the refill TARGET, not an invest-above-this rule.** Surplus cash above
-    it accumulates; nothing buys with it. Investing surplus has never existed in augur and
-    this policy does not add it — that arrives with policy-driven purchases, and only then
-    does the ceiling gain a second meaning.
+    **The ceiling carries two meanings, and which apply depends on `purchase_slots_per_sleeve`.**
+    It is always the refill target a raise aims at. With purchase slots it is also an
+    invest-above-this line: cash projected above the ceiling is invested down to the FLOOR,
+    water-filled into whichever sleeves are furthest below target. With no slots the policy
+    never buys and surplus cash simply accumulates.
+
+    `rebalancing` decides whether drift alone can trade. `CashflowOnly` moves toward the target
+    only when money is going in or out anyway; `DriftBand` also trades in a month with no cash
+    need at all, which costs turnover and realizes gains that were not otherwise due.
 
     Sleeves the policy does not name are outside the target denominator entirely: never sold
     to fund the band, and not counted when measuring what is overweight. That is what makes
@@ -588,17 +629,14 @@ class TargetAllocationPolicy(BaseModel):
     cash_floor: AmountSpec = Decimal(0)
     cash_ceiling: AmountSpec
     cause_id_prefix: str = "allocation_sale"
-    rebalance_tolerance: NonNegativeFloat | None = Field(
-        default=None,
+    rebalancing: RebalancingRule = Field(
         description=(
-            "Drift, relative to a sleeve's own target, at which the policy sells overweight "
-            "sleeves down and buys underweight ones up in a month with no cash need at all. "
-            "0.25 is the '25' of the standard 5/25 rule. `None` means never — cashflow stays "
-            "the only rebalancing mechanism, which is the default because the turnover and tax "
-            "drag of periodic rebalancing are what the allocation study exists to measure, and "
-            "a default that rebalanced would assume the answer. `0.0` is a real setting, not a "
-            "disabled one: it rebalances whenever anything is off by a cent."
-        ),
+            "How the account moves toward its target. Required, and deliberately without a "
+            "default: `CashflowOnly` and `DriftBand` are both real strategies with different "
+            "turnover and tax drag, which is the very difference the allocation study exists to "
+            "measure. A default would pick one of them for every caller that did not think "
+            "about it, and the pick would not appear at the call site or in any report."
+        )
     )
     purchase_slots_per_sleeve: NonNegativeInt = Field(
         default=0,
@@ -632,10 +670,10 @@ class TargetAllocationPolicy(BaseModel):
         # CPI-indexed, hence traced, and a traced value cannot drive a raise. Indexing scales
         # both bounds by the same series, so an ordering that holds here holds on every path.
         validate_band_bounds(floor=_base_amount(self.cash_floor), ceiling=_base_amount(self.cash_ceiling))
-        if self.rebalance_tolerance is not None and self.purchase_slots_per_sleeve == 0:
+        if isinstance(self.rebalancing, DriftBand) and self.purchase_slots_per_sleeve == 0:
             raise ValueError(
-                f"target-allocation policy for {self.agent_id}/{self.account_id} sets "
-                f"{self.rebalance_tolerance=} but no purchase slots. A rebalance sells the overweight "
+                f"target-allocation policy for {self.agent_id}/{self.account_id} sets a drift band of "
+                f"{self.rebalancing.tolerance} but no purchase slots. A rebalance sells the overweight "
                 "sleeves and buys the underweight ones; with nowhere to buy it would only ever sell, "
                 "draining the portfolio into cash a little more on every trigger"
             )

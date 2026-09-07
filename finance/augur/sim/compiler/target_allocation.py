@@ -64,11 +64,6 @@ class TargetAllocationCompileOutput:
     sleeve_quantity_scale: Int64[np.ndarray, " policy sleeve"]
     weights: Int64[np.ndarray, " policy sleeve"]
     cause_id_prefixes: tuple[str, ...]
-    # Per-policy drift tolerance, `None` where the policy never rebalances. A plain tuple rather
-    # than a padded array because the engine reads it host-side as a STATIC compile-time value:
-    # `None` has to make the rebalance untraced, not merely inactive, and a sentinel in a float
-    # array could only ever be checked at trace time.
-    rebalance_tolerances: tuple[float | None, ...]
 
 
 def compile_target_allocation_policies(
@@ -104,7 +99,6 @@ def compile_target_allocation_policies(
     sleeve_quantity_scale = np.ones((slot_count, max_sleeves), dtype=np.int64)
     weights = np.zeros((slot_count, max_sleeves), dtype=np.int64)
     prefixes: list[str] = []
-    tolerances: list[float | None] = []
 
     for idx, policy in enumerate(policies):
         agent[idx] = strings.require(policy.agent_id)
@@ -134,7 +128,6 @@ def compile_target_allocation_policies(
             ceiling_period[idx],
         ) = amount_arrays_quanta(policy.cash_ceiling, series_index_by_id, currency_quantum=scenario.currency.quantum)
         prefixes.append(policy.cause_id_prefix)
-        tolerances.append(policy.rebalance_tolerance)
         for sleeve_idx, sleeve in enumerate(policy.sleeves):
             sleeve_assets[idx, sleeve_idx] = asset_table.require(sleeve.asset)
             weights[idx, sleeve_idx] = sleeve.weight
@@ -166,5 +159,4 @@ def compile_target_allocation_policies(
         sleeve_quantity_scale=sleeve_quantity_scale,
         weights=weights,
         cause_id_prefixes=tuple(prefixes),
-        rebalance_tolerances=tuple(tolerances),
     )

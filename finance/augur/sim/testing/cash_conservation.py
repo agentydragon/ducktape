@@ -40,6 +40,7 @@ from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     CapitalImprovementEvent,
+    CashflowOnly,
     FixedAmount,
     InitialLot,
     MortgageFinancing,
@@ -149,7 +150,11 @@ def target_allocation_sale_case() -> Case:
             ],
             target_allocation_policies=[
                 TargetAllocationPolicy(
-                    agent_id="alice", account_id="checking", sleeves=[SleeveTarget(asset=VTI, weight=1)], cash_ceiling=0
+                    rebalancing=CashflowOnly(),
+                    agent_id="alice",
+                    account_id="checking",
+                    sleeves=[SleeveTarget(asset=VTI, weight=1)],
+                    cash_ceiling=0,
                 )
             ],
             tax_profiles=[],

@@ -14,7 +14,13 @@ from pydantic import ValidationError
 
 from finance.augur.model.series import InflationKey, SecuritySymbol
 from finance.augur.product.asset_key import SecurityKey
-from finance.augur.sim.scenario import SeriesIndexedAmount, SleeveTarget, TargetAllocationPolicy
+from finance.augur.sim.scenario import (
+    CashflowOnly,
+    DriftBand,
+    SeriesIndexedAmount,
+    SleeveTarget,
+    TargetAllocationPolicy,
+)
 
 _VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 _BND = SecurityKey(symbol=SecuritySymbol("bnd"))
@@ -28,6 +34,7 @@ def _policy(**overrides: object) -> TargetAllocationPolicy:
             "sleeves": [SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
             "cash_floor": 10_000,
             "cash_ceiling": 50_000,
+            "rebalancing": CashflowOnly(),
             **overrides,
         }
     )
@@ -94,6 +101,38 @@ def test_a_zero_weight_is_rejected() -> None:
 
     with pytest.raises(ValidationError):
         SleeveTarget(asset=_VTI, weight=0)
+
+
+def test_a_policy_must_say_how_it_rebalances() -> None:
+    """`rebalancing` has no default, and that is the point.
+
+    `CashflowOnly` and `DriftBand` are both real strategies with different turnover and tax
+    drag — the very difference the allocation study exists to measure. A default would pick one
+    for every caller that did not think about it, and the pick would show up neither at the call
+    site nor in any report of the run. So the model refuses to be constructed without one.
+    """
+
+    with pytest.raises(ValidationError, match="rebalancing"):
+        TargetAllocationPolicy(
+            agent_id="alice",
+            account_id="checking",
+            sleeves=[SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
+            cash_floor=10_000,
+            cash_ceiling=50_000,
+        )  # type: ignore[call-arg]
+
+
+def test_a_drift_band_with_nowhere_to_buy_is_rejected() -> None:
+    """A rebalance sells the overweight sleeves and buys the underweight ones. With no purchase
+    slots the buy half cannot execute, so the policy would only ever sell — draining a little
+    more of the portfolio into cash on every trigger, which is a slow ruin rather than a
+    rebalance. `CashflowOnly` is unaffected, since it never trades on drift at all."""
+
+    with pytest.raises(ValidationError, match=r"drift band .* but no purchase slots"):
+        _policy(rebalancing=DriftBand(tolerance=0.25), purchase_slots_per_sleeve=0)
+
+    _policy(rebalancing=DriftBand(tolerance=0.25), purchase_slots_per_sleeve=1)
+    _policy(rebalancing=CashflowOnly(), purchase_slots_per_sleeve=0)
 
 
 if __name__ == "__main__":

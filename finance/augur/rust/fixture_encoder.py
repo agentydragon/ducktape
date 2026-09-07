@@ -50,6 +50,7 @@ from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     CapitalImprovementEvent,
+    DriftBand,
     FixedAmount,
     InterestIncome,
     OrdinaryIncome,
@@ -413,7 +414,7 @@ def _target_allocation_policies(scenario: Scenario, *, quantum: Decimal) -> list
             "cause_id_prefix": policy.cause_id_prefix,
             "purchase_slots_per_sleeve": int(policy.purchase_slots_per_sleeve),
             "rebalance_tolerance_ppb": (
-                None if policy.rebalance_tolerance is None else _ppb(policy.rebalance_tolerance)
+                _ppb(policy.rebalancing.tolerance) if isinstance(policy.rebalancing, DriftBand) else None
             ),
         }
         for policy in scenario.target_allocation_policies

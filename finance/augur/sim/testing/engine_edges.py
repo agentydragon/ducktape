@@ -31,6 +31,7 @@ from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    CashflowOnly,
     FilingStatus,
     HarvestPolicy,
     InitialAccountBalance,
@@ -782,6 +783,7 @@ class ValidationEdgeAcceptance:
             ],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],

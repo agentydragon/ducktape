@@ -23,6 +23,7 @@ from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     AmountSpec,
     CapitalImprovementEvent,
+    CashflowOnly,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
@@ -31,6 +32,7 @@ from finance.augur.sim.scenario import (
     PropertyLifecycleEvent,
     PropertySaleEvent,
     PropertyTaxPolicy,
+    RebalancingRule,
     RecurringObligation,
     RecurringPropertyCashflow,
     RecurringTransfer,
@@ -51,6 +53,10 @@ VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 BND = SecurityKey(symbol=SecuritySymbol("bnd"))
 SF_HOME = HomeValueKey(location_id=LocationId("sf"))
 
+
+# One shared instance rather than a call in a default argument (ruff B008). `CashflowOnly` is
+# frozen, so every case that does not name a rebalancing rule can hold the same value.
+_CASHFLOW_ONLY = CashflowOnly()
 SF = Location(
     location_id="sf",
     display_name="San Francisco",
@@ -294,7 +300,7 @@ def allocation_policy(
     cash_floor: AmountSpec = Decimal(10_000),
     cash_ceiling: AmountSpec = Decimal(30_000),
     purchase_slots_per_sleeve: int = 0,
-    rebalance_tolerance: float | None = None,
+    rebalancing: RebalancingRule = _CASHFLOW_ONLY,
 ) -> TargetAllocationPolicy:
     """An equal-weight VTI/BND band on Alice's `checking` account."""
 
@@ -306,7 +312,7 @@ def allocation_policy(
         cash_floor=cash_floor,
         cash_ceiling=cash_ceiling,
         purchase_slots_per_sleeve=purchase_slots_per_sleeve,
-        rebalance_tolerance=rebalance_tolerance,
+        rebalancing=rebalancing,
     )
 
 

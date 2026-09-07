@@ -38,6 +38,7 @@ from finance.augur.sim.scenario import (
     BondHolding,
     CapitalImprovementEvent,
     DistributionTaxSlice,
+    DriftBand,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
     HarvestPolicy,
@@ -418,7 +419,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 cash_ceiling=Decimal(40_000),
                 cause_id_prefix="benchmark-allocation",
                 purchase_slots_per_sleeve=128,
-                rebalance_tolerance=0.1,
+                rebalancing=DriftBand(tolerance=0.1),
             )
         ],
         private_equity_tender_policies=[

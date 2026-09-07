@@ -29,6 +29,7 @@ from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    CashflowOnly,
     FilingStatus,
     InitialAccountBalance,
     InitialLot,
@@ -1653,6 +1654,7 @@ class YearEndTaxAcceptance:
             ],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -1921,6 +1923,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2026,6 +2029,7 @@ class ObligationAcceptance:
             ],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2093,6 +2097,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="taxable",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2152,6 +2157,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     source_account_ids=("taxable",),
@@ -2209,6 +2215,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0] * 4),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2324,6 +2331,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2386,6 +2394,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2425,6 +2434,7 @@ class ObligationAcceptance:
             ),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2749,6 +2759,7 @@ class RolloutFailureAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
@@ -2827,6 +2838,7 @@ class RolloutFailureAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
