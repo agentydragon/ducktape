@@ -98,3 +98,14 @@ py_binary(
     visibility = ["//:__subpackages__"],
     deps = [":stdio_app"],
 )
+
+py_library(
+    name = "wedge_repro",
+    testonly = True,
+    srcs = ["wedge_repro.py"],
+    deps = [
+        ":remote_server",
+        "@pypi//anyio",
+        "@pypi//fastmcp_slim",
+    ],
+)
