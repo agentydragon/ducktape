@@ -14,10 +14,13 @@ the endpoint URL from ``--url`` / ``$HAKU_MCP_URL``, defaulting to the deployed
 console.
 
 TLS/proxy trust is left to the environment: ``fastmcp.Client`` builds an
-``httpx.AsyncClient`` with ``trust_env`` on, so it honors ``HTTPS_PROXY`` and
-the ``SSL_CERT_FILE`` CA bundle the session already exports — the same trust the
-rest of the repo's HTTPS-from-CLI code relies on. No CA path is hardcoded and
-verification is never disabled.
+``httpx2.AsyncClient`` (fastmcp/mcp-sdk's internal httpx fork) with ``trust_env``
+on by default, so it honors ``HTTPS_PROXY`` and the ``SSL_CERT_FILE`` CA bundle
+the session already exports — the same trust the rest of the repo's
+HTTPS-from-CLI code relies on (verified directly against httpx2's
+``create_ssl_context()``: ``SSL_CERT_FILE``/``SSL_CERT_DIR`` are checked before
+falling back to the OS trust store). No CA path is hardcoded and verification is
+never disabled.
 """
 
 from __future__ import annotations
@@ -144,7 +147,7 @@ async def schema(tool: str = typer.Argument(..., help="Tool name."), url: str = 
     if match is None:
         _err.print(f"[red]error:[/] no tool named {tool!r}")
         raise typer.Exit(1)
-    _out.print_json(json.dumps(match.inputSchema, default=str))
+    _out.print_json(json.dumps(match.input_schema, default=str))
 
 
 @app.command("call")

@@ -421,11 +421,11 @@ class McpActionGroupExecutor:
                 logger.warning("MCP tool name does not fit the catalog key pattern; skipping")
                 continue
             try:
-                jsonschema.validators.validator_for(tool.inputSchema).check_schema(tool.inputSchema)
+                jsonschema.validators.validator_for(tool.input_schema).check_schema(tool.input_schema)
                 if key in actions:
                     raise ValueError("duplicate MCP tool name")
                 actions[key] = ActionDefinition(
-                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.inputSchema
+                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.input_schema
                 )
             except (jsonschema.SchemaError, ValueError) as error:
                 raise _InvalidMcpCatalogError from error

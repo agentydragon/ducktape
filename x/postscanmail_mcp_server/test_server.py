@@ -47,24 +47,24 @@ async def test_tools_carry_correct_annotations(mcp_client: Client) -> None:
     # Reads: read-only (openWorldHint stays default true — external mailbox, not the tool's
     # own state), so clients auto-run them without a per-call approval prompt.
     for name in ("list_items", "list_automation_rules"):
-        assert ann(name).readOnlyHint is True
+        assert ann(name).read_only_hint is True
     # Account-wide automation toggle: idempotent PUT of a boolean, reversible — non-destructive.
     toggle = ann("set_automation_rule")
-    assert toggle.idempotentHint is True
-    assert toggle.destructiveHint is False
+    assert toggle.idempotent_hint is True
+    assert toggle.destructive_hint is False
     # Cancels: a repeat with nothing pending is a no-op (idempotent); cancelling prevents,
     # never causes, an effect — non-destructive.
     for name in ("cancel_open", "cancel_discard", "cancel_rescan", "cancel_shred"):
         cancel = ann(name)
-        assert cancel.idempotentHint is True
-        assert cancel.destructiveHint is False
+        assert cancel.idempotent_hint is True
+        assert cancel.destructive_hint is False
     # Paid scans (open/rescan): state-changing and irreversible once done, but additive —
     # non-destructive.
     for name in ("request_open", "request_rescan"):
-        assert ann(name).destructiveHint is False
+        assert ann(name).destructive_hint is False
     # Mail removal/destruction: discard trashes, shred destroys securely — destructive.
     for name in ("request_discard", "request_shred"):
-        assert ann(name).destructiveHint is True
+        assert ann(name).destructive_hint is True
 
 
 def _items_body(items: list[dict]) -> dict:

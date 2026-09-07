@@ -57,7 +57,7 @@ async def test_batch_client_dependency_failure_is_mcp_error_before_body() -> Non
     async with Client(mcp) as mcp_client:
         result = await mcp_client.call_tool_mcp("entities_list", {"entity_types": ["products"]})
 
-    assert result.isError is True
+    assert result.is_error is True
     assert "Backend authentication failed" in "\n".join(
         block.text for block in result.content if hasattr(block, "text")
     )
@@ -91,7 +91,7 @@ async def test_batch_client_dependency_is_hidden_and_lives_for_one_call() -> Non
         result = await mcp_client.call_tool_mcp("entities_list", {"entity_types": ["products", "locations"]})
 
     assert all("client" not in schema.get("properties", {}) for schema in injected_schemas.values())
-    assert result.isError is False
+    assert result.is_error is False
     assert sorted(backend_requests) == ["/api/objects/locations", "/api/objects/products"]
     assert len(entered) == 1
     assert exited == entered

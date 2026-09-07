@@ -165,7 +165,7 @@ async def test_docstring_cross_links_resolve() -> None:
     missing: dict[str, set[str]] = {}
     for tool in tools:
         candidates = _refs_in(tool.description or "")
-        schema = tool.inputSchema or {}
+        schema = tool.input_schema or {}
         for prop in (schema.get("properties") or {}).values():
             candidates |= _refs_in(prop.get("description", "") or "")
         unresolved = candidates - actual_names
