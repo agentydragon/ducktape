@@ -60,7 +60,7 @@ async def test_facade_forwards_tool_calls() -> None:
         settings = _settings(remote.url)
         async with _facade_client(settings) as client:
             result = await client.call_tool_mcp("echo", {"text": "hi"})
-        assert result.isError is False
+        assert result.is_error is False
         assert result.content[0].text == "echoed: hi"
 
 

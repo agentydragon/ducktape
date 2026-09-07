@@ -170,11 +170,11 @@ def _normalize_parts(
     norm: list[NormalizedPart] = []
     for p in contents:
         if isinstance(p, mcp_types.TextResourceContents):
-            norm.append(TextPart(mime=p.mimeType, raw_bytes=p.text.encode("utf-8")))
+            norm.append(TextPart(mime=p.mime_type, raw_bytes=p.text.encode("utf-8")))
             continue
         if isinstance(p, mcp_types.BlobResourceContents):
             base = p.blob  # base64 string per MCP spec
-            norm.append(BlobPart(mime=p.mimeType, raw_str=str(base)))
+            norm.append(BlobPart(mime=p.mime_type, raw_str=str(base)))
             continue
         raise TypeError(f"Unsupported resource content type: {type(p).__name__}")
     return norm
@@ -459,14 +459,14 @@ class ResourcesServer(EnhancedFastMCP):
                             sliced_bytes = block_bytes[slice_start:slice_end]
                             sliced_content = mcp_types.TextResourceContents(
                                 uri=block.uri,
-                                mimeType=block.mimeType,
+                                mime_type=block.mime_type,
                                 text=sliced_bytes.decode("utf-8", errors="replace"),
                             )
                         else:
                             # blob is base64 string, slice directly
                             assert isinstance(block, mcp_types.BlobResourceContents)
                             sliced_content = mcp_types.BlobResourceContents(
-                                uri=block.uri, mimeType=block.mimeType, blob=block.blob[slice_start:slice_end]
+                                uri=block.uri, mime_type=block.mime_type, blob=block.blob[slice_start:slice_end]
                             )
                         result_blocks.append(
                             TruncatedBlock(
@@ -484,13 +484,15 @@ class ResourcesServer(EnhancedFastMCP):
                     if is_text:
                         sliced_bytes = block_bytes[slice_start:slice_end]
                         sliced_content = mcp_types.TextResourceContents(
-                            uri=block.uri, mimeType=block.mimeType, text=sliced_bytes.decode("utf-8", errors="replace")
+                            uri=block.uri,
+                            mime_type=block.mime_type,
+                            text=sliced_bytes.decode("utf-8", errors="replace"),
                         )
                     else:
                         # blob is base64 string, slice directly
                         assert isinstance(block, mcp_types.BlobResourceContents)
                         sliced_content = mcp_types.BlobResourceContents(
-                            uri=block.uri, mimeType=block.mimeType, blob=block.blob[slice_start:slice_end]
+                            uri=block.uri, mime_type=block.mime_type, blob=block.blob[slice_start:slice_end]
                         )
                     result_blocks.append(
                         TruncatedBlock(

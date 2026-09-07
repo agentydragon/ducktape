@@ -23,7 +23,9 @@ class MCPToolProvider:
     async def list_tools(self) -> list[ToolSchema]:
         """Return available tools from the MCP client."""
         mcp_tools = await self._client.list_tools()
-        return [ToolSchema(name=t.name, description=t.description or "", input_schema=t.inputSchema) for t in mcp_tools]
+        return [
+            ToolSchema(name=t.name, description=t.description or "", input_schema=t.input_schema) for t in mcp_tools
+        ]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a tool via the MCP client."""
@@ -42,7 +44,7 @@ def fastmcp_result_to_tool_result(fastmcp_result: FastMCPCallToolResult) -> Tool
         if isinstance(block, mcp_types.TextContent):
             content.append(TextContent(text=block.text))
         elif isinstance(block, mcp_types.ImageContent):
-            content.append(ImageContent(mime_type=block.mimeType, data=block.data))
+            content.append(ImageContent(mime_type=block.mime_type, data=block.data))
         else:
             raise TypeError(f"Unhandled MCP content block type: {type(block)}")
 

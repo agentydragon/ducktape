@@ -43,7 +43,7 @@ async def test_flat_model_infers_types_and_emits_schema():
     assert t.name == "demo"
     assert t.description == "Demo tool docstring used as description."
     # Input schema is flat with properties a and b
-    schema = t.inputSchema
+    schema = t.input_schema
     assert isinstance(schema, dict)
     assert schema.get("type") == "object"
     props = schema.get("properties") or {}
@@ -53,7 +53,7 @@ async def test_flat_model_infers_types_and_emits_schema():
     required = set(schema.get("required") or [])
     assert "a" in required
     # Output schema not present by default (structured_output=False by default)
-    out_schema = t.outputSchema
+    out_schema = t.output_schema
     assert out_schema is None
 
 
@@ -133,8 +133,8 @@ async def test_flat_model_union_return_unwrapped():
         # Verify FastMCP sets x-fastmcp-wrap-result for union types
         tools = await client.list_tools()
         tool = next(t for t in tools if t.name == "get_page")
-        assert tool.outputSchema["x-fastmcp-wrap-result"] is True
-        assert "result" in tool.outputSchema["properties"]
+        assert tool.output_schema["x-fastmcp-wrap-result"] is True
+        assert "result" in tool.output_schema["properties"]
 
         # Verify raw structured_content has wrapping
         result = await client.call_tool("get_page", {})

@@ -5,11 +5,9 @@ from types import UnionType
 from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
 
 from fastmcp.server import FastMCP
-from mcp import types as mcp_types
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter
 
-from agent_core.pydantic_utils import format_validation_error
 from mcp_infra.flat_tool import FlatTool, _EmptyModel
 from openai_utils.json_schema import openai_json_schema
 
@@ -69,23 +67,11 @@ def _extract_signature_params(fn: Callable[..., Any]) -> tuple[inspect.Parameter
 
 
 class FlatModelMixin(FastMCP):
-    """Mixin that provides flat-model tool support with structured ValidationError formatting."""
+    """Mixin that provides flat-model tool support.
 
-    async def _call_tool_mcp(
-        self, key: str, arguments: dict[str, Any]
-    ) -> (
-        list[mcp_types.ContentBlock]
-        | tuple[list[mcp_types.ContentBlock], dict[str, Any]]
-        | mcp_types.CallToolResult
-        | mcp_types.CreateTaskResult
-    ):
-        """Override to format ValidationErrors from flat model tools as flat JSON."""
-        try:
-            return await super()._call_tool_mcp(key, arguments)
-        except ValidationError as e:
-            return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=format_validation_error(e))], isError=True
-            )
+    Input-validation errors are formatted as structured JSON by `FlatTool.run()`
+    (mcp_infra/flat_tool.py), not here.
+    """
 
     def flat_model[InputModelT: BaseModel, OutputT](
         self,
