@@ -62,6 +62,16 @@ let
             "test_raw_node"
           ];
         });
+        paramiko = pyprev.paramiko.overrideAttrs (old: {
+          # test_sequence_numbers_reset_on_newkeys_when_strict: a real client/server
+          # thread pair racing a NEWKEYS rekey; asserts the post-rekey sequence
+          # counter before the other thread has necessarily processed it. Racy
+          # under load, same class as the anyio/sphinx disables above. No existing
+          # nixpkgs precedent for this one.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_sequence_numbers_reset_on_newkeys_when_strict"
+          ];
+        });
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
           python3Packages = pyfinal;
         };
