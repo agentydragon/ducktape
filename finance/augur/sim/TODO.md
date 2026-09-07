@@ -355,28 +355,32 @@ tree at merge time.
   matters. Defer until landlord-rental scenarios are common enough
   that the smoothed model bites.
 
-## Funding policy: rebalancing on drift alone
+## Funding policy: expose drift rebalancing on the wire
 
-`TargetAllocationPolicy` targets an allocation, but only cashflow moves
-toward it: crossing the cash floor sells the most overweight sleeve, and
-nothing happens in a month that stays inside the band. Drift alone never
-trades, which is deliberate — a rebalancing schedule is a different policy
-with different turnover and tax consequences.
+The sim half is done. `TargetAllocationPolicy.rebalance_tolerance`
+(`sim/scenario.py:591`) drives two-sided drift rebalancing in a month with no
+cash need at all: `rebalance_by_sleeve` sells overweight sleeves down and buys
+underweight ones up, and `deposit_by_sleeve` executes the buy side from
+`rust/engine/target_allocation.rs`.
 
-What a drift-triggered mode would need on top of what exists:
+What is missing is the product surface. `rebalance_tolerance` exists only on the
+sim scenario — `api/wire.py`'s `FundingPolicy` and `product/scenarios.py` never
+mention it — so no configured scenario can turn it on, and the frontend has no
+control for it.
 
-- Wire: a tolerance and a cadence on `FundingPolicy` (sell once a sleeve is
-  more than X% off target, checked every N months). The weights themselves
-  are already there.
-- Sim: a purchase executor. `deposit_by_sleeve` already computes the buy
-  side and is unit-tested, but nothing calls it — rebalancing without buying
-  is just a drawdown.
-- Tax routing: already handled; a rebalancing sell is the same FIFO +
-  capital-gain path the band's sales take.
+Two things to settle while wiring it:
 
-Defer until a scenario needs it. Note the tax argument cuts against it: a
-sale to fund spending is unavoidable, whereas a sale to correct drift is
-elective realization, and augur exists partly to price that difference.
+- **A cadence knob, or not.** Today the check runs every month with no cash
+  need. "Check every N months" is a different strategy with different turnover,
+  and the sweep in #5480 C1 wants both axes.
+- **The default is a strategy.** `None` means never rebalance on drift. That is
+  deliberate — a default that rebalanced would assume the answer the allocation
+  study exists to measure — but it means any grid run without setting it
+  measured a no-drift-rebalancing portfolio, whether or not the report said so.
+
+The tax argument stays worth stating on the product surface: a sale to fund
+spending is unavoidable, whereas a sale to correct drift is elective
+realization, and augur exists partly to price that difference.
 
 ## Funding policy: "reserve for N months" threshold
 
@@ -456,8 +460,9 @@ Documented to prevent re-discovery; intentionally not on the roadmap.
   is free. Deferred deliberately, but the direction of the error is worth
   stating: free trading flatters any strategy that trades, and turnover
   drag is part of what the allocation study is trying to measure. It bites
-  once a scenario turns on how OFTEN to trade — a drift-tolerance rebalance
-  mode, a short ladder rolled frequently, or anything comparing a buy-and-hold
-  sleeve against an actively maintained one. Until then the cash band trades
-  only on cashflow that was going to happen anyway, which keeps turnover low
-  enough that the omission does not decide any answer.
+  once a scenario turns on how OFTEN to trade, and `rebalance_tolerance` now
+  makes that reachable: a drift-rebalancing arm trades on drift alone, so its
+  turnover is no longer bounded by cashflow that was going to happen anyway. A
+  sweep over band width is therefore biased toward tight bands until this lands
+  (#5486). A run with `rebalance_tolerance=None` still trades only on cashflow,
+  where the omission does not decide any answer.
