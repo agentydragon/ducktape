@@ -39,6 +39,9 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 - Executor liveness and orphan recovery for the fixture seam — PR
   [#5733](https://github.com/agentydragon/ducktape/pull/5733) and
   [`../docs/executor_liveness.md`](../docs/executor_liveness.md)
+- MCP-backed `ActionGroup` Executor adapter — PR
+  [#5753](https://github.com/agentydragon/ducktape/pull/5753), with focused adapter tests; production
+  composition, remote transport, and live Agent acceptance remain open
 - Launch presets first slice — PR
   [#5648](https://github.com/agentydragon/ducktape/pull/5648) and
   [launch-preset evidence](../docs/launch_presets.md)

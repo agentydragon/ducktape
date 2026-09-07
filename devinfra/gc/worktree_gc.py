@@ -101,7 +101,13 @@ def classify_worktree(
     live_pids: list[int],
 ) -> Classification:
     path = worktree.path
-    pg = pygit2.Repository(os.fspath(path))
+    try:
+        pg = pygit2.Repository(os.fspath(path))
+    except pygit2.GitError:
+        # `git worktree list` still reports an entry whose directory was deleted out from
+        # under it (or whose gitdir link rotted) — nothing to check, and `git worktree
+        # remove` cleans up the administrative files fine even though the directory is gone.
+        return PrunableWorktree(worktree, "worktree directory is missing", None)
     activity = _last_activity(pg, path)
 
     def keep(reason: str) -> RetainedWorktree:

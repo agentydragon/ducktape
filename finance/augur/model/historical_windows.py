@@ -24,9 +24,11 @@ scenarios that never happened, and this gives a handful of scenarios that defini
 they agree, the answer is robust to the modelling choice. When they diverge, the divergence is
 the finding — and neither number is the truth.
 
-The INSTRUMENT layer is shared with `structural_macro` (`instrument_paths`), deliberately: how
-a fund responds to a yield change is a claim about the fund, not about the economy, so the two
-providers must not differ on it or their outputs are not comparable.
+The INSTRUMENT layer (`bond_fund.constant_maturity_fund_paths`) is shared with
+`structural_macro`, deliberately: how a fund responds to a yield change is a claim about the
+fund, not about the economy, so the two providers must not differ on it or their outputs are
+not comparable. What DOES differ is the yield going in — here it is observed, including
+Moody's corporate curves, where the fitted model has only its own three-factor state.
 """
 
 from __future__ import annotations
@@ -36,21 +38,16 @@ from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
 from pathlib import Path
-from typing import Literal
+from typing import Literal, assert_never
 
 import numpy as np
 from pydantic import model_validator
 
+from finance.augur.model.bond_fund import YieldCurve, constant_maturity_fund_paths
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, SecurityDistributionKey, SecurityKey
-from finance.augur.model.structural_macro import (
-    MINIMUM_ANNUAL_YIELD,
-    MONTHS_PER_YEAR,
-    EquitySpec,
-    InstrumentSpec,
-    instrument_paths,
-)
+from finance.augur.model.structural_macro import MINIMUM_ANNUAL_YIELD, MONTHS_PER_YEAR, EquitySpec, InstrumentSpec
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
 
@@ -72,6 +69,12 @@ class MacroHistory:
     months: tuple[date, ...]
     short_rate: np.ndarray
     term_spread: np.ndarray
+    # Moody's seasoned corporate yields, annualized decimals. Carried as OBSERVATIONS rather
+    # than as a spread over the government curve: a corporate sleeve's yield is a thing that
+    # was measured every month back to 1919, and the Aaa/Baa gap is the credit spread widening
+    # in every recession — which a constant spread denies.
+    corporate_aaa_yield: np.ndarray
+    corporate_baa_yield: np.ndarray
     equity_level: np.ndarray
     cpi_level: np.ndarray
 
@@ -80,6 +83,8 @@ class MacroHistory:
             len(self.months),
             len(self.short_rate),
             len(self.term_spread),
+            len(self.corporate_aaa_yield),
+            len(self.corporate_baa_yield),
             len(self.equity_level),
             len(self.cpi_level),
         }
@@ -110,6 +115,8 @@ class MacroHistory:
             months=tuple(self.months[index] for index in keep),
             short_rate=self.short_rate[rows],
             term_spread=self.term_spread[rows],
+            corporate_aaa_yield=self.corporate_aaa_yield[rows],
+            corporate_baa_yield=self.corporate_baa_yield[rows],
             equity_level=self.equity_level[rows],
             cpi_level=self.cpi_level[rows],
         )
@@ -186,11 +193,28 @@ class HistoricalWindowsModel:
         short_rate = np.maximum(self.history.short_rate[windows], MINIMUM_ANNUAL_YIELD)
         term_spread = self.history.term_spread[windows]
 
+        def market_yield(spec: InstrumentSpec) -> np.ndarray:
+            """The fund's own yield over each window — observed, not derived from a spread."""
+
+            match spec.yield_curve:
+                case YieldCurve.GOVERNMENT:
+                    # Still interpolated off the two-point government curve; see SPEC.md gap 8.
+                    curve = short_rate + min(spec.maturity_years / 10.0, 1.0) * term_spread
+                case YieldCurve.CORPORATE_AAA:
+                    curve = self.history.corporate_aaa_yield[windows]
+                case YieldCurve.CORPORATE_BAA:
+                    curve = self.history.corporate_baa_yield[windows]
+                case _ as unreachable:
+                    assert_never(unreachable)
+            return np.asarray(np.maximum(curve + spec.spread, MINIMUM_ANNUAL_YIELD))
+
         blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [
             (InflationKey(), _rebased(self.history.cpi_level[windows], 100.0))
         ]
         for spec in self.instruments:
-            price, distribution = instrument_paths(spec, short_rate=short_rate, term_spread=term_spread)
+            price, distribution = constant_maturity_fund_paths(
+                market_yield(spec), maturity_years=spec.maturity_years, initial_price_usd=spec.initial_price_usd
+            )
             blocks.append((SecurityKey(symbol=spec.symbol), price))
             blocks.append((SecurityDistributionKey(symbol=spec.symbol), distribution))
         if self.equity is not None:
@@ -273,6 +297,8 @@ def macro_history_from_levels(
     *,
     short_rate_percent: Sequence[tuple[date, float]],
     long_rate_percent: Sequence[tuple[date, float]],
+    corporate_aaa_percent: Sequence[tuple[date, float]],
+    corporate_baa_percent: Sequence[tuple[date, float]],
     equity_level: Sequence[tuple[date, float]],
     cpi_level: Sequence[tuple[date, float]],
 ) -> MacroHistory:
@@ -282,16 +308,28 @@ def macro_history_from_levels(
     start is whichever series begins latest — see `load_macro_history` for which that is.
     """
 
-    tables = [dict(series) for series in (short_rate_percent, long_rate_percent, equity_level, cpi_level)]
+    tables = [
+        dict(series)
+        for series in (
+            short_rate_percent,
+            long_rate_percent,
+            corporate_aaa_percent,
+            corporate_baa_percent,
+            equity_level,
+            cpi_level,
+        )
+    ]
     months = sorted(set.intersection(*(set(table) for table in tables)))
     if not months:
-        raise ValueError("the four series share no months")
+        raise ValueError("the series share no months")
 
-    short, long_rate, equity, cpi = ({month: table[month] for month in months} for table in tables)
+    short, long_rate, aaa, baa, equity, cpi = ({month: table[month] for month in months} for table in tables)
     return MacroHistory(
         months=tuple(months),
         short_rate=np.array([short[m] * 0.01 for m in months]),
         term_spread=np.array([(long_rate[m] - short[m]) * 0.01 for m in months]),
+        corporate_aaa_yield=np.array([aaa[m] * 0.01 for m in months]),
+        corporate_baa_yield=np.array([baa[m] * 0.01 for m in months]),
         equity_level=np.array([equity[m] for m in months]),
         cpi_level=np.array([cpi[m] for m in months]),
     )
@@ -362,6 +400,9 @@ def load_macro_history(evidence_dir: Path) -> MacroHistory:
     - **CPI is the NOT-seasonally-adjusted series.** `CPIAUCSL` starts 1947 and would truncate
       the record by two decades; `CPIAUCNS` reaches 1913. Seasonality is irrelevant here
       because every consumer reads a 12-month ratio.
+    - **Corporate yields are Moody's own**, not the government curve plus a guessed spread.
+      Aaa and Baa both reach 1919 without a gap, so a high-grade sleeve earns what high-grade
+      corporates earned, and the credit spread between them is observed rather than assumed.
 
     The record is the intersection, so its start is whichever series begins latest — today
     French's 1926-07.
@@ -383,6 +424,12 @@ def load_macro_history(evidence_dir: Path) -> MacroHistory:
     return macro_history_from_levels(
         short_rate_percent=list(zip(months, short_rate_percent.tolist(), strict=True)),
         long_rate_percent=[(level.month, level.value) for level in long_rate],
+        corporate_aaa_percent=[
+            (level.month, level.value) for level in loading.read_monthly_levels(evidence_dir, sources.FRED_AAA)
+        ],
+        corporate_baa_percent=[
+            (level.month, level.value) for level in loading.read_monthly_levels(evidence_dir, sources.FRED_BAA)
+        ],
         equity_level=list(zip(months, equity_index.tolist(), strict=True)),
         cpi_level=[
             (level.month, level.value) for level in loading.read_monthly_levels(evidence_dir, sources.FRED_CPI_NSA)

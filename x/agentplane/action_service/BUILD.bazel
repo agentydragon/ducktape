@@ -18,6 +18,20 @@ py_library(
 )
 
 py_library(
+    name = "mcp_executor",
+    srcs = ["mcp_executor.py"],
+    deps = [
+        ":catalog",
+        ":models",
+        ":service",
+        "@pypi//fastmcp_slim",
+        "@pypi//jsonschema",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "auth",
     srcs = ["auth.py"],
     deps = [
@@ -212,6 +226,27 @@ py_test(
         ":models",
         ":service",
         "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_mcp_executor",
+    size = "medium",
+    srcs = ["test_mcp_executor.py"],
+    data = ["//x/agentplane/action_service/test_fixtures:fake_mcp_server.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":mcp_executor",
+        ":models",
+        ":service",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

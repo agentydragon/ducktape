@@ -119,18 +119,12 @@ def _consumer_store() -> dict:
     }
 
 
-def _forgejo_secret(allowed: str, auto: str | None = None) -> dict:
+def _forgejo_creds_eso(namespace: str) -> dict:
     return {
-        "apiVersion": "v1",
-        "kind": "Secret",
-        "metadata": {
-            "name": "forgejo-images-creds",
-            "namespace": "forgejo-images",
-            "annotations": {
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": allowed,
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": auto or allowed,
-            },
-        },
+        "apiVersion": "external-secrets.io/v1",
+        "kind": "ExternalSecret",
+        "metadata": {"name": "forgejo-images-creds", "namespace": namespace},
+        "spec": {"secretStoreRef": {"kind": "ClusterSecretStore", "name": "kubernetes-forgejo-images-secret-store"}},
     }
 
 
@@ -225,35 +219,25 @@ def test_egress_binding_policy_missing_or_in_other_namespace_is_flagged() -> Non
     assert [error.split("'")[3] for error in errors] == ["github", "gitlab"]
 
 
-def test_forgejo_image_namespace_must_be_reflected() -> None:
+def test_forgejo_image_namespace_has_own_external_secret() -> None:
     cluster = ParsedCluster(
         source_resources={
-            Path("registry-creds.yaml"): parse_k8s_resources([_forgejo_secret("worker")]),
+            Path("eso.yaml"): parse_k8s_resources([_forgejo_creds_eso("worker")]),
             Path("deployment.yaml"): parse_k8s_resources([_forgejo_deployment("worker")]),
         }
     )
     assert check_forgejo_image_namespace_reflection(cluster) == []
 
 
-@pytest.mark.parametrize(
-    "missing_annotation",
-    [
-        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces",
-        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces",
-    ],
-)
-def test_forgejo_image_namespace_missing_from_either_reflector_list_is_flagged(missing_annotation: str) -> None:
-    secret = _forgejo_secret("worker")
-    secret["metadata"]["annotations"][missing_annotation] = "other"
+def test_forgejo_image_namespace_missing_external_secret_is_flagged() -> None:
     cluster = ParsedCluster(
         source_resources={
-            Path("registry-creds.yaml"): parse_k8s_resources([secret]),
+            Path("eso.yaml"): parse_k8s_resources([_forgejo_creds_eso("other")]),
             Path("deployment.yaml"): parse_k8s_resources([_forgejo_deployment("worker")]),
         }
     )
-    errors = check_forgejo_image_namespace_reflection(cluster)
-    assert len(errors) == 1
-    assert missing_annotation in errors[0]
+    [error] = check_forgejo_image_namespace_reflection(cluster)
+    assert "worker" in error
 
 
 def test_external_credential_central_store_and_source_approval_pass(tmp_path: Path) -> None:

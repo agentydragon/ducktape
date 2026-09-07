@@ -15,6 +15,8 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: github-api-proxy-secrets
       namespace: ducktape-flux
     - name: forgejo-images

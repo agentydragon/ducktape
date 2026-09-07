@@ -24,5 +24,7 @@ spec:
       name: tana-mcp
       namespace: tana-mcp
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux

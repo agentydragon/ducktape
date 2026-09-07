@@ -16,5 +16,9 @@ spec:
   prune: true
   wait: true
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: nix-cache
       namespace: ducktape-flux

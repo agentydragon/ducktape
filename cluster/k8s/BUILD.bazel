@@ -130,6 +130,7 @@ filegroup(
         "grocy/vallejo/app/namespace.yaml",
         "haku-ci/namespace.yaml",
         "haku-ci/scaledjob.yaml",
+        "haku/console-namespace/forgejo-images-creds-eso.yaml",
         "haku/console/agent-diagnostics-rbac.yaml",
         "haku/console/config.yaml",
         "haku/console/conversation_prompt_fragment.md.j2",

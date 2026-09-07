@@ -48,7 +48,6 @@ what this model does between its state and its emissions is its own business.
 
 from __future__ import annotations
 
-import math
 from collections import Counter
 from datetime import date
 from typing import Literal
@@ -57,6 +56,7 @@ import numpy as np
 import yaml
 from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
+from finance.augur.model.bond_fund import YieldCurve, constant_maturity_fund_paths
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.schemas import FrozenModel
@@ -94,19 +94,25 @@ the instrument actually does.
 class InstrumentSpec(FrozenModel):
     """One tradable the provider prices, as a row rather than a factor.
 
-    `duration_years` is the whole of what makes a fund respond to rates: its price moves by
-    minus duration times the change in its own yield, and its payout converges toward that
-    yield with a half-life of about the same number. A money-market fund is `0.0` — no price
-    response and an immediate payout response, which is exactly what cash is.
+    A constant-maturity bond fund: it holds a par bond of `maturity_years`, collects its
+    coupon, and each month rolls into a fresh one. `bond_fund.constant_maturity_fund_paths`
+    is the arithmetic, and duration is an OUTPUT of it — a longer maturity moves more for the
+    same yield change, without duration being a parameter anyone sets. A money-market fund is
+    a maturity near zero: no price response and an immediate payout response, which is what
+    cash is.
     """
 
     symbol: SecuritySymbol
-    duration_years: NonNegativeFloat
+    # Maturity, not duration: the bond math needs a maturity to discount to, and it yields the
+    # duration response rather than taking one.
+    maturity_years: NonNegativeFloat
     initial_price_usd: PositiveFloat = 100.0
-    # Added to the curve yield at this instrument's duration. Credit risk for a corporate
-    # sleeve; NEGATIVE for municipals, which yield less than Treasuries pre-tax precisely
-    # because their coupons are exempt. Tax treatment itself is the scenario's business —
-    # see `SecurityDistribution.tax_character` — this is only the pre-tax price of the bond.
+    # Which observed yield this fund earns. A corporate sleeve names its own curve rather than
+    # taking a guessed credit spread over governments.
+    yield_curve: YieldCurve = YieldCurve.GOVERNMENT
+    # Added to that curve. NEGATIVE for municipals, which yield less than Treasuries pre-tax
+    # precisely because their coupons are exempt. Tax treatment itself is the scenario's
+    # business — see `SecurityDistribution.tax_character` — this is only the pre-tax price.
     spread: float = 0.0
 
 
@@ -303,7 +309,10 @@ class StructuralMacroModel:
             (InflationKey(), _inflation_level(config, state[INFLATION_RATE]))
         ]
         for spec in config.instruments:
-            price, distribution = instrument_paths(spec, short_rate=short_rate, term_spread=term_spread)
+            market_yield = _instrument_yield(spec, short_rate=short_rate, term_spread=term_spread)
+            price, distribution = constant_maturity_fund_paths(
+                market_yield, maturity_years=spec.maturity_years, initial_price_usd=spec.initial_price_usd
+            )
             blocks.append((SecurityKey(symbol=spec.symbol), price))
             blocks.append((SecurityDistributionKey(symbol=spec.symbol), distribution))
         if config.equity is not None:
@@ -364,67 +373,16 @@ def _instrument_yield(spec: InstrumentSpec, *, short_rate: np.ndarray, term_spre
     curve orders those correctly. What it cannot do is price a barbell against a bullet.
     """
 
-    curve_fraction = min(spec.duration_years / 10.0, 1.0)
-    return np.maximum(short_rate + curve_fraction * term_spread + spec.spread, MINIMUM_ANNUAL_YIELD)
-
-
-def instrument_paths(
-    spec: InstrumentSpec, *, short_rate: np.ndarray, term_spread: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """`(price, distribution_per_unit)` for one fund, both in dollars per unit.
-
-    Public because two providers share it: this one, driven by a simulated state, and
-    `historical_windows`, driven by realized history. That split is deliberate — the duration
-    response, the book-yield lag and the coupon-on-face rule are claims about INSTRUMENTS, not
-    about the economy, so they should not differ between a fitted model and a replay of the
-    past. If they did, the two would not be comparable, which is the entire point of having
-    both.
-
-    Price: minus `duration * change in this instrument's own yield`. No convexity term — at
-    these durations it is a rounding error next to everything else that is uncertain.
-
-    Distribution: the fund's BOOK yield over twelve, on the FACE it holds per unit — not on
-    the mark. A fund pays the coupons its bonds carry, and those do not change when the bonds
-    reprice; face per unit is near-constant while the mark is exactly the thing that moves.
-    `initial_price_usd` stands in for that face, since a fund is issued near par.
-
-    The book yield converges toward the market yield with a half-life of about the fund's
-    duration rather than jumping to it, because a fund only earns a new yield as it rolls into
-    new holdings. That lag is the structural claim the whole model exists to make, and it is
-    the shape the evidence shows: BND's payout did not move in 2022 while its price fell 15%,
-    then climbed from ~2.56%/yr to ~3.67%/yr across 2023-2025. Distributing on the mark would
-    contradict that same evidence in the same month — it would have cut the payout 15% on the
-    spot and then raised it when rates FELL, since a rate cut appreciates the mark by more
-    than it erodes the book yield over any horizon shorter than the convergence.
-    """
-
-    market_yield = _instrument_yield(spec, short_rate=short_rate, term_spread=term_spread)
-    months = market_yield.shape[1]
-
-    price = np.empty_like(market_yield)
-    book_yield = np.empty_like(market_yield)
-    price[:, 0] = spec.initial_price_usd
-    book_yield[:, 0] = market_yield[:, 0]
-    # A zero-duration fund re-earns the market yield immediately; anything longer converges
-    # with a half-life of its duration in months.
-    convergence = (
-        1.0 if spec.duration_years <= 0.0 else 1.0 - math.exp(-math.log(2.0) / (spec.duration_years * MONTHS_PER_YEAR))
-    )
-
-    for month in range(1, months):
-        yield_change = market_yield[:, month] - market_yield[:, month - 1]
-        # `exp(-D·Δy)` rather than `1 - D·Δy`: same first-order duration response, and it
-        # cannot produce a negative price, so no arbitrary floor has to defend the positivity
-        # the level stack requires. The coupon the fund earns leaves as a distribution instead
-        # of compounding into the price, which is why nothing but the duration term is here.
-        price[:, month] = price[:, month - 1] * np.exp(-spec.duration_years * yield_change)
-        book_yield[:, month] = book_yield[:, month - 1] + convergence * (
-            market_yield[:, month] - book_yield[:, month - 1]
+    if spec.yield_curve is not YieldCurve.GOVERNMENT:
+        raise ValueError(
+            f"{spec.symbol} prices off {spec.yield_curve}, which this model cannot produce: its state is "
+            "(short rate, term spread, inflation) with no credit factor, so a corporate yield here would be "
+            "a government yield plus a constant — which is what the instrument model was replaced for. "
+            "Use the historical-windows provider, whose record carries Moody's Aaa and Baa, or add a credit "
+            "factor to the VAR."
         )
-
-    # `book_yield` is a convex combination of market yields, each floored at 1bp, so the payout
-    # is strictly positive without a floor of its own.
-    return price, book_yield * spec.initial_price_usd / MONTHS_PER_YEAR
+    curve_fraction = min(spec.maturity_years / 10.0, 1.0)
+    return np.maximum(short_rate + curve_fraction * term_spread + spec.spread, MINIMUM_ANNUAL_YIELD)
 
 
 def _equity_path(spec: EquitySpec, request: ExogenousSamplingRequest, short_rate: np.ndarray) -> np.ndarray:

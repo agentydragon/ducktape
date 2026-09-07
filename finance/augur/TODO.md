@@ -78,18 +78,17 @@ Remaining:
 
 ## Exogenous Models & Evidence
 
-- [ ] **The bond sleeve distributes more than it earns.**
-      `instrument_paths` pays the coupon on a face pinned at `initial_price_usd`
-      while the mark moves with yields, so the fund's yield on its own mark is
-      the book yield scaled by `face / mark` and drifts away from the market
-      yield permanently. Measured over 1926-1995: the fund's distribution yield on its own NAV
-      reaches 10.95% while the bonds it holds yield 6.71%, and its total return
-      is 7.52%/yr against the 5.70% Cooley/Hubbard/Walz report for long-term
-      corporates. Shared by both providers, so the fitted `structural_macro` has
-      it too — a 30-year projection is long enough for the drift to bite. Fix:
-      amortize face per unit toward the mark on the same roll schedule
-      `book_yield` already converges on. Diagnosis, numbers and the rejected
-      alternative: <augur/debug/bond_sleeve_overdistribution.md>.
+- [ ] **A bond FUND is not a ladder, and only the fund is sellable.**
+      `bond_fund.constant_maturity_fund_paths` reproduces the return and the
+      volatility of long-term corporates, but a constant-maturity fund never
+      matures, so it has no pull-to-par floor. Over a 30-year withdrawal that
+      difference is large — the fund's mark can be written down through a rate
+      rise and never recover, while a ladder repays principal on a date.
+      `BondHolding` models the ladder faithfully and is deliberately never
+      marked, so a target allocation cannot sell it, which is why the fund
+      exists at all. Closing this needs a bond a policy can sell AND that
+      matures; see SPEC.md gaps 8 and 10, whose real curve is the shared
+      prerequisite.
 
 - [ ] **Drop the redundant "exogenous" adjective from remaining identifiers, docs,
       and comments.** Every augur model is exogenous by invariant, so the adjective

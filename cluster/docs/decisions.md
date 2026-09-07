@@ -331,8 +331,6 @@ the open question is unsuspending, not hardware.
   `seaweedfs-browsertrix-bucket` — manifests retained suspended (#4248).
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; Proxmox-pinned, and
   atlas/wyrm2 being back removes that blocker — re-enable when needed.
-- **claude-sandbox-firecracker** — pinned to wyrm2; parked to free resources, and wyrm2
-  is back — unsuspending is now an open question.
 - **egress-proxy-rugged** — decommissioned by operator request; configuration kept,
   reconciliation stopped.
 - **Firecrawl**: `firecrawl`, `firecrawl-{namespace,db}` — parked.

@@ -41,8 +41,15 @@ catalog discovery seam is landed in PR [#5731](https://github.com/agentydragon/d
 synchronous deny-dominant DecisionProvider aggregation is landed in PR
 [#5732](https://github.com/agentydragon/ducktape/pull/5732), and the executor heartbeat/lease
 recovery contract is landed for this fixture seam in PR
-[#5733](https://github.com/agentydragon/ducktape/pull/5733). No real backend is wired because the
-remaining Action schema and Executor wiring contracts below have not been fully tested.
+[#5733](https://github.com/agentydragon/ducktape/pull/5733). No production backend is wired because
+the remaining Action schema and production Executor wiring contracts below have not been fully tested.
+
+**Observed evidence — first MCP-backed Executor landed.** PR
+[#5753](https://github.com/agentydragon/ducktape/pull/5753) adds the tested
+`McpActionGroupExecutor`: a stdio MCP adapter that mirrors `tools/list`, refreshes on notification
+or interval, rechecks the live tool schema, initiates `tools/call`, and maps safe success/error/
+unknown outcomes. The Action Service production composition still wires `EchoExecutor`; runtime
+wiring, a remote streamable-HTTP staging fixture, and live Agent acceptance remain open.
 
 **Observed evidence — launch presets landed.** PR
 [#5648](https://github.com/agentydragon/ducktape/pull/5648) landed the app-owned `SandboxPreset` and
@@ -54,7 +61,9 @@ manual live acceptance target. Broader capability profiles remain deferred; see
 fixture executor.** Executor-level health heartbeats, a per-Execution lease/heartbeat with bounded
 expiry, `lease_expired`/`executor_lost` reason attribution, and authenticated late-completion or
 authoritative-status reconciliation restricted to an Execution already `execution_unknown` resolve
-`EW` item 6 and part of item 5. Dispatch is still in-process, so items 2–4, 7, and 9 remain open; see
+`EW` item 6 and part of item 5. Dispatch is still in-process; items 2–4 and 7 remain open, while the
+MCP adapter portion of item 9 is landed in #5753 and its production composition/remote acceptance
+remain open; see
 [`../docs/executor_liveness.md`](../docs/executor_liveness.md).
 
 **Observed evidence — egress rules API boundary landed.** PR
@@ -69,27 +78,30 @@ index and the redacted response contract. No local-dispatch branch or new creden
 
 ```mermaid
 flowchart TB
-    classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
     classDef active fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    F0["Observed evidence<br/>Sandbox + runner + app + trajectories"]:::completed
-    AUTH["Observed evidence<br/>workload-token substitution + SandboxPrincipal"]:::completed
-    LLM["Observed evidence<br/>authenticated LLM ingress"]:::completed
-    ACTION0["Observed evidence<br/>standalone Action Service + human Decision path<br/>fixture echo only"]:::completed
-    PRESETS["Observed evidence<br/>launch presets first slice"]:::completed
-
     AS["Action schema contract<br/>stable identity, params, result/error,<br/>redaction and evolution"]:::decision
     EW["Executor wiring contract<br/>groups/catalog, dispatch, credentials, MCP compatibility,<br/>claim/idempotency/heartbeat + first adapter"]:::decision
     DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
-    ACTION1["P0 behavior<br/>one real named Action executes once<br/>and returns a safe result"]:::active
-
-    ER["Observed evidence #5701<br/>egress rules boundary + Service DNS transition"]:::completed
+    MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
+    MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
+    CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
+    MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
+    EID["Deferred support<br/>external Agent identity/auth<br/>static principal, not Thread"]:::future
+    MCPAGG["Deferred support<br/>Agentplane MCP aggregator<br/>external harness/client compatibility"]:::future
+    HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
+    APPROVALUI["Deferred integration<br/>integration-app approval UI<br/>pending requests + decisions"]:::future
+    RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
+    RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
     T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
+    PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
+    ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
+    LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
@@ -97,36 +109,48 @@ flowchart TB
     AG["Deferred<br/>durable Agent identity + cross-agent read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
 
-    F0 --> ACTION0
-    AUTH --> LLM
-    AUTH --> ACTION0
-    ACTION0 --> AS
-    ACTION0 --> EW
-    ACTION0 --> DEL
-    AS --> ACTION1
-    EW --> ACTION1
-    DEL --> ACTION1
-    ACTION1 --> PROD
+    AS --> MCP0
+    EW --> MCP0
+    DEL --> MCP0
+    MCP0 --> MCPACCEPT
+    MCP0 --> MCPAUTH
+    CRED --> MCPAUTH
+    MCPAUTH --> PROD
     DEL -. later Thread delivery .-> ING
+    DEL --> APPROVALUI
+    DEL --> MCPAGG
+    EID --> MCPAGG
+    EW --> HOSTEXEC
+    MCPAGG -. replacement surface .-> RETIRE_TOOLS
+    APPROVALUI -. replacement surface .-> RETIRE_TOOLS
+    EID -. external identity .-> RETIRE_AGENT
+    AG -. durable Agent/Thread model .-> RETIRE_AGENT
 
-    AUTH --> ER
-    AUTH --> DEDUPE
-    F0 --> T3
-    F0 --> PR
-    ER -. independent cleanup .-> PROD
     DEDUPE -. independent support .-> PROD
     T3 -. independent product work .-> PROD
     PR -. independent reliability .-> PROD
 
     AS --> DT
     EW --> DT
-    ACTION1 --> AG
+    MCP0 --> AG
+    AG --> EID
+    EW -. retention cleanup .-> LIVE_CLEAN
 ```
 
-The critical path to production action execution is `ACTION0 -> AS + EW + DEL -> ACTION1`. Egress
-introspection cleanup, shared FastAPI/auth deduplication, trajectory search, and proxy survivability
-can proceed without waiting for those gates. Their independence must not be described as evidence
-that the current echo-only Action Service can execute production work.
+The first executable Action/MCP path is `AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
+credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
+acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
+PROD`. Shared FastAPI/auth deduplication, trajectory search, and proxy survivability can proceed
+without waiting for those gates. Their independence must not be described as evidence that the
+current echo-only Action Service can execute production work.
+
+The external-surface and migration tracks are intentionally separate from `MCP0`: `DEL` plus an
+external static Agent identity are prerequisites for the Agentplane MCP aggregator, while the
+integration-app approval UI consumes the same Action-state/Decision surface. Hostexec is another
+Executor adapter behind `EW`; its final ordering relative to the credentialed MCP path is deferred.
+Haku Console migration is split: Agent/conversation management and tool-call/approval management
+can retire on different schedules after their respective replacement surfaces exist. Neither is a
+prerequisite for the first Action/MCP acceptance.
 
 ## Named gates and acceptance evidence
 
@@ -150,11 +174,12 @@ validated before a Decision or dispatch, and whose result/error can be safely re
 6. Keep ActionGroup-to-executor and MCP-server/tool bindings in reviewed runtime configuration such
    as YAML, so backend/account changes do not require an image roll.
 
-**Acceptance evidence:** connect the configured GitHub MCP server as the user's account, mirror its
-catalog, auto-allow safe public-repository reads, and prove with an acceptance test that an Agent can
-invoke one read Action and receive a safe result. Include negative tests for unknown group/action,
-malformed parameters, incompatible current tool schema, malformed result/error, and sensitive data
-appearing in any projection or log.
+**Acceptance evidence for the first slice:** connect a small credentialless remote MCP fixture,
+mirror its catalog, auto-allow one deterministic read-only Action, and prove with the deployed live
+acceptance suite that a real Claude/Codex Agent can invoke it and receive a safe result. Include
+negative tests for unknown group/action, malformed parameters, incompatible current tool schema,
+malformed result/error, and sensitive data appearing in any projection or log. GitHub account access
+is a separate later credentialed milestone below.
 
 ### `EW` — Executor wiring contract
 
@@ -190,13 +215,150 @@ outcome without replay.
 8. Define executor health and capability discovery as startup/readiness evidence, not a broad dynamic
    registry. **Landed in part:** an executor-level health heartbeat exists internally and feeds
    orphan-reason attribution; no external readiness/discovery endpoint exists yet.
-9. Select one concrete first adapter and write its acceptance fixture before implementation.
-   Minimum evidence: the named Action validates, allow auto-dispatches once, the configured backend
-   receives the exact intended payload and credential identity, duplicate Decision/start paths do
-   not call it twice, success and safe failure are delivered, and ambiguous transport loss becomes
-   unknown without retry.
+9. **Landed in part by PR #5753:** `McpActionGroupExecutor` is a tested in-process adapter for one
+   configured stdio MCP server. It mirrors `tools/list`, refreshes on notification or interval,
+   rechecks the live tool schema before dispatch, initiates `tools/call`, and maps safe success,
+   tool-error, and ambiguous transport outcomes. This does not yet wire the adapter into the
+   production composition or provide a remote streamable-HTTP transport.
+10. Wire the MCP adapter into the Action Service composition and reviewed runtime configuration,
+    then select the credentialless remote MCP fixture and write the deployed acceptance test before
+    calling `EW` complete. The fixture must expose one deterministic read-only tool and require no
+    OAuth or provider credential.
+11. Minimum evidence for that fixture: the named Action validates, allow auto-dispatches once, the
+    MCP server receives the exact intended `tools/call`, duplicate Decision/start paths do not call it
+    twice, success and safe failure are delivered, and ambiguous transport loss becomes unknown
+    without retry. The test must live in `x/agentplane/acceptance/` and run against staging with a
+    real LLM Agent, not remain a manual one-off.
 
 `agentplane:v0.echo` remains explicitly fixture-only and cannot satisfy this gate.
+
+### `MCP0` — credentialless remote MCP vertical slice
+
+**P0 behavior:** a real staging Claude/Codex Agent discovers one configured ActionGroup, submits one
+read-only ActionRequest, and polls durable Action events to a safe result produced by a remote MCP
+server without the Agent or Action Service holding a provider credential.
+
+**Needed support:** production composition for the landed MCP executor, a staging-owned deterministic
+streamable-HTTP MCP fixture (or a deliberate transport extension from the current stdio adapter),
+reviewed runtime binding, a narrow auto-allow policy for the fixture Action, and an acceptance
+scenario in `x/agentplane/acceptance/test_action_mcp.py`.
+Keep `EchoExecutor` as a unit-test fixture while it proves the coordinator seam; remove it from the
+production composition only after the real adapter is wired and its replacement evidence passes.
+
+**Acceptance evidence:** `//x/agentplane/acceptance:all` runs the scenario against the deployed
+stack for both real harness providers, verifies catalog discovery, exactly one Action execution,
+cursor-based event polling, and the exact safe tool result. It must not assert success from the
+Agent's prose alone.
+
+### `MCPAUTH` — credentialed MCP account and OAuth boundary
+
+**Deferred support:** connect a user's GitHub MCP account without moving browser OAuth state or
+refresh credentials into the harness. Haku Console or a shared credential broker should own the
+operator identity, authorization-code + PKCE flow, callback state, token exchange/refresh, and
+durable token association. Action Service should receive only an opaque account/credential binding
+and own MCP discovery/call translation. If standalone operation later requires Action Service to own
+OAuth, implement the smallest separately tested subset rather than copying Haku Console wholesale.
+The static credential and binding model is a separate design decision below and requires Rai's
+confirmation before implementation begins.
+
+**Acceptance evidence:** a separate credentialed live scenario proves account linkage, catalog
+refresh, one safe GitHub read, token refresh/reconnect, and negative isolation for an unbound or
+different account. This milestone must not block `MCP0` or be folded into the credentialless fixture
+test.
+
+### `EID` — external Agent identity and authentication
+
+**Deferred support:** authenticate external Agent clients, including Claude Code Web or another
+non-Agentplane-hosted harness, as a known durable/static Agent identity distinct from any Thread or
+Sandbox. The identity must be trusted by Agentplane before an external MCP client can use the
+aggregator or receive approval state. Username, Thread ID, and caller-supplied provenance are not
+identity authority.
+
+**Acceptance evidence:** an external client authenticates as one configured Agent, cannot impersonate
+another configured Agent, and remains distinct from the originating Thread/Sandbox model used by
+hosted Agentplane workloads.
+
+### `CRED` — static credential and binding design
+
+**Deferred decision — Rai confirmation required:** define what a static credential is bound to
+(Agent, external account, MCP server, or another authority), which component owns issuance and
+storage, how expiry/refresh/revocation works, how a binding is selected at execution time, and what
+the Agent/API may observe. This node is a design discussion, not an implementation task; do not
+start code or schema work from it until Rai confirms the design.
+
+### `PROFILES` — cross-cutting capability profiles
+
+**Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
+reachability, and other tool permissions. Do not widen the landed launch-preset slice or store this
+profile in Kubernetes merely to reserve the concept; the profile owner, inheritance, and policy
+read/verification boundary remain open. Do not start implementation before the design is confirmed.
+
+**Acceptance evidence:** one profile can be resolved consistently by each participating authority,
+with explicit precedence and negative tests for stale, cross-Agent, or caller-supplied profile names.
+
+### `ACCESS` — delegated versus brokered external access
+
+**Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
+brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
+use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
+external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for `MCP0`.
+
+**Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
+revocation/expiry semantics without putting a reusable privileged credential in the harness.
+
+### `MCPAGG` — Agentplane MCP aggregator
+
+**Deferred support:** replace Haku Console's MCP aggregator with an Agentplane-owned MCP surface so
+MCP clients and harnesses running outside Agentplane's hosted Sandboxes can use the same approved
+tool/action compatibility surface. It must authenticate the external Agent identity, route approval
+requests through the canonical DecisionProvider, and expose no alternate lifecycle or authority
+store.
+
+**Dependencies:** `EID` for the caller principal and `DEL` for pending-approval notification and
+decision delivery. The exact transport, tool projection, and migration order remain open.
+
+### `HOSTEXEC` — hostexec-backed Action execution
+
+**Deferred support:** add hostexec as an Action Service Executor adapter, preserving hostexec's
+existing machine/user authorization, credential exchange, process-state, output, and no-retry
+boundaries. This is an adapter behind `EW`, not a reason to build a generic worker framework first.
+
+**Acceptance evidence:** one approved host command produces one durable Execution with bounded output
+and safe terminal/unknown handling; duplicate starts do not run the command twice, and the Action
+Service never receives a reusable host credential.
+
+### `LIVE_CLEAN` — executor heartbeat retention cleanup
+
+**Deferred cleanup:** executor liveness currently creates one heartbeat identity row per coordinator
+process lifetime. Once deployment scale makes that accumulation meaningful, choose a stable executor
+identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
+claim or unknown-outcome semantics while doing so.
+
+### `APPROVALUI` — integration-app approval surface
+
+**Deferred integration:** have the Agentplane integration app display pending Action approval requests
+and submit allow/deny decisions through the Action Service's canonical operator API, as Haku Console
+does today. It is a client/presentation layer, not a second Decision authority or Action state store.
+
+**Dependencies:** the durable Action event/query and human Decision-provider notification pieces of
+`DEL`; its UI may be delivered before or alongside `MCPAGG`.
+
+### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
+
+**Deferred migration:** retire Haku Console's own Agent and conversation management only after
+Agentplane has the external identity, durable Agent/Thread lifecycle, conversation read/control, and
+replacement runtime surfaces required by Haku. This is a migration and decommissioning milestone,
+not a prerequisite for Action execution; preserve explicit read/export and rollback evidence before
+removing the old owner.
+
+### `RETIRE_TOOLS` — Haku Console tool-call and approval management migration
+
+**Deferred migration:** retire Haku Console's connected-MCP catalog, tool-call application/approval
+queue, and related tool-call management only after the Agentplane MCP aggregator, integration-app
+approval UI, credential bindings, and canonical Action/Decision APIs cover the required workflows.
+This track may move independently of Agent/conversation management: Haku Console may continue to own
+conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
+Preserve tool-call audit/export and rollback evidence before removing the old owner.
 
 ### `DEL` — decision and Action-state contract
 
@@ -245,6 +407,9 @@ These are observed product decisions and must not be reopened by the schema or w
 ## Deferred
 
 - capability matrices or a broad Agent identity/privilege framework;
+- cross-cutting capability profiles — see [`profiles.md`](profiles.md);
+- delegated-versus-brokered external-access policy and grant/revocation semantics — see
+  [`external_access.md`](external_access.md);
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - production executor implementation in this planning PR;
 - per-destination workload audiences until recipient isolation is required;

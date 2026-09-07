@@ -2,11 +2,13 @@
 # the Haku sandbox pods can pull the sandbox image from the private registry.
 # Reflects the source secret's ready-made .dockerconfigjson verbatim and only
 # stamps the type on top (no reassembly, no hardcoded host); sources the
-# reflector-mirrored copy in flux-system.
+# flux-system copy (itself an ExternalSecret against the scoped
+# kubernetes-forgejo-images-secret-store — cluster/k8s/forgejo-images/).
 #
-# ESO rather than reflector, unlike the sibling proxies: haku-sandbox is on the flux-system store's
-# allowlist regardless, for alloy-otlp-bearer and haku-mail-token, so converting would narrow
-# nothing.
+# Reads through the wide flux-system store rather than the scoped one, unlike
+# the sibling proxies: haku-sandbox is on the flux-system store's allowlist
+# regardless, for alloy-otlp-bearer and haku-mail-token, so switching stores
+# would narrow nothing.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

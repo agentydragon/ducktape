@@ -18,6 +18,7 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter
 
+from finance.augur.model.bond_fund import YieldCurve
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import (
     HistoricalWindowsModel,
@@ -58,6 +59,10 @@ def _history(months: int = MONTHS) -> MacroHistory:
         months=tuple(_month_seq(months, _HISTORY_START_YEAR)),
         short_rate=0.01 + index * 0.0001,
         term_spread=0.005 + index * 0.00001,
+        # Corporate curves sit above the government one and are distinguishable from it and
+        # from each other, so a test can tell which curve an instrument actually priced off.
+        corporate_aaa_yield=0.02 + index * 0.0001,
+        corporate_baa_yield=0.03 + index * 0.0001,
         equity_level=100.0 * np.exp(np.cumsum(0.004 + index * 0.00001)),
         cpi_level=100.0 * np.exp(np.cumsum(0.0015 + index * 0.000003)),
     )
@@ -67,8 +72,8 @@ def _model(history: MacroHistory | None = None) -> HistoricalWindowsModel:
     return HistoricalWindowsModel(
         history=history if history is not None else _history(),
         instruments=(
-            InstrumentSpec(symbol=BOND, duration_years=6.0, initial_price_usd=100.0),
-            InstrumentSpec(symbol=CASH, duration_years=0.0, initial_price_usd=1.0),
+            InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),
+            InstrumentSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),
         ),
         equity=EquitySpec(symbol=EQUITY, initial_price_usd=500.0),
     )
@@ -182,6 +187,8 @@ def test_the_aligned_record_is_the_intersection_of_all_four_series() -> None:
     history = macro_history_from_levels(
         short_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 4.0) for m in range(100)],
         long_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 5.0) for m in range(100)],
+        corporate_aaa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 6.0) for m in range(100)],
+        corporate_baa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 7.0) for m in range(100)],
         equity_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0 + m) for m in range(40, 100)],
         cpi_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0 + m) for m in range(20, 90)],
     )
@@ -196,6 +203,8 @@ def test_disjoint_series_are_rejected() -> None:
         macro_history_from_levels(
             short_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 4.0) for m in range(10)],
             long_rate_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 5.0) for m in range(10)],
+            corporate_aaa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 6.0) for m in range(10)],
+            corporate_baa_percent=[(date(2000, 1, 1) + timedelta(days=31 * m), 7.0) for m in range(10)],
             equity_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0) for m in range(50, 60)],
             cpi_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0) for m in range(10)],
         )
@@ -207,6 +216,8 @@ def test_mismatched_history_lengths_are_rejected() -> None:
             months=tuple(_month_seq(10)),
             short_rate=np.zeros(10),
             term_spread=np.zeros(10),
+            corporate_aaa_yield=np.zeros(10),
+            corporate_baa_yield=np.zeros(10),
             equity_level=np.ones(9),
             cpi_level=np.ones(10),
         )
@@ -301,6 +312,8 @@ def _write_evidence(directory: Path) -> None:
     csv(sources.FRED_GS10, "GS10", lambda m: 5.0)
     csv(sources.FRED_LTGOVTBD, "LTGOVTBD", lambda m: 5.4)
     csv(sources.FRED_CPI_NSA, "CPIAUCNS", lambda m: 100.0)
+    csv(sources.FRED_AAA, "AAA", lambda m: 6.0)
+    csv(sources.FRED_BAA, "BAA", lambda m: 7.0)
 
 
 def test_the_century_record_assembles_from_the_four_evidence_series(tmp_path: Path) -> None:
@@ -340,7 +353,7 @@ def test_the_provider_is_reachable_through_the_config_union(tmp_path: Path) -> N
             "type": "historical_windows",
             "evidence_dir": str(tmp_path),
             "equity": {"symbol": "VOO", "initial_price_usd": 520.0},
-            "instruments": [{"symbol": "CMF", "duration_years": 5.5, "spread": -0.012}],
+            "instruments": [{"symbol": "CMF", "maturity_years": 5.5, "spread": -0.012}],
         }
     )
 
@@ -398,6 +411,8 @@ def test_out_of_order_months_are_rejected() -> None:
             months=(date(1970, 2, 1), date(1970, 1, 1)),
             short_rate=np.zeros(2),
             term_spread=np.zeros(2),
+            corporate_aaa_yield=np.zeros(2),
+            corporate_baa_yield=np.zeros(2),
             equity_level=np.ones(2),
             cpi_level=np.ones(2),
         )
@@ -425,6 +440,54 @@ def test_the_config_cuts_the_record_before_the_sampler_sees_it(tmp_path: Path) -
     ).realize_model()
 
     assert len(model.history.months) == 120
+
+
+def test_an_instrument_prices_off_the_curve_it_names() -> None:
+    """The point of naming a curve: a corporate sleeve earns what corporates earned, not a
+    government yield plus a guessed constant. The three curves are separated in `_history`, so
+    the payout recovers which one was actually read."""
+
+    history = _history(400)
+    horizon = 120
+    payouts = {}
+    for curve in (YieldCurve.GOVERNMENT, YieldCurve.CORPORATE_AAA, YieldCurve.CORPORATE_BAA):
+        model = HistoricalWindowsModel(
+            history=history,
+            instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0, yield_curve=curve),),
+        )
+        bundle = model.sample(ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=(0,)))
+        payout = bundle.level_matrix(SecurityDistributionKey(symbol=BOND), rollout_count=1, horizon_months=horizon)
+        # Month 1's coupon is struck on month 0's yield against the initial 100 of mark, so it
+        # reads back that curve's month-0 level directly.
+        payouts[curve] = float(payout[0, 1]) * 12.0 / 100.0
+
+    # The government leg still interpolates: at 6 years the curve fraction is 6/10, so it is
+    # the short rate plus 0.6 of the term spread. The corporate legs are read straight off.
+    assert payouts[YieldCurve.GOVERNMENT] == pytest.approx(0.01 + 0.6 * 0.005)
+    assert payouts[YieldCurve.CORPORATE_AAA] == pytest.approx(0.02)
+    assert payouts[YieldCurve.CORPORATE_BAA] == pytest.approx(0.03)
+
+
+def test_a_spread_still_adjusts_the_named_curve() -> None:
+    """Municipals yield LESS than their curve pre-tax; the spread survived the rewrite."""
+
+    horizon = 120
+    model = HistoricalWindowsModel(
+        history=_history(400),
+        instruments=(
+            InstrumentSpec(
+                symbol=BOND,
+                maturity_years=6.0,
+                initial_price_usd=100.0,
+                yield_curve=YieldCurve.CORPORATE_AAA,
+                spread=-0.004,
+            ),
+        ),
+    )
+    bundle = model.sample(ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=(0,)))
+    payout = bundle.level_matrix(SecurityDistributionKey(symbol=BOND), rollout_count=1, horizon_months=horizon)
+
+    assert float(payout[0, 1]) * 12.0 / 100.0 == pytest.approx(0.02 - 0.004)
 
 
 if __name__ == "__main__":

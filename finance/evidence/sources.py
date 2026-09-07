@@ -138,6 +138,14 @@ FRED_CPI_NSA = _fred("CPIAUCNS", "fred_cpi_us_nsa.csv")
 # approximation — acceptable for a term SPREAD, not for pricing a specific bond.
 FRED_LTGOVTBD = _fred("LTGOVTBD", "fred_ltgovtbd.csv")
 FRED_GS10 = _fred("GS10", "fred_gs10.csv")
+# Moody's seasoned corporate bond yields, monthly from 1919-01 with no gaps — the longest
+# corporate series reachable, and the one asset class a withdrawal study most needs: Aaa IS
+# "long-term high-grade corporate", the sleeve Cooley/Hubbard/Walz priced their bond leg with.
+# Together they also make the CREDIT SPREAD an observation rather than a constant: Baa minus
+# Aaa widens in every recession, which is when equity falls, so a model carrying a fixed spread
+# denies the one correlation a retirement projection turns on.
+FRED_AAA = _fred("AAA", "fred_moody_aaa.csv")
+FRED_BAA = _fred("BAA", "fred_moody_baa.csv")
 FRED_SP500 = _fred("SP500", "fred_sp500.csv")
 FRED_MORTGAGE30 = _fred("MORTGAGE30US", "fred_mortgage30.csv")
 FRED_SFXRSA = _fred("SFXRSA", "fred_sfxrsa.csv")
@@ -172,6 +180,8 @@ EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     FRED_CPI_NSA,
     FRED_LTGOVTBD,
     FRED_GS10,
+    FRED_AAA,
+    FRED_BAA,
     FRED_SP500,
     FRED_MORTGAGE30,
     FRED_SFXRSA,

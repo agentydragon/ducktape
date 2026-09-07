@@ -69,9 +69,9 @@ private_equity_marks:
 type: structural_macro
 equity: {symbol: VOO, initial_price_usd: 520.0}
 instruments:
-  - {symbol: VMFXX, duration_years: 0.0, initial_price_usd: 1.0} # cash, as an MMF holding
-  - {symbol: VGIT, duration_years: 5.3, initial_price_usd: 59.0} # intermediate Treasuries
-  - {symbol: CMF, duration_years: 5.5, initial_price_usd: 56.0, spread: -0.012} # CA munis
+  - {symbol: VMFXX, maturity_years: 0.0, initial_price_usd: 1.0} # cash, as an MMF holding
+  - {symbol: VGIT, maturity_years: 5.3, initial_price_usd: 59.0} # intermediate Treasuries
+  - {symbol: CMF, maturity_years: 5.5, initial_price_usd: 56.0, spread: -0.012} # CA munis
 ```
 
 ```yaml
@@ -82,7 +82,7 @@ instruments:
 type: historical_windows
 equity: { symbol: VOO, initial_price_usd: 520.0 }
 instruments:
-  - { symbol: CMF, duration_years: 5.5, initial_price_usd: 56.0, spread: -0.012 }
+  - { symbol: CMF, maturity_years: 5.5, initial_price_usd: 56.0, spread: -0.012 }
 ```
 
 Each per-type config lives next to the model/provider it instantiates and

@@ -17,6 +17,8 @@ spec:
     namespace: ducktape-flux
   timeout: 5m
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: public-coder-agent-namespace
     - name: haku-runtime-namespace
       namespace: ducktape-flux

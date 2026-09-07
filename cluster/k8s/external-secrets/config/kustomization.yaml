@@ -7,3 +7,4 @@ resources:
   - claude-sandbox-secret-store.yaml
   - external-creds-secret-store.yaml
   - flux-system-secret-store.yaml
+  - forgejo-images-secret-store.yaml

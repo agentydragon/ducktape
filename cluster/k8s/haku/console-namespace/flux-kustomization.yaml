@@ -7,6 +7,13 @@ spec:
   interval: 10m
   path: ./cluster/k8s/haku/console-namespace
   prune: true
+  # The ducktape-ci pull credential lives here rather than beside the console's own
+  # workloads, because haku-console-migration needs it and the console layer depends on
+  # that migration — putting the ExternalSecret in the console layer makes the pull
+  # secret wait on the Job that needs it.
+  dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
   sourceRef:
     kind: GitRepository
     name: ducktape

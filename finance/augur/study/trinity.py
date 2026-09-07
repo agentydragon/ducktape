@@ -17,17 +17,23 @@ attribution:
 - *Equity is the CRSP total market, not the S&P 500.* Ken French's factors are the longest
   broad-market total-return series reachable without a paid Ibbotson licence, and they start
   in 1926-07 rather than 1926-01, so the record is six months short at the front.
-- *Bonds are a duration-approximated fund priced off the long-term GOVERNMENT rate*, with
-  `CORPORATE_SPREAD` standing in for the credit spread on the paper's long-term high-grade
-  corporates. **This is the largest difference, and it is a defect rather than a modelling
-  choice**: over 1926-1995 the sleeve compounds at 7.5%/yr against the paper's 5.7%, because
-  `instrument_paths` pays its coupon on a face pinned at `initial_price_usd` while the mark
-  drifts — by 1995 the fund distributes 10.95% on a net asset value whose bonds yield 6.71%.
-  Every bond-heavy row here is correspondingly too optimistic: 86% success at 4% for a 25/75
-  portfolio against Table 3's 71%. The equity sleeve has no such gap (10.2% against 10.5%),
-  which is why the equity-led rows land within a few points. Diagnosis and the fix's shape:
-  <../debug/bond_sleeve_overdistribution.md>. Re-tuning `CORPORATE_SPREAD` against this table
-  would hide it and make the reproduction circular.
+- *Bonds are a constant-maturity fund on Moody's Aaa, not the paper's Ibbotson series.* Aaa IS
+  "long-term high-grade corporate" and reaches 1919 without a gap, so the sleeve earns the
+  yield high-grade corporates actually paid rather than a government yield plus a guessed
+  spread. What remains synthetic is the step from a yield to a total return, and that step is
+  the standard one — `bond_fund.constant_maturity_fund_paths`, validated against Damodaran's
+  published returns. Two conventions it inherits: annual-pay coupons, and repricing at the
+  same maturity each month, so there is no roll-down return.
+- ***A constant-maturity fund never matures, and that is where the all-bond row goes.*** The
+  fund reproduces the asset class's return AND volatility (see `BOND_MATURITY_YEARS`), and the
+  equity-led rows land within a few points — but at 0% equity and a 3% withdrawal it survives
+  43% of windows against Table 3's 80%. Trinity's bonds are bonds: they pull to par and repay
+  principal on a date, which floors a portfolio that holds them to maturity. A fund's mark has
+  no such floor — it can be marked down through the 1960s-80s rate rise and never recover,
+  while the retiree sells into it every year. That is not a defect in the fund; it is the fund
+  being a different instrument from a ladder, and augur models the ladder separately
+  (`sim/scenario.py`'s `BondHolding`, which is deliberately never marked). Read the bond-heavy
+  rows as "what a bond FUND would have done", which is not what the paper measured.
 - *Windows start every month, not every year.* 474 of them against the paper's 41 — the same
   span, sampled 12x more finely, which makes each cell smoother rather than different.
 - *Coupons sit in cash until the next withdrawal.* augur's allocation policy refills a cash
@@ -56,6 +62,7 @@ from pathlib import Path
 
 import numpy as np
 
+from finance.augur.model.bond_fund import YieldCurve
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import HistoricalWindowsModel, HistoricalWindowsProviderConfig
 from finance.augur.model.series import (
@@ -110,18 +117,32 @@ BONDS = SecuritySymbol("BONDS")
 # window is rebased to a common start anyway.
 UNIT_PRICE = Decimal(100)
 
-# Long-term high-grade corporates, approximated from the long-term government rate. Duration is
-# the paper-era 20-year-maturity convention; the spread is the credit pickup that made those
-# corporates yield more than governments over 1926-1995.
-BOND_DURATION_YEARS = 12.0
-CORPORATE_SPREAD = 0.01
+# The paper's bond leg: long-term high-grade corporates. Moody's Aaa is that series, so the
+# yield is read rather than constructed.
+#
+# 20 years is chosen against the asset class, NOT against the table below — fitting a maturity
+# to the result being reproduced would make the reproduction circular. Ibbotson report ~5.7%/yr
+# at ~8.5%/yr standard deviation for long-term corporates over 1926-1995; this fund on Moody's
+# Aaa realizes 5.65% at 8.85% at 20 years, against 5.79% at 6.66% at 10, so 20 is the maturity
+# that reproduces the asset class's second moment as well as its first.
+BOND_MATURITY_YEARS = 20.0
 
 EQUITY_SPEC = EquitySpec(symbol=EQUITY, initial_price_usd=float(UNIT_PRICE))
 BOND_SPEC = InstrumentSpec(
-    symbol=BONDS, duration_years=BOND_DURATION_YEARS, initial_price_usd=float(UNIT_PRICE), spread=CORPORATE_SPREAD
+    symbol=BONDS,
+    maturity_years=BOND_MATURITY_YEARS,
+    initial_price_usd=float(UNIT_PRICE),
+    yield_curve=YieldCurve.CORPORATE_AAA,
 )
 
-EVIDENCE = (sources.FRENCH_FACTORS, sources.FRED_LTGOVTBD, sources.FRED_GS10, sources.FRED_CPI_NSA)
+EVIDENCE = (
+    sources.FRENCH_FACTORS,
+    sources.FRED_LTGOVTBD,
+    sources.FRED_GS10,
+    sources.FRED_CPI_NSA,
+    sources.FRED_AAA,
+    sources.FRED_BAA,
+)
 
 PUBLISHED_RATES = tuple(round(0.01 * percent, 2) for percent in range(3, 13))
 """The withdrawal rates Table 3 tabulates: 3% through 12%."""

@@ -3,6 +3,7 @@ kind: Kustomization
 # Generated ConfigMaps carry no namespace of their own (cluster/validation/test_generator_namespace.py).
 namespace: agentplane-staging
 resources:
+  - forgejo-images-creds-eso.yaml
   - serviceaccount-agentplane-runner.yaml
   - sandboxtemplate-agentplane-runner.yaml
   - serviceaccount-agentplane-app.yaml

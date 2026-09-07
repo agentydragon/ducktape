@@ -1,0 +1,22 @@
+# Lives in the namespace layer, not beside the console's workloads: the
+# haku-console-migration Job pulls a private Forgejo image, and the console layer
+# depends on that migration, so a credential shipped from the console layer would only
+# arrive after the Job that needs it had already timed out.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-console
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-forgejo-images-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: forgejo-images-creds
+    template:
+      type: kubernetes.io/dockerconfigjson
+      mergePolicy: Merge
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds

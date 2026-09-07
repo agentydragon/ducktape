@@ -4,11 +4,7 @@ metadata:
     name: forgejo-images-creds
     namespace: forgejo-images
     annotations:
-        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson is auto-reflected as a kubelet imagePullSecret to every namespace in the reflection-auto-namespaces list below, while flux-system uses its reflected copy for ImageRepository authentication. Reflector rather than an ExternalSecret against kubernetes-flux-system-secret-store, because that store grants a namespace read access to every Secret in flux-system; this grants one dockerconfigjson.
-        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "activitywatch,agent-workspaces,agentplane-staging,agents-infra,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,flux-system,github-api-proxy,grocy-sf,grocy-vallejo,ha-mcp,haku-console,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-runtime-sandbox,haku-sandbox,home-assistant,inventree,litellm,loki-read-proxy,manifold-mcp,matrix,monitoring,nix-cache,osm-mcp,plaid-mcp,postscanmail-mcp,props,public-coder-agent,sdr,study-casino,tana-mcp,wayback-cache"
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "activitywatch,agent-workspaces,agentplane-staging,agents-infra,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,flux-system,github-api-proxy,grocy-sf,grocy-vallejo,ha-mcp,haku-console,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-runtime-sandbox,haku-sandbox,home-assistant,inventree,litellm,loki-read-proxy,manifold-mcp,matrix,monitoring,nix-cache,osm-mcp,plaid-mcp,postscanmail-mcp,props,public-coder-agent,sdr,study-casino,tana-mcp,wayback-cache"
+        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images. Each consuming namespace (including flux-system, for ImageRepository authentication) reads this Secret directly via its own ExternalSecret against the scoped kubernetes-forgejo-images-secret-store ClusterSecretStore (cluster/k8s/external-secrets/config/), rather than a cluster-wide reflector-based fan-out.
 type: kubernetes.io/dockerconfigjson
 stringData:
     .dockerconfigjson: ENC[AES256_GCM,data:YMUIE9+iCqTzvTTHxie1D8WTgH85ibJCHpnrwHNUZE41O/Agf+cpSu1N8I0wbmBmJwZH+dkl6214pcNr1j10EF8gV/p/DrU1MdhYWBRdWsAYEVRTKGtlZ1q/q3JGwZRvPH2OXnIV2t2Ku6CHpvcCwYxkeMz0XCGkOJgGHVTchz69RxdkpjzzII+VdVs/UpodwqYWBMVUbxlzBnAHseGQSrQeFIciw/ZsDVDML91+YjRGDdVpaQf5fgBU1YHU5q1O7OqpObQ50RDi8G0HXbuWpH5Q,iv:mbopXU4JKmA1Baebmcfw2FiJYTWO/7DrojV3bSvBwo4=,tag:aBWXFhIJ8ZQ1c3jUerlTnw==,type:str]
@@ -35,7 +31,7 @@ sops:
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-08-31T05:18:22Z"
-    mac: ENC[AES256_GCM,data:gJgeByP1kWGSIej04VUC5Rh0frsmuXm/qpE4mBfQDTn9E6Po6tSSIbz0P0LUyc0QUwrkUmb9rBgMltVNruWdvwc6UcTsv6YXXJzL1GlgsP7cUoZ9MEci8HvZKJ3KTDA0fkfUFG3penXyTwxbA0B6Ow5h3UWhZ3CCfZJ8UpDY49Q=,iv:42d+ajB/j3JcoIBNtOj5D4JZTd2o77BOuSxVqsc/xZY=,tag:SAb0SehQFw033MH53R14vQ==,type:str]
+    lastmodified: "2026-09-07T05:30:53Z"
+    mac: ENC[AES256_GCM,data:zEdIR4GSfjyb9MOAeqWi3U7bGP4xKfbmucihuWR/HUNt3AxkTf1wgVF1qqbCkfwcUjhWyhXdZ/i+fD07S8QnYEddavuqGBXAPg0AOITzjr55hGg8ict7JYPJpThUXCakWGGqMe97WUrieNPqpHqjF+mg1Thll1m/k4GcbBsrUR4=,iv:Bcx4YzzAohdG36/W317d86ojtanVFbK8NiIar7ulHRY=,tag:dPj+cehqRY3w797dPa9EWw==,type:str]
     mac_only_encrypted: true
     version: 3.13.3

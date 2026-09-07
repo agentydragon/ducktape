@@ -1,57 +1,58 @@
-# The bond sleeve distributes more than it earns
+# The bond sleeve distributed more than it earned
 
-`instrument_paths` (<../model/structural_macro.py>) pays a fund's coupon on a face pinned at
-`initial_price_usd` for the whole horizon, while the mark moves with yields. Over a long
-record the two drift apart and the payout stops being something the fund could fund.
+Resolved. Kept as the record of a defect that a green internal test suite could not see, and
+of the check that would have caught it years earlier.
 
-Shared by both providers, so this is the fitted `structural_macro` as much as the historical
-replay — a 30-year retirement projection is long enough for the drift to matter.
+## What was wrong
 
-## Measured, 1926-07..1995-12, `BOND_SPEC` from <../study/trinity.py>
-
-| quantity                                               | value                                          |
-| ------------------------------------------------------ | ---------------------------------------------- |
-| market yield for the instrument                        | 4.54% → 6.71%, mean 6.22%                      |
-| **distribution yield on the mark**                     | **4.54% → 10.95%, mean 7.66%**                 |
-| mark                                                   | 100.00 → 77.07                                 |
-| total return                                           | 7.52%/yr — price leg −0.37%, income leg +7.92% |
-| Cooley/Hubbard/Walz, long-term corporates, same period | 5.70%/yr                                       |
-
-A fund holding bonds that yield 6.71% cannot pay 10.95% on its net asset value. The whole
-1.8pp overshoot is in the income leg; the price leg contributes −0.37%/yr and is not the
-problem. An earlier reading of this blamed the missing pull-to-par in the `exp(-D·Δy)` price
-step — that is not it.
-
-## Mechanism
-
-`distribution = book_yield × initial_price_usd / 12`, so
+`instrument_paths` paid a fund's coupon on a face pinned at `initial_price_usd` for the whole
+horizon while the mark moved with yields, so
 
     yield_on_mark[t] = book_yield[t] × initial_price_usd / price[t]
 
-`book_yield` does converge to the market yield, as intended. But the constant numerator
-against a drifting `price` leaves a permanent multiplier — 100/77.07 = 1.30 by 1995 — that
-nothing corrects. Fall in the mark, and the fund's apparent yield rises without any bond in
-it yielding more.
+drifted away from the market yield without limit. Measured over 1926-07..1995-12 on a
+12-year-duration corporate sleeve: the fund's distribution yield on its own net assets reached
+**10.95% while the bonds it held yielded 6.71%**, and its total return was **7.52%/yr against
+the 5.70%** Cooley/Hubbard/Walz report for long-term corporates over the same period. The mark
+ended at 77.07, so the constant numerator was inflating the payout by 1.30x.
 
-The docstring's rationale holds at the horizon it was written for: over months, a fund's face
-per unit really is near-constant while the mark moves, which is the BND-2022 evidence it
-cites. Over seventy years it does not — the fund rolls its portfolio many times, and each roll
-buys with the market value it actually has, not with the value it started with.
+The whole error was in the income leg (+7.92%/yr); the price leg contributed −0.37%/yr. An
+earlier reading blamed the missing pull-to-par in the `exp(-D·Δy)` price step — that was wrong.
 
-## The invariant to restore
+## Why it survived
 
-A fund's yield on its own mark should converge to the market yield, lagging by its turnover —
-not drift away from it permanently. `book_yield` already carries that convergence, derived
-from duration; face per unit needs to amortize toward the mark on the same schedule, since it
-is the same roll.
+The function glued together three different instruments. The price response was a
+constant-maturity roll; the `book_yield` convergence, with a half-life of the fund's duration,
+described a LADDER of staggered maturities; and the fixed face belonged to neither. Each piece
+had a defensible story — the docstring's BND-2022 evidence for the payout lag is real — and no
+test compared the assembly against anything outside augur.
 
-Distributing on the _current_ mark instead is the opposite extreme — it assumes the whole
-portfolio re-yields every month, discarding the book-yield lag the model exists to represent.
-Measured, it gives 4.98%/yr against the paper's 5.70%: closer than today's 7.52%, still wrong,
-and wrong in the other direction.
+## What replaced it
 
-## Reproducing
+<../model/bond_fund.py>: a constant-maturity fund holding a par bond, collecting its coupon,
+and rolling into a fresh one each month, buying the face its net asset value affords. Exact
+present-value pricing, so duration is an output rather than a parameter, and the payout is
+struck on the previous mark, so yield-on-mark is the yield of the bonds held with no drift
+term. One period of it reproduces Damodaran's published annual Baa returns to 1e-12.
 
-`bbr run //finance/augur/study:trinity_bin` prints the whole-record compound return for both
-sleeves against the paper's figures. The decomposition above came from calling
-`instrument_paths` directly on `load_macro_history(...).restricted_to(...)` for the same span.
+Corporate sleeves now price off Moody's Aaa/Baa (FRED, monthly, 1919-) rather than a
+government yield plus a guessed constant spread.
+
+## The check that caught it, and the one that would have caught it sooner
+
+An **external** number. Every prior check on this code was internal — the engines agreed with
+each other, the money math was exact — and none of that can catch a model that is
+self-consistently wrong. Anchoring on the INPUTS against a published figure is what turned
+"the bond sleeve looks a bit generous" into a located defect.
+
+Second moments matter as much as first. Against Ibbotson's ~5.7%/yr at ~8.5% sd for long-term
+corporates over 1926-1995, the replacement on Moody's Aaa realizes:
+
+| maturity | CAGR  | annual sd |
+| -------- | ----- | --------- |
+| 10       | 5.79% | 6.66%     |
+| 20       | 5.65% | 8.85%     |
+| 25       | 5.60% | 9.48%     |
+
+A check on the mean alone would have accepted the 10-year fund, whose volatility is a third
+too low — and volatility is what a withdrawal study's tails are made of.

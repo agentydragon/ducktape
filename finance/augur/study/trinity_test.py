@@ -112,7 +112,12 @@ def test_safemax_lands_where_table_3_puts_it(replay: trinity.TrinityReplay) -> N
 
 
 def test_the_whole_table_lands_in_the_published_neighbourhood(replay: trinity.TrinityReplay) -> None:
+    """Every allocation that holds equity. The all-bond row is a different instrument and gets
+    its own test below — see the module docstring on funds versus ladders."""
+
     for equity_share, published in trinity.TABLE_3_SUCCESS_PERCENT.items():
+        if equity_share == 0.0:
+            continue
         for rate, paper in zip(trinity.PUBLISHED_RATES, published, strict=True):
             if rate not in CHECKED_RATES:
                 continue
@@ -120,6 +125,28 @@ def test_the_whole_table_lands_in_the_published_neighbourhood(replay: trinity.Tr
             assert reproduced == pytest.approx(paper, abs=TABLE_TOLERANCE_POINTS), (
                 f"{equity_share:.0%} equity at {rate:.0%}: augur {reproduced:.0f}%, Table 3 {paper}%"
             )
+
+
+def test_an_all_bond_fund_never_beats_the_ladder_the_paper_priced(replay: trinity.TrinityReplay) -> None:
+    """The direction of a named methodology difference, asserted rather than tolerated.
+
+    Trinity's bonds mature: they pull to par and repay principal on a date, which floors a
+    portfolio holding them to maturity. A constant-maturity fund has no such floor, so at every
+    withdrawal rate it can only do worse — never better. The gap is large (43% against 80% at a
+    3% withdrawal) and it is the instrument, not an error in the fund, which reproduces the
+    asset class's return and volatility both.
+
+    Asserted as an inequality because that is the falsifiable part: the previous instrument
+    model over-distributed and put this row at 84% against the paper's 80%, which this catches
+    and a symmetric tolerance would not.
+    """
+
+    published = trinity.TABLE_3_SUCCESS_PERCENT[0.0]
+    for rate, paper in zip(trinity.PUBLISHED_RATES, published, strict=True):
+        if rate not in CHECKED_RATES:
+            continue
+        reproduced = 100.0 * replay.success_rate(equity_share=0.0, withdrawal_rate=rate)
+        assert reproduced <= paper, f"all-bond at {rate:.0%}: augur {reproduced:.0f}%, Table 3 {paper}%"
 
 
 def test_raising_the_withdrawal_never_raises_the_success_rate(replay: trinity.TrinityReplay) -> None:

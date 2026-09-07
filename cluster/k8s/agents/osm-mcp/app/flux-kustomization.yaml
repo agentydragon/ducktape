@@ -21,10 +21,11 @@ spec:
       name: osm-mcp
       namespace: osm-mcp
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: osm-mcp-namespace
       namespace: ducktape-flux
-    # Reflector mirrors the forgejo-images-creds pull secret into this
-    # namespace, so the source credential must exist first. forgejo-images
-    # itself dependsOn reflector, so this covers both.
+    # forgejo-images-creds-eso.yaml extracts the source Secret from the
+    # forgejo-images namespace, so it must exist first.
     - name: forgejo-images
       namespace: ducktape-flux

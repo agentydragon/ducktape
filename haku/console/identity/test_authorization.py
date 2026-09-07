@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import errno
 import re
 import threading
 from collections.abc import Awaitable, Callable, Iterator
@@ -1286,6 +1287,16 @@ async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str
 
     with pytest.raises(AgentGrantAuthorityUnavailableError):
         await harness.authority._database_call(time_out)
+
+
+async def test_host_unreachable_maps_to_authority_unavailable(db_url: str, harness: Harness) -> None:
+    """asyncpg can raise a bare OSError (e.g. EHOSTUNREACH) that isn't a ConnectionError subclass."""
+
+    async def no_route_to_host() -> None:
+        raise OSError(errno.EHOSTUNREACH, "No route to host")
+
+    with pytest.raises(AgentGrantAuthorityUnavailableError):
+        await harness.authority._database_call(no_route_to_host)
 
 
 async def test_exchange_revalidates_operator_after_principal_resolution(db_url: str, harness: Harness) -> None:
