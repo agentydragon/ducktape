@@ -15,6 +15,7 @@ from x.agentplane.action_service.models import (
     ActionState,
     DecisionContext,
     DecisionInput,
+    ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
@@ -35,7 +36,7 @@ class EchoExecutor:
     def capabilities(self) -> frozenset[str]:
         return frozenset({"agentplane:v0.echo"})
 
-    async def execute(self, request: ExecutionRequest) -> ExecutionResult:
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})
 
 
