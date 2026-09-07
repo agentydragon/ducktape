@@ -35,6 +35,50 @@ Override any of it through the environment:
 | `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-staging`                         |
 | `AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT` | `agentplane-agent`                           |
 
+### Controlled-host preflight
+
+Run the suite from a controlled NixOS host, devbox/VM, or FHS-compatible agent
+container. Do not use `bbr`/`bb remote` for this suite: the completed test
+process must stay on the caller, where it can use the caller's Kubernetes
+credentials and network path. BuildBuddy-hosted runners do not inherit the
+caller Sandbox workload token or the current egress substitution path.
+
+Before starting a long run, check the client-side seams separately:
+
+```bash
+command -v bazelisk kubectl
+bazelisk version
+kubectl config current-context
+kubectl -n agentplane-staging auth can-i create serviceaccounts/token \
+  --resource-name=agentplane-agent
+kubectl -n agentplane-staging create token agentplane-agent \
+  --audience=agentplane --duration=60s >/dev/null
+```
+
+The preflight must not print or save the returned token. If the token command
+fails, fix caller RBAC or kubeconfig before launching the suite. If Bazel
+fails while loading the module graph, fix the caller's Bazel/repository-rule
+runtime before investigating staging.
+
+### Failure classification
+
+Use the first point at which the run fails to choose the next investigation:
+
+| Observation                                                   | Likely seam                                                                  |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup |
+| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or staging capacity                |
+| App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                 |
+| Model turn hangs and the decision ring is empty               | Sandbox proxy environment, proxy route, or model ingress path                |
+| Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
+| Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication           |
+| Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
+| Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run |
+
+Keep the complete test output and the proxy/app decision evidence together.
+The model transcript explains what the agent attempted, but the decision ring
+is the authority for what the proxy actually served.
+
 ### Where an agent can run it
 
 An agent in a Claude Code session usually cannot: this suite needs a kubeconfig, a route to the
