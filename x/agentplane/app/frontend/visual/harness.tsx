@@ -13,7 +13,7 @@ import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
-import type { BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
+import type { ActionRequestView, BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
 import {
   AttachedSchema,
@@ -270,6 +270,53 @@ const THREADS: ThreadView[] = [
   },
 ];
 
+const ACTIONS: ActionRequestView[] = [
+  {
+    id: "70000000-0000-4000-8000-000000000001",
+    capability: "agentplane:v0.echo",
+    arguments: { repository: "agentydragon/ducktape", token: "[redacted]" },
+    origin_thread_id: THREADS[0].id,
+    caller_kind: "token",
+    caller_principal: "system:serviceaccount:agentplane-staging:agentplane-agent",
+    state: "decision_pending",
+    version: 1,
+    created_at: ago(3 * 60_000),
+    updated_at: ago(3 * 60_000),
+    decision: null,
+    execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000002",
+    capability: "agentplane:v0.echo",
+    arguments: { message: "completed fixture execution" },
+    origin_thread_id: THREADS[1].id,
+    caller_kind: "token",
+    caller_principal: "system:serviceaccount:agentplane-staging:agentplane-agent",
+    state: "succeeded",
+    version: 4,
+    created_at: ago(40 * 60_000),
+    updated_at: ago(39 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000002",
+      verdict: "allow",
+      provider: "human_operator",
+      issuer: "agentydragon",
+      reason: null,
+      idempotency_key: "visual-allow",
+      decided_at: ago(39 * 60_000),
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000002",
+      state: "succeeded",
+      result: { echo: { message: "completed fixture execution" } },
+      error: null,
+      created_at: ago(39 * 60_000),
+      started_at: ago(39 * 60_000 - 500),
+      completed_at: ago(39 * 60_000 - 900),
+    },
+  },
+];
+
 const ATTACHED: Attached = create(AttachedSchema, {
   sessionId: "s-1",
   spec: SPEC,
@@ -402,6 +449,12 @@ routes.push(
     ],
   ],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
+  ["GET", /^\/actions$/, () => ACTIONS],
+  [
+    "POST",
+    /^\/actions\/([^/]+)\/decision$/,
+    (match) => ({ ...ACTIONS.find((request) => request.id === match[1]), state: "allowed", version: 2 }),
+  ],
   ["GET", /^\/sandboxes\/([^/]+)\/egress\/decisions$/, () => egressDecisions()],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
@@ -485,6 +538,7 @@ const PAGES: Record<string, string> = {
   sandboxes: "/",
   // The same list under a watch that has stopped: the banner is the page saying so.
   sandboxes_stale: "/",
+  actions: "/actions",
   sandbox: "/sandboxes/demo-a1b2",
   // With the github-public binding's rules open, so the shot carries the credential detail — its
   // description, where the proxy puts it, and which secret it comes from — and the other

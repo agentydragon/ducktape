@@ -1,6 +1,7 @@
-import { Container } from "@mantine/core";
-import { HashRouter, Route, Routes, useNavigate, useParams } from "react-router";
+import { Button, Container, Group, Stack } from "@mantine/core";
+import { HashRouter, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 
+import { ActionRequests } from "./actions";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
@@ -49,17 +50,39 @@ function SessionRoute(): JSX.Element {
   );
 }
 
-export default function App(): JSX.Element {
+function AppRoutes(): JSX.Element {
+  const navigate = useNavigate();
+  const location = useLocation();
   return (
-    <HashRouter>
-      <Container size="xl" py="md">
+    <Container size="xl" py="md">
+      <Stack>
+        <Group>
+          <Button variant={location.pathname === "/" ? "filled" : "subtle"} onClick={() => void navigate("/")}>
+            Sandboxes
+          </Button>
+          <Button
+            variant={location.pathname === "/actions" ? "filled" : "subtle"}
+            onClick={() => void navigate("/actions")}
+          >
+            Actions
+          </Button>
+        </Group>
         <Routes>
           <Route path="/" element={<ListRoute />} />
+          <Route path="/actions" element={<ActionRequests />} />
           <Route path="/sandboxes/:name" element={<SandboxRoute />} />
           <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
           <Route path="*" element={<ListRoute />} />
         </Routes>
-      </Container>
+      </Stack>
+    </Container>
+  );
+}
+
+export default function App(): JSX.Element {
+  return (
+    <HashRouter>
+      <AppRoutes />
     </HashRouter>
   );
 }

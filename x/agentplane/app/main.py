@@ -21,6 +21,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.app.actions import ActionHub, EchoExecutor
 from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
@@ -180,6 +181,11 @@ async def async_main(settings: Settings) -> None:
         )
         store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
+        action_hub = ActionHub(store.engine, EchoExecutor())
+        await action_hub.ensure_schema()
+        recovered = await action_hub.recover_uncertain_executions()
+        if recovered:
+            logger.warning("marked %d interrupted ActionRequest executions unknown; none replayed", recovered)
         bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
         oidc = load_settings()
         logger.info("browser login: %s", f"OIDC at {oidc.issuer}" if oidc else "none configured")
@@ -194,6 +200,7 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
+            action_hub=action_hub,
         )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
@@ -207,6 +214,7 @@ async def async_main(settings: Settings) -> None:
             watch_task.cancel()
             await asyncio.gather(watch_task, return_exceptions=True)
             await bridge.close()
+            await action_hub.close()
             await store.close()
 
 

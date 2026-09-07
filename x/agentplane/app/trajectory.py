@@ -95,6 +95,11 @@ class TrajectoryStore:
     def connect(cls, database_url: str) -> TrajectoryStore:
         return cls(create_async_engine(database_url, pool_pre_ping=True))
 
+    @property
+    def engine(self) -> AsyncEngine:
+        """The shared PostgreSQL engine for colocated durable modules such as the Action Hub."""
+        return self._engine
+
     async def ensure_schema(self) -> None:
         async with self._engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)

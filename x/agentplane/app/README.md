@@ -37,6 +37,9 @@ bbr test //x/agentplane/app/...
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
+- `actions.py`: the colocated logical Action Hub. It owns immutable ActionRequests, final Decisions,
+  and their single possible Execution in the same PostgreSQL database, while keeping the human
+  DecisionProvider and Executor interfaces separate.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -110,6 +113,24 @@ Kubernetes is the sandbox inventory, including the archived flag and a compact a
 its live preset association plus explicit thread-default edits; the runner holds the live session;
 PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
+
+## ActionRequests v0
+
+`POST /actions` accepts `agentplane:v0.echo` with JSON arguments and an existing
+`origin_thread_id`, deriving caller ownership from the authenticated OIDC session or reviewed
+Kubernetes token. Submission verifies that the origin Thread exists, then records the authenticated
+caller as provenance; v0 deliberately does not infer a durable Agent owner from a Sandbox or Thread.
+The echo capability is an explicit fixture executor: it proves the durable request → human Decision
+→ exactly-once dispatch → result seam without pretending an MCP registry
+or external adapter exists. Actual MCP integration is deferred.
+
+Token callers can list and read only requests recorded for their authenticated principal. The OIDC
+operator can list the app's whole current scope at `/#/actions`, inspect the redacted review
+projection, and call `POST /actions/{request_id}/decision` with an expected version and idempotency
+key. `allow` schedules the one Execution automatically; `deny` is terminal. A process restart marks
+any `dispatching` or `running` Execution `execution_unknown` and never replays it. The event sink in
+`actions.py` is the future notification seam; notification callbacks must return through the same
+idempotent DecisionProvider path.
 
 ## Launch presets
 
