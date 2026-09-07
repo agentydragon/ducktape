@@ -229,13 +229,16 @@ pending human Decision and the eventual Decision/Execution result with bounded p
 evidence. Originating-Thread notification is a later integration node, not a prerequisite for
 proving that an Agent can use an Action backed by MCP.
 
+**Landed:** provider-outcome aggregation and deny-dominant finalization, and duplicate/stale
+callbacks across the human and auto-provider Decision routes — PR
+[#5732](https://github.com/agentydragon/ducktape/pull/5732), summarized in
+[`async_approvals.md`](async_approvals.md).
+
 Settle and test:
 
-- provider-outcome aggregation and deny-dominant finalization;
 - durable Action event append/query and process-restart recovery;
 - redacted pending/Decision/result/error envelopes with provider reason evidence;
-- withdrawal before Execution starts;
-- duplicate/stale callbacks through the same human DecisionProvider; and
+- withdrawal before Execution starts; and
 - Agent/API-visible treatment of `execution_unknown` and any adapter-specific status reconciliation.
 
 The Action Service's event history is the source of truth. A separate outbox is not required for this
