@@ -41,6 +41,7 @@ spec:
                     values:
                       - hil
                       - home
+                      - proxmox
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
   workloadUpdateStrategy: {}
