@@ -1,3 +1,11 @@
+# CLEANUP(added 2026-09-07): function_learning.py, run_all_evals.py, analyze.py and
+#   test_function_learning.py are excluded from gazelle management while their targets are
+#   commented out below (see that tombstone comment for why) -- otherwise gazelle regenerates a
+#   py_library/py_test per source file unconditionally. Drop these four lines once restored.
+# gazelle:exclude function_learning.py
+# gazelle:exclude run_all_evals.py
+# gazelle:exclude analyze.py
+# gazelle:exclude test_function_learning.py
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
