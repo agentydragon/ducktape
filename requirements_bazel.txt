@@ -187,7 +187,6 @@ aiohttp==3.14.3 \
     #   aiodocker
     #   aiohttp-socks
     #   hass-client
-    #   jupyter-mcp-tools
     #   kubernetes
     #   kubernetes-asyncio
     #   litellm
@@ -1643,15 +1642,15 @@ fastjsonschema==2.22.2 \
     --hash=sha256:0fb3915616adac85ccfdd737d26be1089845d2019819505b42d39888458f74d4 \
     --hash=sha256:72064e12356a7d6ef02165be2946b9abadbdf238536e07eb587e3dbaa33099cf
     # via nbformat
-fastmcp==3.4.7 \
-    --hash=sha256:43117aca886f5ee2f6a569bba91cef02b59c339aad04ba29950ff18d251c822a \
-    --hash=sha256:e4e7698cb4af5bc667b1901685261fa2f3526dc73d243a461fca42500c8dbe56
+fastmcp==4.0.3 \
+    --hash=sha256:0dd50baf070105ee4436c245f087ac3c047e655c32d9e783de16d0bf15783a98 \
+    --hash=sha256:f743f43193e1daf606e6497a9dddba5bbaad7df7957a98fd093716ecf4458b99
     # via
     #   ducktape (pyproject.toml)
     #   pydantic-ai-slim
-fastmcp-slim[client, server]==3.4.7 \
-    --hash=sha256:06b32a358320a7dc2b2ee040ba89ea55ddc20763dff2949f384f7974b13b5d8f \
-    --hash=sha256:6c931a0089705f3f2935428ef9b2bc74ad94140adc64aab84d116d103e694b3a
+fastmcp-slim[client, server]==4.0.3 \
+    --hash=sha256:3756ed4bd9f82f40adaf51974b7cdd1463ab6b9f479cf69b69b2692969312b87 \
+    --hash=sha256:3ce04a82b82cc41ccb12bb3bb366cfd65b52bc797b8fee332a75da9d480f9b74
     # via fastmcp
 fastuuid==0.14.0 \
     --hash=sha256:05a8dde1f395e0c9b4be515b7a521403d1e8349443e7641761af07c7ad1624b1 \
@@ -1997,10 +1996,17 @@ google-auth==2.58.0 \
     #   google-api-core
     #   google-api-python-client
     #   google-auth-httplib2
+    #   google-auth-oauthlib
 google-auth-httplib2==0.4.2 \
     --hash=sha256:4298dd6b1415972d0c464b7177e6a69a595e7aec5b972222ecdca342f6009647 \
     --hash=sha256:916225a6367e613c9af44d83f41688a599d3f687777846b8b91bec65085ed1f1
-    # via google-api-python-client
+    # via
+    #   ducktape (pyproject.toml)
+    #   google-api-python-client
+google-auth-oauthlib==1.4.1 \
+    --hash=sha256:1a83f5f2a8421dedadaa3caf25b3a710dddf85a33a63144be41c2fc79174b106 \
+    --hash=sha256:a1be43ec69fe563ac9b2c4d6fc4334b323b21cbdc59a638b5fa34dd4d5a2a348
+    # via ducktape (pyproject.toml)
 googleapis-common-protos==1.75.3 \
     --hash=sha256:57c435ac2c68b108999b6db075d9053e4d7a936ba57b4a3d45667b1346f1738a \
     --hash=sha256:a018d2bf098ca9fb6faa08d5bb780e2a2c2f73c566f069761331386c9596d3f2
@@ -2331,25 +2337,21 @@ httpx==0.28.1 \
     # via
     #   ducktape (pyproject.toml)
     #   anthropic
-    #   fastmcp-slim
     #   huggingface-hub
     #   inspect-ai
     #   jupyterlab
     #   litellm
-    #   mcp
     #   pydantic-ai-slim
     #   pydantic-graph
     #   respx
-httpx-sse==0.4.3 \
-    --hash=sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc \
-    --hash=sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d
-    # via mcp
 httpx2==2.12.0 \
     --hash=sha256:7631fe9887a8a2275f4a2540e053aa670fcc50742864a9ae7c66e609fdcf12cf \
     --hash=sha256:cc8b6eecb8661c146b8f89a60e97456ee086e91a784ed31ac450c3a9e613dd36
     # via
     #   ducktape (pyproject.toml)
+    #   fastmcp-slim
     #   genai-prices
+    #   mcp
     #   openai
 huggingface-hub==1.31.0 \
     --hash=sha256:9dbb6a503cbe2494ea666695207e7262d410659e09134059deb83e5480864667 \
@@ -2921,13 +2923,10 @@ jupyter-lsp==2.3.1 \
     --hash=sha256:71b954d834e85ff3096400554f2eefaf7fe37053036f9a782b0f7c5e42dadb81 \
     --hash=sha256:fdf8a4aa7d85813976d6e29e95e6a2c8f752701f926f2715305249a3829805a6
     # via jupyterlab
-jupyter-mcp-server==1.3.0 \
-    --hash=sha256:0bf30e39872d84f2fd98fbad6b42624a1a277558467bf01686931b2e37484b2b \
-    --hash=sha256:faeeaa11529dbea50ea90ab81ea0ffce3722a1ba91a296d95571fc502abdf88b
+jupyter-mcp-server==2.1.15 \
+    --hash=sha256:0c23c7b372781d3a9f1463e2bd64417c460d73112b3f12e88b0e186d1dd31e61 \
+    --hash=sha256:ac0963bf46d246ba3f475e3651bd4d7f6dbbad2980016e5fa1c47ba5a5df50bc
     # via ducktape (pyproject.toml)
-jupyter-mcp-tools==0.1.7 \
-    --hash=sha256:79c280962b55f2666443701cfb0b86f39f47eeb06da75bd28d3379b9cfa1bde8
-    # via jupyter-mcp-server
 jupyter-mimetypes==0.2.0 \
     --hash=sha256:e6dcd989258e3fc944365b656d9173191517e0e393bd878e97ce500e5b388527
     # via jupyter-kernel-client
@@ -2942,7 +2941,6 @@ jupyter-server==2.21.0 \
     #   code-sandboxes
     #   jupyter-lsp
     #   jupyter-mcp-server
-    #   jupyter-mcp-tools
     #   jupyter-server-fileid
     #   jupyter-server-nbmodel
     #   jupyter-server-ydoc
@@ -3676,9 +3674,9 @@ mautrix==0.21.1 \
     --hash=sha256:2cad21fcff32bd549192091f9b7b58c01980a7b46f827eef8f34e62d92762b67 \
     --hash=sha256:7685b998eae26f6c5b3a0e010e6dd2d838364009dd7d6319dac804988f4b6823
     # via ducktape (pyproject.toml)
-mcp[cli]==1.30.0 \
-    --hash=sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4 \
-    --hash=sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0
+mcp[cli]==2.2.0 \
+    --hash=sha256:2dc37ecb1974becdcebdbf7561e7c15a07dbbf20ba21ba16c3593b3038b3afbd \
+    --hash=sha256:bde982589473a060ae145e3406e9a5333fe538c97229ba841f5a7f92be004f81
     # via
     #   ducktape (pyproject.toml)
     #   claude-agent-sdk
@@ -3686,6 +3684,12 @@ mcp[cli]==1.30.0 \
     #   fastmcp-slim
     #   jupyter-mcp-server
     #   openai-agents
+mcp-types==2.2.0 \
+    --hash=sha256:d3ed53703ddd10d9c6399f29d322bb66f3f67ab41348ac8556ba23e07fedefad \
+    --hash=sha256:ea476b73ee86709ab5abc9452385ed36cc05907e582355622e294595c9a04f13
+    # via
+    #   fastmcp-slim
+    #   mcp
 mdit-py-plugins==0.6.1 \
     --hash=sha256:214c82fb2ac524472ab6a5bcab1de80f73b50443e187f401bfd77efbc7c6481d \
     --hash=sha256:a2bca0f039f39dbd35fb74ae1b5f998608c437463371f0ff7f49a19a17a114d0
@@ -4443,6 +4447,7 @@ opentelemetry-api==1.44.0 \
     #   fastmcp-slim
     #   google-api-core
     #   jupyter-mcp-server
+    #   mcp
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
@@ -5243,6 +5248,7 @@ pycrdt==0.14.5 \
     --hash=sha256:fbe465540886bba6a510d0587f075611f6d9db6895f4bacaef0b5cd5a92111a5
     # via
     #   ducktape (pyproject.toml)
+    #   jupyter-mcp-server
     #   jupyter-nbmodel-client
     #   jupyter-server-ydoc
     #   jupyter-ydoc
@@ -5317,6 +5323,7 @@ pydantic[email]==2.13.5 \
     #   jupyter-server-client
     #   litellm
     #   mcp
+    #   mcp-types
     #   openai
     #   openai-agents
     #   openapi-pydantic
@@ -5460,7 +5467,6 @@ pydantic-settings==2.15.0 \
     # via
     #   ducktape (pyproject.toml)
     #   fastmcp-slim
-    #   mcp
 pyee==13.0.1 \
     --hash=sha256:0b931f7c14535667ed4c7e0d531716368715e860b988770fc7eb8578d1f67fc8 \
     --hash=sha256:af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228
@@ -6157,6 +6163,7 @@ requests-oauthlib==1.3.1 \
     --hash=sha256:2577c501a2fb8d05a304c09d090d6e47c306fef15809d102b327cf8364bddab5 \
     --hash=sha256:75beac4a47881eeb94d5ea5d6ad31ef88856affe2332b9aafb52c6452ccf0d7a
     # via
+    #   google-auth-oauthlib
     #   kubernetes
     #   splitwise
 respx==0.23.1 \
@@ -6828,7 +6835,6 @@ tornado==6.5.5 \
     # via
     #   ipykernel
     #   jupyter-client
-    #   jupyter-mcp-server
     #   jupyter-server
     #   jupyterlab
     #   mitmproxy
@@ -6851,7 +6857,6 @@ traitlets==5.16.1 \
     #   jupyter-core
     #   jupyter-events
     #   jupyter-kernel-client
-    #   jupyter-mcp-server
     #   jupyter-server
     #   jupyterlab
     #   matplotlib-inline
@@ -6973,6 +6978,7 @@ typing-extensions==4.16.0 \
     #   jupyter-kernel-client
     #   jupyter-mimetypes
     #   mcp
+    #   mcp-types
     #   mypy
     #   openai
     #   openai-agents
