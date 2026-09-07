@@ -44,8 +44,8 @@ because the Action schema and Executor wiring contracts below have not been deci
 manual live acceptance target. Broader capability profiles remain deferred; see
 [`../docs/launch_presets.md`](../docs/launch_presets.md) and [`profiles.md`](profiles.md).
 
-**Active review — egress rules API boundary.** PR
-[#5701](https://github.com/agentydragon/ducktape/pull/5701) makes
+**Observed evidence — egress rules API boundary landed.** PR
+[#5701](https://github.com/agentydragon/ducktape/pull/5701) made
 `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` an ordinary destination:
 normal policy and exact workload-placeholder substitution, then independent destination bearer
 validation through `SandboxPrincipalAuthenticator`. Service port 80 targets a separate API listener
@@ -69,16 +69,17 @@ flowchart TB
     PRESETS["Observed evidence<br/>launch presets first slice"]:::completed
 
     AS["Action schema contract<br/>definition, name/version, params, result/error,<br/>redaction and evolution"]:::decision
-    EW["Executor wiring contract<br/>registration, dispatch, credentials, delivery,<br/>claim/idempotency/health + first adapter"]:::decision
-    DEL["Pending/result delivery contract<br/>outbox drain, Thread event, notification,<br/>withdrawal and unknown reconciliation"]:::decision
+    EW["Executor wiring contract<br/>groups/catalog, dispatch, credentials, MCP compatibility,<br/>claim/idempotency/heartbeat + first adapter"]:::decision
+    DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
     ACTION1["P0 behavior<br/>one real named Action executes once<br/>and returns a safe result"]:::active
 
-    ER["Active review #5701<br/>egress rules boundary + Service DNS transition"]:::active
+    ER["Observed evidence #5701<br/>egress rules boundary + Service DNS transition"]:::completed
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
     T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
+    ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>durable Agent identity + cross-agent read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
@@ -93,6 +94,7 @@ flowchart TB
     EW --> ACTION1
     DEL --> ACTION1
     ACTION1 --> PROD
+    DEL -. later Thread delivery .-> ING
 
     AUTH --> ER
     AUTH --> DEDUPE
@@ -117,32 +119,29 @@ that the current echo-only Action Service can execute production work.
 
 ### `AS` — Action schema contract
 
-**P0 behavior:** a caller can submit one stable, reviewable, versioned Action whose parameters are
+**P0 behavior:** a caller can submit one stable, reviewable, namespaced Action whose parameters are
 validated before a Decision or dispatch, and whose result/error can be safely replayed.
 
 **Needed support / decisions:**
 
-1. Define **Action** as the code-owned capability definition and **ActionRequest** as one immutable
-   invocation of that definition. Keep the existing request lifecycle and one-logical-intent model.
-2. Choose a stable capability/action name plus definition version. Decide whether the version is in
-   the name or a separate required field, and what identity participates in idempotency comparison.
-3. Define parameter representation and validation. **Recommendation:** begin with a deliberately
-   small JSON-compatible typed contract compiled into the service/adapters; use JSON Schema only if
-   the first real adapter needs features the smaller contract cannot express.
+1. Define **Action** as the code-owned capability concept and **ActionRequest** as one immutable
+   invocation of that Action. Keep the existing request lifecycle and one-logical-intent model.
+2. Choose a stable group/action name and catalog evolution behavior. No public `action_version` is
+   required; execution re-checks the current executor/tool schema and refuses incompatible arguments.
+3. Define parameter representation and validation. **Recommendation:** use the live MCP/tool schema
+   for the first adapter; introduce a smaller typed contract only if a non-MCP executor needs it.
 4. Define the result and stable error envelope, including which backend/provider details are safe to
    persist and return.
-5. Define sensitivity annotations and recursive redaction for inputs, results, errors, Decision
-   views, events, logs, and replay fixtures. Name what is reference-only versus reviewable content.
-6. Define compatibility/evolution: whether old definitions remain executable, replay-only, or
-   rejected; how a request pins its definition; and which changes are breaking.
-7. Choose definition ownership. **Recommendation:** static code-owned adapter definitions loaded at
-   startup. Alternatives are service configuration or a registry; neither should be built until a
-   current adapter or independent authoring workflow requires it.
+5. Define redaction and projection rules for inputs, results, errors, Decision views, events, logs,
+   and replay fixtures. Do not add a generic `sensitivity` field to every Action.
+6. Keep ActionGroup-to-executor and MCP-server/tool bindings in reviewed runtime configuration such
+   as YAML, so backend/account changes do not require an image roll.
 
-**Acceptance evidence:** one hand-authored Action definition and request/result/error transcript;
-positive validation/replay tests; negative tests for unknown name/version, missing/extra/wrong-type
-parameters, incompatible evolution, malformed result/error, and sensitive values in every
-projection/log path. Tests must prove replay uses the pinned definition without executing a backend.
+**Acceptance evidence:** connect the configured GitHub MCP server as the user's account, mirror its
+catalog, auto-allow safe public-repository reads, and prove with an acceptance test that an Agent can
+invoke one read Action and receive a safe result. Include negative tests for unknown group/action,
+malformed parameters, incompatible current tool schema, malformed result/error, and sensitive data
+appearing in any projection or log.
 
 ### `EW` — Executor wiring contract
 
@@ -182,18 +181,26 @@ outcome without replay.
 
 `agentplane:v0.echo` remains explicitly fixture-only and cannot satisfy this gate.
 
-### `DEL` — pending, result, and notification delivery contract
+### `DEL` — decision and Action-state contract
 
-**P0 behavior:** submission remains non-blocking; a pending human Decision and the eventual
-Decision/Execution result reach the originating Thread through one durable, redacted event path.
+**P0 behavior:** submission remains non-blocking; the Action API and durable Action events expose a pending
+human Decision and the eventual Decision/Execution result with bounded provider-authored reason
+evidence. Originating-Thread notification is a later integration node, not a prerequisite for
+proving that an Agent can use an Action backed by MCP.
 
-**Needed support:** define outbox draining and acknowledgement, idle/active/gone Thread delivery,
-withdrawal before execution, notification deep links/callback idempotency, sensitive payload
-projection, and what an agent receives for `execution_unknown`. The landed outbox row proves only a
-safe pending reference exists; no consumer currently delivers it.
+**Needed support:** define durable Action event append/query, provider-outcome aggregation, human
+decision callbacks, withdrawal before execution, bounded progress, redacted payload projection, and
+what an Agent receives for `execution_unknown`. A separate outbox is not required for this slice.
 
 **Acceptance evidence:** a scripted replay covering submit -> pending -> allow/deny -> one execution
-or no execution -> later Thread input, including process restart and duplicate notification callback.
+or no execution -> Action API polling, including process restart and duplicate callback delivery.
+
+### `ING` — Event & Notification Hub
+
+**Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
+user/Agent subscriptions, and deliver structured events into an Agent/Thread ingress. The Hub owns
+subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
+and Thread wake/queue semantics. It is not an executor or an Action decision authority.
 
 ## Preserved decisions
 

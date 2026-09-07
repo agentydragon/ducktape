@@ -65,8 +65,8 @@ clients.
 - Workload identity comes only from the shared destination-side `SandboxPrincipal` resolver. Two
   Pods using the same ServiceAccount remain distinct callers through their live Sandbox UIDs.
 - Credential-shaped keys are recursively redacted from caller/operator projections, execution
-  results/errors, and pending outbox payloads; the present heuristic is not yet an Action definition
-  sensitivity contract.
+  results/errors, and pending outbox payloads; the present heuristic is a projection rule, not an
+  Action field or a complete backend schema.
 
 ### Current Decision and Execution behavior
 
@@ -106,36 +106,42 @@ It must remain described and named as a fixture.
 Before a real adapter is implemented, decide and test:
 
 - Action versus ActionRequest: the definition is not the invocation;
-- stable action/capability name and versioning, including how requests pin a definition;
+- stable group/action key and catalog evolution behavior; no public `action_version` is required, and
+  execution re-checks the current executor/tool schema before refusing incompatible arguments;
 - parameter representation and validation;
 - stable result and error schema;
-- sensitivity/redaction annotations for review, persistence, delivery, logs, and replay;
+- redaction and projection rules for review, persistence, delivery, logs, and replay;
 - compatibility and evolution rules; and
 - definition ownership.
 
-**Recommendation:** start with static, code-owned definitions beside code-owned adapters, validated
-at startup. Use a small JSON-compatible typed contract unless the first adapter demonstrates a need
-for full JSON Schema. Service configuration and a registry remain alternatives, not P0 machinery.
+**Recommendation:** keep the ActionGroup-to-executor and MCP-server/tool bindings in runtime
+configuration such as a reviewed YAML file, so backend/account changes do not require an image roll.
+Use the executor's live tool schema for admission/execution checks; use a small JSON-compatible typed
+contract unless the first adapter demonstrates a need for full JSON Schema.
 
-**Required evidence:** one hand-authored definition plus request/result/error transcript; positive
-validation and offline replay; negative tests for unknown name/version, malformed parameters,
-extra/missing/wrong-type values, incompatible definition evolution, malformed result/error, and
-sensitive data appearing in any projection or log. Replay must not execute a backend.
+**Required evidence:** connect the configured GitHub MCP server as the user's account, mirror its
+catalog, auto-allow safe public-repository reads, and prove with an acceptance test that an Agent can
+invoke one read Action and receive a safe result. Include negative tests for unknown group/action,
+malformed parameters, incompatible current tool schema, malformed result/error, and sensitive data
+appearing in any projection or log.
 
 ## Open gate: Executor wiring contract (`EW`)
 
 Before the echo fixture is replaced or supplemented, decide and test:
 
-- how action name/version selects an Executor;
+- how group/action identity selects an Executor;
 - capability/definition registration and duplicate/missing/incompatible startup failure;
 - adapter/backend configuration and startup validation;
+- ActionGroup/catalog hierarchy and how child Actions are discovered and admitted;
 - in-process versus separate worker/process, justified by the first adapter's failure and isolation
   needs;
+- an executor boundary compatible with MCP-backed adapters without making MCP the Agent-facing API;
 - the credential and Kubernetes ServiceAccount boundary;
 - dispatch transport and how results/events return to the Action Service;
 - exactly-one claim, no-retry, and unknown-outcome semantics across process/network loss;
 - request and backend idempotency-key behavior;
-- executor health and capability discovery; and
+- executor health, executor heartbeat, and per-Execution lease/heartbeat behavior;
+- bounded progress/status observations for long-running executions; and
 - one concrete first adapter acceptance fixture.
 
 **Recommendation:** keep the first adapter code-owned and in-process only if its transport can keep
@@ -148,20 +154,93 @@ invoke it twice; safe success/failure returns through the service; ambiguous los
 without replay; invalid or unhealthy registration fails before dispatch. The concrete backend target
 and credential owner require Rai's choice before implementation.
 
-## Open gate: pending/result delivery (`DEL`)
+### Action groups, MCP discovery, and backend ownership
 
-The landed `action_outbox` row contains only request ID and capability for a new pending request. It
-proves that a credential-safe durable notification reference can be written transactionally; there
-is no outbox consumer, notification callback path, or originating-Thread delivery yet.
+The Agent-facing catalog should be hierarchical rather than one flat list. An `ActionGroup` is the
+discovery and ownership unit, with child Actions addressed by a stable namespaced key such as
+`github.create_issue`. A group binds to one executor/backend configuration and carries the group-level
+description, account/credential ownership summary, availability, and discovery status. An Action
+under the group carries the tool name, description, input schema, and invocation metadata. The group
+may be backed by MCP, HTTP, hostexec, or another executor protocol; MCP server and ActionGroup are
+related concepts, not the same required abstraction.
+
+The executor contract should be protocol-neutral at the Action Service boundary, but it must be able
+to host an MCP-backed adapter. By default, the adapter mirrors the tools returned by MCP `tools/list`,
+including tool schemas and descriptions, rather than requiring every GitHub-sized tool catalog to be
+hand-authored. Mirroring is discovery, not unconditional authorization: group configuration and the
+DecisionProvider still govern whether a discovered Action can execute.
+
+When an MCP server supports `notifications/tools/list_changed`, the adapter should refresh the group
+catalog and emit the corresponding catalog-change evidence. Correctness must not depend on receiving
+that notification: startup, periodic, and on-demand refresh remain valid, and the REST catalog/call
+path can be used when an Agent needs to inspect or invoke an Action after a missed notification.
+
+There is no public `action_version` requirement. The request stores the stable group/action identity
+and arguments. At execution, the adapter re-checks the current executor/tool schema and refuses the
+request safely if the arguments or binding are no longer compatible; a catalog change must never be
+silently remapped to another Action.
+
+For an MCP-backed Action, the Action Service/executor owns the connection to the configured MCP server
+and initiates the server-side `tools/call`; the Agent or native harness does not initiate the effect
+through an attached MCP client. The adapter maps the MCP tool's input, result, and error into the
+Action definition and Execution envelope, while preserving the Action Service's approval, claim,
+no-retry, and redaction rules.
+
+The initial Agent-facing interface remains Haku-owned rather than being forced to look like MCP. This
+allows pending approval, auto-approval, result delivery, and progress semantics to be designed as
+first-class Action behavior even when a backend happens to speak MCP. A future deployment may expose
+one or more MCP servers directly to harnesses, but dynamic MCP attachment/tool discovery is not a
+prerequisite for the first Actions API.
+
+Authentication and credential ownership are backend-specific. A connected server may use a user's
+privileged GitHub identity, future Gmail or Google Calendar OAuth, or hostexec-style machine access.
+The executor definition and Agent-visible description must identify that boundary and warn against
+using privileged access for work the Agent can perform itself. Real credentials remain in the owning
+backend/worker boundary, not in the harness or ActionRequest.
+
+An executor may report bounded progress snapshots or output observations while an Execution is
+running. Progress is not a second Execution and does not relax the rule that an ambiguous dispatch
+is `execution_unknown` rather than an invitation to retry. A hostexec-style adapter may expose
+authorized process state and output-so-far reads, subject to the same redaction and access checks as
+terminal results.
+
+Executor liveness has two layers:
+
+- an executor heartbeat says that the adapter/worker is available to accept or observe work; and
+- an Execution heartbeat/lease says that a started Execution still has a live coordinator.
+
+If an Execution lease expires, the Action Service may retire the coordination record with a stable
+`execution_unknown` outcome and an executor-lost reason. A missed heartbeat cannot prove that an
+external effect stopped, so it must never trigger a second `start`. If the backend offers an
+authoritative status lookup, a later observation may reconcile the existing Execution without replay.
+Late completion messages must be authenticated and tied to the existing Execution; they do not create
+a new claim.
+
+Decision providers receive trusted caller context from the Action Service, including the authenticated
+caller principal and a verified Agent identity when the deployment can resolve one. They must not
+infer Agent identity from `origin`, `correlation`, or other caller-controlled fields. If only the
+Sandbox principal is available, that limitation is explicit in the decision context rather than
+silently filled with an unverified Agent name.
+
+## Open gate: decision and Action-state contract (`DEL`)
+
+**P0 behavior:** submission remains non-blocking; the Action API and durable Action events expose a
+pending human Decision and the eventual Decision/Execution result with bounded provider-authored reason
+evidence. Originating-Thread notification is a later integration node, not a prerequisite for
+proving that an Agent can use an Action backed by MCP.
 
 Settle and test:
 
-- non-blocking receipt and later input to an idle, active, or resumed Thread;
-- outbox claim/acknowledgement and process-restart replay;
-- redacted pending/Decision/result/error envelopes;
+- provider-outcome aggregation and deny-dominant finalization;
+- durable Action event append/query and process-restart recovery;
+- redacted pending/Decision/result/error envelopes with provider reason evidence;
 - withdrawal before Execution starts;
-- duplicate/stale notification callbacks through the same human DecisionProvider; and
-- agent-visible treatment of `execution_unknown` and any adapter-specific status reconciliation.
+- duplicate/stale callbacks through the same human DecisionProvider; and
+- Agent/API-visible treatment of `execution_unknown` and any adapter-specific status reconciliation.
+
+The Action Service's event history is the source of truth. A separate outbox is not required for this
+slice; cross-service push delivery belongs to the later Event & Notification Hub or a concrete
+executor-worker boundary.
 
 Standing grants remain separate objects owned by access/grants machinery. They are not an alternate
 Execution count or an Action definition field.
@@ -169,12 +248,19 @@ Execution count or an Action definition field.
 ## Authority boundaries
 
 - **Action Service:** canonical lifecycle/state owner and access check.
-- **DecisionProvider:** issues a final allow/deny; v0 is the human operator path.
+- **DecisionProvider:** issues an authoritative provider outcome; v0 is the human operator path,
+  with modular auto-approval providers using the same request shape and lifecycle rather than a
+  second authority path. Each outcome is `allow`, `deny`, or `no_opinion` and carries a bounded
+  provider-authored reason code/description. The Action Service aggregates those outcomes and
+  commits the final lifecycle transition; a provider explanation is evidence, not private chain of
+  thought.
 - **Executor:** owns backend-specific invocation and result translation, never policy reinterpretation.
 - **Integration app/BFF:** authenticates the browser/operator and calls the operator API; it does not
   duplicate Action state.
-- **Agentplane runtime:** owns Sandbox/Thread lifecycle and eventually delivers a product event to a
-  Thread; it does not own every external protocol.
+- **Event & Notification Hub:** later owns subscription matching, external-event ingestion, batching,
+  rate limits, and delivery into an Agent/Thread ingress; it does not execute Actions or decide them.
+- **Agentplane runtime:** owns Sandbox/Thread lifecycle and exposes the ingress used by the Hub; it
+  does not own every external protocol.
 - **Trajectory store:** may preserve larger evidence by reference but cannot bypass Action Service
   read authorization.
 - **Notification adapter:** delivers a redacted reference and returns operator intent through the
@@ -182,7 +268,8 @@ Execution count or an Action definition field.
 
 ## Deferred
 
-- MCP registry or universal protocol translation;
+- generic MCP registry/universal protocol translation and direct harness MCP exposure; MCP-backed
+  adapters remain in the Executor wiring gate;
 - capability matrices, general Agent privileges, and cross-agent permissions;
 - standing-grant design inside the ActionRequest lifecycle;
 - LLM DecisionProvider and cryptographic Decision signatures;
