@@ -101,6 +101,15 @@ resource "github_repository_ruleset" "default_branch_protection" {
       required_check {
         context = "Pre-commit checks"
       }
+      # `Nix wheel check` (top-level `on: pull_request:` workflow — not a
+      # reusable one, so no `<caller>/` prefix) rebuilds every pinned wheel
+      # from PR source and runs each mkWheel's importsCheck against it.
+      # Landed with #2678; #2686 tracked flipping this to required. Blocks
+      # "wheel forgot a package" regressions like the gmail_api / ducktape_pkg
+      # drift in #2669 that motivated the workflow.
+      required_check {
+        context = "Build artifacts + imports check"
+      }
       strict_required_status_checks_policy = false
     }
   }
