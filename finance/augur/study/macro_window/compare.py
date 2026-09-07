@@ -19,6 +19,7 @@ The two fits do NOT read the same series, and that is the finding as much as the
 the long record's short rate is Ken French's one-month T-bill rather than the fed funds rate,
 its long rate is `FRED_LTGOVTBD` spliced into `GS10`, and its CPI is the NSA series. A
 difference here is a difference in window AND in measurement, and nothing below separates them.
+`holdout.py` does separate them, by scoring both spans of the SAME series out of sample.
 """
 
 from __future__ import annotations

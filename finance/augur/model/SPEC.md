@@ -46,8 +46,9 @@ indistinguishable from zero (gap 2).
 
 `fit_structural_macro_defaults` takes a required `MacroFitWindow`. The shipped defaults use
 `FRED_1955`; `LONG_RECORD_1926` fits the same VAR on the century-long record
-`load_macro_history` assembles. Run the comparison with
-`bbr test //finance/augur/study/macro_window:compare_test` (manual — it fetches the upstreams).
+`load_macro_history` assembles. Run the comparisons with
+`bbr test //finance/augur/study/macro_window:{compare,holdout}_test` (manual — they fetch the
+upstreams).
 
 Measured 2026-09-07, both fits off one evidence snapshot:
 
@@ -75,14 +76,52 @@ spread has a 22% NARROWER stationary spread despite larger shocks, which is what
 rate looks like — a spread that cannot move. Pooling a policy regime that no longer exists into
 one stationary process contaminates that block, so "longer" is not automatically "better" here.
 
-**Not yet established: which window predicts better.** The comparison above is of fitted
-parameters. Held-out predictive density and the drawdown comparison have not been run, so
-nothing here ranks the two. The 1955 window stays until they do.
+A caveat on everything above: the two fits do not read the same series. The long record's
+short rate is Ken French's one-month T-bill rather than the fed funds rate, its long rate is
+`LTGOVTBD` spliced into `GS10`, and its CPI is the NSA series — so each difference in the table
+is window AND measurement, and nothing there separates them.
 
-A caveat that survives whichever wins: the two fits do not read the same series. The long
-record's short rate is Ken French's one-month T-bill rather than the fed funds rate, its long
-rate is `LTGOVTBD` spliced into `GS10`, and its CPI is the NSA series — so any difference is
-window AND measurement, and nothing above separates them.
+### Held out, the long record buys inflation and costs rates
+
+`holdout.py` separates them, by scoring both window LENGTHS on ONE series — the long record's —
+so the measurement difference cancels and only the span differs. Rolling origin, refit every
+month, 611 monthly origins from 1975-07 (where the shorter arm first reaches its 240-month
+minimum), both arms scored on the same origins and the same observations. CRPS by state, as
+`long record / 1955-length`, lower being better:
+
+| horizon  | short rate            | term spread           | inflation             |
+| -------- | --------------------- | --------------------- | --------------------- |
+| 1 month  | 0.00342 / **0.00355** | 0.00360 / **0.00370** | **0.00235** / 0.00208 |
+| 1 year   | **0.01107** / 0.01041 | **0.00815** / 0.00804 | 0.01075 / **0.01144** |
+| 5 years  | **0.02175** / 0.02033 | **0.00935** / 0.00868 | 0.01815 / **0.02058** |
+| 10 years | **0.03559** / 0.02889 | **0.00992** / 0.00846 | 0.02414 / **0.02925** |
+
+(bold = the worse of the pair.)
+
+**Past one month, neither window dominates, and the split is by state.** At every horizon from a
+year out the long record forecasts INFLATION better (6-18% lower CRPS) and BOTH RATE states worse
+(1-23% higher), and every one of those gaps widens with horizon. That is the peg finding again, now as a
+measured predictive loss rather than an inference from the fitted spread: the extra 29 years
+carry real information about inflation and a contaminated account of rates.
+
+So the answer to "which window" is that the question is malformed — the century helps one block
+and hurts the other, and picking either window whole accepts a known loss on the other. This is
+the marginal-vs-cross-block rule in `fit/structural_macro.py` reappearing INSIDE the VAR: the fit
+is one OLS per equation over shared regressors, so per-equation windows are mechanically
+available, and only the innovation covariance is genuinely cross-block and needs a common window.
+
+**The one-month row inverts, and why is not established.** There the long record wins on both
+rate states and loses on inflation. One step ahead a predictive is dominated by its innovation
+scale rather than by its dynamics, so h=1 plausibly ranks the arms on fitted shock size alone —
+but the two arms' shock sizes were not measured here, and the table above cannot supply them: it
+compares different SERIES, not the two spans of the one series these arms share. Treat the h=1
+row as reported and unexplained. The horizons a 30-year spender is exposed to are the ones where
+dynamics dominate, and those agree with each other.
+
+**What this does not establish.** Origins overlap heavily at these horizons, so the arms' means
+are comparable to each other but carry no usable standard error; no significance is claimed, and
+none is reported. The shipped default stays `FRED_1955`, which these numbers support for the rate
+block and argue against for inflation.
 
 **Deviation worth knowing:** the VAR reads `CPIAUCSL` (seasonally adjusted) while the historical
 replay's record reads `CPIAUCNS` (not adjusted, and reaching 1913 rather than 1947 — gap 4). The
