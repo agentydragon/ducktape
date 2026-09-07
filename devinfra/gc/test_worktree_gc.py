@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -123,6 +124,15 @@ def test_last_activity_reflects_uncommitted_file_mtime(repo: Path, proc: Path) -
     result = _classify(repo, path, proc)
     assert result.last_activity is not None
     assert result.last_activity.timestamp() == pytest.approx(future, abs=2)
+
+
+def test_missing_worktree_directory_is_prunable(repo: Path, proc: Path) -> None:
+    path = _add(repo, "wt", "feature")
+    shutil.rmtree(path)  # `git worktree list` still reports it, marked prunable
+    result = _classify(repo, path, proc)
+    assert isinstance(result, wg.PrunableWorktree)
+    assert result.reason == "worktree directory is missing"
+    assert result.last_activity is None
 
 
 def test_detached_head_with_commit_is_review(repo: Path, proc: Path) -> None:
