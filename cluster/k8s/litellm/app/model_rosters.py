@@ -16,6 +16,7 @@ model:
 - `google/goog-generate/*` / `google/goog-embed/*` — Google AI key (Gemini), on Google's
   own `:generateContent` / `:embedContent` wire
 - `mistral/oai-chat/*` — Mistral API key
+- `groq/oai-chat/*` — Groq API key, OpenAI-compatible at api.groq.com/openai/v1
 - `ollama/oai-chat/*` / `ollama/olm-chat/*` — self-hosted Ollama, which serves the same
   models on an OpenAI-compatible `/v1` and on its own `/api/chat`; the model segment
   carries the `num_ctx` variant (`gpt-oss-20b-512k`) that distinguishes entries
@@ -53,8 +54,8 @@ rides in a URL path or a Kubernetes resource name.
 The provider segment rides in front, not behind, because key allowlists match
 `model_name` prefixes (the `anthropic-api/ant-messages/*` wildcard in
 tf/gitops/litellm-keys/main.tf). Deliberately not renamed: the raw upstream model slugs
-inside the exposed names, and the groq entries, whose single wire nothing else contends
-with. The bare `gemini-embedding-2`
+inside the exposed names, and the two groq whisper entries, whose `audio_transcription`
+mode no shape slug covers yet. The bare `gemini-embedding-2`
 alias is exempt too: it predates the scheme and public-coder-agent's durable memory index
 stores that model identity, so it stays until the index is deliberately rebuilt.
 """
@@ -72,6 +73,7 @@ class Provider(StrEnum):
     GOOGLE = "google"
     MISTRAL = "mistral"
     OLLAMA = "ollama"
+    GROQ = "groq"
 
 
 class ApiShape(StrEnum):

@@ -89,6 +89,7 @@ _UPSTREAM_DEFINER = {
     "anthropic": "ant",
     "openai": "oai",
     "mistral": "oai",  # OpenAI-compatible chat at api.mistral.ai
+    "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
     "gemini": "goog",
     "ollama": "olm",
 }
