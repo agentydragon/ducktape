@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import tempfile
 from pathlib import Path
 
@@ -168,7 +169,11 @@ def tracking_error(reproduced: dict[int, float]) -> float:
 
 
 def compound_percent(returns: dict[int, float], years: list[int]) -> float:
-    return 100.0 * (float(np.prod([1.0 + returns[y] for y in years])) ** (1.0 / len(years)) - 1.0)
+    # math.pow rather than `**`: typeshed widens float ** float to Any (a negative base with a
+    # fractional exponent is complex), and here a negative cumulative growth would be a bug
+    # worth raising on rather than a value worth returning.
+    growth = float(np.prod([1.0 + returns[y] for y in years]))
+    return 100.0 * (math.pow(growth, 1.0 / len(years)) - 1.0)
 
 
 def main() -> None:
