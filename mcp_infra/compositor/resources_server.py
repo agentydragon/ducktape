@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Iterator, Sequence
-from enum import StrEnum
 from typing import Annotated, Final, Literal
 
 from fastmcp.exceptions import ToolError
@@ -14,11 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
-from mcp_infra.mcp_types import SimpleOk
-from mcp_infra.mount_types import MountEvent
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
-from mcp_infra.resources.types import ListSubscriptionSummary, ResourceEntry, SubscriptionsIndex, SubscriptionSummary
+from mcp_infra.resources.types import ResourceEntry
 from mcp_infra.snapshots import RunningServerEntry
 from mcp_infra.urls import ANY_URL
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -84,30 +80,7 @@ class ResourcesReadArgs(OpenAIStrictModeBaseModel):
     )
 
 
-class ResourcesSubscribeArgs(OpenAIStrictModeBaseModel):
-    server: MCPMountPrefix = Field(description="Origin MCP server mount prefix")
-    uri: str = Field(description="Resource URI to subscribe to")
-
-
 # No compositor meta resources here; see adgn.mcp.compositor.meta_server
-
-
-class SubscriptionRecord(BaseModel):
-    server: str
-    uri: str
-    pinned: bool = False
-    active: bool = False
-    last_error: str | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-class ListSubscribeArgs(OpenAIStrictModeBaseModel):
-    server: MCPMountPrefix
-
-
-class ResourceCapabilityFeature(StrEnum):
-    SUBSCRIBE = "subscribe"
-    LIST_CHANGED = "listChanged"
 
 
 class _MimeBase(BaseModel):
@@ -277,7 +250,7 @@ def _build_window_payload(
 class ResourcesServer(EnhancedFastMCP):
     """Resources MCP server with typed tool access.
 
-    Aggregates resources across servers and provides subscription management.
+    Aggregates resources across servers for discovery and reading.
 
     - Synthetic server injected by the runtime; reserved mount name is ``resources``.
     - Provides a uniform API to discover and read resources exposed by other servers.
@@ -295,35 +268,20 @@ class ResourcesServer(EnhancedFastMCP):
     - Base64 parts are sliced as base64 text; decoding is the caller's responsibility.
     """
 
-    # Resource URI constant
-    SUBSCRIPTIONS_INDEX_URI = "resources://subscriptions"
-
     # Tool references
     list_tool: FlatTool
     list_templates_tool: FlatTool
     read_tool: FlatTool
     read_blocks_tool: FlatTool
-    subscribe_tool: FlatTool
-    unsubscribe_tool: FlatTool
-    list_subscriptions_tool: FlatTool
-    subscribe_list_changes_tool: FlatTool
-    unsubscribe_list_changes_tool: FlatTool
 
     def __init__(self, *, compositor: BaseCompositor):
         """Create a Resources MCP server.
 
         Args:
-            compositor: BaseCompositor for resource operations, metadata, and lifecycle listeners
+            compositor: BaseCompositor for resource operations and metadata
         """
-        # TODO: Ensure NotificationsHandler is consistently injected when mounting this server,
-        # or make subscription functionality optionally toggleable (don't advertise subscribe
-        # tools if no handler is wired, to avoid promising notifications we can't deliver).
-
         # Initialize state
         self._compositor = compositor
-        self._subs_lock = asyncio.Lock()
-        self._subs: dict[tuple[str, str], SubscriptionRecord] = {}
-        self._list_subscribed_servers: set[str] = set()
 
         # Pass explicit version to avoid importlib.metadata.version() lookup which can hang under pytest-xdist
         super().__init__(
@@ -340,45 +298,13 @@ class ResourcesServer(EnhancedFastMCP):
                 "for constructing parameterized resource URIs.\n\n"
                 "**Reading:** Use `read` to fetch resource contents by specifying the (server, URI) pair. "
                 "Supports optional windowing for large resources (e.g., read lines 100-200 from a text resource).\n\n"
-                "**Subscriptions:** Use `subscribe`/`unsubscribe` to track individual resource updates, "
-                "or `subscribe_list_changes`/`unsubscribe_list_changes` to track when a server's resource list changes. "
-                "Check the subscriptions index resource for current subscription state.\n\n"
                 "**Important:** Resources are server-specific - the same URI path on different servers "
                 "represents different resources. Always specify both server and URI when accessing resources.\n\n"
                 "Note: Only servers that advertise the resources capability in their initialize response are queried."
             ),
         )
 
-        # Register subscriptions index resource FIRST (before tools) and stash the result
-        async def subscriptions_index() -> str:
-            present = await self._present_servers()
-            async with self._subs_lock:
-                items = list(self._subs.values())
-                lss = set(self._list_subscribed_servers)
-            out = [
-                SubscriptionSummary(
-                    server=rec.server,
-                    uri=rec.uri,
-                    pinned=rec.pinned,
-                    present=(rec.server in present),
-                    active=rec.active and (rec.server in present),
-                    last_error=rec.last_error,
-                )
-                for rec in items
-            ]
-            list_out: list[ListSubscriptionSummary] = [
-                ListSubscriptionSummary(server=s, present=(s in present), active=(s in present)) for s in sorted(lss)
-            ]
-            return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out).model_dump_json()
-
-        self.resource(
-            self.SUBSCRIPTIONS_INDEX_URI,
-            name="resources.subscriptions",
-            mime_type="application/json",
-            description="Index of resource subscriptions made via the resources server.",
-        )(subscriptions_index)
-
-        # Register tools (8 tools total)
+        # Register tools
         async def list_resources(input: ResourcesListArgs) -> ResourcesListResult:
             """List MCP resources that are exposed by servers (if any). Filter by server name or URI prefix if desired.
 
@@ -448,7 +374,7 @@ class ResourcesServer(EnhancedFastMCP):
             prefixed = add_resource_prefix(input.uri, input.server)
             uri_value = ANY_URL.validate_python(prefixed)
             # Call compositor method that converts FastMCP types to MCP protocol types
-            # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
+            # (resources server is tightly coupled to compositor for metadata)
             try:
                 contents = await self._compositor.read_resource_contents(uri_value)
             except McpError as e:
@@ -584,216 +510,3 @@ class ResourcesServer(EnhancedFastMCP):
             return ReadBlocksResult(blocks=result_blocks)
 
         self.read_blocks_tool = self.flat_model()(read_blocks)
-
-        async def subscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
-            """Subscribe to updates for a resource."""
-            await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-            prefixed = add_resource_prefix(input.uri, input.server)
-            uri_value = ANY_URL.validate_python(prefixed)
-            # Attempt subscribe; reflect success/error in index and re-raise on error.
-            try:
-                # Use the child's persistent session directly (already connected)
-                child_client = self._compositor.get_child_client(input.server)
-                await child_client.session.subscribe_resource(uri_value)
-            except McpError as e:
-                async with self._subs_lock:
-                    rec = self._get_or_create_sub(input.server, input.uri)
-                    rec.active = False
-                    rec.last_error = f"{type(e).__name__}: {e}"
-                await self._broadcast_subs_updated()
-                # Do not degrade on missing method; capability check should prevent reaching here
-                raise
-            else:
-                async with self._subs_lock:
-                    rec = self._get_or_create_sub(input.server, input.uri)
-                    rec.active = True
-                    rec.last_error = None
-                await self._broadcast_subs_updated()
-                return SimpleOk(ok=True)
-
-        self.subscribe_tool = self.flat_model()(subscribe)
-
-        async def unsubscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
-            """Unsubscribe from updates for a resource."""
-            await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-            prefixed = add_resource_prefix(input.uri, input.server)
-            uri_value = ANY_URL.validate_python(prefixed)
-            rec_key = (input.server, input.uri)
-            try:
-                child_client = self._compositor.get_child_client(input.server)
-                await child_client.session.unsubscribe_resource(uri_value)
-            except McpError as e:
-                # Reflect error in index and re-raise
-                async with self._subs_lock:
-                    if (rec := self._subs.get(rec_key)) is not None:
-                        rec.active = False
-                        rec.last_error = f"{type(e).__name__}: {e}"
-                await self._broadcast_subs_updated()
-                # Do not degrade on missing method; capability check should prevent reaching here
-                raise
-            else:
-                # Remove record entirely on explicit unsubscribe (no pin semantics yet)
-                async with self._subs_lock:
-                    self._subs.pop(rec_key, None)
-                await self._broadcast_subs_updated()
-                return SimpleOk(ok=True)
-
-        self.unsubscribe_tool = self.flat_model()(unsubscribe)
-
-        # Note: list_subscriptions is derived from tool name, not explicitly set
-        async def list_subscriptions() -> SubscriptionsIndex:
-            """List current subscriptions (returns same data as subscriptions_index resource)."""
-            present = await self._present_servers()
-            async with self._subs_lock:
-                items = list(self._subs.values())
-                lss = set(self._list_subscribed_servers)
-            out = [
-                SubscriptionSummary(
-                    server=rec.server,
-                    uri=rec.uri,
-                    pinned=rec.pinned,
-                    present=(rec.server in present),
-                    active=rec.active and (rec.server in present),
-                    last_error=rec.last_error,
-                )
-                for rec in items
-            ]
-            list_out: list[ListSubscriptionSummary] = [
-                ListSubscriptionSummary(server=s, present=(s in present), active=(s in present)) for s in sorted(lss)
-            ]
-            return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out)
-
-        self.list_subscriptions_tool = self.flat_model()(list_subscriptions)
-
-        async def subscribe_list_changes_impl(input: ListSubscribeArgs) -> SimpleOk:
-            """Track when a server's resource list changes. Can subscribe to multiple servers."""
-            await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.LIST_CHANGED)
-            async with self._subs_lock:
-                self._list_subscribed_servers.add(input.server)
-            await self._broadcast_subs_updated()
-            return SimpleOk(ok=True)
-
-        self.subscribe_list_changes_tool = self.flat_model(name="subscribe_list_changes")(subscribe_list_changes_impl)
-
-        async def unsubscribe_list_changes_impl(input: ListSubscribeArgs) -> SimpleOk:
-            """Stop tracking resource list changes for a server."""
-            async with self._subs_lock:
-                self._list_subscribed_servers.discard(input.server)
-            await self._broadcast_subs_updated()
-            return SimpleOk(ok=True)
-
-        self.unsubscribe_list_changes_tool = self.flat_model(name="unsubscribe_list_changes")(
-            unsubscribe_list_changes_impl
-        )
-
-        # Register lifecycle listeners
-        async def _on_mount_change(name: str, action: MountEvent) -> None:
-            if action is not MountEvent.UNMOUNTED:
-                return
-            # Server is being unmounted. Do not attempt remote unsubscriptions; the
-            # Compositor tears down underlying sessions. Update local records only.
-            # Drop non-pinned entries for this server; mark pinned (future) inactive.
-            async with self._subs_lock:
-                to_delete = [
-                    (server, uri) for (server, uri), rec in self._subs.items() if server == name and not rec.pinned
-                ]
-                for (server, uri), rec in list(self._subs.items()):
-                    if server == name and rec.pinned:
-                        rec.active = False
-                        self._subs[(server, uri)] = rec
-                changed = bool(to_delete)
-                for key in to_delete:
-                    self._subs.pop(key, None)
-                # Drop list-changed selection for this origin if it is unmounted
-                if name in self._list_subscribed_servers:
-                    self._list_subscribed_servers.discard(name)
-                    changed = True
-            if changed:
-                await self._broadcast_subs_updated()
-
-        compositor.add_mount_listener(_on_mount_change)
-
-        # React to compositor list-changed notifications and reflect updates to the index
-        async def _on_list_changed(name: str) -> None:
-            async with self._subs_lock:
-                subscribed = set(self._list_subscribed_servers)
-            if name in subscribed:
-                await self._broadcast_subs_updated()
-
-        compositor.add_resource_list_change_listener(_on_list_changed)
-
-        # React to compositor resource-updated notifications: if a subscribed
-        # resource (server, uri) matches, broadcast index update so UIs refresh.
-        async def _on_resource_updated(name: str, uri: str) -> None:
-            key = (name, uri)
-            async with self._subs_lock:
-                rec = self._subs.get(key)
-                is_active = bool(rec and rec.active)
-            if is_active:
-                await self._broadcast_subs_updated()
-
-        compositor.add_resource_updated_listener(_on_resource_updated)
-
-        # TODO: Consider per-subscription resources like
-        #   resources://subscriptions/{server}/{percent-encoded-uri}
-        # to enable list_changed semantics. For now, a single index resource is enough.
-
-    async def _broadcast_subs_updated(self) -> None:
-        await self.broadcast_resource_updated(self.SUBSCRIPTIONS_INDEX_URI)
-
-    async def _present_servers(self) -> set[str]:
-        # Include all mounted servers, including in-proc mounts without typed specs.
-        # Use compositor._mount_names() directly; do not swallow errors.
-        names = await self._compositor._mount_names()
-        return set(names)
-
-    def _get_or_create_sub(self, server: str, uri: str) -> SubscriptionRecord:
-        key = (server, uri)
-        rec = self._subs.get(key)
-        if rec is None:
-            rec = SubscriptionRecord(server=server, uri=uri)
-            self._subs[key] = rec
-        return rec
-
-    async def _require_running_entry(self, server: MCPMountPrefix) -> RunningServerEntry:
-        """Fetch the running server entry for a mounted server or raise a ToolError.
-
-        This uses the Compositor's typed entries to ensure we have the
-        InitializeResult for capabilities checks.
-        """
-        entries = await self._compositor.server_entries()
-        entry = entries.get(server)
-        if entry is None:
-            raise ToolError(f"Unknown server '{server}'")
-        if not isinstance(entry, RunningServerEntry):
-            raise ToolError(f"Server '{server}' is not running (state={entry.state})")
-        return entry
-
-    async def _ensure_capability(self, server: MCPMountPrefix, *, feature: ResourceCapabilityFeature) -> None:
-        """Ensure the target server advertises a required resources capability.
-
-        Supported feature values:
-        - ResourceCapabilityFeature.SUBSCRIBE: requires initialize.capabilities.resources.subscribe is True
-        - ResourceCapabilityFeature.LIST_CHANGED: requires initialize.capabilities.resources.listChanged is True
-        """
-        entry = await self._require_running_entry(server)
-        try:
-            caps = entry.initialize.capabilities
-            res_caps = caps.resources
-        except AttributeError as e:
-            raise ToolError(f"Server '{server}' does not advertise resources capabilities") from e
-
-        if res_caps is None:
-            raise ToolError(f"Server '{server}' does not advertise resources capabilities")
-
-        if feature is ResourceCapabilityFeature.SUBSCRIBE:
-            ok = bool(res_caps.subscribe)
-            needed = "resources.subscribe"
-        elif feature is ResourceCapabilityFeature.LIST_CHANGED:
-            ok = bool(res_caps.listChanged)
-            needed = "resources.listChanged"
-        else:
-            raise ToolError(f"Unknown capability feature: {feature}")
-
-        if not ok:
-            raise ToolError(f"Server '{server}' does not support {needed}")

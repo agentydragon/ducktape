@@ -313,16 +313,6 @@ What remains is composing that target with the PE tender floor, and buying.
     in the same month and getting it wrong manufactures churn; and that a coverage target the
     policy cannot afford must be a reported event, never a clamp.
 
-- [ ] **Trim a sleeve that has grown to dominate.** The buy side is done:
-      a policy with `purchase_slots_per_sleeve > 0` invests cash above the
-      ceiling down to the floor, water-filled into whichever sleeves are
-      furthest below target. What is still missing is the other direction —
-      selling an overweight sleeve when there is no cash need at all. Today a
-      sale only ever happens to fund something, so a sleeve that doubles is
-      never trimmed. Doing it needs a drift tolerance, and a tolerance needs
-      the tax drag it causes to be measurable, which is what the allocation
-      study is for.
-
 ## API / Runtime Design Debt
 
 - [ ] **Extend policy schema/programs** enough for downstream

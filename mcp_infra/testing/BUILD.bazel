@@ -31,13 +31,10 @@ py_library(
     srcs = ["fixtures.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":notifications",
         ":simple_servers",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
-        "//mcp_infra/compositor:notifications_buffer",
         "//mcp_infra/compositor:resources_server",
-        "//mcp_infra/enhanced:server",
         "//mcp_infra/exec/docker:types",
         "//mcp_infra/stubs:resources_stub",
         "//mcp_infra/stubs:typed_stubs",
@@ -103,18 +100,12 @@ py_binary(
 )
 
 py_library(
-    name = "stdio_notifier",
-    srcs = ["stdio_notifier.py"],
-    visibility = ["//:__subpackages__"],
+    name = "wedge_repro",
+    testonly = True,
+    srcs = ["wedge_repro.py"],
     deps = [
-        "//mcp_infra/enhanced:server",
+        ":remote_server",
         "@pypi//anyio",
+        "@pypi//fastmcp_slim",
     ],
-)
-
-py_binary(
-    name = "stdio_notifier_bin",
-    main_module = "mcp_infra.testing.stdio_notifier",
-    visibility = ["//:__subpackages__"],
-    deps = [":stdio_notifier"],
 )

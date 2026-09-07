@@ -15,18 +15,6 @@ py_library(
 )
 
 py_library(
-    name = "oob_notify_mixin",
-    srcs = ["oob_notify_mixin.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//mcp_infra:urls",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "openai_strict_mixin",
     srcs = ["openai_strict_mixin.py"],
     visibility = ["//:__subpackages__"],
@@ -42,10 +30,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":flat_mixin",
-        ":oob_notify_mixin",
         ":openai_strict_mixin",
         "@pypi//fastmcp_slim",
-        "@pypi//mcp",
     ],
 )
 
@@ -89,33 +75,6 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_oob_broadcast",
-    srcs = ["test_oob_broadcast.py"],
-    deps = [
-        ":server",
-        "//:conftest",
-        "//mcp_infra:conftest",
-        "@pypi//anyio",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_oob_session_capturing",
-    srcs = ["test_oob_session_capturing.py"],
-    deps = [
-        ":server",
-        "//:conftest",
-        "//mcp_infra:conftest",
-        "//mcp_infra:urls",
-        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )

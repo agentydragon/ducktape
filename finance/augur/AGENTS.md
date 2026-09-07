@@ -37,3 +37,38 @@ Two rules follow, and both have been violated before:
 **Validation splits along the same line.** A traced value cannot drive a Python `raise`,
 so anything that must fail loudly has to be checked before tracing, on the static
 inputs.
+
+## Provenance of a reported number
+
+Augur reports probabilities, and a probability is always _according to a model_. A number
+quoted without the model that produced it is not a weaker claim than one quoted with it —
+it is a different, unfalsifiable claim, and it survives into later work as if it were
+measured.
+
+So every reported figure — in a PR body, an issue, a `debug/` note, a docstring, a commit
+message, a chat reply — carries enough to reproduce it:
+
+- **Which sampler.** Historical replay over overlapping windows, or draws from a fitted
+  model. These are not interchangeable and do not have the same error structure: replay
+  windows overlap, so `N` windows are worth far fewer than `N` independent observations.
+- **Which fit window**, for a fitted sampler, and which evidence series it was fit against.
+- **The policy config that was live**, in full — allocation, the cash band, rebalancing,
+  withdrawal rate, horizon.
+- **The instrument construction** for each sleeve. A bond sleeve's assumed maturity, credit
+  quality and fee are not detail; a 120bp difference on the bond sleeve moves the answer
+  more than the choice of sampler does.
+- **The sampling noise.** Report the standard error next to the estimate, and do not rank
+  cells whose intervals overlap. Most cells in a plausible allocation grid are not
+  separable at achievable sample sizes, so a bare ordering of cells is usually reading
+  noise.
+
+**Gotcha: a default can be a policy choice.** `TargetAllocationPolicy.rebalance_tolerance`
+defaults to `None`, which means _never rebalance on drift_ — a substantive strategy, not
+an absent setting. A reader who is not told will assume the portfolio was rebalanced.
+State the value, including when it is the default.
+
+**"Probability of X" is never the whole label.** Write "probability of X under
+{sampler, window, policy}", or point at the config that pins all three. Where a figure is
+quoted from elsewhere, carry its provenance with it or say that you could not establish
+it — an inherited number whose model is unknown is a starting point for an investigation,
+not evidence.

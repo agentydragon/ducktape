@@ -22,7 +22,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":server",
-        "//mcp_infra:mount_types",
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:server",
     ],
@@ -72,8 +71,6 @@ py_library(
     deps = [
         ":server",
         "//mcp_infra:flat_tool",
-        "//mcp_infra:mcp_types",
-        "//mcp_infra:mount_types",
         "//mcp_infra:prefix",
         "//mcp_infra:resource_utils",
         "//mcp_infra:snapshots",

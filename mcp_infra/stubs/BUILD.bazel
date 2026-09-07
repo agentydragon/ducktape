@@ -6,10 +6,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":server_stubs",
-        "//mcp_infra:mcp_types",
-        "//mcp_infra:resource_utils",
         "//mcp_infra/compositor:resources_server",
-        "//mcp_infra/resources:types",
     ],
 )
 

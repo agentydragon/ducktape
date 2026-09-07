@@ -13,15 +13,15 @@ Two LLM agents alternate turns:
 
 ## Frameworks
 
-| Framework         | Language | Directory          | Status                                                            |
-| ----------------- | -------- | ------------------ | ----------------------------------------------------------------- |
-| PydanticAI        | Python   | `pydantic_ai/`     | Implemented                                                       |
-| LangGraph         | Python   | `langgraph/`       | Implemented                                                       |
-| Agent Framework   | Python   | `agent_framework/` | Implemented (migrated from AutoGen, which is in maintenance mode) |
-| CrewAI            | Python   | `crewai/`          | Implemented                                                       |
-| OpenAI Agents SDK | Python   | `openai_agents/`   | Implemented                                                       |
-| Rig               | Rust     | `rig/`             | Implemented                                                       |
-| Genkit            | Go       | `genkit/`          | Implemented                                                       |
+| Framework         | Language | Directory          | Status                                                                                               |
+| ----------------- | -------- | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| PydanticAI        | Python   | `pydantic_ai/`     | Implemented                                                                                          |
+| LangGraph         | Python   | <langgraph.md>     | Removed: `langchain-mcp-adapters` has no mcp-sdk >=2.0-compatible release (#5786); doc summarizes it |
+| Agent Framework   | Python   | `agent_framework/` | Implemented (migrated from AutoGen, which is in maintenance mode)                                    |
+| CrewAI            | Python   | <crewai.md>        | Removed: `crewai` has no mcp-sdk >=2.0-compatible release (#5786); doc summarizes it                 |
+| OpenAI Agents SDK | Python   | `openai_agents/`   | Implemented                                                                                          |
+| Rig               | Rust     | `rig/`             | Implemented                                                                                          |
+| Genkit            | Go       | `genkit/`          | Implemented                                                                                          |
 
 ## Usage
 

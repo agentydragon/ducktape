@@ -189,6 +189,32 @@ reduction, the percentile brackets, and the rollout projection — is written ag
 canonical event frames rather than against this engine's output layout. The seam is what
 makes a second engine possible; it is not evidence that one exists.
 
+### What porting off the retired engine can and cannot change
+
+Consumers outside this repo still call the JAX entry points this engine replaced, and each
+one has to be ported. What that port is allowed to move is settled, and worth knowing before
+anyone re-derives it from a diff of two runs.
+
+Until the JAX engine was retired (`2d1d2a07c`), a differential suite compared both engines on
+every commit — untagged targets, so `bazel test //...` ran them. `product_failure_test.py`
+asserted **exact integer equality** of the per-rollout failure month and of every product
+metric array, on the feature-rich scenario with an unfundable obligation, for two agents.
+`product_scenario_test.py` did the same for one `ScenarioKey` against the fixture
+deployment's own portfolio and sampled model, funded and after ruin.
+
+So a port that moves a consumer from the JAX product entry points onto the `Engine` contract
+should return the same failure vector and the same metric arrays, to the integer. A grid whose
+numbers move across such a port has changed something else — most likely the sampler, since
+`model/structural_macro.py` and `fit/structural_macro.py` were reworked over the same period.
+Establish that separately before reading a difference as an engine difference.
+
+The one place the engines were known to differ is event-frame recording **inside a failed
+rollout's failure month**, and it is structural rather than a bug either side owns: Rust stops
+inside its month loop at the phase that could not pay, so whether a phase was recorded depends
+on where it sits in that order, while a vectorized scan reports the whole failure month or
+none of it. No month-level rule reproduces an ordering within one month. Product metrics and
+the failure vector were never part of that divergence.
+
 A scenario the fixture cannot express is refused rather than encoded without it. The live
 case is a purchased property: its recurring HOA, insurance and maintenance obligations carry
 a Schedule E deduction category and a property gate, and `ObligationSpec` has neither field.
