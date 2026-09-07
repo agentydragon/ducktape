@@ -136,7 +136,7 @@ def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> No
     # operation and click-free — its own exact-tools atom, distinct from the widening create_grant.
     assert policies["grants_own_revoke"]["type"] == "exact_tools"
     assert policies["grants_own_revoke"]["tools"] == {"grants": ["revoke_grants"]}
-    for root in ("haku_v1", "public_coder_safe_reads"):
+    for root in ("haku_v1", "public_coder_v1"):
         assert "kubernetes_reads" in policies[root]["policies"], root
         assert "grants_self_introspection" in policies[root]["policies"], root
         assert "grants_own_revoke" in policies[root]["policies"], root

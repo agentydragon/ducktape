@@ -6,7 +6,12 @@ keys:
   - &atlas-host age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
   - &iguana-host age1zemurrcedw7sme3hh793cv8u5zu8eeekn637zpkulxwuw8uav58srwcxzv
   - &gecko-host age1qx8tuzmy8dg7m9kdynsz6lfqkupt4xm64narx6lv9j25v6tfg4lsjcrq85
-  - &public-coder-devbox-host age19v9zjyq32v9s3z5wustyhyac2spn7t9nsty6aagsdntyudqx497sm83knx
+  # public-coder-devbox's own sops decryption identity -- a native age-keygen key, not derived
+  # from an SSH host key. Its root disk is ephemeral (KubeVirt containerDisk), and hostexecd
+  # never establishes an SSH session, so there's no SSH host key to derive this from; a small
+  # dedicated key persisted the same way (a KubeVirt-attached virtio disk) is simpler than
+  # inventing one just so this could reuse the ssh-to-age convention.
+  - &public-coder-devbox-age-identity age1uh0wnz6annhya9xsszjf5htslvdjx2k484s9l62uknlmdtxhmcfqtgf30q
   # User keys (derived from ~/.ssh/id_ed25519 via ssh-to-age)
   - &wyrm2-agentydragon age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
   - &rugged-agentydragon age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
@@ -244,13 +249,14 @@ creation_rules:
       - age:
           - *admin
           - *cluster-secrets
-          - *public-coder-devbox-host
+          - *public-coder-devbox-age-identity
 
-  # The VM's own SSH host key, attached by KubeVirt as a plaintext guest disk (never decrypted
-  # inside the guest -- Flux/kustomize-controller decrypts it server-side like any other Secret).
+  # The VM's own sops age identity, attached by KubeVirt as a plaintext guest disk (never
+  # decrypted inside the guest via this rule's recipients -- Flux/kustomize-controller decrypts it
+  # server-side like any other Secret, and the guest reads the resulting plaintext disk directly).
   # Recipients are cluster-only, unlike node-daemon-public-coder-devbox above, which the guest
-  # itself must decrypt via sops-nix.
-  - path_regex: cluster/k8s/agents/public-coder-agent/devbox/host-key\.sops\.yaml$
+  # itself must decrypt via sops-nix using the identity this file delivers.
+  - path_regex: cluster/k8s/agents/public-coder-agent/devbox/age-identity\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

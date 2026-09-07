@@ -375,7 +375,15 @@ auto_approval_policies:
   - id: kubectl_passthrough_redundancy_check
     type: kubernetes_passthrough
     server: kubectl-passthrough-mcp
-  - id: public_coder_safe_reads
+  # Deliberately narrow: names ONE host and nothing about run_as/cmd. See the `hostexec` catalog
+  # entry comment above, haku/console/auto_approval/hostexec.py, and haku/docs/security.md
+  # invariant #9. This is the sole reason public-coder-agent's `hostexec` calls are ever
+  # auto-approved at all -- every other host stays exactly as manual as it is for the Operator.
+  - id: hostexec_public_coder_devbox
+    type: hostexec_host_scoped
+    server: hostexec
+    hosts: [public-coder-devbox]
+  - id: public_coder_v1
     type: any_of
     policies:
       - public_coder_github_reads
@@ -385,21 +393,6 @@ auto_approval_policies:
       - grants_own_revoke
       - public_coder_recall_reads
       - kubectl_passthrough_redundancy_check
-  # Deliberately narrow: names ONE host and nothing about run_as/cmd. See the `hostexec` catalog
-  # entry comment above, haku/console/auto_approval/hostexec.py, and haku/docs/security.md
-  # invariant #9. This is the sole reason public-coder-agent's `hostexec` calls are ever
-  # auto-approved at all -- every other host stays exactly as manual as it is for the Operator.
-  - id: hostexec_public_coder_devbox
-    type: hostexec_host_scoped
-    server: hostexec
-    hosts: [public-coder-devbox]
-  # Wraps public_coder_safe_reads (read-only) plus the one write exception above. Kept as a
-  # separate id from public_coder_safe_reads so anything else that names that id by policies=[...]
-  # is unaffected by the exception being added here.
-  - id: public_coder_v1
-    type: any_of
-    policies:
-      - public_coder_safe_reads
       - hostexec_public_coder_devbox
   - id: tana_safe_tools
     type: exact_tools

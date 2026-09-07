@@ -631,7 +631,7 @@
               '';
             in
             pkgs.dockerTools.buildLayeredImage {
-              name = "ghcr.io/agentydragon/public-coder-devbox";
+              name = "git.allegedly.works/ducktape-ci/public-coder-devbox";
               contents = [ diskRoot ];
               includeStorePaths = false;
               maxLayers = 2;

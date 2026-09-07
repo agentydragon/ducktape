@@ -23,7 +23,8 @@ let
   keys = import ../../../ssh-keys.nix;
   proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
-  hostKeyDevice = "/dev/disk/by-id/virtio-pchostkey";
+  sopsAgeKeyDevice = "/dev/disk/by-id/virtio-pcagekey";
+  sopsAgeKeyFile = "/etc/sops-age-identity.txt";
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
   proxyCaRuntimeDir = "/run/public-coder-devbox-proxy-ca";
 in
@@ -34,16 +35,30 @@ in
     ../../modules/hostexecd.nix
   ];
 
-  # The purpose-built image owns first boot. KubeVirt attaches the encrypted
-  # host-key Secret as a virtio disk; this service installs it before sshd
-  # starts, so the image does not depend on cloud-init being present.
-  systemd.services.public-coder-devbox-host-key = {
-    description = "Install the persisted public-coder-devbox SSH host key";
-    wantedBy = [ "sshd.service" ];
-    before = [
-      "sshd-keygen.service"
-      "sshd.service"
+  # hostexecd needs no SSH host key at all -- it never establishes an SSH session, only outbound
+  # HTTPS -- and this VM's root disk is already ephemeral (containerDisk), so a *persisted* SSH
+  # host key would only buy back a stable known_hosts fingerprint across restarts that now happen
+  # on every image update. sshd is left to generate its own ephemeral host key each boot, same as
+  # any other fresh install.
+  #
+  # What genuinely needs to persist is this VM's OWN sops decryption identity: hostexecd's daemon
+  # token (cluster/k8s/haku/console/node-daemon-public-coder-devbox.sops.yaml) is decrypted by
+  # sops-nix running *on this VM*, independently of Flux's own decryption of the same ciphertext
+  # into a Kubernetes Secret -- and that identity must stay the same across every ephemeral reboot
+  # for the committed ciphertext to keep decrypting. KubeVirt attaches that identity as its own
+  # (non-SSH) age keyfile via a small virtio disk; this service installs it before sops-nix needs
+  # it, so the image does not depend on cloud-init being present.
+  #
+  # NOTE: the `before`/`wantedBy` target here (sops-install-secrets.service) is sops-nix's actual
+  # decrypt unit as of the pinned nixpkgs/sops-nix release, but hasn't been exercised on a live
+  # boot from this session -- confirm with `systemctl list-units | grep sops` after first boot.
+  systemd.services.public-coder-devbox-sops-age-key = {
+    description = "Install the persisted public-coder-devbox sops age decryption identity";
+    wantedBy = [
+      "sops-install-secrets.service"
+      "multi-user.target"
     ];
+    before = [ "sops-install-secrets.service" ];
     after = [ "local-fs.target" ];
     path = [
       pkgs.coreutils
@@ -55,7 +70,7 @@ in
     };
     script = ''
       set -eu
-      src="/run/public-coder-devbox-host-key/source"
+      src="/run/public-coder-devbox-sops-age-key/source"
       mkdir -p "$src"
       mounted=0
       for _ in $(seq 1 60); do
@@ -63,37 +78,23 @@ in
           mounted=1
           break
         fi
-        if mount -o ro "${hostKeyDevice}" "$src" 2>/dev/null; then
+        if mount -o ro "${sopsAgeKeyDevice}" "$src" 2>/dev/null; then
           mounted=1
           break
         fi
         sleep 1
       done
       if [ "$mounted" -ne 1 ]; then
-        echo "KubeVirt host-key disk did not appear at ${hostKeyDevice}" >&2
+        echo "KubeVirt sops age-key disk did not appear at ${sopsAgeKeyDevice}" >&2
         exit 1
       fi
-      install -Dm0600 "$src/ssh_host_ed25519_key" /etc/ssh/ssh_host_ed25519_key
+      install -Dm0600 "$src/key" "${sopsAgeKeyFile}"
       umount "$src"
     '';
   };
 
-  systemd.services.sshd = {
-    requires = [ "public-coder-devbox-host-key.service" ];
-    after = [ "public-coder-devbox-host-key.service" ];
-  };
+  sops.age.keyFile = sopsAgeKeyFile;
 
-  systemd.services.sshd-keygen = {
-    wants = [ "public-coder-devbox-host-key.service" ];
-    after = [ "public-coder-devbox-host-key.service" ];
-  };
-
-  services.openssh.hostKeys = lib.mkForce [
-    {
-      type = "ed25519";
-      path = "/etc/ssh/ssh_host_ed25519_key";
-    }
-  ];
   # The VM is intentionally a root-administered build box. Its egress is
   # still enforced outside the guest by the Cilium policy on virt-launcher.
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
