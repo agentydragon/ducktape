@@ -1,0 +1,96 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: public-coder-devbox
+  namespace: public-coder-agent
+  labels:
+    app.kubernetes.io/name: public-coder-devbox
+spec:
+  runStrategy: Always
+  dataVolumeTemplates:
+    - metadata:
+        name: public-coder-devbox-root
+      spec:
+        source:
+          s3:
+            # This is the full declarative public-coder-devbox image. Its NixOS
+            # systemd units consume the host-key and proxy-CA disks directly.
+            #
+            # TODO(revival): this is the last image published before the VM was retired. It
+            # predates hostexecd (nix/nixos/hosts/public-coder-devbox/default.nix now sets
+            # ducktape.hostexec.enable). Before flipping public-coder-agent-devbox's Flux
+            # Kustomization from suspend:true, publish a fresh image
+            # (cluster/k8s/vm-images-publisher/README.md, IMAGE_OUTPUT=public-coder-devbox-image
+            # OBJECT_PREFIX=public-coder-devbox) and update this URL to the new object.
+            url: "https://s3.allegedly.works/vm-images/public-coder-devbox/3b1eed43befc230db0056680a5ded42e74233426.qcow2"
+            secretRef: public-coder-devbox-vm-images-s3-reader
+        pvc:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 80Gi
+          storageClassName: local-path-ovh
+          volumeMode: Filesystem
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: public-coder-devbox
+        app.kubernetes.io/name: public-coder-devbox
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+        kubevirt.io/schedulable: "true"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      domain:
+        cpu:
+          cores: 8
+        resources:
+          limits:
+            cpu: "8"
+          requests:
+            cpu: "2"
+            memory: 8Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        devices:
+          disks:
+            - name: rootdisk
+              bootOrder: 1
+              disk:
+                bus: virtio
+            - name: proxy-ca
+              serial: pcproxyca
+              disk:
+                bus: virtio
+            - name: host-key
+              serial: pchostkey
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              ports:
+                - name: ssh
+                  port: 22
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: public-coder-devbox-root
+        - name: proxy-ca
+          configMap:
+            name: public-coder-agent-proxy-ca-cert
+        - name: host-key
+          secret:
+            secretName: public-coder-devbox-host-key
