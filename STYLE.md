@@ -289,6 +289,15 @@ whole-program tools (type-aware ESLint) need a `filegroup` glob of the sources p
 and `svelte_check` already checks components and their `.ts` as one program with no
 second hand-maintained list.
 
+### Runfiles: `_main` is the root module, not this repo
+
+A runfiles path begins with a repository name, and `_main` names whichever module is the
+BUILD ROOT. In a test or a tool that only ever runs inside this repo that is this repo, and
+`get_required_path("_main/...")` is correct. In library code a dependent repo imports it is
+the DEPENDENT, and this repo is `ducktape+` — so the lookup fails, or silently resolves to
+the dependent's own file at that path. Library code reaching a data file it ships uses
+`own_repo_rlocation` (<util/bazel/runfiles.py>), which resolves the prefix at runtime.
+
 ### System CA certificates in distroless images
 
 `rules_distroless` ships no `/etc/ssl/certs/ca-certificates.crt` bundle, so a

@@ -25,6 +25,21 @@ def _get_runfiles() -> runfiles.Runfiles:
     return r
 
 
+def own_repo_rlocation(relative: str) -> str:
+    """A runfiles path for `relative` inside THIS repository, wherever it sits in the build.
+
+    A runfiles path starts with a repository name, and `_main` names the ROOT module — right
+    for a test or tool that only ever runs inside this repo, wrong for library code a dependent
+    repo imports. There `_main` is the DEPENDENT's root and this repo is `ducktape+`, so a
+    `_main/...` lookup either resolves to nothing or, worse, to the dependent's own file at
+    that path. Library code reaching a data file it ships must go through here.
+    """
+
+    # Frame 1 is this function, which lives in this repository whoever called it — so the
+    # canonical name comes out right without every caller having to pass its own.
+    return f"{_get_runfiles().CurrentRepository() or '_main'}/{relative}"
+
+
 def get_required_path(rlocation: str) -> Path:
     """Resolve a runfiles path to an absolute Path, raising if missing."""
     if not (resolved := _get_runfiles().Rlocation(rlocation)):

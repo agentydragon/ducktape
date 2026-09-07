@@ -69,7 +69,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.model.series_model import derive_stream_rollout_seeds
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 MONTHS_PER_YEAR = 12
 
@@ -215,12 +215,14 @@ class StructuralMacroFittedDefaults(FrozenModel):
     rate_beta_r_squared: float
 
 
-# Runfile location of the checked-in fit — see `StructuralMacroFittedDefaults`.
-_BUNDLED_STRUCTURAL_MACRO_RUNFILE = "_main/finance/augur/fit/calibrated/trained_structural_macro.yaml"
+# Repository-relative location of the checked-in fit — see `StructuralMacroFittedDefaults`.
+# Resolved through `own_repo_rlocation` rather than hardcoding `_main`: this is library code,
+# and a dependent repo importing it is `_main` itself.
+_BUNDLED_STRUCTURAL_MACRO_RUNFILE = "finance/augur/fit/calibrated/trained_structural_macro.yaml"
 
 
 def _fitted_defaults() -> StructuralMacroFittedDefaults:
-    path = get_required_path(_BUNDLED_STRUCTURAL_MACRO_RUNFILE)
+    path = get_required_path(own_repo_rlocation(_BUNDLED_STRUCTURAL_MACRO_RUNFILE))
     return StructuralMacroFittedDefaults.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
