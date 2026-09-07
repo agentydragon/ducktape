@@ -6,7 +6,7 @@ from typing import Annotated, Final, Literal
 
 from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_infra.compositor.server import BaseCompositor
@@ -377,7 +377,7 @@ class ResourcesServer(EnhancedFastMCP):
             # (resources server is tightly coupled to compositor for metadata)
             try:
                 contents = await self._compositor.read_resource_contents(uri_value)
-            except McpError as e:
+            except MCPError as e:
                 raise ToolError(
                     f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
                     f"Use list_resources to see available resources. Original error: {e}"
@@ -406,7 +406,7 @@ class ResourcesServer(EnhancedFastMCP):
             uri_value = ANY_URL.validate_python(prefixed)
             try:
                 contents = await self._compositor.read_resource_contents(uri_value)
-            except McpError as e:
+            except MCPError as e:
                 raise ToolError(
                     f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
                     f"Use list_resources to see available resources. Original error: {e}"
