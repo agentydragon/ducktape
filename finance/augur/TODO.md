@@ -78,20 +78,18 @@ Remaining:
 
 ## Exogenous Models & Evidence
 
-- [ ] **The bond-fund total return is ~1.8pp/yr too high over a long record.**
-      `//finance/augur/study:trinity_bin` compounds the instrument sleeve at
-      7.5%/yr over 1926-1995 against the 5.7% Cooley/Hubbard/Walz report for
-      long-term high-grade corporates; the equity sleeve has no such gap
-      (10.2% against 10.5%), so this is the instrument model and not the
-      record. It is what makes every bond-heavy row of that reproduction too
-      optimistic — 86% success at a 4% withdrawal for a 25/75 portfolio against
-      the study's 71%. Suspect `instrument_paths`: the price takes a permanent
-      `exp(-D·Δy)` step per month with no pull-to-par, while the distribution
-      pays the book yield on constant FACE, so a sleeve whose mark has fallen
-      keeps paying the full coupon and reinvests it at the depressed mark. Over
-      seventy years that compounds. Fixing it means changing the instrument
-      model — re-tuning `CORPORATE_SPREAD` against the study's own table would
-      make the reproduction circular.
+- [ ] **The bond sleeve distributes more than it earns.**
+      `instrument_paths` pays the coupon on a face pinned at `initial_price_usd`
+      while the mark moves with yields, so the fund's yield on its own mark is
+      the book yield scaled by `face / mark` and drifts away from the market
+      yield permanently. Measured over 1926-1995: the fund's distribution yield on its own NAV
+      reaches 10.95% while the bonds it holds yield 6.71%, and its total return
+      is 7.52%/yr against the 5.70% Cooley/Hubbard/Walz report for long-term
+      corporates. Shared by both providers, so the fitted `structural_macro` has
+      it too — a 30-year projection is long enough for the drift to bite. Fix:
+      amortize face per unit toward the mark on the same roll schedule
+      `book_yield` already converges on. Diagnosis, numbers and the rejected
+      alternative: <augur/debug/bond_sleeve_overdistribution.md>.
 
 - [ ] **Drop the redundant "exogenous" adjective from remaining identifiers, docs,
       and comments.** Every augur model is exogenous by invariant, so the adjective

@@ -19,13 +19,15 @@ attribution:
   in 1926-07 rather than 1926-01, so the record is six months short at the front.
 - *Bonds are a duration-approximated fund priced off the long-term GOVERNMENT rate*, with
   `CORPORATE_SPREAD` standing in for the credit spread on the paper's long-term high-grade
-  corporates. **This is the largest difference, and it is measured, not guessed**: over
-  1926-1995 the sleeve compounds at 7.5%/yr against the paper's 5.7% for corporates, so every
-  bond-heavy row here is too optimistic — 86% success at 4% for a 25/75 portfolio against
-  Table 3's 71%. The equity sleeve has no such gap (10.2% against 10.5%), which is why the
-  equity-led rows land within a few points. Closing it means fixing the instrument model, not
-  re-tuning `CORPORATE_SPREAD` against this table — a spread fitted to the number being
-  reproduced would make the reproduction circular.
+  corporates. **This is the largest difference, and it is a defect rather than a modelling
+  choice**: over 1926-1995 the sleeve compounds at 7.5%/yr against the paper's 5.7%, because
+  `instrument_paths` pays its coupon on a face pinned at `initial_price_usd` while the mark
+  drifts — by 1995 the fund distributes 10.95% on a net asset value whose bonds yield 6.71%.
+  Every bond-heavy row here is correspondingly too optimistic: 86% success at 4% for a 25/75
+  portfolio against Table 3's 71%. The equity sleeve has no such gap (10.2% against 10.5%),
+  which is why the equity-led rows land within a few points. Diagnosis and the fix's shape:
+  <../debug/bond_sleeve_overdistribution.md>. Re-tuning `CORPORATE_SPREAD` against this table
+  would hide it and make the reproduction circular.
 - *Windows start every month, not every year.* 474 of them against the paper's 41 — the same
   span, sampled 12x more finely, which makes each cell smoother rather than different.
 - *Coupons sit in cash until the next withdrawal.* augur's allocation policy refills a cash
