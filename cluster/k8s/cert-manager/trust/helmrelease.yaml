@@ -28,3 +28,10 @@ spec:
         namespace: cert-manager-trust
   values:
     replicaCount: 1
+    # Backs a failurePolicy: Fail webhook on Bundle, so its absence rejects writes
+    # rather than degrading. Same treatment as the other blocking-webhook backends.
+    priorityClassName: system-cluster-critical
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+        operator: Exists

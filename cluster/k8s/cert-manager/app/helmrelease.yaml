@@ -27,6 +27,28 @@ spec:
         namespace: flux-system
       interval: 12h
   values:
+    # cert-manager-webhook backs a failurePolicy: Fail webhook, so while it is down
+    # the API *rejects* every Certificate/Issuer/CertificateRequest write rather than
+    # degrading. Without a priority class it sorted with ordinary workloads under
+    # kubelet eviction, which on 2026-09-07 took out comparable infrastructure for a
+    # few KiB of ephemeral storage on a node whose disk something else had filled.
+    # The chart exposes priorityClassName only under `global`, so this necessarily
+    # covers the controller and cainjector too — which is right: cainjector maintains
+    # the caBundle that webhook depends on, and the controller is what actually
+    # issues the certificates.
+    global:
+      priorityClassName: system-cluster-critical
+
+    # Tolerations are per-component in this chart (no global). This one is the
+    # controller; webhook and cainjector repeat it below. Small stateless components
+    # in the admission path belong on the always-on control-plane bare metal, as
+    # kyverno and external-secrets already are. Widened, not pinned — no nodeSelector
+    # or affinity, so every worker stays a candidate.
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+        operator: Exists
+
     # Install CRDs automatically
     crds:
       enabled: true
@@ -68,6 +90,10 @@ spec:
         memory: 32Mi
 
     webhook:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+          operator: Exists
       # Configure additional DNS names for webhook certificate
       extraArgs:
         - --dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,cert-manager-webhook.cert-manager.svc,cert-manager-webhook.cert-manager.svc.cluster.local
@@ -80,6 +106,10 @@ spec:
           memory: 32Mi
 
     cainjector:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+          operator: Exists
       resources:
         limits:
           cpu: 100m

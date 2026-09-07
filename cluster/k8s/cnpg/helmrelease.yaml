@@ -29,3 +29,17 @@ spec:
         kind: HelmRepository
         name: cnpg
         namespace: flux-system
+  values:
+    # The operator backs two failurePolicy: Fail webhooks (Cluster, Backup,
+    # ScheduledBackup), so while it is down those writes are rejected outright — and
+    # it is the operator reconciling every Postgres cluster here. Same treatment as
+    # the other blocking-webhook backends.
+    #
+    # This is the operator Deployment only. Database placement is unaffected: each
+    # Cluster carries its own affinity (docs/cnpg_conventions.md), and nothing here
+    # would put Postgres on a control-plane node.
+    priorityClassName: system-cluster-critical
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+        operator: Exists
