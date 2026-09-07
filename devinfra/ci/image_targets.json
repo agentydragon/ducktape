@@ -17,15 +17,18 @@
     },
     "augur": {
       "target": "//finance/augur/api:image",
-      "test": "//finance/augur/api/..."
+      "test": "//finance/augur/api/...",
+      "registry": "forgejo"
     },
     "augur-frontend": {
       "target": "//finance/augur/frontend:image",
-      "test": "//finance/augur/frontend:image_build_test"
+      "test": "//finance/augur/frontend:image_build_test",
+      "registry": "forgejo"
     },
     "augur-evidence": {
       "target": "//finance/scraper:image",
-      "test": "//finance/scraper/..."
+      "test": "//finance/scraper/...",
+      "registry": "forgejo"
     },
     "haku-harness-runner": {
       "target": "//haku/runner:runner_image",
@@ -49,7 +52,8 @@
     },
     "exec-backend": {
       "target": "//mcp_infra/exec:direct_image",
-      "test": "//mcp_infra/exec/..."
+      "test": "//mcp_infra/exec/...",
+      "registry": "forgejo"
     },
     "props-backend": {
       "target": "//props/backend:image",
@@ -95,11 +99,13 @@
     },
     "authentik-mcp-poc-server": {
       "target": "//x/authentik_mcp_poc:server_image",
-      "test": "//x/authentik_mcp_poc/..."
+      "test": "//x/authentik_mcp_poc/...",
+      "registry": "forgejo"
     },
     "authentik-mcp-poc-backend": {
       "target": "//x/authentik_mcp_poc:backend_image",
-      "test": "//x/authentik_mcp_poc/..."
+      "test": "//x/authentik_mcp_poc/...",
+      "registry": "forgejo"
     },
     "grocy-mcp": {
       "target": "//grocy_mcp:server_image",
@@ -158,11 +164,13 @@
     },
     "loom-gym-eval": {
       "target": "//loom/gym:eval_image",
-      "test": "//loom/gym/..."
+      "test": "//loom/gym/...",
+      "registry": "forgejo"
     },
     "wayback-proxy": {
       "target": "//loom/wayback/proxy:image",
-      "test": "//loom/wayback/proxy/..."
+      "test": "//loom/wayback/proxy/...",
+      "registry": "forgejo"
     },
     "wayback-archive": {
       "target": "//loom/wayback/cache:image",
@@ -203,10 +211,12 @@
       "registry": "forgejo"
     },
     "firecracker-manager": {
-      "target": "//devinfra/firecracker/manager:image"
+      "target": "//devinfra/firecracker/manager:image",
+      "registry": "forgejo"
     },
     "fc-vm-pod": {
-      "target": "//devinfra/firecracker/vm_pod:image"
+      "target": "//devinfra/firecracker/vm_pod:image",
+      "registry": "forgejo"
     },
     "inventree": {
       "target": "//inventree_utils/rai_plugin:image",

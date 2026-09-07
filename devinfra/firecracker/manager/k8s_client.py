@@ -284,6 +284,9 @@ class K8sVMClient:
             "volumes": volumes,
             "restartPolicy": "Never",
             "terminationGracePeriodSeconds": 10,
+            # vm_image is a private Forgejo package; ducktape-ci credential reflected
+            # into claude-sandbox from cluster/k8s/forgejo-images/.
+            "imagePullSecrets": [{"name": "forgejo-images-creds"}],
         }
         if node_selector:
             spec["nodeSelector"] = node_selector

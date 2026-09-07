@@ -24,9 +24,13 @@ spec:
       serviceAccountName: firecracker-manager
       nodeSelector:
         kubernetes.io/hostname: wyrm2
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       containers:
         - name: manager
-          image: ghcr.io/agentydragon/firecracker-manager:latest
+          image: git.allegedly.works/ducktape-ci/firecracker-manager:latest
           args:
             - /etc/firecracker-manager/config.yaml
           ports:
