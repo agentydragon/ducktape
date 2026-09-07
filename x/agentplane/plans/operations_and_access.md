@@ -6,15 +6,16 @@ map and acceptance criteria are in [`task_dag.md`](task_dag.md).
 
 ## Accepted vocabulary and decisions
 
-- **Action**: a named, versioned capability definition. Its exact schema/ownership is still the
-  `AS` design gate.
+- **Action**: a stable, namespaced capability definition such as `github.get_file`. Its exact
+  schema/ownership is still the `AS` design gate; no public `action_version` is required.
 - **ActionRequest**: one immutable caller intent to invoke an Action with structured arguments.
 - **Decision**: an authorization disposition over one ActionRequest.
 - **Execution**: the at-most-one concrete run created after an allow Decision.
 - **Executor**: the adapter/process that performs that run. Its selection and boundary are still the
   `EW` design gate.
-- **Delivery**: the pending/Decision/Execution event returned to the originating Thread. Its durable
-  path is still the `DEL` design gate.
+- **Action events/API delivery**: the durable pending/Decision/Execution history and query surface
+  exposed by the Action Service. Delivery into an originating Agent/Thread is a later Event &
+  Notification Hub concern, not a prerequisite for the first MCP execution slice.
 
 Preserve these already accepted decisions:
 
@@ -35,9 +36,10 @@ Preserve these already accepted decisions:
 
 PR [#5700](https://github.com/agentydragon/ducktape/pull/5700) landed an independently deployable
 Action Service, not an in-process “Action Hub” inside the integration app. It owns its own PostgreSQL
-schema and is the canonical state owner for ActionRequests, Decisions, Executions, state events, and
-pending-decision outbox references. The integration app/BFF and future notification surfaces are
-clients.
+schema and is the canonical state owner for ActionRequests, Decisions, Executions, and state events.
+The v0 schema also retains a pending-decision outbox reference without request arguments; the first
+MCP execution path uses durable Action events/API polling rather than a separate delivery queue. The
+integration app/BFF and future notification surfaces are clients.
 
 ### Current ActionRequest contract
 
@@ -84,8 +86,11 @@ decision_pending -> allowed -> dispatching -> running -> succeeded | failed | ex
 decision_pending -> denied
 ```
 
-Withdrawal, notification delivery, originating-Thread delivery, adapter-specific reconciliation,
-and cancellation after dispatch are not implemented by this slice.
+Withdrawal, originating-Agent/Thread delivery, adapter-specific reconciliation, and cancellation
+after dispatch are not implemented by this slice. Executor liveness and orphan recovery are now
+specified separately in [`../docs/executor_liveness.md`](../docs/executor_liveness.md); a coordinator
+restart no longer unconditionally declares dispatching/running work unknown, and stale leases are
+the recovery signal.
 
 ### Fixture-only executor
 
@@ -226,7 +231,7 @@ silently filled with an unverified Agent name.
 
 **P0 behavior:** submission remains non-blocking; the Action API and durable Action events expose a
 pending human Decision and the eventual Decision/Execution result with bounded provider-authored reason
-evidence. Originating-Thread notification is a later integration node, not a prerequisite for
+evidence. Originating-Agent/Thread notification is a later integration node, not a prerequisite for
 proving that an Agent can use an Action backed by MCP.
 
 **Landed:** provider-outcome aggregation and deny-dominant finalization, and duplicate/stale

@@ -13,7 +13,8 @@ not a second request or tool lifecycle.
 - `ActionRequest` is the invariant request shape for both human-reviewed and future auto-decided
   actions.
 - Submission is non-blocking. A caller receives a durable `decision_pending` receipt and may
-  continue; the Decision/result should arrive later as a machine-readable Thread input.
+  continue; the caller can query the redacted Action state/events API. Delivery as a later
+  machine-readable Agent/Thread input belongs to the Event & Notification Hub.
 - Decision and Execution are separate. An allow auto-dispatches at most one Execution; a deny creates
   none.
 - The v0 DecisionProvider is human/operator-backed. Future auto-approval policies are modular
@@ -41,10 +42,10 @@ PR [#5700](https://github.com/agentydragon/ducktape/pull/5700) proves:
 - concurrent duplicate Decisions produce one winning Decision and at most one Execution;
 - allow auto-dispatches while deny does not;
 - the state event sequence is durable and ordered;
-- unsafe restart state becomes `execution_unknown` instead of replaying; and
+- ambiguous dispatch/recovery becomes `execution_unknown` instead of replaying; and
 - each new pending request records a durable Action event without arguments or credentials.
 
-That evidence stops at the Action Service boundary. No originating-Thread consumer is required for
+That evidence stops at the Action Service boundary. No originating-Agent/Thread consumer is required for
 this initial MCP execution slice.
 
 PR [#5732](https://github.com/agentydragon/ducktape/pull/5732) adds synchronous DecisionProvider
@@ -62,7 +63,7 @@ production still runs with zero configured providers.
 
 A caller submits an ActionRequest, continues work, and can query one durable, redacted Action state
 that says whether the request remains pending, was denied, or executed and produced a result/error.
-Originating-Thread notification is a later integration node, not a prerequisite for proving that an
+Originating-Agent/Thread notification is a later integration node, not a prerequisite for proving that an
 Agent can use an Action backed by MCP. Synchronous non-human providers are evaluated first; the
 default aggregation is any `deny` -> deny, otherwise any `allow` -> allow, otherwise defer to the
 asynchronous human provider.

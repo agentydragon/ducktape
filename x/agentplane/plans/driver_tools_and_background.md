@@ -11,7 +11,7 @@ incompatible tool-request lifecycle.
 A driver may eventually declare model-visible tools, but that declaration is not an ActionRequest
 and does not grant execution authority. If a declared tool invokes work outside the Sandbox:
 
-- its stable name/version and parameter/result contract come from the `AS` Action schema gate;
+- its stable Action identity and parameter/result contract come from the `AS` Action schema gate;
 - invocation creates the same invariant ActionRequest used by other callers;
 - Decision and at-most-one Execution remain separate;
 - the `EW` gate selects and configures the Executor; and
