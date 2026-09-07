@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: seed-state
-          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:devel-20260905181100-1d05fc8 # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
+          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:devel-20260907013241-7a762c9 # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
           command:
             - sh
             - -c
@@ -133,7 +133,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: openclaw
-          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:devel-20260905181100-1d05fc8 # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
+          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:devel-20260907013241-7a762c9 # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
           env:
             - name: HOME
               value: /home/openclaw
