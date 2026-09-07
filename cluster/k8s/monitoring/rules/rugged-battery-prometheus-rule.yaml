@@ -1,0 +1,59 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rugged-battery-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # node-exporter's default `power_supply` collector already exposes
+    # node_power_supply_capacity (0-100) and node_power_supply_online
+    # (1 = on AC) from /sys/class/power_supply -- no new instrumentation
+    # needed, just node-exporter actually reaching `rugged` (the roaming
+    # toleration added alongside this file). `instance` is the node-exporter
+    # pod IP, not a node name, so match on the well-known BAT* power-supply
+    # name rather than trying to join through kube_node_status_addresses the
+    # way ../rules/roaming-node-prometheus-rule.yaml documents doing for
+    # TargetDown. rugged is the only cluster member with a BAT* power supply
+    # today (iguana does not run the k8s worker module), so this scopes
+    # itself without an explicit node join.
+    - name: rugged-battery-alerts
+      rules:
+        - alert: RuggedBatteryLowNotCharging
+          expr: |
+            max(node_power_supply_capacity{power_supply=~"BAT.*"}) < 20
+            and
+            max(node_power_supply_online) == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "rugged's battery is low and not charging."
+            description: >
+              rugged (the Dell Rugged 12 tablet) has been on battery for 10+
+              minutes with charge at {{ $value | printf "%.0f" }}%. Plug it in.
+              This only fires while node-exporter can reach the node, so it is
+              silent whenever rugged is offline/suspended -- see
+              KubeNodeNotReady in roaming-node-prometheus-rule.yaml (excluded
+              by the roaming taint) for that case.
+        - alert: RuggedBatteryDrainingWhileNominallyIdle
+          expr: |
+            (
+              max(node_power_supply_capacity{power_supply=~"BAT.*"} offset 1h)
+              -
+              max(node_power_supply_capacity{power_supply=~"BAT.*"})
+            ) > 15
+            and
+            max(node_power_supply_online) == 0
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: "rugged's battery dropped more than 15 points in an hour on battery."
+            description: >
+              rugged lost {{ $value | printf "%.0f" }} percentage points of
+              charge in the last hour while on battery. A sharp drop is the
+              "failed to actually suspend" symptom -- check
+              `journalctl -b -u systemd-logind | grep -i suspend` on rugged
+              for whether a suspend cycle actually completed in that window.
