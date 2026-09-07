@@ -62,6 +62,9 @@ from finance.augur.sim.testing.simulation_result import Backend
 TENANT_AGENT_ID = "tenant"
 OWNER_AGENT_ID = "owner"
 MGMT_AGENT_ID = "property_management_agency"
+# $500k house, 20% land: the building basis SS168 depreciates, and the ceiling on the total.
+BUILDING_BASIS_QUANTA = 400_000 * 100
+
 RENT_SERIES_KEY = RentKey(location_id=LocationId("test_location"))
 SF_HOME_VALUE_KEY = HomeValueKey(location_id=LocationId("san_francisco"))
 
@@ -2100,6 +2103,36 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
                     ],
                 }
             )
+
+    def test_a_building_is_depreciated_once_however_long_it_is_held(self, backend: Backend) -> None:
+        """SS168 gives a building 27.5 years of depreciation, not 27.5 years and then more.
+
+        A $500k house is 80% building, so $400k of basis over 330 months. Held rented for 336,
+        an uncapped accrual takes $407,272.32 -- $7,272.32 of depreciation against basis that
+        does not exist -- which drives the tax-adjusted basis below the land value and inflates
+        the realized gain and the SS1250 recapture together, while still deducting from ordinary
+        income every year past the 330th month.
+
+        Sold at twice the purchase price so the gain is far larger than the depreciation, which
+        leaves recapture bounded by what was actually taken. That is the figure under test: the
+        basis exactly, whatever the holding period.
+        """
+
+        horizon, sale_month = 340, 336
+        scenario = self._sale_scenario(horizon=horizon, sale_month=sale_month)
+        ctx = _multi_series(
+            levels_by_series={
+                RENT_SERIES_KEY: {0: [1] * (horizon + 1)},
+                SF_HOME_VALUE_KEY: {0: [1] * sale_month + [2.0] * (horizon + 1 - sale_month)},
+            }
+        )
+        result = backend(rental_case(scenario, series=ctx, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
+
+        sales = result.events.property_sale_events.to_dicts()
+        assert len(sales) == 1, f"one property sold once, got {len(sales)} rows"
+        assert sales[0]["depreciation_recapture_quanta"] == BUILDING_BASIS_QUANTA, (
+            "recapture is capped by the basis the building had, not by the months it was held"
+        )
 
     def _sale_scenario(
         self,

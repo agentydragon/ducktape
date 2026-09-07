@@ -548,12 +548,23 @@ pub(super) fn accrue_property_depreciation(
         .iter_mut()
         .filter(|property| property.active && property.rented_fraction_ppb > 0)
     {
+        // SS168 depreciates a building once, so what is left of the basis is the ceiling on
+        // what any further month may take. Without it the accrual runs past 330 rented months
+        // and drives `tax_adjusted_basis` negative, which inflates both the realized gain and
+        // the SS1250 recapture at sale while still deducting against ordinary income.
+        let remaining = property
+            .building_basis
+            .checked_sub(property.cumulative_depreciation)?;
+        if remaining <= Money(0) {
+            continue;
+        }
         // SS168: 27.5 years of monthly depreciation, taken on the rented share.
         let monthly_share = Factor::parts_per_billion(property.rented_fraction_ppb)
             .per(DEPRECIATION_MONTHS, "property monthly depreciation factor")?;
         let depreciation = property
             .building_basis
-            .scaled_by(monthly_share, "property monthly depreciation")?;
+            .scaled_by(monthly_share, "property monthly depreciation")?
+            .min(remaining);
         property.cumulative_depreciation =
             property.cumulative_depreciation.checked_add(depreciation)?;
         property.depreciation_ytd = property.depreciation_ytd.checked_add(depreciation)?;
