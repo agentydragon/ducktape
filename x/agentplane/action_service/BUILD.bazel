@@ -12,6 +12,12 @@ py_library(
 )
 
 py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "auth",
     srcs = ["auth.py"],
     deps = [
@@ -45,6 +51,7 @@ py_library(
     srcs = ["api.py"],
     deps = [
         ":auth",
+        ":catalog",
         ":db",
         ":models",
         ":service",
@@ -81,6 +88,7 @@ py_library(
     deps = [
         ":api",
         ":auth",
+        ":catalog",
         ":db",
         ":service",
         "//x/agentplane/sandbox_auth:http",
@@ -88,6 +96,7 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
         "@pypi//uvicorn",
     ],
 )
@@ -177,6 +186,7 @@ py_test(
     deps = [
         ":api",
         ":auth",
+        ":catalog",
         ":conftest",
         ":db",
         ":models",
@@ -197,6 +207,7 @@ py_test(
     deps = [
         ":api",
         ":auth",
+        ":catalog",
         ":client",
         ":conftest",
         ":models",
@@ -208,5 +219,19 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_catalog",
+    srcs = ["test_catalog.py"],
+    deps = [
+        ":catalog",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

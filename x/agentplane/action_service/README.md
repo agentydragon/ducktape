@@ -16,6 +16,29 @@ The v0 executable seam is deliberately small:
 - one explicit `agentplane:v0.echo` fixture executor proving the service boundary; and
 - a durable pending-decision outbox reference containing no request arguments.
 
+## Action catalog
+
+`catalog.ActionCatalog` is the Agent-facing discovery seam: an `ActionGroup` (e.g. `github`) is the
+executor/backend ownership unit, and each child `Action` (e.g. `get_file`) is namespaced under it as
+`github.get_file`. `GET /v1/action-groups` lists every configured group with its Actions'
+descriptions and input schemas; `GET /v1/action-groups/{group}/actions/{action}` looks up one Action
+directly and 404s clearly on an unknown group or action. Both are workload-authenticated reads with
+no owner-scoping, since the catalog is the same for every caller.
+
+The catalog is reviewed runtime configuration, not a dynamic registry: `main.Settings.action_groups`
+follows the same `AGENTPLANE_ACTIONS_CONFIG_FILE`-mounted-YAML convention as the integration app's
+`AGENTPLANE_CONFIG_FILE` (`x/agentplane/app/main.py`), so an operator edits the catalog and the
+process picks it up on restart — sufficient because ActionGroup/executor bindings change at
+operator/deploy cadence, not per-request, and the app's existing `Recreate`-strategy Deployment
+already restarts on every config change. `ExecutorBinding.config` (backend/account material) is
+never exposed by any discovery view; only `ExecutorBinding.description`, a human-authored summary of
+the executor (e.g. account/credential ownership), is.
+
+Neither the catalog nor its discovery API selects an Executor or gates `ActionRequest` submission —
+that remains `db.ActionStore.submit`'s `supported_capabilities` check against the wired `Executor`.
+Binding a real ActionGroup to a live Executor is the deferred `EW` gate
+(`plans/task_dag.md`), not this seam.
+
 ## Authentication boundaries
 
 Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does

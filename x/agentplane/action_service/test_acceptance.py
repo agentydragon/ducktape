@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
+from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, ExecutorBinding
 from x.agentplane.action_service.db import ActionStore, ExecutionRow, OutboxRow, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
@@ -90,11 +91,12 @@ class LeakyFailingExecutor(CountingExecutor):
         raise RuntimeError("provider rejected Authorization: Bearer provider-token-must-not-escape")
 
 
-async def _client(service: ActionService) -> httpx.AsyncClient:
+async def _client(service: ActionService, *, catalog: ActionCatalog | None = None) -> httpx.AsyncClient:
     app = create_app(
         service,
         cast(SandboxPrincipalAuthenticator, FakeSandboxAuthenticator()),
         cast(OperatorAuthenticator, FakeOperatorAuthenticator()),
+        catalog or ActionCatalog(),
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")
 
@@ -381,6 +383,75 @@ async def test_restart_resumes_only_pending_dispatch_and_marks_inflight_unknown(
         ActionState.EXECUTION_UNKNOWN,
     ]
     await after_crash.close()
+
+
+async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(engine: AsyncEngine) -> None:
+    catalog = ActionCatalog(
+        groups={
+            "github": ActionGroup(
+                title="GitHub",
+                description="Read access to public GitHub repositories.",
+                executor=ExecutorBinding(
+                    kind="mcp",
+                    description="Connected as Rai's GitHub account.",
+                    config={"account_secret_ref": "github-mcp-account"},
+                ),
+                actions={
+                    "get_file": ActionDefinition(
+                        description="Read one file's contents from a public repository.",
+                        input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+                    )
+                },
+            )
+        }
+    )
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(store, CountingExecutor())
+    await service.start()
+    client = await _client(service, catalog=catalog)
+    try:
+        groups = await client.get("/v1/action-groups", headers=_workload("workload-a"))
+        assert groups.status_code == 200
+        assert groups.json() == [
+            {
+                "key": "github",
+                "title": "GitHub",
+                "description": "Read access to public GitHub repositories.",
+                "executor_kind": "mcp",
+                "executor_description": "Connected as Rai's GitHub account.",
+                "available": True,
+                "actions": [
+                    {
+                        "group": "github",
+                        "name": "get_file",
+                        "id": "github.get_file",
+                        "description": "Read one file's contents from a public repository.",
+                        "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+                    }
+                ],
+            }
+        ]
+        assert "github-mcp-account" not in groups.text
+
+        unauthenticated = await client.get("/v1/action-groups")
+        assert unauthenticated.status_code == 401
+
+        action = await client.get("/v1/action-groups/github/actions/get_file", headers=_workload("workload-a"))
+        assert action.status_code == 200
+        assert action.json()["id"] == "github.get_file"
+
+        missing_group = await client.get(
+            "/v1/action-groups/does-not-exist/actions/get_file", headers=_workload("workload-a")
+        )
+        assert missing_group.status_code == 404
+
+        missing_action = await client.get(
+            "/v1/action-groups/github/actions/does-not-exist", headers=_workload("workload-a")
+        )
+        assert missing_action.status_code == 404
+    finally:
+        await client.aclose()
+        await service.close()
 
 
 if __name__ == "__main__":

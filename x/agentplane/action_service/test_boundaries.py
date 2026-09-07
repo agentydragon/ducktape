@@ -20,6 +20,7 @@ from x.agentplane.action_service.auth import (
     OperatorAuthenticator,
     workload_principal,
 )
+from x.agentplane.action_service.catalog import ActionCatalog
 from x.agentplane.action_service.client import (
     WORKLOAD_CREDENTIAL_PLACEHOLDER,
     ActionServiceClient,
@@ -187,7 +188,10 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
     authenticator, authentication = workload_authenticator()
     service = RecordingActionService()
     app = create_app(
-        cast(ActionService, service), authenticator, cast(OperatorAuthenticator, DisabledOperatorAuthenticator())
+        cast(ActionService, service),
+        authenticator,
+        cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
+        ActionCatalog(),
     )
     body = ActionRequestInput(
         idempotency_key="central-replay",
