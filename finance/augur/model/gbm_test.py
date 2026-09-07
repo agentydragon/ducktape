@@ -22,7 +22,7 @@ def test_deterministic_when_sigma_zero() -> None:
     levels = gbm.sample_levels(rollout_seeds=(1, 2, 3), horizon_months=3)
     expected = 100.0 * np.exp(np.cumsum(np.full(3, 0.01)))
     for row in range(3):
-        np.testing.assert_allclose(levels[row, 1:], expected, rtol=1e-4)
+        np.testing.assert_allclose(levels[row, 1:], expected, rtol=1e-12)
 
 
 def test_seed_reproducible() -> None:
@@ -54,6 +54,20 @@ def test_log_return_moments() -> None:
     log_returns = np.diff(np.log(levels), axis=1)
     assert log_returns.mean() == pytest.approx(mu, abs=2e-3)
     assert log_returns.std() == pytest.approx(sigma, abs=2e-3)
+
+
+def test_a_sampled_level_keeps_the_precision_money_needs() -> None:
+    """A level crosses into money as an exact quantum count, so the cents have to survive.
+
+    $600,000.007 needs nine significant digits; float32 carries about seven. The engine's own
+    acceptance suite uses exactly this figure, on the claim that reading the level wrong "lands
+    a cent low" -- but it authors the level rather than sampling one.
+    """
+
+    value = 600_000.007
+    gbm = GeometricBrownian(initial_value=value, monthly_log_return_mu=0.0, monthly_log_return_sigma=0.0)
+    levels = gbm.sample_levels(rollout_seeds=(1,), horizon_months=1)
+    assert levels[0, 0] == value, f"month 0 sampled as {levels[0, 0]!r}, not the {value!r} configured"
 
 
 if __name__ == "__main__":

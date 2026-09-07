@@ -12,6 +12,7 @@ from pydantic import Field
 
 from finance.augur.dates import months_between
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
+from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.private_equity_protocol import (
     neutral_private_equity_issuer_bundle,
     observed_private_equity_mark_matrix,
@@ -122,7 +123,7 @@ class TrainedPrivateEquityModel(FrozenModel):
 def _sample_levels(
     artifact: TrainedPrivateEquityModelArtifact, *, rollout_seeds: tuple[int, ...], horizon_months: int
 ) -> np.ndarray:
-    levels = np.empty((len(rollout_seeds), horizon_months + 1), dtype=np.float64)
+    levels = np.empty((len(rollout_seeds), horizon_months + 1), dtype=LEVEL_DTYPE)
     for rollout_idx, seed in enumerate(rollout_seeds):
         rng = np.random.default_rng(seed)
         log_path = np.empty(horizon_months + 1, dtype=np.float64)

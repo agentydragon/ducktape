@@ -103,6 +103,7 @@ py_library(
     srcs = ["private_equity_risk.py"],
     deps = [
         ":exogenous",
+        ":float64",
         ":private_equity_bundle",
         ":schemas",
         ":series",
@@ -140,6 +141,7 @@ py_library(
     name = "gbm",
     srcs = ["gbm.py"],
     deps = [
+        ":float64",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pydantic",
@@ -182,6 +184,7 @@ py_library(
     deps = [
         ":conditioning",
         ":exogenous",
+        ":float64",
         ":private_equity_bundle",
         ":private_equity_protocol",
         ":provenance",
@@ -205,6 +208,7 @@ py_library(
     srcs = ["vecm.py"],
     deps = [
         ":exogenous",
+        ":float64",
         ":provenance",
         ":schemas",
         ":series",
@@ -313,6 +317,7 @@ py_library(
     data = ["//finance/augur/fit/calibrated:trained_structural_macro_blob"],
     deps = [
         ":exogenous",
+        ":float64",
         ":schemas",
         ":series",
         ":series_model",
@@ -423,6 +428,7 @@ py_library(
     srcs = ["trained_private_equity.py"],
     deps = [
         ":exogenous",
+        ":float64",
         ":private_equity_protocol",
         ":schemas",
         ":series",
@@ -559,5 +565,14 @@ py_test(
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "float64",
+    srcs = ["float64.py"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//numpy",
     ],
 )

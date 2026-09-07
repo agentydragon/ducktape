@@ -10,6 +10,8 @@ import numpy as np
 from jax import random
 from pydantic import BaseModel
 
+from finance.augur.model.float64 import LEVEL_DTYPE
+
 
 class GeometricBrownian(BaseModel):
     """Fixture GBM-sampled level process for one external series.
@@ -55,4 +57,4 @@ class GeometricBrownian(BaseModel):
             ],
             axis=1,
         )
-        return np.asarray(levels, dtype=np.float64)
+        return np.asarray(levels, dtype=LEVEL_DTYPE)

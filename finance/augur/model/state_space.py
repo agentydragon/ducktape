@@ -34,6 +34,7 @@ from finance.augur.model.exogenous import (
     assemble_level_frames,
     validate_sample_satisfies_request,
 )
+from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.private_equity_protocol import (
@@ -350,7 +351,7 @@ class StateSpaceModel:
         x0 = np.asarray([math.log(level) for level in self._conditioned_start_levels().values()], dtype=np.float64)
         mean = np.asarray([self.artifact.monthly_log_return_mu[factor] for factor in factor_names], dtype=np.float64)
         cov = np.asarray(self.artifact.monthly_log_return_cov, dtype=np.float64)
-        levels = np.empty((request.rollout_count, request.horizon_months + 1, len(factor_names)), dtype=np.float64)
+        levels = np.empty((request.rollout_count, request.horizon_months + 1, len(factor_names)), dtype=LEVEL_DTYPE)
         private_equity_scale_indexes = self._private_equity_scale_indexes()
         for rollout_idx, seed in enumerate(request.rollout_seeds):
             rng = np.random.default_rng(seed)

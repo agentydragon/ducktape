@@ -17,6 +17,7 @@ from finance.augur.model.exogenous import (
     SampledExogenousBundle,
     validate_sample_satisfies_request,
 )
+from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -504,7 +505,7 @@ def _sample_issuer(
     shape = (rollout_count, horizon_months + 1)
 
     # State arrays — all (R, T+1).
-    mark = np.full(shape, issuer.current_mark_usd, dtype=np.float64)
+    mark = np.full(shape, issuer.current_mark_usd, dtype=LEVEL_DTYPE)
     tender_events = np.zeros(shape, dtype=np.bool_)
     event_kind_code = np.zeros(shape, dtype=np.int64)
     regime_code = np.full(shape, int(PrivateEquityRegimeCode.PRIVATE_OPERATING), dtype=np.int64)

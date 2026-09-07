@@ -47,6 +47,7 @@ from numpyro.optim import Adam
 from pydantic import Field
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
+from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
@@ -369,7 +370,7 @@ class VecmModel:
             factor_names=factor_names,
             n_factors=len(factor_names),
             params={name: np.asarray(value, dtype=np.float32) for name, value in trained_state.params.items()},
-            train_log_levels=np.asarray(trained_state.train_log_levels, dtype=np.float64),
+            train_log_levels=np.asarray(trained_state.train_log_levels, dtype=LEVEL_DTYPE),
             latest_observations=dict(latest_observations),
         )
         model._compute_provenance(evidence_source_id)

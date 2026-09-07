@@ -58,6 +58,7 @@ import yaml
 from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
+from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import (
     InflationKey,
@@ -336,7 +337,7 @@ def _macro_state_path(
     normals = np.stack(
         [_shocks(request, f"structural_macro:macro_state:{index}", months=months) for index in range(len(intercept))]
     )
-    path = np.empty((len(intercept), rollouts, months), dtype=np.float64)
+    path = np.empty((len(intercept), rollouts, months), dtype=LEVEL_DTYPE)
     path[:, :, 0] = np.asarray(spec.initial_state)[:, None]
     for month in range(1, months):
         path[:, :, month] = intercept[:, None] + transition @ path[:, :, month - 1] + cholesky @ normals[:, :, month]
