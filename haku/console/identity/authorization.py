@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import errno
 import hashlib
 import hmac
 import json
@@ -91,6 +92,24 @@ _ACTIVATION_LIFETIME = datetime.timedelta(minutes=15)
 _EXPIRY_SWEEP_INTERVAL = datetime.timedelta(minutes=1)
 _EXPIRY_SWEEP_BATCH_SIZE = 100
 _BROWSER_SECRET_BYTES = 32
+
+# asyncpg can surface a raw socket failure before SQLAlchemy has a DBAPIError to wrap it
+# in. These are the transport-level errnos that mean "the database is unreachable", not
+# an application-level OSError subclass (e.g. AgentAccessProfileManagedByDeploymentError
+# is a PermissionError, itself an OSError).
+_TRANSIENT_SOCKET_ERRNOS = frozenset(
+    {
+        errno.ECONNREFUSED,
+        errno.ECONNRESET,
+        errno.ECONNABORTED,
+        errno.EPIPE,
+        errno.EHOSTUNREACH,
+        errno.EHOSTDOWN,
+        errno.ENETUNREACH,
+        errno.ENETDOWN,
+        errno.ETIMEDOUT,
+    }
+)
 
 _T = TypeVar("_T")
 
@@ -214,9 +233,9 @@ class PostgresAgentAuthority:
             return await operation()
         except SQLAlchemyTimeoutError as error:
             raise AgentGrantAuthorityUnavailableError from error
-        except ConnectionError as error:
-            # asyncpg can surface a refused/unreachable socket before SQLAlchemy has a
-            # DBAPIError to wrap it in.
+        except OSError as error:
+            if error.errno not in _TRANSIENT_SOCKET_ERRNOS:
+                raise
             raise AgentGrantAuthorityUnavailableError from error
         except DBAPIError as error:
             if _database_is_unavailable(error):
