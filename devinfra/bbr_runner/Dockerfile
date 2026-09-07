@@ -59,8 +59,16 @@ RUN mkdir -p ~/.config/nix \
     && cd /tmp/flake \
     # Use nix build (not nix profile install) to avoid the profile manifest
     # keeping a reference to the nixpkgs source tree (~457MB).
+    #
+    # --max-jobs 2: nix/packages' packageOverrides fixpoint (see its own
+    # top-of-file comment) can pull a large slice of nixpkgs' Python set into
+    # a from-source rebuild. With sandbox = false and no Nix daemon to throttle
+    # it, the default auto (= nproc, 4 on ubuntu-latest) parallel derivations
+    # of native-code packages can exceed this runner's memory, killing one
+    # build uncleanly and leaving Nix's unsandboxed-root HOME marker
+    # (/homeless-shelter) behind for the next derivation to trip over.
     && RBETOOLS=$(nix build .#rbetools \
-         --no-link --print-out-paths) \
+         --max-jobs 2 --no-link --print-out-paths) \
     # Register as GC root so nix-collect-garbage keeps the closure.
     && nix-store --add-root /nix/var/nix/gcroots/rbetools -r "$RBETOOLS" \
     # Symlink binaries into /usr/local/bin (goinit PATH).
