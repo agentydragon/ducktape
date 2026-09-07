@@ -781,9 +781,9 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # max-clients virtual key (laptop max-claude — laptop-only). Reuses the narrow
+  # claude-subscription-clients virtual key (laptop litellm-claude — laptop-only). Reuses the narrow
   # litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
-  - path_regex: tf/gitops/litellm-keys/litellm-max-clients-key\.yaml$
+  - path_regex: tf/gitops/litellm-keys/litellm-claude-subscription-clients-key\.yaml$
     key_groups:
       - age:
           - *admin

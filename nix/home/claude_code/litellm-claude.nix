@@ -1,9 +1,15 @@
-# `max-claude`: Claude Code on the Anthropic Max subscription via the cluster LiteLLM proxy
-# (→ CLIProxyAPI's Claude OAuth session), reading $MAX_LITELLM_KEY — a subscription-scoped
-# virtual key (SSOT in tf/gitops/litellm-keys). The upstream OAuth session lives in
-# CLIProxyAPI, so this key never carries it. Mirrors the in-cluster haku-console
-# `claude_code` harness (cluster/k8s/haku/console/config.yaml), which runs this same lane.
-# See ./gateway.nix for the shared wrapper pattern.
+# `litellm-claude`: Claude Code on its ordinary Claude models, but routed through the cluster
+# LiteLLM proxy (→ CLIProxyAPI's Claude OAuth session) instead of straight to Anthropic —
+# which is the whole point, since plain `claude` already reaches the subscription. The detour
+# buys Langfuse traces, spend visibility, and one revocable key. Its siblings are named for
+# their backends because driving non-Claude models is what makes them unusual; here the
+# models are unremarkable and the proxy is the deviation.
+#
+# Reads $CLAUDE_SUBSCRIPTION_LITELLM_KEY, a virtual key scoped to the subscription roster
+# (SSOT in tf/gitops/litellm-keys). CLIProxyAPI holds the OAuth session, so this key never
+# carries it. Mirrors the in-cluster haku-console `claude_code` harness
+# (cluster/k8s/haku/console/config.yaml), which runs this same lane. See ./gateway.nix for
+# the shared wrapper pattern.
 #
 # No maxContextTokens, deliberately: the route embeds a Claude family token, Claude Code
 # normalizes it by substring to the canonical model, and for a recognized model it ignores
@@ -16,9 +22,9 @@
 let
   inherit (pkgs) lib;
 in
-import ./gateway.nix { inherit pkgs lib; } "max-claude" {
+import ./gateway.nix { inherit pkgs lib; } "litellm-claude" {
   baseUrl = "https://litellm.allegedly.works";
-  authTokenEnvVar = "MAX_LITELLM_KEY";
+  authTokenEnvVar = "CLAUDE_SUBSCRIPTION_LITELLM_KEY";
   # Sonnet as the default, matching the haku-console harness: Opus is a one-word change,
   # but it draws down the subscription's quota far faster.
   model = "anthropic-max20/ant-messages/claude-sonnet-5";

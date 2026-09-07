@@ -40,9 +40,10 @@ let
 
   tanaClaude = import ./claude_code/tana-claude.nix { inherit pkgs; };
 
-  # `max-claude`: Claude Code on the Anthropic Max subscription via the cluster LiteLLM
-  # proxy, reading $MAX_LITELLM_KEY. See ./claude_code/max-claude.nix.
-  maxClaude = import ./claude_code/max-claude.nix { inherit pkgs; };
+  # `litellm-claude`: Claude Code on its ordinary Claude models, routed through the cluster
+  # LiteLLM proxy rather than straight to Anthropic, reading
+  # $CLAUDE_SUBSCRIPTION_LITELLM_KEY. See ./claude_code/litellm-claude.nix.
+  litellmClaude = import ./claude_code/litellm-claude.nix { inherit pkgs; };
 
   # `gemini-claude`: Claude Code on Google Gemini via the cluster LiteLLM proxy, reading
   # $GEMINI_LITELLM_KEY. See ./claude_code/gemini-claude.nix.
@@ -143,11 +144,11 @@ in
       sopsFile = ../../tf/gitops/litellm-keys/litellm-gemini-clients-key.yaml;
       key = "litellm_gemini_key";
     };
-    # Subscription-scoped LiteLLM virtual key powering the `max-claude` alias below
+    # Subscription-scoped LiteLLM virtual key powering the `litellm-claude` alias below
     # (LiteLLM → CLIProxyAPI's Claude OAuth session). That session stays in-cluster only.
-    MAX_LITELLM_KEY = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-max-clients-key.yaml;
-      key = "litellm_max_key";
+    CLAUDE_SUBSCRIPTION_LITELLM_KEY = {
+      sopsFile = ../../tf/gitops/litellm-keys/litellm-claude-subscription-clients-key.yaml;
+      key = "litellm_claude_subscription_key";
     };
   };
 
@@ -378,7 +379,7 @@ in
       codexClaude
       tanaClaude
       geminiClaude
-      maxClaude
+      litellmClaude
 
       go
 
