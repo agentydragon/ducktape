@@ -7,7 +7,7 @@ spec:
   interval: 10m
   # Not actively working on this — suspended to free resources.
   suspend: true
-  path: ./cluster/k8s/x/claude-sandbox-firecracker
+  path: ./devinfra/firecracker/deploy
   prune: true
   sourceRef:
     kind: GitRepository
