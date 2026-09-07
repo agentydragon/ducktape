@@ -121,20 +121,6 @@ class ExecutorHeartbeatRow(Base):
     heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class OutboxRow(Base):
-    """Pending-decision delivery reference; no credential-bearing arguments are copied here."""
-
-    __tablename__ = "action_outbox"
-    __table_args__ = (UniqueConstraint("request_id", "kind"),)
-
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"))
-    kind: Mapped[str] = mapped_column(Text)
-    payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
 class ActionNotFoundError(Exception):
     pass
 
@@ -235,14 +221,6 @@ class ActionStore:
             if row is None:
                 raise RuntimeError("inserted ActionRequest is unreadable")
             _record_event(session, row, now)
-            session.add(
-                OutboxRow(
-                    request_id=row.id,
-                    kind="decision_pending",
-                    payload={"request_id": str(row.id), "capability": row.capability},
-                    created_at=now,
-                )
-            )
             return await self._view(session, row, principal), True
 
     async def list_requests(
@@ -264,7 +242,8 @@ class ActionStore:
                 raise ActionNotFoundError(str(request_id))
             return await self._view(session, row, principal)
 
-    async def events(self, request_id: UUID, principal: Principal) -> list[ActionEventView]:
+    async def events(self, request_id: UUID, principal: Principal, *, after_sequence: int = 0) -> list[ActionEventView]:
+        """`after_sequence` is the last sequence the caller already has; polling it back is a no-op."""
         async with self._sessions() as session:
             row = await session.get(ActionRequestRow, request_id)
             if row is None or not _may_read(row, principal):
@@ -272,7 +251,7 @@ class ActionStore:
             events = list(
                 await session.scalars(
                     select(ActionEventRow)
-                    .where(ActionEventRow.request_id == request_id)
+                    .where(ActionEventRow.request_id == request_id, ActionEventRow.sequence > after_sequence)
                     .order_by(ActionEventRow.sequence)
                 )
             )

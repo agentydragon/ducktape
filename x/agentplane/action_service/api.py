@@ -132,8 +132,9 @@ def create_app(
         request_id: UUID,
         principal: Annotated[Principal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
+        after_sequence: Annotated[int, Query(ge=0)] = 0,
     ) -> list[ActionEventView]:
-        return await action_service.events(request_id, principal)
+        return await action_service.events(request_id, principal, after_sequence=after_sequence)
 
     # Catalog discovery: the reviewed, config-driven ActionGroup/Action universe. Read-only, and the
     # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.
@@ -177,8 +178,9 @@ def create_app(
         request_id: UUID,
         principal: Annotated[Principal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
+        after_sequence: Annotated[int, Query(ge=0)] = 0,
     ) -> list[ActionEventView]:
-        return await action_service.events(request_id, principal)
+        return await action_service.events(request_id, principal, after_sequence=after_sequence)
 
     @app.post("/v1/operator/action-requests/{request_id}/decision", response_model=ActionRequestView)
     async def decide(

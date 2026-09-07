@@ -9,13 +9,12 @@ from typing import Any, cast
 import httpx
 import pytest_bazel
 from fastapi import HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, ExecutorBinding
-from x.agentplane.action_service.db import ActionStore, ExecutionRow, OutboxRow, make_sessionmaker
+from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
@@ -217,6 +216,9 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(engine
             "echo": {"text": "hello", "nested": {"api_key": "[redacted]"}},
             "credential": "[redacted]",
         }
+        # A human Decision carries no provider reason code; that projection is provider-only.
+        assert terminal["decision"]["reason_code"] is None
+        assert terminal["decision"]["reason_description"] is None
         assert terminal["decision"]["private_reason"] is None
         assert terminal["decision"]["private_reason_redacted"] is True
         assert len(executor.requests) == 1
@@ -245,6 +247,21 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(engine
             "succeeded",
         ]
 
+        # A cursor lets an Agent resume polling without re-reading events it already has, and
+        # re-polling at the tip is a safe, idempotent no-op.
+        resumed = await client.get(
+            f"/v1/action-requests/{request_id}/events", params={"after_sequence": 2}, headers=_workload("workload-a")
+        )
+        assert [(e["sequence"], e["state"]) for e in resumed.json()] == [
+            (3, "dispatching"),
+            (4, "running"),
+            (5, "succeeded"),
+        ]
+        caught_up = await client.get(
+            f"/v1/action-requests/{request_id}/events", params={"after_sequence": 5}, headers=_workload("workload-a")
+        )
+        assert caught_up.json() == []
+
         denied_submit = await client.post(
             "/v1/action-requests",
             headers=_workload("workload-b"),
@@ -263,14 +280,6 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(engine
         )
         assert denied.json()["state"] == "denied"
         assert len(executor.requests) == 1
-
-        async with make_sessionmaker(engine)() as session:
-            outbox = list(await session.scalars(select(OutboxRow).order_by(OutboxRow.created_at)))
-            executions = list(await session.scalars(select(ExecutionRow)))
-            assert len(outbox) == 2
-            assert outbox[0].payload == {"request_id": request_id, "capability": "agentplane:v0.echo"}
-            assert "provider-material" not in str([row.payload for row in outbox])
-            assert len(executions) == 1
     finally:
         await client.aclose()
         await service.close()
@@ -388,6 +397,11 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
         still_running = await store.get(inflight_view.id, CALLER_A)
         assert still_running.state is ActionState.RUNNING
         assert never_called.requests == []
+        # A cursor still only returns transitions after the last sequence the caller already
+        # saw, restart included.
+        assert [event.state for event in await store.events(inflight_view.id, CALLER_A, after_sequence=3)] == [
+            ActionState.RUNNING
+        ]
     finally:
         await after_crash.close()
 

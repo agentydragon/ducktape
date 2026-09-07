@@ -64,9 +64,9 @@ clients.
 - Extra top-level fields are rejected.
 - Workload identity comes only from the shared destination-side `SandboxPrincipal` resolver. Two
   Pods using the same ServiceAccount remain distinct callers through their live Sandbox UIDs.
-- Credential-shaped keys are recursively redacted from caller/operator projections, execution
-  results/errors, and pending outbox payloads; the present heuristic is a projection rule, not an
-  Action field or a complete backend schema.
+- Credential-shaped keys are recursively redacted from caller/operator projections and execution
+  results/errors; the present heuristic is a projection rule, not an Action field or a complete
+  backend schema.
 
 ### Current Decision and Execution behavior
 
@@ -236,14 +236,18 @@ callbacks across the human and auto-provider Decision routes — PR
 
 Settle and test:
 
-- durable Action event append/query and process-restart recovery;
-- redacted pending/Decision/result/error envelopes with provider reason evidence;
-- withdrawal before Execution starts; and
-- Agent/API-visible treatment of `execution_unknown` and any adapter-specific status reconciliation.
+- redacted pending/Decision/result/error envelopes with provider reason evidence; and
+- withdrawal before Execution starts and Agent/API-visible treatment of `execution_unknown` and any
+  adapter-specific status reconciliation.
+
+**Landed:** durable Action event append/query with restart recovery and cursor-based
+`after_sequence` polling, so a caller can resume from the last sequence it already has and repeated
+reads are a no-op. See README.md's "Delivery: polling, not an outbox".
 
 The Action Service's event history is the source of truth. A separate outbox is not required for this
 slice; cross-service push delivery belongs to the later Event & Notification Hub or a concrete
-executor-worker boundary.
+executor-worker boundary, and either is expected to consume the Action event sequence directly rather
+than the now-unused `action_outbox` table.
 
 Standing grants remain separate objects owned by access/grants machinery. They are not an alternate
 Execution count or an Action definition field.

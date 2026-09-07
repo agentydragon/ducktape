@@ -1,9 +1,9 @@
 # Asynchronous approvals and delivery
 
-Status: **the human Decision path and synchronous DecisionProvider aggregation are implemented;
-event/query API, human-provider notification, withdrawal, unknown-outcome, progress, and batching
-remain open.** This plan is the `DEL` gate in [`task_dag.md`](task_dag.md), not a second request or
-tool lifecycle.
+Status: **the human Decision path, synchronous DecisionProvider aggregation, and durable Action
+event/query polling are implemented; human-provider notification, withdrawal, unknown-outcome,
+progress, and batching remain open.** This plan is the `DEL` gate in [`task_dag.md`](task_dag.md),
+not a second request or tool lifecycle.
 
 ## Preserved decisions
 
@@ -69,27 +69,29 @@ asynchronous human provider.
 
 ### Needed support
 
-1. **Action event append/query.** Define the durable event sequence, cursor/query behavior, and
-   process-restart recovery without introducing a second source-of-truth queue.
-2. **Machine envelope.** Define the minimum receipt/provider-outcome/Decision/Execution fields, reason
+1. **Machine envelope.** Define the minimum receipt/provider-outcome/Decision/Execution fields, reason
    codes, bounded explanations, redaction, and references. The Action schema gate owns projection
    rules, not a generic `sensitivity` field on every Action.
-3. **Human provider contract.** Notify the human provider that a new ActionRequest needs a Decision,
+2. **Human provider contract.** Notify the human provider that a new ActionRequest needs a Decision,
    then let its authenticated UI/notification client call the Action Service's canonical decision
    endpoint. The endpoint returns a stale/already-decided result when another provider won; it never
    creates a parallel human lifecycle.
-4. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
+3. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
    the final event. Do not add post-dispatch cancellation unless the first adapter can prove its
    semantics.
-5. **Unknown outcome.** Define the Agent/API-visible state for `execution_unknown` and whether the
+4. **Unknown outcome.** Define the Agent/API-visible state for `execution_unknown` and whether the
    concrete adapter exposes an authoritative status lookup. Status reconciliation may update the
    existing Execution; it never starts another one.
-6. **Progress.** If an adapter is long-running, define bounded status/progress observations and
+5. **Progress.** If an adapter is long-running, define bounded status/progress observations and
    authorized output-so-far reads. Progress must be tied to the existing Execution and must not
    create a second claim, retry, or completion path.
-7. **Batching.** If several events target one Action API consumer together, preserve each event and
+6. **Batching.** If several events target one Action API consumer together, preserve each event and
    ordering in the Action event/query surface. Thread-specific batching belongs to the later Event &
    Notification Hub.
+
+**Landed:** the durable Action event sequence, cursor-based (`after_sequence`) query behavior, and
+process-restart recovery, without a second source-of-truth queue. See
+`x/agentplane/action_service/README.md`.
 
 ### Acceptance evidence
 
@@ -102,8 +104,9 @@ Use a scripted scenario with the fixture executor first, then repeat it for the 
 5. human allow and deny callbacks race through the same canonical Decision route, with one final Decision;
 6. allow produces exactly one Execution and deny produces none;
 7. duplicate callback/event reads do not create a second Decision or Execution;
-8. provider reason codes/descriptions, sensitive arguments, reviewer reason, credentials, and backend
-   exception text do not cross their allowed projections; and
+8. the bounded provider `reason_code`/`reason_description` and safe terminal result reach the caller
+   projection, while sensitive arguments, the operator's `private_reason`, credentials, and backend
+   exception text do not; and
 9. ambiguous dispatch loss reaches the Action API as `execution_unknown` without backend replay.
 
 ## Deferred
