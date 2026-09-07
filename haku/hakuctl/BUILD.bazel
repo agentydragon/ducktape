@@ -55,7 +55,7 @@ py_wheel(
     # (hakuctl). When adding a dependency, update BOTH places.
     requires = [
         "ducktape-util",
-        "fastmcp>=3.4.4,<3.5",
+        "fastmcp>=4.0.3,<4.1",
         "mcp",
         "rich",
         "typer",
