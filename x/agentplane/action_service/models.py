@@ -56,6 +56,22 @@ class Verdict(StrEnum):
     DENY = "deny"
 
 
+class UnknownOutcomeReason(StrEnum):
+    """Safe, non-identifying codes for why an Execution outcome could not be observed."""
+
+    ADAPTER_OUTCOME_UNKNOWN = "execution_outcome_unknown"
+    COORDINATOR_STOPPED = "coordinator_stopped"
+    LEASE_EXPIRED = "lease_expired"
+    EXECUTOR_LOST = "executor_lost"
+
+
+class ReconciliationSource(StrEnum):
+    """Who authenticated a terminal outcome for an Execution that was `execution_unknown`."""
+
+    LATE_COMPLETION = "late_completion"
+    AUTHORITATIVE_STATUS = "authoritative_status"
+
+
 class ActionRequestInput(BaseModel):
     """The invariant caller envelope; no owner or decision-route branch is accepted."""
 
@@ -106,6 +122,7 @@ class ExecutionView(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    reconciled_at: datetime | None
 
 
 class ActionRequestView(BaseModel):
@@ -155,11 +172,36 @@ class ExecutionResult(BaseModel):
     error: dict[str, JsonValue] | None = None
 
 
+class ExecutionClaim(BaseModel):
+    """The unguessable bearer proving which dispatch attempt owns one Execution.
+
+    `lease_token` is the authentication artifact for every later worker-originated call
+    (heartbeat, completion) about this one `request_id` — the seam a future
+    out-of-process worker would present over the wire, not just an in-process handle.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_id: UUID
+    executor_id: str
+    lease_token: UUID
+    lease_expires_at: datetime
+
+
+class ExecutionLease(Protocol):
+    """Handle an executor holds for the one Execution it is currently attempting."""
+
+    async def heartbeat(self) -> bool:
+        """Renew the lease. False means it is no longer recognized as the owner —
+        the external effect may still be in flight and must not be retried."""
+        ...
+
+
 class Executor(Protocol):
     @property
     def capabilities(self) -> frozenset[str]: ...
 
-    async def execute(self, request: ExecutionRequest) -> ExecutionResult: ...
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult: ...
 
 
 class ProviderVerdict(StrEnum):

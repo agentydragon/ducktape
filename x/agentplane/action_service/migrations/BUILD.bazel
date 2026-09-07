@@ -7,6 +7,7 @@ filegroup(
         "script.py.mako",
         "//x/agentplane/action_service/migrations/versions:0001_action_service.py",
         "//x/agentplane/action_service/migrations/versions:0002_decision_provider_reason.py",
+        "//x/agentplane/action_service/migrations/versions:0003_executor_liveness.py",
     ],
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )

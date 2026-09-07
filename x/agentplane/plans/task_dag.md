@@ -44,6 +44,13 @@ because the Action schema and Executor wiring contracts below have not been deci
 manual live acceptance target. Broader capability profiles remain deferred; see
 [`../docs/launch_presets.md`](../docs/launch_presets.md) and [`profiles.md`](profiles.md).
 
+**Observed evidence — executor liveness and orphan-recovery contract landed for the in-process
+fixture executor.** Executor-level health heartbeats, a per-Execution lease/heartbeat with bounded
+expiry, `lease_expired`/`executor_lost` reason attribution, and authenticated late-completion or
+authoritative-status reconciliation restricted to an Execution already `execution_unknown` resolve
+`EW` item 6 and part of item 5. Dispatch is still in-process, so items 2–4, 7, and 9 remain open; see
+[`../docs/executor_liveness.md`](../docs/executor_liveness.md).
+
 **Observed evidence — egress rules API boundary landed.** PR
 [#5701](https://github.com/agentydragon/ducktape/pull/5701) made
 `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` an ordinary destination:
@@ -164,15 +171,19 @@ outcome without replay.
    real credential, how central egress or native workload identity is used, and what the Action
    Service itself must never possess.
 5. Define dispatch transport and result/event delivery back to the Action Service, including how a
-   worker proves which request it is completing.
-6. Preserve the landed exactly-one claim: one Execution row, atomic claim before dispatch, no retry
-   after dispatch may have begun, and `execution_unknown` after ambiguous loss. Define adapter-specific
-   reconciliation only when an authoritative status lookup exists; reconciliation never starts a
-   second effect.
+   worker proves which request it is completing. **Landed in part:** the lease-token bearer a
+   worker presents to heartbeat or complete is decided (`docs/executor_liveness.md`); the transport
+   that would carry it out of process is not.
+6. **Landed:** preserve the exactly-one claim — one Execution row, atomic claim before dispatch, no
+   retry after dispatch may have begun, bounded lease expiry to `execution_unknown` on ambiguous
+   loss, and adapter-agnostic reconciliation (late completion or an authoritative status lookup)
+   restricted to an Execution already `execution_unknown`, never preempting a live attempt. See
+   `docs/executor_liveness.md`.
 7. Define idempotency-key behavior at request admission and at the backend boundary. A backend key
    may reduce duplicate effects but does not weaken the service's no-retry rule.
 8. Define executor health and capability discovery as startup/readiness evidence, not a broad dynamic
-   registry.
+   registry. **Landed in part:** an executor-level health heartbeat exists internally and feeds
+   orphan-reason attribution; no external readiness/discovery endpoint exists yet.
 9. Select one concrete first adapter and write its acceptance fixture before implementation.
    Minimum evidence: the named Action validates, allow auto-dispatches once, the configured backend
    receives the exact intended payload and credential identity, duplicate Decision/start paths do

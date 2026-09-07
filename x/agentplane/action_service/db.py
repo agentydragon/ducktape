@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -20,12 +20,15 @@ from x.agentplane.action_service.models import (
     ActionState,
     DecisionInput,
     DecisionView,
+    ExecutionClaim,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
     ExecutionView,
     Principal,
     PrincipalRole,
+    ReconciliationSource,
+    UnknownOutcomeReason,
     Verdict,
 )
 
@@ -95,6 +98,27 @@ class ExecutionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The executor identity and unguessable bearer that authenticate every later
+    # worker-originated call (heartbeat, completion) about this one Execution.
+    executor_id: Mapped[str | None] = mapped_column(Text)
+    lease_token: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set only when a terminal outcome was learned after the Execution had already
+    # become `execution_unknown`; never set on a first-pass finish.
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reconciliation_source: Mapped[str | None] = mapped_column(Text)
+    reconciled_by: Mapped[str | None] = mapped_column(Text)
+
+
+class ExecutorHeartbeatRow(Base):
+    """Coarse-grained liveness of an executor identity, independent of any one Execution."""
+
+    __tablename__ = "action_executor_heartbeat"
+
+    executor_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class OutboxRow(Base):
@@ -122,6 +146,13 @@ class ActionConflictError(Exception):
 class UnknownCapabilityError(Exception):
     pass
 
+
+_TERMINAL_ACTION_STATE = {
+    ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
+    ExecutionState.FAILED: ActionState.FAILED,
+    ExecutionState.CANCELLED: ActionState.CANCELLED,
+    ExecutionState.EXECUTION_UNKNOWN: ActionState.EXECUTION_UNKNOWN,
+}
 
 _SECRET_KEYS = frozenset(
     {
@@ -364,8 +395,10 @@ class ActionStore:
                 )
             )
 
-    async def claim_execution(self, request_id: UUID) -> bool:
-        """Atomically reserve the only execution before any adapter call can begin."""
+    async def claim_execution(
+        self, request_id: UUID, *, executor_id: str, lease_duration: timedelta
+    ) -> ExecutionClaim | None:
+        """Atomically reserve the only execution and grant its first lease window."""
         async with self._sessions.begin() as session:
             row = await session.scalar(
                 select(ActionRequestRow).where(ActionRequestRow.id == request_id).with_for_update()
@@ -376,15 +409,43 @@ class ActionStore:
             if row is None or execution is None:
                 raise ActionNotFoundError(str(request_id))
             if execution.state != ExecutionState.PENDING_DISPATCH.value:
-                return False
+                return None
             if row.state != ActionState.ALLOWED.value:
                 raise ActionConflictError(f"cannot dispatch request in {row.state}")
             now = datetime.now(UTC)
+            lease_token = uuid4()
+            lease_expires_at = now + lease_duration
             execution.state = ExecutionState.DISPATCHING.value
+            execution.executor_id = executor_id
+            execution.lease_token = lease_token
+            execution.lease_expires_at = lease_expires_at
+            execution.heartbeat_at = now
             row.state = ActionState.DISPATCHING.value
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
+            return ExecutionClaim(
+                request_id=request_id,
+                executor_id=executor_id,
+                lease_token=lease_token,
+                lease_expires_at=lease_expires_at,
+            )
+
+    async def heartbeat_execution(
+        self, request_id: UUID, executor_id: str, lease_token: UUID, *, lease_duration: timedelta
+    ) -> bool:
+        """Renew the lease. False means the caller is not (or no longer) the recognized owner."""
+        async with self._sessions.begin() as session:
+            execution = await session.scalar(
+                select(ExecutionRow).where(ExecutionRow.request_id == request_id).with_for_update()
+            )
+            if execution is None or not _owns_lease(execution, executor_id, lease_token):
+                return False
+            if execution.state not in {ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value}:
+                return False
+            now = datetime.now(UTC)
+            execution.lease_expires_at = now + lease_duration
+            execution.heartbeat_at = now
             return True
 
     async def mark_running(self, request_id: UUID) -> ExecutionRequest:
@@ -416,14 +477,16 @@ class ActionStore:
                 caller_principal=row.caller_principal,
             )
 
-    async def finish_execution(self, request_id: UUID, result: ExecutionResult) -> None:
-        terminal = {
-            ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
-            ExecutionState.FAILED: ActionState.FAILED,
-            ExecutionState.CANCELLED: ActionState.CANCELLED,
-            ExecutionState.EXECUTION_UNKNOWN: ActionState.EXECUTION_UNKNOWN,
-        }
-        if result.state not in terminal:
+    async def finish_execution(
+        self, request_id: UUID, executor_id: str, lease_token: UUID, result: ExecutionResult
+    ) -> None:
+        """Deliver a terminal outcome authenticated by the lease granted at claim time.
+
+        A late completion arriving after the lease already expired to `execution_unknown`
+        is accepted as a reconciliation, still gated on presenting the same lease — it
+        never starts a second effect, only records the truth about the one attempt made.
+        """
+        if result.state not in _TERMINAL_ACTION_STATE:
             raise ValueError(f"executor returned non-terminal state {result.state}")
         async with self._sessions.begin() as session:
             row = await session.scalar(
@@ -434,26 +497,74 @@ class ActionStore:
             )
             if row is None or execution is None:
                 raise ActionNotFoundError(str(request_id))
-            if execution.state not in {ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value}:
-                raise ActionConflictError(f"cannot finish execution in {execution.state}")
+            if not _owns_lease(execution, executor_id, lease_token):
+                raise ActionConflictError("caller is not the recognized owner of this execution's lease")
             now = datetime.now(UTC)
+            if execution.state in {ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value}:
+                execution.completed_at = now
+            elif execution.state == ExecutionState.EXECUTION_UNKNOWN.value:
+                execution.reconciled_at = now
+                execution.reconciliation_source = ReconciliationSource.LATE_COMPLETION
+                execution.reconciled_by = executor_id
+            else:
+                raise ActionConflictError(f"cannot finish execution in {execution.state}")
             execution.state = result.state.value
             execution.result = result.result
             execution.error = result.error
-            execution.completed_at = now
-            row.state = terminal[result.state].value
+            row.state = _TERMINAL_ACTION_STATE[result.state].value
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
 
-    async def recover_unknown(self) -> int:
-        """Mark dispatches that crossed a process lifetime unknown; never replay them."""
-        recovered = 0
+    async def reconcile_from_authority(self, request_id: UUID, result: ExecutionResult, *, authority: str) -> None:
+        """Apply an authoritative backend status lookup to an execution already `execution_unknown`.
+
+        Never touches a still-dispatching/running execution: reconciliation observes the
+        one attempt already made, it does not race or preempt it.
+        """
+        if result.state not in _TERMINAL_ACTION_STATE:
+            raise ValueError(f"authority reported non-terminal state {result.state}")
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(ActionRequestRow).where(ActionRequestRow.id == request_id).with_for_update()
+            )
+            execution = await session.scalar(
+                select(ExecutionRow).where(ExecutionRow.request_id == request_id).with_for_update()
+            )
+            if row is None or execution is None:
+                raise ActionNotFoundError(str(request_id))
+            if execution.state != ExecutionState.EXECUTION_UNKNOWN.value:
+                raise ActionConflictError(f"cannot reconcile execution in {execution.state}")
+            now = datetime.now(UTC)
+            execution.state = result.state.value
+            execution.result = result.result
+            execution.error = result.error
+            execution.reconciled_at = now
+            execution.reconciliation_source = ReconciliationSource.AUTHORITATIVE_STATUS
+            execution.reconciled_by = authority
+            row.state = _TERMINAL_ACTION_STATE[result.state].value
+            row.version += 1
+            row.updated_at = now
+            _record_event(session, row, now)
+
+    async def expire_stale_leases(self, *, executor_health_timeout: timedelta) -> list[UUID]:
+        """Mark executions whose lease lapsed unknown; never replay them.
+
+        Distinguishes `executor_lost` (the owning executor's own health heartbeat is also
+        stale) from `lease_expired` (the executor is otherwise heartbeating, but this one
+        attempt stopped renewing) for operator diagnosis; both are equally final.
+        """
+        now = datetime.now(UTC)
+        executor_stale_before = now - executor_health_timeout
+        expired: list[UUID] = []
         async with self._sessions.begin() as session:
             executions = list(
                 await session.scalars(
                     select(ExecutionRow)
-                    .where(ExecutionRow.state.in_([ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value]))
+                    .where(
+                        ExecutionRow.state.in_([ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value]),
+                        ExecutionRow.lease_expires_at < now,
+                    )
                     .with_for_update()
                 )
             )
@@ -463,16 +574,30 @@ class ActionStore:
                 )
                 if row is None:
                     continue
-                now = datetime.now(UTC)
+                executor_heartbeat = await session.get(ExecutorHeartbeatRow, execution.executor_id)
+                reason = (
+                    UnknownOutcomeReason.EXECUTOR_LOST
+                    if executor_heartbeat is None or executor_heartbeat.heartbeat_at < executor_stale_before
+                    else UnknownOutcomeReason.LEASE_EXPIRED
+                )
                 execution.state = ExecutionState.EXECUTION_UNKNOWN.value
-                execution.error = {"kind": "process_restarted", "message": "dispatch outcome unknown; not replayed"}
+                execution.error = {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
                 execution.completed_at = now
                 row.state = ActionState.EXECUTION_UNKNOWN.value
                 row.version += 1
                 row.updated_at = now
                 _record_event(session, row, now)
-                recovered += 1
-        return recovered
+                expired.append(execution.request_id)
+        return expired
+
+    async def record_executor_heartbeat(self, executor_id: str) -> None:
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as session:
+            await session.execute(
+                pg_insert(ExecutorHeartbeatRow)
+                .values(executor_id=executor_id, started_at=now, heartbeat_at=now)
+                .on_conflict_do_update(index_elements=["executor_id"], set_={"heartbeat_at": now})
+            )
 
     async def _view(self, session: AsyncSession, row: ActionRequestRow, principal: Principal) -> ActionRequestView:
         decision = await session.scalar(select(DecisionRow).where(DecisionRow.request_id == row.id))
@@ -542,7 +667,12 @@ def _execution_view(row: ExecutionRow | None) -> ExecutionView | None:
         created_at=row.created_at,
         started_at=row.started_at,
         completed_at=row.completed_at,
+        reconciled_at=row.reconciled_at,
     )
+
+
+def _owns_lease(execution: ExecutionRow, executor_id: str, lease_token: UUID) -> bool:
+    return execution.executor_id == executor_id and execution.lease_token == lease_token
 
 
 def _redact(value: Mapping[str, JsonValue]) -> dict[str, JsonValue]:

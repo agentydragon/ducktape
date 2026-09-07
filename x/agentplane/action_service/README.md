@@ -11,8 +11,10 @@ The v0 executable seam is deliberately small:
 - caller-own and operator-all reads, recursively redacting credential-shaped fields;
 - one human operator Decision provider, with expected-version and idempotency protection;
 - automatic dispatch after allow, exactly one `Execution`, and no retry after dispatch may begin;
-- restart recovery: pending dispatches resume, while dispatching/running work becomes
-  `execution_unknown`;
+- restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
+  until its own bounded lease expires, then becomes `execution_unknown` and may later be reconciled
+  by an authenticated late completion or an authoritative status lookup — see
+  [`../docs/executor_liveness.md`](../docs/executor_liveness.md);
 - one explicit `agentplane:v0.echo` fixture executor proving the service boundary; and
 - a durable pending-decision outbox reference containing no request arguments.
 

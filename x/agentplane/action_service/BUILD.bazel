@@ -202,6 +202,22 @@ py_test(
 )
 
 py_test(
+    name = "test_executor_liveness",
+    size = "medium",
+    srcs = ["test_executor_liveness.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":db",
+        ":models",
+        ":service",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_boundaries",
     srcs = ["test_boundaries.py"],
     deps = [
