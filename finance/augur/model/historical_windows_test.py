@@ -39,6 +39,13 @@ EQUITY = SecuritySymbol("EQ")
 MONTHS = 600
 
 
+def _month_seq(count: int, start_year: int = 1900) -> list[date]:
+    return [date(start_year + index // 12, index % 12 + 1, 1) for index in range(count)]
+
+
+_HISTORY_START_YEAR = 1970
+
+
 def _history(months: int = MONTHS) -> MacroHistory:
     """A record whose every series is strictly increasing, so a window's identity is visible in
     its values: window `i` starts at exactly the month-`i` level of each series."""
@@ -48,6 +55,7 @@ def _history(months: int = MONTHS) -> MacroHistory:
     # is shape-invariant under rebasing, so every window would replay identically and the tests
     # that distinguish windows would pass against a sampler that always returned window zero.
     return MacroHistory(
+        months=tuple(_month_seq(months, _HISTORY_START_YEAR)),
         short_rate=0.01 + index * 0.0001,
         term_spread=0.005 + index * 0.00001,
         equity_level=100.0 * np.exp(np.cumsum(0.004 + index * 0.00001)),
@@ -178,7 +186,7 @@ def test_the_aligned_record_is_the_intersection_of_all_four_series() -> None:
         cpi_level=[(date(2000, 1, 1) + timedelta(days=31 * m), 100.0 + m) for m in range(20, 90)],
     )
 
-    assert history.months == 50  # months 40..89
+    assert len(history.months) == 50  # months 40..89
     assert history.short_rate[0] == pytest.approx(0.04)
     assert history.term_spread[0] == pytest.approx(0.01)
 
@@ -195,7 +203,13 @@ def test_disjoint_series_are_rejected() -> None:
 
 def test_mismatched_history_lengths_are_rejected() -> None:
     with pytest.raises(ValueError, match="different lengths"):
-        MacroHistory(short_rate=np.zeros(10), term_spread=np.zeros(10), equity_level=np.ones(9), cpi_level=np.ones(10))
+        MacroHistory(
+            months=tuple(_month_seq(10)),
+            short_rate=np.zeros(10),
+            term_spread=np.zeros(10),
+            equity_level=np.ones(9),
+            cpi_level=np.ones(10),
+        )
 
 
 def test_the_provenance_says_the_rollouts_are_not_independent() -> None:
@@ -207,10 +221,6 @@ def test_the_provenance_says_the_rollouts_are_not_independent() -> None:
 
     assert bundle.provenance["distinct_windows_available"] == 480
     assert "not independent draws" in str(bundle.provenance["notes"]).lower()
-
-
-def _month_seq(count: int, start_year: int = 1900) -> list[date]:
-    return [date(start_year + index // 12, index % 12 + 1, 1) for index in range(count)]
 
 
 def _levels(start_year: int, values: list[float]) -> list[MonthlyLevel]:
@@ -299,7 +309,7 @@ def test_the_century_record_assembles_from_the_four_evidence_series(tmp_path: Pa
     _write_evidence(tmp_path)
     history = load_macro_history(tmp_path)
 
-    assert history.months == 400
+    assert len(history.months) == 400
     # French's RF is a monthly simple return; the record speaks annualized decimals.
     assert history.short_rate[0] == pytest.approx(0.30 * 12 / 100.0)
     # Mkt-RF + RF = 1.30%/month, compounded into an index.
@@ -336,13 +346,85 @@ def test_the_provider_is_reachable_through_the_config_union(tmp_path: Path) -> N
 
     assert isinstance(parsed, HistoricalWindowsProviderConfig)
     model = parsed.realize_model()
-    assert model.history.months == 400
+    assert len(model.history.months) == 400
     assert model.emittable_level_keys() == {
         InflationKey(),
         SecurityKey(symbol=SecuritySymbol("VOO")),
         SecurityKey(symbol=SecuritySymbol("CMF")),
         SecurityDistributionKey(symbol=SecuritySymbol("CMF")),
     }
+
+
+def test_a_record_cut_to_a_span_replays_only_that_span() -> None:
+    """The cut is what makes a published-study reproduction answerable: without it the replay
+    samples a different period than the study did, and a disagreement cannot be attributed."""
+
+    history = _history(600).restricted_to(start=date(1980, 1, 1), end=date(1989, 12, 1))
+
+    assert history.months[0] == date(1980, 1, 1)
+    assert history.months[-1] == date(1989, 12, 1)
+    assert len(history.months) == 120
+    # The cut takes a slice of the ORIGINAL series, not a re-derivation of them: month 1980-01
+    # is month 120 of a record starting 1970-01, so it must still carry month 120's rate.
+    assert history.short_rate[0] == pytest.approx(0.01 + 120 * 0.0001)
+
+
+def test_an_open_bound_cuts_only_the_end_it_names() -> None:
+    history = _history(600).restricted_to(start=None, end=date(1979, 12, 1))
+
+    assert history.months[0] == date(1970, 1, 1)
+    assert history.months[-1] == date(1979, 12, 1)
+
+
+def test_a_span_the_record_does_not_reach_is_rejected() -> None:
+    """Silently returning an empty record would surface as "too few months for a window" from
+    the sampler, one layer away from the span that actually caused it."""
+
+    with pytest.raises(ValueError, match="falls in"):
+        _history(600).restricted_to(start=date(2500, 1, 1), end=None)
+
+
+def test_a_record_span_that_ends_before_it_starts_is_rejected() -> None:
+    with pytest.raises(ValueError, match="ends before it starts"):
+        HistoricalWindowsProviderConfig(record_start=date(1990, 1, 1), record_end=date(1980, 1, 1))
+
+
+def test_out_of_order_months_are_rejected() -> None:
+    """The month axis is what every date-addressed claim about the record rests on — a window's
+    start, the span in provenance, the cut above. Unsorted, all three silently lie."""
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        MacroHistory(
+            months=(date(1970, 2, 1), date(1970, 1, 1)),
+            short_rate=np.zeros(2),
+            term_spread=np.zeros(2),
+            equity_level=np.ones(2),
+            cpi_level=np.ones(2),
+        )
+
+
+def test_the_provenance_names_the_span_the_rollouts_came_from() -> None:
+    """A replay result is about a period. Reporting the window count without it leaves the
+    reader unable to tell a 1926-1995 answer from a 1926-2026 one."""
+
+    bundle = _model(_history(600)).sample(ExogenousSamplingRequest(horizon_months=360, rollout_seeds=tuple(range(10))))
+
+    assert bundle.provenance["record_start"] == "1970-01-01"
+    assert bundle.provenance["record_end"] == "2019-12-01"
+    assert bundle.provenance["first_window_start"] == "1970-01-01"
+    # 600 months less a 360-month horizon leaves 240 starts; the last of them is month 239.
+    assert bundle.provenance["last_window_start"] == "1989-12-01"
+
+
+def test_the_config_cuts_the_record_before_the_sampler_sees_it(tmp_path: Path) -> None:
+    """The bound has to reach the realized model, not just be stored on the config."""
+
+    _write_evidence(tmp_path)
+    model = HistoricalWindowsProviderConfig(
+        evidence_dir=tmp_path, record_start=date(1975, 1, 1), record_end=date(1984, 12, 1)
+    ).realize_model()
+
+    assert len(model.history.months) == 120
 
 
 if __name__ == "__main__":

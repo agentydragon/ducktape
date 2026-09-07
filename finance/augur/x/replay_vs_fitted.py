@@ -107,7 +107,7 @@ def main() -> None:
         ).realize_model()
         rollouts = replay.window_count(HORIZON_MONTHS)
         print(
-            f"record: {replay.history.months} months, {rollouts} overlapping {HORIZON_MONTHS // 12}y windows "
+            f"record: {len(replay.history.months)} months, {rollouts} overlapping {HORIZON_MONTHS // 12}y windows "
             f"(~{replay.independent_window_estimate(HORIZON_MONTHS):.1f} independent)"
         )
 

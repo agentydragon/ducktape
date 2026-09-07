@@ -11,11 +11,11 @@ that actually hurt retirees in 1973. Historical replay gets every one of those r
 because it never assumes anything about the joint distribution; it just uses the one draw
 history handed us.
 
-**And what it gets wrong in exchange, which is severe.** The windows OVERLAP. With 46 years of
-aligned data and a 30-year horizon there are ~199 of them, and consecutive windows share 359 of
-360 months — so the effective sample is closer to **1.5 independent observations** than to 199.
-A "P[ruin] = 4%" from this is not a probability. It is "8 of the 199 historical starting months
-would have failed", and those 8 are almost certainly one contiguous episode counted 8 times.
+**And what it gets wrong in exchange, which is severe.** The windows OVERLAP. A century of
+aligned monthly data and a 30-year horizon give 840 of them, and consecutive windows share 359
+of 360 months — so the effective sample is closer to **3 independent observations** than to 840.
+A "P[ruin] = 4%" from this is not a probability. It is "34 of the 840 historical starting months
+would have failed", and those 34 are almost certainly one contiguous episode counted 34 times.
 `window_count` and `independent_window_estimate` are on the result so a caller cannot quietly
 forget that.
 
@@ -34,10 +34,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from itertools import pairwise
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
+from pydantic import model_validator
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.schemas import FrozenModel
@@ -57,27 +59,60 @@ from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
 class MacroHistory:
     """The aligned monthly record every window is cut from.
 
-    All four arrays share one month index, so a window is a slice and nothing can drift out of
+    All four series share `months`, so a window is a slice and nothing can drift out of
     alignment. `short_rate` and `term_spread` are annualized decimals; `equity_level` is a
     total-return index and `cpi_level` a price index, both in arbitrary units because only
     their ratios within a window are ever used.
+
+    The month axis is carried rather than derived because a window's identity IS its starting
+    month: without it a caller can say 199 windows failed but not which decade they were, and
+    a study reproducing a published result cannot cut the record to that study's period.
     """
 
+    months: tuple[date, ...]
     short_rate: np.ndarray
     term_spread: np.ndarray
     equity_level: np.ndarray
     cpi_level: np.ndarray
 
     def __post_init__(self) -> None:
-        lengths = {len(self.short_rate), len(self.term_spread), len(self.equity_level), len(self.cpi_level)}
+        lengths = {
+            len(self.months),
+            len(self.short_rate),
+            len(self.term_spread),
+            len(self.equity_level),
+            len(self.cpi_level),
+        }
         if len(lengths) != 1:
             raise ValueError(f"macro history series have different lengths: {sorted(lengths)}")
+        if any(later <= earlier for earlier, later in pairwise(self.months)):
+            raise ValueError("macro history months must be strictly increasing")
         if np.any(self.equity_level <= 0.0) or np.any(self.cpi_level <= 0.0):
             raise ValueError("equity and CPI levels must be strictly positive to be rebased")
 
-    @property
-    def months(self) -> int:
-        return len(self.short_rate)
+    def restricted_to(self, *, start: date | None, end: date | None) -> MacroHistory:
+        """The same record cut to `[start, end]`, either bound `None` for "as far as it goes".
+
+        A reproduction of a published study needs this: run the replay over the whole record
+        and the answer is about a different sample than the one being reproduced, with no way
+        to tell the disagreement apart from a methodology difference.
+        """
+
+        keep = [
+            index
+            for index, month in enumerate(self.months)
+            if (start is None or month >= start) and (end is None or month <= end)
+        ]
+        if not keep:
+            raise ValueError(f"no month of the {self.months[0]}..{self.months[-1]} record falls in {start}..{end}")
+        rows = np.asarray(keep)
+        return MacroHistory(
+            months=tuple(self.months[index] for index in keep),
+            short_rate=self.short_rate[rows],
+            term_spread=self.term_spread[rows],
+            equity_level=self.equity_level[rows],
+            cpi_level=self.cpi_level[rows],
+        )
 
 
 @dataclass(frozen=True)
@@ -96,17 +131,17 @@ class HistoricalWindowsModel:
     def window_count(self, horizon_months: int) -> int:
         """How many distinct starting months admit a full `horizon_months` window."""
 
-        return max(0, self.history.months - horizon_months)
+        return max(0, len(self.history.months) - horizon_months)
 
     def independent_window_estimate(self, horizon_months: int) -> float:
         """Non-overlapping windows the record could supply — the honest sample size.
 
         Reported alongside `window_count` because the two differ by two orders of magnitude and
-        only this one bounds what can be concluded. 199 overlapping 30-year windows drawn from
-        46 years of data contain about 1.5 independent 30-year observations.
+        only this one bounds what can be concluded. 840 overlapping 30-year windows drawn from a
+        century of data contain about 3 independent 30-year observations.
         """
 
-        return self.history.months / horizon_months if horizon_months else 0.0
+        return len(self.history.months) / horizon_months if horizon_months else 0.0
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         keys: set[LevelSeriesKey] = {InflationKey()}
@@ -134,7 +169,7 @@ class HistoricalWindowsModel:
         available = self.window_count(request.horizon_months)
         if available <= 0:
             raise ValueError(
-                f"history has {self.history.months} months, too few for a {request.horizon_months}-month window"
+                f"history has {len(self.history.months)} months, too few for a {request.horizon_months}-month window"
             )
         if rollouts > available:
             raise ValueError(
@@ -172,6 +207,10 @@ class HistoricalWindowsModel:
             provenance={
                 "exogenous_provider_label": self.label,
                 "window_months": request.horizon_months,
+                "record_start": self.history.months[0].isoformat(),
+                "record_end": self.history.months[-1].isoformat(),
+                "first_window_start": self.history.months[starts[0]].isoformat(),
+                "last_window_start": self.history.months[starts[-1]].isoformat(),
                 "distinct_windows_available": available,
                 "independent_window_estimate": round(self.independent_window_estimate(request.horizon_months), 2),
                 "notes": (
@@ -193,13 +232,26 @@ class HistoricalWindowsProviderConfig(FrozenModel):
 
     type: Literal["historical_windows"] = "historical_windows"
     evidence_dir: Path | None = None
+    # Cut the record to a study period; `None` means "as far as the data goes". A reproduction
+    # of a published result has to pin these or it is answering about a different sample.
+    record_start: date | None = None
+    record_end: date | None = None
     equity: EquitySpec | None = None
     instruments: tuple[InstrumentSpec, ...] = ()
 
+    @model_validator(mode="after")
+    def _reject_empty_record_span(self) -> HistoricalWindowsProviderConfig:
+        if self.record_start is not None and self.record_end is not None and self.record_end < self.record_start:
+            raise ValueError(f"record span ends before it starts: {self.record_start}..{self.record_end}")
+        return self
+
     def realize_model(self) -> HistoricalWindowsModel:
         directory = self.evidence_dir if self.evidence_dir is not None else evidence_dir_from_env()
+        history = load_macro_history(directory)
         return HistoricalWindowsModel(
-            history=load_macro_history(directory), instruments=self.instruments, equity=self.equity
+            history=history.restricted_to(start=self.record_start, end=self.record_end),
+            instruments=self.instruments,
+            equity=self.equity,
         )
 
 
@@ -226,9 +278,8 @@ def macro_history_from_levels(
 ) -> MacroHistory:
     """Inner-join four `(month, value)` series into one aligned record.
 
-    Inner-joined on month, so the record is exactly the span where ALL FOUR exist — which is
-    the binding constraint and worth seeing: rates reach 1954 and CPI 1947, but a total-return
-    equity series only reaches 1980, so that is where the usable history starts.
+    Inner-joined on month, so the record is exactly the span where ALL FOUR exist, and its
+    start is whichever series begins latest — see `load_macro_history` for which that is.
     """
 
     tables = [dict(series) for series in (short_rate_percent, long_rate_percent, equity_level, cpi_level)]
@@ -238,6 +289,7 @@ def macro_history_from_levels(
 
     short, long_rate, equity, cpi = ({month: table[month] for month in months} for table in tables)
     return MacroHistory(
+        months=tuple(months),
         short_rate=np.array([short[m] * 0.01 for m in months]),
         term_spread=np.array([(long_rate[m] - short[m]) * 0.01 for m in months]),
         equity_level=np.array([equity[m] for m in months]),
