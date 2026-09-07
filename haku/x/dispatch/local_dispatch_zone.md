@@ -55,7 +55,7 @@ model_lanes:
       max_active_model_groups: 1
       max_concurrent_jobs_per_model_group: 1
     models:
-      gpt-oss-20b-128k-openai-chat:
+      ollama/oai-chat/gpt-oss-20b-128k:
         model_group: gpt-oss-20b
 
 isolation_profiles:
@@ -112,31 +112,32 @@ Required invariants:
 
 Only whitelist models that pass live smoke probes for the API shape the worker harness
 uses. As of the LiteLLM probe run in July 2026, the useful local route is the
-OpenAI-compatible Ollama route, not the `ollama-native` route.
+OpenAI-compatible Ollama route (`ollama/oai-chat/*`), not the native one
+(`ollama/olm-chat/*`).
 
 Seed the local zone conservatively:
 
 ```text
-gpt-oss-20b-128k-openai-chat
+ollama/oai-chat/gpt-oss-20b-128k
 ```
 
 Candidate additions after another explicit smoke run:
 
 ```text
-gpt-oss-20b-256k-openai-chat
-gpt-oss-20b-512k-openai-chat
-gpt-oss-20b-1m-openai-chat
-gpt-oss-120b-128k-openai-chat
-gemma4-31b-it-q8_0-128k-openai-chat
+ollama/oai-chat/gpt-oss-20b-256k
+ollama/oai-chat/gpt-oss-20b-512k
+ollama/oai-chat/gpt-oss-20b-1m
+ollama/oai-chat/gpt-oss-120b-128k
+ollama/oai-chat/gemma4-31b-it-q8_0-128k
 ```
 
-The 20B `*-openai-chat` routes passed text and tool calls across OpenAI Chat,
+The 20B `ollama/oai-chat/*` routes passed text and tool calls across OpenAI Chat,
 OpenAI Responses, and Anthropic Messages shapes. The 120B and Gemma routes also passed
 Anthropic-shaped text/tool probes after warmup, but they showed cold-load instability
 elsewhere, including 500/504 responses. Do not make them the default local worker model
 until the operator accepts that operational profile.
 
-Do not include `*-ollama-native` gpt-oss routes in the worker allowlist for now. They
+Do not include `ollama/olm-chat/*` gpt-oss routes in the worker allowlist for now. They
 handled basic text but failed structured tool calls and Responses-shape validation.
 
 ## Smoke-test gate
@@ -173,7 +174,7 @@ model_lanes:
       max_active_model_groups: 1
       max_concurrent_jobs_per_model_group: 1
     models:
-      gpt-oss-20b-128k-openai-chat:
+      ollama/oai-chat/gpt-oss-20b-128k:
         model_group: gpt-oss-20b
 ```
 
@@ -327,7 +328,7 @@ classifier.
    generator, parity-tested.
 3. Add the `local-default` isolation profile namespace perimeter and workers-LiteLLM CNP
    admission.
-4. Add a `local-default` dispatch target with only `gpt-oss-20b-128k-openai-chat`.
+4. Add a `local-default` dispatch target with only `ollama/oai-chat/gpt-oss-20b-128k`.
 5. Run live smoke through workers-LiteLLM using a per-job-style key.
 6. Dispatch one low-risk local job, verify result submission, budget accounting, and
    active-model release.

@@ -103,7 +103,7 @@ in
     ./modules/aiquota.nix
     ./modules/haku-approvals.nix
   ];
-  # Workstations use the cluster/local (gpt-oss) Codex model providers + profiles.
+  # Workstations use the local (gpt-oss) Codex model profiles.
   ducktape.codex.localModels.enable = true;
   ducktape.sopsEnv = {
     HF_TOKEN = {

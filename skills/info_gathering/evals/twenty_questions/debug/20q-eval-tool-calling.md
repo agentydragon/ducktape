@@ -2,6 +2,10 @@
 
 **Date**: 2026-03-18
 
+> Route names throughout predate the `{provider}/{shape}/{model}` scheme: `*-openai-chat` is
+> now `ollama/oai-chat/*` and `*-ollama-native` is `ollama/olm-chat/*`. The commands below
+> are left as they were run.
+
 ## Goal
 
 Run the 20 Questions eval against the local `gpt-oss:20b` model via

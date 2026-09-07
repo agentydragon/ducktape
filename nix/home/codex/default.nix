@@ -20,8 +20,8 @@ let
   # config by connector id from the tool's MCP metadata, not by display name.
   githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
 
-  # Common base config for every host. Cluster/local (gpt-oss) model providers +
-  # profiles live in localModelSettings (opt-in via ducktape.codex.localModels);
+  # Common base config for every host. Local (gpt-oss) model profiles live in
+  # localModelSettings (opt-in via ducktape.codex.localModels);
   # the writable-roots sandbox block is appended only under workspace-write.
   baseSettings = {
     model = "gpt-5.6-sol";
@@ -130,34 +130,14 @@ let
     };
   };
 
-  # Cluster/local (gpt-oss) model providers + profiles. Workstation-only; agent
-  # VMs running OpenAI Codex don't need them. Opt in via ducktape.codex.localModels.
+  # Local (gpt-oss) model profiles. Workstation-only; agent VMs running OpenAI
+  # Codex don't need them. Opt in via ducktape.codex.localModels.
   localModelSettings = {
-    model_providers.cluster = {
-      name = "Cluster (litellm.allegedly.works)";
-      base_url = "https://litellm.allegedly.works/v1";
-      env_key = "OLLAMA_API_KEY";
-      wire_api = "responses";
-    };
     profiles = {
-      # GPT-OSS-20B via Ollama
+      # GPT-OSS-20B via Codex's built-in provider for a local Ollama.
       gpt-oss-ollama = {
         model = "gpt-oss:20b";
         model_provider = "ollama";
-        web_search = "disabled";
-      };
-      # GPT-OSS 20B via cluster LiteLLM
-      gpt-oss-20b = {
-        model = "gpt-oss-20b-128k";
-        model_provider = "cluster";
-        model_reasoning_effort = "high";
-        web_search = "disabled";
-      };
-      # GPT-OSS 120B via cluster LiteLLM
-      gpt-oss-120b = {
-        model = "gpt-oss-120b-128k";
-        model_provider = "cluster";
-        model_reasoning_effort = "high";
         web_search = "disabled";
       };
     };
@@ -287,7 +267,7 @@ in
         Only "workspace-write" emits the writable-roots block.
       '';
     };
-    localModels.enable = lib.mkEnableOption "the cluster/local (gpt-oss) Codex model providers + profiles";
+    localModels.enable = lib.mkEnableOption "the local (gpt-oss) Codex model profiles";
   };
 
   config.programs.codex = {

@@ -183,39 +183,6 @@ let
         };
       };
 
-      # === Cluster: GPT-OSS via LiteLLM at litellm.allegedly.works ===
-      # Select in UI: /model → pick cluster/gpt-oss-20b-128k or cluster/gpt-oss-120b-128k
-      # ⚠️ gpt-oss streaming bug may apply (finishReason as object).
-      # See: https://github.com/anomalyco/opencode/issues/7439
-      cluster = {
-        npm = "@ai-sdk/openai-compatible";
-        name = "Cluster (litellm.allegedly.works)";
-        options = {
-          baseURL = "https://litellm.allegedly.works/v1";
-          apiKey = "{env:OLLAMA_API_KEY}";
-        };
-        models = {
-          "gpt-oss-20b-128k" = {
-            name = "GPT-OSS 20B 128k (cluster)";
-            reasoning = true;
-            tool_call = true;
-            limit = {
-              context = 131072;
-              output = 8192;
-            };
-          };
-          "gpt-oss-120b-128k" = {
-            name = "GPT-OSS 120B 128k (cluster)";
-            reasoning = true;
-            tool_call = true;
-            limit = {
-              context = 131072;
-              output = 8192;
-            };
-          };
-        };
-      };
-
       # === Ollama: Easy setup, GGUF quantization ===
       ollama = {
         # NOTE: gpt-oss models have streaming response format issues with OpenCode

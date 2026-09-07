@@ -78,18 +78,19 @@ def test_hidden_model_aliases_target_served_models() -> None:
     assert all(alias["model"] in served for alias in aliases.values())
 
 
-# The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so it must agree
-# with the entry's own wiring: `litellm_params.model`'s prefix selects the upstream handler and
-# `model_info.mode` the endpoint. Every shape whose wire has exactly one provider prefix serving
-# it here pins that prefix, so an entry cannot claim a wire it does not speak -- the check that
-# catches naming a Google-wire entry `oai-chat`. `oai-chat` itself is the open one: any
-# OpenAI-compatible chat provider satisfies it (mistral today, groq or another tomorrow), so it
-# pins the mode and only rules out the prefixes another shape already names.
-_NAMED_UPSTREAM = {
-    ApiShape.ANT_MESSAGES: "anthropic",
-    ApiShape.OAI_RESPONSES: "openai",
-    ApiShape.GOOG_GENERATE: "gemini",
-    ApiShape.GOOG_EMBED: "gemini",
+# The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so the name and
+# the wiring must agree on both halves. The definer half must match the handler
+# `litellm_params.model`'s prefix selects -- the check that catches naming a Google-wire entry
+# `oai-chat`, or an Ollama-native one. The protocol half is pinned by `model_info.mode`, which is
+# what separates two shapes sharing a definer (oai-chat vs oai-responses, goog-generate vs
+# goog-embed). A provider absent from this map has not declared which wire it speaks, so adding
+# one is a deliberate edit rather than a silent pass.
+_UPSTREAM_DEFINER = {
+    "anthropic": "ant",
+    "openai": "oai",
+    "mistral": "oai",  # OpenAI-compatible chat at api.mistral.ai
+    "gemini": "goog",
+    "ollama": "olm",
 }
 _SHAPE_MODE = {
     ApiShape.ANT_MESSAGES: "chat",
@@ -97,6 +98,7 @@ _SHAPE_MODE = {
     ApiShape.OAI_RESPONSES: "responses",
     ApiShape.GOOG_GENERATE: "chat",
     ApiShape.GOOG_EMBED: "embedding",
+    ApiShape.OLM_CHAT: "chat",
 }
 
 
@@ -109,13 +111,9 @@ def test_shape_segment_matches_each_entry_upstream_wire() -> None:
         name = entry["model_name"]
         shape = ApiShape(name.split("/")[1])
         shapes_seen.add(shape)
-        assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
         upstream = entry["litellm_params"]["model"].split("/")[0]
-        expected = _NAMED_UPSTREAM.get(shape)
-        if expected is None:
-            assert upstream not in _NAMED_UPSTREAM.values(), name
-        else:
-            assert upstream == expected, name
+        assert _UPSTREAM_DEFINER[upstream] == shape.partition("-")[0], name
+        assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
     assert shapes_seen == set(ApiShape)
 
 
