@@ -1,5 +1,12 @@
 # In-cluster loom/gym eval
 
+> **Archived 2026-09-07** — parked here under `loom/gym/x/`; this was never
+> Flux-managed (always applied by hand), so nothing to unwire. Nothing was
+> running on the live cluster at archival time. The run procedure below is
+> preserved as-is; the images it references still build on every push
+> (`devinfra/ci/image_targets.json`), but the Job isn't part of the live
+> stack.
+
 On-demand Job that runs the forecasting eval against the **docker-ci** DinD over
 mTLS, with the sandbox containers reaching the wayback cache via its in-cluster
 ClusterIP. The daemon target, upstream, env, args, and image staging all live in
@@ -23,7 +30,7 @@ secrets present in `claude-sandbox`.
 ## Run and fetch results
 
 ```bash
-kubectl apply -f loom/gym/k8s/eval-job.yaml
+kubectl apply -f loom/gym/x/k8s/eval-job.yaml
 kubectl -n claude-sandbox logs -f job/loom-gym-eval
 
 POD=$(kubectl -n claude-sandbox get pod -l job-name=loom-gym-eval -o name)
@@ -49,5 +56,5 @@ Tune model / task-filter / arms via `args` in `eval-job.yaml`.
   empty answer, `JSONDecodeError`, and `value=nan`. Treat the `nan` count as an
   archive reliability signal before assuming a model or scoring bug.
 - Archive-service status, first cold-run results, and limiter follow-ups live in
-  `../../wayback/cache/PLAN.md`. Archive.org API behavior and signal-header
-  notes live in `../../docs/archive_org_apis.md`.
+  `../../../wayback/cache/PLAN.md`. Archive.org API behavior and signal-header
+  notes live in `../../../docs/archive_org_apis.md`.
