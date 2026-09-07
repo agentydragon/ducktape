@@ -66,9 +66,9 @@ no-reboot path.)
 
 ## Recovery / diagnostics
 
-- **Login succeeds but the desktop never appears / wedges** → <login*zombie_recovery.md>
+- **Login succeeds but the desktop never appears / wedges** → [the zombie-session recovery notes](login_zombie_recovery.md)
   (a zombie logind session or a stuck `graphical-session.target`; note that
-  restarting the display manager does \_not* fix either).
+  restarting the display manager does _not_ fix either).
 - **Seat/DRM/logind state** → `sudo bash seat-diag.sh` (DM-agnostic).
 
 ## History (archived) — the constraints we ran into
