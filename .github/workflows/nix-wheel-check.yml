@@ -20,6 +20,9 @@ on:
       BUILDBUDDY_API_KEY:
         description: "BuildBuddy remote execution and cache credential"
         required: true
+      SOPS_AGE_KEY:
+        description: "SOPS age key, for decrypting the Attic reader token (nix substituter cache)"
+        required: true
     inputs:
       environment:
         description: "Protected GitHub Environment to gate this job (optional)"
@@ -105,9 +108,18 @@ jobs:
           echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
           echo "Resolved source revision: $resolved_sha"
 
-      - uses: ./.github/actions/setup-nix-devtools
+      # setup-nix-attic (not setup-nix-devtools) so the checks below can substitute
+      # from cache.allegedly.works/main instead of building from source. Packages
+      # pinned to nixpkgs-master (e.g. codex, see nix/home/codex/default.nix) have
+      # no cache.nixos.org binary — only Hydra-built release channels get one — so
+      # without the Attic substituter this job source-builds codex's whole Rust
+      # toolchain on every run and blows the timeout (#5749).
+      - uses: ./.github/actions/setup-nix-attic
         with:
-          package: citools
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Install citools
+        run: nix profile install .#citools
 
       - name: Check generated command policies
         run: |

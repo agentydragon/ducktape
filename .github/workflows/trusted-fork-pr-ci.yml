@@ -66,3 +66,4 @@ jobs:
       allow_unsafe_pr_checkout: true
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
