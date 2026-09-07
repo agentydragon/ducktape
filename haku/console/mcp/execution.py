@@ -103,7 +103,7 @@ def require_mcp_execution_context(ctx: Context = _CURRENT_CONTEXT) -> McpExecuti
 
     request_context = ctx.request_context
     meta = request_context.meta if request_context is not None else None
-    raw = getattr(meta, _HAKU_EXECUTION_META_KEY, None) if meta is not None else None
+    raw = meta.get(_HAKU_EXECUTION_META_KEY) if meta is not None else None
     if raw is None:
         raise RuntimeError("trusted Haku MCP execution context is required")
     return McpExecutionContext.model_validate(raw)

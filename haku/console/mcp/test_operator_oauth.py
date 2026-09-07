@@ -7,7 +7,7 @@ import datetime
 from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -89,15 +89,15 @@ async def test_refresh_read_timeout_is_classified_as_ambiguous_and_uses_configur
         async def __aexit__(self, *_args: object) -> None:
             return None
 
-        async def post(self, url: str, **_kwargs: object) -> httpx.Response:
-            request = httpx.Request("POST", url)
-            raise httpx.ReadTimeout("late response", request=request)
+        async def post(self, url: str, **_kwargs: object) -> httpx2.Response:
+            request = httpx2.Request("POST", url)
+            raise httpx2.ReadTimeout("late response", request=request)
 
     def client(*, timeout: float) -> TimeoutClient:
         assert timeout == 37.0
         return TimeoutClient()
 
-    monkeypatch.setattr("haku.console.mcp.operator_oauth.httpx.AsyncClient", client)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth.httpx2.AsyncClient", client)
     with pytest.raises(RefreshError) as raised:
         await _refresh_operator_oauth_token(
             _OperatorOAuthTokenClient(
