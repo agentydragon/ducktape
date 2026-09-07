@@ -28,14 +28,20 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
       domain:
+        # 4 cores / 8Gi limit, 2 cores / 4Gi request: the two hil, kubevirt.io/schedulable=true
+        # nodes (ovh-ns102453, ovh-ns103711) are 8-core/32Gi OVH KS-5 boxes already carrying the
+        # rest of the cluster -- the original 8-core/8Gi *request* never fit either node's free
+        # capacity (one short on CPU, the other on memory), which is why this VM's virt-launcher
+        # pod sat Pending/Unschedulable. Heavy compute already runs on BuildBuddy RBE, not this
+        # box, so it doesn't need to request that much locally.
         cpu:
-          cores: 8
+          cores: 4
         resources:
           limits:
-            cpu: "8"
+            cpu: "4"
           requests:
             cpu: "2"
-            memory: 8Gi
+            memory: 4Gi
         firmware:
           bootloader:
             efi:
