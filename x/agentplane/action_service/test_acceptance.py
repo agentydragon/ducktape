@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from typing import Any, cast
 
 import httpx
@@ -19,6 +20,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
     DecisionInput,
+    ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
@@ -77,7 +79,7 @@ class CountingExecutor:
     def capabilities(self) -> frozenset[str]:
         return frozenset({"agentplane:v0.echo"})
 
-    async def execute(self, request: ExecutionRequest) -> ExecutionResult:
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         self.requests.append(request)
         return ExecutionResult(
             state=ExecutionState.SUCCEEDED,
@@ -86,7 +88,7 @@ class CountingExecutor:
 
 
 class LeakyFailingExecutor(CountingExecutor):
-    async def execute(self, request: ExecutionRequest) -> ExecutionResult:
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         self.requests.append(request)
         raise RuntimeError("provider rejected Authorization: Bearer provider-token-must-not-escape")
 
@@ -307,7 +309,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(en
         assert len(executor.requests) == 1
 
         restarted = ActionService(store, executor)
-        assert await restarted.start() == 0
+        await restarted.start()
         await asyncio.sleep(0)
         assert len(executor.requests) == 1
         await restarted.close()
@@ -319,7 +321,13 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(en
         await service.close()
 
 
-async def test_restart_resumes_only_pending_dispatch_and_marks_inflight_unknown(engine: AsyncEngine) -> None:
+async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to_the_lease_sweep(
+    engine: AsyncEngine,
+) -> None:
+    """A restart never assumes in-flight work died with the old process (see executor_liveness.md):
+    pending dispatches resume immediately, but dispatching/running work is untouched until its own
+    lease bound expires — whether that is because the old process crashed or a separate worker did.
+    """
     sessions = make_sessionmaker(engine)
     store = ActionStore(sessions)
     executor = CountingExecutor()
@@ -340,7 +348,7 @@ async def test_restart_resumes_only_pending_dispatch_and_marks_inflight_unknown(
     assert should_dispatch is True
 
     restarted = ActionService(store, executor)
-    assert await restarted.start() == 0
+    await restarted.start()
     client = await _client(restarted)
     try:
         assert (await _terminal(client, str(pending_view.id)))["state"] == "succeeded"
@@ -364,25 +372,24 @@ async def test_restart_resumes_only_pending_dispatch_and_marks_inflight_unknown(
         OPERATOR,
         provider=ActionService.HUMAN_PROVIDER,
     )
-    assert await store.claim_execution(inflight_view.id) is True
+    claim = await store.claim_execution(
+        inflight_view.id, executor_id="crashed-executor", lease_duration=timedelta(minutes=5)
+    )
+    assert claim is not None
     await store.mark_running(inflight_view.id)
 
     never_called = CountingExecutor()
     after_crash = ActionService(store, never_called)
-    assert await after_crash.start() == 1
-    unknown = await store.get(inflight_view.id, CALLER_A)
-    assert unknown.state is ActionState.EXECUTION_UNKNOWN
-    assert unknown.execution is not None
-    assert unknown.execution.error == {"kind": "process_restarted", "message": "dispatch outcome unknown; not replayed"}
-    assert never_called.requests == []
-    assert [event.state for event in await store.events(inflight_view.id, CALLER_A)] == [
-        ActionState.DECISION_PENDING,
-        ActionState.ALLOWED,
-        ActionState.DISPATCHING,
-        ActionState.RUNNING,
-        ActionState.EXECUTION_UNKNOWN,
-    ]
-    await after_crash.close()
+    await after_crash.start()
+    await asyncio.sleep(0)
+    try:
+        # The lease from before the crash is still comfortably unexpired, so the new process
+        # must not assume the old one's work is dead.
+        still_running = await store.get(inflight_view.id, CALLER_A)
+        assert still_running.state is ActionState.RUNNING
+        assert never_called.requests == []
+    finally:
+        await after_crash.close()
 
 
 async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(engine: AsyncEngine) -> None:

@@ -1,4 +1,15 @@
-"""ActionRequest coordinator: DecisionProvider aggregation, human fallback, and single-shot dispatch."""
+"""ActionRequest coordinator: DecisionProvider aggregation, human fallback, and single-shot dispatch.
+
+Executor liveness: the coordinator holds one `executor_id` for its own process lifetime and
+sends it an executor-level health heartbeat regardless of whether it currently owns any
+Execution. Each claimed Execution additionally gets its own unguessable `lease_token` and a
+bounded lease; the adapter renews it via `ExecutionLease.heartbeat()` while working, and a
+periodic sweep marks any Execution whose lease lapsed `execution_unknown` — whether that is
+because the executor died or because this coordinator process itself was killed. Neither
+death is distinguishable from the other from the database's point of view, and both get the
+same safe treatment: never replay, let a later authenticated completion or authoritative
+status lookup reconcile the one attempt that was made.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +17,8 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from uuid import UUID
+from datetime import timedelta
+from uuid import UUID, uuid4
 
 from x.agentplane.action_service.db import ActionConflictError, ActionStore
 from x.agentplane.action_service.models import (
@@ -17,6 +29,8 @@ from x.agentplane.action_service.models import (
     DecisionContext,
     DecisionInput,
     DecisionProvider,
+    ExecutionClaim,
+    ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
@@ -26,6 +40,7 @@ from x.agentplane.action_service.models import (
     Principal,
     ProviderOutcome,
     ProviderVerdict,
+    UnknownOutcomeReason,
     Verdict,
 )
 
@@ -34,6 +49,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 5.0
 PROVIDER_TIMEOUT_REASON = "provider_timeout"
 PROVIDER_UNAVAILABLE_REASON = "provider_unavailable"
+
+DEFAULT_LEASE_DURATION = timedelta(seconds=30)
+DEFAULT_LEASE_SWEEP_INTERVAL = timedelta(seconds=5)
+DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL = timedelta(seconds=10)
+DEFAULT_EXECUTOR_HEALTH_TIMEOUT = timedelta(seconds=45)
 
 
 @dataclass(frozen=True)
@@ -55,8 +75,25 @@ class EchoExecutor:
     def capabilities(self) -> frozenset[str]:
         return frozenset({self.CAPABILITY})
 
-    async def execute(self, request: ExecutionRequest) -> ExecutionResult:
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})
+
+
+class _StoreBackedLease:
+    """The seam a future out-of-process worker would present over the wire, called in-process for v0."""
+
+    def __init__(self, store: ActionStore, claim: ExecutionClaim, lease_duration: timedelta) -> None:
+        self._store = store
+        self._claim = claim
+        self._lease_duration = lease_duration
+
+    async def heartbeat(self) -> bool:
+        return await self._store.heartbeat_execution(
+            self._claim.request_id,
+            self._claim.executor_id,
+            self._claim.lease_token,
+            lease_duration=self._lease_duration,
+        )
 
 
 class ActionService:
@@ -70,27 +107,46 @@ class ActionService:
         outbox: NotificationOutbox | None = None,
         providers: Sequence[DecisionProvider] = (),
         provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
+        executor_id: str | None = None,
+        lease_duration: timedelta = DEFAULT_LEASE_DURATION,
+        lease_sweep_interval: timedelta = DEFAULT_LEASE_SWEEP_INTERVAL,
+        executor_heartbeat_interval: timedelta = DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL,
+        executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
     ) -> None:
         self._store = store
         self._executor = executor
         self._outbox = outbox or NullNotificationOutbox()
         self._providers = tuple(providers)
         self._provider_timeout_seconds = provider_timeout_seconds
+        self._executor_id = executor_id or f"executor-{uuid4()}"
+        self._lease_duration = lease_duration
+        self._lease_sweep_interval = lease_sweep_interval
+        self._executor_heartbeat_interval = executor_heartbeat_interval
+        self._executor_health_timeout = executor_health_timeout
         self._tasks: set[asyncio.Task[None]] = set()
+        self._heartbeat_task: asyncio.Task[None] | None = None
+        self._sweep_task: asyncio.Task[None] | None = None
 
-    async def start(self) -> int:
-        """Recover unsafe in-flight work, then resume only dispatches that provably never started."""
-        recovered = await self._store.recover_unknown()
+    async def start(self) -> None:
+        """Resume only dispatches that provably never started; liveness sweeps handle the rest.
+
+        A restart never assumes in-flight work died with the old process: the sweep loop
+        applies the same bounded-lease-expiry rule regardless of which process is running it,
+        so a hard kill and a live separate executor are indistinguishable here by design.
+        """
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name="action-executor-heartbeat")
+        self._sweep_task = asyncio.create_task(self._sweep_loop(), name="action-lease-sweep")
         for request_id in await self._store.pending_dispatches():
             self._schedule(request_id)
-        return recovered
 
     async def close(self) -> None:
-        tasks = list(self._tasks)
-        for task in tasks:
+        background = [task for task in (self._heartbeat_task, self._sweep_task) if task is not None]
+        for task in [*self._tasks, *background]:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*self._tasks, *background, return_exceptions=True)
         self._tasks.clear()
+        self._heartbeat_task = None
+        self._sweep_task = None
 
     async def submit(self, body: ActionRequestInput, principal: Principal) -> ActionRequestView:
         view, created = await self._store.submit(body, principal, supported_capabilities=self._executor.capabilities)
@@ -187,28 +243,65 @@ class ActionService:
             # state machine carries the safe classification; logs record only that coordination failed.
             logger.error("action dispatch coordination failed; request will not be retried")
 
+    async def _heartbeat_loop(self) -> None:
+        """Prove this executor identity is alive, independent of any Execution it may hold."""
+        while True:
+            try:
+                await self._store.record_executor_heartbeat(self._executor_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("executor heartbeat failed; will retry", exc_info=True)
+            await asyncio.sleep(self._executor_heartbeat_interval.total_seconds())
+
+    async def _sweep_loop(self) -> None:
+        """Bound how long a stalled lease can hide an ambiguous outcome, across restarts."""
+        while True:
+            try:
+                expired = await self._store.expire_stale_leases(executor_health_timeout=self._executor_health_timeout)
+                if expired:
+                    logger.info("lease sweep marked %d execution(s) unknown", len(expired))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("lease sweep failed; will retry", exc_info=True)
+            await asyncio.sleep(self._lease_sweep_interval.total_seconds())
+
     async def _dispatch_once(self, request_id: UUID) -> None:
-        if not await self._store.claim_execution(request_id):
+        claim = await self._store.claim_execution(
+            request_id, executor_id=self._executor_id, lease_duration=self._lease_duration
+        )
+        if claim is None:
             return
+        lease = _StoreBackedLease(self._store, claim, self._lease_duration)
         try:
             request = await self._store.mark_running(request_id)
-            result = await self._executor.execute(request)
+            result = await self._executor.execute(request, lease)
         except ExecutionOutcomeUnknownError:
             # Adapter exception text can contain provider responses or credentials. Persist and
             # return only the stable classification; the service never projects raw exceptions.
             result = ExecutionResult(
                 state=ExecutionState.EXECUTION_UNKNOWN,
-                error={"kind": "execution_outcome_unknown", "message": "execution outcome is unknown; not replayed"},
+                error={
+                    "kind": UnknownOutcomeReason.ADAPTER_OUTCOME_UNKNOWN,
+                    "message": "execution outcome is unknown; not replayed",
+                },
             )
         except asyncio.CancelledError:
-            # A graceful stop can record uncertainty. A hard process loss leaves RUNNING behind;
-            # start() makes the same transition before accepting traffic.
+            # A graceful stop can record uncertainty immediately rather than waiting on the
+            # lease to lapse. A hard process loss leaves no code running to reach this branch;
+            # the lease sweep makes the same transition instead, on its own schedule.
             await asyncio.shield(
                 self._store.finish_execution(
                     request_id,
+                    claim.executor_id,
+                    claim.lease_token,
                     ExecutionResult(
                         state=ExecutionState.EXECUTION_UNKNOWN,
-                        error={"kind": "coordinator_stopped", "message": "dispatch outcome unknown; not replayed"},
+                        error={
+                            "kind": UnknownOutcomeReason.COORDINATOR_STOPPED,
+                            "message": "dispatch outcome unknown; not replayed",
+                        },
                     ),
                 )
             )
@@ -220,4 +313,4 @@ class ActionService:
                 state=ExecutionState.FAILED,
                 error={"kind": type(error).__name__, "message": "executor failed; see credential-safe adapter metrics"},
             )
-        await self._store.finish_execution(request_id, result)
+        await self._store.finish_execution(request_id, claim.executor_id, claim.lease_token, result)

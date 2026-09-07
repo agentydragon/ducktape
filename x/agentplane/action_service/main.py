@@ -81,9 +81,7 @@ async def async_main(settings: Settings) -> None:
     catalog = ActionCatalog(groups=settings.action_groups)
     async with ApiClient(configuration=configuration) as api:
         service = ActionService(ActionStore(make_sessionmaker(engine)), EchoExecutor())
-        recovered = await service.start()
-        if recovered:
-            logger.warning("marked %d in-flight executions unknown after restart", recovered)
+        await service.start()
         operator_authenticator: OperatorAuthenticator
         if settings.operator_bearer_file is None:
             operator_authenticator = DisabledOperatorAuthenticator()
