@@ -168,8 +168,12 @@ let
     ]);
   };
 
-  # Combined CLI + GNOME Shell extension package.
-  aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
+  # Combined CLI + GNOME Shell extension package. Takes the same overridden python3Packages as
+  # everything else here (not stock pkgs.python3Packages) -- claude-hooks depends on both aiquota
+  # and httpx/pydantic directly, and Nix's duplicate-package check fails the build if those two
+  # paths resolve to different derivations of the "same" version (see idna.nix's own comment: this
+  # is exactly the kind of ripple a packageOverrides addition can cause).
+  aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib python3Packages; };
 
   # Chrome-free GTK/WebKit approvals application.
   hakuApprovals = pkgs.callPackage ./haku-approvals.nix {
