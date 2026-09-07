@@ -1,0 +1,127 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_proto_grpc_js//:defs.bzl", "js_grpc_web_library")
+load("@rules_proto_grpc_python//:defs.bzl", "python_grpc_library")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# The generated Python modules use unqualified imports with output_mode = "NO_PREFIX".
+# gazelle:resolve py greeting_pb2 :greeting_python_grpc
+# gazelle:resolve py greeting_pb2_grpc :greeting_python_grpc
+
+proto_library(
+    name = "greeting_proto",
+    srcs = ["greeting.proto"],
+    strip_import_prefix = "/x/grpc_demo",
+)
+
+python_grpc_library(
+    name = "greeting_python_grpc",
+    generate_pyi = True,
+    output_mode = "NO_PREFIX",
+    protos = [":greeting_proto"],
+)
+
+js_grpc_web_library(
+    name = "greeting_js_grpc_web",
+    output_mode = "NO_PREFIX",
+    protos = [":greeting_proto"],
+)
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    deps = ["@pypi//pyjwt"],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        ":auth",
+        "//x/grpc_demo:greeting_python_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: generated protobuf stubs import google.protobuf
+    ],
+)
+
+py_binary(
+    name = "server_bin",
+    legacy_create_init = False,
+    main_module = "x.grpc_demo.server",
+    deps = [":server"],
+)
+
+py_library(
+    name = "static_server",
+    srcs = ["static_server.py"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+py_binary(
+    name = "static_server_bin",
+    data = [":bundle"],
+    main_module = "x.grpc_demo.static_server",
+    deps = [":static_server"],
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_library(
+    name = "frontend",
+    srcs = ["frontend.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":greeting_js_grpc_web",
+        "//:node_modules/oidc-client-ts",
+    ],
+)
+
+spa_bundle(
+    name = "bundle",
+    entry_point = "frontend.ts",
+    index_html = "index.html",
+    minify = False,
+    visibility = ["//visibility:public"],
+    deps = [":frontend"],
+)
+
+alias(
+    name = "grpcwebproxy",
+    actual = "@com_github_improbable_eng_grpc_web//go/grpcwebproxy:grpcwebproxy",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":auth",
+        ":server",
+        "//:conftest",
+        "//x/grpc_demo:greeting_python_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: generated protobuf stubs import google.protobuf
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_auth",
+    srcs = ["test_auth.py"],
+    deps = [
+        ":auth",
+        "//:conftest",
+        "@pypi//cryptography",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
