@@ -23,6 +23,17 @@ let
         };
       in
       {
+        # Being part of this override set means anyio no longer matches nixpkgs'
+        # cached build (its dependency closure shifted under it), so it rebuilds from
+        # source here instead of substituting -- which runs its test suite, including
+        # a thread-count assertion nixpkgs already knows is racy under load (it
+        # disables the sibling test_multiple_threads for the same reason, citing
+        # NixOS/nixpkgs#448125) but hasn't yet disabled for test_single_thread.
+        anyio = pyprev.anyio.overrideAttrs (old: {
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_single_thread"
+          ];
+        });
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
           python3Packages = pyfinal;
         };
