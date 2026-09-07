@@ -62,7 +62,9 @@ class MacroVarFit:
         """`(I - A)^-1 c` — where the state settles absent shocks."""
 
         transition = np.asarray(self.transition)
-        return _as_vector3(np.linalg.solve(np.eye(MACRO_STATE_DIM) - transition, np.asarray(self.intercept)).tolist())
+        return as_state_vector(
+            np.linalg.solve(np.eye(MACRO_STATE_DIM) - transition, np.asarray(self.intercept)).tolist()
+        )
 
     def forecast(self, state: MacroStateVector, *, horizon: int) -> tuple[np.ndarray, np.ndarray]:
         """Mean and covariance of the state `horizon` months after `state`.
@@ -97,16 +99,16 @@ class MacroVarFit:
         return self.transition[0][2] / (1.0 - own_lag)
 
 
-def _as_vector3(values: Sequence[float]) -> MacroStateVector:
+def as_state_vector(values: Sequence[float]) -> MacroStateVector:
     """A numpy row as a genuine 3-tuple: unpacking (rather than `tuple(values)`) is what
     gives mypy a fixed-arity result, and raises immediately on a malformed row."""
     a, b, c = values
     return (a, b, c)
 
 
-def _as_matrix3(rows: Sequence[Sequence[float]]) -> MacroStateMatrix:
+def as_state_matrix(rows: Sequence[Sequence[float]]) -> MacroStateMatrix:
     row0, row1, row2 = rows
-    return (_as_vector3(row0), _as_vector3(row1), _as_vector3(row2))
+    return (as_state_vector(row0), as_state_vector(row1), as_state_vector(row2))
 
 
 @dataclass(frozen=True)
@@ -128,7 +130,7 @@ class MacroStatePath:
     def state_at(self, index: int) -> MacroStateVector:
         """The state at `index` as a fixed-arity vector, ready for `MacroVarFit.forecast`."""
 
-        return _as_vector3(self.states[index].tolist())
+        return as_state_vector(self.states[index].tolist())
 
     def between(self, start: date, end: date) -> MacroStatePath:
         """The sub-path from `start` through `end`, both inclusive.
@@ -197,10 +199,10 @@ def fit_macro_var_path(path: MacroStatePath) -> MacroVarFit:
     covariance = residuals.T @ residuals / (len(residuals) - design.shape[1])
 
     return MacroVarFit(
-        intercept=_as_vector3(coefficients[0].tolist()),
-        transition=_as_matrix3(coefficients[1:].T.tolist()),
-        shock_cholesky=_as_matrix3(np.linalg.cholesky(covariance).tolist()),
-        latest_state=_as_vector3(path.states[-1].tolist()),
+        intercept=as_state_vector(coefficients[0].tolist()),
+        transition=as_state_matrix(coefficients[1:].T.tolist()),
+        shock_cholesky=as_state_matrix(np.linalg.cholesky(covariance).tolist()),
+        latest_state=as_state_vector(path.states[-1].tolist()),
         first_month=path.months[0],
         latest_month=path.months[-1],
         sample_months=len(path.months),

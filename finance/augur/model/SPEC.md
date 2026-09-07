@@ -118,6 +118,44 @@ compares different SERIES, not the two spans of the one series these arms share.
 row as reported and unexplained. The horizons a 30-year spender is exposed to are the ones where
 dynamics dominate, and those agree with each other.
 
+### Splitting the windows by equation beats both, at the horizons that matter
+
+The estimator is one OLS per equation over shared regressors, so each equation can take its own
+sample without changing what is estimated. `mixed_windows.py` gives the rate equations the 1955
+window and inflation the century, with the innovation covariance — the one genuinely
+cross-equation quantity — on the span they share. Same origins and observations as above.
+
+CRPS by state, as `1926 / 1955 / mixed`, lower better:
+
+| horizon  | short rate                      | term spread                     | inflation                       |
+| -------- | ------------------------------- | ------------------------------- | ------------------------------- |
+| 1 month  | **0.00342** / 0.00355/0.00355   | **0.00360** / 0.00370/0.00370   | 0.00235 / 0.00208 / **0.00205** |
+| 1 year   | 0.01107 / **0.01041** / 0.01044 | 0.00815 / **0.00804** / 0.00809 | **0.01075** / 0.01144 / 0.01093 |
+| 5 years  | 0.02175 / 0.02033 / **0.01858** | 0.00935 / 0.00868 / **0.00866** | 0.01815 / 0.02058 / **0.01656** |
+| 10 years | 0.03559 / 0.02889 / **0.02245** | 0.00992 / 0.00846 / **0.00835** | 0.02414 / 0.02925 / **0.01803** |
+
+**At 5 and 10 years the mixed fit beats both single-window fits on every state**, by 4-22%. It
+is stationary (spectral radius 0.9870, between the two it is assembled from).
+
+**The gain is not just each equation getting its own window.** The mixed short-rate row is the
+SAME regression as the 1955 arm's — identical window, identical design — and at one month their
+short-rate CRPS is identical to five digits, which is the check that says the implementation does
+what it claims. By ten years the mixed fit's short rate is 22% better anyway. That improvement
+cannot come from the short-rate row, so it comes through the coupling: the short-rate equation
+loads on lagged inflation, so a better inflation row makes better RATE forecasts. #5817 named the
+Fed-reaction coefficient as the modelling claim this rests on; that channel is where the gain is.
+
+**Joint density does not follow the marginals everywhere.** Mixed leads at 1 month, 1 year and 10
+years (12.000, 7.671, 6.913) but at 5 years it trails the long record (5.620 against 5.802) while
+beating it on all three marginals. Better margins with a worse joint is a correlation statement:
+at that horizon the covariance estimated on the overlap fits the mixed rows less well than the
+century's own does. That is the risk named going in, and it is the open end — the covariance span
+is a free parameter nobody has swept.
+
+So this is not yet a decision to ship. It clears the bar this repo set for the horizons a
+retirement cares about and misses it on one joint-density cell, and no default changes until the
+covariance question is closed.
+
 **What this does not establish.** Origins overlap heavily at these horizons, so the arms' means
 are comparable to each other but carry no usable standard error; no significance is claimed, and
 none is reported. The shipped default stays `FRED_1955`, which these numbers support for the rate

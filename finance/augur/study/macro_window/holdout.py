@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from bisect import bisect_left
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -42,7 +42,13 @@ import jax.numpy as jnp
 import numpy as np
 from numpyro import distributions as dist
 
-from finance.augur.fit.macro_var import MACRO_STATE_NAMES, MacroStatePath, fit_macro_var_path, macro_state_path
+from finance.augur.fit.macro_var import (
+    MACRO_STATE_NAMES,
+    MacroStatePath,
+    MacroVarFit,
+    fit_macro_var_path,
+    macro_state_path,
+)
 from finance.augur.fit.scoring import gaussian_crps, joint_log_density
 from finance.augur.fit.structural_macro import macro_var_levels
 from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, load_macro_history
@@ -77,24 +83,50 @@ class ArmScore:
     mean_crps: dict[str, float]
 
 
-def score_arms(path: MacroStatePath, *, arms: Mapping[str, date], horizons: Sequence[int] = HORIZONS) -> list[ArmScore]:
+@dataclass(frozen=True)
+class Arm:
+    """One fitting rule under test: a name, when it becomes fittable, and how it fits.
+
+    A rule rather than a start date, so an arm whose equations take DIFFERENT windows
+    (`mixed_windows.py`) can be scored beside the single-window ones without a second scorer.
+    `shortest_window_start` is the latest start any of its equations uses — the comparison can
+    only begin once every arm is fittable, and that is what decides when.
+    """
+
+    label: str
+    shortest_window_start: date
+    fit: Callable[[MacroStatePath], MacroVarFit]
+
+
+def single_window(label: str, start: date) -> Arm:
+    """An arm fitting every equation on one window."""
+
+    return Arm(
+        label=label,
+        shortest_window_start=start,
+        fit=lambda path: fit_macro_var_path(path.between(start, path.months[-1])),
+    )
+
+
+def score_arms(path: MacroStatePath, arms: Sequence[Arm], *, horizons: Sequence[int] = HORIZONS) -> list[ArmScore]:
     """Refit every arm at every origin and score its h-step forecast against what happened.
 
     Every arm sees the same origins and is scored against the same observations, which is the
     only reason the means are comparable at all.
     """
 
-    first_origin = _first_origin(path, latest_start=max(arms.values()))
+    first_origin = _first_origin(path, latest_start=max(arm.shortest_window_start for arm in arms))
     last_origin = len(path.months) - 1
     if first_origin > last_origin - min(horizons):
         raise ValueError(f"no scorable origins: {first_origin=} against {len(path.months)} states")
 
-    densities: dict[tuple[str, int], list[float]] = {(arm, h): [] for arm in arms for h in horizons}
-    crps: dict[tuple[str, int], list[dict[str, float]]] = {(arm, h): [] for arm in arms for h in horizons}
+    densities: dict[tuple[str, int], list[float]] = {(a.label, h): [] for a in arms for h in horizons}
+    crps: dict[tuple[str, int], list[dict[str, float]]] = {(a.label, h): [] for a in arms for h in horizons}
 
     for origin in range(first_origin, last_origin):
-        for arm, start in arms.items():
-            fit = fit_macro_var_path(path.between(start, path.months[origin]))
+        for arm_rule in arms:
+            arm = arm_rule.label
+            fit = arm_rule.fit(path.between(path.months[0], path.months[origin]))
             for horizon in horizons:
                 if origin + horizon > last_origin:
                     continue
@@ -116,7 +148,7 @@ def score_arms(path: MacroStatePath, *, arms: Mapping[str, date], horizons: Sequ
             mean_log_density=float(np.mean(densities[arm, horizon])),
             mean_crps={name: float(np.mean([row[name] for row in crps[arm, horizon]])) for name in MACRO_STATE_NAMES},
         )
-        for arm in arms
+        for arm in (rule.label for rule in arms)
         for horizon in horizons
     ]
 
@@ -124,7 +156,7 @@ def score_arms(path: MacroStatePath, *, arms: Mapping[str, date], horizons: Sequ
 def compare_start_dates(path: MacroStatePath) -> list[ArmScore]:
     """The experiment: one series, fitted from the record's own start and from 1955."""
 
-    return score_arms(path, arms={LONG_ARM: path.months[0], SHORT_ARM: FRED_WINDOW_START})
+    return score_arms(path, [single_window(LONG_ARM, path.months[0]), single_window(SHORT_ARM, FRED_WINDOW_START)])
 
 
 def _first_origin(path: MacroStatePath, *, latest_start: date) -> int:

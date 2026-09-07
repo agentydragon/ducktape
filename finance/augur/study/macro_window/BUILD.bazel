@@ -63,3 +63,31 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "mixed_windows",
+    srcs = ["mixed_windows.py"],
+    deps = [
+        ":holdout",
+        "//finance/augur/fit:macro_var",
+        "//finance/augur/model:structural_macro",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "mixed_windows_test",
+    size = "medium",
+    srcs = ["mixed_windows_test.py"],
+    # Manual for the same reason :holdout_test is: it fetches the record from the public
+    # upstreams, and an upstream outage must not redden an unrelated PR.
+    tags = ["manual"],
+    deps = [
+        ":holdout",
+        ":mixed_windows",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
