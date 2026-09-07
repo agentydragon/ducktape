@@ -36,6 +36,18 @@ attribution:
   rows as "what a bond FUND would have done", which is not what the paper measured.
 - *Windows start every month, not every year.* 474 of them against the paper's 41 — the same
   span, sampled 12x more finely, which makes each cell smoother rather than different.
+
+  **This sets how close "close" can be, and it is worth knowing before reading any deviation
+  here as a defect.** All 50 of Table 3's published 30-year cells land exactly on `k/41`, so
+  the paper's grid has a step of 2.44 points and cannot express anything finer. One window
+  flipping moves a cell of theirs by 2.44 points and one of ours by 0.21. Measured in units of
+  their own resolution, this reproduction sits 0.41 of a window away over 3-4% — closer than
+  their table can represent — and about 1.5 windows away over the full 3-12% range.
+
+  Underneath both is the same thin record: 1926-07 to 1995-12 holds **2.3 independent 30-year
+  observations**. Neither table is a probability; both are elaborate readings of roughly two
+  non-overlapping experiments, which is also why the test's tolerances here are loose on
+  purpose and should not be tightened toward the published digits.
 - *Coupons sit in cash until the next withdrawal.* augur's allocation policy refills a cash
   band but never invests a surplus, so a bond sleeve yielding more than the withdrawal rate
   accumulates idle cash that Trinity would have reinvested.
