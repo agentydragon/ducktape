@@ -280,6 +280,7 @@ py_library(
     name = "historical_windows",
     srcs = ["historical_windows.py"],
     deps = [
+        ":bond_fund",
         ":exogenous",
         ":schemas",
         ":series",
@@ -295,6 +296,7 @@ py_test(
     name = "historical_windows_test",
     srcs = ["historical_windows_test.py"],
     deps = [
+        ":bond_fund",
         ":conftest",
         ":exogenous",
         ":historical_windows",
@@ -317,6 +319,7 @@ py_library(
     srcs = ["structural_macro.py"],
     data = ["//finance/augur/fit/calibrated:trained_structural_macro_blob"],
     deps = [
+        ":bond_fund",
         ":exogenous",
         ":float64",
         ":schemas",
@@ -575,5 +578,25 @@ py_library(
     deps = [
         "@pypi//jax",
         "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "bond_fund",
+    srcs = ["bond_fund.py"],
+    deps = ["@pypi//numpy"],
+)
+
+py_test(
+    name = "bond_fund_test",
+    srcs = ["bond_fund_test.py"],
+    deps = [
+        ":bond_fund",
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

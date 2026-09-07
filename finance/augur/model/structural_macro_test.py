@@ -85,8 +85,8 @@ def _config(**updates: object) -> StructuralMacroProviderConfig:
     fields: dict[str, object] = {
         "macro_state": _diagonal_var(),
         "instruments": (
-            InstrumentSpec(symbol=BOND, duration_years=6.0, initial_price_usd=100.0),
-            InstrumentSpec(symbol=CASH, duration_years=0.0, initial_price_usd=1.0),
+            InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),
+            InstrumentSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),
         ),
         **updates,
     }
@@ -134,7 +134,7 @@ def test_rate_fall_moves_price_up_and_payout_down_together() -> None:
     assert np.all(payout[:, -1] < payout[:, 0])
 
 
-def test_longer_duration_loses_more_to_the_same_rate_rise() -> None:
+def test_longer_maturity_loses_more_to_the_same_rate_rise() -> None:
     """Duration is what orders a bond sleeve against cash, so the ordering is load-bearing:
     a study choosing between a short and an intermediate fund is choosing on exactly this."""
 
@@ -143,9 +143,9 @@ def test_longer_duration_loses_more_to_the_same_rate_rise() -> None:
     config = _config(
         macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06),
         instruments=(
-            InstrumentSpec(symbol=long_fund, duration_years=12.0),
-            InstrumentSpec(symbol=short_fund, duration_years=2.0),
-            InstrumentSpec(symbol=CASH, duration_years=0.0),
+            InstrumentSpec(symbol=long_fund, maturity_years=12.0),
+            InstrumentSpec(symbol=short_fund, maturity_years=2.0),
+            InstrumentSpec(symbol=CASH, maturity_years=0.0),
         ),
     )
     bundle = _sample(config)
@@ -157,7 +157,7 @@ def test_longer_duration_loses_more_to_the_same_rate_rise() -> None:
     assert total_return(long_fund) < total_return(short_fund) < total_return(CASH) == 1.0
 
 
-def test_zero_duration_instrument_is_cash() -> None:
+def test_zero_maturity_instrument_is_cash() -> None:
     """A money-market fund: its price never moves and its payout tracks the short rate with no
     lag. That is the definition, and it is what lets the cash sleeve be a holding rather than a
     special case in the engine."""
@@ -167,57 +167,44 @@ def test_zero_duration_instrument_is_cash() -> None:
     payout = _series(bundle, SecurityDistributionKey(symbol=CASH))
 
     assert np.allclose(price, price[:, :1])
-    # Rising rates, no lag: the payout rises every single month, unlike the bond fund's.
-    assert np.all(np.diff(payout, axis=1) > 0.0)
+    # Rising rates, no lag: the payout rises every month from month 1 on. Months 0 and 1 are
+    # equal by construction — month 0 has no prior month to have been bought at, so it opens on
+    # its own yield against an unmoved mark, which is exactly what month 1 then pays.
+    assert np.all(np.diff(payout[:, 1:], axis=1) > 0.0)
 
 
-def test_a_funds_book_yield_converges_with_a_half_life_of_its_duration() -> None:
-    """The structural claim, stated exactly: a fund earns a new yield only as it rolls into new
-    holdings, so its payout converges toward the market yield with a half-life of about its
-    duration instead of jumping to it. That lag is what reproduces 2022-2025 — a price that
-    fell at once and a payout that took years to climb — rather than a step function.
+def test_the_payout_yield_on_the_mark_is_the_yield_of_the_bonds_held() -> None:
+    """The invariant that replaced the book-yield lag, checked end to end through the provider.
 
-    A zero own-lag makes the market yield a STEP: it jumps in month 1 and stays. Without that,
-    the market yield is itself still converging and the measured half-life would be a blend of
-    the two rates rather than the one being claimed.
+    The old model paid a coupon on a face pinned at `initial_price_usd` and let a `book_yield`
+    converge toward the market with a half-life of the fund's duration. Two of those three
+    things belonged to different instruments — a slow book yield is a LADDER of staggered
+    maturities, while the price response was a constant-maturity roll — and the fixed face
+    belonged to neither. Glued together they let the fund pay a yield on its own net assets
+    that its holdings never earned (<../debug/bond_sleeve_overdistribution.md>).
+
+    A constant-maturity fund re-yields when it rolls, which is every month, so the payout is
+    last month's yield struck on last month's mark, and the ratio recovers that yield exactly.
     """
 
-    duration_years = 6.0
-    half_life_months = round(duration_years * 12)
-    # Long enough that the residual gap at the end is ~2^-10 of the jump, so the last month is
-    # a fair stand-in for "converged" and the fraction below is not measuring the tail.
-    horizon = half_life_months * 10
-
+    horizon = 240
     bundle = _sample(
         _config(
-            # `short_lag=0` makes the yield a STEP: it jumps in month 1 and stays.
-            macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06, short_lag=0.0),
-            instruments=(InstrumentSpec(symbol=BOND, duration_years=duration_years, initial_price_usd=100.0),),
+            macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06, short_lag=0.9),
+            instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),),
         ),
         horizon_months=horizon,
     )
     price = _series(bundle, SecurityKey(symbol=BOND), horizon_months=horizon)
     payout = _series(bundle, SecurityDistributionKey(symbol=BOND), horizon_months=horizon)
 
-    # Recovered from the emitted payout alone: a monthly payout per unit over the face it is
-    # paid on, annualized. Over the MARK would not recover it — the payout is a coupon on face,
-    # which is the thing that does not move when the bonds reprice.
-    book_yield = payout * 12.0 / 100.0
-    jump = book_yield[0, -1] - book_yield[0, 0]
-    assert (book_yield[0, half_life_months] - book_yield[0, 0]) / jump == pytest.approx(0.5, abs=0.01)
-
-    # The price, by contrast, takes the whole hit in the month the yield moves and then sits.
-    assert price[0, 1] < price[0, 0]
-    assert np.allclose(price[0, 1:], price[0, 1])
-
-    # 2022 in two assertions, and the reason the payout is a coupon on FACE rather than a yield
-    # on the mark. In the very month the price takes its whole hit, the payout ticks UP — the
-    # opposite direction — and by a small fraction of the move. Paying on the mark would have
-    # cut it by the full price drop on the spot, which is not what happened to any real fund.
-    price_move = abs(price[0, 1] / price[0, 0] - 1.0)
-    payout_move = abs(payout[0, 1] / payout[0, 0] - 1.0)
-    assert payout[0, 1] > payout[0, 0]
-    assert payout_move < price_move / 5.0
+    # Struck on the PREVIOUS mark, so the ratio is a yield with no face/mark drift term in it.
+    yield_on_mark = 12.0 * payout[0, 1:] / price[0, :-1]
+    assert np.all(yield_on_mark > 0.0)
+    # Rates rise toward the 6% mean over this horizon, and the payout yield rises with them
+    # rather than being scaled away from them by an accumulating face/mark ratio.
+    assert yield_on_mark[-1] > yield_on_mark[0]
+    assert yield_on_mark[-1] == pytest.approx(0.06, abs=0.005)
 
 
 def test_yields_stay_positive_through_a_zirp_decade() -> None:
@@ -241,8 +228,8 @@ def test_municipal_spread_lowers_the_pretax_payout() -> None:
     bundle = _sample(
         _config(
             instruments=(
-                InstrumentSpec(symbol=treasury, duration_years=6.0, spread=0.0),
-                InstrumentSpec(symbol=muni, duration_years=6.0, spread=-0.012),
+                InstrumentSpec(symbol=treasury, maturity_years=6.0, spread=0.0),
+                InstrumentSpec(symbol=muni, maturity_years=6.0, spread=-0.012),
             )
         )
     )
@@ -314,7 +301,7 @@ def test_emissions_are_exactly_the_declared_keys() -> None:
 def test_a_rollout_path_does_not_depend_on_the_batch_it_was_sampled_with() -> None:
     """Per-rollout seeding, the property that lets a caller re-run rollout 7 of 1000 alone."""
 
-    config = StructuralMacroProviderConfig(instruments=(InstrumentSpec(symbol=BOND, duration_years=6.0),))
+    config = StructuralMacroProviderConfig(instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0),))
     model = config.realize_model()
 
     def path(seeds: tuple[int, ...], index: int) -> np.ndarray:
@@ -335,7 +322,7 @@ def test_shocks_actually_move_the_paths() -> None:
     shock inputs entirely."""
 
     config = StructuralMacroProviderConfig(
-        instruments=(InstrumentSpec(symbol=BOND, duration_years=6.0),),
+        instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0),),
         equity=EquitySpec(symbol=EQUITY, initial_price_usd=500.0),
     )
     bundle = _sample(config)
@@ -363,14 +350,14 @@ def test_a_symbol_priced_twice_is_rejected() -> None:
     with pytest.raises(ValueError, match="prices a symbol more than once"):
         StructuralMacroProviderConfig(
             instruments=(
-                InstrumentSpec(symbol=BOND, duration_years=6.0),
-                InstrumentSpec(symbol=BOND, duration_years=2.0),
+                InstrumentSpec(symbol=BOND, maturity_years=6.0),
+                InstrumentSpec(symbol=BOND, maturity_years=2.0),
             )
         ).realize_model()
 
     with pytest.raises(ValueError, match="prices a symbol more than once"):
         StructuralMacroProviderConfig(
-            instruments=(InstrumentSpec(symbol=EQUITY, duration_years=6.0),),
+            instruments=(InstrumentSpec(symbol=EQUITY, maturity_years=6.0),),
             equity=EquitySpec(symbol=EQUITY, initial_price_usd=1.0),
         ).realize_model()
 
@@ -383,7 +370,7 @@ def test_config_round_trips_through_the_provider_union() -> None:
     parsed = adapter.validate_python(
         {
             "type": "structural_macro",
-            "instruments": [{"symbol": "CMF", "duration_years": 5.5, "spread": -0.012}],
+            "instruments": [{"symbol": "CMF", "maturity_years": 5.5, "spread": -0.012}],
             "equity": {"symbol": "VOO", "initial_price_usd": 520.0},
         }
     )
@@ -396,9 +383,9 @@ def test_config_round_trips_through_the_provider_union() -> None:
     }
 
 
-def test_negative_duration_is_rejected() -> None:
+def test_negative_maturity_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        InstrumentSpec(symbol=BOND, duration_years=-1.0)
+        InstrumentSpec(symbol=BOND, maturity_years=-1.0)
 
 
 def _state(config: StructuralMacroProviderConfig, *, horizon_months: int, rollouts: int = 400) -> np.ndarray:
@@ -426,7 +413,7 @@ def _fitted_config() -> StructuralMacroProviderConfig:
     """The shipped VAR, with only a zero-duration instrument so the short rate is readable."""
 
     return StructuralMacroProviderConfig(
-        instruments=(InstrumentSpec(symbol=CASH, duration_years=0.0, initial_price_usd=1.0),)
+        instruments=(InstrumentSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),)
     )
 
 

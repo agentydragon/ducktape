@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 HORIZON_MONTHS = 360
 EQUITY = EquitySpec(symbol="VOO", initial_price_usd=520.0)
-BONDS = InstrumentSpec(symbol="CMF", duration_years=5.5, initial_price_usd=56.0, spread=-0.012)
+BONDS = InstrumentSpec(symbol="CMF", maturity_years=5.5, initial_price_usd=56.0, spread=-0.012)
 # The record's own start decides how many windows exist; the fitted arm is given the same count
 # so the two percentile tables are read off the same number of paths.
 EQUITY_WEIGHTS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
