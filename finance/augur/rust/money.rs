@@ -127,12 +127,14 @@ impl Factor {
 
     /// This rate spread over `periods` equal periods -- an annual rate made monthly.
     ///
-    /// TODO(2026-09-06): divide the denominator instead, which is exact. Rounding the
-    /// numerator onto the wire grid is what the fixed-point representation forced, and
-    /// dropping it moves property-depreciation output, so it wants its own change.
+    /// Exact: dividing a rational by an integer scales its denominator, so the split takes
+    /// no rounding of its own and the only one left is where the product becomes money. A
+    /// fixed-point rate had to round the numerator back onto its grid here.
     pub fn per(self, periods: i64, operation: &'static str) -> Result<Self, ArithmeticError> {
-        mul_div_round_half_up(self.numerator, 1, periods, operation)
-            .map(|numerator| Self::new(numerator, self.denominator))
+        self.denominator
+            .checked_mul(periods)
+            .map(|denominator| Self::new(self.numerator, denominator))
+            .ok_or(ArithmeticError::Overflow { operation })
     }
 
     pub fn numerator(self) -> i64 {

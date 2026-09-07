@@ -260,6 +260,26 @@ proptest! {
         prop_assert!(!is_quantity_scale(scale), "{scale} is not a power of ten");
     }
 
+    /// Spreading a rate over periods is exact, so the pieces re-total. A fixed-point rate had
+    /// to round each share onto its own grid, and 330 of those roundings do not add back.
+    #[test]
+    fn a_rate_spread_over_periods_re_totals(
+        amount in -1_000_000_000_000i64..=1_000_000_000_000,
+        parts in 0i64..=1_000_000_000,
+        periods in 1i64..=360,
+    ) {
+        let whole = Factor::parts_per_billion(parts);
+        let share = whole.per(periods, "proptest").unwrap();
+        // `periods` shares of the amount, against the whole rate applied once.
+        let by_share = Money(amount).scaled_by(share, "proptest").unwrap();
+        let by_whole = Money(amount).scaled_by(whole, "proptest").unwrap();
+        prop_assert!(
+            (i128::from(by_share.0) * i128::from(periods) - i128::from(by_whole.0)).abs()
+                <= i128::from(periods),
+            "{by_share:?} x {periods} is not {by_whole:?} back within one rounding each"
+        );
+    }
+
     /// Selling a lot down in pieces consumes exactly the basis it held: nothing is
     /// stranded in the emptied lot, and nothing is spent that the lot never had.
     #[test]
