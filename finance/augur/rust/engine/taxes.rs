@@ -24,7 +24,7 @@ pub(super) fn record_transfer_deduction(
     if deduction_category != Some("ordinary") {
         return Ok(());
     }
-    record_ordinary_deduction(tax, payer_agent_id, amount, RATE_SCALE_PPB)
+    record_ordinary_deduction(tax, payer_agent_id, amount, WIRE_RATE_SCALE)
 }
 
 pub(super) fn record_ordinary_deduction(
@@ -33,12 +33,10 @@ pub(super) fn record_ordinary_deduction(
     amount: Money,
     deductible_fraction_ppb: i64,
 ) -> Result<(), SimulationError> {
-    let deduction = Money(mul_div_round_half_up(
-        amount.0,
-        deductible_fraction_ppb,
-        RATE_SCALE_PPB,
+    let deduction = amount.scaled_by(
+        Factor::parts_per_billion(deductible_fraction_ppb),
         "ordinary deduction",
-    )?);
+    )?;
     Ok(tax.income.deduct_from_ordinary(payer_agent_id, deduction)?)
 }
 
@@ -96,18 +94,12 @@ pub(super) fn record_property_tax_paid(
     amount: Money,
     rented_fraction_ppb: i64,
 ) -> Result<(), SimulationError> {
-    let rental_deduction = Money(mul_div_round_half_up(
-        amount.0,
-        rented_fraction_ppb,
-        RATE_SCALE_PPB,
-        "rental property tax deduction",
-    )?);
-    let owner_property_tax = Money(mul_div_round_half_up(
-        amount.0,
-        RATE_SCALE_PPB - rented_fraction_ppb,
-        RATE_SCALE_PPB,
+    let rented = Factor::parts_per_billion(rented_fraction_ppb);
+    let rental_deduction = amount.scaled_by(rented, "rental property tax deduction")?;
+    let owner_property_tax = amount.scaled_by(
+        rented.complement("owner property tax")?,
         "owner property tax",
-    )?);
+    )?;
     tax.income
         .deduct_from_ordinary(agent_id, rental_deduction)?;
     for ((taxpayer, _), facts) in &mut tax.facts {
@@ -162,7 +154,7 @@ fn mortgage_interest_deduction_for(
             };
             mul_div_round_half_up(
                 cap.0.min(origination_principal.0),
-                RATE_SCALE_PPB,
+                WIRE_RATE_SCALE,
                 origination_principal.0,
                 "mortgage-interest principal factor",
             )?
@@ -178,7 +170,7 @@ fn mortgage_interest_deduction_for(
                 operation: "mortgage-interest aggregate deduction",
             })?;
     }
-    let denominator = i128::from(RATE_SCALE_PPB);
+    let denominator = i128::from(WIRE_RATE_SCALE);
     let rounded = scaled_total / denominator
         + i128::from(scaled_total % denominator >= (denominator + 1) / 2);
     Ok(Money(i64::try_from(rounded).map_err(|_| {

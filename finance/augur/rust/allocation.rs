@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use thiserror::Error;
 
 use crate::money::ArithmeticError;
-use crate::tax::RATE_SCALE;
+use crate::money::WIRE_RATE_SCALE;
 
 #[derive(Debug, Error)]
 pub enum AllocationError {
@@ -219,7 +219,7 @@ pub fn rebalance_by_sleeve(
         .collect::<Result<Vec<_>, _>>()?;
     let fires = drifts.iter().zip(&targets).any(|(drift, target)| {
         *target > 0
-            && i128::from(*drift).abs() * i128::from(RATE_SCALE)
+            && i128::from(*drift).abs() * i128::from(WIRE_RATE_SCALE)
                 >= i128::from(tolerance_ppb) * i128::from(*target)
     });
     if !fires {

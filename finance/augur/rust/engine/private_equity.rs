@@ -132,7 +132,7 @@ pub(super) fn execute_private_equity(
             let forced_target = mul_div_round_half_up(
                 units_after_recovery,
                 forced_sale,
-                RATE_SCALE_PPB,
+                WIRE_RATE_SCALE,
                 "private-equity forced-sale quantity",
             )?
             .min(units_after_recovery);
@@ -280,7 +280,7 @@ fn pe_sellable_units(units: i64, capacity: i64, eligible: i64) -> Result<i64, Si
         .ok_or(ArithmeticError::Overflow {
             operation: "private-equity sellable factor",
         })?;
-    let denominator = i128::from(RATE_SCALE_PPB) * i128::from(RATE_SCALE_PPB);
+    let denominator = i128::from(WIRE_RATE_SCALE) * i128::from(WIRE_RATE_SCALE);
     let result = mul_div_i128_round_half_up(
         i128::from(units),
         factor,

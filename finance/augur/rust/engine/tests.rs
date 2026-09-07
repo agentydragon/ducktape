@@ -110,7 +110,7 @@ fn series_indexed_amounts_follow_rollout_specific_reset_boundaries() {
         }),
         property_id: None,
         deduction_category: None,
-        deductible_fraction_ppb: RATE_SCALE,
+        deductible_fraction_ppb: WIRE_RATE_SCALE,
     }];
     fixture.series = vec![SeriesSpec {
         series_id: "rent:test".into(),
@@ -485,7 +485,7 @@ fn distribution_tax_character_requires_a_complete_known_issuer_split() {
     ));
 
     fixture.scenario.distributions[0].tax_character = vec![DistributionTaxSliceSpec {
-        fraction_ppb: RATE_SCALE,
+        fraction_ppb: WIRE_RATE_SCALE,
         issuer_jurisdiction_id: Some("federal_us".into()),
     }];
     assert!(matches!(
@@ -943,7 +943,7 @@ fn failure_stops_future_actions_and_zeroes_value_state() {
                 amount_due: Money(101).into(),
                 property_id: None,
                 deduction_category: None,
-                deductible_fraction_ppb: RATE_SCALE,
+                deductible_fraction_ppb: WIRE_RATE_SCALE,
             }],
             recurring_obligations: vec![],
             initial_lots: vec![],
@@ -1030,7 +1030,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
                     amount_due: Money(60_000).into(),
                     property_id: None,
                     deduction_category: None,
-                    deductible_fraction_ppb: RATE_SCALE,
+                    deductible_fraction_ppb: WIRE_RATE_SCALE,
                 },
                 RecurringObligationSpec {
                     start_month: 1,
@@ -1042,7 +1042,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
                     amount_due: Money(1).into(),
                     property_id: None,
                     deduction_category: None,
-                    deductible_fraction_ppb: RATE_SCALE,
+                    deductible_fraction_ppb: WIRE_RATE_SCALE,
                 },
             ],
             initial_lots: vec![],

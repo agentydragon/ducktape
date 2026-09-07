@@ -9,7 +9,7 @@
 use proptest::prelude::*;
 
 use crate::money::{
-    ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up,
+    ArithmeticError, Factor, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up,
 };
 
 /// Assert `quotient` is the integer nearest `product / denominator`, an exact tie
@@ -174,6 +174,41 @@ proptest! {
         prop_assert_eq!(
             Money(basis).apportion(Quantity(units), Quantity(units), "proptest"),
             Ok(Money(basis))
+        );
+    }
+
+    /// A factor states one number, however it was spelled. Equal rationals scale money
+    /// identically, which is what makes moving a wire field between grids safe: the kernel
+    /// rounds the exact product, and equal rationals have one exact product.
+    #[test]
+    fn equal_factors_scale_money_identically(
+        amount: i64,
+        basis_points in 0i64..=10_000,
+    ) {
+        let as_authored = Factor::basis_points(basis_points);
+        let on_the_wire = Factor::parts_per_billion(basis_points * 100_000);
+        prop_assert_eq!(
+            Money(amount).scaled_by(as_authored, "proptest"),
+            Money(amount).scaled_by(on_the_wire, "proptest")
+        );
+    }
+
+    /// A factor and its complement split an amount with nothing created or lost beyond the
+    /// one rounding each side takes. Both sides of every rented/owner split ride on this.
+    #[test]
+    fn a_factor_and_its_complement_split_an_amount(
+        amount in -1_000_000_000_000i64..=1_000_000_000_000,
+        parts in 0i64..=1_000_000_000,
+    ) {
+        let factor = Factor::parts_per_billion(parts);
+        let taken = Money(amount).scaled_by(factor, "proptest").unwrap();
+        let left = Money(amount)
+            .scaled_by(factor.complement("proptest").unwrap(), "proptest")
+            .unwrap();
+        let recombined = taken.checked_add(left).unwrap();
+        prop_assert!(
+            (recombined.0 - amount).abs() <= 1,
+            "{taken:?} + {left:?} is not {amount} back, give or take the two roundings"
         );
     }
 

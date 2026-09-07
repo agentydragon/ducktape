@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::money::{ArithmeticError, Money};
-
-pub const RATE_SCALE: i64 = 1_000_000_000;
+use crate::money::{ArithmeticError, Factor, Money, WIRE_RATE_SCALE};
 
 /// What a year-to-date income row is: what the money is, not who taxes it.
 ///
@@ -285,10 +283,10 @@ pub fn validate_rules(rules: &TaxRules) -> Result<(), TaxError> {
             value: rules.max_capital_loss_ordinary_offset.0,
         });
     }
-    if !(0..=RATE_SCALE).contains(&rules.section_1250_rate_ppb) {
+    if !(0..=WIRE_RATE_SCALE).contains(&rules.section_1250_rate_ppb) {
         return Err(TaxError::InvalidRate {
             rate_ppb: rules.section_1250_rate_ppb,
-            scale: RATE_SCALE,
+            scale: WIRE_RATE_SCALE,
         });
     }
     validate_brackets(&rules.ordinary_brackets)?;
@@ -403,12 +401,10 @@ fn capped_section_1250_tax(
         &rules.ordinary_brackets,
     )?;
     let implied_tax = nonnegative(ordinary_tax_with_recapture.checked_sub(ordinary_tax)?);
-    let capped_tax = Money(crate::money::mul_div_round_half_up(
-        recapture.0,
-        rules.section_1250_rate_ppb,
-        RATE_SCALE,
+    let capped_tax = recapture.scaled_by(
+        Factor::parts_per_billion(rules.section_1250_rate_ppb),
         "section 1250 tax cap",
-    )?);
+    )?;
     Ok(implied_tax.min(capped_tax))
 }
 
@@ -428,7 +424,7 @@ pub fn apply_brackets(amount: Money, brackets: &[TaxBracket]) -> Result<Money, T
     }
     Ok(Money(round_positive_numerator(
         numerator,
-        RATE_SCALE,
+        WIRE_RATE_SCALE,
         "tax bracket rounding",
     )?))
 }
@@ -456,7 +452,7 @@ pub fn apply_stacked_brackets(
     }
     Ok(Money(round_positive_numerator(
         numerator,
-        RATE_SCALE,
+        WIRE_RATE_SCALE,
         "capital-gain bracket rounding",
     )?))
 }
@@ -528,10 +524,10 @@ fn validate_brackets(brackets: &[TaxBracket]) -> Result<(), TaxError> {
     let mut previous = -1_i64;
     let mut saw_open = false;
     for bracket in brackets {
-        if !(0..=RATE_SCALE).contains(&bracket.rate_ppb) {
+        if !(0..=WIRE_RATE_SCALE).contains(&bracket.rate_ppb) {
             return Err(TaxError::InvalidRate {
                 rate_ppb: bracket.rate_ppb,
-                scale: RATE_SCALE,
+                scale: WIRE_RATE_SCALE,
             });
         }
         match bracket.upper {

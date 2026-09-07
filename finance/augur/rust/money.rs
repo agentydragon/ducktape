@@ -46,91 +46,82 @@ impl Units {
     }
 }
 
-/// A dimensionless multiplier applied to money, as an exact rational.
+/// A dimensionless multiplier, as an exact rational.
 ///
-/// Implemented by every way this engine states one, so `Money::scaled_by` reads the
-/// same whether the caller has a rate in parts per billion, a fee in basis points, or
-/// the ratio of two levels of one series. The rounding is the multiplier's, not the
-/// call site's.
-pub trait Fraction: Copy {
-    fn numerator(self) -> i64;
-    fn denominator(self) -> i64;
-}
-
-/// A rate or fraction as an integer count of parts per billion.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
-pub struct Ppb(pub i64);
-
-pub const PPB: i64 = 1_000_000_000;
-pub const BPS: i64 = 10_000;
-
-impl Ppb {
-    /// This rate spread over `periods` equal periods -- an annual rate made monthly.
-    pub fn per(self, periods: i64, operation: &'static str) -> Result<Self, ArithmeticError> {
-        mul_div_round_half_up(self.0, 1, periods, operation).map(Self)
-    }
-
-    /// What is left after taking this fraction away.
-    pub fn complement(self) -> Self {
-        Self(PPB - self.0)
-    }
-}
-
-impl Fraction for Ppb {
-    fn numerator(self) -> i64 {
-        self.0
-    }
-    fn denominator(self) -> i64 {
-        PPB
-    }
-}
-
-/// A fraction as an integer count of basis points.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
-pub struct Bps(pub i64);
-
-impl Bps {
-    pub fn complement(self) -> Self {
-        Self(BPS - self.0)
-    }
-}
-
-impl Fraction for Bps {
-    fn numerator(self) -> i64 {
-        self.0
-    }
-    fn denominator(self) -> i64 {
-        BPS
-    }
-}
-
-/// The ratio of two like-dimensioned values -- two levels of one series, say.
+/// One type for every multiplier this engine states, whatever unit it was authored in:
+/// a rate off the wire, a fee in basis points, a literal quarter, or the ratio of two
+/// levels of one series. The unit is a property of the constructor, not of the type,
+/// so a call site reads what the multiplier means rather than which grid it came on.
 ///
-/// Its own type because it is the one multiplier here that is not a configured rate:
-/// both halves are sampled values, and neither is a scale. Passing the denominator
-/// where a scale belongs is exactly the mistake this makes unrepresentable.
+/// Exact rather than fixed-point on purpose. A fixed scale forces every authored value
+/// onto one grid and rounds whatever does not land on it; a rational carries `3/4` and
+/// `1/360` exactly, and rounds once, where the product becomes money.
+///
+/// Deliberately not reduced to lowest terms. Every use multiplies through
+/// `mul_div_round_half_up`, whose `i128` intermediate cannot overflow on `i64` operands,
+/// so the `gcd` would cost the rollout loop and buy nothing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ratio {
+pub struct Factor {
     numerator: i64,
     denominator: i64,
 }
 
-impl Ratio {
-    pub fn new(numerator: i64, denominator: i64) -> Self {
+/// The one grid the fixture encodes every dimensionless value on -- rates, fractions and
+/// index levels alike.
+///
+/// Past the boundary a `Factor` carries its own denominator, so only wire decoding and the
+/// validators that bound a wire field against "one" have any business naming this.
+pub const WIRE_RATE_SCALE: i64 = 1_000_000_000;
+
+impl Factor {
+    pub const ONE: Self = Self {
+        numerator: 1,
+        denominator: 1,
+    };
+
+    pub const fn new(numerator: i64, denominator: i64) -> Self {
         Self {
             numerator,
             denominator,
         }
     }
-}
 
-impl Fraction for Ratio {
-    fn numerator(self) -> i64 {
+    pub const fn percent(percent: i64) -> Self {
+        Self::new(percent, 100)
+    }
+
+    pub const fn basis_points(basis_points: i64) -> Self {
+        Self::new(basis_points, 10_000)
+    }
+
+    /// Decode a rate off the fixture, which spells every one of them on one integer grid.
+    pub const fn parts_per_billion(parts: i64) -> Self {
+        Self::new(parts, WIRE_RATE_SCALE)
+    }
+
+    /// What is left after taking this fraction away. Exact: only the numerator moves.
+    pub fn complement(self, operation: &'static str) -> Result<Self, ArithmeticError> {
+        self.denominator
+            .checked_sub(self.numerator)
+            .map(|numerator| Self::new(numerator, self.denominator))
+            .ok_or(ArithmeticError::Overflow { operation })
+    }
+
+    /// This rate spread over `periods` equal periods -- an annual rate made monthly.
+    ///
+    /// TODO(2026-09-06): divide the denominator instead, which is exact. Rounding the
+    /// numerator onto the wire grid is what the fixed-point representation forced, and
+    /// dropping it moves property-depreciation output, so it wants its own change.
+    pub fn per(self, periods: i64, operation: &'static str) -> Result<Self, ArithmeticError> {
+        mul_div_round_half_up(self.numerator, 1, periods, operation)
+            .map(|numerator| Self::new(numerator, self.denominator))
+    }
+
+    pub fn numerator(self) -> i64 {
         self.numerator
     }
-    fn denominator(self) -> i64 {
+
+    pub fn denominator(self) -> i64 {
         self.denominator
     }
 }
@@ -180,19 +171,15 @@ impl Money {
         mul_div_round_half_up(self.0, part.0, whole.0, operation).map(Self)
     }
 
-    /// This amount times a dimensionless fraction, rounded half away from zero.
-    pub fn scaled_by<F: Fraction>(
+    /// This amount times a dimensionless multiplier, rounded half away from zero.
+    ///
+    /// The multiplier stays exact until here; this is the one rounding.
+    pub fn scaled_by(
         self,
-        fraction: F,
+        factor: Factor,
         operation: &'static str,
     ) -> Result<Self, ArithmeticError> {
-        mul_div_round_half_up(
-            self.0,
-            fraction.numerator(),
-            fraction.denominator(),
-            operation,
-        )
-        .map(Self)
+        mul_div_round_half_up(self.0, factor.numerator(), factor.denominator(), operation).map(Self)
     }
 
     pub fn checked_neg(self) -> Result<Self, ArithmeticError> {

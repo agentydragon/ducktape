@@ -302,9 +302,9 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             && policy.floor_annual_yield_ppb >= 0
             && policy.floor_annual_yield_ppb <= policy.peak_annual_yield_ppb
             && policy.maturity_decay_exponent_ppb > 0
-            && policy.maturity_decay_exponent_ppb % (RATE_SCALE_PPB / 2) == 0
+            && policy.maturity_decay_exponent_ppb % (WIRE_RATE_SCALE / 2) == 0
             && policy.drawdown_sensitivity_ppb >= 0
-            && (0..=RATE_SCALE_PPB).contains(&policy.short_term_fraction_ppb)
+            && (0..=WIRE_RATE_SCALE).contains(&policy.short_term_fraction_ppb)
             && private_equity_issuer(&policy.asset_id).is_none()
             && fixture
                 .series
@@ -386,8 +386,8 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                 bond_id: bond.bond_id.clone(),
             });
         }
-        let reconstructed_rate = ((bond.annual_coupon_rate_ppb as f64 / RATE_SCALE as f64)
-            * RATE_SCALE as f64)
+        let reconstructed_rate = ((bond.annual_coupon_rate_ppb as f64 / WIRE_RATE_SCALE as f64)
+            * WIRE_RATE_SCALE as f64)
             .round() as i64;
         if bond.annual_coupon_rate_ppb > MAX_EXACT_F64_INTEGER
             || reconstructed_rate != bond.annual_coupon_rate_ppb
@@ -399,10 +399,11 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
         }
         if bond.inflation_indexed {
             let exact_period_rate = bond_period_rate_ppb(bond)?;
-            let legacy_period_rate = (((bond.annual_coupon_rate_ppb as f64 / RATE_SCALE as f64)
+            let legacy_period_rate = (((bond.annual_coupon_rate_ppb as f64
+                / WIRE_RATE_SCALE as f64)
                 * f64::from(bond.coupon_period_months)
                 / 12.0
-                * RATE_SCALE as f64)
+                * WIRE_RATE_SCALE as f64)
                 + 0.5)
                 .floor() as i64;
             if exact_period_rate != legacy_period_rate {
@@ -510,12 +511,12 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             .sum::<i128>();
         if distribution.tax_character.is_empty()
             || distribution.tax_character.iter().any(|slice| {
-                let reconstructed = ((slice.fraction_ppb as f64 / RATE_SCALE as f64)
-                    * RATE_SCALE as f64)
+                let reconstructed = ((slice.fraction_ppb as f64 / WIRE_RATE_SCALE as f64)
+                    * WIRE_RATE_SCALE as f64)
                     .round() as i64;
                 slice.fraction_ppb <= 0 || reconstructed != slice.fraction_ppb
             })
-            || fraction_total != i128::from(RATE_SCALE)
+            || fraction_total != i128::from(WIRE_RATE_SCALE)
         {
             return Err(SimulationError::InvalidDistributionTaxCharacter {
                 agent_id: distribution.agent_id.clone(),
@@ -566,8 +567,9 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             });
         }
         if let Some(tolerance) = policy.rebalance_tolerance_ppb {
-            let reconstructed =
-                ((tolerance as f64 / RATE_SCALE as f64) * RATE_SCALE as f64).round() as i64;
+            let reconstructed = ((tolerance as f64 / WIRE_RATE_SCALE as f64)
+                * WIRE_RATE_SCALE as f64)
+                .round() as i64;
             if !(0..=MAX_EXACT_F64_INTEGER).contains(&tolerance)
                 || reconstructed != tolerance
                 || policy.purchase_slots_per_sleeve == 0
@@ -794,8 +796,8 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
         if purchase.purchase_price.0 <= 0
             || purchase.down_payment.0 < 0
             || purchase.buyer_closing_cost.0 < 0
-            || !(0..=RATE_SCALE_PPB).contains(&purchase.rented_fraction_ppb)
-            || !(0..=RATE_SCALE_PPB).contains(&purchase.land_value_fraction_ppb)
+            || !(0..=WIRE_RATE_SCALE).contains(&purchase.rented_fraction_ppb)
+            || !(0..=WIRE_RATE_SCALE).contains(&purchase.land_value_fraction_ppb)
             || purchase.down_payment.checked_add(principal)? != purchase.purchase_price
         {
             return Err(SimulationError::InvalidPropertyTerms {
@@ -815,7 +817,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             );
             if mortgage.principal.0 <= 0
                 || mortgage.annual_interest_rate_ppb < 0
-                || mortgage.annual_interest_rate_ppb > RATE_SCALE_PPB
+                || mortgage.annual_interest_rate_ppb > WIRE_RATE_SCALE
                 || mortgage.term_months == 0
             {
                 return Err(SimulationError::InvalidMortgageTerms {
@@ -884,7 +886,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
                 property_id: sale.property_id.clone(),
             });
         }
-        if sale.month <= purchase.month || sale.closing_cost_bps > 10_000 {
+        if sale.month <= purchase.month || !(0..=WIRE_RATE_SCALE).contains(&sale.closing_cost_ppb) {
             return Err(SimulationError::InvalidPropertySale {
                 property_id: sale.property_id.clone(),
             });
@@ -956,7 +958,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
             event.month,
             fixture.scenario.horizon_months,
         )?;
-        if !(0..=RATE_SCALE_PPB).contains(&event.rented_fraction_ppb) {
+        if !(0..=WIRE_RATE_SCALE).contains(&event.rented_fraction_ppb) {
             return Err(SimulationError::InvalidPropertyLifecycle {
                 property_id: event.property_id.clone(),
             });
@@ -1230,9 +1232,15 @@ fn validate_private_equity_channels(
     validate_private_equity_series_range(issuer_id, "regime", regime, 1, 4)?;
     validate_private_equity_series_range(issuer_id, "event_kind", event_kind, 0, 7)?;
     validate_private_equity_series_range(issuer_id, "sale_opportunity", opportunity, 0, 1)?;
-    validate_private_equity_series_range(issuer_id, "sale_capacity", capacity, 0, RATE_SCALE_PPB)?;
-    validate_private_equity_series_range(issuer_id, "eligible", eligible, 0, RATE_SCALE_PPB)?;
-    validate_private_equity_series_range(issuer_id, "forced_sale", forced_sale, 0, RATE_SCALE_PPB)?;
+    validate_private_equity_series_range(issuer_id, "sale_capacity", capacity, 0, WIRE_RATE_SCALE)?;
+    validate_private_equity_series_range(issuer_id, "eligible", eligible, 0, WIRE_RATE_SCALE)?;
+    validate_private_equity_series_range(
+        issuer_id,
+        "forced_sale",
+        forced_sale,
+        0,
+        WIRE_RATE_SCALE,
+    )?;
     validate_private_equity_series_range(issuer_id, "liquidity_blocked", blocked, 0, 1)?;
     validate_private_equity_series_range(issuer_id, "forced_recovery", recovery, 0, i64::MAX)?;
     validate_private_equity_series_range(issuer_id, "company_valuation", valuation, 0, i64::MAX)?;
@@ -1385,7 +1393,7 @@ fn validate_amount_index_level(
         });
     }
     let reconstructed =
-        ((value as f64 / INDEX_LEVEL_SCALE as f64) * INDEX_LEVEL_SCALE as f64).round() as i64;
+        ((value as f64 / WIRE_RATE_SCALE as f64) * WIRE_RATE_SCALE as f64).round() as i64;
     if value > MAX_EXACT_F64_INTEGER || reconstructed != value {
         return Err(SimulationError::InexactSeriesAmountLevel {
             cause_id: cause_id.into(),
@@ -1402,11 +1410,11 @@ fn validate_deductible_fraction(
     obligation_id: &str,
     deductible_fraction_ppb: i64,
 ) -> Result<(), SimulationError> {
-    if !(0..=RATE_SCALE).contains(&deductible_fraction_ppb) {
+    if !(0..=WIRE_RATE_SCALE).contains(&deductible_fraction_ppb) {
         return Err(SimulationError::InvalidDeductibleFraction {
             obligation_id: obligation_id.into(),
             deductible_fraction_ppb,
-            scale: RATE_SCALE,
+            scale: WIRE_RATE_SCALE,
         });
     }
     Ok(())

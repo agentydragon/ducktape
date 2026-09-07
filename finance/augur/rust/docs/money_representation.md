@@ -20,9 +20,9 @@ is a power of ten — a real loss of coverage, bought with a dependency.
 **The engine has no scale to track anyway.** Scale-in-the-type is what these crates sell,
 and it solves a problem this engine does not have: a `Money` here is dimensionless
 inside the simulation. Its scale is fixed by the scenario and never changes under any
-operation, because every monetary operation is money times a dimensionless fraction
-(`Ppb`, `Bps`, `Ratio`) or money apportioned by a ratio of like quantities. The only
-genuine scale is a lot's `quantity_scale`, and it already travels in the type, on `Units`.
+operation, because every monetary operation is money times a dimensionless `Factor` or
+money apportioned by a ratio of like quantities. The only genuine scale is a lot's
+`quantity_scale`, and it already travels in the type, on `Units`.
 
 Specifics on the two that were costed:
 
@@ -35,6 +35,21 @@ Specifics on the two that were costed:
 - **`rust_decimal`** is already a workspace dependency, but it is arbitrary-precision
   decimal, not a quantum count. Money would stop being an integer at the wire boundary
   that `fixture.rs` exists to keep integral.
+
+## Why the multiplier is a rational and not fixed-point
+
+`Factor` was three fixed-point types -- parts per billion, basis points, and a free ratio --
+which is two more representations than a dimensionless multiplier needs, and it named a
+grid where a reader wants a meaning. A rational states `3/4`, `1/360` and `6.375%` exactly,
+so the only rounding is the one where the product becomes money.
+
+Rational arithmetic was costed as a dependency and declined. `num-rational` reduces with a
+`gcd` on every construction and three more per multiply, has no checked operations, and its
+`round()` is the half-away-from-zero rule we already implement -- so it would move no number
+while charging the rollout loop. Worse, the one place a rational looks like the answer is
+where it fails: mortgage amortization compounds over 360 months, and a rational's terms grow
+exponentially in the exponent. That path stays fixed-point at `CONTRACT_SCALE`, deliberately,
+because wide fixed-point is the right representation for iterated multiplication.
 
 The rounding rule is not negotiable independently of this: half away from zero is what
 makes negating an operand negate the result, which the tax and give-back paths rely on.

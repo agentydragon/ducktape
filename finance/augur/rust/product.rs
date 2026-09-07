@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::fixture::{BondState, Fixture, MortgageState, PropertyState};
 use crate::ledger::{AccountRef, Ledger};
-use crate::money::{Money, mul_div_round_half_up};
+use crate::money::{Factor, Money, mul_div_round_half_up};
 
 /// Base metrics per snapshot, in `metric_composition.BASE_METRIC_NAMES` order.
 pub const BASE_METRIC_NAMES: [&str; 7] = [
@@ -289,12 +289,10 @@ pub fn snapshot_metrics(
             continue;
         }
         let current = series_at(fixture, valuation.home_value_series, rollout, snapshot)?;
-        let market = mul_div_round_half_up(
-            valuation.purchase_price.0,
-            current,
-            base,
-            "product property value",
-        )?;
+        let market = valuation
+            .purchase_price
+            .scaled_by(Factor::new(current, base), "product property value")?
+            .0;
         metrics[PROPERTY] = metrics[PROPERTY].checked_add(market).ok_or(
             crate::money::ArithmeticError::Overflow {
                 operation: "product property total",

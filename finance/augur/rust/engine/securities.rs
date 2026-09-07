@@ -67,12 +67,10 @@ pub(super) fn execute_distributions(
             "security distribution",
         )?);
         for (slice_index, slice) in distribution.tax_character.iter().enumerate() {
-            let amount = Money(mul_div_round_half_up(
-                total_amount.0,
-                slice.fraction_ppb,
-                RATE_SCALE,
+            let amount = total_amount.scaled_by(
+                Factor::parts_per_billion(slice.fraction_ppb),
                 "security distribution tax slice",
-            )?);
+            )?;
             let cause_id = format!(
                 "distribution:{}:{}:s{slice_index}:m{month}",
                 distribution.agent_id, distribution.asset_id
@@ -281,12 +279,10 @@ pub(super) fn amount_value(
             let base_level =
                 series_value(fixture, &amount.series_id, rollout, amount.base_month_index)?;
             let reset_level = series_value(fixture, &amount.series_id, rollout, reset_month)?;
-            Ok(Money(mul_div_round_half_up(
-                amount.base_amount.0,
-                reset_level,
-                base_level,
+            Ok(amount.base_amount.scaled_by(
+                Factor::new(reset_level, base_level),
                 "series-indexed amount",
-            )?))
+            )?)
         }
     }
 }
@@ -315,12 +311,9 @@ fn bond_principal(
     let base_month = bond.purchase_month_index.max(0) as u32;
     let base_level = series_value(fixture, "inflation", rollout_id, base_month)?;
     let level = series_value(fixture, "inflation", rollout_id, snapshot_month)?;
-    Ok(Money(mul_div_round_half_up(
-        bond.face_value.0,
-        level,
-        base_level,
-        "bond indexed principal",
-    )?))
+    Ok(bond
+        .face_value
+        .scaled_by(Factor::new(level, base_level), "bond indexed principal")?)
 }
 
 pub(super) fn bond_period_rate_ppb(bond: &BondSpec) -> Result<i64, SimulationError> {
@@ -338,7 +331,7 @@ pub(super) fn bond_coupon(principal: Money, bond: &BondSpec) -> Result<Money, Si
         i128::from(mul_div_round_half_up(
             principal.0,
             bond_period_rate_ppb(bond)?,
-            RATE_SCALE,
+            WIRE_RATE_SCALE,
             "indexed bond coupon",
         )?)
     } else {
@@ -350,7 +343,7 @@ pub(super) fn bond_coupon(principal: Money, bond: &BondSpec) -> Result<Money, Si
         mul_div_i128_round_half_up(
             i128::from(principal.0),
             rate_times_period,
-            i128::from(RATE_SCALE) * 12,
+            i128::from(WIRE_RATE_SCALE) * 12,
             "nominal bond coupon",
         )?
     };

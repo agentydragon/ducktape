@@ -20,7 +20,7 @@
 use serde::Serialize;
 
 use crate::fixture;
-use crate::money::{Money, Quantity};
+use crate::money::{Money, Quantity, WIRE_RATE_SCALE};
 
 /// A run beside the event frames derived from it.
 ///
@@ -46,11 +46,9 @@ impl<'a> FramedOutput<'a> {
     }
 }
 
-/// Parts per billion, the engine's scale for a dimensionless rate.
-const RATE_SCALE_PPB: f64 = 1_000_000_000.0;
-
+/// A rate crosses the wire as an integer on `WIRE_RATE_SCALE`; Augur reports the fraction.
 fn rate(ppb: i64) -> f64 {
-    ppb as f64 / RATE_SCALE_PPB
+    ppb as f64 / WIRE_RATE_SCALE as f64
 }
 
 /// A `Quantity` is a count of `quantity_scale` sub-units; Augur reports whole units.

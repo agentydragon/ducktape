@@ -85,7 +85,7 @@ pub(super) fn property_obligations(
         let interest = Money(mul_div_round_half_up(
             mortgage.principal.0,
             mortgage.annual_interest_rate_ppb,
-            12 * RATE_SCALE_PPB,
+            12 * WIRE_RATE_SCALE,
             "mortgage monthly interest",
         )?);
         let due = Money(
@@ -143,7 +143,7 @@ pub(super) fn property_obligations(
             .checked_mul(i128::from(rate))
             .and_then(|value| {
                 i128::from(location.annual_special_assessment.0)
-                    .checked_mul(i128::from(RATE_SCALE_PPB))
+                    .checked_mul(i128::from(WIRE_RATE_SCALE))
                     .and_then(|special| value.checked_add(special))
             })
             .ok_or(ArithmeticError::Overflow {
@@ -153,7 +153,7 @@ pub(super) fn property_obligations(
             i64::try_from(mul_div_i128_round_half_up(
                 annual_tax_numerator,
                 1,
-                12 * i128::from(RATE_SCALE_PPB),
+                12 * i128::from(WIRE_RATE_SCALE),
                 "property tax",
             )?)
             .map_err(|_| ArithmeticError::Overflow {
@@ -192,12 +192,9 @@ pub(super) fn tax_obligations(
             if profile.prior_year_tax.0 <= 0 {
                 continue;
             }
-            let amount_due = Money(mul_div_round_half_up(
-                profile.prior_year_tax.0,
-                1,
-                4,
-                "quarterly estimated tax",
-            )?);
+            let amount_due = profile
+                .prior_year_tax
+                .scaled_by(Factor::new(1, 4), "quarterly estimated tax")?;
             if amount_due == Money(0) {
                 continue;
             }
@@ -234,12 +231,9 @@ pub(super) fn tax_obligations(
                 total.checked_add(liability.amount_owed)
             })?;
         let safe_harbor = Money(profile.prior_year_tax.0.min(actual.0));
-        let first_three_quarters = Money(mul_div_round_half_up(
-            profile.prior_year_tax.0,
-            3,
-            4,
-            "first three estimated-tax quarters",
-        )?);
+        let first_three_quarters = profile
+            .prior_year_tax
+            .scaled_by(Factor::new(3, 4), "first three estimated-tax quarters")?;
         let q4_due = Money((safe_harbor.0 - first_three_quarters.0).max(0));
         if q4_due != Money(0) {
             obligations.push(ActiveObligation {
@@ -291,17 +285,15 @@ pub(super) fn mortgage_monthly_payment(
     term_months: u32,
 ) -> Result<Money, SimulationError> {
     if annual_rate_ppb == 0 {
-        return Ok(Money(mul_div_round_half_up(
-            principal.0,
-            1,
-            i64::from(term_months),
+        return Ok(principal.scaled_by(
+            Factor::new(1, i64::from(term_months)),
             "zero-rate mortgage payment",
-        )?));
+        )?);
     }
     let monthly_rate = mul_div_i128_round_half_up(
         i128::from(annual_rate_ppb),
         CONTRACT_SCALE,
-        12 * i128::from(RATE_SCALE_PPB),
+        12 * i128::from(WIRE_RATE_SCALE),
         "mortgage monthly rate",
     )?;
     let factor = CONTRACT_SCALE
@@ -532,12 +524,10 @@ pub(super) fn settle_obligations(
                         .iter()
                         .find(|property| property.property_id == mortgage.property_id)
                         .map_or(0, |property| property.rented_fraction_ppb);
-                    let rental_interest = Money(mul_div_round_half_up(
-                        interest.0,
-                        rented_fraction_ppb,
-                        RATE_SCALE_PPB,
+                    let rental_interest = interest.scaled_by(
+                        Factor::parts_per_billion(rented_fraction_ppb),
                         "rental mortgage interest",
-                    )?);
+                    )?;
                     mortgage.rental_interest_paid_ytd = mortgage
                         .rental_interest_paid_ytd
                         .checked_add(rental_interest)?;

@@ -61,18 +61,18 @@ pub(super) fn execute_tlh_harvest(
         let embedded_gain_ppb = if market_value.0 > 0 {
             mul_div_round_half_up(
                 market_value.0 - adjusted_basis.0,
-                RATE_SCALE_PPB,
+                WIRE_RATE_SCALE,
                 market_value.0,
                 "TLH embedded gain",
             )?
-            .clamp(0, RATE_SCALE_PPB)
+            .clamp(0, WIRE_RATE_SCALE)
         } else {
             0
         };
         let drawdown_ppb = if prior_price > 0 {
             mul_div_round_half_up(
                 prior_price - price,
-                RATE_SCALE_PPB,
+                WIRE_RATE_SCALE,
                 prior_price,
                 "TLH period drawdown",
             )?
@@ -91,7 +91,7 @@ pub(super) fn execute_tlh_harvest(
             mul_div_round_half_up(
                 market_value.0,
                 fraction_ppb,
-                RATE_SCALE_PPB,
+                WIRE_RATE_SCALE,
                 "TLH gross harvest",
             )?
             .min(ceiling.0),
@@ -99,7 +99,7 @@ pub(super) fn execute_tlh_harvest(
         let short_term = Money(mul_div_round_half_up(
             gross.0,
             policy.short_term_fraction_ppb,
-            RATE_SCALE_PPB,
+            WIRE_RATE_SCALE,
             "TLH short-term fraction",
         )?);
         let long_term = gross.checked_sub(short_term)?;
@@ -124,7 +124,7 @@ fn mul_ppb(left: i64, right: i64, operation: &'static str) -> Result<i64, Simula
     Ok(mul_div_round_half_up(
         left,
         right,
-        RATE_SCALE_PPB,
+        WIRE_RATE_SCALE,
         operation,
     )?)
 }
@@ -137,14 +137,14 @@ fn mul_ppb(left: i64, right: i64, operation: &'static str) -> Result<i64, Simula
 /// formula where the policy is calibrated; two exact floors agree without mirroring
 /// each other.
 fn pow_half_ppb(base: i64, half_exponent: i64) -> Result<i64, SimulationError> {
-    let mut power = RATE_SCALE_PPB;
+    let mut power = WIRE_RATE_SCALE;
     for _ in 0..half_exponent / 2 {
         power = mul_ppb(power, base, "TLH maturity decay")?;
     }
     if half_exponent % 2 == 0 {
         return Ok(power);
     }
-    let root = (base * RATE_SCALE_PPB).isqrt();
+    let root = (base * WIRE_RATE_SCALE).isqrt();
     mul_ppb(power, root, "TLH maturity decay")
 }
 
@@ -158,8 +158,8 @@ fn harvest_fraction_ppb(
     drawdown_ppb: i64,
 ) -> Result<i64, SimulationError> {
     let maturity = pow_half_ppb(
-        RATE_SCALE_PPB - embedded_gain_ppb,
-        policy.maturity_decay_exponent_ppb / (RATE_SCALE_PPB / 2),
+        WIRE_RATE_SCALE - embedded_gain_ppb,
+        policy.maturity_decay_exponent_ppb / (WIRE_RATE_SCALE / 2),
     )?;
     let annual = policy.floor_annual_yield_ppb.checked_add(mul_ppb(
         policy.peak_annual_yield_ppb - policy.floor_annual_yield_ppb,
@@ -170,7 +170,7 @@ fn harvest_fraction_ppb(
         operation: "TLH annual yield",
     }))?;
     let base_monthly = (annual + MONTHS_PER_YEAR / 2) / MONTHS_PER_YEAR;
-    let kicker = RATE_SCALE_PPB
+    let kicker = WIRE_RATE_SCALE
         + mul_ppb(
             policy.drawdown_sensitivity_ppb,
             drawdown_ppb,
