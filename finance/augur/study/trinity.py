@@ -41,7 +41,11 @@ attribution:
   accumulates idle cash that Trinity would have reinvested.
 - *Withdrawals are taken at the start of each year*, which is the more demanding convention:
   the money leaves before that year's return is earned on it. The paper does not say which end
-  it withdraws at, and the choice is worth more than every other difference here combined.
+  it withdraws at — not in the methodology, and its one falsifiable datum does not pin it
+  either: the single failing 15-year period it names (100% stocks, 5% constant-dollar, 1929)
+  comes out identical under both conventions, because an 11-month shift barely registers over
+  15 years of flat withdrawals. Over 30 CPI-indexed ones it compounds, and there the choice is
+  worth more than every other difference here combined.
   Shifting the whole schedule 11 months later — same real amounts, since the CPI reset lands
   on the same month either way — moves this table from below Table 3 to above it: start-of-year
   lands under the published rate in 25 of 40 equity-holding cells and over it in 1 (mean -3.6
