@@ -1,0 +1,410 @@
+"""Reproduce the Trinity study's 30-year portfolio success rates through augur's simulator.
+
+Philip L. Cooley, Carl M. Hubbard and Daniel T. Walz, "Retirement Savings: Choosing a
+Withdrawal Rate That Is Sustainable", *AAII Journal* XX(2), February 1998, pp. 16-21.
+Their Table 3 — inflation-adjusted withdrawals, 1926 to 1995 — is the target.
+
+**Why reproduce a 1998 paper at all.** Every other check on augur is internal: the engines
+agree with each other, the money math is exact, the fitted model scores well on its own
+holdout. None of that can catch a portfolio simulator that is self-consistently wrong. The
+Trinity table is an external number, computed from the same history by people who were not us,
+and hitting it is evidence the whole stack — sampler, compiler, engine, liquidity policy —
+composes into something that answers the question it claims to answer.
+
+**What is deliberately NOT identical**, since a reproduction is only as useful as its
+attribution:
+
+- *Equity is the CRSP total market, not the S&P 500.* Ken French's factors are the longest
+  broad-market total-return series reachable without a paid Ibbotson licence, and they start
+  in 1926-07 rather than 1926-01, so the record is six months short at the front.
+- *Bonds are a duration-approximated fund priced off the long-term GOVERNMENT rate*, with
+  `CORPORATE_SPREAD` standing in for the credit spread on the paper's long-term high-grade
+  corporates. **This is the largest difference, and it is measured, not guessed**: over
+  1926-1995 the sleeve compounds at 7.5%/yr against the paper's 5.7% for corporates, so every
+  bond-heavy row here is too optimistic — 86% success at 4% for a 25/75 portfolio against
+  Table 3's 71%. The equity sleeve has no such gap (10.2% against 10.5%), which is why the
+  equity-led rows land within a few points. Closing it means fixing the instrument model, not
+  re-tuning `CORPORATE_SPREAD` against this table — a spread fitted to the number being
+  reproduced would make the reproduction circular.
+- *Windows start every month, not every year.* 474 of them against the paper's 41 — the same
+  span, sampled 12x more finely, which makes each cell smoother rather than different.
+- *Coupons sit in cash until the next withdrawal.* augur's allocation policy refills a cash
+  band but never invests a surplus, so a bond sleeve yielding more than the withdrawal rate
+  accumulates idle cash that Trinity would have reinvested.
+- *Withdrawals are taken at the start of each year.* The paper does not say which end of the
+  year it withdraws at, and the two are not equivalent — a start-of-year withdrawal is the
+  more demanding, since the money leaves before that year's return is earned on it. The
+  size of the difference here has not been measured.
+
+Taxes and transaction costs are absent from both, which is the paper's own statement of its
+method rather than a difference.
+
+    bbr run //finance/augur/study:trinity_bin
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import tempfile
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+
+import numpy as np
+
+from finance.augur.model.exogenous import ExogenousSamplingRequest
+from finance.augur.model.historical_windows import HistoricalWindowsModel, HistoricalWindowsProviderConfig
+from finance.augur.model.series import (
+    InflationKey,
+    LevelSeriesKey,
+    SecurityDistributionKey,
+    SecurityKey,
+    SecuritySymbol,
+)
+from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec
+from finance.augur.rust.backend import RustEngine
+from finance.augur.sim.backend import CompiledRun
+from finance.augur.sim.compiler.plan import compile_simulation
+from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
+from finance.augur.sim.runtime import load_jurisdictions_for
+from finance.augur.sim.scenario import (
+    Agent,
+    DistributionTaxSlice,
+    InitialAccountBalance,
+    InitialLot,
+    ObligationType,
+    Scenario,
+    ScheduledObligation,
+    SecurityDistribution,
+    SeriesIndexedAmount,
+    SleeveTarget,
+    TargetAllocationPolicy,
+)
+from finance.augur.study.evidence_snapshot import snapshot_evidence
+from finance.evidence import sources
+
+logger = logging.getLogger(__name__)
+
+MONTHS_PER_YEAR = 12
+PAYOUT_YEARS = 30
+HORIZON_MONTHS = PAYOUT_YEARS * MONTHS_PER_YEAR
+
+# The paper's sample: "1926 to 1995, inclusively". The record's own start is later (see the
+# module docstring), so the lower bound is the paper's intent rather than a reachable month.
+STUDY_FIRST_MONTH = date(1926, 1, 1)
+STUDY_LAST_MONTH = date(1995, 12, 1)
+
+RETIREE = "retiree"
+WORLD = "world"
+BROKERAGE = "brokerage"
+CHECKING = "checking"
+
+INITIAL_PORTFOLIO = Decimal(1_000_000)
+EQUITY = SecuritySymbol("STOCKS")
+BONDS = SecuritySymbol("BONDS")
+# Arbitrary and equal: only the ratio of a sleeve's value to the portfolio matters, and every
+# window is rebased to a common start anyway.
+UNIT_PRICE = Decimal(100)
+
+# Long-term high-grade corporates, approximated from the long-term government rate. Duration is
+# the paper-era 20-year-maturity convention; the spread is the credit pickup that made those
+# corporates yield more than governments over 1926-1995.
+BOND_DURATION_YEARS = 12.0
+CORPORATE_SPREAD = 0.01
+
+EQUITY_SPEC = EquitySpec(symbol=EQUITY, initial_price_usd=float(UNIT_PRICE))
+BOND_SPEC = InstrumentSpec(
+    symbol=BONDS, duration_years=BOND_DURATION_YEARS, initial_price_usd=float(UNIT_PRICE), spread=CORPORATE_SPREAD
+)
+
+EVIDENCE = (sources.FRENCH_FACTORS, sources.FRED_LTGOVTBD, sources.FRED_GS10, sources.FRED_CPI_NSA)
+
+PUBLISHED_RATES = tuple(round(0.01 * percent, 2) for percent in range(3, 13))
+"""The withdrawal rates Table 3 tabulates: 3% through 12%."""
+
+TABLE_3_SUCCESS_PERCENT: dict[float, tuple[int, ...]] = {
+    1.00: (100, 95, 85, 68, 59, 41, 34, 34, 27, 15),
+    0.75: (100, 98, 83, 68, 49, 34, 22, 7, 2, 0),
+    0.50: (100, 95, 76, 51, 17, 5, 0, 0, 0, 0),
+    0.25: (100, 71, 27, 20, 5, 0, 0, 0, 0, 0),
+    0.00: (80, 20, 17, 12, 0, 0, 0, 0, 0, 0),
+}
+"""Table 3's 30-year row per equity share, over `PUBLISHED_RATES`.
+
+Transcribed from the paper's own PDF, whose table cells are single glyphs positioned by
+kerning; the column boundaries are unambiguous there even though a naive text extraction runs
+the digits together. These are the external contract this module is measured against, so they
+are literals and not something derived.
+"""
+
+PAPER_COMPOUND_RETURN_PERCENT = {EQUITY: 10.5, BONDS: 5.7}
+"""The paper's own 1926-1995 compound annual returns for large-company common stocks and
+long-term corporate bonds, quoted in its opening section.
+
+An anchor on the INPUTS: the success table can only be reproduced if the two return series
+going in resemble the paper's, and a sleeve that is silently mispriced would otherwise show up
+only as an unattributable disagreement in the output.
+"""
+
+
+def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
+    """One Trinity cell: `equity_share` of a $1M portfolio, drawn down at `withdrawal_rate`.
+
+    The withdrawal is `withdrawal_rate` of the INITIAL portfolio, taken at the start of each
+    of the 30 years and indexed to CPI thereafter — the paper's inflation-adjusted Table 3
+    rather than its constant-dollar Table 1.
+
+    Success is "the portfolio supported every withdrawal". augur records the first month an
+    obligation could not be met, which is the same event: the paper's ending value can only
+    reach $0 by way of a withdrawal it could not fund.
+    """
+
+    annual_withdrawal = INITIAL_PORTFOLIO * Decimal(str(withdrawal_rate))
+    sleeve_shares = ((EQUITY, equity_share), (BONDS, 1.0 - equity_share))
+    holds_bonds = equity_share < 1.0
+    # Integer weights, and a zero-weight sleeve omitted rather than passed as 0: an asset the
+    # policy does not name is outside the target denominator, which is what "no bonds" means.
+    equity_points = round(equity_share * 100)
+
+    return Scenario(
+        agents=[Agent(agent_id=RETIREE), Agent(agent_id=WORLD)],
+        initial_cash=[
+            InitialAccountBalance(agent_id=RETIREE, account_id=CHECKING, balance=0),
+            InitialAccountBalance(agent_id=WORLD, account_id=CHECKING, balance=0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id=f"{symbol}_initial",
+                agent_id=RETIREE,
+                account_id=BROKERAGE,
+                asset=SecurityKey(symbol=symbol),
+                purchase_month_index=-1,
+                quantity=float(INITIAL_PORTFOLIO * Decimal(str(share)) / UNIT_PRICE),
+                cost_basis_per_unit=UNIT_PRICE,
+            )
+            for symbol, share in sleeve_shares
+            if share > 0.0
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=year * MONTHS_PER_YEAR,
+                obligation_id=f"withdrawal_year_{year}",
+                obligation_type=ObligationType.CASH_SPEND,
+                agent_id=RETIREE,
+                from_account_id=CHECKING,
+                to_agent_id=WORLD,
+                to_account_id=CHECKING,
+                amount_due=SeriesIndexedAmount(
+                    base_amount=annual_withdrawal, series=InflationKey(), adjustment_period_months=MONTHS_PER_YEAR
+                ),
+            )
+            for year in range(PAYOUT_YEARS)
+        ],
+        # Declared only when the sleeve exists: the compiler rejects a payout on a pool holding
+        # no lots, on the grounds that it would be silently zero for the whole horizon.
+        security_distributions=[
+            SecurityDistribution(
+                asset=SecurityKey(symbol=BONDS),
+                agent_id=RETIREE,
+                holding_account_id=BROKERAGE,
+                to_account_id=CHECKING,
+                # The scenario carries no tax profile, so the character is inert here; it is
+                # required because a payout that allocates less than all of itself would pay
+                # out less than the fund distributes.
+                tax_character=(DistributionTaxSlice(fraction=1.0),),
+            )
+        ]
+        if holds_bonds
+        else [],
+        target_allocation_policies=[
+            TargetAllocationPolicy(
+                agent_id=RETIREE,
+                account_id=CHECKING,
+                source_account_ids=(BROKERAGE,),
+                sleeves=[
+                    SleeveTarget(asset=SecurityKey(symbol=symbol), weight=points)
+                    for symbol, points in ((EQUITY, equity_points), (BONDS, 100 - equity_points))
+                    if points > 0
+                ],
+                # No buffer at either end: the portfolio holds no idle cash, and each
+                # withdrawal is funded by selling exactly what it costs, from whichever sleeve
+                # is most overweight. That is the paper's implicit annual rebalance-on-
+                # withdrawal, and the closest augur expresses to it — a drift-triggered
+                # rebalance needs a purchase slot per buy, and the lot axis is dense.
+                cash_floor=Decimal(0),
+                cash_ceiling=Decimal(0),
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=HORIZON_MONTHS,
+    )
+
+
+@dataclass(frozen=True)
+class TrinityReplay:
+    """The study's exogenous paths, sampled once and reused across every cell.
+
+    One sample for the whole table, because a cell differs from its neighbour only in the
+    portfolio: re-sampling per cell would let the sample vary underneath the comparison.
+    """
+
+    external_series: ExternalSeriesContext
+    window_count: int
+    record_start: date
+    record_end: date
+    # Read against `PAPER_COMPOUND_RETURN_PERCENT`. Held as the numbers rather than as a
+    # second copy of the paths, which the context already carries in the simulator's shape.
+    compound_return_percent: dict[SecuritySymbol, float]
+
+    def success_rate(self, *, equity_share: float, withdrawal_rate: float) -> float:
+        """Fraction of historical windows in which every scheduled withdrawal was paid."""
+
+        scenario = build_scenario(equity_share=equity_share, withdrawal_rate=withdrawal_rate)
+        jurisdictions = load_jurisdictions_for(scenario)
+        run = CompiledRun(
+            scenario=scenario,
+            plan=compile_simulation(
+                scenario,
+                rollout_count=self.window_count,
+                external_series=self.external_series,
+                jurisdictions=jurisdictions,
+                locations={},
+            ),
+            external_series=self.external_series,
+            jurisdictions=jurisdictions,
+            locations={},
+        )
+        metrics = RustEngine().product_metrics(run, primary_agent_id=RETIREE)
+        return float(np.mean(np.asarray(metrics.failed_month) < 0))
+
+    def safemax(self, *, equity_share: float, grid: tuple[float, ...]) -> float | None:
+        """Highest rate in `grid` that every window survived, or `None` if even the lowest fails.
+
+        Bisects rather than scanning: raising the withdrawal takes strictly more out of the
+        portfolio in every month of every window, so a rate that fails cannot be rescued by
+        raising it further. The predicate is monotone and 31 candidates cost 5 simulations.
+        """
+
+        if self.success_rate(equity_share=equity_share, withdrawal_rate=grid[0]) < 1.0:
+            return None
+        low, high = 0, len(grid) - 1
+        while low < high:
+            middle = (low + high + 1) // 2
+            if self.success_rate(equity_share=equity_share, withdrawal_rate=grid[middle]) == 1.0:
+                low = middle
+            else:
+                high = middle - 1
+        return grid[low]
+
+
+def _whole_record_compound_returns(model: HistoricalWindowsModel) -> dict[SecuritySymbol, float]:
+    """Each sleeve's compound annual TOTAL return over the ENTIRE record, in percent.
+
+    The whole record and not a 30-year window, because that is the period the paper's own
+    10.5% / 5.7% cover: long yields in the record's first half are less than half those of its
+    second, so window 0 alone understates a bond sleeve by nearly two points and would make
+    this anchor a comparison between different decades.
+
+    Total, not price: a bond fund's price omits the coupon, which over such a span is most of
+    its return. Units compound by `distribution / price`, so the index is units times price.
+
+    One window spanning everything is how the sampler is asked for it — a horizon one month
+    short of the record leaves exactly one start month, so this is the same replay path the
+    study runs on rather than a second way of reading the history.
+    """
+
+    horizon = len(model.history.months) - 1
+    bundle = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=horizon,
+            rollout_seeds=(0,),
+            required_asset_prices=frozenset({SecurityKey(symbol=EQUITY), SecurityKey(symbol=BONDS)}),
+            required_security_distributions=frozenset({SecurityDistributionKey(symbol=BONDS)}),
+            required_index_series=frozenset({InflationKey()}),
+        )
+    )
+
+    def matrix(key: LevelSeriesKey) -> np.ndarray:
+        return bundle.level_matrix(key, rollout_count=1, horizon_months=horizon)
+
+    returns: dict[SecuritySymbol, float] = {}
+    for symbol in PAPER_COMPOUND_RETURN_PERCENT:
+        index = matrix(SecurityKey(symbol=symbol))[0]
+        if symbol == BONDS:
+            index = index * np.cumprod(1.0 + matrix(SecurityDistributionKey(symbol=symbol))[0] / index)
+        returns[symbol] = float(100.0 * ((index[-1] / index[0]) ** (MONTHS_PER_YEAR / horizon) - 1.0))
+    return returns
+
+
+def sample_replay(evidence_dir: Path) -> TrinityReplay:
+    """Sample every 30-year window the study period supplies, from an evidence checkout."""
+
+    model = HistoricalWindowsProviderConfig(
+        evidence_dir=evidence_dir,
+        record_start=STUDY_FIRST_MONTH,
+        record_end=STUDY_LAST_MONTH,
+        equity=EQUITY_SPEC,
+        instruments=(BOND_SPEC,),
+    ).realize_model()
+    windows = model.window_count(HORIZON_MONTHS)
+    bundle = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=HORIZON_MONTHS,
+            # Every window, not a thinned subset: the paper's success rate is a count over all
+            # of its payout periods, so dropping any of ours would answer a different question.
+            rollout_seeds=tuple(range(windows)),
+            required_asset_prices=frozenset({SecurityKey(symbol=EQUITY), SecurityKey(symbol=BONDS)}),
+            required_security_distributions=frozenset({SecurityDistributionKey(symbol=BONDS)}),
+            required_index_series=frozenset({InflationKey()}),
+        )
+    )
+    return TrinityReplay(
+        external_series=materialize_sampled_exogenous(bundle),
+        window_count=windows,
+        record_start=model.history.months[0],
+        record_end=model.history.months[-1],
+        compound_return_percent=_whole_record_compound_returns(model),
+    )
+
+
+SAFEMAX_GRID = tuple(round(0.025 + 0.001 * step, 3) for step in range(31))
+"""2.5% to 5.5% in tenths of a point — finer than Table 3's whole points, which resolve
+SAFEMAX no better than "somewhere in [3%, 4%)" for every allocation."""
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    with tempfile.TemporaryDirectory() as raw:
+        directory = Path(raw)
+        asyncio.run(snapshot_evidence(directory, EVIDENCE))
+        replay = sample_replay(directory)
+
+        print(
+            f"\nrecord {replay.record_start}..{replay.record_end}, "
+            f"{replay.window_count} overlapping {PAYOUT_YEARS}-year windows"
+        )
+        print("compound annual total return over the whole record (paper's 1926-1995 figure):")
+        for symbol, paper in PAPER_COMPOUND_RETURN_PERCENT.items():
+            print(f"  {symbol:>8}: {replay.compound_return_percent[symbol]:5.1f}%   (paper {paper:.1f}%)")
+
+        print(f"\nsuccess rate, augur vs Table 3, {PAYOUT_YEARS}-year payout")
+        print("  equity  " + "  ".join(f"{rate:>9.0%}" for rate in PUBLISHED_RATES))
+        for equity_share, published in TABLE_3_SUCCESS_PERCENT.items():
+            cells = [
+                f"{100 * replay.success_rate(equity_share=equity_share, withdrawal_rate=rate):3.0f}/{paper:<3d}"
+                for rate, paper in zip(PUBLISHED_RATES, published, strict=True)
+            ]
+            print(f"  {equity_share:>5.0%}   " + "  ".join(f"{cell:>9}" for cell in cells))
+
+        print("\nSAFEMAX — highest rate every window survived")
+        for equity_share in TABLE_3_SUCCESS_PERCENT:
+            safe = replay.safemax(equity_share=equity_share, grid=SAFEMAX_GRID)
+            print(
+                f"  {equity_share:>5.0%}   " + (f"{safe:.1%}" if safe is not None else f"below {SAFEMAX_GRID[0]:.1%}")
+            )
+
+
+if __name__ == "__main__":
+    main()

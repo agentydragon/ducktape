@@ -1,0 +1,28 @@
+# augur/study
+
+Reproductions of published results, run through the whole simulator.
+
+Every other check on augur is internal — the money math is exact, the fitted model scores well
+on its own holdout — and none of it can catch a simulator that is self-consistently wrong. A
+study here takes a number somebody else computed from the same history and checks augur lands
+near it.
+
+A reproduction is only as useful as its attribution, so each module states, in its docstring,
+every way it differs from the paper it reproduces. A residual gap is then either a named
+difference or a defect, and never "close enough".
+
+## Data
+
+Studies replay the historical record, which comes from the public upstreams
+`finance/evidence/sources.py` already specifies — fetched directly (`evidence_snapshot.py`)
+rather than through the augur-evidence mirror, which would need a read credential and supplies
+nothing a one-shot reproduction uses.
+
+That makes the test targets network-dependent, hence `manual`: they are excluded from the
+default CI filter (`.bazelrc` `test:ci --test_tag_filters=…,-manual`) so an upstream outage
+cannot redden an unrelated PR. Run one by name:
+
+```bash
+bbr test //finance/augur/study:trinity_test
+bbr run //finance/augur/study:trinity_bin   # the full table, printed
+```

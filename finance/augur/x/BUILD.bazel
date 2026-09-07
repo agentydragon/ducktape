@@ -8,8 +8,8 @@ py_library(
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
         "//finance/augur/model:structural_macro",
+        "//finance/augur/study:evidence_snapshot",
         "//finance/evidence:sources",
-        "//finance/scraper:http_fetch",
         "@pypi//numpy",
     ],
 )

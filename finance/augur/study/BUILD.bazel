@@ -1,0 +1,58 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "evidence_snapshot",
+    srcs = ["evidence_snapshot.py"],
+    deps = [
+        "//finance/evidence:sources",
+        "//finance/scraper:http_fetch",
+    ],
+)
+
+py_library(
+    name = "trinity",
+    srcs = ["trinity.py"],
+    deps = [
+        ":evidence_snapshot",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/model:series",
+        "//finance/augur/model:structural_macro",
+        "//finance/augur/rust:backend",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:plan",
+        "//finance/evidence:sources",
+        "@pypi//numpy",
+    ],
+)
+
+py_binary(
+    name = "trinity_bin",
+    main_module = "finance.augur.study.trinity",
+    deps = [":trinity"],
+)
+
+py_test(
+    name = "trinity_test",
+    # Fetches the record from the public upstreams and runs ~55 474-rollout simulations, so it
+    # is excluded from CI's default filter: an upstream outage must not redden an unrelated PR.
+    # See the package README for how to run it. Measured at ~180s on an RBE worker: ~55
+    # 474-rollout simulations plus a whole-record sample, so "medium" would leave under 2x
+    # headroom for a network fetch and RBE's own I/O latency.
+    size = "large",
+    srcs = ["trinity_test.py"],
+    tags = ["manual"],
+    deps = [
+        ":evidence_snapshot",
+        ":trinity",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
