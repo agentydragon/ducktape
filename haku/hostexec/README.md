@@ -4,8 +4,9 @@
 `atlas`, `public-coder-devbox`, …). Every call still executes under a bound Operator's own
 Authentik authority (haku/docs/security.md invariant #9); by default it also goes through the
 console's ordinary manual MCP approval queue. The one exception is `public-coder-devbox`, whose
-calls from the `public-coder` access profile skip the click under a narrow, host-scoped
-auto-approval policy — see invariant #9 and `haku/console/auto_approval/hostexec.py`. Auto-approval
+calls from the `public-coder` access profile skip the click under a narrow policy naming both the
+host and an unprivileged `run_as` (never root) — see invariant #9 and
+`haku/console/auto_approval/hostexec.py`. Auto-approval
 never becomes standing execution authority itself: it only decides whether a human has to click
 before the same per-host token is minted.
 

@@ -375,14 +375,23 @@ auto_approval_policies:
   - id: kubectl_passthrough_redundancy_check
     type: kubernetes_passthrough
     server: kubectl-passthrough-mcp
-  # Deliberately narrow: names ONE host and nothing about run_as/cmd. See the `hostexec` catalog
-  # entry comment above, haku/console/auto_approval/hostexec.py, and haku/docs/security.md
-  # invariant #9. This is the sole reason public-coder-agent's `hostexec` calls are ever
-  # auto-approved at all -- every other host stays exactly as manual as it is for the Operator.
+  # Deliberately narrow: names ONE host, ONE unprivileged run_as, and nothing about cmd. See the
+  # `hostexec` catalog entry comment above, haku/console/auto_approval/hostexec.py, and
+  # haku/docs/security.md invariant #9. This is the sole reason public-coder-agent's `hostexec`
+  # calls are ever auto-approved at all -- every other host stays exactly as manual as it is for
+  # the Operator. `run_as: [coder]` deliberately excludes root: hostexecd runs as root so it can
+  # drop to whatever run_as a call names, and the devbox's own daemon-token file is root-owned
+  # mode 0600 -- an auto-approved run_as=root call would let the Agent read that file (and
+  # everything else on the box) with nobody ever reviewing the command. `coder` is the VM's
+  # unprivileged build account (nix/nixos/hosts/public-coder-devbox/default.nix); the Operator can
+  # still request root manually (hostexec-root-public-coder-devbox in
+  # tf/gitops/agent-machine-access/hostexec.tf), same as on wyrm2/rugged/atlas -- that path is
+  # unaffected, since this policy only ever widens auto-approval, never RBAC.
   - id: hostexec_public_coder_devbox
     type: hostexec_host_scoped
     server: hostexec
     hosts: [public-coder-devbox]
+    run_as: [coder]
   - id: public_coder_v1
     type: any_of
     policies:
@@ -1258,8 +1267,8 @@ mcp:
     # the auth mode; the in-scope hosts + their exec URLs / audiences are the top-level
     # `hostexec:` block below. Every call is manual-approval by default (haku/docs/security.md
     # invariant #9), EXCEPT calls the `hostexec_public_coder_devbox` auto_approval_policy below
-    # matches: exactly host=public-coder-devbox, any run_as, any cmd, assigned only to the
-    # `public-coder` access profile. Auto-approval never changes the execution authority --
+    # matches: exactly host=public-coder-devbox, run_as=coder (never root), any cmd, assigned
+    # only to the `public-coder` access profile. Auto-approval never changes the execution authority --
     # the minted token is still the Operator's own, per invariant #9 -- it only skips the
     # click for that one host. See haku/hostexec/README.md and
     # haku/console/auto_approval/hostexec.py.

@@ -241,11 +241,14 @@ and cluster permissions can be much broader than the public-coder Pod's identiti
 `hostexec/bash` also reaches this Agent's own dedicated devbox VM
 (`cluster/k8s/agents/public-coder-agent/devbox`, `host=public-coder-devbox`), which exists
 specifically for the heavier build tooling this Pod's own image does not carry (Bazel/BuildBuddy,
-direnv, full Git checkouts). Calls to that one host auto-approve — no operator click, any `run_as`
-(`coder` or `root`), any `cmd` — under a narrow policy scoped to exactly that host
-(`haku/docs/security.md` invariant #9, `haku/console/auto_approval/hostexec.py`). Every other host
-(`wyrm2`, `rugged`, `atlas`) stays exactly as manual-approval as it always was; do not assume the
-devbox exception generalizes.
+direnv, full Git checkouts). Calls to that one host as its unprivileged `coder` user auto-approve —
+no operator click, any `cmd` — under a narrow policy scoped to exactly that host and that one
+`run_as` (`haku/docs/security.md` invariant #9, `haku/console/auto_approval/hostexec.py`). `run_as`
+must be `coder`; `root` on this host stays exactly as manual-approval as every other host
+(`wyrm2`, `rugged`, `atlas`) always was — `hostexecd` runs as root to drop privilege into whatever
+`run_as` a call names, so an auto-approved root call would let you read that host's own daemon
+token straight off disk. Do not assume the devbox exception generalizes beyond this one host and
+this one user.
 
 Central valid uses include:
 
@@ -280,8 +283,9 @@ policy auto-approves reviewed GitHub reads scoped to:
 
 The repository evaluator checks ordinary owner/repository fields and applies stricter parsing to
 code and pull-request search queries. It also auto-approves `hostexec/bash` calls with
-`host=public-coder-devbox` (any `run_as`, any `cmd`) — see § Host execution above. Every other Haku
-operation, including `hostexec/bash` on any other host, remains approval-gated unless the live
+`host=public-coder-devbox, run_as=coder` (any `cmd`) — see § Host execution above. Every other Haku
+operation, including `hostexec/bash` on any other host or as `run_as=root` on this one, remains
+approval-gated unless the live
 configuration has changed.
 
 Do not infer public-coder authority from the broader `haku_v1` profile. That profile belongs to Haku

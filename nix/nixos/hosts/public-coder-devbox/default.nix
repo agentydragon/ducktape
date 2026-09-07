@@ -90,12 +90,19 @@ in
     '';
   };
 
-  # The VM is intentionally a root-administered build box. Its egress is
-  # still enforced outside the guest by the Cilium policy on virt-launcher.
+  # Root SSH login stays available for the human Operator (key-only; manual hostexec approval, or
+  # an interactive session, both still work as root exactly like any other hostexec host). Its
+  # egress is enforced outside the guest by the Cilium policy on virt-launcher either way.
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   users.users.root.openssh.authorizedKeys.keys = [ keys.publicCoderDevbox ];
 
+  # `coder` is the account public-coder-agent's auto-approved hostexec calls actually run as
+  # (cluster/k8s/haku/console/config.yaml's hostexec_public_coder_devbox policy names it as the
+  # only allowed run_as) -- an ordinary unprivileged user, so it can run Nix/Bazel builds like any
+  # normal account (the daemon-mediated multi-user Nix model needs no special privilege for that),
+  # but cannot read the root-owned, mode-0600 hostexecd daemon token or anything else root-only on
+  # this box. That confinement is the whole point: see haku/docs/security.md invariant #9.
   users.users.coder = {
     isNormalUser = true;
     home = "/home/coder";

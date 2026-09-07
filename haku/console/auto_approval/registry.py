@@ -296,10 +296,10 @@ class AutoApprovalPolicyRegistry:
                 if server_id != server or tool_name != CALL_SERVICE_TOOL:
                     return
                 evaluation.record(current_path, evaluate_entity_control(tool_name, arguments, entities))
-            case HostexecHostScopedAutoApprovalPolicy(server=server, hosts=hosts):
+            case HostexecHostScopedAutoApprovalPolicy(server=server, hosts=hosts, run_as=run_as):
                 if server_id != server or tool_name != BASH_TOOL:
                     return
-                evaluation.record(current_path, evaluate_host_scoped(tool_name, arguments, hosts))
+                evaluation.record(current_path, evaluate_host_scoped(tool_name, arguments, hosts, run_as))
             case KubernetesPassthroughAutoApprovalPolicy(server=server):
                 if server_id != server:
                     return

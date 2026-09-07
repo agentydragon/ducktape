@@ -368,12 +368,18 @@ bulk channels.
    `hostexec_host_scoped` policy kind
    (`haku/console/auto_approval/hostexec.py`, `cluster/k8s/haku/console/config.yaml`'s
    `hostexec_public_coder_devbox` policy, assigned only to the `public-coder` access profile).
-   That policy kind may constrain only `host` — never `run_as` or `cmd` — so the one exception this
-   invariant tolerates is legible as "which machine may skip the click", never "which command", and
-   the executed token is unaffected either way: it is still the Operator's, still short-lived,
-   still per-host, still independently verified. Widening this exception to a second host or a
-   second policy kind is a decision for this invariant, not a config-only change elsewhere. Node
-   daemons initiate outbound HTTPS and expose no command listener.
+   That policy kind requires both `host` and `run_as` — never `cmd` — and `run_as` may never
+   include `root`: `hostexecd` runs as root specifically so it can drop to whichever `run_as` a
+   call names, so an auto-approved `run_as=root` call would let the Agent read that host's
+   root-owned daemon-token file (and everything else on the box) with nobody ever reviewing the
+   command, silently recreating the standing root access this invariant exists to prevent.
+   `public-coder-devbox`'s policy names only its unprivileged `coder` account. So the one exception
+   this invariant tolerates is legible as "which machine, as which unprivileged user, may skip the
+   click", never "which command" or "as root", and the executed token is unaffected either way: it
+   is still the Operator's, still short-lived, still per-host, still independently verified.
+   Widening this exception to a second host, a `run_as` including root, or a second policy kind is
+   a decision for this invariant, not a config-only change elsewhere. Node daemons initiate
+   outbound HTTPS and expose no command listener.
 
 ## Known gaps (tracked)
 
