@@ -31,12 +31,11 @@ polling with it is a cheap, idempotent no-op once no new events exist, so a call
 from submission to a terminal state without missing or duplicating a transition.
 
 An earlier `action_outbox` table recorded a pending-decision delivery reference for a future push
-notifier. Nothing drains it — no consumer was ever wired into `main.py` — and it duplicated data
-already in `action_event`/`action_request`, so the service no longer writes to it. The table itself
-is left in the schema rather than dropped in a migration; a later cleanup can drop it once a real
-Event & Notification Hub proves it does not need this exact shape. The `.../events` polling surface
-above is not a prerequisite on that hub, and the hub is expected to consume the Action event sequence
-directly rather than an outbox.
+notifier. Nothing ever drained it — no consumer was wired into `main.py` — and it duplicated data
+already in `action_event`/`action_request`, so it has been dropped (migration
+`0004_drop_action_outbox`). The `.../events` polling surface above is not a prerequisite on the
+later Event & Notification Hub, which is expected to consume the Action event sequence directly
+rather than an outbox.
 
 ## Action catalog
 

@@ -214,8 +214,8 @@ human and auto-provider Decisions. See [`async_approvals.md`](async_approvals.md
 **Needed support:** human decision callbacks, withdrawal before execution, bounded progress, redacted
 payload projection, and what an Agent receives for `execution_unknown`. Durable Action event
 append/query with cursor-based (`after_sequence`) polling is landed; see `action_service/README.md`.
-A separate outbox is not required for this slice, and the now-unused `action_outbox` table remains
-in the schema undropped rather than migrated away.
+A separate outbox is not required for this slice, and the never-drained `action_outbox` table has
+been dropped.
 
 **Acceptance evidence:** a scripted replay covering submit -> pending -> allow/deny -> one execution
 or no execution -> Action API polling, including process restart and duplicate callback delivery.

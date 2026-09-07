@@ -37,8 +37,8 @@ Preserve these already accepted decisions:
 PR [#5700](https://github.com/agentydragon/ducktape/pull/5700) landed an independently deployable
 Action Service, not an in-process “Action Hub” inside the integration app. It owns its own PostgreSQL
 schema and is the canonical state owner for ActionRequests, Decisions, Executions, and state events.
-The v0 schema also retains a pending-decision outbox reference without request arguments; the first
-MCP execution path uses durable Action events/API polling rather than a separate delivery queue. The
+The first MCP execution path uses durable Action events/API polling rather than a separate delivery
+queue; the outbox #5700 landed alongside it was never drained and has since been dropped. The
 integration app/BFF and future notification surfaces are clients.
 
 ### Current ActionRequest contract
@@ -250,9 +250,9 @@ Settle and test:
 reads are a no-op. See README.md's "Delivery: polling, not an outbox".
 
 The Action Service's event history is the source of truth. A separate outbox is not required for this
-slice; cross-service push delivery belongs to the later Event & Notification Hub or a concrete
-executor-worker boundary, and either is expected to consume the Action event sequence directly rather
-than the now-unused `action_outbox` table.
+slice; the never-drained `action_outbox` table has been dropped. Cross-service push delivery belongs
+to the later Event & Notification Hub or a concrete executor-worker boundary, and either is expected
+to consume the Action event sequence directly.
 
 Standing grants remain separate objects owned by access/grants machinery. They are not an alternate
 Execution count or an Action definition field.
