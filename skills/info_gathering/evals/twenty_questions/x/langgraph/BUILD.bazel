@@ -1,6 +1,0 @@
-# CLEANUP(added 2026-09-07): langchain-mcp-adapters has no release compatible with mcp-sdk
-#   >=2.0 (requires mcp<2.0.0 as of 0.3.2; tracked at
-#   langchain-ai/langchain-mcp-adapters#578), which blocked the #5786 mcp-sdk/fastmcp
-#   migration. Restore these targets (and drop the `# gazelle:exclude langgraph` in
-#   ../BUILD.bazel) once a compatible release ships, then re-run gazelle. Source files in
-#   this directory are otherwise untouched.

@@ -1,5 +1,0 @@
-# CLEANUP(added 2026-09-07): crewai has no release compatible with mcp-sdk >=2.0 (pinned to
-#   mcp~=1.28.1 as of crewai 1.15.20), which blocked the #5786 mcp-sdk/fastmcp migration.
-#   Restore these targets (and drop the `# gazelle:exclude crewai` in ../BUILD.bazel) once
-#   crewai ships a release compatible with mcp-sdk >=2.0, then re-run gazelle. Source files
-#   in this directory are otherwise untouched.

@@ -1,9 +1,3 @@
-# CLEANUP(added 2026-09-07): crewai and langgraph are excluded from gazelle management while
-#   their BUILD.bazel targets are emptied out (see the tombstone comment in each) -- neither
-#   framework's MCP package has a release compatible with mcp-sdk >=2.0 yet. Drop these two
-#   lines once both are restored.
-# gazelle:exclude crewai
-# gazelle:exclude langgraph
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
