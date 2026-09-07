@@ -8,8 +8,8 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 ## Open plans and gates
 
 - [Task DAG](task_dag.md) — authoritative landed/open dependency map
-- [Operations and access](operations_and_access.md) — Action schema, Executor wiring, and delivery gates
-- [Asynchronous approvals](async_approvals.md) — unresolved pending/result delivery and notification path
+- [Operations and access](operations_and_access.md) — Action schema, Executor wiring, and Action-state gates
+- [Asynchronous approvals](async_approvals.md) — Decision aggregation and Action event/query delivery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [BuildBuddy hosted remote-run authentication](buildbuddy_remote_auth.md) — unresolved hosted-run credential boundary
@@ -30,6 +30,15 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 - Standalone Action Service with human Decision path and fixture-only echo executor — PR
   [#5700](https://github.com/agentydragon/ducktape/pull/5700) and
   [`../action_service/README.md`](../action_service/README.md)
+- ActionGroup/Action catalog discovery — PR
+  [#5731](https://github.com/agentydragon/ducktape/pull/5731), summarized in
+  [`../action_service/README.md`](../action_service/README.md)
+- Synchronous DecisionProvider aggregation — PR
+  [#5732](https://github.com/agentydragon/ducktape/pull/5732), summarized in
+  [`async_approvals.md`](async_approvals.md)
+- Executor liveness and orphan recovery for the fixture seam — PR
+  [#5733](https://github.com/agentydragon/ducktape/pull/5733) and
+  [`../docs/executor_liveness.md`](../docs/executor_liveness.md)
 - Launch presets first slice — PR
   [#5648](https://github.com/agentydragon/ducktape/pull/5648) and
   [launch-preset evidence](../docs/launch_presets.md)
@@ -37,8 +46,9 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
   [#5650](https://github.com/agentydragon/ducktape/pull/5650) and the
   [egress specification](../egress/SPEC.md); hosted `bb remote` remains open
 - Credentialless Sandbox egress — [accepted ADR](../docs/adr_sandbox_proxy_gateway.md)
-- Agent-facing egress rules API boundary — draft PR
-  [#5701](https://github.com/agentydragon/ducktape/pull/5701), still in review
+- Agent-facing egress rules API boundary — PR
+  [#5701](https://github.com/agentydragon/ducktape/pull/5701), landed and summarized in
+  [`../docs/egress_composition.md`](../docs/egress_composition.md)
 - Claude/Codex provider and harness evidence —
   [protocols](../docs/provider_protocols.md), [input queue](../docs/claude_input_queue.md), and
   [native harness evidence](../docs/harness_evidence.md)

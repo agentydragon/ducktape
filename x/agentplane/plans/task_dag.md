@@ -30,13 +30,19 @@ current caller envelope accepts exactly a 1–200 character `idempotency_key`, a
 `capability`, a JSON-object `arguments`, and optional JSON-object `origin`/`correlation`; extra
 top-level fields are rejected, and origin/correlation are untrusted provenance. Workload callers can read their own redacted records; the operator surface can read all
 and issue an expected-version, idempotent human allow/deny Decision. Allow auto-dispatches exactly
-one Execution; there are no blind retries, and unsafe restart state becomes `execution_unknown`.
+one Execution; there are no blind retries, and an ambiguous outcome becomes `execution_unknown`
+through the bounded lease/recovery contract in [`../docs/executor_liveness.md`](../docs/executor_liveness.md).
 
 The only accepted capability is `agentplane:v0.echo`. `EchoExecutor` returns
 `{"echo": <arguments>}` in-process and exists only to prove the coordinator seam, redaction,
 single-execution claim, and recovery behavior. It is not a production action definition, backend,
-MCP adapter, HTTP adapter, worker protocol, or credential-bearing executor. No real backend is wired
-because the Action schema and Executor wiring contracts below have not been decided or tested.
+MCP adapter, HTTP adapter, worker protocol, or credential-bearing executor. The ActionGroup/Action
+catalog discovery seam is landed in PR [#5731](https://github.com/agentydragon/ducktape/pull/5731),
+synchronous deny-dominant DecisionProvider aggregation is landed in PR
+[#5732](https://github.com/agentydragon/ducktape/pull/5732), and the executor heartbeat/lease
+recovery contract is landed for this fixture seam in PR
+[#5733](https://github.com/agentydragon/ducktape/pull/5733). No real backend is wired because the
+remaining Action schema and Executor wiring contracts below have not been fully tested.
 
 **Observed evidence — launch presets landed.** PR
 [#5648](https://github.com/agentydragon/ducktape/pull/5648) landed the app-owned `SandboxPreset` and
@@ -75,7 +81,7 @@ flowchart TB
     ACTION0["Observed evidence<br/>standalone Action Service + human Decision path<br/>fixture echo only"]:::completed
     PRESETS["Observed evidence<br/>launch presets first slice"]:::completed
 
-    AS["Action schema contract<br/>definition, name/version, params, result/error,<br/>redaction and evolution"]:::decision
+    AS["Action schema contract<br/>stable identity, params, result/error,<br/>redaction and evolution"]:::decision
     EW["Executor wiring contract<br/>groups/catalog, dispatch, credentials, MCP compatibility,<br/>claim/idempotency/heartbeat + first adapter"]:::decision
     DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
     ACTION1["P0 behavior<br/>one real named Action executes once<br/>and returns a safe result"]:::active
@@ -158,7 +164,7 @@ outcome without replay.
 
 **Needed support / decisions:**
 
-1. Define how `(action name, definition version)` selects an Executor and how capability/definition
+1. Define how stable group/action identity selects an Executor and how capability/definition
    registration is validated at startup. Duplicate, missing, or incompatible registrations fail
    startup or request admission; they do not fall through at dispatch time.
 2. Define adapter/backend configuration and validation, including what is static code/config and what
@@ -196,7 +202,7 @@ outcome without replay.
 
 **P0 behavior:** submission remains non-blocking; the Action API and durable Action events expose a pending
 human Decision and the eventual Decision/Execution result with bounded provider-authored reason
-evidence. Originating-Thread notification is a later integration node, not a prerequisite for
+evidence. Originating-Agent/Thread notification is a later integration node, not a prerequisite for
 proving that an Agent can use an Action backed by MCP.
 
 **Observed evidence — synchronous DecisionProvider aggregation landed.** PR
