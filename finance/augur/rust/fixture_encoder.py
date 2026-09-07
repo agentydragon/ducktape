@@ -67,7 +67,7 @@ from finance.augur.sim.scenario import (
 
 # Mirrors `FIXTURE_SCHEMA_VERSION` in `fixture.rs`; the simulator rejects any other value, so a
 # schema bump fails loudly here rather than encoding a document the engine will not read.
-FIXTURE_SCHEMA_VERSION = 10
+FIXTURE_SCHEMA_VERSION = 11
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -453,21 +453,15 @@ def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> list[dict[st
     ]
 
 
-def _closing_cost_bps(event: PropertySaleEvent) -> int:
-    """Seller closing costs, which the fixture spells in basis points and the scenario in percent.
+def _closing_cost_ppb(event: PropertySaleEvent) -> int:
+    """Seller closing costs, on the same grid as every other rate the fixture carries.
 
-    The engine scales proceeds by `(10_000 - bps) / 10_000`, so the basis-point figure has to
-    mean exactly what the authored percent did. That identity is checked here rather than
-    assumed, because the two spellings round on different grids.
+    The scenario authors a percent, so the fraction is `pct / 100`. This used to cross in
+    basis points, which refused any percent that was not a whole number of them -- 6.375%
+    among them -- for no reason but the coarser grid.
     """
 
-    exact = Decimal(str(event.closing_cost_pct)) * 100
-    if exact != exact.to_integral_value():
-        raise UnsupportedScenarioError(
-            f"property sale of {event.property_id!r} charges {event.closing_cost_pct}% closing costs, "
-            "which is not a whole number of basis points"
-        )
-    return int(exact)
+    return _ppb(float(Decimal(str(event.closing_cost_pct)) / 100))
 
 
 def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum: Decimal) -> list[dict[str, Any]]:
@@ -650,7 +644,7 @@ def encode_fixture(
                 {
                     "month": int(event.month),
                     "property_id": event.property_id,
-                    "closing_cost_bps": _closing_cost_bps(event),
+                    "closing_cost_ppb": _closing_cost_ppb(event),
                 }
                 for event in lifecycle
                 if isinstance(event, PropertySaleEvent)

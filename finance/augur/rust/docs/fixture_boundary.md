@@ -92,5 +92,8 @@ vocabulary, not of the engine behind it.
 | A `SeriesIndexedAmount` indexed by a series that is not an index | The fixture's `AmountSpec` indexes by inflation and rent levels only.                                               |
 | A `LevelSeriesKey` that is neither money nor an index            | Money series cross as currency quanta and index series as parts per billion; a key that is neither has no encoding. |
 
-Rates and per-unit values are not on this list. They are rounded onto the parts-per-billion
-grid, which is one defined rule stated in one place.
+Rates and per-unit values are not on this list, and a rate's precision is never a reason to
+refuse one: every dimensionless value crosses on one grid and is rounded onto it by one rule,
+stated in one place. Seller closing costs used to be the exception -- spelled in basis points,
+so a percent that was not a whole number of them was refused -- which is why this paragraph
+is worth stating rather than assuming.

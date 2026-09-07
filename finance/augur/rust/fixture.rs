@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 
 use crate::{
     ledger::{AccountRef, JournalEntry},
-    money::{Money, PerUnit, Quantity},
-    tax::{IncomeSource, JurisdictionLevel, RATE_SCALE, TaxRules},
+    money::{Money, PerUnit, Quantity, WIRE_RATE_SCALE},
+    tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 10;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -233,7 +233,7 @@ pub struct RecurringPropertyCashflowSpec {
 }
 
 fn fully_deductible() -> i64 {
-    RATE_SCALE
+    WIRE_RATE_SCALE
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -517,7 +517,7 @@ pub struct PropertySaleSpec {
     pub month: u32,
     pub property_id: String,
     /// Seller closing costs in basis points, where 10_000 is 100%.
-    pub closing_cost_bps: u32,
+    pub closing_cost_ppb: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

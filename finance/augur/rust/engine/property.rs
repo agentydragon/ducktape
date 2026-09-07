@@ -191,11 +191,12 @@ fn execute_property_sales(
         let series_id = format!("home_value:{}", purchase.location_id);
         let base_value = series_value(fixture, &series_id, rollout_id, 0)?;
         let sale_value = series_value(fixture, &series_id, rollout_id, month)?;
-        let appreciation = Ratio::new(sale_value, base_value);
+        let appreciation = Factor::new(sale_value, base_value);
         let market_value = purchase
             .purchase_price
             .scaled_by(appreciation, "property market value")?;
-        let retained = Bps(i64::from(sale.closing_cost_bps)).complement();
+        let retained = Factor::parts_per_billion(sale.closing_cost_ppb)
+            .complement("property sale retained share")?;
         let gross_proceeds = market_value.scaled_by(retained, "property sale proceeds")?;
         let mortgage_indices: Vec<_> = mortgages
             .iter()
@@ -341,7 +342,7 @@ pub(super) fn accrue_primary_residence_occupancy(
     })? % SECTION_121_LOOKBACK_MONTHS;
     for property in properties {
         let occupied = property.active
-            && property.rented_fraction_ppb < RATE_SCALE_PPB
+            && property.rented_fraction_ppb < WIRE_RATE_SCALE
             && primary_residence_by_agent
                 .get(&property.owner_agent_id)
                 .and_then(|assignment| assignment.as_deref())
@@ -381,13 +382,14 @@ pub(super) fn execute_property_purchases(
         let adjusted_basis = purchase
             .purchase_price
             .checked_add(purchase.buyer_closing_cost)?;
-        let building_basis_initial = Money(mul_div_round_half_up(
-            purchase.purchase_price.0,
-            RATE_SCALE_PPB - purchase.land_value_fraction_ppb,
-            RATE_SCALE_PPB,
-            "property building basis",
-        )?)
-        .checked_add(purchase.buyer_closing_cost)?;
+        let building_basis_initial = purchase
+            .purchase_price
+            .scaled_by(
+                Factor::parts_per_billion(purchase.land_value_fraction_ppb)
+                    .complement("property building share")?,
+                "property building basis",
+            )?
+            .checked_add(purchase.buyer_closing_cost)?;
         let stake = purchase
             .down_payment
             .checked_add(purchase.buyer_closing_cost)?;
@@ -547,7 +549,7 @@ pub(super) fn accrue_property_depreciation(
         .filter(|property| property.active && property.rented_fraction_ppb > 0)
     {
         // SS168: 27.5 years of monthly depreciation, taken on the rented share.
-        let monthly_share = Ppb(property.rented_fraction_ppb)
+        let monthly_share = Factor::parts_per_billion(property.rented_fraction_ppb)
             .per(DEPRECIATION_MONTHS, "property monthly depreciation factor")?;
         let depreciation = property
             .building_basis

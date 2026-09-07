@@ -61,6 +61,10 @@ HOME_VALUE_AT_SALE = 600_000.007
 PURCHASE_PRICE = Decimal("400000.00")
 HOME_VALUE_AT_SALE_QUANTA = 60_000_001
 
+# 6.375% is 637.5 basis points -- representable as a rate, never as a whole number of them.
+FRACTIONAL_CLOSING_COST_PCT = 6.375
+FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA = 56_175_001
+
 
 def sale_and_tax_year() -> CompiledRun:
     """One long-term lot sold mid-horizon, and the tax year that closes after it.
@@ -116,7 +120,7 @@ def sale_and_tax_year() -> CompiledRun:
     )
 
 
-def a_property_bought_and_sold() -> CompiledRun:
+def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> CompiledRun:
     """One all-cash property, bought at what it is worth and sold while it is worth more.
 
     The home-value levels are deliberately not whole cents. A property is valued from that
@@ -147,7 +151,7 @@ def a_property_bought_and_sold() -> CompiledRun:
             )
         ],
         property_lifecycle_events=[
-            PropertySaleEvent(month=PROPERTY_SALE_MONTH, property_id="house", closing_cost_pct=0.0)
+            PropertySaleEvent(month=PROPERTY_SALE_MONTH, property_id="house", closing_cost_pct=closing_cost_pct)
         ],
         # Untaxed on purpose: what the gain is assessed at is the statute suites' business, and
         # here it would only put a bracket walk between the series and the number under test.
@@ -190,6 +194,10 @@ class EngineAcceptance:
     @pytest.fixture(scope="class")
     def property_run(self) -> CompiledRun:
         return a_property_bought_and_sold()
+
+    @pytest.fixture(scope="class")
+    def fractional_closing_cost_run(self) -> CompiledRun:
+        return a_property_bought_and_sold(closing_cost_pct=FRACTIONAL_CLOSING_COST_PCT)
 
     def test_it_says_which_engine_it_is(self, engine: Engine) -> None:
         assert engine.name, "an engine identifies itself in responses and test failures"
@@ -279,6 +287,22 @@ class EngineAcceptance:
             f"sold for {rows[0]['gross_proceeds_quanta']} quanta, not the {HOME_VALUE_AT_SALE_QUANTA} "
             "the home value is worth"
         )
+
+    def test_a_closing_cost_finer_than_a_basis_point_is_charged_exactly(
+        self, engine: Engine, fractional_closing_cost_run: CompiledRun
+    ) -> None:
+        """A rate is a rate; nothing about it has to land on a hundredth of a percent.
+
+        6.375% of the sale is 56,175,000.93625 quanta of cost against a 60,000,001 quanta
+        house, so the seller keeps 56,175,001 -- the rounding, once, where the rate becomes
+        money. The scenario is authorable at all only because closing costs cross on the same
+        grid as every other rate; spelled in basis points this one had no exact form and the
+        whole scenario was refused.
+        """
+
+        rows = engine.events(fractional_closing_cost_run).property_sale_events.to_dicts()
+        assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
+        assert rows[0]["gross_proceeds_quanta"] == FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA
 
     def test_one_execution_answers_both_summaries(self, engine: Engine, run: CompiledRun) -> None:
         """`product_summaries` is the two of them together, not a third reduction."""

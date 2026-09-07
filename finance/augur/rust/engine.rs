@@ -21,7 +21,7 @@ use crate::{
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{
-        ArithmeticError, Bps, Money, PerUnit, Ppb, Quantity, Ratio, Units,
+        ArithmeticError, Factor, Money, PerUnit, Quantity, Units, WIRE_RATE_SCALE,
         mul_div_i128_round_half_up, mul_div_round_half_up,
     },
     product::{
@@ -29,8 +29,8 @@ use crate::{
         snapshot_metrics,
     },
     tax::{
-        IncomeLedger, IncomeSource, JurisdictionLevel, RATE_SCALE, TaxError, TaxFacts, TaxRules,
-        TaxState, assess, net_capital_gains, validate_rules,
+        IncomeLedger, IncomeSource, JurisdictionLevel, TaxError, TaxFacts, TaxRules, TaxState,
+        assess, net_capital_gains, validate_rules,
     },
 };
 
@@ -65,9 +65,7 @@ use validation::*;
 
 const EXTERNAL_AGENT: &str = "__external__";
 const OPENING_EQUITY: &str = "equity:opening";
-const RATE_SCALE_PPB: i64 = 1_000_000_000;
 const MONTHS_PER_YEAR: i64 = 12;
-const INDEX_LEVEL_SCALE: i64 = 1_000_000_000;
 const MAX_EXACT_F64_INTEGER: i64 = 1_i64 << 53;
 const CONTRACT_SCALE: i128 = 1_000_000_000_000_000_000;
 const SECTION_121_LOOKBACK_MONTHS: usize = 60;
