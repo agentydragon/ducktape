@@ -16,6 +16,7 @@ py_library(
     srcs = ["trinity.py"],
     deps = [
         ":evidence_snapshot",
+        "//finance/augur/model:bond_fund",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
