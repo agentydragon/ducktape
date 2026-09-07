@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
+from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, UnknownCapabilityError
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -28,6 +29,10 @@ _operator_bearer = HTTPBearer(auto_error=False)
 
 def _service(request: Request) -> ActionService:
     return cast(ActionService, request.app.state.action_service)
+
+
+def _catalog(request: Request) -> ActionCatalog:
+    return cast(ActionCatalog, request.app.state.action_catalog)
 
 
 def _workload_authenticator(request: Request) -> SandboxPrincipalAuthenticator:
@@ -64,16 +69,23 @@ def create_app(
     service: ActionService,
     workload_authenticator: SandboxPrincipalAuthenticator,
     operator_authenticator: OperatorAuthenticator,
+    catalog: ActionCatalog,
 ) -> FastAPI:
     app = FastAPI(title="Agentplane Action Service", version="v1")
     app.state.action_service = service
     app.state.workload_authenticator = workload_authenticator
     app.state.operator_authenticator = operator_authenticator
+    app.state.action_catalog = catalog
 
     @app.exception_handler(ActionNotFoundError)
     async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
         del request, error
         return _error(status.HTTP_404_NOT_FOUND, "action request not found")
+
+    @app.exception_handler(UnknownActionError)
+    async def unknown_action(request: Request, error: UnknownActionError) -> JSONResponse:
+        del request
+        return _error(status.HTTP_404_NOT_FOUND, f"unknown group/action {error.group_key}.{error.action_key}")
 
     @app.exception_handler(ActionConflictError)
     async def conflict(request: Request, error: ActionConflictError) -> JSONResponse:
@@ -122,6 +134,25 @@ def create_app(
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> list[ActionEventView]:
         return await action_service.events(request_id, principal)
+
+    # Catalog discovery: the reviewed, config-driven ActionGroup/Action universe. Read-only, and the
+    # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.
+    @app.get("/v1/action-groups", response_model=list[ActionGroupView])
+    async def list_action_groups(
+        principal: Annotated[Principal, Depends(_workload)], action_catalog: Annotated[ActionCatalog, Depends(_catalog)]
+    ) -> list[ActionGroupView]:
+        del principal
+        return action_catalog.group_views()
+
+    @app.get("/v1/action-groups/{group_key}/actions/{action_key}", response_model=ActionView)
+    async def get_action(
+        group_key: str,
+        action_key: str,
+        principal: Annotated[Principal, Depends(_workload)],
+        action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
+    ) -> ActionView:
+        del principal
+        return action_catalog.action_view(group_key, action_key)
 
     # Operator/BFF surface: deliberately different paths and authenticator. A workload bearer can
     # never acquire operator-all read or decision authority merely by authenticating as a Sandbox.
