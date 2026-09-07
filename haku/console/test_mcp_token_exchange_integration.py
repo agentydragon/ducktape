@@ -96,7 +96,7 @@ class _TokenChainHarness:
             # persisted error status.
             async with Client(f"{self.downstream_url}/mcp", auth=self.stored_reference) as downstream_client:
                 direct_result = await downstream_client.call_tool_mcp("get_system_info", {})
-            direct_result_is_error = direct_result.isError
+            direct_result_is_error = direct_result.is_error
             direct_result_text = "\n".join(
                 block.text for block in direct_result.content if isinstance(block, mcp_types.TextContent)
             )

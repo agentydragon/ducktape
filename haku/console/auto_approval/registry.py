@@ -334,7 +334,7 @@ async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str,
         logger.exception("auto-approval tool lookup failed tool=%s", tool_name)
         return "error: registered tool lookup failed"
     try:
-        jsonschema.validate(instance=arguments, schema=tool.to_mcp_tool().inputSchema)
+        jsonschema.validate(instance=arguments, schema=tool.to_mcp_tool().input_schema)
     except jsonschema.ValidationError as exc:
         logger.warning("auto-denied invalid MCP arguments tool=%s: %s", tool_name, exc)
         return PolicyDenial(

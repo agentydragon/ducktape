@@ -95,7 +95,6 @@ def _view(record: ActiveSandboxRecord) -> ActiveSandbox:
 def build_mcp(service: SessionService, *, access: InProcessServerAccessPolicy) -> FastMCP:
     mcp = FastMCP(
         name=HAKU_SESSION_SANDBOXES_SERVER_ID,
-        strict_input_validation=True,
         instructions=(
             "Inspect and terminate active Haku Console sandbox sessions. list_active returns a bounded "
             "paged inventory including provisioning, ready, responding, and closing resources. "

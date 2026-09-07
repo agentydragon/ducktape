@@ -172,13 +172,13 @@ class ServerMetadata(BaseModel):
 
 
 def _tool_metadata(tool: mcp_types.Tool) -> ToolMetadata:
-    schema = tool.inputSchema if isinstance(tool.inputSchema, dict) else {}
+    schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
     return ToolMetadata(
         name=tool.name,
         title=tool.title,
         description=tool.description,
         input_schema=schema,
-        output_schema=tool.outputSchema,
+        output_schema=tool.output_schema,
         annotations=tool.annotations,
         icons=tool.icons,
     )
@@ -875,7 +875,8 @@ class McpServerDispatcher:
         execution_context: McpExecutionContext,
     ) -> dict[str, Any]:
         transport, transport_auth = _transport(server, self._in_process, auth_token)
-        async with Client(transport, auth=transport_auth) as client:
+        # mode="legacy": see the matching comment on the _reflect() connection below.
+        async with Client(transport, auth=transport_auth, mode="legacy") as client:
             result = await client.call_tool_mcp(
                 tool_name,
                 arguments,
@@ -883,7 +884,7 @@ class McpServerDispatcher:
                 if isinstance(server.backend, InProcessBackend)
                 else None,
             )
-        if result.isError:
+        if result.is_error:
             raise RuntimeError(_mcp_error_message(result))
         return _mcp_result_to_json(result)
 
@@ -902,7 +903,11 @@ class McpServerDispatcher:
 
     async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> ReflectedCatalog:
         transport, transport_auth = _transport(server, self._in_process, auth_token)
-        async with Client(transport, auth=transport_auth) as client:
+        # mode="legacy": fastmcp v4 defaults to mode="auto", which against another v4 server
+        # adopts the modern server/discover era and leaves initialize_result (read below) None.
+        # Pin the handshake era this connection needs rather than reworking `instructions`
+        # onto the discover-era client properties.
+        async with Client(transport, auth=transport_auth, mode="legacy") as client:
             tools: list[mcp_types.Tool] = await client.list_tools()
             # The handshake already happened on enter, so its result costs nothing extra here — the
             # instructions were previously fetched and dropped on every single reflection.

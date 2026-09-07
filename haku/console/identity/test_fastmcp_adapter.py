@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 import fastmcp
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp.exceptions import ToolError
@@ -238,9 +238,9 @@ def test_fastmcp_version_guard_accepts_the_supported_runtime() -> None:
 
 
 def test_fastmcp_version_guard_rejects_an_unsupported_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(fastmcp, "__version__", "3.4.3")
+    monkeypatch.setattr(fastmcp, "__version__", "4.0.2")
 
-    with pytest.raises(AssertionError, match=r"supports FastMCP 3\.4\.4 only"):
+    with pytest.raises(AssertionError, match=r"supports FastMCP 4\.0\.3 only"):
         ensure_supported_fastmcp_version()
 
 
@@ -517,8 +517,8 @@ async def test_clean_invalid_or_revoked_bearer_is_a_clean_non_match() -> None:
 async def test_transparent_refresh_transport_failure_survives_fastmcp_blanket_catch() -> None:
     proxy = _bare_proxy()
     _install_token_payloads(proxy, {"local-access": _payload(jti="access-jti")})
-    upstream_failure = httpx.ConnectError(
-        "temporary DNS failure", request=httpx.Request("POST", "https://auth.example.test/token")
+    upstream_failure = httpx2.ConnectError(
+        "temporary DNS failure", request=httpx2.Request("POST", "https://auth.example.test/token")
     )
 
     async def fastmcp_try(self: object, token_set: object) -> object:
@@ -529,7 +529,7 @@ async def test_transparent_refresh_transport_failure_survives_fastmcp_blanket_ca
         _ = token
         try:
             await self._try_transparent_refresh(object())
-        except httpx.ConnectError:
+        except httpx2.ConnectError:
             # This is the blanket conversion in OAuthProxy.load_access_token.
             return
         raise AssertionError("refresh was expected to fail")
@@ -577,10 +577,10 @@ async def test_storage_wrapper_preserves_failure_through_fastmcp_blanket_catch()
 async def test_jwks_verifier_preserves_fetch_failure_through_fastmcp_non_match() -> None:
     proxy = _bare_proxy()
     _install_token_payloads(proxy, {"local-access": _payload(jti="access-jti")})
-    jwks_failure = httpx.ConnectError(
-        "JWKS endpoint unavailable", request=httpx.Request("GET", "https://auth.example.test/jwks/")
+    jwks_failure = httpx2.ConnectError(
+        "JWKS endpoint unavailable", request=httpx2.Request("GET", "https://auth.example.test/jwks/")
     )
-    http_client = AsyncMock(spec=httpx.AsyncClient)
+    http_client = AsyncMock(spec=httpx2.AsyncClient)
     http_client.get.side_effect = jwks_failure
     verifier = FailureObservingJWTVerifier(
         jwks_uri="https://auth.example.test/jwks/",
