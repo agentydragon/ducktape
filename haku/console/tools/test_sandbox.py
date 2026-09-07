@@ -71,18 +71,18 @@ async def test_tool_surface_and_annotations() -> None:
 
     assert set(tools) == {"provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes", "dispose_sandbox"}
     assert tools["get_sandbox_info"].annotations is not None
-    assert tools["get_sandbox_info"].annotations.readOnlyHint
+    assert tools["get_sandbox_info"].annotations.read_only_hint
     assert tools["list_sandboxes"].annotations is not None
-    assert tools["list_sandboxes"].annotations.readOnlyHint
+    assert tools["list_sandboxes"].annotations.read_only_hint
     assert tools["provision_sandbox"].annotations is not None
-    assert tools["provision_sandbox"].annotations.idempotentHint
+    assert tools["provision_sandbox"].annotations.idempotent_hint
     assert tools["dispose_sandbox"].annotations is not None
-    assert tools["dispose_sandbox"].annotations.destructiveHint
+    assert tools["dispose_sandbox"].annotations.destructive_hint
 
 
 async def test_exec_advertises_configured_maxes() -> None:
     tools = await _tools(_client(), _environment(max_exec_timeout_seconds=120, max_output_bytes=5_000))
-    properties = tools["exec_sandbox"].inputSchema["properties"]
+    properties = tools["exec_sandbox"].input_schema["properties"]
 
     assert properties["timeout_seconds"]["maximum"] == 120
     assert properties["max_output_bytes"]["maximum"] == 5_000
@@ -90,7 +90,7 @@ async def test_exec_advertises_configured_maxes() -> None:
 
 async def test_provision_has_no_profile_or_ttl_parameter() -> None:
     tools = await _tools(_client())
-    properties = tools["provision_sandbox"].inputSchema["properties"]
+    properties = tools["provision_sandbox"].input_schema["properties"]
 
     assert set(properties) == {"name"}
 
