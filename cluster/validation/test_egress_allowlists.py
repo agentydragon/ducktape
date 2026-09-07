@@ -173,6 +173,12 @@ BUILD_REGISTRIES = GITHUB_GIT | hosts(
     # Bazel
     "releases.bazel.build",
     "bcr.bazel.build",
+    # Rust: the toolchain tarballs and the sparse crate registry. Needed since augur's
+    # simulator became a Rust extension, so a consumer that builds `finance/augur/rust`
+    # cold-fetches rustc and its crates.
+    "static.rust-lang.org",
+    "index.crates.io",
+    "static.crates.io",
     # Container images and OS packages
     "ghcr.io",
     "pkg-containers.githubusercontent.com",

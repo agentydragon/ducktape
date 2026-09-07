@@ -49,6 +49,7 @@ spec:
               - matchName: ghcr.io
               - matchName: github.com
               - matchName: haku.allegedly.works
+              - matchName: index.crates.io
               - matchName: kubeapi.allegedly.works
               - matchName: nixos.org
               - matchName: nodejs.org
@@ -60,6 +61,8 @@ spec:
               - matchName: release-assets.githubusercontent.com
               - matchName: releases.bazel.build
               - matchName: snapshot.debian.org
+              - matchName: static.crates.io
+              - matchName: static.rust-lang.org
     # Public HTTPS is still application-layer allowlisted by iron-proxy. Include
     # remote-node/host because allegedly.works is served from node ExternalIPs,
     # which Cilium does not classify as world.

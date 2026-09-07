@@ -69,6 +69,7 @@ spec:
               - matchName: github.com
               - matchName: gmail.googleapis.com
               - matchName: haku-mailbox.allegedly.works
+              - matchName: index.crates.io
               - matchName: nixos.org
               - matchName: nodejs.org
               - matchName: objects.githubusercontent.com
@@ -79,6 +80,8 @@ spec:
               - matchName: release-assets.githubusercontent.com
               - matchName: releases.bazel.build
               - matchName: snapshot.debian.org
+              - matchName: static.crates.io
+              - matchName: static.rust-lang.org
               - matchName: tasks.googleapis.com
               - matchName: www.googleapis.com
     - toFQDNs:
@@ -170,6 +173,10 @@ spec:
     # snapshot.debian.org: rules_distroless apt manifests in haku-state (the jupyter
     # sidecar's git layer — haku-state PR #68's follow-up) resolve + fetch debs from
     # the dated snapshot at Bazel fetch time, on haku-ci and in Haku's sandboxes alike.
+    # static.rust-lang.org + the crates pair: augur's simulator is a Rust extension, so
+    # anything depending on `@ducktape//finance/augur/rust` makes rules_rust cold-fetch a
+    # rustc toolchain and its crates. haku-state reaches that dep through the allocation
+    # model and the jupyter kernel; before the engine was ported it needed no Rust at all.
     - toFQDNs:
         - matchName: releases.bazel.build
         - matchName: bcr.bazel.build
@@ -181,6 +188,9 @@ spec:
         - matchName: ftp.gnu.org
         - matchName: nodejs.org
         - matchName: snapshot.debian.org
+        - matchName: static.rust-lang.org
+        - matchName: index.crates.io
+        - matchName: static.crates.io
       toPorts:
         - ports:
             - port: "443"
