@@ -31,5 +31,6 @@ spec:
                   operator: In
                   values:
                     - hil
+                    - proxmox
                 - key: node-role.kubernetes.io/control-plane
                   operator: DoesNotExist
