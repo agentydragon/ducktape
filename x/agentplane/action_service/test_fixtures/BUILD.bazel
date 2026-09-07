@@ -1,0 +1,10 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "fake_mcp_server",
+    testonly = True,
+    srcs = ["fake_mcp_server.py"],
+    deps = ["@pypi//fastmcp_slim"],
+)
