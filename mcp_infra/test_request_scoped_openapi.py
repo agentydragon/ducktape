@@ -9,7 +9,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
@@ -54,39 +54,39 @@ _SPEC: dict[str, Any] = {
 
 
 @pytest.fixture
-async def placeholder_client() -> AsyncIterator[httpx.AsyncClient]:
-    async def unexpected_request(request: httpx.Request) -> httpx.Response:
+async def placeholder_client() -> AsyncIterator[httpx2.AsyncClient]:
+    async def unexpected_request(request: httpx2.Request) -> httpx2.Response:
         raise AssertionError(f"provider-level client was used for {request.url}")
 
-    async with httpx.AsyncClient(
-        base_url="https://placeholder.invalid", transport=httpx.MockTransport(unexpected_request)
+    async with httpx2.AsyncClient(
+        base_url="https://placeholder.invalid", transport=httpx2.MockTransport(unexpected_request)
     ) as client:
         yield client
 
 
 @pytest.fixture
-def echo_provider(placeholder_client: httpx.AsyncClient) -> OpenAPIProvider:
+def echo_provider(placeholder_client: httpx2.AsyncClient) -> OpenAPIProvider:
     return OpenAPIProvider(_SPEC, client=placeholder_client)
 
 
 async def test_preserves_schema_filters_injected_argument_and_closes_each_client(
-    echo_provider: OpenAPIProvider, placeholder_client: httpx.AsyncClient
+    echo_provider: OpenAPIProvider, placeholder_client: httpx2.AsyncClient
 ) -> None:
     requests: list[tuple[str, str | None]] = []
-    entered: list[httpx.AsyncClient] = []
-    exited: list[httpx.AsyncClient] = []
+    entered: list[httpx2.AsyncClient] = []
+    exited: list[httpx2.AsyncClient] = []
 
-    async def backend(request: httpx.Request) -> httpx.Response:
+    async def backend(request: httpx2.Request) -> httpx2.Response:
         value = request.url.params["value"]
         requests.append((value, request.headers.get("authorization")))
-        return httpx.Response(200, json={"value": value})
+        return httpx2.Response(200, json={"value": value})
 
     @asynccontextmanager
-    async def trusted_client() -> AsyncIterator[httpx.AsyncClient]:
-        async with httpx.AsyncClient(
+    async def trusted_client() -> AsyncIterator[httpx2.AsyncClient]:
+        async with httpx2.AsyncClient(
             base_url="https://backend.invalid",
             headers={"Authorization": "Bearer trusted"},
-            transport=httpx.MockTransport(backend),
+            transport=httpx2.MockTransport(backend),
         ) as client:
             entered.append(client)
             try:
@@ -120,7 +120,7 @@ async def test_preserves_schema_filters_injected_argument_and_closes_each_client
 
 
 async def test_rejects_openapi_parameter_that_collides_with_injected_client(
-    placeholder_client: httpx.AsyncClient,
+    placeholder_client: httpx2.AsyncClient,
 ) -> None:
     spec = deepcopy(_SPEC)
     spec["paths"]["/echo"]["get"]["parameters"].append(
@@ -129,7 +129,7 @@ async def test_rejects_openapi_parameter_that_collides_with_injected_client(
     provider = OpenAPIProvider(spec, client=placeholder_client)
 
     @asynccontextmanager
-    async def client_provider() -> AsyncIterator[httpx.AsyncClient]:
+    async def client_provider() -> AsyncIterator[httpx2.AsyncClient]:
         yield placeholder_client
 
     provider.add_transform(RequestScopedOpenAPIClients(client_provider))
@@ -138,7 +138,7 @@ async def test_rejects_openapi_parameter_that_collides_with_injected_client(
 
 
 async def test_concurrent_calls_keep_request_clients_isolated(
-    echo_provider: OpenAPIProvider, placeholder_client: httpx.AsyncClient
+    echo_provider: OpenAPIProvider, placeholder_client: httpx2.AsyncClient
 ) -> None:
     current_bearer: ContextVar[str] = ContextVar("current_bearer")
     both_requests_started = asyncio.Event()
@@ -146,23 +146,23 @@ async def test_concurrent_calls_keep_request_clients_isolated(
     entered: list[str] = []
     exited: list[str] = []
 
-    async def backend(request: httpx.Request) -> httpx.Response:
+    async def backend(request: httpx2.Request) -> httpx2.Response:
         value = request.url.params["value"]
         authorization = request.headers.get("authorization")
         observed.append((value, authorization))
         if len(observed) == 2:
             both_requests_started.set()
         await both_requests_started.wait()
-        return httpx.Response(200, json={"value": value})
+        return httpx2.Response(200, json={"value": value})
 
     @asynccontextmanager
-    async def per_call_client() -> AsyncIterator[httpx.AsyncClient]:
+    async def per_call_client() -> AsyncIterator[httpx2.AsyncClient]:
         bearer = current_bearer.get()
         entered.append(bearer)
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             base_url="https://backend.invalid",
             headers={"Authorization": f"Bearer {bearer}"},
-            transport=httpx.MockTransport(backend),
+            transport=httpx2.MockTransport(backend),
         ) as client:
             try:
                 yield client

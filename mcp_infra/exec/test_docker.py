@@ -99,7 +99,7 @@ async def test_cwd_always_set_to(make_cwd_server) -> None:
     async with Client(server) as c:
         tools = await c.list_tools()
         exec_tool = next(t for t in tools if t.name == "exec")
-        assert "cwd" not in exec_tool.inputSchema["properties"]
+        assert "cwd" not in exec_tool.input_schema["properties"]
 
         result = await c.call_tool("exec", {"cmd": ["pwd"], "timeout_ms": 10000})
         text = result.content[0].text if result.content else ""
@@ -112,8 +112,8 @@ async def test_cwd_model_chooses(make_cwd_server) -> None:
     async with Client(server) as c:
         tools = await c.list_tools()
         exec_tool = next(t for t in tools if t.name == "exec")
-        assert "cwd" in exec_tool.inputSchema["properties"]
-        assert "cwd" in exec_tool.inputSchema["required"]
+        assert "cwd" in exec_tool.input_schema["properties"]
+        assert "cwd" in exec_tool.input_schema["required"]
 
         result = await c.call_tool("exec", {"cmd": ["pwd"], "cwd": "/tmp", "timeout_ms": 10000})
         text = result.content[0].text if result.content else ""
