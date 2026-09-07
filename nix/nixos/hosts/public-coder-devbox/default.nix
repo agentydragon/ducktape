@@ -1,6 +1,13 @@
 # public-coder-devbox - headless NixOS VM used by the public-coder OpenClaw
 # instance for Git checkouts, direnv, Bazel, BuildBuddy, and tests.
 #
+# Ephemeral KubeVirt containerDisk root (flake output
+# public-coder-devbox-container-disk, published by
+# .github/workflows/public-coder-devbox-image.yml and kept current by Flux image
+# automation) -- nothing written to "/" survives an image update or VM restart.
+# Accepted: Bazel/BuildBuddy already caches remotely, and this VM's whole point is
+# to always run the current devel config, not to carry local state.
+#
 # The VM's egress is fenced at the KubeVirt virt-launcher Pod: DNS and the
 # public-coder-agent iron-proxy are the only allowed destinations. The proxy CA
 # is not copied into Git. trust-manager publishes the live CA bundle as a
@@ -16,7 +23,8 @@ let
   keys = import ../../../ssh-keys.nix;
   proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
-  hostKeyDevice = "/dev/disk/by-id/virtio-pchostkey";
+  hostexecdTokenDevice = "/dev/disk/by-id/virtio-pctoken";
+  hostexecdTokenFile = "/etc/hostexecd-daemon-token.txt";
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
   proxyCaRuntimeDir = "/run/public-coder-devbox-proxy-ca";
 in
@@ -24,18 +32,30 @@ in
   imports = [
     ../../modules/vm-hardware.nix
     ../../modules/bazel
+    ../../modules/hostexecd.nix
   ];
 
-  # The purpose-built image owns first boot. KubeVirt attaches the encrypted
-  # host-key Secret as a virtio disk; this service installs it before sshd
-  # starts, so the image does not depend on cloud-init being present.
-  systemd.services.public-coder-devbox-host-key = {
-    description = "Install the persisted public-coder-devbox SSH host key";
-    wantedBy = [ "sshd.service" ];
-    before = [
-      "sshd-keygen.service"
-      "sshd.service"
+  # hostexecd needs no SSH host key at all -- it never establishes an SSH session, only outbound
+  # HTTPS -- and this VM's root disk is already ephemeral (containerDisk), so a *persisted* SSH
+  # host key would only buy back a stable known_hosts fingerprint across restarts that now happen
+  # on every image update. sshd is left to generate its own ephemeral host key each boot, same as
+  # any other fresh install.
+  #
+  # hostexecd's own daemon token (cluster/k8s/haku/console/node-daemon-public-coder-devbox.sops.yaml)
+  # needs no on-guest sops/age decryption either, unlike wyrm2/rugged/atlas: those are physical
+  # machines with no Kubernetes relationship to the cluster, so decrypting that committed ciphertext
+  # themselves via a persisted host-derived age identity is their only channel. This VM is a
+  # KubeVirt-managed guest Kubernetes already controls, so it gets the same treatment as the proxy
+  # CA below: Flux/kustomize-controller decrypts the token server-side (it already needs to, to
+  # materialize haku-console's own copy of it) and KubeVirt attaches the plaintext result as a small
+  # virtio disk. No local decryption identity to persist at all.
+  systemd.services.public-coder-devbox-hostexecd-token = {
+    description = "Install the public-coder-devbox hostexecd daemon token";
+    wantedBy = [
+      "hostexecd.service"
+      "multi-user.target"
     ];
+    before = [ "hostexecd.service" ];
     after = [ "local-fs.target" ];
     path = [
       pkgs.coreutils
@@ -47,7 +67,7 @@ in
     };
     script = ''
       set -eu
-      src="/run/public-coder-devbox-host-key/source"
+      src="/run/public-coder-devbox-hostexecd-token/source"
       mkdir -p "$src"
       mounted=0
       for _ in $(seq 1 60); do
@@ -55,43 +75,34 @@ in
           mounted=1
           break
         fi
-        if mount -o ro "${hostKeyDevice}" "$src" 2>/dev/null; then
+        if mount -o ro "${hostexecdTokenDevice}" "$src" 2>/dev/null; then
           mounted=1
           break
         fi
         sleep 1
       done
       if [ "$mounted" -ne 1 ]; then
-        echo "KubeVirt host-key disk did not appear at ${hostKeyDevice}" >&2
+        echo "KubeVirt hostexecd-token disk did not appear at ${hostexecdTokenDevice}" >&2
         exit 1
       fi
-      install -Dm0600 "$src/ssh_host_ed25519_key" /etc/ssh/ssh_host_ed25519_key
+      install -Dm0600 "$src/token" "${hostexecdTokenFile}"
       umount "$src"
     '';
   };
 
-  systemd.services.sshd = {
-    requires = [ "public-coder-devbox-host-key.service" ];
-    after = [ "public-coder-devbox-host-key.service" ];
-  };
-
-  systemd.services.sshd-keygen = {
-    wants = [ "public-coder-devbox-host-key.service" ];
-    after = [ "public-coder-devbox-host-key.service" ];
-  };
-
-  services.openssh.hostKeys = lib.mkForce [
-    {
-      type = "ed25519";
-      path = "/etc/ssh/ssh_host_ed25519_key";
-    }
-  ];
-  # The VM is intentionally a root-administered build box. Its egress is
-  # still enforced outside the guest by the Cilium policy on virt-launcher.
+  # Root SSH login stays available for the human Operator (key-only; manual hostexec approval, or
+  # an interactive session, both still work as root exactly like any other hostexec host). Its
+  # egress is enforced outside the guest by the Cilium policy on virt-launcher either way.
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   users.users.root.openssh.authorizedKeys.keys = [ keys.publicCoderDevbox ];
 
+  # `coder` is the account public-coder-agent's auto-approved hostexec calls actually run as
+  # (cluster/k8s/haku/console/config.yaml's hostexec_public_coder_devbox policy names it as the
+  # only allowed run_as) -- an ordinary unprivileged user, so it can run Nix/Bazel builds like any
+  # normal account (the daemon-mediated multi-user Nix model needs no special privilege for that),
+  # but cannot read the root-owned, mode-0600 hostexecd daemon token or anything else root-only on
+  # this box. That confinement is the whole point: see haku/docs/security.md invariant #9.
   users.users.coder = {
     isNormalUser = true;
     home = "/home/coder";
@@ -177,6 +188,29 @@ in
       SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
       NIX_SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
     };
+  };
+
+  # hostexecd: haku-console runs approved public-coder-agent shell calls here, auto-approved only
+  # for this exact host (haku/docs/security.md invariant #9, cluster/k8s/haku/console/config.yaml's
+  # `hostexec_public_coder_devbox` policy). Its outbound HTTPS is fenced through the same iron-proxy
+  # as everything else on this VM, so it needs the proxy plus the proxy's own interception CA
+  # (nix/nixos/modules/hostexecd.nix's extra_root_cert_file), which every other hostexec host
+  # (wyrm2/rugged/atlas) leaves unset because it reaches the console directly.
+  ducktape.hostexec = {
+    enable = true;
+    httpsProxy = proxyUrl;
+    extraRootCertFile = "${proxyCaRuntimeDir}/ca-bundle.crt";
+    daemonTokenFile = hostexecdTokenFile;
+  };
+  systemd.services.hostexecd = {
+    requires = [
+      "public-coder-devbox-proxy-ca.service"
+      "public-coder-devbox-hostexecd-token.service"
+    ];
+    after = [
+      "public-coder-devbox-proxy-ca.service"
+      "public-coder-devbox-hostexecd-token.service"
+    ];
   };
 
   # These are intentionally placeholders / non-secret routing settings. The

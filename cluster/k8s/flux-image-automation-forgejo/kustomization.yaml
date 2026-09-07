@@ -26,6 +26,7 @@ resources:
   - osm-mcp-image.yaml
   - cpap-gateway-image.yaml
   - cpap-sync-image.yaml
+  - public-coder-devbox-image.yaml
   - plaid-mcp-sync-image.yaml
   - forgejo-token-rotation-image.yaml
   - matrix-user-provisioner-image.yaml

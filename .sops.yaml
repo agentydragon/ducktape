@@ -237,6 +237,29 @@ creation_rules:
           - *cluster-secrets
           - *atlas-host
 
+  # public-coder-devbox needs no per-host recipient here, unlike wyrm2/rugged/atlas above: it's a
+  # KubeVirt-managed guest, so Flux/kustomize-controller's own decryption (already needed to
+  # materialize this Secret for haku-console's env var) is also how the *daemon* gets its copy --
+  # see hostexecd-token.sops.yaml below, a second Secret carrying the identical value into the
+  # public-coder-agent namespace for KubeVirt to attach as a guest disk. No on-guest decryption.
+  - path_regex: cluster/k8s/haku/console/node-daemon-public-coder-devbox\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
+  # Same value as node-daemon-public-coder-devbox.sops.yaml above, reflected into
+  # public-coder-agent's own namespace so KubeVirt can attach it as a guest disk (there is no
+  # cross-namespace secretKeyRef, and no reflector controller wired for this pair) -- update both
+  # files together if this token is ever rotated.
+  - path_regex: cluster/k8s/agents/public-coder-agent/devbox/hostexecd-token\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # AIQuota's read-only bearer is also consumed by the local CLI/GNOME clients.
   # Keep the same token as the cluster Secret, but let the configured user
   # identities decrypt it without granting them access to other cluster secrets.

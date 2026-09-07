@@ -1,8 +1,14 @@
 # hostexec — outbound node execution daemons
 
-`hostexec` lets Haku request shell commands on operator machines (`wyrm2`, `rugged`, …).
-Every call goes through the console's ordinary MCP approval queue and executes under the
-approving operator's own Authentik authority. There is no auto-approved host execution path.
+`hostexec` lets an Agent request shell commands on a registered machine (`wyrm2`, `rugged`,
+`atlas`, `public-coder-devbox`, …). Every call still executes under a bound Operator's own
+Authentik authority (haku/docs/security.md invariant #9); by default it also goes through the
+console's ordinary manual MCP approval queue. The one exception is `public-coder-devbox`, whose
+calls from the `public-coder` access profile skip the click under a narrow policy naming both the
+host and an unprivileged `run_as` (never root) — see invariant #9 and
+`haku/console/auto_approval/hostexec.py`. Auto-approval
+never becomes standing execution authority itself: it only decides whether a human has to click
+before the same per-host token is minted.
 
 ## Architecture
 

@@ -360,9 +360,26 @@ bulk channels.
 8. If haku-state ever vendors third-party content, re-examine every "haku-state is
    single-author, so rendering it live is safe" assumption (garden MDX eval).
 9. A node daemon's standing bearer authenticates only heartbeat, claim, and result traffic. It
-   must never become execution authority: every `hostexec` command remains approval-gated and
-   carries the approving Operator's independently verified, short-lived per-host Authentik token.
-   Node daemons initiate outbound HTTPS and expose no command listener.
+   must never become execution authority: every `hostexec` command still carries a bound
+   Operator's independently verified, short-lived per-host Authentik token, minted fresh at
+   execution time regardless of whether a human clicked approve or a configured auto-approval
+   policy matched instead. Manual Operator approval is the default and remains the only path for
+   every host but one: `public-coder-devbox` may skip the click under the narrow
+   `hostexec_host_scoped` policy kind
+   (`haku/console/auto_approval/hostexec.py`, `cluster/k8s/haku/console/config.yaml`'s
+   `hostexec_public_coder_devbox` policy, assigned only to the `public-coder` access profile).
+   That policy kind requires both `host` and `run_as` — never `cmd` — and `run_as` may never
+   include `root`: `hostexecd` runs as root specifically so it can drop to whichever `run_as` a
+   call names, so an auto-approved `run_as=root` call would let the Agent read that host's
+   root-owned daemon-token file (and everything else on the box) with nobody ever reviewing the
+   command, silently recreating the standing root access this invariant exists to prevent.
+   `public-coder-devbox`'s policy names only its unprivileged `coder` account. So the one exception
+   this invariant tolerates is legible as "which machine, as which unprivileged user, may skip the
+   click", never "which command" or "as root", and the executed token is unaffected either way: it
+   is still the Operator's, still short-lived, still per-host, still independently verified.
+   Widening this exception to a second host, a `run_as` including root, or a second policy kind is
+   a decision for this invariant, not a config-only change elsewhere. Node daemons initiate
+   outbound HTTPS and expose no command listener.
 
 ## Known gaps (tracked)
 

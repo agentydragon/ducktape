@@ -287,6 +287,32 @@ class HomeAssistantEntityControlAutoApprovalPolicy(AutoApprovalPolicyBase):
         return value
 
 
+class HostexecHostScopedAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Conditionally auto-approve `hostexec` `bash` calls confined to named hosts and users.
+
+    hostexec's execution authority never changes: the console still mints the approving Operator's
+    own short-lived per-host Authentik token on every call (haku/docs/security.md invariant #9)
+    regardless of whether a human clicked approve or this policy matched. ``hosts`` and ``run_as``
+    are the only constraints — deliberately never ``cmd`` — so the exception this policy grants is
+    legible as "which machine, as which user, may skip the click", never "which command".
+
+    ``run_as`` is required, not merely allowed to be narrow: the host's own daemon-token file is
+    root-owned and mode 0600, and `hostexecd` runs as root specifically so it can drop to whatever
+    `run_as` a call names before executing. An auto-approved call naming `run_as=root` would let the
+    Agent itself read that file (and everything else on the box) with no human ever seeing the
+    command — a `hosts`-only policy that leaves `run_as` open, as this one first shipped with, hands
+    back exactly the standing root access invariant #9 exists to prevent. Every host this policy
+    names must therefore provision a real unprivileged account for its listed `run_as` values,
+    distinct from whatever account the human Operator uses for manual approval. See
+    ``haku/console/auto_approval/hostexec.py``.
+    """
+
+    type: Literal["hostexec_host_scoped"] = "hostexec_host_scoped"
+    server: str = Field(min_length=1)
+    hosts: set[str] = Field(min_length=1)
+    run_as: set[str] = Field(min_length=1)
+
+
 class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve reviewed GitHub reads for one repository."""
 
@@ -348,6 +374,7 @@ type AutoApprovalPolicy = Annotated[
     | GmailLabelNamespaceAutoApprovalPolicy
     | GitHubRepositoryAutoApprovalPolicy
     | HomeAssistantEntityControlAutoApprovalPolicy
+    | HostexecHostScopedAutoApprovalPolicy
     | GitHubPublicRepositoryAutoApprovalPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy

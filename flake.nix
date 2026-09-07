@@ -576,11 +576,6 @@
           # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
           wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
           bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
-          # Full public-coder-devbox image: the VM boots straight into the real
-          # build/test configuration and owns its first-boot disk setup through
-          # NixOS systemd units rather than cloud-init.
-          public-coder-devbox-image =
-            self.nixosConfigurations.public-coder-devbox.config.system.build.images.qemu-efi;
           # Full agent-box host image: the VM boots straight into the real config
           # (codex user, Codex CLI, planted keys) — no bootstrap + nixos-rebuild
           # switch. Published by vm-images-publisher with IMAGE_OUTPUT=agent-box-image,
@@ -615,6 +610,39 @@
               # KubeVirt's virt-launcher runs qemu as UID 107. dockerTools
               # applies this ownership to the layer without chowning the Nix
               # store output itself.
+              uid = 107;
+              gid = 107;
+              config = { };
+            };
+          # Ephemeral KubeVirt containerDisk for public-coder-devbox (same shape as
+          # cpap-gateway-container-disk above): the VM boots straight into the real
+          # build/test configuration and owns its first-boot disk setup through NixOS
+          # systemd units rather than cloud-init -- which is what makes it a clean fit
+          # for containerDisk's "every boot is a fresh disk" model. No persistent state
+          # (Nix store, Bazel/BuildBuddy caches, checkouts) survives an image update or
+          # VM restart; that's an accepted tradeoff for auto-published, always-current
+          # tooling rather than a manual publish+URL-bump step.
+          public-coder-devbox-container-disk =
+            let
+              diskImage = self.nixosConfigurations.public-coder-devbox.config.system.build.images.qemu-efi;
+              diskRoot = pkgs.runCommand "public-coder-devbox-container-disk-root" { } ''
+                mkdir -p $out/disk
+                cp ${diskImage}/*.qcow2 $out/disk/disk.qcow2
+              '';
+            in
+            pkgs.dockerTools.buildLayeredImage {
+              name = "git.allegedly.works/ducktape-ci/public-coder-devbox";
+              contents = [ diskRoot ];
+              includeStorePaths = false;
+              maxLayers = 2;
+              extraCommands = ''
+                cp --dereference disk/disk.qcow2 disk/disk.qcow2.real
+                rm disk/disk.qcow2
+                mv disk/disk.qcow2.real disk/disk.qcow2
+              '';
+              fakeRootCommands = ''
+                chown 107:107 disk/disk.qcow2
+              '';
               uid = 107;
               gid = 107;
               config = { };

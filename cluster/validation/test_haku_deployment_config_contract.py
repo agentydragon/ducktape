@@ -26,6 +26,7 @@ def _console_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
         "HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__WYRM2__TOKEN",
         "HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__RUGGED__TOKEN",
         "HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__ATLAS__TOKEN",
+        "HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__PUBLIC-CODER-DEVBOX__TOKEN",
         "HAKU_CONSOLE__MCP__SERVERS__TANA_RW__BACKEND__AUTH__TOKEN",
         "HAKU_CONSOLE__MCP__SERVERS__HOME_ASSISTANT__BACKEND__AUTH__TOKEN",
         "HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_ID",
@@ -135,7 +136,7 @@ def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> No
     # operation and click-free — its own exact-tools atom, distinct from the widening create_grant.
     assert policies["grants_own_revoke"]["type"] == "exact_tools"
     assert policies["grants_own_revoke"]["tools"] == {"grants": ["revoke_grants"]}
-    for root in ("haku_v1", "public_coder_safe_reads"):
+    for root in ("haku_v1", "public_coder_v1"):
         assert "kubernetes_reads" in policies[root]["policies"], root
         assert "grants_self_introspection" in policies[root]["policies"], root
         assert "grants_own_revoke" in policies[root]["policies"], root
