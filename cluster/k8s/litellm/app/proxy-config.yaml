@@ -295,6 +295,17 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+  # `[1m]` requests Claude Code's 1M-context beta (context-1m-2025-08-07); LiteLLM
+  # strips the model_name -> litellm model translation, so the suffix must be routed
+  # to the same backend model explicitly rather than falling through.
+  - model_name: anthropic-max20/ant-messages/claude-sonnet-5[1m]
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+      api_key: os.environ/CLIPROXY_CLIENT_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
   - model_name: anthropic-max20/ant-messages/claude-fable-5
     litellm_params:
       model: anthropic/claude-fable-5

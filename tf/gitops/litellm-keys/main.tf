@@ -92,6 +92,15 @@ locals {
     "anthropic-max20/ant-messages/claude-fable-5",
     "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
   ]
+  # Sonnet's 1M-context beta variant, requested via Claude Code's own `[1m]`
+  # model-suffix convention. A one-off addition on top of claude_client_models
+  # rather than a change to it or to ANTHROPIC_MODELS: only the laptop
+  # litellm-claude wrapper (nix/home/claude_code/litellm-claude.nix) opts into
+  # it, and folding it into the shared roster would also add a redundant
+  # variant to the direct-API lane and haku-console-claude's allowlist.
+  claude_subscription_client_models = concat(local.claude_client_models, [
+    "anthropic-max20/ant-messages/claude-sonnet-5[1m]",
+  ])
   # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
   # a direct OpenAI Platform key for memorySearch, but a domain-confined agent has no
@@ -404,7 +413,7 @@ data "sops_file" "claude_subscription_clients_key" {
 resource "litellm_key" "claude_subscription_clients" {
   key_alias = "claude-subscription-clients"
   key       = data.sops_file.claude_subscription_clients_key.data["litellm_claude_subscription_key"]
-  models    = local.claude_client_models
+  models    = local.claude_subscription_client_models
   metadata = {
     consumer = "laptop-litellm-claude"
   }
