@@ -588,4 +588,11 @@ router_settings:
       model: chatgpt/oai-responses/gpt-6-astra
       hidden: true
 general_settings:
+  # Forward the client's `anthropic-beta` and `x-*` headers upstream -- never
+  # User-Agent, which LiteLLM has no setting for, so CLIProxyAPI cannot confirm a
+  # native Claude Code caller and rebuilds the beta set from the request body
+  # instead. A few betas are request-only and reach it no other way, above all
+  # context-1m-2025-08-07, which nothing in the body implies. Applies to every
+  # client and every upstream, not only the Claude lanes.
+  forward_client_headers_to_llm_api: true
   store_model_in_db: false
