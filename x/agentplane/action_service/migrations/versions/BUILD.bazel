@@ -1,13 +1,25 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 exports_files(
-    ["0001_action_service.py"],
+    [
+        "0001_action_service.py",
+        "0002_decision_provider_reason.py",
+    ],
     visibility = ["//x/agentplane/action_service/migrations:__pkg__"],
 )
 
 py_library(
     name = "0001_action_service",
     srcs = ["0001_action_service.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0002_decision_provider_reason",
+    srcs = ["0002_decision_provider_reason.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

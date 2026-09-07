@@ -1,18 +1,22 @@
-"""ActionRequest coordinator: human DecisionProvider and one single-shot executor dispatch."""
+"""ActionRequest coordinator: DecisionProvider aggregation, human fallback, and single-shot dispatch."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 from uuid import UUID
 
-from x.agentplane.action_service.db import ActionStore
+from x.agentplane.action_service.db import ActionConflictError, ActionStore
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    DecisionContext,
     DecisionInput,
+    DecisionProvider,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
@@ -20,9 +24,22 @@ from x.agentplane.action_service.models import (
     NotificationOutbox,
     NullNotificationOutbox,
     Principal,
+    ProviderOutcome,
+    ProviderVerdict,
+    Verdict,
 )
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_PROVIDER_TIMEOUT_SECONDS = 5.0
+PROVIDER_TIMEOUT_REASON = "provider_timeout"
+PROVIDER_UNAVAILABLE_REASON = "provider_unavailable"
+
+
+@dataclass(frozen=True)
+class _ProviderVote:
+    provider: str
+    outcome: ProviderOutcome
 
 
 class ExecutionOutcomeUnknownError(Exception):
@@ -45,10 +62,20 @@ class EchoExecutor:
 class ActionService:
     HUMAN_PROVIDER = "human_operator"
 
-    def __init__(self, store: ActionStore, executor: Executor, *, outbox: NotificationOutbox | None = None) -> None:
+    def __init__(
+        self,
+        store: ActionStore,
+        executor: Executor,
+        *,
+        outbox: NotificationOutbox | None = None,
+        providers: Sequence[DecisionProvider] = (),
+        provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
+    ) -> None:
         self._store = store
         self._executor = executor
         self._outbox = outbox or NullNotificationOutbox()
+        self._providers = tuple(providers)
+        self._provider_timeout_seconds = provider_timeout_seconds
         self._tasks: set[asyncio.Task[None]] = set()
 
     async def start(self) -> int:
@@ -67,9 +94,67 @@ class ActionService:
 
     async def submit(self, body: ActionRequestInput, principal: Principal) -> ActionRequestView:
         view, created = await self._store.submit(body, principal, supported_capabilities=self._executor.capabilities)
-        if created:
-            await self._outbox.wake()
-        return view
+        if not created:
+            return view
+        await self._outbox.wake()
+        return await self._auto_decide(view, body, principal)
+
+    async def _auto_decide(
+        self, view: ActionRequestView, body: ActionRequestInput, principal: Principal
+    ) -> ActionRequestView:
+        """Evaluate configured synchronous providers; defer to the human path on no decisive outcome."""
+        if not self._providers:
+            return view
+        context = DecisionContext(
+            request_id=view.id, capability=body.capability, arguments=body.arguments, caller_principal=principal
+        )
+        vote = await self._evaluate_providers(context)
+        if vote is None:
+            return view
+        try:
+            decided, should_dispatch = await self._store.decide_by_provider(
+                view.id,
+                principal,
+                verdict=Verdict.ALLOW if vote.outcome.verdict is ProviderVerdict.ALLOW else Verdict.DENY,
+                provider=vote.provider,
+                idempotency_key=f"auto:{view.id}",
+                expected_version=view.version,
+                reason_code=vote.outcome.reason_code,
+                reason_description=vote.outcome.reason_description,
+            )
+        except ActionConflictError:
+            # A human operator's Decision committed first (a genuine race); the auto-provider
+            # outcome is stale and must never override or duplicate the winning Decision.
+            logger.info("auto-provider decision for %s was stale; another Decision already won", view.id)
+            return await self._store.get(view.id, principal)
+        if should_dispatch:
+            self._schedule(view.id)
+        return decided
+
+    async def _evaluate_providers(self, context: DecisionContext) -> _ProviderVote | None:
+        """Run every configured provider to completion first, so deny dominance never depends on
+        which provider happens to answer fastest."""
+        votes = await asyncio.gather(*(self._ask(provider, context) for provider in self._providers))
+        for vote in votes:
+            if vote.outcome.verdict is ProviderVerdict.DENY:
+                return vote
+        for vote in votes:
+            if vote.outcome.verdict is ProviderVerdict.ALLOW:
+                return vote
+        return None
+
+    async def _ask(self, provider: DecisionProvider, context: DecisionContext) -> _ProviderVote:
+        try:
+            outcome = await asyncio.wait_for(provider.decide(context), timeout=self._provider_timeout_seconds)
+        except TimeoutError:
+            logger.warning("decision provider %s timed out; treating as no_opinion", provider.name)
+            outcome = ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code=PROVIDER_TIMEOUT_REASON)
+        except Exception:
+            # A provider's raw exception text can carry backend/credential material; never persist
+            # or project it. Unavailability is not an allow — it defers like a silent no-opinion.
+            logger.exception("decision provider %s raised; treating as no_opinion", provider.name)
+            outcome = ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code=PROVIDER_UNAVAILABLE_REASON)
+        return _ProviderVote(provider=provider.name, outcome=outcome)
 
     async def list_requests(
         self, principal: Principal, *, states: tuple[ActionState, ...] = ()
