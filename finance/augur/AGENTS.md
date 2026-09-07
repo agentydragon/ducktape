@@ -62,10 +62,14 @@ message, a chat reply — carries enough to reproduce it:
   separable at achievable sample sizes, so a bare ordering of cells is usually reading
   noise.
 
-**Gotcha: a default can be a policy choice.** `TargetAllocationPolicy.rebalance_tolerance`
-defaults to `None`, which means _never rebalance on drift_ — a substantive strategy, not
-an absent setting. A reader who is not told will assume the portfolio was rebalanced.
-State the value, including when it is the default.
+**Gotcha: a default can be a policy choice.** `TargetAllocationPolicy.purchase_slots_per_sleeve`
+defaults to `0`, which means _the policy never buys_ — so surplus cash above the ceiling
+accumulates instead of being invested. That is a substantive strategy, and a reader who is not
+told will assume otherwise. State such a value, including when it is the default.
+
+`rebalancing` on the same model used to be the worse instance of this, defaulting to "never
+rebalance on drift"; it is now a required `CashflowOnly | DriftBand`, so every run says which
+it was. Results published before that change did not, and ran as `CashflowOnly`.
 
 **"Probability of X" is never the whole label.** Write "probability of X under
 {sampler, window, policy}", or point at the config that pins all three. Where a figure is

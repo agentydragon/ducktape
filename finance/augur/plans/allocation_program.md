@@ -50,12 +50,12 @@ has to come from the fitted model, which is why lane 3 exists.
 Three things landed or were discovered after Plan 0 ran, and each is cheap enough that it
 should happen before any lane starts.
 
-**The published grid ran with drift rebalancing off.** `rebalance_tolerance` ships and
-defaults to `None`, which means never. Every grid run that did not set it measured a
-never-rebalanced portfolio, whatever the report said. Re-run the grid with it on at two band
-widths, against common random numbers, and see whether the answer moves. This is a few hours
-and it either validates the existing results or invalidates them; nothing below is worth doing
-until it is known which.
+**The published grid ran with drift rebalancing off.** It predates `rebalancing` becoming a
+required `CashflowOnly | DriftBand`, and every run that did not set the old nullable tolerance
+measured a never-rebalanced portfolio, whatever the report said. Re-run the grid with
+`DriftBand` at two band widths, against common random numbers, and see whether the answer
+moves. This is a few hours and it either validates the existing results or invalidates them;
+nothing below is worth doing until it is known which.
 
 **A downstream consumer still imports the deleted JAX entry point.** It cannot run at all, so
 the grid it published cannot currently be reproduced. Port it onto `RustEngine.product_metrics`

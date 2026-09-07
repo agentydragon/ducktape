@@ -373,10 +373,11 @@ Two things to settle while wiring it:
 - **A cadence knob, or not.** Today the check runs every month with no cash
   need. "Check every N months" is a different strategy with different turnover,
   and the sweep in #5480 C1 wants both axes.
-- **The default is a strategy.** `None` means never rebalance on drift. That is
-  deliberate — a default that rebalanced would assume the answer the allocation
-  study exists to measure — but it means any grid run without setting it
-  measured a no-drift-rebalancing portfolio, whether or not the report said so.
+- **Neither option may become the default.** `rebalancing` is a required
+  `CashflowOnly | DriftBand` precisely because both are real strategies, and the
+  wire surface has to keep it that way rather than defaulting whichever is easier
+  to leave out of a request. Runs published before the field was required did not
+  say which they used; they were all `CashflowOnly`.
 
 The tax argument stays worth stating on the product surface: a sale to fund
 spending is unavoidable, whereas a sale to correct drift is elective
