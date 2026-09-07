@@ -18,13 +18,13 @@
 #
 # Costs read as fiction: Claude Code prices from that same static table at Anthropic list
 # rates, while a subscription call bills nothing. Traces are honest; `costUSD` is not.
-{ pkgs }:
+{ pkgs, config }:
 let
   inherit (pkgs) lib;
 in
 import ./gateway.nix { inherit pkgs lib; } "litellm-claude" {
   baseUrl = "https://litellm.allegedly.works";
-  authTokenEnvVar = "CLAUDE_SUBSCRIPTION_LITELLM_KEY";
+  authTokenFile = config.sops.secrets.litellm_claude_subscription_key.path;
   # Sonnet as the default, matching the haku-console harness: Opus is a one-word change,
   # but it draws down the subscription's quota far faster.
   model = "anthropic-max20/ant-messages/claude-sonnet-5";

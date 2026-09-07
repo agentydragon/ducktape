@@ -15,7 +15,7 @@ let
 
   # `codex-claude`: Claude Code on ChatGPT/Codex via the in-cluster CLIProxyAPI gateway.
   # See ./claude_code/codex-claude.nix.
-  codexClaude = import ./claude_code/codex-claude.nix { inherit pkgs; };
+  codexClaude = import ./claude_code/codex-claude.nix { inherit pkgs config; };
 
   ducktapePackages = import ../packages {
     inherit lib pkgs;
@@ -38,16 +38,16 @@ let
     bbapi
     ;
 
-  tanaClaude = import ./claude_code/tana-claude.nix { inherit pkgs; };
+  tanaClaude = import ./claude_code/tana-claude.nix { inherit pkgs config; };
 
   # `litellm-claude`: Claude Code on its ordinary Claude models, routed through the cluster
   # LiteLLM proxy rather than straight to Anthropic, reading
   # $CLAUDE_SUBSCRIPTION_LITELLM_KEY. See ./claude_code/litellm-claude.nix.
-  litellmClaude = import ./claude_code/litellm-claude.nix { inherit pkgs; };
+  litellmClaude = import ./claude_code/litellm-claude.nix { inherit pkgs config; };
 
   # `gemini-claude`: Claude Code on Google Gemini via the cluster LiteLLM proxy, reading
   # $GEMINI_LITELLM_KEY. See ./claude_code/gemini-claude.nix.
-  geminiClaude = import ./claude_code/gemini-claude.nix { inherit pkgs; };
+  geminiClaude = import ./claude_code/gemini-claude.nix { inherit pkgs config; };
 
   mkHomeGtkBookmark =
     { path, title }:
@@ -127,26 +127,28 @@ in
       key = "stringData/api-key";
       name = "brave_api_key";
     };
-    # Tana-scoped LiteLLM virtual key powering the `tana-claude` alias below.
-    TANA_LITELLM_KEY = {
+  };
+
+  # LiteLLM virtual keys for the Claude Code gateway wrappers. Declared as plain secrets
+  # rather than through ducktape.sopsEnv because each wrapper cats its own file at exec
+  # time: only the one process that authenticates holds the credential, instead of every
+  # shell and everything a shell spawns. The upstream credentials each key stands in for
+  # -- the cli-proxy client key, GEMINI_API_KEY, the Claude OAuth session -- stay
+  # in-cluster and never reach the laptop.
+  sops.secrets = {
+    litellm_tana_key = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-tana-clients-key.yaml;
       key = "litellm_tana_key";
     };
-    # Codex-scoped LiteLLM virtual key powering the `codex-claude` alias below
-    # (LiteLLM → CLIProxyAPI). The cli-proxy client key itself stays in-cluster only.
-    CODEX_LITELLM_KEY = {
+    litellm_codex_key = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
       key = "litellm_codex_key";
     };
-    # Gemini-scoped LiteLLM virtual key powering the `gemini-claude` alias below
-    # (LiteLLM → Google Gemini). The upstream GEMINI_API_KEY stays in-cluster only.
-    GEMINI_LITELLM_KEY = {
+    litellm_gemini_key = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-gemini-clients-key.yaml;
       key = "litellm_gemini_key";
     };
-    # Subscription-scoped LiteLLM virtual key powering the `litellm-claude` alias below
-    # (LiteLLM → CLIProxyAPI's Claude OAuth session). That session stays in-cluster only.
-    CLAUDE_SUBSCRIPTION_LITELLM_KEY = {
+    litellm_claude_subscription_key = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-claude-subscription-clients-key.yaml;
       key = "litellm_claude_subscription_key";
     };

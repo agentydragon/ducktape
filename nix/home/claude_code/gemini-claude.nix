@@ -1,5 +1,5 @@
-# `gemini-claude`: Claude Code on Google Gemini via the cluster LiteLLM proxy, reading
-# $GEMINI_LITELLM_KEY — a gemini-scoped virtual key (SSOT in tf/gitops/litellm-keys).
+# `gemini-claude`: Claude Code on Google Gemini via the cluster LiteLLM proxy, reading the
+# litellm_gemini_key sops secret — a gemini-scoped virtual key (SSOT in tf/gitops/litellm-keys).
 # LiteLLM translates Claude Code's Anthropic /v1/messages calls to the `gemini/` provider;
 # the upstream reaches Google with the in-cluster GEMINI_API_KEY, so this key never carries
 # it. WebFetch/WebSearch are disabled: they are Anthropic-hosted server tools a non-Anthropic
@@ -17,13 +17,13 @@
 # and LiteLLM 1.90.2 forwards a byte-stable prefix and reports it (`cached_tokens` /
 # `cache_read_input_tokens`). So no 100x cost blowup; you trade Anthropic's deterministic
 # ~90% cache for Gemini's best-effort ~75%.
-{ pkgs }:
+{ pkgs, config }:
 let
   inherit (pkgs) lib;
 in
 import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
   baseUrl = "https://litellm.allegedly.works";
-  authTokenEnvVar = "GEMINI_LITELLM_KEY";
+  authTokenFile = config.sops.secrets.litellm_gemini_key.path;
   model = "google/goog-generate/gemini-3.7-flash";
   haikuModel = "google/goog-generate/gemini-3.5-flash-lite";
   disallowedTools = [

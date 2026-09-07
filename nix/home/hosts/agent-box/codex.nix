@@ -2,12 +2,13 @@
 # See ./common.nix for the shared base; this file adds Codex, Claude Code routed
 # through CLIProxyAPI, and unattended config for both CLIs.
 {
+  config,
   pkgs,
   pkgsUnstable,
   ...
 }:
 let
-  codexClaude = import ../../claude_code/codex-claude.nix { inherit pkgs; };
+  codexClaude = import ../../claude_code/codex-claude.nix { inherit pkgs config; };
 in
 {
   imports = [
@@ -33,7 +34,7 @@ in
   # Codex-claude LiteLLM virtual key (codex-* models via LiteLLM → CLIProxyAPI). Same SSOT
   # as workstations and codex-pod (reflected kubernetes_secret); the agent-box codex
   # identity is an explicit SOPS recipient of the pinned-key file.
-  ducktape.sopsEnv.CODEX_LITELLM_KEY = {
+  sops.secrets.litellm_codex_key = {
     sopsFile = ../../../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
     key = "litellm_codex_key";
   };
