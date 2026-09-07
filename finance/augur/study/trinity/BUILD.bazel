@@ -12,8 +12,8 @@ py_library(
 )
 
 py_library(
-    name = "trinity",
-    srcs = ["trinity.py"],
+    name = "replay",
+    srcs = ["replay.py"],
     deps = [
         ":evidence_snapshot",
         "//finance/augur/model:bond_fund",
@@ -33,24 +33,24 @@ py_library(
 )
 
 py_binary(
-    name = "trinity_bin",
-    main_module = "finance.augur.study.trinity",
-    deps = [":trinity"],
+    name = "replay_bin",
+    main_module = "finance.augur.study.trinity.replay",
+    deps = [":replay"],
 )
 
 py_test(
-    name = "trinity_test",
+    name = "replay_test",
     # Fetches the record from the public upstreams and runs ~55 474-rollout simulations, so it
     # is excluded from CI's default filter: an upstream outage must not redden an unrelated PR.
     # See the package README for how to run it. Measured at ~180s on an RBE worker: ~55
     # 474-rollout simulations plus a whole-record sample, so "medium" would leave under 2x
     # headroom for a network fetch and RBE's own I/O latency.
     size = "large",
-    srcs = ["trinity_test.py"],
+    srcs = ["replay_test.py"],
     tags = ["manual"],
     deps = [
         ":evidence_snapshot",
-        ":trinity",
+        ":replay",
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",

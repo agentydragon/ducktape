@@ -28,7 +28,7 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExoge
 from finance.augur.model.historical_windows import HistoricalWindowsProviderConfig
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec, StructuralMacroProviderConfig
-from finance.augur.study.evidence_snapshot import snapshot_evidence
+from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.evidence import sources
 
 HORIZON_MONTHS = 360

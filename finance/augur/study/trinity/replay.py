@@ -75,7 +75,7 @@ attribution:
 Taxes and transaction costs are absent from both, which is the paper's own statement of its
 method rather than a difference.
 
-    bbr run //finance/augur/study:trinity_bin
+    bbr run //finance/augur/study/trinity:replay_bin
 """
 
 from __future__ import annotations
@@ -119,7 +119,7 @@ from finance.augur.sim.scenario import (
     SleeveTarget,
     TargetAllocationPolicy,
 )
-from finance.augur.study.evidence_snapshot import snapshot_evidence
+from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.evidence import sources
 
 logger = logging.getLogger(__name__)
@@ -294,7 +294,7 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
 
 
 @dataclass(frozen=True)
-class TrinityReplay:
+class Replay:
     """The study's exogenous paths, sampled once and reused across every cell.
 
     One sample for the whole table, because a cell differs from its neighbour only in the
@@ -389,7 +389,7 @@ def _whole_record_compound_returns(model: HistoricalWindowsModel) -> dict[Securi
     return returns
 
 
-def sample_replay(evidence_dir: Path) -> TrinityReplay:
+def sample_replay(evidence_dir: Path) -> Replay:
     """Sample every 30-year window the study period supplies, from an evidence checkout."""
 
     model = HistoricalWindowsProviderConfig(
@@ -411,7 +411,7 @@ def sample_replay(evidence_dir: Path) -> TrinityReplay:
             required_index_series=frozenset({InflationKey()}),
         )
     )
-    return TrinityReplay(
+    return Replay(
         external_series=materialize_sampled_exogenous(bundle),
         window_count=windows,
         record_start=model.history.months[0],
