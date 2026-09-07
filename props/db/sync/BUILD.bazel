@@ -135,6 +135,10 @@ py_test(
 
 py_test(
     name = "test_sync_snapshot_files",
+    # bbapi target history shows every recorded RBE run at 52-59s against the
+    # "small" 60s default -- a real Postgres-container startup consistently
+    # eating nearly the whole budget, not a hang. One TIMEOUT observed 2026-09-07.
+    size = "medium",
     srcs = ["test_sync_snapshot_files.py"],
     requires_docker = True,
     deps = [
