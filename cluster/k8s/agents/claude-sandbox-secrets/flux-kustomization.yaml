@@ -22,5 +22,7 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
+    - name: forgejo-images # mints the source forgejo-images-creds the ESO reflects
+      namespace: ducktape-flux
     - name: ollama-secrets
       namespace: ducktape-flux

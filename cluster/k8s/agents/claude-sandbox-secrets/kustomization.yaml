@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - claude-web-age-key.sops.yaml
   - claude-forgejo-tea.sops.yaml
+  - forgejo-images-creds-eso.yaml
