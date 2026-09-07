@@ -45,9 +45,11 @@ The interesting damage was all on the node, not on ESO:
   [containerd#9459](https://github.com/containerd/containerd/issues/9459)).
 - Containers stuck in `already in removing state`, retried every ~60 s indefinitely.
 - CSI `MountVolume.MountDevice failed: timeout waiting for mount`.
-- Ten pods wedged in `PodInitializing`/`ContainerCreating` on that one node, including a
-  `haku-console-migration` Job that produced **zero log output** and died at
-  `activeDeadlineSeconds` — the symptom that started the investigation.
+- Ten pods wedged in `PodInitializing`/`ContainerCreating` on that one node, and a
+  `haku-console-migration` Job that hung until `activeDeadlineSeconds` killed it — the
+  symptom that started the investigation. Its empty log is **not** a signal: that Job
+  writes nothing on a successful run either. Only the deadline separates the two — a
+  healthy run exits 0 in ~45 s.
 - ESO's own logs full of `client-side throttling` delays of 80–140 s and
   `dial tcp 10.96.0.1:443: i/o timeout`: it was too busy page-faulting to reach the API
   server.
