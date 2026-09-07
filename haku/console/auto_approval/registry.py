@@ -18,6 +18,7 @@ from haku.console.auto_approval.github import (
 )
 from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
 from haku.console.auto_approval.home_assistant import CALL_SERVICE_TOOL, evaluate_entity_control
+from haku.console.auto_approval.hostexec import BASH_TOOL, evaluate_host_scoped
 from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.mcp_config import (
@@ -30,6 +31,7 @@ from haku.console.mcp_config import (
     GmailLabelNamespaceAutoApprovalPolicy,
     GrantSelfListAutoApprovalPolicy,
     HomeAssistantEntityControlAutoApprovalPolicy,
+    HostexecHostScopedAutoApprovalPolicy,
     KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
@@ -178,6 +180,12 @@ class AutoApprovalPolicyRegistry:
                     if server_id == server and tool_name == CALL_SERVICE_TOOL
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
+            case HostexecHostScopedAutoApprovalPolicy(server=server):
+                return (
+                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
+                    if server_id == server and tool_name == BASH_TOOL
+                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+                )
             case KubernetesPassthroughAutoApprovalPolicy():
                 return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
             case AnyOfAutoApprovalPolicy(policies=members):
@@ -288,6 +296,10 @@ class AutoApprovalPolicyRegistry:
                 if server_id != server or tool_name != CALL_SERVICE_TOOL:
                     return
                 evaluation.record(current_path, evaluate_entity_control(tool_name, arguments, entities))
+            case HostexecHostScopedAutoApprovalPolicy(server=server, hosts=hosts):
+                if server_id != server or tool_name != BASH_TOOL:
+                    return
+                evaluation.record(current_path, evaluate_host_scoped(tool_name, arguments, hosts))
             case KubernetesPassthroughAutoApprovalPolicy(server=server):
                 if server_id != server:
                     return

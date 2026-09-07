@@ -385,6 +385,22 @@ auto_approval_policies:
       - grants_own_revoke
       - public_coder_recall_reads
       - kubectl_passthrough_redundancy_check
+  # Deliberately narrow: names ONE host and nothing about run_as/cmd. See the `hostexec` catalog
+  # entry comment above, haku/console/auto_approval/hostexec.py, and haku/docs/security.md
+  # invariant #9. This is the sole reason public-coder-agent's `hostexec` calls are ever
+  # auto-approved at all -- every other host stays exactly as manual as it is for the Operator.
+  - id: hostexec_public_coder_devbox
+    type: hostexec_host_scoped
+    server: hostexec
+    hosts: [public-coder-devbox]
+  # Wraps public_coder_safe_reads (read-only) plus the one write exception above. Kept as a
+  # separate id from public_coder_safe_reads so anything else that names that id by policies=[...]
+  # is unaffected by the exception being added here.
+  - id: public_coder_v1
+    type: any_of
+    policies:
+      - public_coder_safe_reads
+      - hostexec_public_coder_devbox
   - id: tana_safe_tools
     type: exact_tools
     tools:
@@ -538,7 +554,7 @@ access_profiles:
       - workers
       - haku_session_sandboxes
   - id: public-coder
-    auto_approval_policy: public_coder_safe_reads
+    auto_approval_policy: public_coder_v1
     allowed_harnesses:
       - codex_app_server
     can_read_profiles: []
@@ -548,6 +564,7 @@ access_profiles:
       - grants
       - haku_index
       - haku_session_sandboxes
+      - hostexec
   - id: manual-review
     auto_approval_policy: manual_review
     allowed_harnesses: []
@@ -1240,13 +1257,19 @@ mcp:
         credential:
           kind: none
     # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
-    # operator machine (wyrm2/rugged/atlas) under the operator's OWN Authentik identity. There
-    # is no standing credential: `operator_login_identity` makes each call resolve the acting
-    # Operator's stored console-login token (captured via offline_access) and exchange it
-    # (jwt-bearer) for a short-lived, single-use, per-host token that hostexecd verifies
-    # against Authentik's JWKS. This catalog entry only selects the auth mode; the in-scope
-    # hosts + their exec URLs / audiences are the top-level `hostexec:` block below. Every
-    # call is manual-approval (no auto-approve policy). See haku/hostexec/README.md.
+    # operator machine (wyrm2/rugged/atlas/public-coder-devbox) under the operator's OWN
+    # Authentik identity. There is no standing credential: `operator_login_identity` makes each
+    # call resolve the acting Operator's stored console-login token (captured via
+    # offline_access) and exchange it (jwt-bearer) for a short-lived, single-use, per-host
+    # token that hostexecd verifies against Authentik's JWKS. This catalog entry only selects
+    # the auth mode; the in-scope hosts + their exec URLs / audiences are the top-level
+    # `hostexec:` block below. Every call is manual-approval by default (haku/docs/security.md
+    # invariant #9), EXCEPT calls the `hostexec_public_coder_devbox` auto_approval_policy below
+    # matches: exactly host=public-coder-devbox, any run_as, any cmd, assigned only to the
+    # `public-coder` access profile. Auto-approval never changes the execution authority --
+    # the minted token is still the Operator's own, per invariant #9 -- it only skips the
+    # click for that one host. See haku/hostexec/README.md and
+    # haku/console/auto_approval/hostexec.py.
     hostexec:
       id: hostexec
       backend:
@@ -1271,6 +1294,13 @@ hostexec:
     atlas:
       daemon_id: atlas
       audience_client_id: hostexec-atlas
+    # public-coder-agent's own KubeVirt devbox (cluster/k8s/agents/public-coder-agent/devbox). The
+    # only host in this list an Agent (not just the Operator) may reach without a manual click --
+    # see the `hostexec` catalog entry comment above and the `hostexec_public_coder_devbox` policy
+    # below.
+    public-coder-devbox:
+      daemon_id: public-coder-devbox
+      audience_client_id: hostexec-public-coder-devbox
 node_daemons:
   daemons:
     wyrm2:
@@ -1281,4 +1311,7 @@ node_daemons:
       backends: [hostexec]
     atlas:
       display_name: atlas
+      backends: [hostexec]
+    public-coder-devbox:
+      display_name: public-coder-devbox
       backends: [hostexec]

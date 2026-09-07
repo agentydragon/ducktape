@@ -13,6 +13,13 @@
 # "May run as <run_as> on <host>." The operator holds all four; each name must
 # equal hostexecd's expected `hostexec-<run_as>-<host>` string exactly
 # (haku/hostexec/hostexecd/authentik.rs).
+#
+# public-coder-devbox's two groups exist for the same reason as every other host's: the token
+# hostexecd verifies always carries the OPERATOR's own `hostexec-*` group claims (see the provider
+# comment below) even when the call that requested it was auto-approved by policy rather than
+# clicked by a human. Auto-approval (cluster/k8s/haku/console/config.yaml's
+# `hostexec_public_coder_devbox` policy, haku/docs/security.md invariant #9) only skips the click;
+# it never changes whose Authentik identity the executed token is bound to.
 resource "authentik_group" "hostexec" {
   for_each = toset([
     "hostexec-agentydragon-wyrm2",
@@ -21,6 +28,8 @@ resource "authentik_group" "hostexec" {
     "hostexec-root-rugged",
     "hostexec-agentydragon-atlas",
     "hostexec-root-atlas",
+    "hostexec-coder-public-coder-devbox",
+    "hostexec-root-public-coder-devbox",
   ])
   name  = each.key
   users = [data.authentik_user.agentydragon.pk]
@@ -44,7 +53,7 @@ resource "authentik_property_mapping_provider_scope" "hostexec_groups" {
 # client_credentials grant bypasses it) and never distributed — the console
 # presents only the client_id + the operator's token as the assertion.
 resource "authentik_provider_oauth2" "hostexec" {
-  for_each = toset(["wyrm2", "rugged", "atlas"])
+  for_each = toset(["wyrm2", "rugged", "atlas", "public-coder-devbox"])
 
   name                  = "hostexec-${each.key}"
   client_id             = "hostexec-${each.key}"

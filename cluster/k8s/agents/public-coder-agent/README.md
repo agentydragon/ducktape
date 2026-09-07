@@ -44,11 +44,12 @@ own GitHub account and pushes to its own forks.
 
 ## Layers
 
-| Directory    | Contents                                                             |
-| ------------ | -------------------------------------------------------------------- |
-| `namespace/` | Namespace only                                                       |
-| `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist    |
-| `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies |
+| Directory    | Contents                                                                                                             |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `namespace/` | Namespace only                                                                                                       |
+| `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist                                                    |
+| `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies                                                 |
+| `devbox/`    | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached via auto-approved `hostexec` (§ TOOLING.md Host execution) |
 
 The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
 which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live
@@ -183,5 +184,9 @@ proxy environment handling.
   next substantial expansion. It intentionally includes the gateway and Matrix
   plugin, but also the broad `devtools` and git-hook closures (Bazel/`bbr`,
   Ansible, AWS CLI, Checkov, Rust tooling, and formatter/pre-commit tooling).
-  Identify the actual runtime-required subset and move the rest to the
-  dedicated devbox or on-demand tooling without breaking agent workflows.
+  `devbox/` now gives the agent a reachable devbox again (auto-approved
+  `hostexec`, TOOLING.md § Host execution), but nothing has moved to it yet:
+  identify the actual runtime-required subset of the image and move the rest
+  there without breaking agent workflows. The devbox's own image also still
+  needs a fresh publish before it carries hostexecd at all — see the
+  `TODO(revival)` comment in `devbox/virtualmachine.yaml`.

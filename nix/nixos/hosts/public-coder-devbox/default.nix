@@ -24,6 +24,7 @@ in
   imports = [
     ../../modules/vm-hardware.nix
     ../../modules/bazel
+    ../../modules/hostexecd.nix
   ];
 
   # The purpose-built image owns first boot. KubeVirt attaches the encrypted
@@ -177,6 +178,22 @@ in
       SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
       NIX_SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
     };
+  };
+
+  # hostexecd: haku-console runs approved public-coder-agent shell calls here, auto-approved only
+  # for this exact host (haku/docs/security.md invariant #9, cluster/k8s/haku/console/config.yaml's
+  # `hostexec_public_coder_devbox` policy). Its outbound HTTPS is fenced through the same iron-proxy
+  # as everything else on this VM, so it needs the proxy plus the proxy's own interception CA
+  # (nix/nixos/modules/hostexecd.nix's extra_root_cert_file), which every other hostexec host
+  # (wyrm2/rugged/atlas) leaves unset because it reaches the console directly.
+  ducktape.hostexec = {
+    enable = true;
+    httpsProxy = proxyUrl;
+    extraRootCertFile = "${proxyCaRuntimeDir}/ca-bundle.crt";
+  };
+  systemd.services.hostexecd = {
+    requires = [ "public-coder-devbox-proxy-ca.service" ];
+    after = [ "public-coder-devbox-proxy-ca.service" ];
   };
 
   # These are intentionally placeholders / non-secret routing settings. The

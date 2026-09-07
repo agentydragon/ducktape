@@ -52,6 +52,26 @@ in
       default = "https://haku.allegedly.works";
       description = "Public Haku Console origin hostexecd heartbeats and long-polls.";
     };
+
+    httpsProxy = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        HTTP(S) proxy hostexecd's outbound reqwest client should use to reach `consoleUrl`/the
+        JWKS endpoint, for a host whose egress is fenced through one (public-coder-devbox). Unset
+        on every host that reaches the console directly (wyrm2/rugged/atlas).
+      '';
+    };
+
+    extraRootCertFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Extra PEM root certificate file hostexecd should trust in addition to the built-in web
+        roots. Needed only behind a TLS-*intercepting* egress proxy, whose leaf certificate for
+        `consoleUrl` is signed by a local CA the built-in roots don't know.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -84,6 +104,14 @@ in
           # argv[0] like `hostname` (net-tools) can't be resolved at exec. Exec with the
           # system PATH so operator commands resolve as they would in a login shell.
           "PATH=/run/wrappers/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin"
+        ]
+        ++ lib.optionals (cfg.httpsProxy != null) [
+          "HTTP_PROXY=${cfg.httpsProxy}"
+          "HTTPS_PROXY=${cfg.httpsProxy}"
+          "NO_PROXY=127.0.0.1,localhost"
+        ]
+        ++ lib.optionals (cfg.extraRootCertFile != null) [
+          "HOSTEXEC_EXTRA_ROOT_CERT_FILE=${cfg.extraRootCertFile}"
         ];
       };
     };

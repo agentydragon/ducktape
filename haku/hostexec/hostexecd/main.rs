@@ -37,6 +37,14 @@ struct Config {
     daemon_token_file: PathBuf,
     #[arg(long, env = "HOSTEXEC_VERSION", default_value = env!("CARGO_PKG_VERSION"))]
     version: String,
+    /// Extra PEM root certificate to trust, in addition to the built-in web roots. reqwest
+    /// otherwise honors HTTP_PROXY/HTTPS_PROXY automatically, but a TLS-*intercepting* egress
+    /// proxy (public-coder-devbox's iron-proxy) presents a leaf certificate signed by its own
+    /// interception CA rather than the console's real one, which rustls's bundled webpki roots do
+    /// not trust. Every other host (wyrm2/rugged/atlas) reaches the console directly and leaves
+    /// this unset.
+    #[arg(long, env = "HOSTEXEC_EXTRA_ROOT_CERT_FILE")]
+    extra_root_cert_file: Option<PathBuf>,
 }
 
 struct App {
@@ -291,11 +299,19 @@ async fn main() -> Result<()> {
     if daemon_token.is_empty() {
         return Err(anyhow!("daemon token file is empty"));
     }
+    let mut client_builder = Client::builder().timeout(Duration::from_secs(30));
+    if let Some(cert_file) = &config.extra_root_cert_file {
+        let pem =
+            std::fs::read(cert_file).with_context(|| format!("read {}", cert_file.display()))?;
+        let cert = reqwest::Certificate::from_pem(&pem)
+            .with_context(|| format!("parse PEM certificate {}", cert_file.display()))?;
+        client_builder = client_builder.add_root_certificate(cert);
+    }
     let app = Arc::new(App {
         jwks: Jwks::new(config.jwks_url.clone()),
         config,
         daemon_token,
-        client: Client::builder().timeout(Duration::from_secs(30)).build()?,
+        client: client_builder.build()?,
         instance_id: Uuid::new_v4(),
         replay: ReplayStore::new(),
     });

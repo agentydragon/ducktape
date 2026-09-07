@@ -238,6 +238,15 @@ privileged node operations are not routine direct-reader diagnostics.
 and `rugged`. It runs under an explicitly authorized host user, commonly `agentydragon`, whose host
 and cluster permissions can be much broader than the public-coder Pod's identities.
 
+`hostexec/bash` also reaches this Agent's own dedicated devbox VM
+(`cluster/k8s/agents/public-coder-agent/devbox`, `host=public-coder-devbox`), which exists
+specifically for the heavier build tooling this Pod's own image does not carry (Bazel/BuildBuddy,
+direnv, full Git checkouts). Calls to that one host auto-approve — no operator click, any `run_as`
+(`coder` or `root`), any `cmd` — under a narrow policy scoped to exactly that host
+(`haku/docs/security.md` invariant #9, `haku/console/auto_approval/hostexec.py`). Every other host
+(`wyrm2`, `rugged`, `atlas`) stays exactly as manual-approval as it always was; do not assume the
+devbox exception generalizes.
+
 Central valid uses include:
 
 - admin-level kubectl diagnostics or operations that the public-coder ServiceAccount and current
@@ -263,14 +272,16 @@ state which host-local fact or elevated permission makes the direct Pod surfaces
 
 ## Current auto-approval summary
 
-As of 2026-08-21, `public-coder-agent` uses the `public-coder` access profile. Its standing Haku
+As of 2026-09-06, `public-coder-agent` uses the `public-coder` access profile. Its standing Haku
 policy auto-approves reviewed GitHub reads scoped to:
 
 - `agentydragon/ducktape`; and
 - `agentydragon/gaffer-private`.
 
 The repository evaluator checks ordinary owner/repository fields and applies stricter parsing to
-code and pull-request search queries. Other Haku operations remain approval-gated unless the live
+code and pull-request search queries. It also auto-approves `hostexec/bash` calls with
+`host=public-coder-devbox` (any `run_as`, any `cmd`) — see § Host execution above. Every other Haku
+operation, including `hostexec/bash` on any other host, remains approval-gated unless the live
 configuration has changed.
 
 Do not infer public-coder authority from the broader `haku_v1` profile. That profile belongs to Haku

@@ -287,6 +287,22 @@ class HomeAssistantEntityControlAutoApprovalPolicy(AutoApprovalPolicyBase):
         return value
 
 
+class HostexecHostScopedAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Conditionally auto-approve `hostexec` `bash` calls confined to named hosts.
+
+    hostexec's execution authority never changes: the console still mints the approving Operator's
+    own short-lived per-host Authentik token on every call (haku/docs/security.md invariant #9)
+    regardless of whether a human clicked approve or this policy matched. ``hosts`` is the only
+    constraint — deliberately never ``run_as`` or ``cmd`` — so the exception this policy grants is
+    legible as "which machine may skip the click", not "which command". See
+    ``haku/console/auto_approval/hostexec.py``.
+    """
+
+    type: Literal["hostexec_host_scoped"] = "hostexec_host_scoped"
+    server: str = Field(min_length=1)
+    hosts: set[str] = Field(min_length=1)
+
+
 class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve reviewed GitHub reads for one repository."""
 
@@ -348,6 +364,7 @@ type AutoApprovalPolicy = Annotated[
     | GmailLabelNamespaceAutoApprovalPolicy
     | GitHubRepositoryAutoApprovalPolicy
     | HomeAssistantEntityControlAutoApprovalPolicy
+    | HostexecHostScopedAutoApprovalPolicy
     | GitHubPublicRepositoryAutoApprovalPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy

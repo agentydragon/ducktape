@@ -82,6 +82,7 @@ py_library(
         ":github",
         ":gmail",
         ":home_assistant",
+        ":hostexec",
         ":kubernetes",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
@@ -108,6 +109,25 @@ py_test(
         "//haku/console/tools:google_calendar",
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "hostexec",
+    srcs = ["hostexec.py"],
+    deps = [":decision"],
+)
+
+py_test(
+    name = "test_hostexec",
+    srcs = ["test_hostexec.py"],
+    deps = [
+        ":decision",
+        ":hostexec",
+        "//:conftest",
+        "//haku/console:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
