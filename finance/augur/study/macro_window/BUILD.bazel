@@ -1,0 +1,32 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "compare",
+    srcs = ["compare.py"],
+    deps = [
+        "//finance/augur/fit:macro_var",
+        "//finance/augur/fit:structural_macro",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/model:structural_macro",
+        "//finance/augur/study/trinity:evidence_snapshot",
+        "//finance/evidence:sources",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "compare_test",
+    size = "medium",
+    srcs = ["compare_test.py"],
+    # Fetches the record from the public upstreams, so it is off CI's default filter for the
+    # reason //finance/augur/study/trinity:replay_test is: an upstream outage must not redden an
+    # unrelated PR. Run it by name when the window question is being decided.
+    tags = ["manual"],
+    deps = [
+        ":compare",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/fit:structural_macro",
+        "@pypi//pytest_bazel",
+    ],
+)

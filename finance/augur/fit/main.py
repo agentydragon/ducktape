@@ -35,7 +35,7 @@ import yaml
 
 from finance.augur.fit.data import load_evidence
 from finance.augur.fit.state_space import fit_state_space_artifact
-from finance.augur.fit.structural_macro import fit_structural_macro_defaults
+from finance.augur.fit.structural_macro import MacroFitWindow, fit_structural_macro_defaults
 from finance.augur.model.provider_config import StateSpaceProviderConfig, VecmProviderConfig
 from finance.augur.model.state_space import write_state_space_artifact
 from finance.augur.model.structural_macro import StructuralMacroFittedDefaults
@@ -116,7 +116,9 @@ def main(argv: list[str] | None = None) -> int:
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
         )
     elif args.model == "structural_macro":
-        fitted = fit_structural_macro_defaults(evidence_dir_from_env())
+        # The shipped defaults stay on the 1955 FRED window until the long record is scored
+        # against it (#5509); switching before measuring would swap the estimate on a hunch.
+        fitted = fit_structural_macro_defaults(evidence_dir_from_env(), macro_window=MacroFitWindow.FRED_1955)
     else:
         raise AssertionError(f"unsupported model {args.model!r}")
 
