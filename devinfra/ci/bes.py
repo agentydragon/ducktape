@@ -40,7 +40,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 DEFAULT_BASE_URL = "https://app.buildbuddy.io"
 
@@ -64,6 +64,10 @@ class Output:
     digest: str
     size: int
     output_group: str
+    #: The aspect that produced this file, or "" for the target's own outputs.
+    #: bazel-ci runs the lint aspects, whose report files complete under the same
+    #: label; a caller after the target's real artifact must filter these out.
+    aspect: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -184,6 +188,7 @@ def parse(raw: bytes) -> Invocation:
         if completed is None:
             continue
         label = event["id"]["targetCompleted"]["label"]
+        aspect = event["id"]["targetCompleted"].get("aspect", "")
         for group in completed.get("outputGroup") or []:
             outputs.extend(
                 Output(
@@ -193,10 +198,31 @@ def parse(raw: bytes) -> Invocation:
                     digest=file.get("digest", ""),
                     size=int(file.get("length", 0)),
                     output_group=group.get("name", ""),
+                    aspect=aspect,
                 )
                 for file in files_in(group.get("fileSets") or [])
             )
     return Invocation(outputs=_dedup(outputs), test_status=test_status)
+
+
+def artifact_output(by_label: Mapping[str, list[Output]], label: str) -> Output | str:
+    """The one file `label` published as its artifact, or a reason it has none.
+
+    "Artifact" means the target's own default output group — not lint-aspect
+    reports completing under the same label, and not `_validation` outputs. A
+    release/pin target publishes exactly one such file; anything else is a reason
+    string the caller turns into its own failure mode (the planner fails open,
+    the asset resolver fails loud).
+    """
+    artifacts = sorted(
+        {o for o in by_label.get(label, []) if not o.aspect and o.output_group == "default"}, key=lambda o: o.path
+    )
+    if not artifacts:
+        return f"{label}: not reported by the build"
+    if len(artifacts) > 1:
+        paths = ", ".join(o.path for o in artifacts)
+        return f"{label}: reports {len(artifacts)} default outputs ({paths}); an artifact target must publish one"
+    return artifacts[0]
 
 
 def merge(invocations: Iterable[Invocation]) -> Invocation | None:

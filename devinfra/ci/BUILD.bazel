@@ -70,6 +70,20 @@ py_library(
 )
 
 py_library(
+    name = "release_assets",
+    srcs = ["release_assets.py"],
+    data = [
+        "artifact_targets.json",
+        "//skills:skills_registry.json",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bes",
+        ":plan_releases",
+    ],
+)
+
+py_library(
     name = "bes",
     srcs = ["bes.py"],
     visibility = ["//:__subpackages__"],
@@ -191,6 +205,18 @@ py_test(
     deps = [
         ":bes",
         ":plan_releases",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_release_assets",
+    srcs = ["test_release_assets.py"],
+    deps = [
+        ":bes",
+        ":plan_releases",
+        ":release_assets",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

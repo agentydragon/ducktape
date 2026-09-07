@@ -8,7 +8,7 @@ The publisher moved with its code to <../pr_visuals/README.md>.
 
 ## `artifact_targets.json`
 
-Single source of truth for Bazel targets, artifact outputs, and release
+Single source of truth for Bazel targets, released asset names, and release
 grouping for every artifact pinned in `nix/artifact-pins.json` (except `bb`,
 which is an external buildbuddy-io binary). Consumed by:
 
@@ -29,9 +29,10 @@ Two tables, symmetric on pins:
 ```text
 pins:
   <pin_name>:
-    target:   Bazel label that produces `output`
-    output:   file path under bb-out/
-    release:  release group this pin ships in
+    target:    Bazel label that produces the asset
+    filename:  released asset name — the built file's basename, and the
+               download-URL component sync_pins.py builds
+    release:   release group this pin ships in
 ```
 
 Every pin corresponds 1:1 to a same-named entry in `nix/artifact-pins.json`.
@@ -49,8 +50,13 @@ releases:
 
 Every pin assigned to a release has equal standing. `release-artifact` hashes
 the complete, filename-addressed asset set to build the release tag suffix and
-uploads every output. For backward compatibility, a one-asset release retains
+uploads every asset. For backward compatibility, a one-asset release retains
 the SHA-256 of that asset as its release identity.
+
+No file spells a Bazel output path: after each build, `release_assets.py`
+resolves every asset's `bb-out/` location from that build's own event stream by
+label — which also absorbs configuration differences like debundle's `-c opt` —
+and refuses a built file whose basename contradicts the pin's `filename`.
 
 `nixPackage: false` means release.yml still publishes it but the PR gate
 skips it — typical for binary drops (bbapi, claude-hook-rs, debundle,
@@ -72,7 +78,7 @@ Two pins ship on one release tag: the Python wheel and the GNOME Shell
 extension zip come out of one `bazel build //aiquota:aiquota_wheel
 //aiquota/gnome:aiquota_zip` invocation, and `nix/packages/gnome-shell-aiquota.nix`
 consumes both via `artifacts.aiquota` and `artifacts.aiquota-extension`.
-Changing either output changes the release identity and publishes both assets.
+Changing either asset changes the release identity and publishes both.
 
 **`haku-approvals`**
 
