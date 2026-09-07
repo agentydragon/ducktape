@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
+from itertools import pairwise
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -1060,6 +1061,88 @@ class MortgageInterestDeductionPolicy(BaseModel):
             "diverge for moderately-large mortgages."
         ),
     )
+
+
+class SpendingTier(BaseModel):
+    """One rung of a spending ladder: a whole standard of living, and what it costs.
+
+    Not a budget line. A tier is a complete life at a cost, so a plan that can no longer
+    fund the tier above lands on this one FULLY funded rather than partially — which is
+    what makes "how long did it hold each standard of living" a question with an answer.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(description="How this tier is reported. Unique within its ladder.")
+    monthly_spend: AmountSpec = Field(
+        description=(
+            "What this standard of living costs per month. An `AmountSpec`, so a tier can be "
+            "held in real terms by indexing it (`series=InflationKey()`) rather than fixed in "
+            "nominal dollars over a horizon long enough for that to matter."
+        )
+    )
+
+
+class SpendingLadder(BaseModel):
+    """Ordered standards of living, most expensive first, entered downward only.
+
+    **The one-way traversal is a deliberate simplification, not an oversight.** A recovery
+    large enough to climb back to a tier you left is a FAVOURABLE assumption, and a model
+    should not make favourable assumptions silently — so the ladder cannot express climbing
+    back, and a study that wants it has to say so by changing this type. Revisit if the
+    constraint turns out to dominate the answer rather than merely simplify it.
+
+    "Downward" is well defined because `tiers` is strictly decreasing in cost, so the
+    ladder's own index order IS its cost order and monotone traversal is an index that
+    never decreases. That is the property this type exists to guarantee; selecting which
+    tier is live in a given month of a given rollout is the engine's job, not this type's.
+
+    The bottom rung is a funded life, not zero spend and not a return to earned income.
+    Every tier is therefore positive: a ladder whose floor is "spend nothing" describes
+    running out of money, which the failure vector already reports.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    tiers: tuple[SpendingTier, ...] = Field(
+        description="Most expensive first. At least one; a single-tier ladder has no fallback."
+    )
+
+    @model_validator(mode="after")
+    def _reject_unordered_and_degenerate(self) -> SpendingLadder:
+        if not self.tiers:
+            raise ValueError(
+                "a spending ladder names no tiers; it has to describe at least the standard of "
+                "living the plan intends, even when there is no fallback below it"
+            )
+        names = [tier.name for tier in self.tiers]
+        if len(set(names)) != len(names):
+            duplicated = sorted({name for name in names if names.count(name) > 1})
+            raise ValueError(
+                f"spending ladder names {duplicated} more than once; tiers are reported by name, "
+                "so a duplicate makes time-in-tier unattributable"
+            )
+        # Ordering is checked on the CONFIGURED base amounts, for the reason `validate_band_bounds`
+        # checks the cash band that way: a tier may be CPI-indexed, hence traced, and a traced
+        # value cannot drive a raise. With one price level every tier scales by the same series,
+        # so an ordering that holds here holds on every path. That argument is exactly what a
+        # second price level would break — a lower tier in another economy is not guaranteed to
+        # stay lower — so this check has to be revisited alongside per-tier inflation.
+        amounts = [_base_amount(tier.monthly_spend) for tier in self.tiers]
+        for (above, cost_above), (below, cost_below) in pairwise(zip(names, amounts, strict=True)):
+            if cost_below >= cost_above:
+                raise ValueError(
+                    f"spending ladder tier {below!r} costs {cost_below} but sits below {above!r} at "
+                    f"{cost_above}; tiers are ordered by cost, and equal or inverted rungs make "
+                    "'step down' meaningless"
+                )
+        if (floor := amounts[-1]) <= 0:
+            raise ValueError(
+                f"spending ladder's bottom tier {names[-1]!r} costs {floor}; the bottom rung is a "
+                "funded life, not zero spend. A plan with nothing left to cut is one that has run "
+                "out, which the failure vector already reports"
+            )
+        return self
 
 
 class Scenario(BaseModel):
