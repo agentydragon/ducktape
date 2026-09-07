@@ -5,11 +5,13 @@
   artifacts,
 }:
 let
-  # The ducktape umbrella wheel is built (on Bazel) against
-  # `fastmcp==3.4.4` (see requirements_bazel.txt). Nixpkgs 26.05 ships 3.2,
-  # while py-key-value-aio is older than FastMCP's >=0.4.4 floor. Package those
-  # two deltas against the stable Python package set so the whole closure shares
-  # one consistent site-packages.
+  # The ducktape umbrella wheel is built (on Bazel) against `fastmcp==4.0.3` /
+  # `mcp==2.1.1` (see requirements_bazel.txt). The pinned nixpkgs revision predates
+  # both mcp-sdk v2 (nixpkgs still ships mcp 1.26.0) and mcp v2's new transitive
+  # deps (mcp-types, httpx2/httpcore2 -- all three postdate the pin entirely), and
+  # py-key-value-aio is older than FastMCP's floor. Package those deltas against
+  # the stable Python package set so the whole closure shares one consistent
+  # site-packages.
   python3 = pkgs.python3.override {
     self = python3;
     packageOverrides =
@@ -22,6 +24,21 @@ let
       in
       {
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
+          python3Packages = pyfinal;
+        };
+        idna = pkgs.callPackage ./idna.nix {
+          python3Packages = pyfinal;
+        };
+        httpcore2 = pkgs.callPackage ./httpcore2.nix {
+          python3Packages = pyfinal;
+        };
+        httpx2 = pkgs.callPackage ./httpx2.nix {
+          python3Packages = pyfinal;
+        };
+        mcp-types = pkgs.callPackage ./mcp-types.nix {
+          python3Packages = pyfinal;
+        };
+        mcp = pkgs.callPackage ./mcp.nix {
           python3Packages = pyfinal;
         };
         inherit (fastmcpPackages) fastmcp fastmcp-slim;
