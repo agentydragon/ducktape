@@ -72,7 +72,7 @@ def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
 class RetryableJWTVerifier(JWTVerifier):
     """Retry transient JWKS-fetch failures before FastMCP swallows them.
 
-    `JWTVerifier._get_jwks_key` catches any `httpx.HTTPError` from `_fetch_jwks`
+    `JWTVerifier._get_jwks_key` catches any `httpx2.HTTPError` from `_fetch_jwks`
     (including timeouts and connect errors, not just 5xx) and re-raises as
     `ValueError`; `load_access_token` (both this class's own, and
     `OAuthProxy.load_access_token` on every incoming request) then catches that
