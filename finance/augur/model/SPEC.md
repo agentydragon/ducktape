@@ -42,6 +42,48 @@ start. Equity is a marginal and keeps its own much longer history; `rate_beta`, 
 parameter linking equity to the macro state, pays the common-window cost and comes out
 indistinguishable from zero (gap 2).
 
+### The 1955 window is a choice, and the alternative is measured
+
+`fit_structural_macro_defaults` takes a required `MacroFitWindow`. The shipped defaults use
+`FRED_1955`; `LONG_RECORD_1926` fits the same VAR on the century-long record
+`load_macro_history` assembles. Run the comparison with
+`bbr test //finance/augur/study/macro_window:compare_test` (manual — it fetches the upstreams).
+
+Measured 2026-09-07, both fits off one evidence snapshot:
+
+|                                   | FRED 1955               | long record              |
+| --------------------------------- | ----------------------- | ------------------------ |
+| span                              | 1955-07 – 2026-07 (852) | 1927-07 – 2026-07 (1188) |
+| spectral radius of `A`            | 0.9854                  | 0.9939                   |
+| short-rate shock / stationary sd  | 0.00479 / 0.03349       | 0.00629 / 0.02926        |
+| term-spread shock / stationary sd | 0.00463 / 0.01551       | 0.00631 / 0.01217        |
+| inflation shock / stationary sd   | 0.00360 / 0.02502       | 0.00608 / 0.03749        |
+
+Three things follow, and the third is the reason the window is not simply switched.
+
+**Persistence roughly doubles in half-life** — 47 months against 113. Both fits are stationary,
+but the long record says a shock takes about 2.4x as long to decay, so a decade of high
+inflation is much more reachable.
+
+**The windows disagree about which state carries the long-run uncertainty.** On the 1955 fit
+the short rate has the widest stationary spread and inflation is tighter; on the long record
+that inverts, and inflation is widest by half. For a CPI-indexed spender that is not a
+magnitude difference, it is a different account of what the risk is.
+
+**The pre-1951 rate peg is visible, exactly as the risk was stated.** The long record's term
+spread has a 22% NARROWER stationary spread despite larger shocks, which is what a pegged long
+rate looks like — a spread that cannot move. Pooling a policy regime that no longer exists into
+one stationary process contaminates that block, so "longer" is not automatically "better" here.
+
+**Not yet established: which window predicts better.** The comparison above is of fitted
+parameters. Held-out predictive density and the drawdown comparison have not been run, so
+nothing here ranks the two. The 1955 window stays until they do.
+
+A caveat that survives whichever wins: the two fits do not read the same series. The long
+record's short rate is Ken French's one-month T-bill rather than the fed funds rate, its long
+rate is `LTGOVTBD` spliced into `GS10`, and its CPI is the NSA series — so any difference is
+window AND measurement, and nothing above separates them.
+
 **Deviation worth knowing:** the VAR reads `CPIAUCSL` (seasonally adjusted) while the historical
 replay's record reads `CPIAUCNS` (not adjusted, and reaching 1913 rather than 1947 — gap 4). The
 two are not interchangeable at monthly frequency, but both consumers read a trailing-year ratio,
