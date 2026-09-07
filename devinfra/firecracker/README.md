@@ -19,14 +19,15 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 | Manager service    | `manager/`                       | FastAPI VMM, creates VM pods       |
 | NixOS rootfs       | `nix/nixos/hosts/fc_dev/`        | NixOS config for guest rootfs      |
 | Rootfs provisioner | `provision-rootfs.sh`            | Build rootfs via Nix, dd to LV     |
-| K8s manifests      | `deploy/`                        | Flux-managed (suspended)           |
+| K8s manifests      | `deploy/`                        | Archived — unwired from Flux       |
 | KVM plugin         | `cluster/k8s/kvm-device-plugin/` | Device plugin for `/dev/kvm`       |
 
 ## Quick Start
 
-The in-cluster deployment (`cluster/k8s/claude-sandbox-firecracker.yaml`) is
-currently suspended — nothing is deployed to `claude-sandbox` right now. Flip
-its `suspend` to `false` to revive it.
+The in-cluster deployment is archived (`deploy/` is no longer wired into
+`cluster/k8s/kustomization.yaml`) — nothing is deployed to `claude-sandbox`
+right now. To revive it, re-add a Flux Kustomization pointing at `./deploy`
+(see `cluster/k8s/props.yaml` for the shape).
 
 ```bash
 # Provision base rootfs on wyrm2 (requires Nix + LVM thin pool)

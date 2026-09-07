@@ -65,8 +65,6 @@ resources:
   - agents/authentik-jwt-rotation/flux-kustomization.yaml
   - agents/forgejo-token-rotation/flux-kustomization.yaml
   - agents/attic-jwt-rotation/flux-kustomization.yaml
-  # --- claude-sandbox-firecracker (parked; flip cluster/k8s/claude-sandbox-firecracker.yaml suspend to revive) ---
-  - claude-sandbox-firecracker.yaml
   - agents/alloy-otlp-bearer/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - x/google-workspace-mcp/flux-kustomization.yaml
