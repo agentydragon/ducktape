@@ -187,6 +187,8 @@ proxy environment handling.
   `devbox/` now gives the agent a reachable devbox again (auto-approved
   `hostexec`, TOOLING.md § Host execution), but nothing has moved to it yet:
   identify the actual runtime-required subset of the image and move the rest
-  there without breaking agent workflows. The devbox's own image also still
-  needs a fresh publish before it carries hostexecd at all — see the
-  `TODO(revival)` comment in `devbox/virtualmachine.yaml`.
+  there without breaking agent workflows. The devbox's own root disk is an
+  ephemeral KubeVirt `containerDisk`, published automatically by
+  `.github/workflows/public-coder-devbox-image.yml` and kept current by Flux
+  image automation — no manual republish step, but also no persistent local
+  state (Bazel/BuildBuddy caches, checkouts) across an image update or restart.

@@ -1,6 +1,13 @@
 # public-coder-devbox - headless NixOS VM used by the public-coder OpenClaw
 # instance for Git checkouts, direnv, Bazel, BuildBuddy, and tests.
 #
+# Ephemeral KubeVirt containerDisk root (flake output
+# public-coder-devbox-container-disk, published by
+# .github/workflows/public-coder-devbox-image.yml and kept current by Flux image
+# automation) -- nothing written to "/" survives an image update or VM restart.
+# Accepted: Bazel/BuildBuddy already caches remotely, and this VM's whole point is
+# to always run the current devel config, not to carry local state.
+#
 # The VM's egress is fenced at the KubeVirt virt-launcher Pod: DNS and the
 # public-coder-agent iron-proxy are the only allowed destinations. The proxy CA
 # is not copied into Git. trust-manager publishes the live CA bundle as a

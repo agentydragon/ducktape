@@ -2,7 +2,11 @@
 
 In-cluster builder + publisher for the NixOS qcow2 image outputs used by CDI to
 provision KubeVirt VMs (for example `.#bootstrap-image` and
-`.#public-coder-devbox-image`).
+`.#agent-box-image`). A VM whose root disk doesn't need to persist across
+image updates is usually better served by a KubeVirt `containerDisk` published
+via GitHub Actions + Flux image automation instead — see
+`.github/workflows/cpap-gateway-image.yml` and
+`.github/workflows/public-coder-devbox-image.yml` for that pattern.
 
 Why this exists: a GitHub Actions workflow previously did the publish from
 runner side and uploaded through the public S3 gateway at
@@ -32,12 +36,12 @@ instead, which has no such constraint. The legacy workflow has been removed.
 kubectl create job --from=cronjob/vm-images-publisher \
   "publish-$(date +%s)" -n vm-images-publisher
 
-# Publish the full public-coder-devbox image instead
-job_name="publish-devbox-$(date +%s)"
+# Publish the full agent-box image instead
+job_name="publish-agent-box-$(date +%s)"
 kubectl create job --from=cronjob/vm-images-publisher "$job_name" \
   -n vm-images-publisher
 kubectl -n vm-images-publisher set env "job/$job_name" \
-  IMAGE_OUTPUT=public-coder-devbox-image OBJECT_PREFIX=public-coder-devbox
+  IMAGE_OUTPUT=agent-box-image OBJECT_PREFIX=agent-box
 
 # Watch
 kubectl -n vm-images-publisher logs -f -l batch.kubernetes.io/job-name=publish-…

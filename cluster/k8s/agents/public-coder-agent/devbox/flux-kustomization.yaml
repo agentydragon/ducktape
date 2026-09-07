@@ -4,11 +4,8 @@ metadata:
   name: public-coder-agent-devbox
   namespace: ducktape-flux
   annotations:
-    description: KubeVirt build/test devbox for public-coder-agent (Bazel/BuildBuddy/direnv). hostexecd lets the agent run commands on it under an auto-approved, host-scoped policy (haku/docs/security.md invariant #9).
+    description: KubeVirt build/test devbox for public-coder-agent (Bazel/BuildBuddy/direnv), ephemeral containerDisk root. hostexecd lets the agent run commands on it under an auto-approved, host-scoped policy (haku/docs/security.md invariant #9).
 spec:
-  # Keep suspended until a fresh image (with ducktape.hostexec.enable) is published and
-  # virtualmachine.yaml's DataVolume URL is updated -- see the TODO(revival) comment there.
-  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 30m
@@ -30,24 +27,10 @@ spec:
       namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
-    - name: cdi
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: seaweedfs-public-s3
-      namespace: ducktape-flux
-    - name: local-path-provisioner
+    - name: forgejo-images
       namespace: ducktape-flux
   wait: true
   healthChecks:
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: public-coder-devbox-vm-images-s3-reader
-      namespace: public-coder-agent
-    - apiVersion: cdi.kubevirt.io/v1beta1
-      kind: DataVolume
-      name: public-coder-devbox-root
-      namespace: public-coder-agent
     - apiVersion: kubevirt.io/v1
       kind: VirtualMachine
       name: public-coder-devbox

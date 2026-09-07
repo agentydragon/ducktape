@@ -7,31 +7,6 @@ metadata:
     app.kubernetes.io/name: public-coder-devbox
 spec:
   runStrategy: Always
-  dataVolumeTemplates:
-    - metadata:
-        name: public-coder-devbox-root
-      spec:
-        source:
-          s3:
-            # This is the full declarative public-coder-devbox image. Its NixOS
-            # systemd units consume the host-key and proxy-CA disks directly.
-            #
-            # TODO(revival): this is the last image published before the VM was retired. It
-            # predates hostexecd (nix/nixos/hosts/public-coder-devbox/default.nix now sets
-            # ducktape.hostexec.enable). Before flipping public-coder-agent-devbox's Flux
-            # Kustomization from suspend:true, publish a fresh image
-            # (cluster/k8s/vm-images-publisher/README.md, IMAGE_OUTPUT=public-coder-devbox-image
-            # OBJECT_PREFIX=public-coder-devbox) and update this URL to the new object.
-            url: "https://s3.allegedly.works/vm-images/public-coder-devbox/3b1eed43befc230db0056680a5ded42e74233426.qcow2"
-            secretRef: public-coder-devbox-vm-images-s3-reader
-        pvc:
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: 80Gi
-          storageClassName: local-path-ovh
-          volumeMode: Filesystem
   template:
     metadata:
       labels:
@@ -86,8 +61,17 @@ spec:
           pod: {}
       volumes:
         - name: rootdisk
-          dataVolume:
-            name: public-coder-devbox-root
+          containerDisk:
+            # This is an ephemeral VM disk (accepted tradeoff: no Bazel/BuildBuddy
+            # cache, checkout, or other local state survives an image update or VM
+            # restart). Flux ImageUpdateAutomation rewrites this tag after
+            # .github/workflows/public-coder-devbox-image.yml publishes a new one --
+            # see the public-coder-devbox ImagePolicy in
+            # ../../../flux-image-automation-forgejo/. Until the workflow's first run
+            # completes, this placeholder tag doesn't exist yet and the pod sits in
+            # ImagePullBackOff -- expected, and self-resolving once CI publishes.
+            image: git.allegedly.works/ducktape-ci/public-coder-devbox:unpublished # {"$imagepolicy": "flux-system:public-coder-devbox"}
+            imagePullPolicy: IfNotPresent
         - name: proxy-ca
           configMap:
             name: public-coder-agent-proxy-ca-cert

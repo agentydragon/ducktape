@@ -1,0 +1,59 @@
+# Build the ephemeral public-coder-devbox qcow2 and publish it as a KubeVirt
+# containerDisk image in the private Forgejo registry. Flux tracks the
+# resulting devel-* tags through the public-coder-devbox ImagePolicy.
+name: public-coder-devbox image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/nixos/hosts/public-coder-devbox/**"
+      - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/nixos/modules/bazel/**"
+      - "nix/nixos/modules/hostexecd.nix"
+      - "nix/ssh-keys.nix"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/public-coder-devbox-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-push:
+    name: Build & push public-coder-devbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: git.allegedly.works/ducktape-ci/public-coder-devbox
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-nix-attic
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Build containerDisk image
+        run: nix build .#public-coder-devbox-container-disk --print-build-logs
+
+      - name: Compute tag
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      # Keep feature-branch/manual runs from publishing a tag that Flux would
+      # consider deployable. workflow_dispatch on devel remains useful for a
+      # retry after a transient registry failure.
+      - name: Push to Forgejo registry
+        if: github.ref_name == 'devel'
+        run: |
+          ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
+          echo "$FORGEJO_IMAGES_PASSWORD" | skopeo login git.allegedly.works \
+            -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+          skopeo copy --insecure-policy \
+            "docker-archive:$(readlink -f result)" \
+            "docker://$ref"
+          echo "pushed $ref" >> "$GITHUB_STEP_SUMMARY"
