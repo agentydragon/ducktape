@@ -118,6 +118,36 @@ compares different SERIES, not the two spans of the one series these arms share.
 row as reported and unexplained. The horizons a 30-year spender is exposed to are the ones where
 dynamics dominate, and those agree with each other.
 
+### What survives varying the scoring period: the short horizons, not the long ones
+
+`stability.py` runs the century-against-1955 comparison over three origin sets (1975, 1985, 1995)
+and reports whether each difference kept its sign. **Eight of sixteen comparisons change sign.**
+What flips is not scattered — it is sorted by horizon:
+
+| horizon  | joint density | short rate | term spread | inflation |
+| -------- | ------------- | ---------- | ----------- | --------- |
+| 1 month  | FLIPS         | holds      | holds       | holds     |
+| 1 year   | holds         | FLIPS      | FLIPS       | holds     |
+| 5 years  | holds         | FLIPS      | FLIPS       | FLIPS     |
+| 10 years | FLIPS         | FLIPS      | holds       | holds     |
+
+The stable statements are all short-horizon and mostly per-state: at one month the century is
+worse on inflation and better on both rate states, in every period; at one and five years it has
+the better joint density. **At ten years neither the joint density nor the short rate is
+established at all** — the ranking there depends on which decades it is scored over, and by a
+lot (the ten-year joint density gap runs -0.13, +0.32, +0.71 across the three periods).
+
+That is the horizon a retirement actually lives on, and it is the one this record cannot resolve.
+The cause is the same one `plans/allocation_program.md` finding 6 names for the replay sampler:
+long-horizon observations are few and overlapping, so a ten-year comparison has very little
+independent evidence behind it however many origins it prints. Switching from replay to a fitted
+model does not create observations, and this is what that limit looks like from the fitted side.
+
+Read the two sections above through this: their long-horizon rows are period-specific, and the
+5509 conclusion that the century "buys inflation and costs rates" holds for inflation and does
+not hold for the rate states once the period is varied. "holds" here means only that the sign was
+consistent, not that the gap was material.
+
 ### Splitting the windows by equation, and why its answer is not stable
 
 The estimator is one OLS per equation over shared regressors, so each equation can take its own

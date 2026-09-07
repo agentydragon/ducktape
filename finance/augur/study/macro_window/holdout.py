@@ -108,14 +108,32 @@ def single_window(label: str, start: date) -> Arm:
     )
 
 
-def score_arms(path: MacroStatePath, arms: Sequence[Arm], *, horizons: Sequence[int] = HORIZONS) -> list[ArmScore]:
+def score_arms(
+    path: MacroStatePath,
+    arms: Sequence[Arm],
+    *,
+    horizons: Sequence[int] = HORIZONS,
+    first_origin_month: date | None = None,
+) -> list[ArmScore]:
     """Refit every arm at every origin and score its h-step forecast against what happened.
 
     Every arm sees the same origins and is scored against the same observations, which is the
     only reason the means are comparable at all.
+
+    `first_origin_month` starts the origins LATER than the arms require. That exists because the
+    scoring period turned out to move the answer — a ranking measured from 1975 is not the one
+    measured from 1995 — so the period has to be a knob a caller can vary rather than a
+    consequence of which arms happen to be in the comparison (`stability.py`).
     """
 
     first_origin = _first_origin(path, latest_start=max(arm.shortest_window_start for arm in arms))
+    if first_origin_month is not None:
+        requested = bisect_left(path.months, first_origin_month)
+        if requested < first_origin:
+            raise ValueError(
+                f"{first_origin_month} precedes {path.months[first_origin]}, where the arms become fittable"
+            )
+        first_origin = requested
     last_origin = len(path.months) - 1
     if first_origin > last_origin - min(horizons):
         raise ValueError(f"no scorable origins: {first_origin=} against {len(path.months)} states")

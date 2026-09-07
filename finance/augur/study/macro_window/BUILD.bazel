@@ -107,3 +107,27 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "stability",
+    srcs = ["stability.py"],
+    deps = [
+        ":holdout",
+        "//finance/augur/fit:macro_var",
+    ],
+)
+
+py_test(
+    name = "stability_test",
+    size = "medium",
+    srcs = ["stability_test.py"],
+    # Manual for the same reason :holdout_test is: it fetches from the public upstreams.
+    tags = ["manual"],
+    deps = [
+        ":holdout",
+        ":stability",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
