@@ -1,11 +1,10 @@
 # The Trinity all-bond row is 43% against a published 80%
 
-**Resolved: the cell has no resolution.** At a 3% withdrawal the 0%-equity row sits exactly
-where the mass of 30-year windows crosses the survival boundary, so roughly one point of it
-rides on one basis point a year of compound return. The apparent 27-point disagreement is
-about a quarter point a year in the bond sleeve's level, amplified about a hundredfold by a
-knife-edge statistic. Details in § What it actually is; the ruled-out sections below are kept
-because two plausible stories died there and neither should be re-walked.
+**Partly resolved.** Of the 33 points between this sleeve and Table 3 on a consistent basis,
+19 are the bond series — a quarter point a year of compound return, amplified by a cell that
+sits on the survival boundary — and **14 remain unexplained**. Details in § What it actually
+is. The ruled-out sections below are kept because two plausible stories died there
+(funds-versus-ladders, then duration) and neither should be re-walked.
 
 ## Ruled out: the fund is a fund and Trinity priced a ladder
 
@@ -93,8 +92,42 @@ Twenty basis points a year buys 22 points of this cell and does not improve the 
 the actual return series at all. That is the whole phenomenon: about one point of "success
 rate" per basis point per year, on 32 windows holding roughly two independent observations.
 
-The residual after that — SBBI's own 66% against Table 3's 80%, on a window set friendlier than
-the paper's — is 14 points, i.e. about 14 basis points a year. There is nothing left to explain.
+### Why 3% and not the others
+
+A 30-year CPI-indexed withdrawal survives iff the window's real return clears a break-even
+fixed by the rate. A cell is sensitive exactly insofar as window mass sits near its own
+break-even, and that is the whole story of which cells move:
+
+| rate | break-even real return | median window minus break-even | windows within ±0.25pp |
+| ---- | ---------------------- | ------------------------------ | ---------------------- |
+| 3%   | −0.71%                 | +0.39pp                        | 7 of 32                |
+| 4%   | +1.31%                 | −1.63pp                        | 2 of 32                |
+| 5%   | +3.08%                 | −3.40pp                        | 0 of 32                |
+| 6%   | +4.70%                 | −5.02pp                        | 0 of 32                |
+
+The median window clears the 3% break-even by 0.39pp — less than half a point from a coin
+flip — while 5% and 6% are three to five points away from anything. That is why a 0.20pp
+sleeve difference is worth 19 points at 3% and zero at 5%. It is forced by where the
+break-evens fall, not a coincidence.
+
+## What is still open
+
+SBBI's own 66% against Table 3's 80% — 14 points, about 4.5 windows of 32 — is not explained
+by anything here, and the window set makes it worse rather than better: these 32 start
+1927-1958, where SBBI's published returns end, while the paper's 41 run to a 1965 start. Those
+later starts eat the 1965-82 inflation early and are the worst in the record, so on the paper's
+own windows the real series would land below 66%, widening the gap.
+
+Leads, in order of promise:
+
+- **The terminal-year success rule.** Table 3's all-bond cells drop 60 points between 3% and
+  4%; ours drop 28. A partially-funded final withdrawal counted as success there and failure
+  here would land almost entirely on the marginal cell, which is exactly where the gap is.
+- The paper used annual SBBI data; the 1998 article's method section does not pin whether the
+  withdrawal precedes or follows the year's return, and its one falsifiable datum (a 1929
+  15-year failure) does not discriminate.
+- Whether Table 3's all-bond row is reproducible from Ibbotson's data at all. Every other row
+  family reproduces.
 
 ## The one thing still worth fixing
 
