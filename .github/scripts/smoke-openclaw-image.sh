@@ -40,6 +40,20 @@ printf 'openclaw image hook smoke\n' >"$hook_repo/README.md"
 git -C "$hook_repo" add README.md
 (cd "$hook_repo" && ducktape-precommit)
 
+# Validate the config this image actually deploys with (public-coder-agent's
+# openclaw.json5) against openclaw's own schema. Catches structural/type
+# errors -- unknown keys, wrong types, invalid enum values -- before Flux
+# rolls it out; unset secrets and plugins this image doesn't bundle surface
+# only as non-fatal warnings.
+deploy_config="/tmp/public-coder-agent-openclaw.json5"
+validate_out="${TMPDIR:-/tmp}/openclaw-config-validate.json"
+OPENCLAW_CONFIG_PATH="$deploy_config" openclaw config validate --json >"$validate_out" || true
+jq -e '.valid == true' "$validate_out" >/dev/null || {
+  echo "public-coder-agent openclaw.json5 failed schema validation:" >&2
+  jq . "$validate_out" >&2
+  exit 1
+}
+
 config="${TMPDIR:-/tmp}/openclaw-plugin-smoke.json"
 plugins="${TMPDIR:-/tmp}/openclaw-plugins.json"
 cat >"$config" <<'JSON'

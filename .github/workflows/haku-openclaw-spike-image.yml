@@ -18,6 +18,7 @@ on:
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
+      - "cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
       - ".github/workflows/haku-openclaw-spike-image.yml"
   push:
     branches: [devel]
@@ -33,6 +34,7 @@ on:
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
+      - "cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
       - ".github/workflows/haku-openclaw-spike-image.yml"
   workflow_dispatch:
 
@@ -88,7 +90,9 @@ jobs:
           printf '%s\n' "$loaded"
           image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
           test -n "$image"
-          docker run --rm --entrypoint /bin/sh "$image" -ceu '
+          docker run --rm --entrypoint /bin/sh \
+            --mount "type=bind,src=$PWD/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json,dst=/tmp/haku-openclaw-spike-openclaw.json,readonly" \
+            "$image" -ceu '
             openclaw --version
             node --version
             claude --version
@@ -102,6 +106,17 @@ jobs:
             preload_option="${NODE_OPTIONS%% *}"
             preload="${preload_option#--import=file://}"
             test -f "$preload"
+            # Validate the config this image actually deploys with against
+            # openclaw'"'"'s own schema. Catches structural/type errors --
+            # unknown keys, wrong types, invalid enum values -- before Flux
+            # rolls it out; unset secrets surface only as non-fatal warnings.
+            validate_out="${TMPDIR:-/tmp}/openclaw-config-validate.json"
+            OPENCLAW_CONFIG_PATH=/tmp/haku-openclaw-spike-openclaw.json openclaw config validate --json >"$validate_out" || true
+            jq -e ".valid == true" "$validate_out" >/dev/null || {
+              echo "haku-openclaw-spike openclaw.json failed schema validation:" >&2
+              jq . "$validate_out" >&2
+              exit 1
+            }
             # openclaw --version does not import the gateway runtime modules, so
             # it passes even when the gateway is missing runtime deps. Actually
             # load the gateway: the npm-path install copies openclaw deps from
