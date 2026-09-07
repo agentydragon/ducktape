@@ -14,7 +14,11 @@ spec:
         app.kubernetes.io/name: public-coder-devbox
     spec:
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        # No region pin: the cluster's own KubeVirt CR (cluster/k8s/kubevirt/app/kubevirt.yaml)
+        # already scopes where VMs can run (region in [hil, home], no control-plane nodes), and
+        # kubevirt.io/schedulable=true only appears on nodes that CR actually placed virt-handler
+        # on. Restating region: hil here was redundant with that and needlessly excluded home-region
+        # capacity (e.g. optiplex) that the cluster already permits.
         kubevirt.io/schedulable: "true"
       affinity:
         nodeAffinity:
