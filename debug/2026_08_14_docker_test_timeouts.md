@@ -91,6 +91,12 @@ a pin bump or a rebuild reloads, the daemon id so a prune or an out-of-band reta
 
 ## Still open
 
+**Partly answered since**, by measurement on 2026-08-28: the daemon's own container start is
+bounded and cheap (Postgres accepting connections 1.98s after the load), and each RBE action turns
+out to get its own microVM and its own empty daemon — so the per-worker contention this note
+diagnoses is not reachable remotely today, whatever was true in August. Numbers and consequences:
+<../devinfra/docs/container_image_loading.md>.
+
 - **The daemon's own container start is unbounded.** The lock removes the herd on the _load_; N
   concurrent `container.start()` calls are still N. If timeouts persist, that is the next thing to
   measure, and the new timings point straight at it.

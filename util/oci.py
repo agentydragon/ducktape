@@ -129,6 +129,11 @@ def _one_loader_at_a_time(tag: str) -> Iterator[None]:
     A file lock rather than anything cleverer because the thing being serialised is per machine and
     the processes share nothing else. `flock` is released when the fd closes, so a loader that dies
     mid-push does not strand the others.
+
+    **On RBE there is nothing to serialise.** Each action runs in its own freshly booted microVM
+    with its own empty daemon, so neither this lock nor the marker `_already_loaded` reads ever
+    hits — both are local-development mechanisms today, and every remote action pays a full load.
+    Measurements and the options for fixing that: <../devinfra/docs/container_image_loading.md>.
     """
     with _lock_path(tag).open("w") as lock:
         waited_from = time.monotonic()
