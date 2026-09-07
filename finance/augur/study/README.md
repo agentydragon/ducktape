@@ -20,3 +20,5 @@ excluded from the default CI filter (`.bazelrc` `test:ci --test_tag_filters=…,
 upstream outage cannot redden an unrelated PR. Run one by name.
 
 - <trinity/README.md> — Cooley, Hubbard and Walz (1998), the "4% rule" table.
+- <sbbi/README.md> — Ibbotson and Sinquefield (1989), the long-term corporate bond series
+  Trinity's bonds are, and augur's only external check on its bond arithmetic.

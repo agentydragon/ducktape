@@ -1,0 +1,40 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "long_term_corporate",
+    srcs = ["long_term_corporate.py"],
+    deps = [
+        "//finance/augur/model:bond_fund",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/study/trinity:evidence_snapshot",
+        "//finance/evidence:sources",
+        "@pypi//numpy",
+    ],
+)
+
+py_binary(
+    name = "long_term_corporate_bin",
+    main_module = "finance.augur.study.sbbi.long_term_corporate",
+    deps = [":long_term_corporate"],
+)
+
+py_test(
+    name = "long_term_corporate_test",
+    # Fetches the record from the public upstreams, so it is excluded from CI's default filter:
+    # an upstream outage must not redden an unrelated PR. See the package README for how to run
+    # it. Two evidence fetches plus four century-long reproductions, all cheap arithmetic.
+    size = "medium",
+    srcs = ["long_term_corporate_test.py"],
+    tags = ["manual"],
+    deps = [
+        ":long_term_corporate",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/study/trinity:evidence_snapshot",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
