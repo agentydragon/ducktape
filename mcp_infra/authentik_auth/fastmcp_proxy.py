@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import httpx
+import httpx2
 from authlib.oauth2 import OAuth2Error
 from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
@@ -33,9 +33,9 @@ _RETRY_AFTER_SECONDS = 60
 
 def _transient_upstream_error(exc: BaseException | None) -> bool:
     """True for upstream failures that say nothing about the grant's validity."""
-    if isinstance(exc, httpx.TransportError):  # DNS, connect, timeout, protocol errors
+    if isinstance(exc, httpx2.TransportError):  # DNS, connect, timeout, protocol errors
         return True
-    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
+    return isinstance(exc, httpx2.HTTPStatusError) and exc.response.status_code >= 500
 
 
 def _is_transient_token_error(exc: BaseException) -> bool:
@@ -60,13 +60,13 @@ def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
     refresh token, missing JTI mapping — i.e. normal client churn that never
     reached Authentik, and must not fire the upstream-failure alert.
     """
-    return isinstance(exc, OAuth2Error | httpx.HTTPStatusError)
+    return isinstance(exc, OAuth2Error | httpx2.HTTPStatusError)
 
 
 class RetryableJWTVerifier(JWTVerifier):
     """Retry transient JWKS-fetch failures before FastMCP swallows them.
 
-    `JWTVerifier._get_jwks_key` catches any `httpx.HTTPError` from `_fetch_jwks`
+    `JWTVerifier._get_jwks_key` catches any `httpx2.HTTPError` from `_fetch_jwks`
     (including timeouts and connect errors, not just 5xx) and re-raises as
     `ValueError`; `load_access_token` (both this class's own, and
     `OAuthProxy.load_access_token` on every incoming request) then catches that

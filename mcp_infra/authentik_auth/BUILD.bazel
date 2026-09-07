@@ -200,6 +200,7 @@ py_test(
         "//mcp_infra:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//joserfc",
         "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

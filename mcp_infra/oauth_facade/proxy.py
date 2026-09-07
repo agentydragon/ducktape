@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from fastmcp.server import create_proxy
@@ -25,7 +26,7 @@ def build_transport(settings: FacadeSettings) -> ClientTransport:
             return StdioTransport(command=upstream.command[0], args=upstream.command[1:], env=os.environ.copy())
 
 
-def build_proxy_server(settings: FacadeSettings, **kwargs: object):
+def build_proxy_server(settings: FacadeSettings, **kwargs: Any):
     """Create a FastMCP proxy to the configured upstream MCP server."""
     return create_proxy(
         ProxyClient(build_transport(settings)), name=settings.facade_name, instructions=settings.instructions, **kwargs

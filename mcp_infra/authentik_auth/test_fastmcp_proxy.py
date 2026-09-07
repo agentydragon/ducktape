@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from authlib.oauth2 import OAuth2Error
@@ -75,9 +75,9 @@ def _invalid_grant_from(cause: BaseException | None) -> TokenError:
         return raised
 
 
-def _http_error(status: int) -> httpx.HTTPStatusError:
-    request = httpx.Request("POST", "https://auth.example.com/application/o/token/")
-    return httpx.HTTPStatusError(f"HTTP {status}", request=request, response=httpx.Response(status, request=request))
+def _http_error(status: int) -> httpx2.HTTPStatusError:
+    request = httpx2.Request("POST", "https://auth.example.com/application/o/token/")
+    return httpx2.HTTPStatusError(f"HTTP {status}", request=request, response=httpx2.Response(status, request=request))
 
 
 def _failures(outcome: str) -> float:
@@ -103,7 +103,7 @@ async def test_retryable_refresh_proxy_transient_5xx_becomes_503(proxy: Retryabl
 
 async def test_retryable_refresh_proxy_dns_failure_becomes_503(proxy: RetryableRefreshOIDCProxy) -> None:
     """DNS resolution failure (cluster DNS outage) is transient, not invalid_grant."""
-    dns_error = httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
+    dns_error = httpx2.ConnectError("[Errno -3] Temporary failure in name resolution")
     with (
         patch.object(OIDCProxy, "exchange_refresh_token", AsyncMock(side_effect=_invalid_grant_from(dns_error))),
         pytest.raises(HTTPException) as exc_info,
@@ -220,10 +220,10 @@ async def test_retryable_jwt_verifier_retries_transient_jwks_fetch_then_succeeds
 async def test_retryable_jwt_verifier_dns_failure_retries_then_gives_up(jwt_verifier: RetryableJWTVerifier) -> None:
     """A persistent transient failure still raises after exhausting attempts —
     it's not silently absorbed forever, just given a few chances to clear."""
-    dns_error = httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
+    dns_error = httpx2.ConnectError("[Errno -3] Temporary failure in name resolution")
     with (
         patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=dns_error)) as upstream,
-        pytest.raises(httpx.ConnectError),
+        pytest.raises(httpx2.ConnectError),
     ):
         await jwt_verifier._fetch_jwks()
     assert upstream.call_count == 3  # jwks_retry_stop = stop_after_attempt(3)
@@ -234,7 +234,7 @@ async def test_retryable_jwt_verifier_genuine_4xx_is_not_retried(jwt_verifier: R
     config, not upstream flakiness — no point retrying it."""
     with (
         patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=_http_error(404))) as upstream,
-        pytest.raises(httpx.HTTPStatusError),
+        pytest.raises(httpx2.HTTPStatusError),
     ):
         await jwt_verifier._fetch_jwks()
     assert upstream.call_count == 1
