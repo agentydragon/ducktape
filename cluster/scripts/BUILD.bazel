@@ -15,6 +15,13 @@ py_binary(
     srcs = ["ovh_hil_availability.py"],
 )
 
+# Attribute block-device I/O on a Talos node to cgroups (etcd, containerd, pods).
+# kubelet's cAdvisor only walks /kubepods, so etcd is invisible to it.
+py_binary(
+    name = "talos_cgroup_io",
+    srcs = ["talos_cgroup_io.py"],
+)
+
 # Typed loader for nebula-mesh.json. Shared by render_mobile_nebula_config and
 # the validation test in //cluster/validation/.
 py_library(
