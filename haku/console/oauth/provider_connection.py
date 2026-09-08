@@ -22,7 +22,7 @@ from typing import Annotated, Literal, cast
 from urllib.parse import urlencode
 from uuid import UUID
 
-import httpx
+import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from mcp.client.auth.oauth2 import PKCEParameters
@@ -199,8 +199,8 @@ def _token_request_data(
     return data
 
 
-async def _post_token(descriptor: ProviderConnectionDescriptor, data: dict[str, str]) -> httpx.Response:
-    async with httpx.AsyncClient(timeout=_TOKEN_ENDPOINT_TIMEOUT_SECONDS) as http:
+async def _post_token(descriptor: ProviderConnectionDescriptor, data: dict[str, str]) -> httpx2.Response:
+    async with httpx2.AsyncClient(timeout=_TOKEN_ENDPOINT_TIMEOUT_SECONDS) as http:
         return await http.post(descriptor.token_url, data=data, headers=token_request_headers())
 
 
