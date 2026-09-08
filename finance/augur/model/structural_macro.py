@@ -110,10 +110,23 @@ class InstrumentSpec(FrozenModel):
     # Which observed yield this fund earns. A corporate sleeve names its own curve rather than
     # taking a guessed credit spread over governments.
     yield_curve: YieldCurve = YieldCurve.GOVERNMENT
-    # Added to that curve. NEGATIVE for municipals, which yield less than Treasuries pre-tax
-    # precisely because their coupons are exempt. Tax treatment itself is the scenario's
-    # business — see `SecurityDistribution.tax_character` — this is only the pre-tax price.
+    # Two ways to sit off the curve, because they are different economics and a muni needs the
+    # second. `spread` is ADDITIVE, which is what a credit spread is: a corporate yields the
+    # government curve plus compensation for default risk, roughly independent of the level.
+    # `curve_ratio` is MULTIPLICATIVE, which is what a tax exemption is: a muni yields a
+    # FRACTION of the taxable curve, anchored near `1 - t` for the marginal investor, so the gap
+    # narrows as rates fall instead of staying put. An additive muni spread is a linearisation
+    # of that ratio around current rates, and it goes NEGATIVE once the curve drops below the
+    # spread — see #5832, where the clamp that catches it then becomes a coupon and collapses
+    # the fund.
+    #
+    # Both are static here, which is the simplification that remains: the ratio has no dynamics
+    # of its own, so this still cannot produce a muni selloff Treasuries escape (gap 5). #5835
+    # gives munis their own factor, fitted jointly, and #5834 replaces the two-point curve these
+    # sit on. Tax treatment itself stays the scenario's business — see
+    # `SecurityDistribution.tax_character`; this is only the pre-tax price.
     spread: float = 0.0
+    curve_ratio: PositiveFloat = 1.0
 
 
 class EquitySpec(FrozenModel):
@@ -368,11 +381,17 @@ def _shocks(request: ExogenousSamplingRequest, stream_id: str, *, months: int) -
 
 
 def _instrument_yield(spec: InstrumentSpec, *, short_rate: np.ndarray, term_spread: np.ndarray) -> np.ndarray:
-    """This instrument's yield: the curve at its duration, plus its spread.
+    """This instrument's yield: its share of the curve at its maturity, plus its spread.
 
-    The curve is linear in duration between the short rate and the 10-year point. Crude, and
-    adequate: the study compares a short fund, an intermediate fund and cash, and a linear
-    curve orders those correctly. What it cannot do is price a barbell against a bullet.
+    The curve is linear in maturity between the short rate and the 10-year point, and flat past
+    ten years. Crude, and adequate for ordering cash against a short and an intermediate fund;
+    it cannot price a barbell against a bullet, and it misprices a long ladder badly. #5834
+    replaces it with a fitted curve.
+
+    `curve_ratio` scales the curve BEFORE `spread` is added, so a muni's exemption stays
+    proportional to the level while a credit spread stays absolute. That ordering is what keeps
+    the yield off the floor as rates fall: a ratio of a small number is small, a constant
+    subtracted from a small number is negative.
     """
 
     if spec.yield_curve is not YieldCurve.GOVERNMENT:
@@ -384,7 +403,8 @@ def _instrument_yield(spec: InstrumentSpec, *, short_rate: np.ndarray, term_spre
             "factor to the VAR."
         )
     curve_fraction = min(spec.maturity_years / 10.0, 1.0)
-    return np.maximum(short_rate + curve_fraction * term_spread + spec.spread, MINIMUM_ANNUAL_YIELD)
+    curve = short_rate + curve_fraction * term_spread
+    return np.maximum(spec.curve_ratio * curve + spec.spread, MINIMUM_ANNUAL_YIELD)
 
 
 def _equity_path(spec: EquitySpec, request: ExogenousSamplingRequest, short_rate: np.ndarray) -> np.ndarray:

@@ -255,9 +255,16 @@ how much they move an allocation answer.
    even at 1871 the ceiling is ~5 independent windows: history cannot supply more, which is why
    a fitted model belongs beside the replay rather than instead of it.
 
-5. **No cyclical credit spread.** A muni's spread over the curve is a constant, so the model
-   cannot produce a muni selloff that Treasuries escape — which is exactly what a credit event
-   looks like, and exactly when a floor is tested.
+5. **No cyclical credit spread.** A muni sits off the curve by a static `curve_ratio` (and a
+   static `spread` for a credit sleeve), so the model cannot produce a muni selloff that
+   Treasuries escape — which is exactly what a credit event looks like, and exactly when a floor
+   is tested. #5835 gives munis their own factor, fitted jointly with Treasuries around the
+   tax-wedge decomposition, which is where the ratio comes from in the first place.
+
+   The ratio replaced an additive constant, which was not merely coarse but wrong in shape below
+   about a 1.2% curve: a constant subtracted from a falling curve goes negative, and the clamp
+   that catches it becomes the next coupon (#5832).
+
 6. **Mismatched inflation and equity windows** — still true, but it now runs the other way, and
    the old text here described the pre-refit state. Equity is fitted on 1926-07–2026-06 (1200
    months, gap 3); the joint VAR inner-joins `FEDFUNDS`/`GS10`/`CPIAUCSL` and so starts at
@@ -268,8 +275,9 @@ how much they move an allocation answer.
 7. **The rate means are barely identified.** OLS on a near-unit-root series biases mean
    reversion upward and pins the long-run mean weakly: the same fit gives a 4.93% short-rate
    mean over 1954–2026 and 1.71% over 1990–2026. Read the sigmas; sweep the means.
-8. **The curve is clamped flat past 10 years.** `_instrument_yield` is
-   `short_rate + min(duration/10, 1) * term_spread + spread`, so it interpolates the front and
+8. **The curve is clamped flat past 10 years** (#5834, which also owns the design sketched
+   below — it belongs in a design doc rather than in this contract). `_instrument_yield` is
+   `curve_ratio * (short_rate + min(maturity/10, 1) * term_spread) + spread`, so it interpolates the front and
    then STOPS: a 30-year bond is priced at exactly the 10-year yield. It orders cash, a short
    fund and an intermediate fund correctly, and it cannot price a barbell against a bullet — but
    the flat long end is the larger defect, because it is where a real ladder lives. Against the

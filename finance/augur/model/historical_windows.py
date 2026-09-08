@@ -206,7 +206,11 @@ class HistoricalWindowsModel:
                     curve = self.history.corporate_baa_yield[windows]
                 case _ as unreachable:
                     assert_never(unreachable)
-            return np.asarray(np.maximum(curve + spec.spread, MINIMUM_ANNUAL_YIELD))
+            # Ratio before spread, matching `structural_macro._instrument_yield`. Both providers
+            # read the same `InstrumentSpec`, so a muni that is 73% of the curve in one and
+            # 73%-minus-a-constant in the other would make the two samplers disagree about what
+            # the instrument IS, not about what the economy did.
+            return np.asarray(np.maximum(spec.curve_ratio * curve + spec.spread, MINIMUM_ANNUAL_YIELD))
 
         blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [
             (InflationKey(), _rebased(self.history.cpi_level[windows], 100.0))

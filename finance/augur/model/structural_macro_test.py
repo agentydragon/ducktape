@@ -239,6 +239,40 @@ def test_municipal_spread_lowers_the_pretax_payout() -> None:
     assert np.all(muni_payout < treasury_payout)
 
 
+def test_a_ratio_muni_survives_a_zirp_decade_where_an_additive_one_floors() -> None:
+    """The shape of the muni adjustment, at the rates where the two shapes disagree.
+
+    An exemption is proportional to the level — a muni yields a FRACTION of the taxable curve —
+    so as rates fall the gap narrows. A constant subtracted from a falling curve instead crosses
+    zero, hits `MINIMUM_ANNUAL_YIELD`, and the clamp becomes the next coupon: the fund then holds
+    a 1bp bond, gets repriced at the real yield, and its price decays without bound until the
+    distribution rounds to zero and the engine refuses the series (#5832).
+
+    So this is the ZIRP path of `test_yields_stay_positive_through_a_zirp_decade`, which never
+    had a muni in it, run against both shapes.
+    """
+
+    additive = SecuritySymbol("MUNI_ADD")
+    ratio = SecuritySymbol("MUNI_RATIO")
+    config = _config(
+        macro_state=_diagonal_var(short_initial=0.001, short_mean=0.0),
+        instruments=(
+            InstrumentSpec(symbol=additive, maturity_years=5.5, initial_price_usd=56.0, spread=-0.012),
+            InstrumentSpec(symbol=ratio, maturity_years=5.5, initial_price_usd=56.0, curve_ratio=0.73),
+        ),
+    )
+    bundle = _sample(config)
+
+    floor_payout = 56.0 * MINIMUM_ANNUAL_YIELD / 12.0
+    additive_payout = _series(bundle, SecurityDistributionKey(symbol=additive))
+    ratio_payout = _series(bundle, SecurityDistributionKey(symbol=ratio))
+
+    # The additive muni is pinned AT the floor here: -120bp on a curve near zero is negative.
+    assert np.isclose(additive_payout[:, -1], floor_payout).all()
+    # The ratio muni is not, because 73% of a small number is a small number, not a negative one.
+    assert np.all(ratio_payout[:, -1] > floor_payout)
+
+
 def test_the_rates_coupling_works_when_configured() -> None:
     """`rate_beta` is the only channel between equity and the curve, so the mechanism has to
     work even though the fitted value is zero — a future window, or a different equity proxy,
