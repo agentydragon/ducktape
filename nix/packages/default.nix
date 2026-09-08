@@ -72,6 +72,25 @@ let
             "test_sequence_numbers_reset_on_newkeys_when_strict"
           ];
         });
+        django = pyprev.django.overrideAttrs (old: {
+          # test_crafted_xml_performance (tests/serializers/test_deserialization.py,
+          # TestDeserializer): asserts XML-deserialization time grows roughly
+          # linearly with input size (average factor <=2 across increasing
+          # depth/length) -- a wall-clock timing assertion, racy under this
+          # closure's rebuild load, same class as the tenacity/paramiko disables
+          # above (Django's own comment already concedes this: "Assert based on
+          # the average factor to reduce test flakiness"). django's checkPhase
+          # calls runtests.py directly, bypassing pytestCheckHook/
+          # unittestCheckHook, so disabledTests has no effect here -- skip via
+          # source patch instead, the same mechanism nixpkgs' own
+          # django_5_disable_failing_tests.patch uses for this exact package.
+          postPatch = (old.postPatch or "") + ''
+            substituteInPlace tests/serializers/test_deserialization.py \
+              --replace-fail '    def test_crafted_xml_performance(self):' \
+                              '    @unittest.skip("racy timing assertion under nix build load")
+            def test_crafted_xml_performance(self):'
+          '';
+        });
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
           python3Packages = pyfinal;
         };
