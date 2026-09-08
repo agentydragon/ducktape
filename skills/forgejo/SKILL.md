@@ -18,7 +18,17 @@ curl -fsS "$FORGEJO_URL/swagger.v1.json" \
 ```
 
 This Forgejo deployment exposes Actions metadata under `/api/v1/repos/.../actions/...`.
-It does not expose GitHub-compatible REST endpoints for log download or rerun/retry.
+It does not expose GitHub-compatible REST endpoints for log download or rerun/retry; the
+one Actions write route is `workflow_dispatch` (§ Re-running).
+
+Gotchas that look like a wrong route:
+
+- An unauthenticated call for a private repo returns the generic 404
+  `{"message":"The target couldn't be found."}`, identical to a bad path. Authenticate
+  first: `curl -n` reads `~/.netrc` and Basic auth is enough for `/api/v1/...`.
+- `/actions/runs` returns the whole run history unless paginated. On `haku/haku-state`
+  the unbounded response was over 9 MB and outran a 90 s timeout; `?limit=15&page=1` is
+  140 KB and answers in about a second.
 
 ## Actions Metadata
 
@@ -36,6 +46,9 @@ Important ID namespaces:
 - `index_in_repo` is the UI/display run number, e.g. `/actions/runs/396`.
 - `id` is the internal REST run id for `GET /api/v1/repos/$OWNER/$REPO/actions/runs/$id`.
 - `actions/tasks` returns job/task rows; its `id` is a task id, not the run id.
+- A job re-run keeps the run's `index_in_repo`. It shows up as a **new task row** with
+  the same `run_number` and a later `run_started_at`, and the run's `status` flips back
+  to `running`; watching the run list for a higher index misses it.
 
 List task rows:
 
@@ -129,8 +142,11 @@ uv run skills/forgejo/scripts/forgejo.py logs \
 ```
 
 The helper logs in, fetches the run page, parses the page-provided `data-*` attributes, and
-posts the UI's JSON cursor payload. Keep credentials in environment variables or temporary
-shell variables (`FORGEJO_URL`, `FORGEJO_USER`, `FORGEJO_PASSWORD`); do not print them.
+posts the UI's JSON cursor payload. If `uv run` picks a stripped system interpreter (the
+symptom is `ModuleNotFoundError: No module named 'math'` from inside the stdlib, seen in
+the Claude Code web container), point it at a full one with `uv run --python <path>`.
+
+Keep credentials in environment variables or temporary shell variables (`FORGEJO_URL`, `FORGEJO_USER`, `FORGEJO_PASSWORD`); do not print them.
 
 Manual equivalent:
 
@@ -178,9 +194,7 @@ Notes:
 
 - `jobs/$JOB_INDEX` is the zero-based UI job index, not the REST task id and not the UI job
   id embedded in `data-initial-post-response`.
-- The deployment's OpenAPI currently exposes `GET` for Actions runs but no documented rerun
-  or retry endpoint. If you need to rerun a job, discover the web UI endpoint from the page
-  or trigger a new workflow/commit intentionally.
+- There is no REST rerun or retry; § Re-running covers what exists.
 - The download link in the gear menu is
   `$ACTIONS_URL/runs/$RUN_INDEX/jobs/$JOB_INDEX/attempt/$ATTEMPT/logs`, but the JSON POST is
   better for targeted diagnostics and works with expanded-step cursors.
@@ -188,6 +202,36 @@ Notes:
   page state lists each step summary/status under `state.currentJob.steps`.
 - Some repos also publish fallback logs, e.g. a `ci-logs` branch or workflow artifact; check
   workflow comments before assuming web logs are the only channel.
+
+## Re-running
+
+There is no REST rerun or retry on this deployment (15.0.3+gitea-1.22.0; `swagger.v1.json`
+has no path matching `rerun|retry|cancel`). Two routes exist:
+
+**`workflow_dispatch`, the REST route.** Works only for a workflow that declares
+`on: workflow_dispatch`; `haku/haku-state`'s `bazel-ci.yaml` does, as its documented manual
+re-run, and its gate runs the `image` job for every non-push event:
+
+```bash
+curl -fsS -n -X POST -H 'Content-Type: application/json' \
+  --data '{"ref":"my-branch"}' \
+  "$FORGEJO_URL/api/v1/repos/$OWNER/$REPO/actions/workflows/bazel-ci.yaml/dispatches"
+# 204 No Content; the run appears in /actions/runs a few seconds later.
+```
+
+How the dispatched run reads back, and what it does not do:
+
+- In the run list its `prettyref` is the bare branch name (a PR run shows `#N`) and its
+  `event` is null, so a filter on `.event == "workflow_dispatch"` finds nothing.
+- It records its own commit-status context on the commit rather than replacing the PR's.
+  A PR whose `pull_request` run failed keeps that red check next to the dispatch's; the PR
+  itself goes green only through the UI re-run or the next push to the branch.
+
+**The UI re-run, the web route.** The run page's re-run buttons POST to
+`$ACTIONS_URL/runs/$RUN_INDEX/rerun` and `.../jobs/$JOB_INDEX/rerun` with the CSRF token
+from the page, over the web session from § Logs. Not exercised from an agent session yet:
+the form login needs the password in a shell command, and an auto-mode session may refuse
+that step.
 
 ## Actions Artifacts
 
@@ -241,6 +285,17 @@ generated Docker auth config, not at the registry being globally down.
 
 For `haku/haku-state`, the useful read credential is `haku-forgejo-git` from
 `haku-sandbox`. Use it for API reads; do not use scratch tokens.
+
+`bazel-ci.yaml` publishes the failing job's Bazel output to the `ci-logs` branch
+(`tools/ci/publish_bazel_log.sh`), and only on failure, so a green run leaves no log there.
+The branch holds one commit that each publish replaces, and a job re-run republishes under
+the **same** subject, `ci log: run N (sha)`. Poll for a new hash or commit date, never for
+a new subject:
+
+```bash
+git fetch origin ci-logs && git log -1 --format='%h %ci %s' FETCH_HEAD
+git show FETCH_HEAD:bazel-ci.log
+```
 
 Distinguish the two CI surfaces:
 
