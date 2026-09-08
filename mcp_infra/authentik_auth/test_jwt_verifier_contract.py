@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth
@@ -40,7 +40,7 @@ class _RejectingOIDCProxy(AuthProvider):
 class _JWTContractHarness:
     auth: MultiAuth
     signing_keys: dict[str, RSAKeyPair]
-    jwks_requests: list[httpx.Request]
+    jwks_requests: list[httpx2.Request]
 
     def create_token(
         self,
@@ -69,11 +69,11 @@ def signing_keys() -> dict[str, RSAKeyPair]:
 async def jwt_contract_harness(
     monkeypatch: pytest.MonkeyPatch, signing_keys: dict[str, RSAKeyPair]
 ) -> AsyncIterator[_JWTContractHarness]:
-    jwks_requests: list[httpx.Request] = []
+    jwks_requests: list[httpx2.Request] = []
 
-    def handle_jwks(request: httpx.Request) -> httpx.Response:
+    def handle_jwks(request: httpx2.Request) -> httpx2.Response:
         jwks_requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             200,
             request=request,
             json={
@@ -84,7 +84,7 @@ async def jwt_contract_harness(
             },
         )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handle_jwks)) as jwks_client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle_jwks)) as jwks_client:
 
         def build_verifier(
             *,

@@ -36,8 +36,9 @@ py_library(
         "//haku/console/oauth:token_state",
         "//haku/console/oauth:token_support",
         "//mcp_infra/authentik_auth:config",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//sqlalchemy",
     ],
 )
@@ -56,6 +57,10 @@ py_library(
         "//haku/console/oauth:callback_page",
         "@pypi//authlib",
         "@pypi//fastapi",
+        # keep: authlib.integrations.starlette_client imports authlib's own httpx_client
+        # integration (plain httpx, not httpx2 -- authlib itself is unaffected by the
+        # fastmcp/mcp-sdk httpx2 migration), not surfaced by scanning this file's own imports.
+        "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//starlette",
     ],
@@ -108,8 +113,9 @@ py_library(
         "//mcp_infra/authentik_auth:fastmcp_proxy",
         "//mcp_infra/authentik_auth:oidc_principal",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//py_key_value_aio",
         "@pypi//starlette",
     ],
@@ -255,8 +261,9 @@ py_test(
         "//mcp_infra/authentik_auth:fastmcp_proxy",
         "//mcp_infra/authentik_auth:oidc_principal",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
@@ -321,10 +328,9 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console/oauth:token_state",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//respx",
     ],
 )
 

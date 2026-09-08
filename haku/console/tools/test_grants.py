@@ -231,17 +231,17 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     tools = {tool.name: tool for tool in console.call(list_tools)}
     assert set(tools) == {"create_grant", "list_grants", "get_grant", "revoke_grants", "kubernetes_can_i", "whoami"}
     for tool in tools.values():
-        assert "context" not in tool.inputSchema.get("properties", {})
+        assert "context" not in tool.input_schema.get("properties", {})
     # whoami is a pure identity read: no arguments beyond the hidden execution context.
-    assert tools["whoami"].inputSchema.get("properties", {}) == {}
-    assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "principal"}
-    assert set(tools["list_grants"].inputSchema["properties"]) == {"principal", "include_inactive"}
-    assert set(tools["get_grant"].inputSchema["properties"]) == {"domain", "grant_id"}
+    assert tools["whoami"].input_schema.get("properties", {}) == {}
+    assert set(tools["create_grant"].input_schema["properties"]) == {"grants", "duration_seconds", "principal"}
+    assert set(tools["list_grants"].input_schema["properties"]) == {"principal", "include_inactive"}
+    assert set(tools["get_grant"].input_schema["properties"]) == {"domain", "grant_id"}
     # One end-grants tool: an Agent omits owner_agent_id (relinquishes its own); an Operator names it.
-    assert set(tools["revoke_grants"].inputSchema["properties"]) == {"domain", "grant_ids", "reason", "owner_agent_id"}
-    assert set(tools["kubernetes_can_i"].inputSchema["properties"]) == {"requests"}
+    assert set(tools["revoke_grants"].input_schema["properties"]) == {"domain", "grant_ids", "reason", "owner_agent_id"}
+    assert set(tools["kubernetes_can_i"].input_schema["properties"]) == {"requests"}
     # The create payload discriminates the two domains' capability specs by `domain`.
-    branches = tools["create_grant"].inputSchema["properties"]["grants"]["items"]["oneOf"]
+    branches = tools["create_grant"].input_schema["properties"]["grants"]["items"]["oneOf"]
     assert {branch["properties"]["domain"]["const"] for branch in branches} == {"kubernetes", "http"}
 
 

@@ -178,7 +178,13 @@ class Mount:
 
             # Create client with optional message handler
             handler = child_handler_factory(self._prefix) if child_handler_factory else None
-            child_client = Client(server, message_handler=handler)
+            # mode="legacy": server_entries()/ResourcesServer rely on client.initialize_result
+            # (the full InitializeResult, incl. capabilities) for status/capability reporting.
+            # fastmcp v4 defaults new clients to mode="auto", which adopts the modern
+            # server/discover era against another v4 server and leaves initialize_result
+            # permanently None -- pin the handshake era this mount actually needs instead of
+            # reworking every initialize_result consumer onto the discover-era properties.
+            child_client = Client(server, message_handler=handler, mode="legacy")
             await stack.enter_async_context(child_client)
 
             # Create proxy with persistent child client
@@ -233,7 +239,8 @@ class Mount:
             # Create transport and client
             transport = transport_factory(spec)
             handler = child_handler_factory(self._prefix) if child_handler_factory else None
-            base_client = Client(transport, message_handler=handler)
+            # mode="legacy": see the matching comment in setup_inproc.
+            base_client = Client(transport, message_handler=handler, mode="legacy")
             await stack.enter_async_context(base_client)
 
             # Create proxy

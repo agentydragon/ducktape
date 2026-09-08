@@ -309,7 +309,7 @@ async def build_mcp_tool_arguments_schema() -> dict[str, Any]:
         for tool in tools:
             if allowlist is not None and tool.name not in allowlist:
                 continue
-            input_schema = tool.inputSchema
+            input_schema = tool.input_schema
             if not isinstance(input_schema, dict):
                 raise ValueError(f"{server_id}.{tool.name} published a non-object input schema")
             tool_properties[tool.name] = _frontend_schema(
@@ -364,7 +364,7 @@ async def build_mcp_tool_results_schema() -> dict[str, Any]:
         for tool in tools:
             if allowlist is not None and tool.name not in allowlist:
                 continue
-            output_schema = tool.outputSchema
+            output_schema = tool.output_schema
             if output_schema is None:
                 continue
             if not isinstance(output_schema, dict):

@@ -1,9 +1,8 @@
 """Request-scoped HTTP clients for FastMCP OpenAPI tools.
 
-FastMCP 3.4.4 binds one ``httpx.AsyncClient`` to every ``OpenAPITool`` when
-the OpenAPI provider is constructed.  Unlike function-backed tools, those
-tools have no dependency-injection seam for choosing a client at invocation
-time.
+FastMCP binds one ``httpx2.AsyncClient`` to every ``OpenAPITool`` when the
+OpenAPI provider is constructed.  Unlike function-backed tools, those tools
+have no dependency-injection seam for choosing a client at invocation time.
 
 ``RequestScopedOpenAPIClients`` adapts each generated tool into a transformed
 tool whose client comes from FastMCP's call-scoped ``Depends`` resolver.  The
@@ -19,7 +18,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from copy import deepcopy
 from typing import Any, overload
 
-import httpx
+import httpx2
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.providers.openapi import OpenAPITool
@@ -28,13 +27,13 @@ from fastmcp.tools import Tool
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
-type HTTPClientProvider[ClientT: httpx.AsyncClient = httpx.AsyncClient] = Callable[
+type HTTPClientProvider[ClientT: httpx2.AsyncClient = httpx2.AsyncClient] = Callable[
     ..., AbstractAsyncContextManager[ClientT]
 ]
 _INJECTED_CLIENT_PARAMETER = "_fastmcp_request_scoped_http_client"
 
 
-def borrowed_http_client_provider[ClientT: httpx.AsyncClient](client: ClientT) -> HTTPClientProvider[ClientT]:
+def borrowed_http_client_provider[ClientT: httpx2.AsyncClient](client: ClientT) -> HTTPClientProvider[ClientT]:
     """Adapt a caller-owned client to the sole provider-based API.
 
     This is useful for tests and local tooling that already manage a fixed
@@ -79,11 +78,11 @@ class RequestScopedOpenAPIClients(Transform):
         injected_client = Depends(client_provider)
 
         async def dispatch(
-            _fastmcp_request_scoped_http_client: httpx.AsyncClient = injected_client, **arguments: Any
+            _fastmcp_request_scoped_http_client: httpx2.AsyncClient = injected_client, **arguments: Any
         ) -> ToolResult:
-            # OpenAPITool has no public per-call client factory in FastMCP
-            # 3.4.4.  model_copy() preserves its generated route/director while
-            # ensuring this private client assignment is invocation-local.
+            # OpenAPITool has no public per-call client factory.  model_copy()
+            # preserves its generated route/director while ensuring this
+            # private client assignment is invocation-local.
             bound = tool.model_copy()
             bound._client = _fastmcp_request_scoped_http_client
             return await bound.run(arguments)

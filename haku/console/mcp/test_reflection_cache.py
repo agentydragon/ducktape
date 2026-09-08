@@ -109,11 +109,11 @@ async def test_a_caller_mutating_a_returned_tool_cannot_corrupt_the_cache() -> N
 
     (borrowed,) = (await cache.reflect(_key(), reflect)).tools
     borrowed.name = "renamed"
-    borrowed.inputSchema["properties"] = {"injected": {"type": "string"}}
+    borrowed.input_schema["properties"] = {"injected": {"type": "string"}}
     (fresh,) = (await cache.reflect(_key(), reflect)).tools
 
     assert fresh.name == "stock_add"
-    assert fresh.inputSchema == {"type": "object"}
+    assert fresh.input_schema == {"type": "object"}
     assert reflect.calls == 1
 
 

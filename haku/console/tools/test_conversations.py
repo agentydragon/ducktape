@@ -246,7 +246,7 @@ async def test_harness_kind_is_a_required_closed_identity_field_on_a_session() -
     async with Client(_mcp(_Reader())) as client:
         list_sessions = one(tool for tool in await client.list_tools() if tool.name == "list_sessions")
 
-    schema = list_sessions.outputSchema
+    schema = list_sessions.output_schema
     assert schema is not None
     session = schema["properties"]["items"]["items"]  # FastMCP serves the page schema fully dereferenced.
     assert session["properties"]["harness_kind"]["enum"] == ["claude_code", "codex_app_server"]

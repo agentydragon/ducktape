@@ -210,7 +210,6 @@ manifest:
     httptools: httptools
     httpx: httpx
     httpx2: httpx2
-    httpx_sse: httpx_sse
     huggingface_hub: huggingface_hub
     humanize: humanize
     hyperframe: hyperframe
@@ -294,6 +293,7 @@ manifest:
     matplotlib_inline: matplotlib_inline
     mautrix: mautrix
     mcp: mcp
+    mcp_types: mcp_types
     mdit_py_plugins: mdit_py_plugins
     mdurl: mdurl
     mirakuru: mirakuru
@@ -589,4 +589,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 939528d88b953866dcb5da858a27b68bcb36b36fdcd1bd694e66bb86e0c986c7
+integrity: e0a0fc7d73d763ef5ca68f145206aac3d2da2cb4de120404dc326bee5e64ed89

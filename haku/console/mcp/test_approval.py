@@ -900,6 +900,8 @@ async def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
         "content": [{"type": "text", "text": "ok"}, {"type": "image", "data": "ZmFrZQ==", "mimeType": "image/png"}],
         "structuredContent": {"changed": True},
         "isError": False,
+        # Always serialized (mcp_types.CallToolResult.result_type); older peers ignore it.
+        "resultType": "complete",
     }
 
 

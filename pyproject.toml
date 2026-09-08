@@ -59,9 +59,14 @@ dependencies = [
     "tiktoken>=0.7.0",
     "tenacity>=8.2.0",
 
-    # MCP
-    "mcp[cli]>=1.13.1",
-    "fastmcp>=3.4.4,<3.5",
+    # MCP. mcp-sdk v2 (2026-07-28) and fastmcp v4 rework the protocol to be stateless by
+    # default, eliminating the shared per-replica session-manager task group that v1/v3 wedges
+    # permanently on an uncaught CancelledError from a mid-request client disconnect (#5786).
+    # fastmcp's own minor version is capped, matching its predecessor's cap: fastmcp moves fast
+    # post-major-bump, and a repin needs the same deliberate re-audit as any other FastMCP
+    # version bump (see haku/console/docs/agent_authority.md § "The FastMCP seam").
+    "mcp[cli]>=2.0.0",
+    "fastmcp>=4.0.3,<4.1",
     "py-key-value-aio[valkey]>=0.4.4",
 
     # Docker
@@ -219,7 +224,10 @@ dependencies = [
     # does NOT bump agent-framework-core off 1.0.0 (b260409+ require core >=1.0.1).
     "agent-framework-redis==1.0.0b260402",
     "pydantic-ai-slim[openai,anthropic,fastmcp]>=0.10",
-    "openai-agents>=0.0.1",
+    # openai-agents first allowed mcp-sdk >=2.0 in 0.20.0 (previous releases back to 0.12.5
+    # capped mcp<2); floor raised here for #5786's mcp-sdk v2 migration, not for openai-agents'
+    # own features.
+    "openai-agents>=0.20.0",
     # crewai and the langgraph/langchain-* group backed the x/crewai and x/langgraph eval
     # variants, deleted 2026-09-07 (see skills/info_gathering/evals/twenty_questions/x/
     # {crewai,langgraph}.md): neither had a release compatible with mcp-sdk >=2.0 (crewai

@@ -72,11 +72,11 @@ async def test_snapshot_reads_do_not_reflect_and_are_detached() -> None:
 
     first = catalogs.metadata(operator_id=operator_id, server=_server("alpha"))
     assert isinstance(first, ReflectedCatalog)
-    first.tools[0].inputSchema["mutated"] = True
+    first.tools[0].input_schema["mutated"] = True
     second = catalogs.metadata(operator_id=operator_id, server=_server("alpha"))
 
     assert isinstance(second, ReflectedCatalog)
-    assert "mutated" not in second.tools[0].inputSchema
+    assert "mutated" not in second.tools[0].input_schema
     assert isinstance(catalogs.metadata(operator_id=operator_id, server=_server("beta")), DegradedReflection)
     metadata.assert_not_awaited()
 

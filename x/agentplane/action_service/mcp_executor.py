@@ -150,7 +150,7 @@ class McpActionGroupExecutor:
                 logger.warning("MCP tool name %r does not fit the catalog key pattern; skipping", tool.name)
                 continue
             actions[key] = ActionDefinition(
-                description=tool.description or f"MCP tool {tool.name}", input_schema=tool.inputSchema
+                description=tool.description or f"MCP tool {tool.name}", input_schema=tool.input_schema
             )
         self._group.actions = actions
         self._group.available = True
@@ -180,7 +180,7 @@ class McpActionGroupExecutor:
             )
 
         try:
-            jsonschema.validate(request.arguments, tool.inputSchema)
+            jsonschema.validate(request.arguments, tool.input_schema)
         except jsonschema.ValidationError:
             return ExecutionResult(
                 state=ExecutionState.FAILED,

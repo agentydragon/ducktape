@@ -10,7 +10,7 @@ from typing import cast
 import pytest
 import pytest_bazel
 from mcp.types import Implementation, InitializeResult, ReadResourceResult, ServerCapabilities, TextResourceContents
-from pydantic import AnyUrl, BaseModel
+from pydantic import BaseModel
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 
@@ -172,14 +172,16 @@ def test_compact_display_handler_with_anyurl_in_result():
 def test_compact_display_handler_with_read_resource_result():
     """Test that CompactDisplayHandler handles ReadResourceResult correctly.
 
-    ReadResourceResult was in the original error trace - it contains uri (AnyUrl).
+    ReadResourceResult was in the original error trace, back when TextResourceContents.uri
+    was AnyUrl-typed (mcp-sdk v2 narrowed it to plain str; test_compact_display_handler_with_anyurl_in_result
+    above still covers a genuinely AnyUrl-typed field).
     """
 
     # Create a ReadResourceResult - this is what resources_read_blocks returns
     read_result = ReadResourceResult(
         contents=[
             TextResourceContents(
-                uri=AnyUrl("resource://docker/containers/snapshots/crush/2025-08-30-internal_db/info"),
+                uri="resource://docker/containers/snapshots/crush/2025-08-30-internal_db/info",
                 mimeType="text/plain",
                 text="test content",
             )

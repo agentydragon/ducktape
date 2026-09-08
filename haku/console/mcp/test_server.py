@@ -305,7 +305,7 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
 
     # Gmail reads are transparent pass-through: server-prefixed name, no envelope nesting.
     assert "gmail__labels_list" in tools
-    assert "input" not in tools["gmail__labels_list"].inputSchema.get("properties", {})
+    assert "input" not in tools["gmail__labels_list"].input_schema.get("properties", {})
     gmail_read_meta = tools["gmail__labels_list"].meta
     assert gmail_read_meta is not None
     assert gmail_read_meta[MCP_TOOL_META_KEY] == {
@@ -316,14 +316,14 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     # Read tools advertise read-only; the write tool stays unannotated (defaults describe mutating).
     gmail_read_ann = tools["gmail__labels_list"].annotations
     assert gmail_read_ann is not None
-    assert gmail_read_ann.readOnlyHint is True
+    assert gmail_read_ann.read_only_hint is True
     assert tools["gmail__drafts_create"].annotations is None
-    # No upstream title to prefix here, so the proxy sets none (clients fall back to the
-    # already server-prefixed name).
-    assert tools["gmail__labels_list"].title is None
+    # No explicit upstream title, but FastMCP's own MCP conversion now defaults one from the
+    # tool name (mcp_types.Tool.title humanizes "labels_list") -- still prefixed like any other.
+    assert tools["gmail__labels_list"].title == "gmail: Labels List"
     # Gmail writes are approval-request tools with the envelope.
     assert "gmail__drafts_create" in tools
-    envelope = tools["gmail__drafts_create"].inputSchema
+    envelope = tools["gmail__drafts_create"].input_schema
     assert set(envelope["required"]) == {"input", "rationale"}
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_result_ms"}
     assert envelope["additionalProperties"] is False
@@ -352,13 +352,13 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
         "list_tool_calls",
         "list_mcp_servers",
     } <= tools.keys()
-    assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
-    assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
-    assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
-    assert "actor" not in tools["get_mcp_server_status"].inputSchema.get("properties", {})
-    assert tools["get_mcp_server_status"].inputSchema["properties"]["include_tool_schemas"]["default"] is False
-    get_fields = tools["get_tool_call"].inputSchema["properties"]["fields"]
-    list_fields = tools["list_tool_calls"].inputSchema["properties"]["fields"]
+    assert "actor" not in tools["get_tool_call"].input_schema.get("properties", {})
+    assert "actor" not in tools["list_tool_calls"].input_schema.get("properties", {})
+    assert "actor" not in tools["list_mcp_servers"].input_schema.get("properties", {})
+    assert "actor" not in tools["get_mcp_server_status"].input_schema.get("properties", {})
+    assert tools["get_mcp_server_status"].input_schema["properties"]["include_tool_schemas"]["default"] is False
+    get_fields = tools["get_tool_call"].input_schema["properties"]["fields"]
+    list_fields = tools["list_tool_calls"].input_schema["properties"]["fields"]
     assert get_fields["items"]["enum"] == [field.value for field in ToolCallPayloadField]
     assert get_fields["default"] == [ToolCallPayloadField.RESULT]
     assert list_fields["items"]["enum"] == [field.value for field in ToolCallPayloadField]
@@ -375,8 +375,8 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     ):
         ann = tools[meta_tool].annotations
         assert ann is not None
-        assert ann.readOnlyHint is True
-        assert ann.openWorldHint is False
+        assert ann.read_only_hint is True
+        assert ann.open_world_hint is False
     # The envelope shape and the polling operation are in the tool's description; lifecycle
     # semantics are shared through the server instructions.
     gmail_write_description = tools["gmail__drafts_create"].description
@@ -386,17 +386,17 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     # Calendar reads are transparent; creation is the approval-gated request tool. The server
     # prefix supplies "calendar", so no tool repeats it in the local name.
     assert "google_calendar__get_event" in tools
-    assert "input" not in tools["google_calendar__get_event"].inputSchema.get("properties", {})
+    assert "input" not in tools["google_calendar__get_event"].input_schema.get("properties", {})
     cal_read_ann = tools["google_calendar__get_event"].annotations
     assert cal_read_ann is not None
-    assert cal_read_ann.readOnlyHint is True
+    assert cal_read_ann.read_only_hint is True
     assert "google_calendar__create_event" in tools
     assert "google_calendar__create_calendar_event" not in tools
     # Every advertised tool's schemas — passthrough and envelope input schemas, and any declared
     # output schema — must be valid, fully-resolvable JSON Schema, not just superficially shaped.
     for tool in tools.values():
-        _assert_valid_json_schema(tool.inputSchema)
-        _assert_valid_json_schema(tool.outputSchema)
+        _assert_valid_json_schema(tool.input_schema)
+        _assert_valid_json_schema(tool.output_schema)
 
 
 def test_console_server_instructions_keep_client_critical_guidance() -> None:
@@ -441,7 +441,7 @@ async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Har
     # Haku's exact-tools policy makes this transparent only for Haku. The unassigned sibling sees
     # the approval envelope and cannot inherit Haku's standing read authority.
     labels_list = tools["gmail__labels_list"]
-    assert set(labels_list.inputSchema["required"]) == {"input", "rationale"}
+    assert set(labels_list.input_schema["required"]) == {"input", "rationale"}
     assert labels_list.meta is not None
     assert labels_list.meta[MCP_TOOL_META_KEY]["approval_mode"] == "approval_required"
 
@@ -777,11 +777,11 @@ async def test_withdraw_tool_call_is_advertised_as_a_mutation(agent_client: Clie
 
     annotations = tools["withdraw_tool_call"].annotations
     assert annotations is not None
-    assert annotations.readOnlyHint is False
-    assert annotations.openWorldHint is False
+    assert annotations.read_only_hint is False
+    assert annotations.open_world_hint is False
     read_tool_annotations = tools["get_tool_call"].annotations
     assert read_tool_annotations is not None
-    assert read_tool_annotations.readOnlyHint is True
+    assert read_tool_annotations.read_only_hint is True
 
 
 async def test_call_mcp_tool_dispatches_an_auto_approved_read(harness: _Harness, agent_client: Client) -> None:
@@ -917,8 +917,8 @@ async def test_call_mcp_tool_is_advertised_as_an_open_world_call(agent_client: C
 
     annotations = tools["call_mcp_tool"].annotations
     assert annotations is not None
-    assert annotations.readOnlyHint is False
-    assert annotations.openWorldHint is True
+    assert annotations.read_only_hint is False
+    assert annotations.open_world_hint is True
 
 
 async def test_withdraw_tool_call_after_approval_reports_the_real_status(
@@ -1066,8 +1066,8 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                 # Upstream self-declared annotations propagate through the proxy reflection.
                 ann = tools["standin__echo"].annotations
                 assert ann is not None
-                assert ann.readOnlyHint is True
-                assert ann.openWorldHint is False
+                assert ann.read_only_hint is True
+                assert ann.open_world_hint is False
                 # The human-readable title is re-prefixed with the server id, just like the name,
                 # and the spec-preferred `title` field wins over the legacy `annotations.title`.
                 assert tools["standin__echo"].title == "standin: Echo text"
@@ -1077,8 +1077,8 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                 # modeled as a conformant outputSchema (claude.ai requires type == "object";
                 # anthropics/claude-ai-mcp#400), and outputSchema is optional. The stub behavior is
                 # described in the tool description, not its output schema.
-                assert tools["standin__echo"].outputSchema is None
-                _assert_valid_json_schema(tools["standin__echo"].inputSchema)
+                assert tools["standin__echo"].output_schema is None
+                _assert_valid_json_schema(tools["standin__echo"].input_schema)
                 result = await client.call_tool(
                     "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_result_ms": 0}
                 )
@@ -1752,7 +1752,7 @@ async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrate
 
     assert isinstance(tool, mcp_server_module.ProxyTool)
     advertised = tool.to_mcp_tool()
-    assert advertised.inputSchema == {"type": "object", "properties": {"limit": {"type": "integer"}}}
+    assert advertised.input_schema == {"type": "object", "properties": {"limit": {"type": "integer"}}}
     result = await tool.run({"limit": 100})
     assert isinstance(result.content[0], TextContent)
     assert result.content[0].text == "listed"
@@ -1960,7 +1960,11 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 assert registration.status_code == 201, registration.text
                 registered = registration.json()
                 assert registered["client_id"]
-                assert registered["client_secret"]
+                # The proxy always stores DCR clients as public (token_endpoint_auth_method="none")
+                # since it alone authenticates to the upstream IdP; it downgrades the requested
+                # "client_secret_post" and omits client_secret from the response accordingly.
+                assert registered["token_endpoint_auth_method"] == "none"
+                assert "client_secret" not in registered
 
                 code_verifier = secrets.token_urlsafe(32)
                 authorize = await anon.get(
@@ -2029,7 +2033,6 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                         "code": client_callback.params["code"],
                         "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
                         "client_id": registered["client_id"],
-                        "client_secret": registered["client_secret"],
                         "code_verifier": code_verifier,
                     },
                 )

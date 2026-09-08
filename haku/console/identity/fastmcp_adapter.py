@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Protocol, SupportsFloat, cast, override
 from uuid import UUID
 
 import fastmcp
-import httpx
+import httpx2
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-_SUPPORTED_FASTMCP_VERSION = "3.4.4"
+_SUPPORTED_FASTMCP_VERSION = "4.0.3"
 _RETRY_AFTER_SECONDS = 60
 _INVALID_GRANT = "The Agent authorization grant is invalid."
 
@@ -992,9 +992,9 @@ def _require_same_actor(before: GrantAuthorization, after: GrantAuthorization, *
 
 
 def _transient_upstream_error(error: BaseException) -> bool:
-    if isinstance(error, httpx.TransportError):
+    if isinstance(error, httpx2.TransportError):
         return True
-    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code >= 500
+    return isinstance(error, httpx2.HTTPStatusError) and error.response.status_code >= 500
 
 
 def _service_unavailable(detail: str) -> HTTPException:

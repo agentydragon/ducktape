@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from difflib import get_close_matches
 from typing import Any
 
-import httpx
+import httpx2
 
 from grocy_mcp.grocy_types import EntityType
 
@@ -44,7 +44,7 @@ class ResolvedQU:
     1.0 when the input QU is the stock QU."""
 
 
-class GrocyClient(httpx.AsyncClient):
+class GrocyClient(httpx2.AsyncClient):
     """HTTP client plus Grocy-specific entity operations.
 
     Entity methods use collision-safe names rather than a separate resolver

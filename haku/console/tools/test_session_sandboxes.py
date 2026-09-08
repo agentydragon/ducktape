@@ -99,13 +99,13 @@ async def test_surface_annotations_and_bounded_arguments() -> None:
         tools = {tool.name: tool for tool in await client.list_tools()}
 
     assert set(tools) == {"list_active", "terminate"}
-    assert set(tools["terminate"].inputSchema["properties"]) == {"session_id"}
-    assert tools["list_active"].inputSchema["properties"]["limit"]["maximum"] == 100
+    assert set(tools["terminate"].input_schema["properties"]) == {"session_id"}
+    assert tools["list_active"].input_schema["properties"]["limit"]["maximum"] == 100
     assert tools["list_active"].annotations is not None
-    assert tools["list_active"].annotations.readOnlyHint
+    assert tools["list_active"].annotations.read_only_hint
     assert tools["terminate"].annotations is not None
-    assert tools["terminate"].annotations.destructiveHint
-    assert tools["terminate"].annotations.idempotentHint
+    assert tools["terminate"].annotations.destructive_hint
+    assert tools["terminate"].annotations.idempotent_hint
 
 
 async def test_list_is_operator_scoped_and_paginated() -> None:

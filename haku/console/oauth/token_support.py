@@ -12,7 +12,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-import httpx
+import httpx2
 from mcp.client.auth.utils import handle_token_response_scopes
 from mcp.shared.auth import OAuthToken
 from pydantic import ValidationError
@@ -49,9 +49,9 @@ def public_base_url(settings: Settings) -> str:
     return settings.public_base_url.rstrip("/")
 
 
-def token_request_error_message(*, label: str, request_error: httpx.RequestError, timeout_seconds: float) -> str:
+def token_request_error_message(*, label: str, request_error: httpx2.RequestError, timeout_seconds: float) -> str:
     """Describe token-endpoint transport failures even when httpx's message is empty."""
-    if isinstance(request_error, httpx.TimeoutException):
+    if isinstance(request_error, httpx2.TimeoutException):
         return f"{label} timed out after {timeout_seconds:g} seconds"
     detail = str(request_error).strip()
     suffix = f": {detail}" if detail else ""
@@ -69,7 +69,7 @@ def token_request_headers(headers: Mapping[str, str] | None = None) -> dict[str,
     return {**(headers or {}), "Accept": "application/json"}
 
 
-async def parse_token_response(response: httpx.Response, *, label: str) -> OAuthToken:
+async def parse_token_response(response: httpx2.Response, *, label: str) -> OAuthToken:
     if response.status_code != 200:
         detail, oauth_error = _oauth_error_detail(response)
         raise TokenResponseError(
@@ -89,7 +89,7 @@ async def parse_token_response(response: httpx.Response, *, label: str) -> OAuth
         ) from e
 
 
-def _oauth_error_detail(response: httpx.Response) -> tuple[str, str | None]:
+def _oauth_error_detail(response: httpx2.Response) -> tuple[str, str | None]:
     """Return bounded, useful token-endpoint diagnostics without echoing token fields.
 
     OAuth error responses are normally JSON. Only the RFC error fields are retained from

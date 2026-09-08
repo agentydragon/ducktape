@@ -365,7 +365,7 @@ async def test_send_message_is_registered_with_bounded_text_schema() -> None:
     async with Client(_message_mcp(_Sessions())) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
     assert "send_message" in tools
-    schema = tools["send_message"].inputSchema
+    schema = tools["send_message"].input_schema
     assert schema["properties"]["text"]["minLength"] == 1
     assert schema["properties"]["text"]["maxLength"] == 100_000
 

@@ -15,9 +15,10 @@ loopback-socket cancellation actually reproduces the task-group teardown is timi
 transport-dependent, and wasn't reliably reproducible this way in ad hoc local testing
 (nor was `modelcontextprotocol/python-sdk#820`'s literal malformed-arguments trigger,
 which the currently pinned SDK already converts into a clean JSON-RPC error response
-rather than an uncaught exception). Use this to assert the follow-up keeps succeeding
-once migrated to the SDK version that removes the shared task group architecturally
-(see #5786); it is not by itself proof the wedge was live on the old SDK.
+rather than an uncaught exception) -- so no attempt is made here to assert the *negative*
+(that a request wedges) either; that would only be flaky, not evidence. The assertion
+that the follow-up keeps succeeding lives in test_wedge_repro.py, which also states
+precisely which protocol era that proves the fix for.
 """
 
 from __future__ import annotations

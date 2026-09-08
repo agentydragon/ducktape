@@ -5,11 +5,13 @@
   artifacts,
 }:
 let
-  # The ducktape umbrella wheel is built (on Bazel) against
-  # `fastmcp==3.4.4` (see requirements_bazel.txt). Nixpkgs 26.05 ships 3.2,
-  # while py-key-value-aio is older than FastMCP's >=0.4.4 floor. Package those
-  # two deltas against the stable Python package set so the whole closure shares
-  # one consistent site-packages.
+  # The ducktape umbrella wheel is built (on Bazel) against `fastmcp==4.0.3` /
+  # `mcp==2.1.1` (see requirements_bazel.txt). The pinned nixpkgs revision predates
+  # both mcp-sdk v2 (nixpkgs still ships mcp 1.26.0) and mcp v2's new transitive
+  # deps (mcp-types, httpx2/httpcore2 -- all three postdate the pin entirely), and
+  # py-key-value-aio is older than FastMCP's floor. Package those deltas against
+  # the stable Python package set so the whole closure shares one consistent
+  # site-packages.
   python3 = pkgs.python3.override {
     self = python3;
     packageOverrides =
@@ -21,7 +23,89 @@ let
         };
       in
       {
+        # Any package pulled transitively into this override set no longer matches
+        # nixpkgs' cached build once the closure shifts under it, so it rebuilds from
+        # source here instead of substituting -- running its test suite for the first
+        # time in this closure and surfacing pre-existing flaky tests nixpkgs' own
+        # binary-cache users never exercise. Fix these the same way nixpkgs itself
+        # already does for known-racy cases (see anyio's own disabledTests below,
+        # which excludes the sibling test_multiple_threads for the identical reason):
+        # disable the specific flaky test with a comment, not doCheck = false wholesale.
+        anyio = pyprev.anyio.overrideAttrs (old: {
+          # test_single_thread: thread-count assertion racy under load, same class as
+          # nixpkgs' own test_multiple_threads exclusion (NixOS/nixpkgs#448125).
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_single_thread"
+          ];
+        });
+        python-ulid = pyprev.python-ulid.overrideAttrs (old: {
+          # test_same_millisecond_overflow: writes directly to the shared
+          # ULID.provider singleton's mutable state and expects to observe its own
+          # write, order/isolation-dependent under this closure's rebuild.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_same_millisecond_overflow"
+          ];
+        });
+        tenacity = pyprev.tenacity.overrideAttrs (old: {
+          # test_sleeps: asserts an async retry-with-backoff run completes within
+          # 1.1s; scheduler jitter under this closure's rebuild load pushed it to 2s.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_sleeps"
+          ];
+        });
+        sphinx = pyprev.sphinx.overrideAttrs (old: {
+          # test_raw_node (tests/test_builders/test_build_linkcheck.py): nixpkgs
+          # already disables two sibling tests in this exact file as "racy" --
+          # test_check_link_response_only, test_anchors_ignored_for_url -- this is
+          # the same linkcheck-under-load flakiness, just not (yet) one of them.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_raw_node"
+          ];
+        });
+        paramiko = pyprev.paramiko.overrideAttrs (old: {
+          # test_sequence_numbers_reset_on_newkeys_when_strict: a real client/server
+          # thread pair racing a NEWKEYS rekey; asserts the post-rekey sequence
+          # counter before the other thread has necessarily processed it. Racy
+          # under load, same class as the anyio/sphinx disables above. No existing
+          # nixpkgs precedent for this one.
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_sequence_numbers_reset_on_newkeys_when_strict"
+          ];
+        });
+        django = pyprev.django.overrideAttrs (old: {
+          # test_crafted_xml_performance (tests/serializers/test_deserialization.py,
+          # TestDeserializer): asserts XML-deserialization time grows roughly
+          # linearly with input size (average factor <=2 across increasing
+          # depth/length) -- a wall-clock timing assertion, racy under this
+          # closure's rebuild load, same class as the tenacity/paramiko disables
+          # above (Django's own comment already concedes this: "Assert based on
+          # the average factor to reduce test flakiness"). django's checkPhase
+          # calls runtests.py directly, bypassing pytestCheckHook/
+          # unittestCheckHook, so disabledTests has no effect here -- skip via
+          # source patch instead, the same mechanism nixpkgs' own
+          # django_5_disable_failing_tests.patch uses for this exact package.
+          postPatch = (old.postPatch or "") + ''
+            substituteInPlace tests/serializers/test_deserialization.py \
+              --replace-fail '    def test_crafted_xml_performance(self):' \
+              $'    @unittest.skip("racy timing assertion under nix build load")\n    def test_crafted_xml_performance(self):'
+          '';
+        });
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
+          python3Packages = pyfinal;
+        };
+        idna = pkgs.callPackage ./idna.nix {
+          python3Packages = pyfinal;
+        };
+        httpcore2 = pkgs.callPackage ./httpcore2.nix {
+          python3Packages = pyfinal;
+        };
+        httpx2 = pkgs.callPackage ./httpx2.nix {
+          python3Packages = pyfinal;
+        };
+        mcp-types = pkgs.callPackage ./mcp-types.nix {
+          python3Packages = pyfinal;
+        };
+        mcp = pkgs.callPackage ./mcp.nix {
           python3Packages = pyfinal;
         };
         inherit (fastmcpPackages) fastmcp fastmcp-slim;
@@ -151,8 +235,12 @@ let
     ]);
   };
 
-  # Combined CLI + GNOME Shell extension package.
-  aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
+  # Combined CLI + GNOME Shell extension package. Takes the same overridden python3Packages as
+  # everything else here (not stock pkgs.python3Packages) -- claude-hooks depends on both aiquota
+  # and httpx/pydantic directly, and Nix's duplicate-package check fails the build if those two
+  # paths resolve to different derivations of the "same" version (see idna.nix's own comment: this
+  # is exactly the kind of ripple a packageOverrides addition can cause).
+  aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib python3Packages; };
 
   # Chrome-free GTK/WebKit approvals application.
   hakuApprovals = pkgs.callPackage ./haku-approvals.nix {

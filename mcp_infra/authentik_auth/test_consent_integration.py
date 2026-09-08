@@ -46,7 +46,7 @@ def _authorization_params(*, client_id: str, state: str, code_verifier: str) -> 
 
 
 async def _complete_authorization(
-    browser: httpx.AsyncClient, *, authorization_endpoint: str, token_endpoint: str, client_id: str, client_secret: str
+    browser: httpx.AsyncClient, *, authorization_endpoint: str, token_endpoint: str, client_id: str
 ) -> None:
     code_verifier = secrets.token_urlsafe(32)
     started = await browser.get(
@@ -85,7 +85,6 @@ async def _complete_authorization(
             "code": callback_params["code"][0],
             "redirect_uri": _CLIENT_CALLBACK,
             "client_id": client_id,
-            "client_secret": client_secret,
             "code_verifier": code_verifier,
         },
     )
@@ -131,13 +130,17 @@ async def test_build_authentik_auth_requires_consent_for_every_authorization() -
             )
             assert registered_response.status_code == 201, registered_response.text
             registered = registered_response.json()
+            # The proxy always stores DCR clients as public (token_endpoint_auth_method="none")
+            # since it alone authenticates to the upstream IdP; it downgrades the requested
+            # "client_secret_post" and omits client_secret from the response accordingly.
+            assert registered["token_endpoint_auth_method"] == "none"
+            assert "client_secret" not in registered
 
             await _complete_authorization(
                 browser,
                 authorization_endpoint=metadata["authorization_endpoint"],
                 token_endpoint=metadata["token_endpoint"],
                 client_id=registered["client_id"],
-                client_secret=registered["client_secret"],
             )
 
             second_verifier = secrets.token_urlsafe(32)

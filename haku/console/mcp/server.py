@@ -480,7 +480,7 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
             content: list[mcp_types.ContentBlock] = list(upstream.content) or [
                 mcp_types.TextContent(type="text", text="(tool returned no content)")
             ]
-            return ToolResult(content=content, structured_content=upstream.structuredContent, meta=result_meta)
+            return ToolResult(content=content, structured_content=upstream.structured_content, meta=result_meta)
         case ToolCallStatus.ERROR:
             return _failed_result(record.error or "tool call failed", result_meta)
         case ToolCallStatus.DENIED:
@@ -533,9 +533,9 @@ def _direct_to_result(result: dict[str, Any]) -> ToolResult:
     upstream = mcp_types.CallToolResult.model_validate(result)
     return ToolResult(
         content=list(upstream.content),
-        structured_content=upstream.structuredContent,
+        structured_content=upstream.structured_content,
         meta=upstream.meta,
-        is_error=upstream.isError,
+        is_error=upstream.is_error,
     )
 
 
@@ -624,10 +624,10 @@ class ProxyTool(Tool):
 def _build_proxy_tool(
     context: ConsoleMcpContext, server_id: str, tool: mcp_types.Tool, *, passthrough: bool, actor: RuntimeActor
 ) -> ProxyTool:
-    # `inputSchema` is a required field on the real upstream type, but treat a degenerate empty
+    # `input_schema` is a required field on the real upstream type, but treat a degenerate empty
     # dict the same as "no schema" — an empty object schema is a worse minimal schema than the
     # canonical one.
-    schema = tool.inputSchema or {"type": "object"}
+    schema = tool.input_schema or {"type": "object"}
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
     name = f"{server_tool_prefix(server_id)}{TOOL_NAME_SEPARATOR}{tool.name}"
