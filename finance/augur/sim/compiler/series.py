@@ -9,6 +9,7 @@ fields."""
 from __future__ import annotations
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
+from collections.abc import Callable
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -23,7 +24,7 @@ from finance.augur.model.series import (
     SecurityKey,
 )
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
-from finance.augur.sim.fixed_point import sampled_array_to_quanta
+from finance.augur.sim.fixed_point import sampled_array_to_per_unit_rate, sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 
 
@@ -211,21 +212,43 @@ def external_series_cubes(
     shape = (len(series_index_by_id), rollout_count, horizon_months + 1)
     values = np.full(shape, np.nan, dtype=np.float64)
     money_values = np.zeros(shape, dtype=np.int64)
-    money_keys = (SecurityKey, SecurityDistributionKey, HomeValueKey)
     for rows in level_rows:
         index = series_index_by_id.get(rows.key)
         if index is None:
             continue
         keep = rows.in_bounds
         values[index, rows.rollout_index[keep], rows.month_index[keep]] = rows.values[keep]
-        if not isinstance(rows.key, money_keys):
+        quantize = _money_quantizer(rows.key)
+        if quantize is None:
             continue
         keep = rows.in_bounds & np.isfinite(rows.values)
         if keep.any():
-            money_values[index, rows.rollout_index[keep], rows.month_index[keep]] = sampled_array_to_quanta(
+            money_values[index, rows.rollout_index[keep], rows.month_index[keep]] = quantize(
                 rows.values[keep], quantum=currency_quantum
             )
     return values, money_values
+
+
+def _money_quantizer(key: LevelSeriesKey) -> Callable[..., Int64[np.ndarray, " ..."]] | None:
+    """How this series' levels cross into integer money, or `None` if they do not.
+
+    Both quantizers take `(values, *, quantum)`, which `Callable` cannot spell.
+
+    A per-unit RATE and a per-unit PRICE are not the same unit, and the difference is the
+    whole of #5832: the engine multiplies a distribution by a whole position before anything is
+    owed, so rounding it to the currency quantum first both loses precision proportional to
+    units held and sends a sub-quantum payout to a literal zero, which the engine then rejects.
+    A price is large enough per unit that the quantum is the right grid for it, and it is
+    already the grid every price, basis and order on the wire agrees on.
+    """
+
+    match key:
+        case SecurityDistributionKey():
+            return sampled_array_to_per_unit_rate
+        case SecurityKey() | HomeValueKey():
+            return sampled_array_to_quanta
+        case _:
+            return None
 
 
 def validate_series_indexed_amounts(

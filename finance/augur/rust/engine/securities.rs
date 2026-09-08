@@ -60,8 +60,11 @@ pub(super) fn execute_distributions(
             rollout_id,
             month,
         )?;
-        let total_amount =
-            PerUnit(per_unit).times(Units::new(Quantity(units), scale), "security distribution")?;
+        // A rate, not a price: `security_distribution:` is quoted in nano-quanta per unit, so
+        // that a payout far below one quantum per unit survives to be multiplied by the
+        // position rather than rounding to zero first (#5832).
+        let total_amount = PerUnitRate(per_unit)
+            .times(Units::new(Quantity(units), scale), "security distribution")?;
         for (slice_index, slice) in distribution.tax_character.iter().enumerate() {
             let amount = total_amount.scaled_by(
                 Factor::parts_per_billion(slice.fraction_ppb),

@@ -76,8 +76,9 @@ def constant_maturity_fund_paths(
     price[:, 0] = initial_price_usd
     # Month 0 has no prior month to have bought at, so the position opens at the month's own
     # yield on the initial mark. It therefore pays the same as month 1, whose mark has not
-    # moved yet. A zero would read more naturally as "nothing accrued", but the level stack is
-    # multiplicative and the engine rejects a non-positive series outright.
+    # moved yet. A zero would read more naturally as "nothing accrued", but the engine rejects
+    # a non-positive value in a `security_distribution:` series outright — a restriction a
+    # payout does not obviously need, unlike the price series it is grouped with (#5832).
     distribution[:, 0] = initial_price_usd * market_yield[:, 0] / MONTHS_PER_YEAR
 
     for month in range(1, market_yield.shape[1]):

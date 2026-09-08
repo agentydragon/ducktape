@@ -32,7 +32,19 @@ UNITS = 10_000.0
 PRICE = Decimal(73)
 # A round monthly payout per unit, so `units x per unit` is exact at every split.
 PER_UNIT = Decimal("0.20")
-MONTHLY_PAYOUT_QUANTA = int(Decimal(str(UNITS)) * PER_UNIT * 100)
+# Below half a cent a unit: what a bond fund at a low unit price pays at a low yield, and what
+# rounding the RATE to the currency quantum turned into a literal zero (#5832).
+SUB_QUANTUM_PER_UNIT = Decimal("0.0004")
+# Between one and two cents a unit, where quantizing the rate to whole cents does not zero the
+# payout but still loses a fifth of it.
+LOSSY_PER_UNIT = Decimal("0.0123")
+
+
+def payout_quanta(per_unit: Decimal) -> int:
+    return int(Decimal(str(UNITS)) * per_unit * 100)
+
+
+MONTHLY_PAYOUT_QUANTA = payout_quanta(PER_UNIT)
 
 TREASURY = (DistributionTaxSlice(fraction=1.0, issuer_jurisdiction_id="federal_us"),)
 CALIFORNIA_MUNI = (DistributionTaxSlice(fraction=1.0, issuer_jurisdiction_id="california"),)
@@ -54,6 +66,7 @@ def distribution_case(
     distributes: bool = True,
     holding_account_id: str = "brokerage",
     pays_a_series: bool = True,
+    per_unit: Decimal = PER_UNIT,
 ) -> Case:
     """Alice holds one fund in a brokerage account and its payout lands in checking.
 
@@ -95,7 +108,7 @@ def distribution_case(
             # The two series have the same shape and units, which is the point of the payout
             # being a primitive rather than a rate.
             **(
-                {SecurityDistributionKey(symbol=SYMBOL): flat(PER_UNIT, rollout_count=1, horizon_months=HORIZON)}
+                {SecurityDistributionKey(symbol=SYMBOL): flat(per_unit, rollout_count=1, horizon_months=HORIZON)}
                 if pays_a_series
                 else {}
             ),
@@ -132,6 +145,33 @@ class SecurityDistributionAcceptance:
         assert _cash_by_month(backend(distribution_case(is_taxed=False))) == dict.fromkeys(
             range(HORIZON), MONTHLY_PAYOUT_QUANTA
         )
+
+    def test_a_payout_below_one_quantum_per_unit_still_reaches_cash(self, backend: Backend) -> None:
+        """#5832. A per-unit figure is a RATE, and a rate has no reason to be a whole number of
+        cents: 10,000 units at $0.0004 each is an ordinary $4.00 payment. Rounding the rate to
+        the currency quantum before multiplying by the position sent it to zero per unit, and
+        the engine then rejected the whole series as non-positive rather than paying $0.00 —
+        which is the only reason anyone noticed.
+
+        This is about the SIZE of the per-unit payout, not the length of the run: a fund at a
+        low unit price reaches it at any horizon, so a thirteen-month case pins it.
+        """
+
+        case = distribution_case(is_taxed=False, per_unit=SUB_QUANTUM_PER_UNIT)
+        assert _cash_by_month(backend(case)) == dict.fromkeys(range(HORIZON), payout_quanta(SUB_QUANTUM_PER_UNIT))
+
+    def test_a_payout_of_a_fractional_quantum_per_unit_is_not_rounded_away(self, backend: Backend) -> None:
+        """The half of #5832 that never raised: quantizing the rate first loses up to half a
+        quantum PER UNIT, scaled up by the whole position.
+
+        10,000 units at $0.0123 is $123.00. Rounded to whole cents per unit first it is
+        $100.00 — a fifth of the payout gone, silently, on a series that validates fine. The
+        engine multiplies before it divides, so there is nothing to round until the amount is
+        money.
+        """
+
+        case = distribution_case(is_taxed=False, per_unit=LOSSY_PER_UNIT)
+        assert _cash_by_month(backend(case)) == dict.fromkeys(range(HORIZON), payout_quanta(LOSSY_PER_UNIT))
 
     def test_splitting_the_tax_character_does_not_change_what_reaches_cash(self, backend: Backend) -> None:
         """The slices are a tax decomposition, not separate payouts. They share one

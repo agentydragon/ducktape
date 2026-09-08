@@ -126,7 +126,11 @@ class CompiledSimulation:
     series_keys: tuple[LevelSeriesKey, ...]
     # Heterogeneous model levels (CPI and other non-money ratios remain float-valued).
     external_values: Float64[np.ndarray, " series rollout snapshot"]
-    # Price-like model levels quantized to integer scenario-currency quanta before sim.
+    # Price-like model levels quantized to integers before sim. The unit is a function of the
+    # row's key type, decided once in `series._money_quantizer`: whole currency quanta for a
+    # price or a property value, and nano-quanta (`MONEY_FACTOR_SCALE` to the quantum) for a
+    # per-unit distribution rate, which is far smaller per unit than a quantum and would round
+    # to zero on the coarse grid.
     external_money_values: Int64[np.ndarray, " series rollout snapshot"]
     agent_codes: Int64[np.ndarray, " agent"]
     cash_agent_codes: Int64[np.ndarray, " cash"]

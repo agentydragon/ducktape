@@ -22,6 +22,22 @@ pub struct Quantity(pub i64);
 #[serde(transparent)]
 pub struct PerUnit(pub i64);
 
+/// A per-unit rate on the fixture's fine grid: `WIRE_RATE_SCALE` of these to one quantum.
+///
+/// A distribution is quoted per unit and can sit far below one quantum there -- a bond fund
+/// at $56 a unit yielding 10bp pays under half a cent a unit a month -- while the amount it
+/// comes to over a real position is ordinary money. Carrying it in whole quanta like a price
+/// rounds away up to half a quantum per unit BEFORE the multiply by the position, and sends a
+/// small enough rate to zero, which the fixture validator then rejects (#5832).
+///
+/// A separate type from `PerUnit` rather than a second constructor on it, because the two are
+/// different units and nothing else distinguishes them: an `i64` off the wire looks the same
+/// either way, and the one thing that must never happen is a rate multiplied as if it were a
+/// price -- off by a billion, silently, in the direction that overpays.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct PerUnitRate(pub i64);
+
 /// A quantity together with the scale its integer counts in.
 ///
 /// Asset scales differ -- a satoshi is not a share -- and the scale is a property of
@@ -247,6 +263,27 @@ impl PerUnit {
     }
 }
 
+impl PerUnitRate {
+    /// The amount this rate comes to over `units`, rounded half away from zero -- ONCE, here.
+    ///
+    /// Both scales divide out together, and the product is formed before either does, so the
+    /// only rounding in the path from a sampled rate to booked money is this one. The
+    /// denominator is taken in `i128` because `units.scale * WIRE_RATE_SCALE` reaches 1e18 for
+    /// a gwei-scaled asset, which is within `i64` but leaves no room to be casual about.
+    pub fn times(self, units: Units, operation: &'static str) -> Result<Money, ArithmeticError> {
+        let denominator = i128::from(units.scale) * i128::from(WIRE_RATE_SCALE);
+        let amount = mul_div_i128_round_half_up(
+            i128::from(self.0),
+            i128::from(units.raw),
+            denominator,
+            operation,
+        )?;
+        i64::try_from(amount)
+            .map(Money)
+            .map_err(|_| ArithmeticError::Overflow { operation })
+    }
+}
+
 /// Multiply two integers, divide by `denominator`, and round half away from
 /// zero. The intermediate uses `i128`, so ordinary financial products cannot
 /// overflow merely because their operands are `i64`.
@@ -318,4 +355,68 @@ mod tests {
         assert_eq!(mul_div_i128_round_half_up(5, 1, 2, "test"), Ok(3));
         assert_eq!(mul_div_i128_round_half_up(-5, 1, 2, "test"), Ok(-3));
     }
+
+    /// 10,000 units of an asset held in millionths, which is what a fund position looks like.
+    fn ten_thousand_units() -> Units {
+        Units::new(Quantity(10_000 * 1_000_000), 1_000_000)
+    }
+
+    #[test]
+    fn a_rate_of_whole_quanta_per_unit_agrees_with_a_price() {
+        // The two types differ only in the grid they are quoted on, so where a rate happens to
+        // land on a whole quantum they must come to the same money -- otherwise the split is a
+        // behaviour change rather than a precision one.
+        for quanta_per_unit in [1, 20, 4_237] {
+            assert_eq!(
+                PerUnitRate(quanta_per_unit * WIRE_RATE_SCALE)
+                    .times(ten_thousand_units(), "test")
+                    .unwrap(),
+                PerUnit(quanta_per_unit)
+                    .times(ten_thousand_units(), "test")
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn a_rate_below_one_quantum_per_unit_still_comes_to_money() {
+        // $0.0004 a unit over 10,000 units is $4.00. As a `PerUnit` this rate is not
+        // expressible at all: it rounds to zero cents per unit and pays nothing (#5832).
+        let rate = PerUnitRate(4 * WIRE_RATE_SCALE / 100);
+        assert_eq!(rate.times(ten_thousand_units(), "test"), Ok(Money(400)));
+        assert_eq!(PerUnit(0).times(ten_thousand_units(), "test"), Ok(Money(0)));
+    }
+
+    #[test]
+    fn the_product_is_formed_before_either_scale_divides_out() {
+        // One quantum spread across the WHOLE position: a ten-thousandth of a quantum per
+        // unit, which is only representable because nothing rounds until the amount is money.
+        assert_eq!(
+            PerUnitRate(WIRE_RATE_SCALE / 10_000).times(ten_thousand_units(), "test"),
+            Ok(Money(1))
+        );
+        // And the rounding is half away from zero AT THE AMOUNT rather than per unit, so half
+        // a quantum over the position rounds up and a hair under it does not.
+        assert_eq!(
+            PerUnitRate(WIRE_RATE_SCALE / 20_000).times(ten_thousand_units(), "test"),
+            Ok(Money(1))
+        );
+        assert_eq!(
+            PerUnitRate(WIRE_RATE_SCALE / 20_000 - 1).times(ten_thousand_units(), "test"),
+            Ok(Money(0))
+        );
+    }
+
+    #[test]
+    fn a_gwei_scaled_position_does_not_overflow_the_denominator() {
+        // `units.scale * WIRE_RATE_SCALE` is 1e18 here, inside `i64` but with no room spare,
+        // which is why the denominator is taken in `i128`.
+        let units = Units::new(Quantity(3 * ETH_GWEI), ETH_GWEI);
+        assert_eq!(
+            PerUnitRate(7 * WIRE_RATE_SCALE).times(units, "test"),
+            Ok(Money(21))
+        );
+    }
+
+    const ETH_GWEI: i64 = 1_000_000_000;
 }

@@ -117,9 +117,7 @@ def ratio_to_money_factor(numerator: int | np.integer[Any], denominator: int | n
         raise ValueError(f"money factor {factor} does not fit in int64") from exc
 
 
-def sampled_array_to_quanta(values: Any, *, quantum: Any) -> Int64[np.ndarray, " ..."]:
-    """Quantize a model-produced monetary path at the simulator boundary."""
-
+def _quantize_sampled(values: Any, *, quantum: Any, subdivision: int) -> Int64[np.ndarray, " ..."]:
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
     currency_quantum = validate_currency_quantum(quantum)
@@ -130,12 +128,36 @@ def sampled_array_to_quanta(values: Any, *, quantum: Any) -> Int64[np.ndarray, "
             raise ValueError("sampled monetary value must be numeric") from exc
         if not sampled.is_finite():
             raise ValueError("sampled monetary value must be finite")
-        count = (sampled / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        count = (sampled * subdivision / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
         try:
             out[idx] = np.int64(int(count))
         except OverflowError as exc:
             raise ValueError(f"sampled currency quantum count {count} does not fit in int64") from exc
     return out
+
+
+def sampled_array_to_quanta(values: Any, *, quantum: Any) -> Int64[np.ndarray, " ..."]:
+    """Quantize a model-produced monetary path at the simulator boundary."""
+
+    return _quantize_sampled(values, quantum=quantum, subdivision=1)
+
+
+def sampled_array_to_per_unit_rate(values: Any, *, quantum: Any) -> Int64[np.ndarray, " ..."]:
+    """Quantize a model-produced PER-UNIT rate at the simulator boundary, in nano-quanta.
+
+    A per-unit figure is not a payment, and rounding it as one is a unit error. The engine
+    multiplies it by a whole position before anything is owed — `PerUnitRate::times` is a
+    multiply-then-divide over `i128` — so quantizing to the currency quantum FIRST discards up
+    to half a quantum PER UNIT ahead of that multiply, and sends a payout smaller than half a
+    quantum to a literal zero. That zero is #5832: a bond fund at $56 a unit yielding under
+    ~11bp pays under half a cent a unit a month, and the engine rejects the series outright.
+
+    So a per-unit rate lands on the same parts-per-billion grid every other dimensionless wire
+    value uses — `MONEY_FACTOR_SCALE` of these to one quantum, `WIRE_RATE_SCALE` on the Rust
+    side. Nothing is gained by rounding earlier than the multiply, and precision is lost.
+    """
+
+    return _quantize_sampled(values, quantum=quantum, subdivision=MONEY_FACTOR_SCALE)
 
 
 # Quantity quanta by symbol: the smallest fraction of a unit the ledger tracks. BTC and ETH

@@ -21,7 +21,7 @@ use crate::{
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{
-        ArithmeticError, Factor, Money, PerUnit, Quantity, Units, WIRE_RATE_SCALE,
+        ArithmeticError, Factor, Money, PerUnit, PerUnitRate, Quantity, Units, WIRE_RATE_SCALE,
         is_quantity_scale, mul_div_i128_round_half_up, mul_div_round_half_up,
     },
     product::{
