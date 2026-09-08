@@ -1,0 +1,14 @@
+# With two replicas, a voluntary disruption (node drain, descheduler eviction,
+# rolling update) may take one proxy pod at a time but never both, so haku-ci's
+# only egress path keeps a ready endpoint throughout. The descheduler honors
+# PDBs unconditionally.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: haku-egress-proxy
+  namespace: haku-egress-proxy
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-egress-proxy

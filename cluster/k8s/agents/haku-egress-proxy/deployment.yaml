@@ -8,7 +8,10 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 1
+  # Two, so one container's restart never empties the Service. mitmproxy OOM-kills
+  # under haku-ci traffic (#5846), and with one replica every kill was a CI outage:
+  # dependency fetches mid-flight got "connection refused" for the restart's duration.
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-egress-proxy
@@ -17,6 +20,17 @@ spec:
       labels:
         app.kubernetes.io/name: haku-egress-proxy
     spec:
+      affinity:
+        podAntiAffinity:
+          # Preferred, not required: this proxy is haku-ci's only egress path, so a
+          # replica left Pending by a hard rule costs more than two on one node.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: haku-egress-proxy
+                topologyKey: kubernetes.io/hostname
       initContainers:
         - name: mitmproxy-ca-init
           image: busybox:1.37
@@ -95,8 +109,10 @@ spec:
               # TODO(vpa-memory-audit): 1Gi -> 3Gi. VPA observed a 1.15Gi
               # request / 1.73Gi upper bound, so the working set is NOT staying
               # bounded the way the note above assumes — this is the second time
-              # mitmproxy has outgrown its limit. Retained flows are the usual
-              # cause; confirm before accepting a 3x ceiling.
+              # mitmproxy has outgrown its limit, and it was OOM-killed at 3Gi
+              # again on 2026-09-08 after ~53h of traffic (#5846). Retained flows
+              # are the usual cause; bound retention rather than raising this a
+              # third time.
               memory: 3Gi
       volumes:
         - name: mitmproxy-ca
