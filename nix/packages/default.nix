@@ -87,8 +87,7 @@ let
           postPatch = (old.postPatch or "") + ''
             substituteInPlace tests/serializers/test_deserialization.py \
               --replace-fail '    def test_crafted_xml_performance(self):' \
-                              '    @unittest.skip("racy timing assertion under nix build load")
-            def test_crafted_xml_performance(self):'
+              $'    @unittest.skip("racy timing assertion under nix build load")\n    def test_crafted_xml_performance(self):'
           '';
         });
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
