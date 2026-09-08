@@ -18,8 +18,10 @@ spec:
       dnsPolicy: ClusterFirst
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/region: hil
+      # No explicit region nodeSelector: the workspace volumeClaimTemplate's
+      # seaweedfs-ovh StorageClass already pins scheduling to
+      # topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer +
+      # allowedTopologies (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml).
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

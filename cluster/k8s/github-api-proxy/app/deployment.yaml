@@ -19,8 +19,10 @@ spec:
       labels:
         app.kubernetes.io/name: github-api-proxy
     spec:
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
+      # No explicit zone nodeSelector: github-api-proxy-capture's seaweedfs-ovh
+      # StorageClass already pins scheduling to topology.kubernetes.io/zone=hil-ovh
+      # via WaitForFirstConsumer + allowedTopologies
+      # (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml).
       imagePullSecrets:
         - name: forgejo-images-creds
       automountServiceAccountToken: false
