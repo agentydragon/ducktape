@@ -27,6 +27,21 @@ spec:
       # 250 ms request timeout is too small for the current cross-site path.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Stateless (config only, no PVC). Allow control-plane nodes as overflow
+      # capacity, but prefer workers to keep ordinary application I/O away from
+      # etcd disks.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       containers:
         - name: server
           image: git.allegedly.works/ducktape-ci/grocy-mcp:devel-20260907225333-df4a440 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}

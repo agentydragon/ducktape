@@ -23,6 +23,21 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
+      # Stateless: all state is in study-casino-db (CNPG), no local storage. Allow
+      # control-plane nodes as overflow capacity, but prefer workers to keep
+      # ordinary application I/O away from etcd disks.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       containers:
         - name: app
           image: git.allegedly.works/ducktape-ci/study-casino:devel-20260829000854-36bd53e # {"$imagepolicy": "flux-system:study-casino"}

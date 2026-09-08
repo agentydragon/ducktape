@@ -50,9 +50,9 @@ An overflow exception must satisfy all of these rules:
   review any generated child pod template as part of the same change.
 
 This is a scheduling fallback, not a general invitation to place application
-workloads on control planes. The Langfuse web/worker pods, Paperless app, and
-cli-proxy-api are explicit exceptions because their manifests use no local-path,
-hostPath, or emptyDir storage.
+workloads on control planes. The Langfuse web/worker pods, Paperless app,
+cli-proxy-api, Gatus, study-casino, and grocy-mcp-server are explicit exceptions
+because their manifests use no local-path, hostPath, or emptyDir storage.
 
 **Deviation: cli-proxy-api skips the soft non-control-plane node-affinity
 preference.** Its footprint (100m-1 CPU, 128Mi-512Mi memory, proxy-only network
