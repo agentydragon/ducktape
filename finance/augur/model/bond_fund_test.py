@@ -103,5 +103,88 @@ def test_every_rollout_is_priced_independently() -> None:
         assert np.allclose(distribution[rollout], alone_distribution[0])
 
 
+# The `y -> 0` expansion of `par_bond_price`, which is what makes the singularity a numerical
+# artifact rather than an economic edge. With `d = (1+y)^-T`:
+#
+#     price = c(1-d)/y + d  ->  (1 + cT) - y * (T + cT(T+1)/2) + O(y^2)
+#
+# Both the limit and its first-order approach are closed form, so a test can pin them instead
+# of a tolerance nobody can check.
+LIMIT_COUPON, LIMIT_MATURITY = 0.03, 5.5
+
+
+def _zero_yield_limit(coupon: float, maturity: float) -> float:
+    """An undiscounted coupon annuity plus par: what the price becomes when nothing discounts."""
+
+    return 1.0 + coupon * maturity
+
+
+def _first_order_slope(coupon: float, maturity: float) -> float:
+    return maturity + coupon * maturity * (maturity + 1.0) / 2.0
+
+
+def test_the_price_approaches_its_closed_form_zero_yield_limit() -> None:
+    """`MINIMUM_ANNUAL_YIELD` is a SINGULARITY GUARD, not a modelling choice.
+
+    `par_bond_price` divides by the yield, so the floor exists to keep the denominator off
+    zero — and the value of the floor is therefore arbitrary in the way a guard's is, not
+    defensible in the way a rate would be. What licenses that reading is that the function has
+    a finite limit at zero and reaches it smoothly: nothing economic happens as the yield
+    approaches the floor from above, and the shipped floor sits well inside the smooth region.
+    """
+
+    limit = _zero_yield_limit(LIMIT_COUPON, LIMIT_MATURITY)
+    slope = _first_order_slope(LIMIT_COUPON, LIMIT_MATURITY)
+
+    # Down to 1e-8 and no further: below roughly 1e-10 the cancellation in `1 - (1+y)^-T`
+    # loses more precision than the expansion's next term carries, so the agreement stops
+    # being a statement about the formula.
+    for market_yield in (1e-2, 1e-3, 1e-4, 1e-6, 1e-8):
+        price = float(
+            par_bond_price(np.array([LIMIT_COUPON]), np.array([market_yield]), maturity_years=LIMIT_MATURITY)[0]
+        )
+        assert price == pytest.approx(limit - slope * market_yield, rel=1e-2)
+
+
+def test_a_zero_yield_prices_to_a_silent_nan() -> None:
+    """What the floor prevents is a NaN that propagates, not an exception that stops the run.
+
+    At exactly zero the numerator vanishes with the denominator, so the array path takes 0/0
+    and numpy answers with a warning and a NaN rather than raising. A NaN mark multiplies
+    through the whole level stack and reaches the engine as a shape that is merely "not
+    finite" — far from the yield that produced it. This is the failure `MINIMUM_ANNUAL_YIELD`
+    is standing in front of, and it is why the floor cannot simply be dropped in favour of
+    letting a zero through.
+    """
+
+    with np.errstate(invalid="ignore"):
+        price = par_bond_price(np.array([0.03]), np.array([0.0]), maturity_years=5.5)
+
+    assert np.isnan(price).all()
+
+
+def test_the_bond_math_is_continuous_through_a_negative_yield() -> None:
+    """Negative nominal yields happen, and NONE of this arithmetic objects to them.
+
+    A bond discounted at a negative rate is worth more than par, and one paying its own
+    negative coupon is worth exactly par — the same two statements that hold above zero, with
+    no special case between them. So what forbids a negative yield here is the provider's
+    floor (`structural_macro.MINIMUM_ANNUAL_YIELD`), a decision taken one layer up and for the
+    singularity at zero, not because the fund could not be priced. See #5834: modelling the
+    curve generatively is what would let a rate go through zero on its own terms.
+    """
+
+    for market_yield in (-0.001, -0.005, -0.01):
+        above_par = float(par_bond_price(np.array([0.03]), np.array([market_yield]), maturity_years=5.5)[0])
+        assert above_par > 1.0
+        at_own_coupon = par_bond_price(np.array([market_yield]), np.array([market_yield]), maturity_years=5.5)
+        assert float(at_own_coupon[0]) == pytest.approx(1.0)
+
+    # Monotone in the yield across zero, exactly as it is on either side of it.
+    crossing = np.array([[-0.01, -0.005, 0.0001, 0.005, 0.01]])
+    prices = par_bond_price(np.full_like(crossing, 0.03), crossing, maturity_years=5.5)
+    assert np.all(np.diff(prices[0]) < 0.0)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -83,11 +83,18 @@ MINIMUM_MONTHS = 240
 MINIMUM_ANNUAL_YIELD = 0.0001
 """Floor on any modeled yield, as a decimal (1bp).
 
-Not a fudge. A distribution per unit is a level series and the level stack is multiplicative,
-so a zero breaks it — and a short rate that reaches zero is 2009-2021, not a hypothetical.
-Real money-market funds never paid exactly zero either: a fund whose gross yield would go
-negative has its fee waived instead. So the floor is both what the arithmetic needs and what
-the instrument actually does.
+A SINGULARITY GUARD first: `bond_fund.par_bond_price` divides by the yield, and at exactly
+zero the numerator vanishes with it, so the array path takes 0/0 and returns a silent NaN
+that propagates through the whole level stack (`bond_fund_test.py` pins both that and the
+finite limit it guards). A short rate reaching zero is 2009-2021, not a hypothetical.
+
+Its VALUE is arbitrary in the way a guard's is: the price has a closed-form limit at zero and
+approaches it smoothly, so nothing economic distinguishes 1bp from 0.1bp. It is not what keeps
+a fund's yield positive — `curve_ratio` is (see `InstrumentSpec`) — and it is not what stops a
+payout from encoding as zero at the simulator boundary, which is #5832 and a unit error one
+layer down. Real money-market funds do also never pay exactly zero (a fund whose gross yield
+would go negative has its fee waived instead), so the floor is not economically wrong; it just
+is not there for that reason.
 """
 
 
@@ -117,8 +124,7 @@ class InstrumentSpec(FrozenModel):
     # FRACTION of the taxable curve, anchored near `1 - t` for the marginal investor, so the gap
     # narrows as rates fall instead of staying put. An additive muni spread is a linearisation
     # of that ratio around current rates, and it goes NEGATIVE once the curve drops below the
-    # spread — see #5832, where the clamp that catches it then becomes a coupon and collapses
-    # the fund.
+    # spread, where `MINIMUM_ANNUAL_YIELD` catches it.
     #
     # Both are static here, which is the simplification that remains: the ratio has no dynamics
     # of its own, so this still cannot produce a muni selloff Treasuries escape (gap 5). #5835
