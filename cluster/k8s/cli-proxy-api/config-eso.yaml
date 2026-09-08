@@ -8,7 +8,9 @@ metadata:
   annotations:
     description: >-
       CLIProxyAPI config.yaml rendered from the client-key Secret. Retry an upstream stream up
-      to three times only before its first response byte reaches the caller.
+      to three times only before its first response byte reaches the caller. Remote management
+      is enabled (see README.md "Remote recovery") and reachable only through the SSO-gated
+      cli-proxy-api-admin.allegedly.works route.
 spec:
   refreshInterval: 1h
   secretStoreRef:
@@ -29,6 +31,16 @@ spec:
           debug: false
           streaming:
             bootstrap-retries: 3
+          # Verified against upstream config.example.yaml (router-for-me/CLIProxyAPI):
+          # allow-remote lifts the localhost-only restriction on the management API/UI
+          # (GET/POST /v0/management/*, served on the same port). The MANAGEMENT_PASSWORD
+          # env var (deployment.yaml; remote-management.secret-key) is unconditionally
+          # required regardless of this flag; allow-remote only changes who may reach the
+          # check. Public reachability is additionally gated by Authentik SSO — see
+          # README.md "Remote recovery" and
+          # cluster/k8s/authentik/proxy-routes/cli-proxy-api-admin-httproute.yaml.
+          remote-management:
+            allow-remote: true
   data:
     - secretKey: client_key
       remoteRef:

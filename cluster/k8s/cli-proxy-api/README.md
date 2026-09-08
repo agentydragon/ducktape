@@ -83,6 +83,32 @@ AIQuota uses the management API's opaque `auth_index` only because the current
 `/api-call` contract requires it for `$TOKEN$` substitution. It never reads or
 stores the auth file or either OAuth token.
 
+## Remote recovery (SSO-gated web UI)
+
+The Codex/Claude OAuth sessions above periodically die (OpenAI/Anthropic invalidate the
+refresh token) and previously could only be recovered by the interactive `kubectl exec`
+device-login flow, which needs a machine with cluster access — not a phone. CLIProxyAPI's
+own [management API](https://help.router-for.me/management/api) already covers this:
+`GET /v0/management/{codex,anthropic,antigravity}-auth-url` returns a provider login URL
+plus a `state`; `GET /v0/management/get-auth-status?state=...` polls it; `GET`/`POST
+/v0/management/oauth-callback` completes it (unauthenticated, since it only carries the
+provider's redirect). The rest of the management API and the bundled web UI it serves at
+`/management.html` on the same port ride along.
+
+`https://cli-proxy-api-admin.allegedly.works` exposes this — Gateway → Authentik embedded
+outpost (SSO, `agentydragon` only, `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`)
+→ this Service. Authentik does not replace the app's own auth: every management endpoint
+still requires the `cli-proxy-api-management` key (`Authorization: Bearer <key>` or
+`X-Management-Key: <key>`, config `remote-management.secret-key`, wired here via the
+`MANAGEMENT_PASSWORD` env var) underneath. Enabled via `remote-management.allow-remote:
+true` in `config-eso.yaml` — CLIProxyAPI's config format has no narrower scoping for
+remote endpoints, so this lifts the localhost restriction for the whole management
+surface (account pool included), not just the OAuth-login endpoints; the SSO gate in
+front, scoped to the account owner, is the accepted mitigation.
+
+The existing `cli-proxy-api.allegedly.works` hostname is unrelated and unchanged — it only
+ever routes unauthenticated `/v1` model traffic.
+
 ## Secrets
 
 - `client-key.sops.yaml` — SSOT of the client key. ESO renders it into

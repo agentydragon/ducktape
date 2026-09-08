@@ -1,0 +1,55 @@
+# First NetworkPolicy in this namespace. Default-deny ingress on 8317, admitting exactly
+# the traffic that already reaches this pod today plus the new SSO-gated admin route's
+# outpost hop. Uses CiliumNetworkPolicy, not a plain NetworkPolicy, because the existing
+# cli-proxy-api.allegedly.works /v1 route is a direct Gateway HTTPRoute backend: its
+# traffic carries the reserved:ingress identity, which only Cilium's policy CRD can match
+# (cluster/docs/cilium_network_policy.md).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cli-proxy-api-ingress
+  namespace: cli-proxy-api
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cli-proxy-api
+  ingress:
+    # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the
+    # existing cli-proxy-api.allegedly.works /v1 HTTPRoute (httproute.yaml), which routes
+    # straight to this Service, unauthenticated, for LiteLLM's model traffic.
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
+    # LiteLLM's codex-*/chatgpt-* upstreams (k8s/litellm/app/proxy-config.yaml) call the
+    # in-cluster Service by cluster DNS, not through the Gateway.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: litellm
+            app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
+    # Authentik embedded outpost: reverse-proxies the new SSO-gated admin route
+    # (cli-proxy-api-admin.allegedly.works) to this Service after login. Required for
+    # proxy-mode SSO providers — cluster/docs/sso.md "Proxy-mode NetworkPolicy (required)".
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/name: authentik
+            app.kubernetes.io/component: server
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
+    # Kubelet readiness/liveness tcpSocket probes (deployment.yaml) originate from the
+    # node host.
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
