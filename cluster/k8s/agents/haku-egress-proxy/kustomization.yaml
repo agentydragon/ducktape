@@ -6,6 +6,7 @@ resources:
   - trust-bundle.yaml
   - deployment.yaml
   - service.yaml
+  - poddisruptionbudget.yaml
   - claude-iron-deployment.yaml
   - claude-iron-service.yaml
   - claude-networkpolicy.yaml
