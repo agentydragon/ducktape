@@ -82,6 +82,9 @@ down.
    current objective cannot rank the candidates and finding 2 says which one can. #5482 also
    opens the policy seam SPEC gap 10 needs for a rolling ladder, so two lanes share it.
 
+   The design the lane builds to is `docs/spending_model.md`: spending is a policy the engine
+   consults each month, obligations are contracts, and the tier menu lives in the policy.
+
    Two things this lane must get right rather than defer. #5484's output is a **panel of
    metrics over the rollout distribution** — P(holds the top tier) first, alongside P(ruin),
    time-in-tier and terminal quantiles — and explicitly not a fitted scalar utility, which
