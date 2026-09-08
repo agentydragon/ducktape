@@ -50,9 +50,9 @@ An overflow exception must satisfy all of these rules:
   review any generated child pod template as part of the same change.
 
 This is a scheduling fallback, not a general invitation to place application
-workloads on control planes. The Langfuse web/worker pods and Paperless app are
-explicit exceptions because their manifests use no local-path, hostPath, or
-emptyDir storage.
+workloads on control planes. The Langfuse web/worker pods, Paperless app, and
+cli-proxy-api are explicit exceptions because their manifests use no local-path,
+hostPath, or emptyDir storage.
 
 ## OVH-Only Resilience Invariants
 
