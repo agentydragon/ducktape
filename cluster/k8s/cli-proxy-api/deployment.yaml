@@ -37,16 +37,6 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
-      # Soft anti-affinity off control-plane nodes: prefer ordinary workers when they
-      # have room, landing here only when the zone's workers are the contended ones.
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: DoesNotExist
       initContainers:
         - name: init-auth-dir
           image: busybox:1.37

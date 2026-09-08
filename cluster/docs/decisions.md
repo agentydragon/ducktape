@@ -54,6 +54,17 @@ workloads on control planes. The Langfuse web/worker pods, Paperless app, and
 cli-proxy-api are explicit exceptions because their manifests use no local-path,
 hostPath, or emptyDir storage.
 
+**Deviation: cli-proxy-api skips the soft non-control-plane node-affinity
+preference.** Its footprint (100m-1 CPU, 128Mi-512Mi memory, proxy-only network
+I/O, no local storage) is light enough that control planes are meant to be
+ordinary candidates for it, not last resort: it is a single-writer,
+Recreate-strategy pod whose Codex OAuth refresh session cannot tolerate the
+descheduler's `LowNodeUtilization` evictions (roughly every 15 minutes, driven
+by the zone's two ordinary workers running hot), and a soft preference away from
+control planes would keep steering the scheduler's replacement pod back onto
+those same contended workers — recreating the churn this exception exists to
+fix. It still keeps the hard taint toleration and the no-local-storage rule.
+
 ## OVH-Only Resilience Invariants
 
 **Rule**: These services MUST work with OVH only (Proxmox completely down). No
