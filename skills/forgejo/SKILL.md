@@ -119,7 +119,8 @@ Timing-field gotchas on this deployment (they bite a naive reading):
   queued before it runs; treat a long tail as queue wait and filter outliers (the helper's
   `--max-seconds`).
 - **`limit` is ignored** — the endpoint returns the whole task list under `workflow_runs`;
-  slice client-side.
+  slice client-side. That list is the repo's entire task history (3.4 MB in 80–90 s on
+  `haku/haku-state`, 2026-09), so give the read minutes: a default 30 s client times out.
 
 ## Logs
 
@@ -144,19 +145,23 @@ uv run skills/forgejo/scripts/forgejo.py logs \
 The helper logs in, fetches the run page, parses the page-provided `data-*` attributes, and
 posts the UI's JSON cursor payload. If `uv run` picks a stripped system interpreter (the
 symptom is `ModuleNotFoundError: No module named 'math'` from inside the stdlib, seen in
-the Claude Code web container), point it at a full one with `uv run --python <path>`.
+the Claude Code web container), point it at the resolved path of a full one:
+`uv run --python "$(readlink -f /usr/local/bin/python3.13)" …`. The symlink path itself
+does not help: a venv whose `home` is `/usr/local/bin` falls back to the same stripped
+`/usr/lib/python3.13`.
 
-Keep credentials in environment variables or temporary shell variables (`FORGEJO_URL`, `FORGEJO_USER`, `FORGEJO_PASSWORD`); do not print them.
+The credential comes from the `~/.netrc` entry for the Forgejo host (mode `600`, or
+Python's `netrc` refuses it) unless `--user`/`--password` or
+`FORGEJO_USER`/`FORGEJO_PASSWORD` are set, so no password has to pass through a command
+line; do not print them.
 
-Manual equivalent:
+Manual equivalent. The login form carries no `_csrf` field on this deployment, so the login
+is one POST; a wrong password answers 200 with the form again, so check that the final URL
+left `/user/login`:
 
 ```bash
 cookie=$(mktemp)
-curl -fsS -c "$cookie" "$FORGEJO_URL/user/login" -o /tmp/forgejo-login.html
-csrf=$(rg -o 'name="_csrf" value="([^"]+)"' -r '$1' /tmp/forgejo-login.html | head -1)
-curl -fsS -L -b "$cookie" -c "$cookie" -o /tmp/forgejo-after-login.html \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode "_csrf=$csrf" \
+curl -fsS -L -b "$cookie" -c "$cookie" -o /dev/null -w '%{url_effective}\n' \
   --data-urlencode "user_name=$USER" \
   --data-urlencode "password=$PASS" \
   "$FORGEJO_URL/user/login"
@@ -206,7 +211,40 @@ Notes:
 ## Re-running
 
 There is no REST rerun or retry on this deployment (15.0.3+gitea-1.22.0; `swagger.v1.json`
-has no path matching `rerun|retry|cancel`). Two routes exist:
+has no path matching `rerun|retry|cancel`). The UI's re-run buttons post to web routes,
+which the helper drives over the § Logs session; a `workflow_dispatch` is the REST-only
+alternative, and it does less.
+
+**The UI re-run, the web route — what repaints a PR's checks.** The helper logs in
+(`~/.netrc`, § Logs), reads the run page's job list and `canRerun` flags, and posts where
+the UI's buttons post:
+
+```bash
+# One job (by name, or by zero-based index in the run's job list) plus the jobs that need it.
+uv run skills/forgejo/scripts/forgejo.py rerun \
+  --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --job image
+
+# Every job of the run.
+uv run skills/forgejo/scripts/forgejo.py rerun --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER"
+```
+
+Manual equivalent over the cookie jar from § Logs. `$RUN_LINK` is the page state's
+`state.run.link` (`/haku/haku-state/actions/runs/7502`); `$JOB_INDEX` is the job's position
+in `state.run.jobs`, which follows the workflow file's job order — not the task id, not the
+UI job id:
+
+```bash
+curl -fsS -b "$cookie" -X POST "$FORGEJO_URL$RUN_LINK/jobs/$JOB_INDEX/rerun"   # -> {}
+curl -fsS -b "$cookie" -X POST "$FORGEJO_URL$RUN_LINK/rerun"                   # every job
+```
+
+Observed on a job re-run (`haku/haku-state` run 7502, `validate`, 2026-09-08): the run keeps
+its index and goes back to `running`; the job gets a new task row in `/actions/tasks` with a
+later `run_started_at` (poll that, not the run list, whose `updated_at` stays blank); and
+the job's commit-status context on the PR head is re-posted — `pending` within seconds, the
+final state when the job ends. So a job re-run repaints the PR's check, which the dispatch
+below cannot. `canRerun` is false while the run is still running or when the session cannot
+write Actions; the helper stops on it before posting.
 
 **`workflow_dispatch`, the REST route.** Works only for a workflow that declares
 `on: workflow_dispatch`; `haku/haku-state`'s `bazel-ci.yaml` does, as its documented manual
@@ -227,12 +265,6 @@ How the dispatched run reads back, and what it does not do:
   dispatch of `bazel-ci.yaml`, `/commits/{sha}/statuses` still listed only the
   `(pull_request)` contexts, with the failed `image` one untouched. So a dispatch proves
   the commit builds; the PR's checks go green only through the UI re-run or the next push.
-
-**The UI re-run, the web route.** The run page's re-run buttons POST to
-`$ACTIONS_URL/runs/$RUN_INDEX/rerun` and `.../jobs/$JOB_INDEX/rerun` with the CSRF token
-from the page, over the web session from § Logs. Not exercised from an agent session yet:
-the form login needs the password in a shell command, and an auto-mode session may refuse
-that step.
 
 ## Actions Artifacts
 

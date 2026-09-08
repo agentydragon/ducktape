@@ -76,7 +76,7 @@ RUN_HTML = """
       data-run-id="1883"
       data-job-index="0"
       data-attempt-number="1"
-      data-initial-post-response='{"state":{"currentJob":{"steps":[{"index":8,"name":"Log in to the Forgejo registry","status":"failure"}]}}}'
+      data-initial-post-response='{"state":{"run":{"link":"/haku/haku-state/actions/runs/391","status":"failure","canRerun":true,"jobs":[{"id":4001,"name":"validate","status":"success","canRerun":true},{"id":4002,"name":"image","status":"failure","canRerun":true}]},"currentJob":{"steps":[{"index":8,"name":"Log in to the Forgejo registry","status":"failure"}]}}}'
     ></div>
   </body>
 </html>
@@ -163,8 +163,53 @@ def test_parse_log_response_handles_forgejo_lines() -> None:
     ]
 
 
-def test_parse_csrf_returns_blank_when_login_page_has_no_token() -> None:
-    assert forgejo.parse_csrf("<html></html>") == ""
+# ── rerun ────────────────────────────────────────────────────────────────────
+
+
+def test_run_view_lists_jobs_in_route_index_order() -> None:
+    run = forgejo.run_view(forgejo.parse_run_page(RUN_HTML).initial_post_response)
+
+    assert run.link == "/haku/haku-state/actions/runs/391"
+    assert run.can_rerun
+    assert [(job.name, job.status, job.can_rerun) for job in run.jobs] == [
+        ("validate", "success", True),
+        ("image", "failure", True),
+    ]
+
+
+def test_resolve_job_accepts_index_or_unique_name() -> None:
+    jobs = forgejo.run_view(forgejo.parse_run_page(RUN_HTML).initial_post_response).jobs
+
+    assert forgejo.resolve_job(jobs, "image") == 1
+    assert forgejo.resolve_job(jobs, "0") == 0
+    with pytest.raises(SystemExit, match="matches 0"):
+        forgejo.resolve_job(jobs, "deploy")
+    with pytest.raises(SystemExit, match="out of range"):
+        forgejo.resolve_job(jobs, "2")
+
+
+def test_rerun_endpoint_posts_under_the_page_run_link() -> None:
+    link = "/haku/haku-state/actions/runs/391"
+
+    assert forgejo.rerun_endpoint("https://forgejo.test/", link, None) == (
+        "https://forgejo.test/haku/haku-state/actions/runs/391/rerun"
+    )
+    assert forgejo.rerun_endpoint("https://forgejo.test", link, 1) == (
+        "https://forgejo.test/haku/haku-state/actions/runs/391/jobs/1/rerun"
+    )
+
+
+def test_credentials_prefer_flags_then_netrc(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    netrc_file = tmp_path / ".netrc"
+    netrc_file.write_text("machine forgejo.test login bot password hunter2\n")
+    netrc_file.chmod(0o600)
+
+    assert forgejo.credentials("https://forgejo.test/", "flag-user", "flag-pass") == ("flag-user", "flag-pass")
+    # A user without a password is not a credential; the netrc entry still wins.
+    assert forgejo.credentials("https://forgejo.test/", "flag-user", None) == ("bot", "hunter2")
+    with pytest.raises(SystemExit, match=r"no credentials for other\.test"):
+        forgejo.credentials("https://other.test/", None, None)
 
 
 if __name__ == "__main__":

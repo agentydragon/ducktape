@@ -3,9 +3,9 @@
 # requires-python = ">=3.13"
 # dependencies = ["httpx>=0.27", "pydantic>=2"]
 # ///
-"""Inspect Forgejo Actions from the command line.
+"""Inspect and drive Forgejo Actions from the command line.
 
-Two subcommands:
+Three subcommands:
 
 - `timing` — per-job CI duration distribution from `/api/v1/repos/.../actions/tasks`
   (answers "why is CI slow?"). Timing-field gotchas this encodes, verified live:
@@ -18,26 +18,72 @@ Two subcommands:
 - `logs` — a run's step logs, driven through the web UI endpoints (answers "why did this
   run fail?"). Discovers the current UI endpoint shape from the run page instead of
   hardcoding REST-like IDs, since this deployment has no REST log-download route.
+- `rerun` — re-run a whole run or one job through the run page's re-run route, since the
+  REST API has no rerun endpoint either. The job list, the `{job}` route index (list
+  position) and the `canRerun` flags come from the same page state the UI reads.
+
+Credentials come from `--user`/`--password`, `FORGEJO_USER`/`FORGEJO_PASSWORD`, or the
+`~/.netrc` entry for the host, in that order: Basic auth for `timing` (`/api/v1/`), and a
+form login kept as the session cookie for `logs` and `rerun`, since Basic auth does not
+cover the web routes they drive.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import html
 import json
+import netrc
 import os
 import statistics
 import sys
 import urllib.parse
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
 from typing import Any
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+DEFAULT_FORGEJO_URL = "https://git.allegedly.works"
+
+# ── credentials ──────────────────────────────────────────────────────────────
+
+
+def credentials(forgejo_url: str, user: str | None, password: str | None) -> tuple[str, str]:
+    """Explicit flags/env win; otherwise the `~/.netrc` entry for the Forgejo host.
+
+    The netrc lookup is the stdlib's, not httpx's: httpx 0.28 dropped implicit netrc under
+    `trust_env`, so a bare `uv run` (newest httpx) would silently send no auth.
+    """
+    if user and password:
+        return user, password
+    host = urllib.parse.urlsplit(forgejo_url).hostname or forgejo_url
+    try:
+        entry = netrc.netrc().authenticators(host)
+    except FileNotFoundError:
+        entry = None
+    if entry is None or not entry[2]:
+        raise SystemExit(
+            f"no credentials for {host}: pass --user/--password, set FORGEJO_USER/FORGEJO_PASSWORD, "
+            "or add a ~/.netrc entry with a password"
+        )
+    return entry[0], entry[2]
+
+
+def _configure_credentials(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--forgejo-url", default=os.environ.get("FORGEJO_URL", DEFAULT_FORGEJO_URL))
+    parser.add_argument("--user", default=os.environ.get("FORGEJO_USER"), help="Forgejo username (else ~/.netrc)")
+    parser.add_argument(
+        "--password",
+        default=os.environ.get("FORGEJO_PASSWORD") or os.environ.get("FORGEJO_PASS"),
+        help="Forgejo password (else ~/.netrc); prefer FORGEJO_PASSWORD or FORGEJO_PASS over shell history",
+    )
+
 
 # ── timing ───────────────────────────────────────────────────────────────────
 
@@ -115,12 +161,11 @@ def summarize(tasks: list[Task], max_seconds: float) -> tuple[list[JobStats], in
     return stats, dropped
 
 
-def fetch_tasks(forgejo_url: str, owner: str, repo: str) -> list[dict]:
+def fetch_tasks(forgejo_url: str, owner: str, repo: str, auth: tuple[str, str]) -> list[dict]:
     url = f"{forgejo_url.rstrip('/')}/api/v1/repos/{owner}/{repo}/actions/tasks"
-    user, password = os.environ.get("FORGEJO_USER"), os.environ.get("FORGEJO_PASSWORD")
-    # Explicit Basic auth if given; otherwise trust_env lets httpx use ~/.netrc.
-    auth = (user, password) if user and password else None
-    with httpx.Client(trust_env=True, timeout=30.0) as client:
+    # The endpoint ignores `limit` and serialises the whole task history: 3.4 MB in ~90 s
+    # on haku/haku-state (2026-09), so the read needs minutes, not the default seconds.
+    with httpx.Client(timeout=httpx.Timeout(10.0, read=300.0)) as client:
         resp = client.get(url, auth=auth, headers={"Accept": "application/json"})
         resp.raise_for_status()
     # resp.json() is Any (untyped external boundary); list() pins it to a concrete type.
@@ -128,9 +173,9 @@ def fetch_tasks(forgejo_url: str, owner: str, repo: str) -> list[dict]:
 
 
 def _configure_timing(parser: argparse.ArgumentParser) -> None:
+    _configure_credentials(parser)
     parser.add_argument("--owner", required=True)
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--forgejo-url", default=os.environ.get("FORGEJO_URL", "https://git.allegedly.works"))
     parser.add_argument("--limit", type=int, default=200, help="recent tasks to analyze")
     parser.add_argument(
         "--max-seconds",
@@ -143,7 +188,8 @@ def _configure_timing(parser: argparse.ArgumentParser) -> None:
 
 
 def _run_timing(args: argparse.Namespace) -> int:
-    tasks = recent_finished(fetch_tasks(args.forgejo_url, args.owner, args.repo), args.limit)
+    auth = credentials(args.forgejo_url, args.user, args.password)
+    tasks = recent_finished(fetch_tasks(args.forgejo_url, args.owner, args.repo, auth), args.limit)
     if not tasks:
         print("no finished tasks with usable timestamps found", file=sys.stderr)
         return 1
@@ -164,7 +210,43 @@ def _run_timing(args: argparse.Namespace) -> int:
     return 0
 
 
-# ── logs ─────────────────────────────────────────────────────────────────────
+# ── web session (logs, rerun) ────────────────────────────────────────────────
+
+
+def _response_text(response: httpx.Response) -> str:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text[:400]
+        raise RuntimeError(f"HTTP {exc.response.status_code} from {exc.request.url}: {body}") from exc
+    return response.text
+
+
+def login(forgejo_url: str, username: str, password: str, timeout: float) -> httpx.Client:
+    """A client holding the web session cookie.
+
+    The form carries no `_csrf` field on this deployment (Forgejo 15), so the login is one
+    POST. A failed login answers 200 with the form again, so success is "left the login
+    page", not "no HTTP error".
+    """
+    login_url = f"{forgejo_url.rstrip('/')}/user/login"
+    client = httpx.Client(follow_redirects=True, timeout=timeout)
+    try:
+        after = client.post(login_url, data={"user_name": username, "password": password})
+        _response_text(after)
+        if after.url.path.rstrip("/") == "/user/login":
+            raise RuntimeError(f"login as {username} failed: still on the login page (wrong password, or 2FA)")
+    except Exception:
+        client.close()
+        raise
+    return client
+
+
+def fetch_run_page(client: httpx.Client, forgejo_url: str, owner: str, repo: str, run_number: str) -> str:
+    path = "/".join(
+        urllib.parse.quote(part.strip("/"), safe="") for part in (owner, repo, "actions", "runs", run_number)
+    )
+    return _response_text(client.get(f"{forgejo_url.rstrip('/')}/{path}"))
 
 
 @dataclass(frozen=True)
@@ -181,34 +263,19 @@ class RunPageState:
         return f"{base}{actions}/runs/{self.run_index}/jobs/{self.job_index}/attempt/{self.attempt}"
 
 
-@dataclass(frozen=True)
-class LogLine:
-    timestamp: str | None
-    message: str
-
-
-class _ForgejoHtmlParser(HTMLParser):
+class _RunPageParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.csrf: str | None = None
         self.run_attrs: dict[str, str] | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {name: value or "" for name, value in attrs}
-        if attr_map.get("name") == "_csrf" and "value" in attr_map:
-            self.csrf = attr_map["value"]
         if "data-actions-url" in attr_map:
             self.run_attrs = attr_map
 
 
-def parse_csrf(login_html: str) -> str:
-    parser = _ForgejoHtmlParser()
-    parser.feed(login_html)
-    return parser.csrf or ""
-
-
 def parse_run_page(run_html: str) -> RunPageState:
-    parser = _ForgejoHtmlParser()
+    parser = _RunPageParser()
     parser.feed(run_html)
     attrs = parser.run_attrs
     if attrs is None:
@@ -241,6 +308,31 @@ def parse_run_page(run_html: str) -> RunPageState:
         attempt=attrs["data-attempt-number"],
         initial_post_response=initial,
     )
+
+
+def _configure_web_session(parser: argparse.ArgumentParser) -> None:
+    _configure_credentials(parser)
+    parser.add_argument("--owner", required=True, help="Repository owner")
+    parser.add_argument("--repo", required=True, help="Repository name")
+    parser.add_argument("--run", dest="run_number", required=True, help="UI run number, not REST run id")
+    parser.add_argument("--timeout", type=float, default=10.0, help="Per-request timeout in seconds")
+
+
+@contextlib.contextmanager
+def run_page_session(args: argparse.Namespace) -> Iterator[tuple[httpx.Client, RunPageState]]:
+    user, password = credentials(args.forgejo_url, args.user, args.password)
+    # closing(), not `with client`: login() already opened the client with its first request.
+    with contextlib.closing(login(args.forgejo_url, user, password, args.timeout)) as client:
+        yield client, parse_run_page(fetch_run_page(client, args.forgejo_url, args.owner, args.repo, args.run_number))
+
+
+# ── logs ─────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class LogLine:
+    timestamp: str | None
+    message: str
 
 
 def _looks_like_steps(value: Any) -> bool:
@@ -306,36 +398,6 @@ def parse_log_response(response_text: str) -> list[LogLine]:
     return list(iter_log_lines(parsed))
 
 
-def _response_text(response: httpx.Response) -> str:
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        body = exc.response.text[:400]
-        raise RuntimeError(f"HTTP {exc.response.status_code} from {exc.request.url}: {body}") from exc
-    return response.text
-
-
-def login(forgejo_url: str, username: str, password: str, timeout: float) -> httpx.Client:
-    login_url = f"{forgejo_url.rstrip('/')}/user/login"
-    client = httpx.Client(follow_redirects=True, timeout=timeout)
-    try:
-        login_page = _response_text(client.get(login_url))
-        _response_text(
-            client.post(login_url, data={"_csrf": parse_csrf(login_page), "user_name": username, "password": password})
-        )
-    except Exception:
-        client.close()
-        raise
-    return client
-
-
-def fetch_run_page(client: httpx.Client, forgejo_url: str, owner: str, repo: str, run_number: str) -> str:
-    path = "/".join(
-        urllib.parse.quote(part.strip("/"), safe="") for part in (owner, repo, "actions", "runs", run_number)
-    )
-    return _response_text(client.get(f"{forgejo_url.rstrip('/')}/{path}"))
-
-
 def fetch_step_logs(client: httpx.Client, forgejo_url: str, state: RunPageState, step: int) -> list[LogLine]:
     return parse_log_response(
         _response_text(client.post(state.log_endpoint(forgejo_url), json=build_log_payload(step)))
@@ -377,37 +439,15 @@ def _print_logs(lines: list[LogLine], timestamps: bool) -> None:
 
 
 def _configure_logs(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--forgejo-url", default=os.environ.get("FORGEJO_URL"), help="Forgejo base URL")
-    parser.add_argument("--owner", required=True, help="Repository owner")
-    parser.add_argument("--repo", required=True, help="Repository name")
-    parser.add_argument("--run", dest="run_number", required=True, help="UI run number, not REST run id")
-    parser.add_argument("--user", default=os.environ.get("FORGEJO_USER"), help="Forgejo username")
-    parser.add_argument(
-        "--password",
-        default=os.environ.get("FORGEJO_PASSWORD") or os.environ.get("FORGEJO_PASS"),
-        help="Forgejo password; prefer FORGEJO_PASSWORD or FORGEJO_PASS over shell history",
-    )
+    _configure_web_session(parser)
     parser.add_argument("--step", action="append", type=int, help="Step index to expand; repeatable")
     parser.add_argument("--list-steps", action="store_true", help="List step indexes from the run page")
     parser.add_argument("--timestamps", action="store_true", help="Print timestamp<TAB>message")
-    parser.add_argument(
-        "--timeout", type=float, default=10.0, help="Per-request timeout in seconds; applies to each attempted address"
-    )
     parser.set_defaults(func=_run_logs)
 
 
 def _run_logs(args: argparse.Namespace) -> int:
-    if not args.forgejo_url:
-        raise SystemExit("--forgejo-url or FORGEJO_URL is required")
-    if not args.user:
-        raise SystemExit("--user or FORGEJO_USER is required")
-    if not args.password:
-        raise SystemExit("--password, FORGEJO_PASSWORD, or FORGEJO_PASS is required")
-
-    client = login(args.forgejo_url, args.user, args.password, args.timeout)
-    try:
-        state = parse_run_page(fetch_run_page(client, args.forgejo_url, args.owner, args.repo, args.run_number))
-
+    with run_page_session(args) as (client, state):
         if args.list_steps or not args.step:
             _print_steps(extract_steps(state.initial_post_response))
             if not args.step:
@@ -416,18 +456,85 @@ def _run_logs(args: argparse.Namespace) -> int:
         for step in args.step:
             _print_logs(fetch_step_logs(client, args.forgejo_url, state, step), args.timestamps)
         return 0
-    finally:
-        client.close()
+
+
+# ── rerun ────────────────────────────────────────────────────────────────────
+
+
+class RunJob(BaseModel):
+    """One entry of the page state's `state.run.jobs`; its list position is the `{job}` of
+    the web routes (`.../runs/{run}/jobs/{job}/...`), which is neither the task id nor the
+    UI job id."""
+
+    name: str
+    status: str
+    can_rerun: bool = Field(alias="canRerun", description="done, and the session may write Actions")
+
+
+class RunView(BaseModel):
+    link: str = Field(description="site-relative run link the UI's own re-run buttons post under")
+    can_rerun: bool = Field(alias="canRerun")
+    jobs: list[RunJob]
+
+
+def run_view(initial_post_response: dict[str, Any]) -> RunView:
+    return RunView.model_validate(initial_post_response["state"]["run"])
+
+
+def resolve_job(jobs: list[RunJob], selector: str) -> int:
+    """`selector` is a zero-based job index or an exact, unique job name."""
+    if selector.isdigit():
+        if int(selector) >= len(jobs):
+            raise SystemExit(f"job index {selector} out of range: the run has {len(jobs)} jobs")
+        return int(selector)
+    indexes = [i for i, job in enumerate(jobs) if job.name == selector]
+    if len(indexes) != 1:
+        raise SystemExit(f"job {selector!r} matches {len(indexes)} of {[job.name for job in jobs]}")
+    return indexes[0]
+
+
+def rerun_endpoint(forgejo_url: str, run_link: str, job_index: int | None) -> str:
+    run_url = f"{forgejo_url.rstrip('/')}{run_link}"
+    return f"{run_url}/rerun" if job_index is None else f"{run_url}/jobs/{job_index}/rerun"
+
+
+def _configure_rerun(parser: argparse.ArgumentParser) -> None:
+    _configure_web_session(parser)
+    parser.add_argument(
+        "--job",
+        help="zero-based job index or job name to re-run (with the jobs that need it); omit to re-run every job",
+    )
+    parser.set_defaults(func=_run_rerun)
+
+
+def _run_rerun(args: argparse.Namespace) -> int:
+    with run_page_session(args) as (client, state):
+        run = run_view(state.initial_post_response)
+        if args.job is None:
+            targets, allowed, endpoint = run.jobs, run.can_rerun, rerun_endpoint(args.forgejo_url, run.link, None)
+        else:
+            index = resolve_job(run.jobs, args.job)
+            targets, allowed = [run.jobs[index]], run.jobs[index].can_rerun
+            endpoint = rerun_endpoint(args.forgejo_url, run.link, index)
+        if not allowed:
+            raise SystemExit(
+                "not re-runnable (still running, or the session cannot write Actions): "
+                + ", ".join(f"{job.name}={job.status}" for job in targets)
+            )
+        _response_text(client.post(endpoint))
+        print(f"re-run requested: {args.forgejo_url.rstrip('/')}{run.link} ({', '.join(job.name for job in targets)})")
+        return 0
 
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="forgejo", description="Inspect Forgejo Actions.")
+    parser = argparse.ArgumentParser(prog="forgejo", description="Inspect and drive Forgejo Actions.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _configure_timing(subparsers.add_parser("timing", help="per-job CI duration distribution"))
     _configure_logs(subparsers.add_parser("logs", help="fetch a run's step logs from the web UI"))
+    _configure_rerun(subparsers.add_parser("rerun", help="re-run a run or one of its jobs via the web UI route"))
     args = parser.parse_args(argv)
     func: Callable[[argparse.Namespace], int] = args.func
     return func(args)
