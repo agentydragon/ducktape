@@ -114,9 +114,9 @@ spec:
               # request / 1.73Gi upper bound, so the working set is NOT staying
               # bounded the way the note above assumes — this is the second time
               # mitmproxy has outgrown its limit, and it was OOM-killed at 3Gi
-              # again on 2026-09-08 after ~53h of traffic (#5846). Retained flows
-              # are the usual cause; bound retention rather than raising this a
-              # third time.
+              # again on 2026-09-08 after ~53h of traffic (#5846). The cause was
+              # mitmweb's flow store, gone since the switch to mitmdump; observe
+              # the working set under mitmdump and lower this to match.
               memory: 3Gi
       volumes:
         - name: mitmproxy-ca
