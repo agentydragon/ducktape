@@ -24,8 +24,10 @@ spec:
         app.kubernetes.io/name: cli-proxy-api
     spec:
       automountServiceAccountToken: false
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
+      # No explicit zone nodeSelector: the PVC's seaweedfs-ovh StorageClass already
+      # pins scheduling to topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer
+      # + allowedTopologies (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml), and the
+      # already-bound PV carries that same zone in its own nodeAffinity.
       # hil-ovh's only schedulable workers (ovh-ns103711, ovh-ns102453) run hot enough
       # that the descheduler's LowNodeUtilization plugin (k8s/descheduler/helmrelease.yaml)
       # evicts this pod roughly every 15 minutes for node overutilization. As the
