@@ -12,6 +12,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+import httpx
 import httpx2
 from mcp.shared.auth import OAuthToken
 from pydantic import ValidationError
@@ -48,9 +49,14 @@ def public_base_url(settings: Settings) -> str:
     return settings.public_base_url.rstrip("/")
 
 
-def token_request_error_message(*, label: str, request_error: httpx2.RequestError, timeout_seconds: float) -> str:
-    """Describe token-endpoint transport failures even when httpx's message is empty."""
-    if isinstance(request_error, httpx2.TimeoutException):
+def token_request_error_message(*, label: str, request_error: httpx.RequestError, timeout_seconds: float) -> str:
+    """Describe token-endpoint transport failures even when httpx's message is empty.
+
+    This project's httpx2-based clients raise httpx2 exceptions, but this helper's only caller,
+    ``mcp/operator_oauth.py``, is not yet migrated and still raises plain httpx ones -- keep this
+    typed for httpx until that migration reaches it too.
+    """
+    if isinstance(request_error, httpx.TimeoutException):
         return f"{label} timed out after {timeout_seconds:g} seconds"
     detail = str(request_error).strip()
     suffix = f": {detail}" if detail else ""

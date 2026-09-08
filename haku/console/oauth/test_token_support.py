@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import httpx2
 import pytest
 import pytest_bazel
@@ -13,21 +14,21 @@ from haku.console.oauth.token_support import (
 
 
 def test_token_request_timeout_has_a_message_when_httpx_error_does_not() -> None:
-    request = httpx2.Request("POST", "https://authorization.example/token")
+    request = httpx.Request("POST", "https://authorization.example/token")
 
     message = token_request_error_message(
-        label="MCP OAuth token refresh", request_error=httpx2.ReadTimeout("", request=request), timeout_seconds=10.0
+        label="MCP OAuth token refresh", request_error=httpx.ReadTimeout("", request=request), timeout_seconds=10.0
     )
 
     assert message == "MCP OAuth token refresh timed out after 10 seconds"
 
 
 def test_token_request_failure_preserves_error_class() -> None:
-    request = httpx2.Request("POST", "https://authorization.example/token")
+    request = httpx.Request("POST", "https://authorization.example/token")
 
     message = token_request_error_message(
         label="MCP OAuth token refresh",
-        request_error=httpx2.ReadError("connection reset", request=request),
+        request_error=httpx.ReadError("connection reset", request=request),
         timeout_seconds=10.0,
     )
 
