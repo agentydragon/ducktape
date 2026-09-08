@@ -223,9 +223,10 @@ How the dispatched run reads back, and what it does not do:
 
 - In the run list its `prettyref` is the bare branch name (a PR run shows `#N`) and its
   `event` is null, so a filter on `.event == "workflow_dispatch"` finds nothing.
-- It records its own commit-status context on the commit rather than replacing the PR's.
-  A PR whose `pull_request` run failed keeps that red check next to the dispatch's; the PR
-  itself goes green only through the UI re-run or the next push to the branch.
+- It posts **no commit status** on the commit, not even its own context: after a green
+  dispatch of `bazel-ci.yaml`, `/commits/{sha}/statuses` still listed only the
+  `(pull_request)` contexts, with the failed `image` one untouched. So a dispatch proves
+  the commit builds; the PR's checks go green only through the UI re-run or the next push.
 
 **The UI re-run, the web route.** The run page's re-run buttons POST to
 `$ACTIONS_URL/runs/$RUN_INDEX/rerun` and `.../jobs/$JOB_INDEX/rerun` with the CSRF token
