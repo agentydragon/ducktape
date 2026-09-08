@@ -94,6 +94,12 @@ spec:
               containerPort: 8080
             - name: web
               containerPort: 8081
+          # An endpoint only once the listener is up: with two replicas a rolling
+          # update otherwise routes to a pod that is not listening yet.
+          readinessProbe:
+            tcpSocket:
+              port: proxy
+            periodSeconds: 5
           volumeMounts:
             - name: mitmproxy-data
               mountPath: /mitmproxy-data
