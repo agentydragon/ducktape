@@ -83,9 +83,9 @@ impl AgentHoldings {
             );
         let mut public_series_by_asset = BTreeMap::new();
         for asset_id in assets.filter(|asset| {
-            !asset
+            asset
                 .strip_prefix("private_equity:")
-                .is_some_and(|issuer| !issuer.is_empty())
+                .is_none_or(|issuer| issuer.is_empty())
         }) {
             let series_id = format!("security:{asset_id}");
             let row = series_rows
@@ -120,10 +120,10 @@ impl AgentHoldings {
             .filter(|lot| {
                 lot.agent_id == self.agent_id
                     && lot.units_remaining != 0
-                    && !lot
+                    && lot
                         .asset_id
                         .strip_prefix("private_equity:")
-                        .is_some_and(|issuer| !issuer.is_empty())
+                        .is_none_or(|issuer| issuer.is_empty())
             })
             .try_fold(Money(0), |sum, lot| {
                 let row = self
