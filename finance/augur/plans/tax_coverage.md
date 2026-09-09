@@ -50,6 +50,18 @@ statutory variations are covered. Source paths below are relative to Augur.
 | Direct bonds                      | Existing nominal/TIPS slice is initial, par-held and nontradable, with coupon/redemption and indexed-principal processing.                                                                                                                              | Retain its controls. Before tradable/off-par arms: coupon dates, clean/dirty price, accrued interest, premium/discount/OID, basis and tax character at sale/redemption. Do not infer full TIPS coverage from indexed principal alone.            |
 | Other accounts/residencies        | No general retirement-account withdrawal/tax regime or cross-border residency transition contract.                                                                                                                                                      | Explicitly exclude irrelevant cases; add an independent branch when required. Changing a currency label or jurisdiction list is not a residency model.                                                                                           |
 
+### Housing basis reconciliation
+
+`rust/engine/property.rs` adds `buyer_closing_cost` to the purchase's recorded
+adjusted basis, but `settle_property_sales` reconstructs gain basis from purchase
+price, later improvements and depreciation, omitting that opening cost. The two
+basis calculations need one supported cost-classification contract under GT/TAX.
+Pin which acquisition/financing costs are capitalized, deducted or excluded;
+then test purchase, depreciation and disposal against independently calculated
+basis and gains, including nonzero opening costs. Do not preserve the mismatch
+as a regression expectation. This is separate from VAL's purchase-date price-index
+correction and blocks only housing arms that rely on this treatment.
+
 ### Primary sources to pin into acceptance cases
 
 Consulted 2026-09-09. These identify the governing questions; the implementation
