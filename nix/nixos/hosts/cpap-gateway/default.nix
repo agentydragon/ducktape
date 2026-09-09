@@ -20,7 +20,10 @@ let
   '';
 in
 {
-  imports = [ ../../modules/vm-hardware.nix ];
+  imports = [
+    ../../modules/operator.nix
+    ../../modules/vm-hardware.nix
+  ];
 
   # MT7921U firmware and driver for the USB adapter passed through by KubeVirt.
   hardware.firmware = [ pkgs.linux-firmware ];

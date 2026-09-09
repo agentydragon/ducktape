@@ -19,6 +19,8 @@ let
   ];
 in
 {
+  imports = [ ../../modules/operator.nix ];
+
   # VMs use virtio devices only — no need to ship the full firmware tree.
   hardware.enableAllFirmware = lib.mkForce false;
   hardware.enableRedistributableFirmware = lib.mkForce false;

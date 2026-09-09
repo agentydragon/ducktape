@@ -16,6 +16,7 @@ let
 in
 {
   imports = [
+    ../../modules/operator.nix
     ../../modules/vm-hardware.nix
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix

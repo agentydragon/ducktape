@@ -43,7 +43,9 @@ let
 in
 {
   imports = [
+    ../../modules/operator.nix
     ../../modules/gui.nix
+    ../../modules/vm-desktop.nix
     ../../modules/workstation.nix
     ../../modules/bazel
     ../../modules/system-inspection-sudo.nix

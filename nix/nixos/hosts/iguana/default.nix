@@ -28,6 +28,7 @@ let
 in
 {
   imports = [
+    ../../modules/operator.nix
     ./hardware-configuration.nix
     ../../modules/gui.nix
     ../../modules/workstation.nix

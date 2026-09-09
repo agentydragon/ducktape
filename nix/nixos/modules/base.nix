@@ -1,11 +1,12 @@
-# Base NixOS configuration shared by all VMs
+# What is true of every NixOS host in this flake, and nothing else. Anything that assumes a
+# person logs in -- the operator account, sudo, NetworkManager, editors -- lives in operator.nix,
+# which hosts with a human import. Deeper workstation tooling is in workstation.nix.
 {
   config,
   pkgs,
   lib,
   inputs,
   hostname,
-  username,
   ...
 }:
 {
@@ -16,7 +17,6 @@
 
   # Networking
   networking.hostName = hostname;
-  networking.networkmanager.enable = lib.mkDefault true;
 
   # Timezone
   time.timeZone = "America/Los_Angeles";
@@ -32,10 +32,6 @@
         # without resorting to `builtins.storePath` (which requires --impure).
         "fetch-closure"
       ];
-      trusted-users = [
-        username
-        "root"
-      ];
       auto-optimise-store = true;
     };
     gc = {
@@ -50,32 +46,8 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  # User - password should be set after first boot with `passwd`
-  users.users.${username} = {
-    isNormalUser = true;
-    home = "/home/${username}";
-    description = username;
-    extraGroups = [
-      "wheel"
-      "networkmanager"
-      "video"
-      "audio"
-    ];
-  };
-
-  # Sudo requires password by default (security)
-  # Override in agent-sandbox modules if needed
-  security.sudo.wheelNeedsPassword = true;
-  security.sudo.extraConfig = lib.mkAfter ''
-    # Show asterisks while typing sudo passwords.
-    Defaults pwfeedback
-  '';
-
   # Zsh as default shell
   programs.zsh.enable = true;
-
-  # Allow reading kernel logs without sudo
-  boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
 
   # SSH
   services.openssh = {
@@ -86,14 +58,11 @@
     };
   };
 
-  # Bare-minimum packages shared by every host (including `bootstrap`).
-  # Diagnostics, editors, profiling, etc. live in workstation.nix and are
-  # imported by real workstation hosts only.
+  # Bare minimum for every host including `bootstrap`: what scripts and the Nix machinery reach
+  # for. Editors and interactive extras are in operator.nix; diagnostics in workstation.nix.
   environment.systemPackages = with pkgs; [
     git
-    vim
     curl
-    wget
     openssl
   ];
 
