@@ -53,8 +53,8 @@ class MarketPaths:
 
     @property
     def rollout_count(self) -> int:
-        return self.short_rate.shape[0]
+        return int(self.short_rate.shape[0])
 
     @property
     def horizon_months(self) -> int:
-        return self.short_rate.shape[1] - 1
+        return int(self.short_rate.shape[1]) - 1
