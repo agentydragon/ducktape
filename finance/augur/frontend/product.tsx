@@ -259,9 +259,11 @@ export function ProductProjectionWorkspace({
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioError, setPortfolioError] = useState(null);
   const [selectedPercentile, setSelectedPercentile] = useState(null);
-  const [selectedSeedFromDistribution, setSelectedSeedFromDistribution] = useState(null);
-  const [rolloutDetails, setRolloutDetails] = useState(() => new Map());
-  const [rolloutError, setRolloutError] = useState(null);
+  const [selectedRollout, setSelectedRollout] = useState<{
+    key: string;
+    detail: Awaited<ReturnType<typeof fetchProductRollout>> | null;
+    error: string | null;
+  } | null>(null);
   const eventSelection = useEventSelection();
   const visibleEventKinds = useVisibleEventKinds();
 
@@ -295,8 +297,6 @@ export function ProductProjectionWorkspace({
   const selectMetricValue = (value) => {
     setSelectedMetricValue(value);
     setSelectedPercentile(null);
-    setSelectedSeedFromDistribution(null);
-    setRolloutError(null);
     eventSelection.clear();
   };
 
@@ -375,7 +375,7 @@ export function ProductProjectionWorkspace({
     [chartScenarios, resultsById, activeId, selectedMetric.value]
   );
 
-  const scenarioCacheKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
+  const scenarioKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
   const selectedTerminalSample = useMemo(
     () =>
       selectedPercentile == null
@@ -383,10 +383,11 @@ export function ProductProjectionWorkspace({
         : terminalSampleAtPercentile(activeTerminalSelectionResult, selectedMetric, selectedPercentile),
     [activeTerminalSelectionResult, selectedMetric, selectedPercentile]
   );
-  const selectedRolloutSeed = selectedTerminalSample?.seed ?? selectedSeedFromDistribution;
-  const selectedDetailKey = selectedRolloutSeed == null ? null : `${scenarioCacheKey}|seed:${selectedRolloutSeed}`;
-  const selectedDetail = selectedDetailKey ? rolloutDetails.get(selectedDetailKey) : null;
-  const selectedSeed = selectedRolloutSeed ?? selectedDetail?.rollout?.seed ?? null;
+  const selectedRolloutSeed = selectedTerminalSample?.seed ?? null;
+  const selectedDetailKey = selectedRolloutSeed == null ? null : `${scenarioKey}|seed:${selectedRolloutSeed}`;
+  const selectedDetail = selectedRollout?.key === selectedDetailKey ? selectedRollout.detail : null;
+  const rolloutError = selectedRollout?.key === selectedDetailKey ? selectedRollout.error : null;
+  const selectedSeed = selectedRolloutSeed;
   const selectedSummary = useMemo(
     () =>
       selectedDetail?.rollout
@@ -423,16 +424,12 @@ export function ProductProjectionWorkspace({
   // Selecting in the distribution chart carries both coordinates: the line picks the variant
   // (making it active), and the X picks the percentile. The active terminal-distribution response
   // maps that percentile to a seed; the full rollout detail is fetched by seed.
-  const onSelectPercentile = (variantId, percentile, seed = null) => {
+  const onSelectPercentile = (variantId, percentile) => {
     selectEntry(variantId);
     setSelectedPercentile(percentile);
-    setSelectedSeedFromDistribution(seed == null ? null : Number(seed));
-    setRolloutError(null);
   };
   const clearSelectedRollout = () => {
     setSelectedPercentile(null);
-    setSelectedSeedFromDistribution(null);
-    setRolloutError(null);
     eventSelection.clear();
   };
   const renameEntry = (id, label) =>
@@ -522,6 +519,7 @@ export function ProductProjectionWorkspace({
         const requestKey = JSON.stringify(request);
         fetchProductProjectionSummary(request, { signal: controller.signal })
           .then((payload) => {
+            if (controller.signal.aborted) return;
             setResultsById((previous) => new Map(previous).set(id, payload.metricFan));
             setTerminalResultsById((previous) => new Map(previous).set(id, payload.terminalDistribution));
             setTerminalResultKeysById((previous) => new Map(previous).set(id, requestKey));
@@ -539,7 +537,7 @@ export function ProductProjectionWorkspace({
             });
           })
           .catch((error) => {
-            if (error?.name === "AbortError") return;
+            if (controller.signal.aborted || error?.name === "AbortError") return;
             const message = error?.message || String(error);
             setErrorsById((previous) => new Map(previous).set(id, message));
             setTerminalErrorsById((previous) => new Map(previous).set(id, message));
@@ -559,10 +557,9 @@ export function ProductProjectionWorkspace({
   }, [selectedDetailKey]);
 
   useEffect(() => {
+    setSelectedRollout(null);
     if (selectedPercentile == null || selectedRolloutSeed == null || selectedDetailKey == null) return;
-    if (rolloutDetails.has(selectedDetailKey)) return;
     const controller = new AbortController();
-    setRolloutError(null);
     fetchProductRollout(
       {
         scenario: activeRequest.scenario,
@@ -571,19 +568,16 @@ export function ProductProjectionWorkspace({
       { signal: controller.signal }
     )
       .then((payload) => {
-        setRolloutDetails((previous) => {
-          const next = new Map(previous);
-          next.set(selectedDetailKey, payload);
-          return next;
-        });
+        if (controller.signal.aborted) return;
+        setSelectedRollout({ key: selectedDetailKey, detail: payload, error: null });
       })
       .catch((error) => {
-        if (error?.name === "AbortError") return;
-        setRolloutError(error?.message || String(error));
+        if (controller.signal.aborted || error?.name === "AbortError") return;
+        setSelectedRollout({ key: selectedDetailKey, detail: null, error: error?.message || String(error) });
         toastFetchError("product-rollout", "Rollout detail failed", error);
       });
     return () => controller.abort();
-  }, [activeRequest.scenario, rolloutDetails, selectedDetailKey, selectedPercentile, selectedRolloutSeed]);
+  }, [activeRequest.scenario, selectedDetailKey, selectedPercentile, selectedRolloutSeed]);
 
   return (
     <div

@@ -58,8 +58,11 @@ per-seed table plus product-readable event rows for a selected rollout, either
 by explicit seed or by resolving a requested terminal percentile server-side.
 Drill-down responses include details for only that selected rollout, such as
 public-security sales, monthly expense settlements, and rollout failures.
-Missing rollouts are transparently sampled and simulated into an in-memory
-server cache. Product concepts that are neither in the request type nor
+Rollout detail is sampled and simulated on request, without a server result
+cache. The browser retains only its selected detail and request state; changing
+or clearing that selection discards the old detail, and stale responses cannot
+replace the current selection. Per-scenario displayed fan results remain available.
+Product concepts that are neither in the request type nor
 deployment config are not supported by the product endpoint yet.
 
 ## Model

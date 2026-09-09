@@ -33,7 +33,7 @@ and responsibility docstrings beside the implementing modules.
   Existing contracts survive a policy change; experiments need not implement
   optimizing lenders, landlords, or a general-equilibrium economy.
 
-The library milestone is CACHE/PATH/OUT/BIND/POL, exercised by STUDY and the
+The library milestone is PATH/OUT/BIND/POL, exercised by STUDY and the
 HOUSE preservation example. A new experiment must not require a new engine policy
 variant, app configuration, or copy of financial mechanics.
 
@@ -68,8 +68,7 @@ Reuse [Trinity](../study/trinity/README.md),
 [bond policies](../x/bond_policies/README.md), and
 `study/macro_window/{holdout,mixed_windows,stability}.py` as consumers and controls.
 The bond example supplies discount curves and unitizes strategies; it does **not**
-make a native `BondHolding` tradable. The server result cache is gone; browser
-rollout-detail memoization remains.
+make a native `BondHolding` tradable.
 
 ## Intended responsibilities
 
@@ -102,7 +101,6 @@ Paths are relative to `finance/augur/`. Each row names the change that removes i
 
 | Existing problem and evidence                                                                                                                                                                 | Replacement / deletion criterion                                                                                                                                 | Landing unit        |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| Unbounded selected-rollout history in `frontend/product.tsx`'s `rolloutDetails` map.                                                                                                          | Only current detail/request state; no multi-rollout cache or cache invalidation machinery. Preserve displayed fan state.                                         | CACHE               |
 | General execution reports through product-named, fixed wealth metrics; native spending explicitly lacks consumption metrics (`sim/backend.py`, `rust/engine/spending.rs`).                    | Compact requested/paid consumption and explicit stop/default outcomes reconcile to events; UI projections are consumers.                                         | OUT                 |
 | Allocation decisions and lot/tax mutation share `rust/engine/target_allocation.rs`; `TargetAllocationPolicy` is static data.                                                                  | Replaceable executable decisions, canonical execution. Current static allocation becomes a built-in function on the same seam.                                   | POL                 |
 | Consumption is converted into `ActiveObligation`; chosen spend and existing promises share an all-or-none funding group.                                                                      | Preserve the shared payment machinery, distinguish claim/request/receipt. Do not infer legal commitment from a cash-demand implementation type.                  | OUT, HOUSE; gate GP |
@@ -128,7 +126,6 @@ of this plan in one PR. Several nodes explicitly split into smaller PRs.
 
 ```mermaid
 flowchart TB
-    CACHE["CACHE: remove browser rollout cache"]
     PATH["PATH: explicit path identities"]
     OUT["OUT: consumption and failure outcomes"]
     BIND["BIND: explicit product bindings"]
@@ -170,7 +167,7 @@ flowchart TB
     POL --> LANG
 ```
 
-**Deliberate non-edges:** CACHE need not precede experiments; native POL does
+**Deliberate non-edges:** native POL does
 not wait for LANG; STUDY does not wait for TAX; pricing BOND does not wait for a
 generative curve or BIND's sampler extraction; RUN/ROBUST do not wait for MODEL or
 every study. RUN can begin with generated paths and static allocation varied
@@ -183,7 +180,6 @@ those actions. These scope-specific edges do not require unrelated comparisons t
 
 | Unit   | Independently reviewable change(s)                                                                                                                                                                                                                                                                                                                                               | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                                                   |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CACHE  | Delete browser rollout-detail memoization.                                                                                                                                                                                                                                                                                                                                       | Changing scenario/seed fetches the right detail; stale responses cannot overwrite the current selection; bounded retained state. No server-cache work.                                                                                                                                                                                                                                         |
 | PATH   | Let the caller select historical starts and materialize those exact paths. Preserve identities in artifacts and selected-trace execution.                                                                                                                                                                                                                                        | Same paths/results when reordered, split or extended; unchanged window set reproduces current Trinity output. Do not change historical methodology during the API migration.                                                                                                                                                                                                                   |
 | OUT    | First add compact requested/paid consumption with event parity. Separately distinguish spending shortfall, contract default and stopped paths in results; remove zero-filled post-failure wealth being interpreted as actual terminal books.                                                                                                                                     | Matching compact/forensic amounts and failure cause, including zero spend and failure with a remaining house/debt. Paid-through-stop, censored terminal outcomes and reporting CPI/base date are explicit. This does not add recovery or partial settlement.                                                                                                                                   |
 | BIND   | Separate slices: distinguish total-return proxies from distributing products and validate held/purchasable support; extract shared factor-to-product construction; supply equity price-return **and dividend-amount paths**, with explicit historical/fitted payout assumptions. Reconcile remaining `typed_series_config.md` work here; do not redo typed keys already present. | Missing payouts, incompatible tax character and double-counted total returns reject. Historical/generated consumers share construction where appropriate without loading each other's artifacts. Price plus payouts reconcile to total return before tax, with explicit payout timing and evidence/model provenance. No global registry or universal fitter.                                   |
@@ -201,9 +197,7 @@ those actions. These scope-specific edges do not require unrelated comparisons t
 
 Keep housing/PE/mortgage, double-entry, lot-basis, tax and failure regressions
 running throughout. A boundary change updates all callers and relevant
-README/SPEC claims in that PR; no transition shims in this monorepo. In
-particular, current `SPEC.md` still describes a server cache: reconcile that
-stale claim in CACHE, not by restoring the cache.
+README/SPEC claims in that PR; no transition shims in this monorepo.
 
 ## Decision gates
 
@@ -235,7 +229,7 @@ all the others to be solved first.
 
 ## What to dispatch first
 
-1. **CACHE**, **PATH**, and OUT's consumption-capture slice are separate
+1. **PATH** and OUT's consumption-capture slice are separate
    ready PRs. They have concrete consumers and deletion/parity criteria.
 2. Run **GP**, **GT**, and **GS** as bounded decisions alongside those changes;
    draft POL's constant/glide consumer and TAX's acceptance cases from the answers.

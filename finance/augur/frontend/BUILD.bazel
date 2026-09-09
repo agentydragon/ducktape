@@ -671,6 +671,21 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "product_test_lib",
+    srcs = ["product.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":input_helpers",
+        ":product",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
 # vitest loads this config itself, so it stays a `.ts` in the runfiles rather than being compiled
 # away; no_emit type-checks it anyway, through the generated :vitest_config_typecheck_test.
 ts_project(
@@ -743,6 +758,21 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":url_state_test_lib",
+        "//:node_modules/vitest",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "product_test",
+    args = [
+        "run",
+        "product.test.js",
+    ],
+    chdir = package_name(),
+    data = [
+        "vitest.config.ts",
+        ":product_test_lib",
+        "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
 )
