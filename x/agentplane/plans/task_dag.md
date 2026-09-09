@@ -47,6 +47,7 @@ flowchart TB
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
+    EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
@@ -78,6 +79,7 @@ flowchart TB
     PR --> PC_EGRESS
 
     MCP0 --> AG
+    ACCESS -. authority choice .-> EGRESS_CHANGE
 ```
 
 The credentialless deployed gate is `MCP0 -> MCPACCEPT`: use the existing staging-owned
@@ -112,6 +114,14 @@ MCP path is deferred.
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
+
+### `EGRESS_CHANGE` — agent-requested egress policy expansion
+
+**Deferred design:** define how an agent can request an expansion or change to its egress rules.
+The request may become a policy-gated Action with operator approval, or use another reviewed
+configuration path. Keep the authority, approval, persistence, and rollback model open until a
+concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
+path and does not block current credential-placeholder egress.
 
 ## Named gates and acceptance evidence
 

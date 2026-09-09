@@ -1,5 +1,11 @@
 # Repository TODOs
 
+## Agentplane
+
+- [ ] Extend the image-owned Agentplane agent instructions once the interfaces are ready: explain
+      subagent operation and safe lookup of past conversations without putting task-specific procedures
+      in the shared prompt.
+
 ## LSP in Claude Code
 
 - [ ] Configure Python LSP (pyright) similarly to rust-analyzer — investigate whether pyright supports repo-local config files that Claude Code's LSP client would pick up, or if the marketplace plugin's default behavior already works with this Bazel repo. See <devinfra/rust/LSP_NOTES.md> for the approach used with rust-analyzer.

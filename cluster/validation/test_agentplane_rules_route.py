@@ -39,7 +39,6 @@ def test_default_policy_and_nonsecret_instructions_bootstrap_existing_workload_c
     resources = manifest("egress/kustomization.yaml")["resources"]
     rule = one(policy["spec"]["rules"])
     target = one(credential["spec"]["targets"])
-    instructions = get_required_path("_main/x/agentplane/app/agent_instructions.md").read_text()
 
     assert "egresspolicy-egress-rules.yaml" in resources
     assert "egresscredential-agentplane-workload.yaml" in resources
@@ -50,9 +49,7 @@ def test_default_policy_and_nonsecret_instructions_bootstrap_existing_workload_c
     assert rule["methods"] == ["GET"]
     assert rule["paths"] == ["/v1/rules"]
     assert rule["clusterInternal"] is True
-    assert f"http://{one(rule['hosts'])}{one(rule['paths'])}" in instructions
-    assert f"agentplane-credential-{credential['metadata']['name']}" in instructions
-    assert "Authorization: Bearer" in instructions
+    assert config["agent_egress_rules_url"] == f"http://{one(rule['hosts'])}{one(rule['paths'])}"
 
 
 if __name__ == "__main__":
