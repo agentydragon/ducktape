@@ -16,7 +16,7 @@ pub(super) struct PlannedDisposition {
 }
 
 /// One exact holding to sell. A lot ID is not authority to sell another account's lot.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct LotSale {
     pub account_id: String,
     pub lot_id: String,
@@ -25,7 +25,7 @@ pub struct LotSale {
 
 /// Sell the specified lots of one asset into the owner's declared proceeds account.
 /// Selection order is receipt order; the executor never substitutes other lots.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct SaleRequest {
     pub cause_id: String,
     pub agent_id: String,
@@ -115,7 +115,7 @@ impl SaleProceeds {
 
 /// Buy an exact quantity into a new lot, using the owner's declared cash account.
 /// Affordability clamping and choice of lot ID belong to the caller, not execution.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct PurchaseRequest {
     pub cause_id: String,
     pub agent_id: String,

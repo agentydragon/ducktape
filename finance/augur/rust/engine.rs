@@ -36,6 +36,7 @@ use crate::{
 };
 
 mod accounts;
+pub mod actors;
 pub mod allocation;
 mod cashflows;
 pub mod claims;

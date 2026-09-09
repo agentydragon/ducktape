@@ -6,7 +6,7 @@ use super::*;
 
 /// A particular occurrence in one month's claim set, not a user-supplied cause label.
 /// Handles are scoped to the containing rollout; another month's handle is stale.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct ClaimId {
     pub(super) month: u32,
     pub(super) index: usize,

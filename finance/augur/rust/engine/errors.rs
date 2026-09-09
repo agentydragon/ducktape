@@ -8,6 +8,10 @@ use super::*;
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
+    #[error("unsupported actor control input: {reason}")]
+    UnsupportedActorInput { reason: String },
+    #[error("actor responses must name each active path/month exactly once")]
+    InvalidActorResponses,
     #[error(transparent)]
     PropertyValuation(#[from] crate::property::ValuationError),
     #[error(transparent)]
