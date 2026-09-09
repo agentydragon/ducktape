@@ -45,7 +45,7 @@
 # init script (no user-UI env vars, always installs python default) and
 # once via the Setup hook (web_setup_hook.sh, has UI env vars). Once the Setup hook
 # is confirmed to fire reliably across all session modes (new / resume
-# / resume-cached / setup-only — see devinfra/claude/README.md) and is
+# / resume-cached / setup-only — see devinfra/claude/README.adoc) and is
 # sufficient on its own, make the init-script path a no-op (or drop it
 # from the Claude Code web UI "Setup Command" field) and let the Setup
 # hook own devtools install. Remove this tombstone after ≥1 week of

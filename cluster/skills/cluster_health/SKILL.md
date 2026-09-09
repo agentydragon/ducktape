@@ -166,4 +166,4 @@ Check findings against:
 
 - `cluster/docs/decisions.md` "Suspended Kustomizations" — don't flag expected suspensions
 - `cluster/docs/plan.md` "Next Actions" — note if findings match known TODOs
-- `cluster/docs/troubleshooting.md` — reference known fix procedures for matching symptoms
+- `cluster/docs/troubleshooting.adoc` — reference known fix procedures for matching symptoms

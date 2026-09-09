@@ -1,7 +1,7 @@
 # Atlas: Proxmox → NixOS Migration Delta
 
 Written 2026-04-19 and **not started since**: `atlas` still runs Proxmox
-(<../cluster/README.md> node table), `ansible/atlas.yaml` still configures it, and
+(<../cluster/README.adoc> node table), `ansible/atlas.yaml` still configures it, and
 `cluster/terraform.tf` still pins `bpg/proxmox`. The delta analysis below is the
 value here — it is what would otherwise be re-derived — not a scheduled piece of
 work. The friction it exists to remove is still real and still recorded elsewhere:

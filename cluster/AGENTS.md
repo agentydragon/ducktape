@@ -1,4 +1,4 @@
-@README.md
+@README.adoc
 
 ## Talos Linux Documentation
 

@@ -4,7 +4,7 @@
 #
 # Lives here rather than inline in .github/workflows/bazel-ci.yml because it is ~200 lines
 # of bash with three functions, and a script embedded in a YAML string is invisible to
-# shfmt and shellcheck (STYLE.md: "any embedded script/config block longer than ~5 lines
+# shfmt and shellcheck (STYLE.adoc: "any embedded script/config block longer than ~5 lines
 # lives in its native file"). It was 58% of that workflow file.
 #
 # EXECUTION CONTEXT — this does NOT run on the GitHub Actions runner. `bb remote --script`

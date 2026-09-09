@@ -1,10 +1,13 @@
-# Props Ecosystem
+= Props Ecosystem
+:toc:
+:sectanchors:
 
 High-level architecture and shared infrastructure for the props evaluation system.
 
-## Directory Structure
+== Directory Structure
 
-```
+[source,text]
+----
 props/
 ├── .envrc                    # Devenv entry point for env vars
 ├── compose.yaml              # Docker Compose for postgres, registry, backend
@@ -42,11 +45,12 @@ props/
 ├── testing/                  # Shared test fixtures and utilities
 ├── docs/                     # Documentation
 └── prompts/                  # Mako prompt templates
-```
+----
 
-## Initial Setup
+== Initial Setup
 
-```bash
+[source,bash]
+----
 cd props
 
 # 1. Allow direnv (generates PGPASSWORD, sets env vars)
@@ -74,34 +78,36 @@ bazelisk run //props/agents/critic:push
 bazelisk run //props/agents/grader:push
 bazelisk run //props/agents/critic_dev/improve:push
 bazelisk run //props/agents/critic_dev/optimize:push
-```
+----
 
-## Development
+== Development
 
-```bash
+[source,bash]
+----
 docker compose up -d            # Start infrastructure
 docker compose down             # Stop infrastructure
 docker compose logs -f postgres # View logs
-```
+----
 
-For frontend hot-reload during development, use `frontend:dev` instead of the
-compose backend (starts its own backend + esbuild watch):
+For frontend hot-reload during development, use `frontend:dev` instead of the compose backend (starts its own backend + esbuild watch):
 
-```bash
+[source,bash]
+----
 docker compose up -d postgres registry     # Infra only (no backend)
 bazelisk run //props/frontend:dev          # Frontend :5173 + backend :8000
-```
+----
 
-### Service URLs
+=== Service URLs
 
-- Dashboard: <http://localhost:8000> (frontend + API, same origin)
-- Backend API: <http://localhost:8000/api/> — see <docs/backend_api.md> for endpoint reference
-- PostgreSQL: localhost:5433
-- Registry: localhost:5000 (direct, for debugging)
+* Dashboard: http://localhost:8000 (frontend + API, same origin)
+* Backend API: http://localhost:8000/api/ — see link:docs/backend_api.md[] for endpoint reference
+* PostgreSQL: localhost:5433
+* Registry: localhost:5000 (direct, for debugging)
 
-## Database Management
+== Database Management
 
-```bash
+[source,bash]
+----
 # psql access (uses PG* environment variables from devenv)
 psql
 
@@ -111,84 +117,77 @@ bazelisk run //props/cli -- db recreate
 # Backup and restore
 bazelisk run //props/cli -- db backup
 bazelisk run //props/cli -- db restore <backup_file>
-```
+----
 
-## Specimens Dataset
+== Specimens Dataset
 
-Specimens live in `props/specimens/` (previously a [separate repository](https://github.com/agentydragon/specimens)).
+Specimens live in `props/specimens/` (previously a https://github.com/agentydragon/specimens[separate repository]).
 
 Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
 
-- Per-snapshot directories with `BUILD.bazel` (slug, split via `specimen_targets()`) and issue files (`.yaml`)
-- Each snapshot's `BUILD.bazel` defines the code source and train/valid/test split
+* Per-snapshot directories with `BUILD.bazel` (slug, split via `specimen_targets()`) and issue files (`.yaml`)
+* Each snapshot's `BUILD.bazel` defines the code source and train/valid/test split
 
-The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by direnv (`.envrc`) to
-`props/specimens/`. See <specimens/docs/authoring_guide.md> for the format spec.
+The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by direnv (`.envrc`) to `props/specimens/`. See link:specimens/docs/authoring_guide.md[] for the format spec.
 
-## Evaluation Workflow
+== Evaluation Workflow
 
-1. **Specimens** — frozen code snapshots with human-labeled canonical issues
-2. **Critiques** — agent-generated issue reports per specimen
-3. **Grading** — comparison against canonical issues (recall/precision)
-4. **Selection** — agents ranked by fitness scores
+[arabic]
+. *Specimens* — frozen code snapshots with human-labeled canonical issues
+. *Critiques* — agent-generated issue reports per specimen
+. *Grading* — comparison against canonical issues (recall/precision)
+. *Selection* — agents ranked by fitness scores
 
-Grading is automatic via snapshot graders. See <docs/training_strategy.md> for details.
+Grading is automatic via snapshot graders. See link:docs/training_strategy.md[] for details.
 
-## Cluster Deployment
+== Cluster Deployment
 
-Props has one canonical deployment package under `props/deploy/`. It is a Kustomize
-package containing the namespace, database, secrets, RBAC, application resources,
-and the Forgejo Terraform wiring. Flux registers that package through
-`cluster/k8s/props.yaml`; the registration is currently suspended while Props is
-parked. Set `suspend: false` there to revive it.
+Props has one canonical deployment package under `props/deploy/`. It is a Kustomize package containing the namespace, database, secrets, RBAC, application resources, and the Forgejo Terraform wiring. Flux registers that package through `cluster/k8s/props.yaml`; the registration is currently suspended while Props is parked. Set `suspend: false` there to revive it.
 
-### Components
+=== Components
 
-| Component  | Deployment package resource |
-| ---------- | --------------------------- |
-| Backend    | `props/deploy/app/`         |
-| PostgreSQL | `props/deploy/db/`          |
-| Secrets    | `props/deploy/secrets/`     |
-| Forgejo    | `props/deploy/forgejo/`     |
+[cols=",",options="header",]
+|===
+|Component |Deployment package resource
+|Backend |`props/deploy/app/`
+|PostgreSQL |`props/deploy/db/`
+|Secrets |`props/deploy/secrets/`
+|Forgejo |`props/deploy/forgejo/`
+|===
 
 The package keeps its existing node placement and workload-level configuration.
 
-### OCI Image
+=== OCI Image
 
 The backend OCI image (`//props/backend:image`) bundles:
 
-- Python backend + frontend assets
-- All specimen artifacts (code tars + data YAMLs) at `/specimens/{slug}/`
+* Python backend + frontend assets
+* All specimen artifacts (code tars + data YAMLs) at `/specimens/{slug}/`
 
 Built by Bazel, pushed to GHCR by CI.
 
-### Startup Behavior
+=== Startup Behavior
 
 Controlled by `PropsConfig` toggles in `config.toml` (mounted via ConfigMap):
 
-- `auto_migrate: true` — runs Alembic migrations on boot
-- `auto_sync_specimens: true` — scans `/specimens/` and syncs all specimens to PostgreSQL
+* `auto_migrate: true` — runs Alembic migrations on boot
+* `auto_sync_specimens: true` — scans `/specimens/` and syncs all specimens to PostgreSQL
 
-### PostgreSQL Backup
+=== PostgreSQL Backup
 
 A daily CronJob (`backup.enabled: true`) runs `pg_dump | gzip` to a PVC, with configurable retention (`backup.retention.days`). Manual trigger:
 
-```bash
+[source,bash]
+----
 kubectl create job --from=cronjob/props-backup props-backup-test -n props
-```
+----
 
-### Registry Proxy
+=== Registry Proxy
 
-The registry proxy manifests remain in the dormant deployment package as revival
-scaffolding, but the Forgejo registry tenant's package content and upstream
-credential wiring were intentionally retired. Re-enabling this path requires
-restoring that integration deliberately.
+The registry proxy manifests remain in the dormant deployment package as revival scaffolding, but the Forgejo registry tenant's package content and upstream credential wiring were intentionally retired. Re-enabling this path requires restoring that integration deliberately.
 
-The remaining `props-registry-pull` Secret wiring is derived from the CNPG
-`props-db-app` credentials. The registry is configured with
-`REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative
-URLs (required for external clients going through the Gateway API proxy).
+The remaining `props-registry-pull` Secret wiring is derived from the CNPG `props-db-app` credentials. The registry is configured with `REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative URLs (required for external clients going through the Gateway API proxy).
 
-## GitHub Copilot Agent Setup
+== GitHub Copilot Agent Setup
 
 See `.github/workflows/copilot-setup-steps.yml` for automated environment setup (env vars, network config). Uses `props-agents` Docker network (no HTTP proxy, unlike Claude hooks which use `host` network).

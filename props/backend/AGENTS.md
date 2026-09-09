@@ -2,4 +2,4 @@
 
 ## Workflow
 
-See `props/docs/SPEC.md` for the append-only target spec.
+See `props/docs/SPEC.adoc` for the append-only target spec.

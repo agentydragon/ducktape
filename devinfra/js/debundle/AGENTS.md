@@ -149,9 +149,9 @@ stage lists) unless a real external consumer needs them; flat transform specs ca
 inputs and author decisions only — analysis provenance (`evidence`, `confidence`,
 `export_shape`) goes in docs or diagnostic side outputs, not `VendorMark`.
 
-## Spec `note:` field — STYLE.md exemption
+## Spec `note:` field — STYLE.adoc exemption
 
-**Deviation** from STYLE.md ("every field needs a reader"; authoring provenance
+**Deviation** from STYLE.adoc ("every field needs a reader"; authoring provenance
 belongs in inert `#` comments, not `note:` schema fields): the spec's optional
 `note:` field on `LogicalModule` / `Member` / `AnonymousStatement`, plus
 per-binding annotation notes, is a ratified exemption — the rewriters drop `#`

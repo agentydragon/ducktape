@@ -106,7 +106,7 @@ genuinely need cluster identity or cluster-only services justify the real one.
 
 ## Leftovers from the teardown
 
-`cluster/docs/troubleshooting.md` § "Removing a CRD Operator (Uninstall Runbook)"
+`cluster/docs/troubleshooting.adoc` § "Removing a CRD Operator (Uninstall Runbook)"
 already covers this ground — Helm not removing CRDs, finalizers stalling once the
 controller is gone, the clear-the-finalizer patch, and a final verification
 checklist. #3607 did not follow it, and paid for all three: `kubectl delete ns

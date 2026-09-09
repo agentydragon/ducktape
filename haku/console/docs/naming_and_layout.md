@@ -141,7 +141,7 @@ haku/indexer/          # NEW tree (#4887, forthcoming) — the maintenance worke
     recall_index_sync.py  (+ the #4872 chunk/embed split)  chat_corpus/  model_key contract test
 ```
 
-House rules that bound the shape (#4924, <../../../STYLE.md> § General): no grab-bag modules
+House rules that bound the shape (#4924, <../../../STYLE.adoc> § General): no grab-bag modules
 (`core.py`/`utils.py` banned), flat-over-nested (a `<3`-file domain gets no subdir — `hostexecd/`
 is the landed example: a flat service.py/models.py pair, no nesting), one `py_library` per file with
 gazelle-managed BUILDs (every move is mechanical), import-from-defining-module.
@@ -344,7 +344,7 @@ result. Their identity-lane treatment remains separate from the token rename.
 
 ## 4. Naming conventions — the reviewer checklist
 
-Every burn-down PR is checkable against these. They are already <../../../STYLE.md> rules, made
+Every burn-down PR is checkable against these. They are already <../../../STYLE.adoc> rules, made
 concrete for this batch.
 
 ### 4.1 Directory-as-namespace / no redundant prefix
