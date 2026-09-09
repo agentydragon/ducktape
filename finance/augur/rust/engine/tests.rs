@@ -857,6 +857,36 @@ fn rejects_mixed_quantity_scales_and_invalid_security_prices() {
 }
 
 #[test]
+fn zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not() {
+    let mut fixture = minimal_fixture();
+    fixture.series.push(SeriesSpec {
+        series_id: "security_distribution:example".into(),
+        snapshots: 2,
+        values: vec![0, 0],
+    });
+    assert!(simulate(&fixture).is_ok());
+    fixture.series[0].values[1] = -1;
+    assert!(matches!(
+        simulate(&fixture),
+        Err(SimulationError::NegativeSecurityDistribution {
+            index: 1,
+            value: -1,
+            ..
+        })
+    ));
+    fixture.series[0].series_id = "security:example".into();
+    fixture.series[0].values = vec![100, 0];
+    assert!(matches!(
+        simulate(&fixture),
+        Err(SimulationError::InvalidSecurityPrice {
+            index: 1,
+            value: 0,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn transfer_and_fifo_sale_remain_balanced() {
     let alice_cash = AccountRef::new("alice", "checking");
     let bob_cash = AccountRef::new("bob", "checking");

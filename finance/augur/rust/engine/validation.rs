@@ -55,7 +55,6 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
             });
         }
         if (series.series_id.starts_with("security:")
-            || series.series_id.starts_with("security_distribution:")
             || series.series_id.starts_with("home_value:"))
             && let Some((index, value)) = series
                 .values
@@ -65,6 +64,20 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 .find(|(_, value)| *value <= 0)
         {
             return Err(SimulationError::InvalidSecurityPrice {
+                series_id: series.series_id.clone(),
+                index,
+                value,
+            });
+        }
+        if series.series_id.starts_with("security_distribution:")
+            && let Some((index, value)) = series
+                .values
+                .iter()
+                .copied()
+                .enumerate()
+                .find(|(_, value)| *value < 0)
+        {
+            return Err(SimulationError::NegativeSecurityDistribution {
                 series_id: series.series_id.clone(),
                 index,
                 value,

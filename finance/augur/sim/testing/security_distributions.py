@@ -146,6 +146,13 @@ class SecurityDistributionAcceptance:
             range(HORIZON), MONTHLY_PAYOUT_QUANTA
         )
 
+    def test_zero_payout_months_move_no_cash_between_actual_payments(self, backend: Backend) -> None:
+        case = distribution_case(is_taxed=False, per_unit=Decimal(0))
+        case.series[SecurityDistributionKey(symbol=SYMBOL)][0, 6] = float(PER_UNIT)
+        expected = dict.fromkeys(range(HORIZON), 0)
+        expected[6] = MONTHLY_PAYOUT_QUANTA
+        assert _cash_by_month(backend(case)) == expected
+
     def test_a_payout_below_one_quantum_per_unit_still_reaches_cash(self, backend: Backend) -> None:
         """#5832. A per-unit figure is a RATE, and a rate has no reason to be a whole number of
         cents: 10,000 units at $0.0004 each is an ordinary $4.00 payment. Rounding the rate to

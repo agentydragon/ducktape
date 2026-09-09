@@ -149,8 +149,7 @@ def sampled_array_to_per_unit_rate(values: Any, *, quantum: Any) -> Int64[np.nda
     multiplies it by a whole position before anything is owed — `PerUnitRate::times` is a
     multiply-then-divide over `i128` — so quantizing to the currency quantum FIRST discards up
     to half a quantum PER UNIT ahead of that multiply, and sends a payout smaller than half a
-    quantum to a literal zero. That zero is #5832: a bond fund at $56 a unit yielding under
-    ~11bp pays under half a cent a unit a month, and the engine rejects the series outright.
+    quantum to a literal zero instead of preserving the amount earned (#5832).
 
     So a per-unit rate lands on the same parts-per-billion grid every other dimensionless wire
     value uses — `MONEY_FACTOR_SCALE` of these to one quantum, `WIRE_RATE_SCALE` on the Rust

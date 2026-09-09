@@ -142,9 +142,13 @@ py_test(
     deps = [
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:security_distributions",
+        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -43,6 +43,14 @@ pub enum SimulationError {
         index: usize,
         value: i64,
     },
+    #[error(
+        "distribution series {series_id:?} contains negative value {value} at flat index {index}"
+    )]
+    NegativeSecurityDistribution {
+        series_id: String,
+        index: usize,
+        value: i64,
+    },
     #[error("series {series_id:?} has {actual} values; expected {expected}")]
     SeriesShape {
         series_id: String,

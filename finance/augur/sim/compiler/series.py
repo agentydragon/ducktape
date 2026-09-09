@@ -235,7 +235,7 @@ def _money_quantizer(key: LevelSeriesKey) -> Callable[..., Int64[np.ndarray, " .
     A per-unit RATE and a per-unit PRICE are not the same unit, and the difference is the
     whole of #5832: the engine multiplies a distribution by a whole position before anything is
     owed, so rounding it to the currency quantum first both loses precision proportional to
-    units held and sends a sub-quantum payout to a literal zero, which the engine then rejects.
+    units held and sends a sub-quantum payout to a literal zero.
     A price is large enough per unit that the quantum is the right grid for it, and it is
     already the grid every price, basis and order on the wire agrees on.
     """

@@ -190,15 +190,20 @@ def _obligation(obligation: ScheduledObligation | RecurringObligation, *, quantu
 def _series_values(
     key: LevelSeriesKey, levels: Float64[np.ndarray, " rollout snapshot"], money: Int64[np.ndarray, " rollout snapshot"]
 ) -> Int64[np.ndarray, " rollout snapshot"]:
+    if not np.isfinite(levels).all():
+        rollout, month = np.argwhere(~np.isfinite(levels))[0]
+        raise ValueError(
+            f"series {key.wire_id!r} has no finite level at rollout {rollout}, month {month}; "
+            "the execution input's series are dense over every rollout and snapshot"
+        )
+    if isinstance(key, SecurityDistributionKey) and np.any(levels < 0):
+        rollout, month = np.argwhere(levels < 0)[0]
+        raise ValueError(
+            f"distribution series {key.wire_id!r} has a negative payout at rollout {rollout}, month {month}"
+        )
     if isinstance(key, _MONEY_SERIES_KINDS):
         return money
     if isinstance(key, _INDEX_SERIES_KINDS):
-        if not np.isfinite(levels).all():
-            rollout, month = np.argwhere(~np.isfinite(levels))[0]
-            raise ValueError(
-                f"index series {key.wire_id!r} has no level at rollout {rollout}, month {month}; "
-                "the execution input's series are dense over every rollout and snapshot"
-            )
         return _round_ppb(levels)
     raise UnsupportedScenarioError(f"level series {key.wire_id!r} has no execution input representation")
 
