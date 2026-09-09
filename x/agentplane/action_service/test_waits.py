@@ -83,13 +83,13 @@ async def subscribed(waiting: Waiting) -> None:
 
 
 async def decide(waiting: Waiting, verdict: Verdict) -> ActionRequestView:
-    view, _ = await waiting.writer.decide(
+    await waiting.writer.decide(
         waiting.request.id,
         DecisionInput(verdict=verdict, expected_version=1, idempotency_key="test-decision"),
         OPERATOR,
         provider="test-human",
     )
-    return view
+    return await waiting.writer.get(waiting.request.id, CALLER)
 
 
 async def test_cross_writer_decision_and_terminal_predicates(waiting: Waiting) -> None:
