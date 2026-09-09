@@ -115,8 +115,8 @@ def _summary(catalog: ActionCatalog, identity: ActionIdentity, fields: set[Inclu
     )
 
 
-def _result(model: BaseModel) -> ToolResult:
-    return ToolResult(structured_content=model.model_dump(mode="json", exclude_none=True))
+def _result(model: BaseModel, *, exclude_none: bool = False) -> ToolResult:
+    return ToolResult(structured_content=model.model_dump(mode="json", exclude_none=exclude_none))
 
 
 def create_server(
@@ -173,7 +173,7 @@ def create_server(
                 next_after = ActionIdentity(group=last.group, name=last.name)
                 break
             page.append(_summary(catalog, identity, include_fields or set()))
-        return _result(ActionPage(actions=page, next_after=next_after))
+        return _result(ActionPage(actions=page, next_after=next_after), exclude_none=True)
 
     @server.tool(annotations={"readOnlyHint": True})
     async def get_action(group: Key, name: Key, include_fields: set[IncludeField] | None = None) -> ToolResult:
@@ -183,7 +183,9 @@ def create_server(
         Unknown names fail clearly; use get_action_request instead when you have a durable request ID.
         """
         with _tool_errors():
-            return _result(_summary(catalog, ActionIdentity(group=group, name=name), include_fields or set()))
+            return _result(
+                _summary(catalog, ActionIdentity(group=group, name=name), include_fields or set()), exclude_none=True
+            )
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     async def request_action(
@@ -237,7 +239,8 @@ def create_server(
                 EventPage(
                     events=events[:limit],
                     next_after_sequence=events[limit - 1].sequence if len(events) > limit else None,
-                )
+                ),
+                exclude_none=True,
             )
 
     return server

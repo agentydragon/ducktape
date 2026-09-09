@@ -79,7 +79,7 @@ def create_app(
     updates: ActionUpdates,
 ) -> FastAPI:
     mcp_app = create_server(service, catalog, updates, workload_authenticator).http_app(
-        path="/mcp", stateless_http=True, json_response=True
+        path="/mcp", stateless_http=True, json_response=False
     )
 
     @asynccontextmanager

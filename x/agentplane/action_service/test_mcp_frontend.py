@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import httpx
 import pytest
@@ -18,6 +20,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
 from sqlalchemy.ext.asyncio import AsyncEngine
+from starlette.types import Message, Scope
 
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import DisabledOperatorAuthenticator, workload_principal
@@ -280,12 +283,7 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_origin_and_forger
         )
         assert invalid.is_error
         assert await frontend.store.list_requests(OPERATOR) == []
-        frontend.core.read_namespaced_pod.side_effect = None
-        frontend.core.read_namespaced_pod.return_value = k8s_client.V1Pod(
-            metadata=k8s_client.V1ObjectMeta(
-                name="test-pod-a", namespace=NAMESPACE, uid="test-pod-uid-a", deletion_timestamp=datetime.now(UTC)
-            )
-        )
+        frontend.core.read_namespaced_pod.side_effect = k8s_client.ApiException(status=404)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
         revoked = await http.post(
             "/mcp",
@@ -301,6 +299,105 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_origin_and_forger
             "/mcp", headers={"Authorization": "Bearer test-token-a", "Origin": "https://test-untrusted.example"}
         )
         assert origin.status_code == 403
+
+
+async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> None:
+    async with frontend.client() as client:
+        request = {
+            "idempotency_key": "test-bounded-submit",
+            "action": {"group": "test-group", "name": "alpha"},
+            "arguments": {"message": "test-wait"},
+        }
+        receipt = ActionRequestView.model_validate(
+            (await client.call_tool("request_action", {"request": request, "wait_seconds": 0.001})).structured_content
+        )
+        assert receipt.state is ActionState.DECISION_PENDING
+        assert not frontend.updates._subscribers
+        for seconds in (-1, 31):
+            invalid = await client.call_tool(
+                "request_action",
+                {"request": {**request, "idempotency_key": "test-invalid"}, "wait_seconds": seconds},
+                raise_on_error=False,
+            )
+            assert invalid.is_error
+        assert len(await frontend.store.list_requests(OPERATOR)) == 1
+
+
+async def test_http_disconnect_releases_wait_without_cancelling_action(
+    frontend: Frontend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registered, released = asyncio.Event(), asyncio.Event()
+    subscribe = frontend.updates.subscribe
+
+    @contextmanager
+    def observed_subscription(request_id: UUID) -> Iterator[asyncio.Event]:
+        with subscribe(request_id) as changed:
+            registered.set()
+            try:
+                yield changed
+            finally:
+                released.set()
+
+    monkeypatch.setattr(frontend.updates, "subscribe", observed_subscription)
+    incoming: asyncio.Queue[Message] = asyncio.Queue()
+    incoming.put_nowait(
+        {
+            "type": "http.request",
+            "body": json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "request_action",
+                        "arguments": {
+                            "request": {
+                                "idempotency_key": "test-disconnect",
+                                "action": {"group": "test-group", "name": "alpha"},
+                                "arguments": {"message": "test-disconnect"},
+                            },
+                            "wait_seconds": 30,
+                        },
+                    },
+                }
+            ).encode(),
+            "more_body": False,
+        }
+    )
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/mcp",
+        "raw_path": b"/mcp",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"actions.test"),
+            (b"authorization", b"Bearer test-token-a"),
+            (b"content-type", b"application/json"),
+            (b"accept", b"application/json, text/event-stream"),
+            (b"mcp-protocol-version", b"2025-11-25"),
+        ],
+        "server": ("actions.test", 80),
+        "client": ("127.0.0.1", 12345),
+    }
+
+    async def send(message: Message) -> None:
+        pass
+
+    async with asyncio.timeout(10):
+        request_task = asyncio.create_task(frontend.app(scope, incoming.get, send))
+        await registered.wait()
+        incoming.put_nowait({"type": "http.disconnect"})
+        await request_task
+        await released.wait()
+    requests = await frontend.store.list_requests(OPERATOR)
+    assert len(requests) == 1
+    assert requests[0].state is ActionState.DECISION_PENDING
+    assert not frontend.updates._subscribers
 
 
 if __name__ == "__main__":
