@@ -1,5 +1,7 @@
-"""Compile the example and inspect canonical action, lot, tax and stopping results."""
+"""Run the documented CLI and inspect canonical action, lot, tax and stopping results."""
 
+import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -7,11 +9,20 @@ import pytest
 import pytest_bazel
 
 from finance.augur.x.monthly_actions.run import run_example
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
-@pytest.fixture
-def example(tmp_path: Path) -> dict[str, Any]:
-    return run_example(tmp_path / "example")
+@pytest.fixture(scope="module")
+def example(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    output = tmp_path_factory.mktemp("monthly-actions") / "results"
+    subprocess.run(
+        [get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/run_bin")), "--output-dir", output],
+        check=True,
+    )
+    document = json.loads((output / "outcomes.json").read_text())
+    if not isinstance(document, dict):
+        raise ValueError("example CLI output must be a JSON object")
+    return document
 
 
 def test_bill_and_later_tax_are_paid_from_actual_sale_proceeds(example: dict[str, Any]) -> None:

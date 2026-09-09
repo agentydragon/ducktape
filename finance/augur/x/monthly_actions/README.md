@@ -33,8 +33,9 @@ The new output directory retains `execution-input.json` with all assumptions and
 `outcomes.json` with each original path's ordered action receipts, stop reason and
 canonical forensic financial output. Amounts are USD cents. Add `--rollout 1`
 for selected replay, or `--rollout 1 --rollout 0` to reorder the same paths.
-The tests check these identity invariants and the financial outcomes through the
-real compiler and native entrypoint, offline.
+The tests invoke the documented CLI and check its emitted financial outcomes,
+then compare reordered and selected replay through the same authoring function.
+All inputs are generated locally; the tests need no live service or evidence data.
 
 Input/output transport uses the shared
 [native invocation helpers](../../rust/docs/execution_boundary.md#native-experiment-invocation).
