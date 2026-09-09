@@ -10,7 +10,8 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 - [Task DAG](task_dag.md) — authoritative landed/open dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
 - [Operations and access](operations_and_access.md) — Action schema, Executor wiring, and Action-state gates
 - [Asynchronous approvals](async_approvals.md) — Decision aggregation and Action event/query delivery
-- [External MCP connections](external_mcp_connections.md) — Claude.ai OAuth/DCR, operator-bound static identities, per-identity Action bounds/deciders, and the first Haku MCP replacement slice
+- [Configured Action policies](action_policies.md) — open policy-binding storage/model gate, then bounded auto-approval by external Identity or authenticated Sandbox type
+- [External MCP connections](external_mcp_connections.md) — Claude.ai and local Claude Code OAuth connections, runtime naming/rename/unbind/rebind, configured Identities, and Haku MCP replacement
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [BuildBuddy hosted remote-run authentication](buildbuddy_remote_auth.md) — unresolved hosted-run credential boundary
