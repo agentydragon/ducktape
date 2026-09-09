@@ -57,6 +57,12 @@ path, so whichever wins a race, the loser's stale callback surfaces as an explic
 conflict rather than overriding the winner. No real policy provider or Thread notification is added;
 staging now configures the bounded Everything echo fixture policy; broader policies remain deferred.
 
+The planned `IDPOLICY` slice in [external MCP connections](external_mcp_connections.md) adds bounded
+deciders selected by a trusted configured static identity. It distinguishes the identity's mandatory
+Action authorization bounds from permission to skip human review; an error in a mandatory bound
+cannot become `no_opinion` and let another provider's allow win. Configuration and policy-change
+semantics remain design work, while this document owns the existing Decision aggregation contract.
+
 ## Open delivery contract
 
 ### P0 behavior
