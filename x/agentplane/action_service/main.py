@@ -26,6 +26,7 @@ from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, Fixture
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
@@ -146,6 +147,7 @@ async def async_main(settings: Settings) -> None:
             ),
             operator_authenticator,
             catalog,
+            updates=ActionUpdates(settings.database_url),
         )
         await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
 

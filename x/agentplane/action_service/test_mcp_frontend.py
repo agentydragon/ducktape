@@ -1,0 +1,307 @@
+"""Actual MCP HTTP protocol, destination workload validation, and canonical Action receipts."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+import pytest_bazel
+from fastapi import FastAPI
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+from kubernetes_asyncio import client as k8s_client
+from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from x.agentplane.action_service.api import create_app
+from x.agentplane.action_service.auth import DisabledOperatorAuthenticator, workload_principal
+from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
+from x.agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
+from x.agentplane.action_service.db import ActionStore, make_sessionmaker
+from x.agentplane.action_service.models import (
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+    Principal,
+    PrincipalRole,
+    Verdict,
+)
+from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import ActionUpdates
+from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import (
+    POD_NAME_CLAIM,
+    POD_UID_CLAIM,
+    SandboxPrincipal,
+    SandboxPrincipalResolver,
+)
+
+AUDIENCE = "test-action-audience"
+NAMESPACE = "test-action-sandboxes"
+OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
+
+
+def sandbox(label: str) -> SandboxPrincipal:
+    return SandboxPrincipal(
+        namespace=NAMESPACE,
+        service_account_name="test-runner",
+        service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-runner",
+        pod_name=f"test-pod-{label}",
+        pod_uid=f"test-pod-uid-{label}",
+        sandbox_name=f"test-sandbox-{label}",
+        sandbox_uid=f"test-sandbox-uid-{label}",
+    )
+
+
+class EgressSubstitution(httpx.AsyncBaseTransport):
+    """The runner supplies only a public placeholder; substitution is an external boundary."""
+
+    def __init__(self, app: FastAPI, token: str) -> None:
+        self._upstream = httpx.ASGITransport(app)
+        self._token = token
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}"
+        request.headers["authorization"] = f"Bearer {self._token}"
+        return await self._upstream.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._upstream.aclose()
+
+
+@dataclass
+class Frontend:
+    app: FastAPI
+    store: ActionStore
+    authentication: AsyncMock
+    core: AsyncMock
+    updates: ActionUpdates
+    tokens: dict[str, SandboxPrincipal]
+
+    def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
+        def factory(**kwargs: Any) -> httpx.AsyncClient:
+            transport = EgressSubstitution(self.app, token) if egress else httpx.ASGITransport(self.app)
+            return httpx.AsyncClient(transport=transport, **kwargs)
+
+        return Client(
+            StreamableHttpTransport(
+                "http://actions.test/mcp",
+                headers={"Authorization": f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER if egress else token}"},
+                httpx_client_factory=factory,
+            )
+        )
+
+
+@pytest.fixture
+async def frontend(engine: AsyncEngine, db_url: str) -> AsyncIterator[Frontend]:
+    tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b")}
+    authentication = AsyncMock(spec=AuthenticationV1Api)
+    core = AsyncMock(spec=CoreV1Api)
+
+    async def review(body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
+        identity = tokens.get(body.spec.token)
+        return k8s_client.V1TokenReview(
+            spec=body.spec,
+            status=k8s_client.V1TokenReviewStatus(
+                authenticated=identity is not None,
+                audiences=[AUDIENCE],
+                user=k8s_client.V1UserInfo(
+                    username=identity.service_account_subject,
+                    extra={POD_NAME_CLAIM: [identity.pod_name], POD_UID_CLAIM: [identity.pod_uid]},
+                )
+                if identity is not None
+                else None,
+            ),
+        )
+
+    async def pod(name: str, namespace: str) -> k8s_client.V1Pod:
+        identity = next(identity for identity in tokens.values() if identity.pod_name == name)
+        return k8s_client.V1Pod(
+            metadata=k8s_client.V1ObjectMeta(
+                name=name,
+                namespace=namespace,
+                uid=identity.pod_uid,
+                owner_references=[
+                    k8s_client.V1OwnerReference(
+                        api_version="agents.x-k8s.io/v1beta1",
+                        kind="Sandbox",
+                        controller=True,
+                        name=identity.sandbox_name,
+                        uid=identity.sandbox_uid,
+                    )
+                ],
+            )
+        )
+
+    authentication.create_token_review.side_effect = review
+    core.read_namespaced_pod.side_effect = pod
+    catalog = ActionCatalog(
+        groups={
+            "test-group": ActionGroup(
+                title="Test group",
+                description="test-group-description-not-default",
+                executor=McpExecutorBinding(
+                    description="test-executor-description-not-default", config={"token": "test-backend-secret"}
+                ),
+                actions={
+                    name: ActionDefinition(
+                        description="test-full-description-" + "x" * 10000,
+                        input_schema={
+                            "type": "object",
+                            "properties": {"message": {"type": "string"}},
+                            "required": ["message"],
+                            "additionalProperties": False,
+                        },
+                    )
+                    for name in ("alpha", "beta")
+                },
+            )
+        }
+    )
+    store = ActionStore(make_sessionmaker(engine))
+    # No dispatch in these human-deny tests; admission still requires a bound executor.
+    executor = AsyncMock()
+    service = ActionService(store, catalog, {"test-group": executor})
+    updates = ActionUpdates(db_url)
+    app = create_app(
+        service,
+        SandboxPrincipalAuthenticator(
+            SandboxPrincipalResolver(
+                authentication=authentication,
+                core_v1=core,
+                audience=AUDIENCE,
+                allowed_service_account_namespaces=frozenset({NAMESPACE}),
+            )
+        ),
+        DisabledOperatorAuthenticator(),
+        catalog,
+        updates=updates,
+    )
+    async with app.router.lifespan_context(app):
+        yield Frontend(app, store, authentication, core, updates, tokens)
+    await service.close()
+
+
+async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
+    async with frontend.client(egress=True) as client:
+        tools = await client.list_tools()
+        assert len(tools) == 5
+        assert "test-full-description" not in " ".join(tool.model_dump_json() for tool in tools)
+        page = await client.call_tool("list_actions", {"limit": 1})
+        assert page.structured_content == {
+            "actions": [{"group": "test-group", "name": "alpha", "available": True}],
+            "next_after": {"group": "test-group", "name": "alpha"},
+        }
+        next_page = await client.call_tool("list_actions", {"limit": 1, "after": page.structured_content["next_after"]})
+        assert next_page.structured_content == {"actions": [{"group": "test-group", "name": "beta", "available": True}]}
+        details = await client.call_tool(
+            "get_action", {"group": "test-group", "name": "alpha", "include_fields": ["input_schema"]}
+        )
+        assert details.structured_content is not None
+        assert "input_schema" in details.structured_content
+        assert "description" not in details.structured_content
+        assert "test-backend-secret" not in str(details)
+        unsupported = await client.call_tool(
+            "get_action",
+            {"group": "test-group", "name": "alpha", "include_fields": ["output_schema"]},
+            raise_on_error=False,
+        )
+        assert unsupported.is_error
+
+
+async def test_submission_wait_receipts_events_and_owner_scope(frontend: Frontend) -> None:
+    async with frontend.client() as caller, frontend.client("test-token-b") as other:
+        envelope = {
+            "idempotency_key": "test-submit",
+            "action": {"group": "test-group", "name": "alpha"},
+            "arguments": {"message": "test-message"},
+        }
+        result = await caller.call_tool("request_action", {"request": envelope})
+        receipt = ActionRequestView.model_validate(result.structured_content)
+        assert receipt.state is ActionState.DECISION_PENDING
+        repeated = await caller.call_tool("request_action", {"request": envelope})
+        assert repeated.structured_content == result.structured_content
+        for name in ("get_action_request", "list_action_request_events"):
+            denied = await other.call_tool(name, {"request_id": str(receipt.id)}, raise_on_error=False)
+            assert denied.is_error
+        task = asyncio.create_task(
+            caller.call_tool("get_action_request", {"request_id": str(receipt.id), "wait_seconds": 10})
+        )
+        # A commit before or after subscription must both be observed, without polling.
+        await frontend.store.decide(
+            receipt.id,
+            DecisionInput(verdict=Verdict.DENY, expected_version=1, idempotency_key="test-deny"),
+            OPERATOR,
+            provider="test-human",
+        )
+        assert ActionRequestView.model_validate((await task).structured_content).state is ActionState.DENIED
+        first = await caller.call_tool("list_action_request_events", {"request_id": str(receipt.id), "limit": 1})
+        assert first.structured_content is not None
+        assert first.structured_content["next_after_sequence"] == 1
+        second = await caller.call_tool(
+            "list_action_request_events", {"request_id": str(receipt.id), "after_sequence": 1}
+        )
+        assert second.structured_content is not None
+        assert second.structured_content["events"][0]["state"] == "denied"
+        assert "next_after_sequence" not in second.structured_content
+        assert (
+            await frontend.store.get(receipt.id, workload_principal(frontend.tokens["test-token-a"]))
+        ).id == receipt.id
+
+
+@pytest.mark.parametrize("authorization", [None, "Bearer test-operator", f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}"])
+async def test_transport_requires_real_workload_bearer(frontend: Frontend, authorization: str | None) -> None:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as client:
+        headers = {"Authorization": authorization} if authorization is not None else {}
+        for method in ("GET", "POST", "DELETE"):
+            response = await client.request(method, "/mcp", headers=headers)
+            assert response.status_code == 401
+
+
+async def test_revalidates_live_pod_and_rejects_duplicate_auth_origin_and_forgery(frontend: Frontend) -> None:
+    async with frontend.client() as client:
+        invalid = await client.call_tool(
+            "request_action",
+            {
+                "request": {
+                    "idempotency_key": "test-forgery",
+                    "action": {"group": "test-group", "name": "alpha"},
+                    "arguments": {"message": "test"},
+                    "caller_principal": "test-other",
+                }
+            },
+            raise_on_error=False,
+        )
+        assert invalid.is_error
+        assert await frontend.store.list_requests(OPERATOR) == []
+        frontend.core.read_namespaced_pod.side_effect = None
+        frontend.core.read_namespaced_pod.return_value = k8s_client.V1Pod(
+            metadata=k8s_client.V1ObjectMeta(
+                name="test-pod-a", namespace=NAMESPACE, uid="test-pod-uid-a", deletion_timestamp=datetime.now(UTC)
+            )
+        )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        revoked = await http.post(
+            "/mcp",
+            headers={"Authorization": "Bearer test-token-a"},
+            json={"jsonrpc": "2.0", "id": 99, "method": "tools/list"},
+        )
+        assert revoked.status_code == 401
+        duplicate = await http.post(
+            "/mcp", headers=[("Authorization", "Bearer test-token-a"), ("Authorization", "Bearer test-token-b")]
+        )
+        assert duplicate.status_code == 401
+        origin = await http.post(
+            "/mcp", headers={"Authorization": "Bearer test-token-a", "Origin": "https://test-untrusted.example"}
+        )
+        assert origin.status_code == 403
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -248,7 +248,9 @@ class ActionStore:
                 raise ActionNotFoundError(str(request_id))
             return await self._view(session, row, principal)
 
-    async def events(self, request_id: UUID, principal: Principal, *, after_sequence: int = 0) -> list[ActionEventView]:
+    async def events(
+        self, request_id: UUID, principal: Principal, *, after_sequence: int = 0, limit: int | None = None
+    ) -> list[ActionEventView]:
         """`after_sequence` is the last sequence the caller already has; polling it back is a no-op."""
         async with self._sessions() as session:
             row = await session.get(ActionRequestRow, request_id)
@@ -259,6 +261,7 @@ class ActionStore:
                     select(ActionEventRow)
                     .where(ActionEventRow.request_id == request_id, ActionEventRow.sequence > after_sequence)
                     .order_by(ActionEventRow.sequence)
+                    .limit(limit)
                 )
             )
             return [

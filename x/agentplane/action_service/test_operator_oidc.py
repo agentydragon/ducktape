@@ -18,6 +18,7 @@ from x.agentplane.action_service.catalog import ActionCatalog
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 
@@ -43,6 +44,7 @@ async def test_signed_operator_admission(engine: AsyncEngine, failure: str | Non
             )
         ),
         catalog,
+        updates=ActionUpdates("postgresql://unused-test-listener"),
     )
     now = int(time.time())
     claims: dict[str, Any] = {

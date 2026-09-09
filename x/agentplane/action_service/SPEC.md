@@ -32,3 +32,18 @@ transitions. Setup cannot miss a concurrent commit. A deadline returns the curre
 disconnect or wait cancellation only releases the wait and never cancels or resubmits the Action.
 Loss of the notification channel fails waiting explicitly; immediate reads remain available and
 there is no periodic state-query fallback.
+
+## MCP workload frontend
+
+The Action Service serves a generic MCP frontend in the same process, with the same catalog,
+admission, Decision, Execution, and receipt authority as its HTTP interface. Its fixed tools
+discover Actions, submit requests, read receipts, and page durable events; individual Actions are
+not mirrored into MCP tools. Catalog responses omit input schemas and full descriptions unless
+explicitly requested. Lists and wait durations are bounded, and backend configuration is never
+exposed.
+
+Every MCP HTTP request authenticates through the existing Sandbox bearer resolver, including live
+workload validation. Reused MCP session identifiers confer no authority. Long waits revalidate
+workload authorization before returning data. Operator bearers, unexchanged credential placeholders,
+browser-origin requests, and caller-supplied identity/policy claims cannot acquire this authority.
+External OAuth/DCR is not offered by this workload frontend.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, cast
 from uuid import UUID
 
@@ -12,6 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
+from x.agentplane.action_service.mcp_frontend import WorkloadMcp, create_server
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -23,6 +26,7 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
 )
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
+from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 _operator_bearer = HTTPBearer(auto_error=False)
@@ -71,8 +75,23 @@ def create_app(
     workload_authenticator: SandboxPrincipalAuthenticator,
     operator_authenticator: OperatorAuthenticator,
     catalog: ActionCatalog,
+    *,
+    updates: ActionUpdates,
 ) -> FastAPI:
-    app = FastAPI(title="Agentplane Action Service", version="v1")
+    mcp_app = create_server(service, catalog, updates, workload_authenticator).http_app(
+        path="/mcp", stateless_http=True, json_response=True
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        await updates.start()
+        try:
+            async with mcp_app.lifespan(mcp_app):
+                yield
+        finally:
+            await updates.close()
+
+    app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service
     app.state.workload_authenticator = workload_authenticator
     app.state.operator_authenticator = operator_authenticator
@@ -205,6 +224,8 @@ def create_app(
     ) -> ActionRequestView:
         return await action_service.decide(request_id, body, principal)
 
+    # Last mount catches /mcp exactly without a slash redirect; REST routes above remain distinct.
+    app.mount("/", WorkloadMcp(mcp_app, workload_authenticator))
     return app
 
 

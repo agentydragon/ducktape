@@ -236,8 +236,10 @@ class ActionService:
     async def cancel(self, request_id: UUID, principal: Principal) -> CancellationResult:
         return await self._store.cancel(request_id, principal)
 
-    async def events(self, request_id: UUID, principal: Principal, *, after_sequence: int = 0) -> list[ActionEventView]:
-        return await self._store.events(request_id, principal, after_sequence=after_sequence)
+    async def events(
+        self, request_id: UUID, principal: Principal, *, after_sequence: int = 0, limit: int | None = None
+    ) -> list[ActionEventView]:
+        return await self._store.events(request_id, principal, after_sequence=after_sequence, limit=limit)
 
     async def decide(self, request_id: UUID, body: DecisionInput, principal: Principal) -> ActionRequestView:
         view, should_dispatch = await self._store.decide(request_id, body, principal, provider=self.HUMAN_PROVIDER)

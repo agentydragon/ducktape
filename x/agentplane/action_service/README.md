@@ -81,6 +81,35 @@ rechecking durable state and releases registrations on every exit path. A lost l
 bounded waits explicitly until the listener is restarted; it never falls back to timed queries.
 The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
 
+## Generic MCP frontend
+
+The same service process serves stateless Streamable HTTP at `/mcp`. The FastAPI lifespan starts
+the PostgreSQL update listener and MCP transport and unwinds both on shutdown/startup failure.
+This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
+Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
+Operator/OIDC bearers remain confined to `/v1/operator/...`; external OAuth/DCR enrollment and
+browser-origin access are not implemented. No public ingress or harness deployment is added here.
+
+| Tool                         | Use                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                    |
+| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both. |
+| `request_action`             | The existing request envelope under `request`; caller-scoped idempotency and input validation are unchanged.                                      |
+| `get_action_request`         | One own-caller receipt by `request_id`, not an Action definition.                                                                                 |
+| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                             |
+
+Both submission and receipt reads accept `wait_seconds` (0–30, default 0) and `wait_until`
+(`decision` or `terminal`, default terminal). Waits use commit notifications rather than periodic
+queries. A deadline returns a receipt, not a cancellation. On an ambiguous response, reuse the
+original request/key; transport or notification failure must not prompt a new Action. Workload
+authorization is revalidated after a bounded wait, before returning data. The generic MCP tool
+schemas never expand the dynamic Action catalog, and no Action output-schema metadata is added.
+
+Workflow: list identifiers, fetch one input schema if needed, submit once, then wait/read the
+request ID or resume events. Discovery/read failures cannot submit anything; a wrong caller sees
+the same not-found response as an absent request. Discovery projects no executor configuration,
+group descriptions, or hidden schemas through nested payloads.
+
 ## Action catalog
 
 `catalog.ActionCatalog` is the Agent-facing discovery seam: an `ActionGroup` (e.g. `github`) is the
