@@ -231,6 +231,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_migrate",
         "//haku/console:database_schema",
+        "//haku/console:tool_call_actor",
         "//haku/console/harnesses:kind",
         "//haku/console/mcp:approval",
         "//haku/console/session:launch_identity",
