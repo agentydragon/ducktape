@@ -84,12 +84,13 @@ class Response:
     actions: tuple[Action, ...]
 
 def decide(
-    observation: Observation, memory: MyPolicyMemory,
-) -> tuple[Response, MyPolicyMemory]: ...
+    observations: Batch[Observation], memory: MyPolicyMemory,
+) -> tuple[Batch[Response], MyPolicyMemory]: ...
 ```
 
 The experiment owns the policy's memory and function; no required superclass or
-registry. Each active actor gets one monthly call; an empty action list is a valid
+registry. There is one policy function shape: batches in, batches out. Each active
+actor/path appears once in its monthly batch; an empty action list is a valid
 decision and does not defer claims. Successful execution results can inform the
 next month's decision, not another call within this month. Record intentions as
 intentions, and actual cash raised from receipts. A budget cut is a policy decision,
@@ -132,22 +133,17 @@ reevaluate that language choice, including execution strategy, ragged output
 layout and notebook usability. A Python executor would own the same financial
 time evolution; the economic boundary is not a permanent Python/Rust boundary.
 
-### Batching: requirement versus open API choice
+### One batch-shaped policy API
 
-High-N execution must support batched observation/action transfer. A candidate
-policy signature is:
+The engine, caller-owned loop and convenience runner all use the same batch-shaped
+callable. A singleton batch is the one-rollout case, not a second interface. An
+optional scalar-to-batch helper may invoke an author's scalar function once per
+row while routing its per-path memory; it returns the same keyed response batch.
+Neither the engine nor runner dispatches through a separate scalar policy hook.
 
-```python
-def decide_batch(
-    observations: Batch[Observation], memory: Batch[MyPolicyMemory],
-) -> tuple[Batch[Response], Batch[MyPolicyMemory]]: ...
-```
-
-Whether batch functions are the primary authoring API or an optional fast path
-alongside scalar functions remains open for P6/GL. The scalar sketch describes
-one decision's meaning, not a requirement for per-path Python callbacks from Rust
-workers or two permanent APIs. Compare a scalar-policy adapter with a batch-native
-policy on the same workload before choosing layout and authoring surface.
+P6/GL compares that adapter with a directly batch-authored function on the same
+workload. It chooses data representation and evaluates costs/usability, not
+whether to maintain scalar and batch engine APIs.
 
 `Batch` leaves row/column layout, ragged actions/lots and chunk size undecided.
 Only active rollouts participate in a monthly decision batch.
@@ -194,13 +190,14 @@ no hidden engine trades, cuts or borrowing. Results distinguish fatal invalid
 actions from unmet claims; unsupported input schemas and simulator bugs are not
 silently converted into modeled financial failure.
 
-The monthly call limit, caller-specified action order, fatal-action contract and
-first example's cashflows/claims-before-policy ordering are settled. An unpaid due
+The single batch-shaped API, monthly call limit, caller-specified action order,
+fatal-action contract and first example's cashflows/claims-before-policy ordering
+are settled. An unpaid due
 claim stops that example after the action list, distinctly from an invalid action.
 GP gates expanded product/housing and multi-policy-actor timing, not this first
 integration. No retry/default/recovery mechanism is part of this interface.
 The existing opening-month/all-or-none cases remain P6 parity controls, not
-the destination contract. P6/GL decides policy-call representation; RUNTIME/GE
+the destination contract. P6/GL decides batch data representation; RUNTIME/GE
 decides executor placement. If GE retains hybrid execution, P9 promotes the
 measured bridge with P7's actor loop and P8's helpers; otherwise replan the
 language-specific steps. P11 migrates executable experiments; P12 cuts over
