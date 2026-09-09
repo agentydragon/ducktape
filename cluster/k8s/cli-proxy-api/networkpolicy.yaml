@@ -33,6 +33,16 @@ spec:
         - ports:
             - port: "8317"
               protocol: TCP
+    # aiquota retrieves Claude and Codex subscription usage through the authenticated
+    # CLIProxyAPI management endpoint.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cli-proxy-api
+            app.kubernetes.io/name: aiquota
+      toPorts:
+        - ports:
+            - port: "8317"
+              protocol: TCP
     # Authentik embedded outpost: reverse-proxies the new SSO-gated admin route
     # (cli-proxy-api-admin.allegedly.works) to this Service after login. Required for
     # proxy-mode SSO providers — cluster/docs/sso.md "Proxy-mode NetworkPolicy (required)".
