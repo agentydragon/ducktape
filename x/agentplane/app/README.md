@@ -123,6 +123,10 @@ unchanged, including expected versions, idempotency keys, and the human-authored
 The same note is visible to the requesting caller and operator; the existing UI displays it.
 Provider-authored bounded `reason_code`/`reason_description` are separate outcome evidence, not
 another human note. OpenAPI and frontend types are generated from the canonical models.
+External receipts display the immutable authenticated Identity, issuer/client and Connection
+from `external_grant`; the grant ID and revision are expandable audit detail. This is
+submission-time evidence, not the Connection's current authorization status. Receipts without
+that snapshot retain their caller-principal display.
 Event reads return canonical `ActionEventView` entries in sequence order, strictly after the
 non-negative cursor (default 0).
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload

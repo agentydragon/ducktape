@@ -82,6 +82,61 @@ afterEach(async () => {
 });
 
 describe("ActionRequests", () => {
+  it.each(["decision_pending", "succeeded"] as const)(
+    "shows the immutable authenticated submitter for %s receipts",
+    async (state) => {
+      const grant = {
+        identity_id: "test_identity",
+        issuer: "https://test-issuer.example/oauth",
+        client_id: "test-external-client",
+        connection_id: "40000000-0000-4000-8000-000000000001",
+        grant_id: "50000000-0000-4000-8000-000000000001",
+        revision: 7,
+      };
+      const row = {
+        ...request(state, 1),
+        caller_principal: "configured-identity:test_identity",
+        external_grant: grant,
+        origin: { identity_id: "forged-origin-identity", client_id: "forged-origin-client" },
+        correlation: { connection_id: "forged-correlation-connection", display_name: "mutable-connection-name" },
+      };
+      const container = await render({ list: async () => [row], decide: vi.fn() });
+
+      expect(container.textContent).toContain("Authenticated external caller at submission");
+      for (const value of [grant.identity_id, grant.issuer, grant.client_id, grant.connection_id]) {
+        expect(container.textContent).toContain(value);
+      }
+      expect(container.textContent).not.toContain("forged-");
+      expect(container.textContent).not.toContain("mutable-connection-name");
+      const details = container.querySelector("details");
+      const summary = details?.querySelector("summary");
+      if (!details || !summary) throw new Error("missing grant audit disclosure");
+      expect(details.open).toBe(false);
+      await act(async () => summary.click());
+      expect(details.open).toBe(true);
+      expect(details.textContent).toContain(grant.grant_id);
+      expect(details.textContent).toContain("Revision 7");
+      expect(details.textContent).toContain("Historical submission evidence");
+    }
+  );
+
+  it.each([null, undefined])(
+    "retains workload caller display without manufacturing external provenance (%s)",
+    async (external_grant) => {
+      const row = {
+        ...request("decision_pending", 1),
+        external_grant,
+        origin: { identity_id: "forged-origin-identity" },
+      };
+      const container = await render({ list: async () => [row], decide: vi.fn() });
+      expect(container.textContent).toContain(row.caller_principal);
+      expect(container.textContent).not.toContain("Authenticated external caller");
+      expect(container.textContent).not.toContain("forged-origin-identity");
+      expect(container.querySelector("details")).toBeNull();
+      expect(button(container, "Allow").disabled).toBe(false);
+    }
+  );
+
   it("renders pending, decision, running, and every terminal outcome", async () => {
     const states: ActionState[] = [
       "decision_pending",

@@ -406,6 +406,7 @@ VISUAL_DATA = [
     )
     for scenario in [
         "actions",
+        "actions_phone",
         "sandboxes",
         "sandboxes_stale",
         "sandbox",

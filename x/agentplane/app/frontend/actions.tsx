@@ -34,6 +34,45 @@ function JsonProjection({ value }: { value: unknown }): JSX.Element {
   );
 }
 
+function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element {
+  const grant = request.external_grant;
+  if (!grant)
+    return (
+      <Text size="xs" c="dimmed">
+        {request.caller_principal}
+      </Text>
+    );
+  return (
+    <Stack gap={2} style={{ overflowWrap: "anywhere" }}>
+      <Text size="xs" fw={600}>
+        Authenticated external caller at submission
+      </Text>
+      <Text size="xs">
+        Identity <Code>{grant.identity_id}</Code> · Client <Code>{grant.client_id}</Code>
+      </Text>
+      <Text size="xs">
+        Issuer <Code>{grant.issuer}</Code>
+      </Text>
+      <Text size="xs">
+        Connection <Code>{grant.connection_id}</Code>
+      </Text>
+      <details>
+        <Text component="summary" size="xs" style={{ cursor: "pointer" }}>
+          Grant audit details
+        </Text>
+        <Stack gap={2} mt={4}>
+          <Text size="xs">
+            Grant <Code>{grant.grant_id}</Code> · Revision <Code>{grant.revision}</Code>
+          </Text>
+          <Text size="xs" c="dimmed">
+            Historical submission evidence, not the connection’s current authorization status.
+          </Text>
+        </Stack>
+      </details>
+    </Stack>
+  );
+}
+
 function ActionCard({
   request,
   deciding,
@@ -47,16 +86,14 @@ function ActionCard({
     <Paper withBorder p="md">
       <Stack gap="sm">
         <Group justify="space-between" align="flex-start">
-          <Stack gap={2}>
+          <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
             <Text fw={600}>
               {request.action.group} / {request.action.name}
             </Text>
             <Text size="xs" c="dimmed">
               Request {request.id}
             </Text>
-            <Text size="xs" c="dimmed">
-              {request.caller_principal}
-            </Text>
+            <ActionCaller request={request} />
           </Stack>
           <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
         </Group>

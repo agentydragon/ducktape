@@ -274,11 +274,19 @@ const ACTIONS: ActionRequestView[] = [
   {
     id: "70000000-0000-4000-8000-000000000001",
     action: { group: "everything", name: "echo" },
-    arguments: { repository: "agentydragon/ducktape", token: "[redacted]" },
+    arguments: { repository: "test-owner/test-repository", token: "[redacted]" },
     origin: { thread_id: THREADS[0].id },
     correlation: {},
     idempotency_key: "visual-pending",
-    caller_principal: "system:serviceaccount:agentplane-staging:agentplane-agent",
+    caller_principal: "configured-identity:test_public_coder",
+    external_grant: {
+      identity_id: "test_public_coder",
+      issuer: "https://test-actions.example/oauth",
+      client_id: "test-external-client",
+      connection_id: "73000000-0000-4000-8000-000000000001",
+      grant_id: "74000000-0000-4000-8000-000000000001",
+      revision: 2,
+    },
     state: "decision_pending",
     version: 1,
     created_at: ago(3 * 60_000),
@@ -293,7 +301,7 @@ const ACTIONS: ActionRequestView[] = [
     origin: { thread_id: THREADS[1].id },
     correlation: {},
     idempotency_key: "visual-completed",
-    caller_principal: "system:serviceaccount:agentplane-staging:agentplane-agent",
+    caller_principal: "system:serviceaccount:test-agentplane:test-workload",
     state: "succeeded",
     version: 4,
     created_at: ago(40 * 60_000),
@@ -302,7 +310,7 @@ const ACTIONS: ActionRequestView[] = [
       id: "71000000-0000-4000-8000-000000000002",
       verdict: "allow",
       provider: "human_operator",
-      issuer: "agentydragon",
+      issuer: "test-operator",
       decision_note: null,
       idempotency_key: "visual-allow",
       decided_at: ago(39 * 60_000),
@@ -542,6 +550,7 @@ const PAGES: Record<string, string> = {
   // The same list under a watch that has stopped: the banner is the page saying so.
   sandboxes_stale: "/",
   actions: "/actions",
+  actions_phone: "/actions",
   sandbox: "/sandboxes/demo-a1b2",
   // With the github-public binding's rules open, so the shot carries the credential detail — its
   // description, where the proxy puts it, and which secret it comes from — and the other
