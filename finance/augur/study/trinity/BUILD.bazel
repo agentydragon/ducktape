@@ -17,10 +17,10 @@ py_library(
     deps = [
         ":evidence_snapshot",
         "//finance/augur/model:bond_fund",
+        "//finance/augur/model:equity",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
-        "//finance/augur/model:structural_macro",
         "//finance/augur/rust:backend",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",

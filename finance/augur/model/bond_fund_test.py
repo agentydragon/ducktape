@@ -169,7 +169,7 @@ def test_the_bond_math_is_continuous_through_a_negative_yield() -> None:
     A bond discounted at a negative rate is worth more than par, and one paying its own
     negative coupon is worth exactly par — the same two statements that hold above zero, with
     no special case between them. So what forbids a negative yield here is the provider's
-    floor (`structural_macro.MINIMUM_ANNUAL_YIELD`), a decision taken one layer up and for the
+    floor (`bond_fund.MINIMUM_ANNUAL_YIELD`), a decision taken one layer up and for the
     singularity at zero, not because the fund could not be priced. See #5834: modelling the
     curve generatively is what would let a rate go through zero on its own terms.
     """

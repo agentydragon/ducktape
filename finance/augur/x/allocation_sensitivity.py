@@ -41,10 +41,12 @@ from pathlib import Path
 
 import numpy as np
 
+from finance.augur.model.bond_fund import BondFundSpec
+from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, HistoricalWindowsProviderConfig
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
-from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec, StructuralMacroProviderConfig
+from finance.augur.model.structural_macro import EquityProcess, StructuralMacroProviderConfig
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 
 logger = logging.getLogger(__name__)
@@ -63,8 +65,8 @@ EQUITY = EquitySpec(symbol="VOO", initial_price_usd=520.0)
 # the discount without being credited the exemption. Read it as a lower bound on the bond end,
 # not as a muni portfolio.
 BOND_SLEEVES = (
-    ("taxable", InstrumentSpec(symbol="CMF", maturity_years=5.5, initial_price_usd=56.0)),
-    ("muni, -120bp", InstrumentSpec(symbol="CMF", maturity_years=5.5, initial_price_usd=56.0, spread=-0.012)),
+    ("taxable", BondFundSpec(symbol="CMF", maturity_years=5.5, initial_price_usd=56.0)),
+    ("muni, -120bp", BondFundSpec(symbol="CMF", maturity_years=5.5, initial_price_usd=56.0, spread=-0.012)),
 )
 
 EQUITY_WEIGHTS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
@@ -92,7 +94,7 @@ def _total_return_index(price: np.ndarray, distribution: np.ndarray) -> np.ndarr
 
 
 def _paths(
-    bundle: SampledExogenousBundle, *, bonds: InstrumentSpec, rollouts: int, horizon_months: int, independent: float
+    bundle: SampledExogenousBundle, *, bonds: BondFundSpec, rollouts: int, horizon_months: int, independent: float
 ) -> Paths:
     def matrix(key: LevelSeriesKey) -> np.ndarray:
         return bundle.level_matrix(key, rollout_count=rollouts, horizon_months=horizon_months)
@@ -142,7 +144,7 @@ def standard_error_points(rate: float, independent_rollouts: float) -> float:
     return 100.0 * float(np.sqrt(max(rate * (1.0 - rate), 0.0) / independent_rollouts))
 
 
-def _sample(evidence_dir: Path, *, payout_years: int, bonds: InstrumentSpec) -> dict[str, Paths]:
+def _sample(evidence_dir: Path, *, payout_years: int, bonds: BondFundSpec) -> dict[str, Paths]:
     horizon_months = payout_years * MONTHS_PER_YEAR
     replay = HistoricalWindowsProviderConfig(
         evidence_dir=evidence_dir, equity=EQUITY, instruments=(bonds,)
@@ -156,7 +158,9 @@ def _sample(evidence_dir: Path, *, payout_years: int, bonds: InstrumentSpec) -> 
         required_security_distributions=frozenset({SecurityDistributionKey(symbol=bonds.symbol)}),
         required_index_series=frozenset({InflationKey()}),
     )
-    fitted = StructuralMacroProviderConfig(equity=EQUITY, instruments=(bonds,)).realize_model()
+    fitted = StructuralMacroProviderConfig(
+        equity=EquityProcess(instrument=EQUITY), instruments=(bonds,)
+    ).realize_model()
     logger.info("%dy: %d overlapping windows, ~%.1f independent", payout_years, rollouts, independent)
     return {
         "replay": _paths(

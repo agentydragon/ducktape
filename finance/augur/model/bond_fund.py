@@ -25,8 +25,19 @@ from __future__ import annotations
 from enum import StrEnum
 
 import numpy as np
+from pydantic import Field, NonNegativeFloat, PositiveFloat
+
+from finance.augur.model.schemas import FrozenModel
+from finance.augur.model.series import SecuritySymbol
 
 MONTHS_PER_YEAR = 12
+
+MINIMUM_ANNUAL_YIELD = 0.0001
+"""One-basis-point guard against the zero-yield singularity in `par_bond_price`.
+
+Applied by the yield-construction helpers, not the valuation formula. The positive
+floor is an existing approximation, not a constraint on possible economic rates.
+"""
 
 
 class YieldCurve(StrEnum):
@@ -41,6 +52,37 @@ class YieldCurve(StrEnum):
     GOVERNMENT = "government"
     CORPORATE_AAA = "corporate_aaa"
     CORPORATE_BAA = "corporate_baa"
+
+
+class BondFundSpec(FrozenModel):
+    """A constant-maturity fund and its chosen reference-yield construction.
+
+    Both historical and generated yields can price this same fund. Maturity is an
+    input; duration follows from the bond math. Zero maturity represents cash.
+    Static spread/ratio adjustments are modeling assumptions, not fitted dynamics
+    or tax rules; distribution tax character belongs to the simulation scenario.
+    """
+
+    symbol: SecuritySymbol
+    maturity_years: NonNegativeFloat
+    initial_price_usd: PositiveFloat = 100.0
+    yield_curve: YieldCurve = YieldCurve.GOVERNMENT
+    spread: float = Field(default=0.0, description="Additive annualized-decimal spread after the curve ratio.")
+    curve_ratio: PositiveFloat = Field(
+        default=1.0, description="Scale the reference yield before adding the spread, e.g. a static muni/taxable ratio."
+    )
+
+
+def government_curve_yield(short_rate: np.ndarray, term_spread: np.ndarray, *, maturity_years: float) -> np.ndarray:
+    """Linear short-to-10y interpolation, flat beyond 10y; not a full term-structure model."""
+
+    return short_rate + min(maturity_years / 10.0, 1.0) * term_spread
+
+
+def fund_yield(spec: BondFundSpec, reference_yield: np.ndarray) -> np.ndarray:
+    """Apply the fund's ratio, then additive spread, then the positive-yield guard."""
+
+    return np.maximum(spec.curve_ratio * reference_yield + spec.spread, MINIMUM_ANNUAL_YIELD)
 
 
 def par_bond_price(coupon_rate: np.ndarray, market_yield: np.ndarray, *, maturity_years: float) -> np.ndarray:

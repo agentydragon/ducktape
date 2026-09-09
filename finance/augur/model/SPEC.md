@@ -25,6 +25,19 @@ surface at all; what happens between the state and the emissions is the model's 
 
 **Per-rollout seeding.** A rollout's path depends only on its own seed, never on the batch.
 
+## Instrument and forecast responsibilities
+
+Equity identity and opening price are shared descriptions, independent of fitted return
+parameters. Historical replay can construct and price its instruments without loading a
+structural-macro fit. The structural model binds its equity return process to that same
+description; its drift, volatility and rate sensitivity remain model-specific.
+
+Both providers use the same constant-maturity bond-fund construction, including reference-yield
+ratio/spread adjustments and the positive-yield guard. The experiment chooses these assumptions;
+each provider supplies only curves it represents. Historical replay can supply observed corporate
+yields; the structural model rejects them because it has no credit factor. Sharing instrument
+descriptions does not imply that every model supports every instrument.
+
 ## What is fitted, and on what
 
 | Block       | Source                                | Window            | Months |

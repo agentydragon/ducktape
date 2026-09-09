@@ -4,6 +4,8 @@ py_library(
     name = "replay_vs_fitted",
     srcs = ["replay_vs_fitted.py"],
     deps = [
+        "//finance/augur/model:bond_fund",
+        "//finance/augur/model:equity",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
@@ -23,6 +25,8 @@ py_library(
     name = "allocation_sensitivity",
     srcs = ["allocation_sensitivity.py"],
     deps = [
+        "//finance/augur/model:bond_fund",
+        "//finance/augur/model:equity",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",

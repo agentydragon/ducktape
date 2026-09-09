@@ -281,10 +281,10 @@ py_library(
     srcs = ["historical_windows.py"],
     deps = [
         ":bond_fund",
+        ":equity",
         ":exogenous",
         ":schemas",
         ":series",
-        ":structural_macro",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
@@ -298,11 +298,11 @@ py_test(
     deps = [
         ":bond_fund",
         ":conftest",
+        ":equity",
         ":exogenous",
         ":historical_windows",
         ":provider_config",
         ":series",
-        ":structural_macro",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/evidence:loading",
@@ -320,6 +320,7 @@ py_library(
     data = ["//finance/augur/fit/calibrated:trained_structural_macro_blob"],
     deps = [
         ":bond_fund",
+        ":equity",
         ":exogenous",
         ":float64",
         ":schemas",
@@ -336,8 +337,11 @@ py_test(
     name = "structural_macro_test",
     srcs = ["structural_macro_test.py"],
     deps = [
+        ":bond_fund",
         ":conftest",
+        ":equity",
         ":exogenous",
+        ":historical_windows",
         ":provider_config",
         ":series",
         ":structural_macro",
@@ -584,7 +588,12 @@ py_library(
 py_library(
     name = "bond_fund",
     srcs = ["bond_fund.py"],
-    deps = ["@pypi//numpy"],
+    deps = [
+        ":schemas",
+        ":series",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
 )
 
 py_test(
@@ -598,5 +607,15 @@ py_test(
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "equity",
+    srcs = ["equity.py"],
+    deps = [
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
     ],
 )

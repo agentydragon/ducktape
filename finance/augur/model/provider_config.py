@@ -67,7 +67,8 @@ private_equity_marks:
 # equity's `monthly_log_return_mu`/`sigma` default to the checked-in fit
 # (fit/calibrated/trained_structural_macro.yaml) when omitted, as here.
 type: structural_macro
-equity: {symbol: VOO, initial_price_usd: 520.0}
+equity:
+  instrument: {symbol: VOO, initial_price_usd: 520.0}
 instruments:
   - {symbol: VMFXX, maturity_years: 0.0, initial_price_usd: 1.0} # cash, as an MMF holding
   - {symbol: VGIT, maturity_years: 5.3, initial_price_usd: 59.0} # intermediate Treasuries

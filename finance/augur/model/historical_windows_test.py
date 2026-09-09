@@ -12,13 +12,15 @@ import zipfile
 from datetime import date, timedelta
 from itertools import pairwise
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 import pytest_bazel
 from pydantic import TypeAdapter
 
-from finance.augur.model.bond_fund import YieldCurve
+from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
+from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import (
     HistoricalWindowsModel,
@@ -30,7 +32,6 @@ from finance.augur.model.historical_windows import (
 )
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
-from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec
 from finance.evidence import sources
 from finance.evidence.loading import MonthlyLevel
 
@@ -72,8 +73,8 @@ def _model(history: MacroHistory | None = None) -> HistoricalWindowsModel:
     return HistoricalWindowsModel(
         history=history if history is not None else _history(),
         instruments=(
-            InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),
-            InstrumentSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),
+            BondFundSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),
+            BondFundSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),
         ),
         equity=EquitySpec(symbol=EQUITY, initial_price_usd=500.0),
     )
@@ -103,6 +104,15 @@ def test_every_window_starts_at_the_configured_level() -> None:
 
     assert np.all(equity[:, 0] == 500.0)
     assert np.all(inflation[:, 0] == 100.0)
+
+
+def test_in_memory_replay_needs_no_fitted_artifact() -> None:
+    history = _history(months=13)
+    with patch.object(Path, "read_text", side_effect=AssertionError("replay must not read fitted artifacts")):
+        model = _model(history)
+        equity = _series(model, SecurityKey(symbol=EQUITY), horizon=12, rollouts=1)
+
+    np.testing.assert_array_equal(equity[0], 500.0 * (history.equity_level / history.equity_level[0]))
 
 
 def test_seeds_are_ignored_because_nothing_is_random() -> None:
@@ -453,7 +463,7 @@ def test_an_instrument_prices_off_the_curve_it_names() -> None:
     for curve in (YieldCurve.GOVERNMENT, YieldCurve.CORPORATE_AAA, YieldCurve.CORPORATE_BAA):
         model = HistoricalWindowsModel(
             history=history,
-            instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0, yield_curve=curve),),
+            instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0, yield_curve=curve),),
         )
         bundle = model.sample(ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=(0,)))
         payout = bundle.level_matrix(SecurityDistributionKey(symbol=BOND), rollout_count=1, horizon_months=horizon)
@@ -475,7 +485,7 @@ def test_a_spread_still_adjusts_the_named_curve() -> None:
     model = HistoricalWindowsModel(
         history=_history(400),
         instruments=(
-            InstrumentSpec(
+            BondFundSpec(
                 symbol=BOND,
                 maturity_years=6.0,
                 initial_price_usd=100.0,

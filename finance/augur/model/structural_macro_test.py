@@ -10,17 +10,22 @@ independently.
 
 from __future__ import annotations
 
+from datetime import date
+
 import numpy as np
 import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
+from finance.augur.model.bond_fund import MINIMUM_ANNUAL_YIELD, BondFundSpec
+from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
+from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import (
     InflationKey,
@@ -31,10 +36,8 @@ from finance.augur.model.series import (
 )
 from finance.augur.model.structural_macro import (
     INFLATION_RATE,
-    MINIMUM_ANNUAL_YIELD,
     SHORT_RATE,
-    EquitySpec,
-    InstrumentSpec,
+    EquityProcess,
     MacroVarSpec,
     StructuralMacroProviderConfig,
 )
@@ -85,8 +88,8 @@ def _config(**updates: object) -> StructuralMacroProviderConfig:
     fields: dict[str, object] = {
         "macro_state": _diagonal_var(),
         "instruments": (
-            InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),
-            InstrumentSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),
+            BondFundSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),
+            BondFundSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),
         ),
         **updates,
     }
@@ -122,6 +125,41 @@ def test_rate_rise_moves_price_down_and_payout_up_together() -> None:
     assert np.all(payout[:, -1] > payout[:, 0])
 
 
+@pytest.mark.parametrize("maturity_years", [6.0, 15.0])
+def test_bond_outputs_match_replay_of_the_same_yield_path(maturity_years: float) -> None:
+    """Changing the path source preserves fund pricing, including ratio, spread and floor."""
+
+    fund = BondFundSpec(symbol=BOND, maturity_years=maturity_years, curve_ratio=0.73, spread=-0.004)
+    macro = MacroVarSpec(
+        initial_state=(-0.01, -0.002, 0.02),
+        intercept=(0.04, 0.01, 0.02),
+        transition=ZERO_SHOCKS,
+        shock_cholesky=ZERO_SHOCKS,
+    )
+    # A zero-transition, zero-shock VAR steps to its intercept and then stays there.
+    history = MacroHistory(
+        months=tuple(date(2000, month, 1) for month in range(1, 4)),
+        short_rate=np.array([-0.01, 0.04, 0.04]),
+        term_spread=np.array([-0.002, 0.01, 0.01]),
+        corporate_aaa_yield=np.full(3, 0.05),
+        corporate_baa_yield=np.full(3, 0.06),
+        equity_level=np.full(3, 100.0),
+        cpi_level=np.full(3, 100.0),
+    )
+    request = ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(11,))
+    structural = _config(macro_state=macro, instruments=(fund,)).realize_model().sample(request)
+    replay = HistoricalWindowsModel(history=history, instruments=(fund,)).sample(request)
+    for key in (SecurityKey(symbol=BOND), SecurityDistributionKey(symbol=BOND)):
+        np.testing.assert_array_equal(
+            structural.level_matrix(key, rollout_count=1, horizon_months=2),
+            replay.level_matrix(key, rollout_count=1, horizon_months=2),
+        )
+
+    payout = structural.level_matrix(SecurityDistributionKey(symbol=BOND), rollout_count=1, horizon_months=2)
+    assert payout[0, 0] == pytest.approx(fund.initial_price_usd * MINIMUM_ANNUAL_YIELD / 12.0)
+    assert payout[0, 2] > payout[0, 0]
+
+
 def test_rate_fall_moves_price_up_and_payout_down_together() -> None:
     """The same relation with the sign flipped, so the test above cannot pass on a model that
     simply makes bond prices fall."""
@@ -143,9 +181,9 @@ def test_longer_maturity_loses_more_to_the_same_rate_rise() -> None:
     config = _config(
         macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06),
         instruments=(
-            InstrumentSpec(symbol=long_fund, maturity_years=12.0),
-            InstrumentSpec(symbol=short_fund, maturity_years=2.0),
-            InstrumentSpec(symbol=CASH, maturity_years=0.0),
+            BondFundSpec(symbol=long_fund, maturity_years=12.0),
+            BondFundSpec(symbol=short_fund, maturity_years=2.0),
+            BondFundSpec(symbol=CASH, maturity_years=0.0),
         ),
     )
     bundle = _sample(config)
@@ -191,7 +229,7 @@ def test_the_payout_yield_on_the_mark_is_the_yield_of_the_bonds_held() -> None:
     bundle = _sample(
         _config(
             macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06, short_lag=0.9),
-            instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),),
+            instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0),),
         ),
         horizon_months=horizon,
     )
@@ -228,8 +266,8 @@ def test_municipal_spread_lowers_the_pretax_payout() -> None:
     bundle = _sample(
         _config(
             instruments=(
-                InstrumentSpec(symbol=treasury, maturity_years=6.0, spread=0.0),
-                InstrumentSpec(symbol=muni, maturity_years=6.0, spread=-0.012),
+                BondFundSpec(symbol=treasury, maturity_years=6.0, spread=0.0),
+                BondFundSpec(symbol=muni, maturity_years=6.0, spread=-0.012),
             )
         )
     )
@@ -257,8 +295,8 @@ def test_a_ratio_muni_survives_a_zirp_decade_where_an_additive_one_floors() -> N
     config = _config(
         macro_state=_diagonal_var(short_initial=0.001, short_mean=0.0),
         instruments=(
-            InstrumentSpec(symbol=additive, maturity_years=5.5, initial_price_usd=56.0, spread=-0.012),
-            InstrumentSpec(symbol=ratio, maturity_years=5.5, initial_price_usd=56.0, curve_ratio=0.73),
+            BondFundSpec(symbol=additive, maturity_years=5.5, initial_price_usd=56.0, spread=-0.012),
+            BondFundSpec(symbol=ratio, maturity_years=5.5, initial_price_usd=56.0, curve_ratio=0.73),
         ),
     )
     bundle = _sample(config)
@@ -279,7 +317,9 @@ def test_the_rates_coupling_works_when_configured() -> None:
     could support a nonzero one, and a silently-broken channel would look exactly like the
     honest zero this model ships with."""
 
-    equity = EquitySpec(symbol=EQUITY, initial_price_usd=500.0, monthly_log_return_sigma=0.0, rate_beta=-2.0)
+    equity = EquityProcess(
+        instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0), monthly_log_return_sigma=0.0, rate_beta=-2.0
+    )
     rising = _series(_sample(_rising_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
     falling = _series(_sample(_falling_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
 
@@ -295,7 +335,7 @@ def test_equity_ignores_rates_by_default() -> None:
     a documented gap (SPEC.md), and a model that quietly grew a coupling would invalidate every
     bond/equity conclusion drawn from it without failing anything."""
 
-    equity = EquitySpec(symbol=EQUITY, initial_price_usd=500.0, monthly_log_return_sigma=0.0)
+    equity = EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0), monthly_log_return_sigma=0.0)
     assert equity.rate_beta == 0.0
 
     rising = _series(_sample(_rising_rates().model_copy(update={"equity": equity})), SecurityKey(symbol=EQUITY))
@@ -308,7 +348,7 @@ def test_emissions_are_exactly_the_declared_keys() -> None:
     provider that advertises a key it does not emit renders as a spurious hard failure, and one
     that emits a key it does not advertise gets silently skipped by every check."""
 
-    config = _config(equity=EquitySpec(symbol=EQUITY, initial_price_usd=500.0))
+    config = _config(equity=EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0)))
     model = config.realize_model()
     declared = model.emittable_level_keys()
 
@@ -335,7 +375,7 @@ def test_emissions_are_exactly_the_declared_keys() -> None:
 def test_a_rollout_path_does_not_depend_on_the_batch_it_was_sampled_with() -> None:
     """Per-rollout seeding, the property that lets a caller re-run rollout 7 of 1000 alone."""
 
-    config = StructuralMacroProviderConfig(instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0),))
+    config = StructuralMacroProviderConfig(instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0),))
     model = config.realize_model()
 
     def path(seeds: tuple[int, ...], index: int) -> np.ndarray:
@@ -356,8 +396,8 @@ def test_shocks_actually_move_the_paths() -> None:
     shock inputs entirely."""
 
     config = StructuralMacroProviderConfig(
-        instruments=(InstrumentSpec(symbol=BOND, maturity_years=6.0),),
-        equity=EquitySpec(symbol=EQUITY, initial_price_usd=500.0),
+        instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0),),
+        equity=EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0)),
     )
     bundle = _sample(config)
     for key in (SecurityKey(symbol=BOND), SecurityDistributionKey(symbol=BOND), SecurityKey(symbol=EQUITY)):
@@ -369,7 +409,7 @@ def test_month_zero_is_the_configured_level() -> None:
     """Anchoring rescales off month 0, so month 0 has to be the level the config states rather
     than one step of drift past it."""
 
-    equity = EquitySpec(symbol=EQUITY, initial_price_usd=500.0)
+    equity = EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=500.0))
     bundle = _sample(_config(equity=equity, initial_inflation_level=137.0))
 
     assert np.all(_series(bundle, SecurityKey(symbol=BOND))[:, 0] == 100.0)
@@ -383,16 +423,13 @@ def test_a_symbol_priced_twice_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="prices a symbol more than once"):
         StructuralMacroProviderConfig(
-            instruments=(
-                InstrumentSpec(symbol=BOND, maturity_years=6.0),
-                InstrumentSpec(symbol=BOND, maturity_years=2.0),
-            )
+            instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0), BondFundSpec(symbol=BOND, maturity_years=2.0))
         ).realize_model()
 
     with pytest.raises(ValueError, match="prices a symbol more than once"):
         StructuralMacroProviderConfig(
-            instruments=(InstrumentSpec(symbol=EQUITY, maturity_years=6.0),),
-            equity=EquitySpec(symbol=EQUITY, initial_price_usd=1.0),
+            instruments=(BondFundSpec(symbol=EQUITY, maturity_years=6.0),),
+            equity=EquityProcess(instrument=EquitySpec(symbol=EQUITY, initial_price_usd=1.0)),
         ).realize_model()
 
 
@@ -405,7 +442,7 @@ def test_config_round_trips_through_the_provider_union() -> None:
         {
             "type": "structural_macro",
             "instruments": [{"symbol": "CMF", "maturity_years": 5.5, "spread": -0.012}],
-            "equity": {"symbol": "VOO", "initial_price_usd": 520.0},
+            "equity": {"instrument": {"symbol": "VOO", "initial_price_usd": 520.0}},
         }
     )
     assert isinstance(parsed, StructuralMacroProviderConfig)
@@ -419,7 +456,7 @@ def test_config_round_trips_through_the_provider_union() -> None:
 
 def test_negative_maturity_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        InstrumentSpec(symbol=BOND, maturity_years=-1.0)
+        BondFundSpec(symbol=BOND, maturity_years=-1.0)
 
 
 def _state(config: StructuralMacroProviderConfig, *, horizon_months: int, rollouts: int = 400) -> np.ndarray:
@@ -447,7 +484,7 @@ def _fitted_config() -> StructuralMacroProviderConfig:
     """The shipped VAR, with only a zero-duration instrument so the short rate is readable."""
 
     return StructuralMacroProviderConfig(
-        instruments=(InstrumentSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),)
+        instruments=(BondFundSpec(symbol=CASH, maturity_years=0.0, initial_price_usd=1.0),)
     )
 
 

@@ -118,7 +118,8 @@ from pathlib import Path
 
 import numpy as np
 
-from finance.augur.model.bond_fund import YieldCurve
+from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
+from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import (
     MACRO_HISTORY_SOURCES,
@@ -132,7 +133,6 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec
 from finance.augur.rust.backend import RustEngine
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
@@ -203,7 +203,7 @@ UNIT_PRICE = Decimal(100)
 BOND_MATURITY_YEARS = 20.0
 
 EQUITY_SPEC = EquitySpec(symbol=EQUITY, initial_price_usd=float(UNIT_PRICE))
-BOND_SPEC = InstrumentSpec(
+BOND_SPEC = BondFundSpec(
     symbol=BONDS,
     maturity_years=BOND_MATURITY_YEARS,
     initial_price_usd=float(UNIT_PRICE),

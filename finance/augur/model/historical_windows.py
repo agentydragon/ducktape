@@ -43,11 +43,19 @@ from typing import Literal, assert_never
 import numpy as np
 from pydantic import model_validator
 
-from finance.augur.model.bond_fund import YieldCurve, constant_maturity_fund_paths
+from finance.augur.model.bond_fund import (
+    MINIMUM_ANNUAL_YIELD,
+    MONTHS_PER_YEAR,
+    BondFundSpec,
+    YieldCurve,
+    constant_maturity_fund_paths,
+    fund_yield,
+    government_curve_yield,
+)
+from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, SecurityDistributionKey, SecurityKey
-from finance.augur.model.structural_macro import MINIMUM_ANNUAL_YIELD, MONTHS_PER_YEAR, EquitySpec, InstrumentSpec
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
 
@@ -131,7 +139,7 @@ class HistoricalWindowsModel:
     """
 
     history: MacroHistory
-    instruments: tuple[InstrumentSpec, ...] = ()
+    instruments: tuple[BondFundSpec, ...] = ()
     equity: EquitySpec | None = None
     label: str = "historical_windows"
 
@@ -193,24 +201,19 @@ class HistoricalWindowsModel:
         short_rate = np.maximum(self.history.short_rate[windows], MINIMUM_ANNUAL_YIELD)
         term_spread = self.history.term_spread[windows]
 
-        def market_yield(spec: InstrumentSpec) -> np.ndarray:
+        def market_yield(spec: BondFundSpec) -> np.ndarray:
             """The fund's own yield over each window — observed, not derived from a spread."""
 
             match spec.yield_curve:
                 case YieldCurve.GOVERNMENT:
-                    # Still interpolated off the two-point government curve; see SPEC.md gap 8.
-                    curve = short_rate + min(spec.maturity_years / 10.0, 1.0) * term_spread
+                    curve = government_curve_yield(short_rate, term_spread, maturity_years=spec.maturity_years)
                 case YieldCurve.CORPORATE_AAA:
                     curve = self.history.corporate_aaa_yield[windows]
                 case YieldCurve.CORPORATE_BAA:
                     curve = self.history.corporate_baa_yield[windows]
                 case _ as unreachable:
                     assert_never(unreachable)
-            # Ratio before spread, matching `structural_macro._instrument_yield`. Both providers
-            # read the same `InstrumentSpec`, so a muni that is 73% of the curve in one and
-            # 73%-minus-a-constant in the other would make the two samplers disagree about what
-            # the instrument IS, not about what the economy did.
-            return np.asarray(np.maximum(spec.curve_ratio * curve + spec.spread, MINIMUM_ANNUAL_YIELD))
+            return fund_yield(spec, curve)
 
         blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [
             (InflationKey(), _rebased(self.history.cpi_level[windows], 100.0))
@@ -265,7 +268,7 @@ class HistoricalWindowsProviderConfig(FrozenModel):
     record_start: date | None = None
     record_end: date | None = None
     equity: EquitySpec | None = None
-    instruments: tuple[InstrumentSpec, ...] = ()
+    instruments: tuple[BondFundSpec, ...] = ()
 
     @model_validator(mode="after")
     def _reject_empty_record_span(self) -> HistoricalWindowsProviderConfig:

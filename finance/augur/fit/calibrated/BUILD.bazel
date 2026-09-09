@@ -1,7 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
 # Checked-in structural_macro fit — produced by `bb run //finance/augur/fit:train -- --model
-# structural_macro ...` and loaded via runfiles as StructuralMacroProviderConfig's/EquitySpec's
+# structural_macro ...` and loaded via runfiles as StructuralMacroProviderConfig's/EquityProcess's
 # shipped defaults (see model/structural_macro.py's `_fitted_defaults`). Unlike the VECM
 # provider config, this isn't itself a deployable ProviderConfig — deployment-specific fields
 # (equity symbol, instruments) aren't fit outputs, so they stay in the deployment YAML.

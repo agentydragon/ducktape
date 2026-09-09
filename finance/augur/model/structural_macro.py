@@ -56,18 +56,19 @@ import numpy as np
 import yaml
 from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
-from finance.augur.model.bond_fund import YieldCurve, constant_maturity_fund_paths
+from finance.augur.model.bond_fund import (
+    MINIMUM_ANNUAL_YIELD,
+    BondFundSpec,
+    YieldCurve,
+    constant_maturity_fund_paths,
+    fund_yield,
+    government_curve_yield,
+)
+from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import (
-    InflationKey,
-    IssuerId,
-    LevelSeriesKey,
-    SecurityDistributionKey,
-    SecurityKey,
-    SecuritySymbol,
-)
+from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.model.series_model import derive_stream_rollout_seeds
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
@@ -80,73 +81,16 @@ PERCENT_TO_DECIMAL = 0.01
 # ~865 the real rate series carry and well above anything that could fit a single regime.
 MINIMUM_MONTHS = 240
 
-MINIMUM_ANNUAL_YIELD = 0.0001
-"""Floor on any modeled yield, as a decimal (1bp).
 
-A SINGULARITY GUARD first: `bond_fund.par_bond_price` divides by the yield, and at exactly
-zero the numerator vanishes with it, so the array path takes 0/0 and returns a silent NaN
-that propagates through the whole level stack (`bond_fund_test.py` pins both that and the
-finite limit it guards). A short rate reaching zero is 2009-2021, not a hypothetical.
+class EquityProcess(FrozenModel):
+    """Structural-macro return dynamics bound to an experiment's equity description.
 
-Its VALUE is arbitrary in the way a guard's is: the price has a closed-form limit at zero and
-approaches it smoothly, so nothing economic distinguishes 1bp from 0.1bp. It is not what keeps
-a fund's yield positive — `curve_ratio` is (see `InstrumentSpec`) — and it is not what stops a
-payout from encoding as zero at the simulator boundary, which is #5832 and a unit error one
-layer down. Real money-market funds do also never pay exactly zero (a fund whose gross yield
-would go negative has its fee waived instead), so the floor is not economically wrong; it just
-is not there for that reason.
-"""
-
-
-class InstrumentSpec(FrozenModel):
-    """One tradable the provider prices, as a row rather than a factor.
-
-    A constant-maturity bond fund: it holds a par bond of `maturity_years`, collects its
-    coupon, and each month rolls into a fresh one. `bond_fund.constant_maturity_fund_paths`
-    is the arithmetic, and duration is an OUTPUT of it — a longer maturity moves more for the
-    same yield change, without duration being a parameter anyone sets. A money-market fund is
-    a maturity near zero: no price response and an immediate payout response, which is what
-    cash is.
+    Log returns combine drift, an independent equity shock and `rate_beta` times
+    the short-rate change. That last term is the only equity/macro coupling, and
+    its default is zero; the macro state's own innovations are jointly fitted.
     """
 
-    symbol: SecuritySymbol
-    # Maturity, not duration: the bond math needs a maturity to discount to, and it yields the
-    # duration response rather than taking one.
-    maturity_years: NonNegativeFloat
-    initial_price_usd: PositiveFloat = 100.0
-    # Which observed yield this fund earns. A corporate sleeve names its own curve rather than
-    # taking a guessed credit spread over governments.
-    yield_curve: YieldCurve = YieldCurve.GOVERNMENT
-    # Two ways to sit off the curve, because they are different economics and a muni needs the
-    # second. `spread` is ADDITIVE, which is what a credit spread is: a corporate yields the
-    # government curve plus compensation for default risk, roughly independent of the level.
-    # `curve_ratio` is MULTIPLICATIVE, which is what a tax exemption is: a muni yields a
-    # FRACTION of the taxable curve, anchored near `1 - t` for the marginal investor, so the gap
-    # narrows as rates fall instead of staying put. An additive muni spread is a linearisation
-    # of that ratio around current rates, and it goes NEGATIVE once the curve drops below the
-    # spread, where `MINIMUM_ANNUAL_YIELD` catches it.
-    #
-    # Both are static here, which is the simplification that remains: the ratio has no dynamics
-    # of its own, so this still cannot produce a muni selloff Treasuries escape (gap 5). #5835
-    # gives munis their own factor, fitted jointly, and #5834 replaces the two-point curve these
-    # sit on. Tax treatment itself stays the scenario's business — see
-    # `SecurityDistribution.tax_character`; this is only the pre-tax price.
-    spread: float = 0.0
-    curve_ratio: PositiveFloat = 1.0
-
-
-class EquitySpec(FrozenModel):
-    """Broad equity, priced as a correlated log process rather than off the curve.
-
-    `rate_beta` is the ONLY channel to rates: the log return picks up
-    `rate_beta * (change in the short rate)` on top of its own drift and shock. It exists here
-    rather than in a covariance matrix because there is no covariance matrix — this model has
-    structure instead — and it defaults to ZERO because the data does not support a value.
-    See the field comment: the fitted coupling is the wrong sign and explains 0.4% of variance.
-    """
-
-    symbol: SecuritySymbol
-    initial_price_usd: PositiveFloat
+    instrument: EquitySpec
     # Defaults to the checked-in fit on the CRSP value-weighted total US market (Ken French's
     # factors, `Mkt-RF + RF`, dividends included) — see `fit/calibrated/trained_structural_macro
     # .yaml`'s `equity_fit` for the window/sample count, and SPEC.md gap 3 for why a century
@@ -212,11 +156,11 @@ class StructuralMacroFittedDefaults(FrozenModel):
     """The structural-macro fit, checked in whole: written by `bb run
     //finance/augur/fit:train -- --model structural_macro ...` to
     `fit/calibrated/trained_structural_macro.yaml` and loaded (via `_fitted_defaults` below)
-    as `StructuralMacroProviderConfig`'s and `EquitySpec`'s shipped defaults.
+    as `StructuralMacroProviderConfig`'s and `EquityProcess`'s shipped defaults.
 
     Deployment-specific fields are deliberately absent — which equity symbol and which
     instruments a scenario prices are not fit outputs, so they stay on
-    `StructuralMacroProviderConfig`/`InstrumentSpec`, supplied per scenario.
+    `StructuralMacroProviderConfig`/`BondFundSpec`, supplied per scenario.
     """
 
     macro_state: MacroVarSpec
@@ -226,7 +170,7 @@ class StructuralMacroFittedDefaults(FrozenModel):
     equity_monthly_log_return_sigma: NonNegativeFloat
     equity_fit: FitWindowProvenance
 
-    # `EquitySpec.rate_beta` stays a policy-set 0.0 rather than this fitted value — see its
+    # `EquityProcess.rate_beta` stays a policy-set 0.0 rather than this fitted value — see its
     # field comment. Recorded here so that policy is checkable against real evidence instead
     # of asserted, and so a future refit's rate_beta finding is a reviewable diff.
     rate_beta_fit: FitWindowProvenance
@@ -268,8 +212,8 @@ class StructuralMacroProviderConfig(FrozenModel):
     initial_inflation_level: PositiveFloat = 100.0
 
     # --- instruments --------------------------------------------------------------------
-    equity: EquitySpec | None = None
-    instruments: tuple[InstrumentSpec, ...] = ()
+    equity: EquityProcess | None = None
+    instruments: tuple[BondFundSpec, ...] = ()
 
     def realize_model(self) -> StructuralMacroModel:
         return StructuralMacroModel(config=self)
@@ -291,7 +235,7 @@ class StructuralMacroModel:
         self._config = config
         symbols = [spec.symbol for spec in config.instruments]
         if config.equity is not None:
-            symbols.append(config.equity.symbol)
+            symbols.append(config.equity.instrument.symbol)
         # Two rows for one symbol would emit two `SecurityKey`s with the same sub-id, which
         # `assemble_level_frames` concatenates into a frame with twice the rows per rollout —
         # caught much later, by a shape check that names the symbol but not the cause.
@@ -309,7 +253,7 @@ class StructuralMacroModel:
             # has no qualified-dividend rate, so an equity distribution routed through the
             # interest path would be overtaxed as ordinary income. Emitting nothing is the
             # honest option until that third category exists.
-            keys.add(SecurityKey(symbol=self._config.equity.symbol))
+            keys.add(SecurityKey(symbol=self._config.equity.instrument.symbol))
         return frozenset(keys)
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
@@ -337,7 +281,9 @@ class StructuralMacroModel:
             blocks.append((SecurityKey(symbol=spec.symbol), price))
             blocks.append((SecurityDistributionKey(symbol=spec.symbol), distribution))
         if config.equity is not None:
-            blocks.append((SecurityKey(symbol=config.equity.symbol), _equity_path(config.equity, request, short_rate)))
+            blocks.append(
+                (SecurityKey(symbol=config.equity.instrument.symbol), _equity_path(config.equity, request, short_rate))
+            )
 
         return SampledExogenousBundle(
             levels=assemble_level_frames(blocks, rollout_count=rollouts, horizon_months=request.horizon_months),
@@ -386,19 +332,8 @@ def _shocks(request: ExogenousSamplingRequest, stream_id: str, *, months: int) -
     return np.stack([np.random.default_rng(seed).standard_normal(months) for seed in seeds])
 
 
-def _instrument_yield(spec: InstrumentSpec, *, short_rate: np.ndarray, term_spread: np.ndarray) -> np.ndarray:
-    """This instrument's yield: its share of the curve at its maturity, plus its spread.
-
-    The curve is linear in maturity between the short rate and the 10-year point, and flat past
-    ten years. Crude, and adequate for ordering cash against a short and an intermediate fund;
-    it cannot price a barbell against a bullet, and it misprices a long ladder badly. #5834
-    replaces it with a fitted curve.
-
-    `curve_ratio` scales the curve BEFORE `spread` is added, so a muni's exemption stays
-    proportional to the level while a credit spread stays absolute. That ordering is what keeps
-    the yield off the floor as rates fall: a ratio of a small number is small, a constant
-    subtracted from a small number is negative.
-    """
+def _instrument_yield(spec: BondFundSpec, *, short_rate: np.ndarray, term_spread: np.ndarray) -> np.ndarray:
+    """Bind only reference curves represented by this model's state."""
 
     if spec.yield_curve is not YieldCurve.GOVERNMENT:
         raise ValueError(
@@ -408,12 +343,11 @@ def _instrument_yield(spec: InstrumentSpec, *, short_rate: np.ndarray, term_spre
             "Use the historical-windows provider, whose record carries Moody's Aaa and Baa, or add a credit "
             "factor to the VAR."
         )
-    curve_fraction = min(spec.maturity_years / 10.0, 1.0)
-    curve = short_rate + curve_fraction * term_spread
-    return np.maximum(spec.curve_ratio * curve + spec.spread, MINIMUM_ANNUAL_YIELD)
+    curve = government_curve_yield(short_rate, term_spread, maturity_years=spec.maturity_years)
+    return fund_yield(spec, curve)
 
 
-def _equity_path(spec: EquitySpec, request: ExogenousSamplingRequest, short_rate: np.ndarray) -> np.ndarray:
+def _equity_path(spec: EquityProcess, request: ExogenousSamplingRequest, short_rate: np.ndarray) -> np.ndarray:
     """Broad equity as a log process with a rates term, so it is not independent of the curve."""
 
     shocks = _shocks(request, "structural_macro:equity", months=short_rate.shape[1])
@@ -421,7 +355,7 @@ def _equity_path(spec: EquitySpec, request: ExogenousSamplingRequest, short_rate
     log_returns = spec.monthly_log_return_mu + spec.monthly_log_return_sigma * shocks + spec.rate_beta * rate_changes
     # Month 0 is the anchor, not a return: every emitted series starts at its configured level.
     log_returns[:, 0] = 0.0
-    return spec.initial_price_usd * np.exp(np.cumsum(log_returns, axis=1))
+    return spec.instrument.initial_price_usd * np.exp(np.cumsum(log_returns, axis=1))
 
 
 def _inflation_level(config: StructuralMacroProviderConfig, inflation_rate: np.ndarray) -> np.ndarray:

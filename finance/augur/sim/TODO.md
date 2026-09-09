@@ -417,7 +417,7 @@ starts and held to maturity, indexed or not. Everything below is what that shape
       Once a real curve exists this gets much cheaper than its deferral implies: a rung prices
       itself off the curve at its REMAINING term, which rolls down and converges to par on its
       own. The blocker was never the sale mechanics, it was having nothing to mark against —
-      `InstrumentSpec.duration_years` is a constant, right for a fund that rolls and wrong for a
+      `BondFundSpec.maturity_years` is a constant, right for a fund that rolls and wrong for a
       bond that ages.
 
 - [ ] **Non-par purchase.** `purchase_price` is required to EQUAL face, so a real holding
