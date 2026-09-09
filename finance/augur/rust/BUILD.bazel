@@ -100,7 +100,6 @@ py_library(
     srcs = ["backend.py"],
     deps = [
         ":event_log",
-        ":fixture_encoder",
         "//finance/augur/product:metric_composition",
         "//finance/augur/product:quantiles",
         "//finance/augur/rust:simulator_ext",
@@ -110,31 +109,6 @@ py_library(
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
-)
-
-py_library(
-    name = "fixture_encoder",
-    srcs = ["fixture_encoder.py"],
-    deps = [
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:jurisdictions",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim/compiler:plan",
-        "//finance/augur/sim/compiler:tax",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "fixture_spec",
-    srcs = ["fixture_spec.py"],
-    deps = ["@pypi//more_itertools"],
 )
 
 py_library(
@@ -158,10 +132,12 @@ py_test(
         "//finance/augur/sim:backend",
         "//finance/augur/sim/testing:behaviour",
         "//finance/augur/sim/testing:bonds",
+        "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:cash_conservation",
         "//finance/augur/sim/testing:deductions",
         "//finance/augur/sim/testing:engine_acceptance",
         "//finance/augur/sim/testing:engine_edges",
+        "//finance/augur/sim/testing:fixtures",
         "//finance/augur/sim/testing:frozen_rollout",
         "//finance/augur/sim/testing:income_sources",
         "//finance/augur/sim/testing:private_equity",
@@ -182,10 +158,7 @@ py_library(
     name = "case_fixture",
     testonly = True,
     srcs = ["case_fixture.py"],
-    deps = [
-        ":fixture_encoder",
-        "//finance/augur/sim/testing:case",
-    ],
+    deps = ["//finance/augur/sim/testing:case"],
 )
 
 # Test scaffolding: it projects a run into the shape the behavioural suites read.

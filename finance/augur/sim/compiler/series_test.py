@@ -14,8 +14,8 @@ def test_an_indexed_bond_demands_an_inflation_path() -> None:
 
     Every other level-series demand comes from something PRICED — a lot, a sleeve, a sale. A
     bond has no price series at all, so an indexed one is the only instrument whose exogenous
-    demand is invisible from the thing that carries it. Without it, `compile_bonds` raises
-    "carry no inflation path" for any caller that derives its sampling request from the
+    demand is invisible from the thing that carries it. Without it, the engine rejects a
+    missing inflation path for any caller that derives its sampling request from the
     scenario, which is what the product surface does, unless it happens to want CPI anyway.
 
     Asserted on the demand function rather than through a run: a run supplies its own bundle

@@ -1,10 +1,8 @@
-"""External-series wrangling: collect referenced series IDs from a scenario, and
-build the dense `(series, rollout, month)` cubes the engine reads at runtime.
+"""Collect a scenario's path requirements, validate supplied series and quantize them.
 
-Separated from the orchestrator so the compile_simulation function in
-`compiler/plan.py` reads as pure scaffolding and the per-domain compilers can
-import these helpers directly when they need to encode `SeriesIndexedAmount`
-fields."""
+Demand discovery is available before sampling. Materialization supplies the integer
+paths used by execution-input preparation, without allocating financial-state slots.
+"""
 
 from __future__ import annotations
 
@@ -49,12 +47,12 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
             seen.add(key)
             keys.append(key)
 
-    # Holdings are marked every month off their asset-price series (`plan.lot_asset_series_index`).
+    # Holdings are marked every month off their asset-price series.
     for lot in scenario.initial_lots:
         add(asset_price_key_or_none(lot.asset))
     # A TIPS' principal rides CPI, so an inflation-indexed bond DEMANDS inflation even when
-    # nothing else in the scenario does. Without this, `compile_bonds._cpi_series_row` raises
-    # ("carry no inflation path") for any scenario that does not happen to want CPI for another
+    # nothing else in the scenario does. Without this, the engine rejects a missing inflation
+    # path for any scenario that does not happen to want CPI for another
     # reason — a CPI-indexed spend, cash band, tender floor, or property obligation.
     #
     # Demand side only, deliberately: the supply-side twin must NOT add this. Inflation reaches

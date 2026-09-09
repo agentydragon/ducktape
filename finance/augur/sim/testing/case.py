@@ -28,7 +28,6 @@ from jaxtyping import Float64
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.sim.backend import CompiledRun, compile_run
-from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
@@ -108,10 +107,6 @@ class Case:
         """
 
         return load_jurisdictions_for(self.scenario)
-
-    @property
-    def plan(self) -> CompiledSimulation:
-        return self.compiled_run.plan
 
     @cached_property
     def compiled_run(self) -> CompiledRun:

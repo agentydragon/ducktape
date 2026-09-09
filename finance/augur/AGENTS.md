@@ -4,9 +4,9 @@ Augur is pre-production. Do not add compatibility shims for older URL state
 versions, request schemas, or serialized payloads unless the user explicitly
 asks for backward compatibility.
 
-Execution runs through `augur/rust`, against the plan `augur/sim` compiles; do
+Execution runs through `augur/rust`, against the input `augur/sim` prepares; do
 not revive deleted `augur/core` execution or market-bundle adapters. When
-extending API responses, project the compiler plan and the canonical frames
+extending API responses, project the prepared input and the canonical frames
 directly, as `augur/product/projection.py` does, instead of adding parallel
 read-model tables over `SimulationRun`'s long-form polars frames.
 

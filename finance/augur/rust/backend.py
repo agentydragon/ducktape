@@ -22,7 +22,6 @@ from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_
 from finance.augur.product.quantiles import currency_quantile_plan, interpolate_currency_quantiles
 from finance.augur.rust import simulator
 from finance.augur.rust.event_log import decode_event_log
-from finance.augur.rust.fixture_encoder import encode_fixture
 from finance.augur.sim.backend import CompiledRun, Engine
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.product_metrics import (
@@ -151,48 +150,38 @@ def run_rust_product_summaries(
 class RustEngine(Engine):
     """The Rust engine as an `Engine`.
 
-    Each method encodes the compiled run as the strict integer fixture and makes one
-    in-process call. The fixture is derived here rather than held on `CompiledRun` because
-    it is this engine's input shape, and nothing else should have to know it exists.
+    Each method transports the already-prepared input and makes one in-process call.
+    Execution never rereads the authored scenario or recompiles its financial rules.
     """
 
     @property
     def name(self) -> str:
         return "rust"
 
-    def _fixture(self, run: CompiledRun) -> dict[str, Any]:
-        return encode_fixture(
-            run.scenario,
-            run.plan,
-            external_series=run.external_series,
-            jurisdictions=run.jurisdictions,
-            locations=run.locations,
-        )
-
     def product_metrics(self, run: CompiledRun, *, primary_agent_id: str) -> ProductMetricArrays:
-        return run_rust_product_metric_arrays(self._fixture(run), primary_agent_id=primary_agent_id)
+        return run_rust_product_metric_arrays(run.execution_input, primary_agent_id=primary_agent_id)
 
     def product_fan(
         self, run: CompiledRun, *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
     ) -> ProductMetricFanSummary:
         return run_rust_product_summary(
-            self._fixture(run), primary_agent_id=primary_agent_id, metric=metric, percentiles=percentiles
+            run.execution_input, primary_agent_id=primary_agent_id, metric=metric, percentiles=percentiles
         )
 
     def product_terminal(self, run: CompiledRun, *, primary_agent_id: str, metric: str) -> ProductTerminalSummary:
         return run_rust_product_summary(
-            self._fixture(run), primary_agent_id=primary_agent_id, metric=metric, percentiles=None
+            run.execution_input, primary_agent_id=primary_agent_id, metric=metric, percentiles=None
         )
 
     def product_summaries(
         self, run: CompiledRun, *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
     ) -> ProductProjectionSummaries:
         return run_rust_product_summaries(
-            self._fixture(run), primary_agent_id=primary_agent_id, metric=metric, percentiles=percentiles
+            run.execution_input, primary_agent_id=primary_agent_id, metric=metric, percentiles=percentiles
         )
 
     def events(self, run: CompiledRun) -> EventLog:
         # Dense, not forensic: both carry the canonical frames, and the balanced journal the
         # forensic run adds is Rust's own double-entry invariant with no reader here.
-        dense = cast(dict[str, Any], json.loads(simulator.simulate_dense_json(json.dumps(self._fixture(run)))))
+        dense = cast(dict[str, Any], json.loads(simulator.simulate_dense_json(json.dumps(run.execution_input))))
         return decode_event_log(dense)

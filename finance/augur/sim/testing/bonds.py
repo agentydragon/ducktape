@@ -206,7 +206,7 @@ class BondAcceptance:
             rollout_count=1,
             series={InflationKey(): levels([[Decimal(str(level)) for level in CPI_FLAT]])},
         )
-        with pytest.raises(ValueError, match="has no cash account in this scenario"):
+        with pytest.raises(ValueError, match="references unknown account alice:brokerage"):
             backend(mistyped)
 
     def test_an_indexed_coupon_rides_the_indexed_principal(self, backend: Backend) -> None:

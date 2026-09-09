@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.compiler.plan import compile_simulation
+from finance.augur.sim.compiler.execution import compile_execution_input
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario, TaxProfile
@@ -39,7 +39,7 @@ def _capping(jurisdiction: Jurisdiction, *, offset: Decimal) -> Jurisdiction:
 
 
 def _compile(scenario: Scenario, jurisdictions: dict[str, Jurisdiction]) -> None:
-    compile_simulation(
+    compile_execution_input(
         scenario,
         rollout_count=1,
         external_series=ExternalSeriesContext.from_level_blocks(

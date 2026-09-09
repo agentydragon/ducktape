@@ -3,158 +3,25 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "assets",
-    srcs = ["assets.py"],
-    deps = [
-        ":helpers",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "bonds",
     srcs = ["bonds.py"],
-    deps = [
-        ":helpers",
-        ":income_buckets",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:bonds",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "cashflows",
-    srcs = ["cashflows.py"],
-    deps = [
-        ":helpers",
-        ":income_buckets",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "deductions",
-    srcs = ["deductions.py"],
-    deps = [
-        ":helpers",
-        ":properties",
-        ":tax",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
+    deps = ["//finance/augur/sim:scenario"],
 )
 
 py_library(
     name = "distributions",
     srcs = ["distributions.py"],
-    deps = [
-        ":helpers",
-        ":income_buckets",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
+    deps = ["//finance/augur/sim:scenario"],
 )
 
 py_library(
     name = "helpers",
     srcs = ["helpers.py"],
-    deps = [
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-    ],
 )
 
 py_library(
     name = "income_buckets",
     srcs = ["income_buckets.py"],
-    deps = [
-        ":helpers",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "lifecycle",
-    srcs = ["lifecycle.py"],
-    deps = [
-        "//finance/augur/sim:enums",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "obligations",
-    srcs = ["obligations.py"],
-    deps = [
-        ":helpers",
-        ":properties",
-        ":tax",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "plan",
-    srcs = ["plan.py"],
-    deps = [
-        ":assets",
-        ":bonds",
-        ":cashflows",
-        ":deductions",
-        ":distributions",
-        ":helpers",
-        ":lifecycle",
-        ":obligations",
-        ":primary_residence",
-        ":private_equity",
-        ":properties",
-        ":series",
-        ":target_allocation",
-        ":tax",
-        ":tlh_harvest",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:jurisdictions",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "primary_residence",
-    srcs = ["primary_residence.py"],
     deps = [
         ":helpers",
         "//finance/augur/sim:scenario",
@@ -170,23 +37,7 @@ py_library(
         ":helpers",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
         "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "properties",
-    srcs = ["properties.py"],
-    deps = [
-        ":helpers",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:runtime",
-        "//finance/augur/sim:scenario",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
@@ -196,20 +47,6 @@ py_library(
     name = "series",
     srcs = ["series.py"],
     deps = [
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "target_allocation",
-    srcs = ["target_allocation.py"],
-    deps = [
-        ":helpers",
         "//finance/augur/model:series",
         "//finance/augur/product:asset_key",
         "//finance/augur/sim:fixed_point",
@@ -235,19 +72,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "tlh_harvest",
-    srcs = ["tlh_harvest.py"],
-    deps = [
-        ":helpers",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:scenario",
-        "//finance/augur/sim:tlh_harvest",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
 py_test(
     name = "income_buckets_test",
     srcs = ["income_buckets_test.py"],
@@ -264,42 +88,10 @@ py_test(
 )
 
 py_test(
-    name = "target_allocation_test",
-    size = "small",
-    srcs = ["target_allocation_test.py"],
-    deps = [
-        ":helpers",
-        ":target_allocation",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "plan_test",
-    srcs = ["plan_test.py"],
-    deps = [
-        ":plan",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "tax_test",
     srcs = ["tax_test.py"],
     deps = [
-        ":plan",
+        ":execution",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:external_series",
@@ -319,6 +111,41 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim/testing:bonds",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "execution",
+    srcs = ["execution.py"],
+    deps = [
+        ":helpers",
+        ":private_equity",
+        ":series",
+        ":tax",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:scenario",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "execution_test",
+    srcs = ["execution_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:scenario",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

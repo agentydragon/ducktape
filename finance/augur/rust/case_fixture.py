@@ -1,27 +1,16 @@
 """A case as the Rust engine takes it.
 
-`Case` describes a scenario and its sampled paths and nothing else, so an engine's own input
-format is derived from it rather than authored beside it. This is that derivation: it encodes
-the case's *compiled plan*, so the tax schedule, bracket ladder and deductions the engine
-assesses are the ones the compiler resolved, not a second lookup.
-
-It is a function here rather than a property on `Case` because `Case` is engine-agnostic and
-lives in `sim/`, which cannot import `rust/`.
+Tests that inspect or perturb an execution document get their own copy of the case's
+prepared input. No separate financial encoding or rule lookup occurs here.
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
-from finance.augur.rust.fixture_encoder import encode_fixture
 from finance.augur.sim.testing.case import Case
 
 
 def fixture_for(case: Case) -> dict[str, Any]:
-    return encode_fixture(
-        case.scenario,
-        case.plan,
-        external_series=case.external_series,
-        jurisdictions=case.jurisdictions,
-        locations=case.locations,
-    )
+    return deepcopy(case.compiled_run.execution_input)

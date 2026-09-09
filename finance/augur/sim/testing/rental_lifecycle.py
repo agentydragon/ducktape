@@ -1044,9 +1044,7 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
 
     def test_property_sale_requires_home_value_series(self, backend: Backend) -> None:
         scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
-        with pytest.raises(
-            KeyError, match=r"property sale for property_id 'p1'.*home-value series 'home_value:san_francisco'"
-        ):
+        with pytest.raises(ValueError, match='missing series "home_value:san_francisco"'):
             backend(rental_case(scenario, series={}, rollout_count=1, locations=SAN_FRANCISCO_LOCATIONS))
 
     def test_property_sale_at_gain_routes_recapture_and_ltcg(self, backend: Backend) -> None:

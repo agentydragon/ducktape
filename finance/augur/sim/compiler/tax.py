@@ -1,15 +1,9 @@
-"""Tax compile output: per-profile + per-(profile, jurisdiction) link tables, plus the
-year-end TaxLiability slots. Pairs with `codec/tax.py`.
-
-`TaxCompileOutput` and `TaxLiabilityCompileOutput` live together because the year-end
-tax-liability slots are derived purely from the tax link table — same domain. The §1250
-federal cap rate, the §121 primary-residence exclusion lookup, and the per-scenario
-capital-gain-agent index also live here since they're tax-routing concerns."""
+"""Resolve scenario tax profiles, jurisdiction rules, and income-source ordering
+into the simulation engine's tax tables."""
 
 from __future__ import annotations
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
-from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
@@ -19,10 +13,10 @@ from jaxtyping import Float64, Int64
 
 from finance.augur.sim.compiler.bonds import bond_income_categories
 from finance.augur.sim.compiler.distributions import distribution_income_categories
-from finance.augur.sim.compiler.helpers import AccountSlots, StringTable
+from finance.augur.sim.compiler.helpers import StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
-from finance.augur.sim.jurisdictions import BracketUpper, Jurisdiction, JurisdictionLevel, load_jurisdiction
+from finance.augur.sim.jurisdictions import BracketUpper, Jurisdiction, load_jurisdiction
 from finance.augur.sim.scenario import FilingStatus, InterestIncome, Scenario, TaxProfile, TransferIncomeCategory
 
 SECTION_1250_FEDERAL_CAP_RATE = 0.25
@@ -76,14 +70,12 @@ class TaxCompileOutput:
       federal-style flat rate (0.25 for `federal_us`); 0.0 ⇒ no separate cap, recapture
       is taxed as ordinary inside the standard bracket walk (state-style, e.g. CA)."""
 
-    profile_agent: Int64[np.ndarray, " tax_profile"]
     profile_prior_year_tax: Int64[np.ndarray, " tax_profile"]
     profile_section_121_exclusion: Int64[np.ndarray, " tax_profile"]
     profile_max_capital_loss_ordinary_offset: Int64[np.ndarray, " tax_profile"]
     link_profile: Int64[np.ndarray, " tax_link"]
     link_jurisdiction: Int64[np.ndarray, " tax_link"]
     link_standard_deduction: Int64[np.ndarray, " tax_link"]
-    link_has_ltcg: Int64[np.ndarray, " tax_link"]
     link_section_1250_rate: Float64[np.ndarray, " tax_link"]
     link_ordinary_upper: Int64[np.ndarray, " tax_link bracket"]
     link_ordinary_rate: Float64[np.ndarray, " tax_link bracket"]
@@ -92,7 +84,6 @@ class TaxCompileOutput:
     link_ltcg_rate: Float64[np.ndarray, " tax_link bracket"]
     link_ltcg_count: Int64[np.ndarray, " tax_link"]
     buckets: IncomeBuckets
-    link_income_mask: Int64[np.ndarray, " tax_link income_bucket"]
 
 
 class IncomeTagged(Protocol):
@@ -127,17 +118,6 @@ def collect_income_sources(scenario: Scenario) -> set[TransferIncomeCategory]:
     )
 
 
-def _source_is_taxed_by(
-    source: TransferIncomeCategory, jurisdiction: Jurisdiction, issuer_levels: Mapping[str, JurisdictionLevel]
-) -> bool:
-    """Whether `jurisdiction` includes this kind of income in its ordinary base."""
-
-    if not isinstance(source, InterestIncome):
-        return True
-    issuer = source.issuer_jurisdiction_id
-    return jurisdiction.taxes_interest_from(issuer, issuer_levels[issuer] if issuer is not None else None)
-
-
 def _agreed_capital_loss_offset_cap(
     profile: TaxProfile, jurisdictions: dict[str, Jurisdiction], *, quantum: object
 ) -> np.int64:
@@ -162,15 +142,11 @@ def _agreed_capital_loss_offset_cap(
     return currency_amount_to_quanta(next(iter(caps.values())), quantum=quantum)
 
 
-def compile_tax(
-    scenario: Scenario, strings: StringTable, account_slot_by_key: AccountSlots, jurisdictions: dict[str, Jurisdiction]
-) -> TaxCompileOutput:
-    profile_agent: list[int] = []
+def compile_tax(scenario: Scenario, strings: StringTable, jurisdictions: dict[str, Jurisdiction]) -> TaxCompileOutput:
     prior_year_tax: list[np.int64] = []
     link_profile: list[int] = []
     link_jurisdiction: list[int] = []
     standard_deduction: list[np.int64] = []
-    has_ltcg: list[int] = []
     section_1250_rate: list[float] = []
     ordinary_brackets: list[list[tuple[np.int64, float]]] = []
     ltcg_brackets: list[list[tuple[np.int64, float]]] = []
@@ -180,12 +156,6 @@ def compile_tax(
     max_ord = 1
     max_ltcg = 1
     for profile_index, profile in enumerate(scenario.tax_profiles):
-        profile_agent.append(strings.require(profile.agent_id))
-        # Validate/string-intern payment routing even when the horizon contains no tax-payment month.
-        account_slot_by_key.resolve(profile.agent_id, profile.payment_account_id)
-        strings.require(profile.payment_account_id)
-        strings.require(profile.tax_authority_agent_id)
-        strings.require(profile.tax_authority_account_id)
         prior_year_tax.append(currency_amount_to_quanta(profile.prior_year_tax, quantum=scenario.currency.quantum))
         section_121_exclusion.append(
             currency_amount_to_quanta(
@@ -224,7 +194,6 @@ def compile_tax(
                     jurisdiction.standard_deduction[profile.filing_status], quantum=scenario.currency.quantum
                 )
             )
-            has_ltcg.append(1 if jurisdiction.ltcg_brackets is not None else 0)
             # Federal-us gets the §1250 25% flat rate cap; all other jurisdictions tax
             # unrecaptured-depreciation as ordinary income (CA, etc.).
             section_1250_rate.append(
@@ -235,23 +204,12 @@ def compile_tax(
 
     link_count = len(link_profile)
 
-    # Which buckets each link's ordinary base includes. Built here, at compile time, from the
-    # jurisdiction's own rules — the engine never asks "is this exempt?", it multiplies.
+    # Preserve the declared income-source ordering used by execution inputs and outputs.
     buckets = IncomeBuckets.for_sources(collect_income_sources(scenario), profile_count=len(scenario.tax_profiles))
-    issuer_levels = {
-        source.issuer_jurisdiction_id: load_jurisdiction(source.issuer_jurisdiction_id).level
-        for source in buckets.source_ids
-        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None
-    }
-    # Integer, not float: these multiply int64 cent amounts, and a float mask would promote
-    # the engine's fixed-point money to float64 — losing cents above 2^53 and quietly
-    # abandoning the exact-integer accounting the rest of the engine maintains.
-    income_mask = np.zeros((max(1, link_count), max(1, buckets.row_count)), dtype=np.int64)
-    for link_index, profile_index in enumerate(link_profile):
-        jurisdiction = jurisdictions[strings.values[link_jurisdiction[link_index]]]
-        for source in buckets.source_ids:
-            if _source_is_taxed_by(source, jurisdiction, issuer_levels):
-                income_mask[link_index, buckets.bucket(profile_index, source)] = 1
+    # Every named income issuer must resolve, including issuers found only on cashflows.
+    for source in buckets.source_ids:
+        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None:
+            load_jurisdiction(source.issuer_jurisdiction_id)
 
     ordinary_upper = np.zeros((max(1, link_count), max_ord), dtype=np.int64)
     ordinary_rate = np.zeros((max(1, link_count), max_ord), dtype=np.float64)
@@ -271,78 +229,18 @@ def compile_tax(
             ltcg_rate[idx, bracket_idx] = rate
 
     return TaxCompileOutput(
-        profile_agent=np.asarray(profile_agent, dtype=np.int64),
         profile_prior_year_tax=np.asarray(prior_year_tax, dtype=np.int64),
         profile_section_121_exclusion=np.asarray(section_121_exclusion, dtype=np.int64),
         profile_max_capital_loss_ordinary_offset=np.asarray(max_capital_loss_ordinary_offset, dtype=np.int64),
         link_profile=np.asarray(link_profile, dtype=np.int64),
         link_jurisdiction=np.asarray(link_jurisdiction, dtype=np.int64),
         link_standard_deduction=np.asarray(standard_deduction, dtype=np.int64),
-        link_has_ltcg=np.asarray(has_ltcg, dtype=np.int64),
         link_section_1250_rate=np.asarray(section_1250_rate, dtype=np.float64),
         buckets=buckets,
-        link_income_mask=income_mask,
         link_ordinary_upper=ordinary_upper,
         link_ordinary_rate=ordinary_rate,
         link_ordinary_count=ordinary_count,
         link_ltcg_upper=ltcg_upper,
         link_ltcg_rate=ltcg_rate,
         link_ltcg_count=ltcg_count,
-    )
-
-
-def compile_capital_gain_agents(
-    scenario: Scenario, strings: StringTable
-) -> tuple[Int64[np.ndarray, " capital_gain_profile"], Int64[np.ndarray, " tax_profile"]]:
-    agent_ids: list[str] = []
-    seen: set[str] = set()
-
-    def add(agent_id: str) -> None:
-        if agent_id in seen:
-            return
-        seen.add(agent_id)
-        agent_ids.append(agent_id)
-
-    for profile in scenario.tax_profiles:
-        add(profile.agent_id)
-    for lot in scenario.initial_lots:
-        add(lot.agent_id)
-    for sale in scenario.scheduled_asset_sales:
-        add(sale.agent_id)
-    for policy in scenario.target_allocation_policies:
-        add(policy.agent_id)
-
-    index_by_agent = {agent_id: idx for idx, agent_id in enumerate(agent_ids)}
-    return (
-        np.asarray([strings.require(agent_id) for agent_id in agent_ids], dtype=np.int64),
-        np.asarray([index_by_agent[profile.agent_id] for profile in scenario.tax_profiles], dtype=np.int64),
-    )
-
-
-@dataclass(frozen=True)
-class TaxLiabilityCompileOutput:
-    """Per-tax-liability arrays produced by `compile_tax_liability_slots`. One row per
-    (link, year-end-month) pair where a tax liability accrues. Engine looks up the
-    profile + link + payment month to schedule estimated-tax/true-up obligations."""
-
-    profile_index: Int64[np.ndarray, " tax_liability"]
-    link_index: Int64[np.ndarray, " tax_liability"]
-    year_end_month: Int64[np.ndarray, " tax_liability"]
-
-
-def compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> TaxLiabilityCompileOutput:
-    profile_indices: list[int] = []
-    link_indices: list[int] = []
-    end_months: list[int] = []
-    for month in range(horizon):
-        if month % 12 != 11:
-            continue
-        for link_index, profile_index in enumerate(tax.link_profile.tolist()):
-            profile_indices.append(profile_index)
-            link_indices.append(link_index)
-            end_months.append(month)
-    return TaxLiabilityCompileOutput(
-        profile_index=np.asarray(profile_indices, dtype=np.int64),
-        link_index=np.asarray(link_indices, dtype=np.int64),
-        year_end_month=np.asarray(end_months, dtype=np.int64),
     )

@@ -76,7 +76,7 @@ def project_product_rollout(
     The frames already did most of the joining this file used to do by hand: seven payment
     shapes are `obligation_settlements` filtered by `obligation_type`, the three disposition
     sources are one `lot_dispositions`, and `tax_breakdowns` carries every column the accrual
-    event needs instead of a `TaxBreakdownChannel` index per field.
+    event needs instead of dense tax-channel indices.
     """
 
     if rollout_index < 0:
