@@ -26,7 +26,7 @@ terraform {
 # litellm_key resources live in the litellm-db CNPG database and their IDs live in
 # this module's tofu state. Wiping litellm-db without clearing the litellm_keys
 # state schema breaks the next plan; recovery per
-# cluster/docs/troubleshooting.md § "Resource ID Desync After Wiping a Backing
+# cluster/docs/troubleshooting.adoc § "Resource ID Desync After Wiping a Backing
 # Datastore".
 #
 # Deliberately NOT minted yet: a Haku (orchestrator) key — Haku receives its

@@ -1,4 +1,4 @@
-@README.md
+@README.adoc
 
 ## Target Platform
 
@@ -314,4 +314,4 @@ rg -n '"//:node_modules"' --glob 'BUILD*' --glob '*.bzl' .
 
 See <props/frontend/AGENTS.md> for frontend conventions.
 
-@STYLE.md
+@STYLE.adoc

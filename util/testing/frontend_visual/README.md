@@ -55,7 +55,7 @@ passes none.
 
 There is no delay option to fall back on: a fixed wait is too short on a loaded
 runner and pure dead time on every run that did not need it, and it hides what is
-being awaited (STYLE.md § Waiting). A scene with nothing to wait on is an app to
+being awaited (STYLE.adoc § Waiting). A scene with nothing to wait on is an app to
 fix — give the view a `data-` attribute or class it sets when it has its data —
 not a timer to tune.
 

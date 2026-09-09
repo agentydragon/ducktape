@@ -257,7 +257,7 @@ confirmed incident in
 <../../cluster/debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md> showed
 large Cilium-over-Nebula packets silently dropping on the Fi underlay and
 causing Terraform state-write timeouts. The cluster's authoritative MTU model
-is <../../cluster/docs/network.md>. Treat that as a separate roaming-node
+is <../../cluster/docs/network.adoc>. Treat that as a separate roaming-node
 problem: validate a host-specific MSS/PMTU mitigation before changing the
 global Cilium MTU, because a global reduction penalizes every fixed-underlay
 node and still does not prove anything about native Fi IPv6.

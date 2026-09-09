@@ -382,7 +382,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
 async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to_the_lease_sweep(
     engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    """A restart never assumes in-flight work died with the old process (see executor_liveness.md):
+    """A restart never assumes in-flight work died with the old process (see executor_liveness.adoc):
     pending dispatches resume immediately, but dispatching/running work is untouched until its own
     lease bound expires — whether that is because the old process crashed or a separate worker did.
     """

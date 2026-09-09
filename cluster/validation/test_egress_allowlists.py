@@ -8,7 +8,7 @@ host sets, and nothing failed when one gained an entry.
 
 Each allowlist declares the exact set it may carry, as a union of named host
 groups. The assertion is equality, so no host can be added, removed or renamed
-anywhere without this test failing. That is not the change-detector `STYLE.md`
+anywhere without this test failing. That is not the change-detector `STYLE.adoc`
 forbids: the value under test is not a literal copied back from the manifest, it
 is the claim *"this consumer reaches these groups and nothing else."* A host
 added without saying which group it joins is exactly the failure being caught.

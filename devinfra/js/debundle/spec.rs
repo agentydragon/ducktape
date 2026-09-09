@@ -727,7 +727,7 @@ pub struct LogicalModule {
     /// rationale (e.g. `merged from: …` provenance written by
     /// `modules merge`) that survives spec edits without appearing in
     /// generated JS. Ignored by the lowering pass — unlike `comment:`,
-    /// which emits a `//` block. Same non-emitting contract and STYLE.md local
+    /// which emits a `//` block. Same non-emitting contract and STYLE.adoc local
     /// exemption (see AGENTS.md "Spec `note:` field").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,

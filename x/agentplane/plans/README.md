@@ -30,7 +30,7 @@ Use the [Action Service specification](../action_service/SPEC.md) and
 [README](../action_service/README.md) for catalog, Decisions, events, bounded waits, cancellation,
 generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [app README](../app/README.md) owns the consent and Action-review presentation contracts.
-[Executor liveness](../docs/executor_liveness.md), [operator federation](../docs/operator_federation.md),
+[Executor liveness](../docs/executor_liveness.adoc), [operator federation](../docs/operator_federation.md),
 [workload authentication](../docs/workload_authentication.md), and
 [launch presets](../docs/launch_presets.md) own the other implemented contracts.
 Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.

@@ -7,7 +7,7 @@ Secrets and refreshes access tokens in the background.
 
 Airlock has no MCP endpoint, tool proxy, action queue, or operator tool-approval
 API. Haku Console owns the live risky-MCP-tool policy, approval, audit, and result
-flow; see <../haku/console/README.md>.
+flow; see <../haku/console/README.adoc>.
 
 ## Architecture
 

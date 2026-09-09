@@ -17,7 +17,7 @@ oci_load(
 # can read. The bundle is release-independent PEM, so this one target serves both
 # bookworm- and trixie-based images. Add it to an oci_image's `tars` and set
 # SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt.
-# Usage guidance: STYLE.md § "System CA certificates in distroless images".
+# Usage guidance: STYLE.adoc § "System CA certificates in distroless images".
 cacerts(
     name = "cacerts",
     package = "@ca_certificates_deb//:data.tar.xz",

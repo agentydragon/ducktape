@@ -3,7 +3,7 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 # The package tree's shared compiler options; a subpackage extends the parent's ts_config
-# rather than declaring its own (STYLE.md § TypeScript).
+# rather than declaring its own (STYLE.adoc § TypeScript).
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
 ts_library(

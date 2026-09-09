@@ -23,7 +23,7 @@ spec:
     #   - node label `topology.kubernetes.io/region=roaming`
     #   - `terraform/main/home-nodes.tf` (the declarations)
     #   - `nebula-mesh.json` at the repo root (mesh roster)
-    #   - the Node Types table in <cluster/README.md>
+    #   - the Node Types table in <cluster/README.adoc>
     # The taint wins because it is the *operational* statement -- a node tainted
     # roaming is one the scheduler is told may vanish, which is exactly the
     # property that makes NotReady uninteresting. Taint a new laptop and it is

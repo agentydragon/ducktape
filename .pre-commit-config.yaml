@@ -113,6 +113,17 @@ repos:
         language: system
         files: ^(cluster|website)/.*\.md$
 
+  # AsciiDoc validation — asciidoctor provided by devShell / web-session via Nix.
+  # Render to /dev/null so the hook checks syntax and includes without creating
+  # generated artifacts in the worktree.
+  - repo: local
+    hooks:
+      - id: asciidoctor
+        name: asciidoctor
+        entry: bash -c 'for file in "$@"; do asciidoctor --failure-level=ERROR --backend=html5 --out-file=/dev/null "$file" || exit 1; done' --
+        language: system
+        files: \.(adoc|asciidoc)$
+
   # NOTE: ESLint and svelte-check are handled by Bazel:
   # - ESLint: bazel build //... (lint aspects run by default)
   # - svelte-check: bazel test //props/frontend:svelte_check_test

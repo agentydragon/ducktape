@@ -4,7 +4,7 @@ The canonical Action lifecycle, catalog, Decisions, caller/operator projections,
 notification-driven waits are implemented. Their contracts live in the
 [Action Service specification](../action_service/SPEC.md) and [README](../action_service/README.md).
 Claims, leases, unknown outcomes, and reconciliation live in
-[executor liveness](../docs/executor_liveness.md); browser/operator authority lives in
+[executor liveness](../docs/executor_liveness.adoc); browser/operator authority lives in
 [operator federation](../docs/operator_federation.md). Do not reopen these as first-adapter design gates.
 
 The [task DAG](task_dag.md) tracks the remaining work. The existing credentialless MCP runtime and

@@ -51,15 +51,15 @@ fd -t f -e yaml -e toml -e json .
 
 **Identify documentation types to verify:**
 
-| Type              | Location                 | Verification Method                               |
-| ----------------- | ------------------------ | ------------------------------------------------- |
-| README.md         | Per-directory            | Cross-reference with actual files and commands    |
-| AGENTS.md         | Per-directory            | Verify agent instructions match codebase reality  |
-| Docstrings        | Python functions/classes | Compare to actual signatures and behavior         |
-| Inline comments   | Throughout code          | Verify comment describes adjacent code accurately |
-| Config examples   | Docs, README             | Validate against actual schemas                   |
-| CLI examples      | Docs                     | Run or trace to verify commands work              |
-| Architecture docs | docs/ directories        | Trace described flows through actual code         |
+| Type                    | Location                 | Verification Method                               |
+| ----------------------- | ------------------------ | ------------------------------------------------- |
+| README.adoc / README.md | Per-directory            | Cross-reference with actual files and commands    |
+| AGENTS.md               | Per-directory            | Verify agent instructions match codebase reality  |
+| Docstrings              | Python functions/classes | Compare to actual signatures and behavior         |
+| Inline comments         | Throughout code          | Verify comment describes adjacent code accurately |
+| Config examples         | Docs, README             | Validate against actual schemas                   |
+| CLI examples            | Docs                     | Run or trace to verify commands work              |
+| Architecture docs       | docs/ directories        | Trace described flows through actual code         |
 
 ## Phase 2: Decomposition and Agent Spawning
 
@@ -84,7 +84,7 @@ Each subagent receives:
 
 ```
 Subagent 1: haku/console/
-- Verify haku/console/AGENTS.md, haku/console/README.md
+- Verify haku/console/AGENTS.md, haku/console/README.adoc
 - Verify all docstrings under haku/console/
 - Flag any claims about mcp_infra/ for cross-verification
 
