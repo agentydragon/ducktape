@@ -158,6 +158,21 @@ class ActionEventView(BaseModel):
     sequence: int
     state: ActionState
     at: datetime
+    actor_principal: str | None = Field(default=None, description="Authenticated cancellation actor; absent otherwise.")
+
+
+class CancellationOutcome(StrEnum):
+    CANCELLED = "cancelled"
+    ALREADY_CANCELLED = "already_cancelled"
+    ALREADY_FINISHED = "already_finished"
+    TOO_LATE = "too_late"
+
+
+class CancellationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: CancellationOutcome
+    request: ActionRequestView
 
 
 class ExecutionRequest(BaseModel):

@@ -27,12 +27,13 @@ def _round_trip(connection: Connection) -> None:
     connection.execute(text("UPDATE action_decision SET private_reason = 'Existing deployed note — preserved.'"))
     command.upgrade(config, "head")
     assert connection.scalar(text("SELECT decision_note FROM action_decision")) == "Existing deployed note — preserved."
-    # Check the changed table, not unrelated migration-only request/execution indexes.
+    assert connection.scalar(text("SELECT count(*) FROM action_event WHERE actor_principal IS NOT NULL")) == 0
+    # Check the changed tables, not unrelated migration-only request/execution indexes.
     context = MigrationContext.configure(
         connection,
         opts={
             "include_object": lambda obj, name, type_, reflected, compare_to: (
-                type_ != "table" or name == "action_decision"
+                type_ != "table" or name in {"action_decision", "action_event"}
             )
         },
     )

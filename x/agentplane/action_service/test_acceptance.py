@@ -24,6 +24,8 @@ from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
+    CancellationOutcome,
+    CancellationResult,
     DecisionInput,
     ExecutionLease,
     ExecutionRequest,
@@ -687,6 +689,40 @@ async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively
             "arguments"
         ] == arguments
         assert (await client.get(_operator_path(request_id), headers=_workload("workload-a"))).status_code == 401
+
+
+async def test_cancellation_http_is_owner_only_and_needs_no_version(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    executor = CountingExecutor()
+    service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": executor})
+    async with await _client(service) as client:
+        response = await client.post(
+            "/v1/action-requests",
+            headers=_workload("workload-a"),
+            json=ActionRequestInput(
+                idempotency_key="test-http-cancel",
+                action=ActionIdentity(group="agentplane", name="echo"),
+                arguments={"access_token": "must-redact"},
+                origin={"caller_principal": CALLER_B.key, "thread_id": "untrusted-thread"},
+            ).model_dump(mode="json"),
+        )
+        response.raise_for_status()
+        request_id = response.json()["id"]
+        path = f"/v1/action-requests/{request_id}/cancel"
+        assert (await client.post(path)).status_code == 401
+        assert (await client.post(path, headers=_operator())).status_code == 401
+        assert (await client.post(path, headers=_workload("workload-b"))).status_code == 404
+        assert (await client.post(_operator_path(request_id, "/cancel"), headers=_operator())).status_code == 404
+        response = await client.post(path, headers=_workload("workload-a"))
+        assert response.status_code == 200
+        result = CancellationResult.model_validate(response.json())
+        assert result.outcome is CancellationOutcome.CANCELLED
+        assert result.request.state is ActionState.CANCELLED
+        assert result.request.arguments == {"access_token": "[redacted]"}
+        duplicate = await client.post(path, headers=_workload("workload-a"))
+        assert CancellationResult.model_validate(duplicate.json()).outcome is CancellationOutcome.ALREADY_CANCELLED
+        assert executor.requests == []
 
 
 if __name__ == "__main__":

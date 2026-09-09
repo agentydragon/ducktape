@@ -20,6 +20,8 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CancellationOutcome,
+    CancellationResult,
     DecisionInput,
     DecisionView,
     ExecutionClaim,
@@ -71,6 +73,7 @@ class ActionEventRow(Base):
     sequence: Mapped[int] = mapped_column(Integer, primary_key=True)
     state: Mapped[str] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    actor_principal: Mapped[str | None] = mapped_column(Text)
 
 
 @event.listens_for(ActionEventRow, "after_insert")
@@ -258,7 +261,45 @@ class ActionStore:
                     .order_by(ActionEventRow.sequence)
                 )
             )
-            return [ActionEventView(sequence=e.sequence, state=ActionState(e.state), at=e.at) for e in events]
+            return [
+                ActionEventView(
+                    sequence=e.sequence, state=ActionState(e.state), at=e.at, actor_principal=e.actor_principal
+                )
+                for e in events
+            ]
+
+    async def cancel(self, request_id: UUID, principal: Principal) -> CancellationResult:
+        """Withdraw only before the atomic dispatch claim, without interrupting an executor."""
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(ActionRequestRow).where(ActionRequestRow.id == request_id).with_for_update()
+            )
+            # Operator-all read/decision authority does not confer cancellation ownership.
+            if row is None or row.caller_principal != principal.key:
+                raise ActionNotFoundError(str(request_id))
+            state = ActionState(row.state)
+            if state is ActionState.CANCELLED:
+                outcome = CancellationOutcome.ALREADY_CANCELLED
+            elif state in {ActionState.DENIED, ActionState.SUCCEEDED, ActionState.FAILED}:
+                outcome = CancellationOutcome.ALREADY_FINISHED
+            elif state in {ActionState.DISPATCHING, ActionState.RUNNING, ActionState.EXECUTION_UNKNOWN}:
+                outcome = CancellationOutcome.TOO_LATE
+            else:
+                now = datetime.now(UTC)
+                if state is ActionState.ALLOWED:
+                    execution = await session.scalar(
+                        select(ExecutionRow).where(ExecutionRow.request_id == request_id).with_for_update()
+                    )
+                    if execution is None or execution.state != ExecutionState.PENDING_DISPATCH.value:
+                        raise ActionConflictError("allowed request has no pending dispatch")
+                    execution.state = ExecutionState.CANCELLED.value
+                    execution.completed_at = now
+                row.state = ActionState.CANCELLED.value
+                row.version += 1
+                row.updated_at = now
+                _record_event(session, row, now, actor_principal=principal.key)
+                outcome = CancellationOutcome.CANCELLED
+            return CancellationResult(outcome=outcome, request=await self._view(session, row, principal))
 
     async def decide(
         self, request_id: UUID, body: DecisionInput, principal: Principal, *, provider: str
@@ -615,8 +656,12 @@ def _may_read(row: ActionRequestRow, principal: Principal) -> bool:
     return principal.role is PrincipalRole.OPERATOR or row.caller_principal == principal.key
 
 
-def _record_event(session: AsyncSession, row: ActionRequestRow, at: datetime) -> None:
-    session.add(ActionEventRow(request_id=row.id, sequence=row.version, state=row.state, at=at))
+def _record_event(
+    session: AsyncSession, row: ActionRequestRow, at: datetime, *, actor_principal: str | None = None
+) -> None:
+    session.add(
+        ActionEventRow(request_id=row.id, sequence=row.version, state=row.state, at=at, actor_principal=actor_principal)
+    )
 
 
 def _decision_view(row: DecisionRow | None) -> DecisionView | None:

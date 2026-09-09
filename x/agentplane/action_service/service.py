@@ -29,6 +29,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CancellationResult,
     DecisionContext,
     DecisionInput,
     DecisionProvider,
@@ -179,7 +180,7 @@ class ActionService:
         )
         vote = await self._evaluate_providers(context)
         if vote is None:
-            return view
+            return await self._store.get(view.id, principal)
         try:
             decided, should_dispatch = await self._store.decide_by_provider(
                 view.id,
@@ -192,9 +193,8 @@ class ActionService:
                 reason_description=vote.outcome.reason_description,
             )
         except ActionConflictError:
-            # A human operator's Decision committed first (a genuine race); the auto-provider
-            # outcome is stale and must never override or duplicate the winning Decision.
-            logger.info("auto-provider decision for %s was stale; another Decision already won", view.id)
+            # A human Decision or caller cancellation may commit during provider evaluation.
+            logger.info("auto-provider decision for %s was stale; another transition already won", view.id)
             return await self._store.get(view.id, principal)
         if should_dispatch:
             self._schedule(view.id)
@@ -232,6 +232,9 @@ class ActionService:
 
     async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
         return await self._store.get(request_id, principal)
+
+    async def cancel(self, request_id: UUID, principal: Principal) -> CancellationResult:
+        return await self._store.cancel(request_id, principal)
 
     async def events(self, request_id: UUID, principal: Principal, *, after_sequence: int = 0) -> list[ActionEventView]:
         return await self._store.events(request_id, principal, after_sequence=after_sequence)

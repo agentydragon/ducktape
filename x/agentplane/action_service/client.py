@@ -13,6 +13,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CancellationResult,
     DecisionInput,
 )
 
@@ -55,6 +56,10 @@ class ActionServiceClient(_BearerClient):
     async def get(self, request_id: UUID) -> ActionRequestView:
         response = await self._request("GET", f"/v1/action-requests/{request_id}")
         return ActionRequestView.model_validate(response.json())
+
+    async def cancel(self, request_id: UUID) -> CancellationResult:
+        response = await self._request("POST", f"/v1/action-requests/{request_id}/cancel")
+        return CancellationResult.model_validate(response.json())
 
     async def events(self, request_id: UUID, *, after_sequence: int = 0) -> list[ActionEventView]:
         """The durable, ordered transition log; `after_sequence` makes repeated polling a no-op."""

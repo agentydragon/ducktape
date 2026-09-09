@@ -14,6 +14,7 @@ The v0 executable seam is deliberately small:
   optional synchronous non-human `DecisionProvider`s run first and carry bounded
   `reason_code`/`reason_description` outcome evidence, with `decision_note=None`;
 - automatic dispatch after allow, exactly one `Execution`, and no retry after dispatch may begin;
+- owner-only cancellation before the atomic dispatch claim, with no expected-version requirement;
 - restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
   until its own bounded lease expires, then becomes `execution_unknown` and may later be reconciled
   by an authenticated late completion or an authoritative status lookup — see
@@ -27,6 +28,35 @@ The v0 executable seam is deliberately small:
 Migration `0006_decision_note` renames the existing human-note column without dropping data;
 downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
 a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
+
+## Cancellation
+
+`POST /v1/action-requests/{id}/cancel` takes no body or expected version and returns
+`CancellationResult`: an `outcome` and the current caller-safe `request` receipt.
+`ActionServiceClient.cancel(id)` uses this same route. Only the authenticated owning principal may
+cancel; operator-all read/decision authority grants no override. Workload ownership is the Sandbox
+principal, not a Thread or caller-supplied provenance. Unknown and non-owned requests both return 404.
+
+| Request state                                 | Outcome             | Effect                                                         |
+| --------------------------------------------- | ------------------- | -------------------------------------------------------------- |
+| `decision_pending`                            | `cancelled`         | Cancel without creating a Decision or Execution.               |
+| `allowed`, Execution `pending_dispatch`       | `cancelled`         | Preserve the Decision; mark the unstarted Execution cancelled. |
+| `dispatching`, `running`, `execution_unknown` | `too_late`          | Leave unchanged; execution may already have started.           |
+| `cancelled`                                   | `already_cancelled` | Idempotent success, no new event.                              |
+| `denied`, `succeeded`, `failed`               | `already_finished`  | Return the unchanged receipt.                                  |
+
+The request row lock serializes cancellation with Decision commits and the dispatch claim. A
+successful cancellation guarantees no executor will run for that request, including after restart,
+a queued dispatch task, or late approval/provider completion. Claiming is the cutoff even before
+the executor is invoked. Cancellation does not signal executors or kill processes; disconnecting
+or cancelling an HTTP/MCP wait does not cancel the underlying ActionRequest.
+
+A successful cancellation appends one canonical `cancelled` event with authenticated
+`actor_principal` and timestamp. Migration `0007_cancellation_actor` adds the nullable actor field;
+existing and non-caller-cancellation events leave it null. An unclaimed Execution retains null
+`started_at`, result and error, with `completed_at` set to the cancellation time. Repeating the
+original submission idempotency key returns the same cancelled request; an intentional new attempt
+needs a new key.
 
 ## Delivery: durable events and bounded waits
 

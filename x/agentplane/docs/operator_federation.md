@@ -241,5 +241,6 @@ A result echoing an argument does not become an operator credential-disclosure p
 
 The single human-authored `decision_note` is shared unchanged with caller and operator through
 canonical polling/BFF projections; provider outcome reason fields remain separate. There is no
-private human-note path. Agent-requested withdrawal/cancellation and push/Event Hub notification
-remain deferred.
+private human-note path. [Caller cancellation](../action_service/README.md#cancellation) is available
+before dispatch claim; the operator/BFF surface has no cancellation override. Push/Event Hub
+notification remains deferred.

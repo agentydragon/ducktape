@@ -17,6 +17,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CancellationResult,
     DecisionInput,
     Principal,
     PrincipalRole,
@@ -131,6 +132,14 @@ def create_app(
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
+
+    @app.post("/v1/action-requests/{request_id}/cancel", response_model=CancellationResult)
+    async def cancel_own_request(
+        request_id: UUID,
+        principal: Annotated[Principal, Depends(_workload)],
+        action_service: Annotated[ActionService, Depends(_service)],
+    ) -> CancellationResult:
+        return await action_service.cancel(request_id, principal)
 
     @app.get("/v1/action-requests/{request_id}/events", response_model=list[ActionEventView])
     async def own_events(

@@ -81,8 +81,9 @@ stateDiagram-v2
     execution_unknown --> [*] : caller sees execution_unknown\nuntil/unless reconciled
 ```
 
-`cancelled` exists in `ExecutionState` for a future adapter-initiated cancellation and is not
-reachable by anything in this change.
+An owning caller can cancel `pending_dispatch` before the atomic claim; the Execution becomes
+`cancelled` without a `started_at`. After claim, caller cancellation is refused even if the executor
+has not yet been invoked. See [the cancellation API](../action_service/README.md#cancellation).
 
 ## Reason codes
 
