@@ -1129,7 +1129,7 @@ fn stopped_book_fixture(
         annual_coupon_rate_ppb: 0,
         coupon_period_months: 6,
         inflation_indexed: true,
-        purchase_month_index: -1,
+        purchase_month_index: -5,
         maturity_month_index: 13,
     });
     input
