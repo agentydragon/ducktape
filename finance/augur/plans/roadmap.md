@@ -363,6 +363,18 @@ P9. Their current hybrid implementation is conditional on GE's placement choice.
 | P11 — migrate executable experiments     | Move bounded-spending/allocation-glide consumers onto the supported API and demonstrate a joint spending-flex × allocation sweep on shared paths. Remove superseded callback entrypoints and dedicated policy binaries after updating all their callers.                 | P9, P10                        | Runnable/testable synthetic experiment reports distributions and selected traces; declared controls agree and authors vary both rules without engine edits. No orphaned callback callers or compatibility shims.                                                                                                                                |
 | P12 — cut over configured consumers      | Make Trinity, the bond example, benchmarks and product shell explicitly supply policies/helpers. Remove implicit public-portfolio strategy from execution input and old allocator orchestration.                                                                         | P9, P10                        | All affected callers, compiler/schema declarations and tests migrate atomically. Preserve existing housing/other supported mechanics and study conventions. No hidden allocator remains; no new market/tax capabilities are claimed.                                                                                                            |
 
+P7's first control may trade only public pools declared by initial lots; it must
+not add dummy allocation policies to declare a purchasable asset. P8 must separate
+cash-account, holding-pool and observable-price declarations from strategy, with a
+cash-only opening followed by a purchase of a previously unheld asset as acceptance
+evidence. P9 inherits that requirement through P8. BIND extends these declarations
+with product/payout compatibility; its broader payout work need not block P8.
+
+P12 must also preserve the product shell's explicit exclusion authority: its current
+zero weight means "do not sell this holding", whereas a zero target in a selected
+core portfolio means "exit this sleeve". Make exclusion and target weight distinct
+when migrating that shell; do not silently turn an excluded holding into a sale.
+
 The migration is complete only when P11's joint experiment uses the supported
 surface and P12 removes the old public-portfolio decision machinery. Adding a
 second interface beside it is not completion.
