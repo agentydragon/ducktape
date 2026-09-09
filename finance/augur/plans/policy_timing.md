@@ -1,7 +1,8 @@
 # Policy timing: executable cases and remaining choices
 
 Inputs to **GP** in [the landing plan](roadmap.md). The tests below exercise current
-canonical execution; the proposed interface decisions remain open.
+canonical execution, not the target [actor-facing interface](policy_interfaces.md).
+Economic agency defines that boundary; scoped timing/execution choices remain open.
 
 ## Name the cashflows, not just “spending”
 
@@ -89,25 +90,27 @@ Run the two cases without network evidence downloads:
 bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
 ```
 
-## Remaining joint-decision choices
+## Remaining actor-action choices
 
-- **Observation time/content.** For a joint budget/allocation review, decide which
-  known contract schedules and tax facts to expose alongside current holdings.
-  Known schedules are not future market observations. Current separate native
-  callbacks review at opening, before same-month distributions/transfers.
-- **Proposal versus execution.** A budget and an allocation target/order are
-  requests. Shared mechanics determine funded consumption, realized lots/gains,
-  tax facts and accepted actions. If a policy needs a funding/tax preview, it must
-  use those same mechanics, not duplicate them.
-- **Commitments and priority.** Preserve current grouping in the initial seam.
-  Giving rent/taxes priority, permitting partial consumption, retrying with a cut
-  or modeling recovery changes results and needs a separate explicit contract.
-  Requests that look affordable against gross wealth can still fail settlement.
+- **Observation time/content.** Expose actor-known contracts, claims and tax facts
+  at the first consumer's information/action opportunities. Current callbacks
+  review before same-month distributions/transfers; moving funding logic into
+  that opening callback alone would deprive it of facts the engine currently uses.
+- **Proposal versus execution.** Policies turn budgets and allocation targets into
+  trades/payments, optionally using sleeve helpers. Pin request/result identity,
+  execution versus cash availability and same-time action order. The engine
+  validates and settles; it does not choose extra trades. Funding/tax previews
+  reuse canonical calculations with observable inputs and explicit assumptions.
+- **Commitments and priority.** Keep current grouping for STEP/BATCH parity controls,
+  not as the destination contract. Contracts generate claims; actors choose their
+  funding/payment actions or explicit standing instructions. GP scopes rejection,
+  deadlines and stop behavior for the bill → sale → available funds → payment
+  example. Broader partial-payment/default/recovery behavior needs separate scope;
+  a collection of actions is not implicitly atomic.
 - **Decision memory and receipts.** State is local to a rollout. Decide which
   changes commit on proposal versus on successful settlement. Record meaningful
   cuts/anchor transitions separately from payment receipts so equal-cost anchors
   remain distinguishable; do not serialize arbitrary closure internals.
 
-The initial separate callable boundaries do not settle these joint-policy and
-recovery choices. They also do not provide zero-target/full-exit arithmetic,
-compact allocation capture or explicit decision-transition receipts.
+These controls do not implement the actor-action loop, zero-target/full-exit
+arithmetic, compact allocation capture or explicit decision-transition receipts.
