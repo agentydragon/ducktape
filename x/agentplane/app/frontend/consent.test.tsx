@@ -68,7 +68,10 @@ describe("ConnectionConsent", () => {
     const navigate = vi.fn();
     const service: ConsentService = {
       preview: vi.fn(async () => preview()),
-      decide: vi.fn(async () => ({ verdict: "allow", redirect_url: "https://idp.test/held-authorization" })),
+      decide: vi.fn<ConsentService["decide"]>(async () => ({
+        verdict: "allow",
+        redirect_url: "https://idp.test/held-authorization",
+      })),
     };
     const container = await render(service, navigate);
     expect(service.preview).toHaveBeenCalledWith("opaque-handle");
@@ -91,7 +94,7 @@ describe("ConnectionConsent", () => {
     const navigate = vi.fn();
     const service: ConsentService = {
       preview: async () => ({ ...preview(), identities: {} }),
-      decide: vi.fn(async () => ({ verdict: "deny", redirect_url: null })),
+      decide: vi.fn<ConsentService["decide"]>(async () => ({ verdict: "deny", redirect_url: null })),
     };
     const container = await render(service, navigate);
     expect(container.textContent).toContain("No enabled identities");
