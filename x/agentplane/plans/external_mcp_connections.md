@@ -319,6 +319,23 @@ only the generic tools. Exact names, pagination, and idempotency-key ergonomics 
 - **Lifecycle:** storage/refresh/revoke behavior, consistency at dispatch, cleanup of abandoned
   registrations, and explicit behavior after reconnect. Agree on these before schema/API work.
 
+## Deferred: Identity authority beyond Actions
+
+A static Identity may eventually need access to resources outside the Action Service, such as
+reading conversations from selected classes of agents. Discuss whether that use should move the
+MCP frontend, Connection-to-Identity binding authority, or both into a shared component. Current
+in-process placement is the first delivery slice, not an irrevocable ownership decision.
+
+Keep each resource-owning component responsible for its authorization. Shared identity resolution
+would not imply that Action permissions or same-Identity Action reads grant conversation access.
+Settle conversation scope/selectors, trusted identity propagation, revocation consistency, and
+immutable submitting-client provenance before that cross-service extension. SandboxPreset remains
+integration-app-owned; this possibility does not make downstream services interpret its recipes.
+
+This is the deferred `IDENTITY_SCOPE` discussion in [the DAG](task_dag.md), independent of the
+current DCR and consent implementation. Do not preempt that implementation with extraction or
+speculative abstractions.
+
 ## Acceptance and migration
 
 First prove a credentialless fixture through both a real Claude.ai custom connection and Claude Code
