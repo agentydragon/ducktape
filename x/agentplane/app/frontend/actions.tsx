@@ -85,18 +85,18 @@ function ActionCard({
   return (
     <Paper withBorder p="md">
       <Stack gap="sm">
-        <Group justify="space-between" align="flex-start">
-          <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
+        <Stack gap={2}>
+          <Group justify="space-between" align="flex-start">
             <Text fw={600}>
               {request.action.group} / {request.action.name}
             </Text>
-            <Text size="xs" c="dimmed">
-              Request {request.id}
-            </Text>
-            <ActionCaller request={request} />
-          </Stack>
-          <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
-        </Group>
+            <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
+          </Group>
+          <Text size="xs" c="dimmed">
+            Request {request.id}
+          </Text>
+          <ActionCaller request={request} />
+        </Stack>
         <div>
           <Text size="sm" fw={600} mb={4}>
             Exact arguments (unredacted)
