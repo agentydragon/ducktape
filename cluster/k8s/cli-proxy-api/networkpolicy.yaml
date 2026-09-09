@@ -1,9 +1,4 @@
-# First NetworkPolicy in this namespace. Default-deny ingress on 8317, admitting exactly
-# the traffic that already reaches this pod today plus the new SSO-gated admin route's
-# outpost hop. Uses CiliumNetworkPolicy, not a plain NetworkPolicy, because the existing
-# cli-proxy-api.allegedly.works /v1 route is a direct Gateway HTTPRoute backend: its
-# traffic carries the reserved:ingress identity, which only Cilium's policy CRD can match
-# (cluster/docs/cilium_network_policy.md).
+# Gateway, LiteLLM, and AIQuota reach CLIProxyAPI; the backend authenticates requests.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -39,18 +34,6 @@ spec:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: cli-proxy-api
             app.kubernetes.io/name: aiquota
-      toPorts:
-        - ports:
-            - port: "8317"
-              protocol: TCP
-    # Authentik embedded outpost: reverse-proxies the new SSO-gated admin route
-    # (cli-proxy-api-admin.allegedly.works) to this Service after login. Required for
-    # proxy-mode SSO providers — cluster/docs/sso.md "Proxy-mode NetworkPolicy (required)".
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: authentik
-            app.kubernetes.io/name: authentik
-            app.kubernetes.io/component: server
       toPorts:
         - ports:
             - port: "8317"

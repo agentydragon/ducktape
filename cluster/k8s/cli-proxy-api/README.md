@@ -68,12 +68,8 @@ port-forward delivers that callback to the process in the pod. CLIProxyAPI
 writes the Claude auth file, including its refresh token, under `/data/auth`.
 The normal server process watches that directory and then owns future refreshes.
 
-Verify only the file names, never the credential contents:
-
-```bash
-kubectl -n cli-proxy-api exec deploy/cli-proxy-api -- \
-  sh -c 'find /data/auth -maxdepth 1 -type f -printf "%f\\n"'
-```
+Verify the new account appears in the management UI's auth-file list. The packaged
+image is distroless, so shell commands such as `sh` and `find` are unavailable.
 
 The existing SOPS-managed Claude setup token and its egress proxy remain in
 place for the existing Haku Claude runner. AIQuota has no fallback token path;
@@ -95,82 +91,38 @@ plus a `state`; `GET /v0/management/get-auth-status?state=...` polls it; `GET`/`
 provider's redirect). The rest of the management API and the bundled web UI it serves at
 `/management.html` on the same port ride along.
 
-`https://cli-proxy-api-admin.allegedly.works` exposes this — Gateway → Authentik embedded
-outpost (SSO, `agentydragon` only, `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`)
-→ this Service. Authentik does not replace the app's own auth: every management endpoint
-still requires the `cli-proxy-api-management` key (`Authorization: Bearer <key>` or
-`X-Management-Key: <key>`, config `remote-management.secret-key`, wired here via the
-`MANAGEMENT_PASSWORD` env var) underneath. Enabled via `remote-management.allow-remote:
-true` in `config-eso.yaml` — CLIProxyAPI's config format has no narrower scoping for
-remote endpoints, so this lifts the localhost restriction for the whole management
-surface (account pool included), not just the OAuth-login endpoints; the SSO gate in
-front, scoped to the account owner, is the accepted mitigation.
+Open [the management UI](https://cli-proxy-api-admin.allegedly.works/management.html)
+and choose **Sign in with SSO**. The Gateway routes directly to CLIProxyAPI, which
+uses Authentik OIDC and a secure browser session cookie. Both the Authentik
+application policy and the backend subject allowlist restrict access to
+`agentydragon`. No management key needs to be copied into the browser.
 
-The existing `cli-proxy-api.allegedly.works` hostname is unrelated and unchanged — it only
-ever routes unauthenticated `/v1` model traffic.
+The confidential provider and reflected `cli-proxy-api-admin-oidc` Secret are owned
+by `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`. The provider uses
+`sub_mode = "user_id"`, so the backend allowlist contains the owner's numeric
+Authentik ID. Its strict callback is
+`https://cli-proxy-api-admin.allegedly.works/v0/management/callback`.
 
-## Native OIDC image and pending migration
+Sessions last at most one hour or the ID token's remaining lifetime. Restarting the
+single replica revokes them. Logout clears the local session; it does not log the
+browser out of Authentik. Expired sessions offer login again.
 
-The patched image is built by `@ducktape_cli_proxy_api//:image` and tested by
-`//third_party/cli_proxy_api_tests:tests` (upstream patch tests plus an actual
-container boot with synthetic API keys). The image roster in
-`devinfra/ci/image_targets.json` publishes it to
-`git.allegedly.works/ducktape-ci/cli-proxy-api`. Its backend and management frontend
-patches live in `third_party/cli_proxy_api/` for eventual upstream submission.
+`MANAGEMENT_PASSWORD` remains enabled for AIQuota's direct management-key access.
+The existing client key protects model requests, including direct LiteLLM traffic.
+The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
 
-This build does not activate OIDC in the cluster. The deployment still pins the
-upstream image and uses the Authentik proxy described above. Switching the provider
-before publishing and validating the patched image would interrupt management access.
-After publication, make the following changes together in a deployment PR:
+## Patched image
 
-1. Replace the proxy provider in
-   `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf` with a confidential
-   `authentik_provider_oauth2`, using `client_id = "cli-proxy-api-admin"`,
-   `issuer_mode = "per_provider"`, `sub_mode = "user_id"`, the existing signing
-   certificate, and the OpenID scope mapping. Keep the application slug and its
-   `cli_proxy_api_admin_owner_only` policy binding. Register exactly
-   `https://cli-proxy-api-admin.allegedly.works/v0/management/callback` as a strict
-   redirect URI.
-2. Have that Terraform module own an OIDC Secret and distribute it only to
-   `cli-proxy-api`, following its existing provider Secret pattern. Wire its entries
-   into the container with `secretKeyRef`; do not copy credentials into Git or the
-   browser. Required environment values are:
+`@ducktape_cli_proxy_api//:image` builds the backend and bundled management UI;
+`//third_party/cli_proxy_api_tests:tests` checks the patches and boots the packaged
+container. Patches live in `third_party/cli_proxy_api/` for eventual upstream
+submission. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks
+its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
+upstream panel updater.
 
-   | Environment variable               | Value                                                             |
-   | ---------------------------------- | ----------------------------------------------------------------- |
-   | `MANAGEMENT_OIDC_ISSUER`           | `https://auth.allegedly.works/application/o/cli-proxy-api-admin/` |
-   | `MANAGEMENT_OIDC_CLIENT_ID`        | Provider's `client_id`                                            |
-   | `MANAGEMENT_OIDC_CLIENT_SECRET`    | Provider's generated `client_secret`                              |
-   | `MANAGEMENT_OIDC_REDIRECT_URL`     | The exact callback URI above                                      |
-   | `MANAGEMENT_OIDC_ALLOWED_SUBJECTS` | `tostring(authentik_user.agentydragon.id)`                        |
-
-   The allowlist is an additional backend authorization check, independent of the
-   Authentik application policy. `user_id` makes its value the same numeric user ID
-   Terraform manages; a username or email is not the subject. Preserve
-   `MANAGEMENT_PASSWORD` for AIQuota's direct management API calls and the existing
-   client key for model consumers.
-
-3. Pin a successfully published image, add `forgejo-images-creds` to the Pod's
-   `imagePullSecrets`, and configure its bundled management
-   UI as described in the image README. The pull Secret already belongs to
-   `aiquota/forgejo-images-creds-eso.yaml` in this namespace; do not create a second
-   ExternalSecret owning it. Add a colocated ImageRepository/ImagePolicy under
-   `flux-image-automation-forgejo/` and an image-policy marker only after the registry
-   contains a usable `devel-*` tag.
-4. Move the admin HTTPRoute from `authentik/proxy-routes/` into this directory and
-   point it directly at `cli-proxy-api:8317`. Update both Kustomizations, remove the
-   old provider's embedded-outpost assignment, and remove the obsolete Authentik
-   ingress rule from this service's NetworkPolicy. The existing Gateway ingress and
-   direct LiteLLM rules remain necessary.
-5. Verify a fresh browser reaches the dashboard through OIDC without a management
-   key; a different Authentik user is denied; logout invalidates the local session;
-   and expired sessions offer login again. Check forged proxy headers and
-   cross-origin mutations cannot authorize management requests. Then verify both
-   AIQuota's management-key access and LiteLLM's authenticated model request path.
-
-Forgejo is the repository default for new private images and already serves AIQuota
-in this namespace. A Forgejo outage prevents replacement image pulls when the image
-is not cached; it does not interrupt a running CLIProxyAPI process.
+The namespace's `forgejo-images-creds` pull Secret belongs to
+`aiquota/forgejo-images-creds-eso.yaml`. A Forgejo outage prevents uncached replacement
+image pulls but does not interrupt a running process.
 
 ## Secrets
 

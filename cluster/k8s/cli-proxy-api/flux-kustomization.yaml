@@ -24,3 +24,7 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
+    - name: sso-providers-tf
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
