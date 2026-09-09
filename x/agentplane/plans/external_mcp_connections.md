@@ -27,6 +27,8 @@ auto-approval for configured Actions from trusted Sandbox types; hosted callers 
 1. The operator configures a stable identity, for example `claude-personal`, and its permitted
    Actions and auto-approval conditions. Static means its identity and policy association are
    configured independently of conversations and credentials; it does not mean a static bearer.
+   The association references a reusable policy set: `claude-wyrm2` may use the same `public-coder`
+   ActionPolicySet as many hosted Sandboxes, with one canonical definition and separate caller ownership.
 2. The operator adds the remote MCP URL in Claude.ai or configures it in a local Claude Code
    installation. Discovery and registration begin the client's OAuth flow, including the DCR path.
    Registration alone grants no Action access and creates no privileged identity.
@@ -106,6 +108,9 @@ client remains a caller, including when its operator is the person who authorize
 The shared [Action policy plan](action_policies.md) owns mandatory bounds, decider composition, and
 policy-change/dispatch consistency. Apply those rules to the resolved Identity and retain its exact
 submitting Connection; pending work must not silently inherit a replacement Connection's authority.
+Its reusable policy sets let an external Identity and a Sandbox type share Action permissions without
+duplicating policy or conflating Identity with type. Enrollment selects the Identity; it does not
+copy the referenced policy configuration into the new Connection.
 
 ## Existing pieces and reuse probe
 

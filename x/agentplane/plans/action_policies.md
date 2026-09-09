@@ -25,14 +25,58 @@ required for either caller class.
 
 ## `POLICYBIND`: storage and binding model
 
+### Reusable policy sets and one source of truth
+
+**Required reuse:** the operator can give an external Claude Code Connection the same Action
+permissions as a class of hosted Sandboxes without duplicating configuration or sharing caller
+identity. Use `ActionPolicySet` as a working name for the indirection: a named reusable definition
+of permitted Actions, conditions, and bounded auto-approval deciders. Its final name/schema and
+storage remain open; references to one canonical definition are the required behavior.
+
+For example:
+
+```mermaid
+flowchart LR
+    C["Connection: Claude Code on wyrm2"] --> I["Identity: claude-wyrm2"]
+    I --> P["ActionPolicySet: public-coder"]
+    S["Many public-coder Sandboxes"] --> T["Trusted Sandbox type: public-coder"]
+    T --> P
+```
+
+The Sandbox association may go through a configured Identity if the model below selects that
+shape; either route references the same policy set. The Sandbox type and policy set can share a
+display name, but an explicit reference is the authority: matching names never imply a binding.
+The Connection still binds an Identity, whose policy association selects the reusable set.
+
+Policies belong to the set and are evaluated through its reference. Creating a Sandbox, enrolling
+a Connection, or binding another Identity must not copy those rules into an independently editable
+configuration. An edit to `public-coder` applies to every reference under the chosen rollout and
+in-flight consistency contract. Keep the evaluated policy revision as Decision evidence; that audit
+snapshot is not another active policy definition. Missing/deleted references must not fall back to
+an old copied allow or a coincidentally same-named replacement.
+
+Keep the first model small: one reusable set can satisfy this example without an inheritance tree.
+Whether a set references named constituent policies, callers may bind several sets, or bindings may
+add narrower constraints remains design work. Define precedence and expansion limits before adding
+composition; permission reuse must not silently become additive privilege union. Identity, caller
+receipt ownership, credential bindings, and Sandbox/host restrictions remain separate. Sharing
+`public-coder` means equivalent Action permissions under its conditions, not control over Claude
+Code's local tools or automatic access to a particular upstream account's credentials.
+
+This is the Action-only reuse slice. The broader cross-authority profile in [profiles](profiles.md)
+remains deferred; do not create a competing Action-policy owner when that profile is later designed.
+
+### Open model and storage choices
+
 **Open design gate, not a selected schema.** Specify how policy configuration is associated with
 authority and where that association is stored before implementing policy selectors or identity
 tables. The policy binding and the OAuth Connection are different relationships:
 
-- **Policy definition:** named, versioned Action conditions and decider configuration.
-- **Policy binding:** an association of policy definitions with an Identity or a trusted workload
-  selector. Decide whether this is one policy-set reference, several explicit bindings, or another
-  minimal model, and define combination/precedence rather than inheriting it from storage shape.
+- **Policy definition / set:** canonical named, versioned Action conditions and decider
+  configuration reusable across caller classes, as above.
+- **Policy binding:** an explicit reference from an Identity or trusted workload selector to a
+  reusable policy set. Decide cardinality and combination/precedence without copying the definition
+  or deriving authority from a shared name.
 - **Runtime Connection binding:** the operator creates a named Connection during OAuth enrollment,
   associates it with a configured Identity, and can later rename, unbind, or rebind it. This mutable
   runtime relationship is separate from the configured Identity's policy bindings and must have a
@@ -155,8 +199,12 @@ Do not use Thread identity or a caller-supplied type string to populate it.
 - Forged type/preset/Identity fields, unauthorized classification changes, missing classification,
   and mandatory-policy failure never grant authority. Classification/revocation changes during
   pending work obey the agreed dispatch contract, including after Pod/service restart.
-- External Identity A's policy and Sandbox-type policies cannot accidentally match each other;
-  external Identity B does not inherit A's policy. Test with canonical Action/Decision/Execution
+- Bind multiple `public-coder` Sandboxes and the distinct `claude-wyrm2` Identity to the same reusable
+  set. Equivalent Actions/arguments receive the same permissions/decider behavior; one change to
+  that set reaches both caller classes without editing their bindings. Verify revision evidence,
+  removal/tightening, and preservation of separate caller reads/idempotency and submission provenance.
+- External Identity A and a Sandbox type share policy only through explicit references;
+  external Identity B does not inherit A's policy by name or provenance. Test with canonical Action/Decision/Execution
   evidence, including safe results, bounded reasons, and unchanged retry/unknown-outcome semantics.
 
 Prove the Sandbox slice independently of external enrollment. Claude.ai and externally running

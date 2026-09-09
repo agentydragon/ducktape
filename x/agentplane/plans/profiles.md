@@ -26,8 +26,9 @@ CRD, which pre-commits the cross-cutting design to one consumer and makes the se
 either extend the egress resource or invent a parallel notion. The selector subject form is
 removed for this reason, not merely unused: a subject is one named Sandbox.
 
-**Profiles are not to be stored in Kubernetes** (Rai). Where they do live is part of the design
-this entry is waiting on.
+Storage remains an open design choice, including Kubernetes resources, app configuration, and
+PostgreSQL. The [Action policy binding plan](action_policies.md) compares these candidates and their
+ownership boundaries; no blanket Kubernetes exclusion applies.
 
 ## What this leaves open
 
@@ -35,6 +36,12 @@ The launch-presets design says where the app-owned defaults live and how the cur
 Thread consumers use them. A broader capability profile still waits for a design that says how
 future consumers — egress, approvals, MCP reachability, and other tool permissions — share one
 authority. Do not widen the launch-presets slice to settle that question.
+
+The narrower Action-policy reuse requirement is active in [Action policies](action_policies.md):
+many `public-coder` Sandboxes and a separate external Identity can reference one canonical
+ActionPolicySet (working name). This shares Action permissions without copying configuration or
+sharing identity. It does not require a cross-authority capability profile; a future broad profile
+must reuse that Action policy authority rather than duplicate its rules.
 
 ## Meanwhile
 

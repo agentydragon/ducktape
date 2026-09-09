@@ -96,7 +96,7 @@ flowchart TB
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
     EID["Planned support<br/>configured static external identity<br/>trusted caller + connection binding"]:::future
-    POLICYBIND["Design gate<br/>Identity/workload-to-policy bindings<br/>model, storage, ownership"]:::decision
+    POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
     MCPOAUTH["Planned support<br/>OAuth/DCR + named Connections<br/>select Identity, rename/unbind/rebind"]:::future
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     WID["Observed evidence<br/>SandboxPrincipal<br/>workload authentication"]:::milestone
@@ -298,6 +298,13 @@ management. Choose direct workload policy selection versus workload-to-Identity 
 cardinality/precedence, stable IDs, mutation ownership, and rollout/revocation semantics. This is
 single-operator; multiple-operator management is out of scope.
 
+**Required reuse:** a `public-coder` Sandbox type and a distinct external `claude-wyrm2` Identity can
+reference the same canonical ActionPolicySet (working name). One edit changes their Action policy
+under the chosen consistency contract without copying rules into each caller's configuration.
+Explicit references share permissions, not caller identity, receipt ownership, or upstream credentials.
+The first slice does not require a general inheritance system; the [Action policy plan](action_policies.md)
+owns the worked example, composition choices, and shared-policy acceptance.
+
 The [Action policy plan](action_policies.md) compares app configuration, Kubernetes resources,
 PostgreSQL, and mixed ownership. No option is selected. For Kubernetes, define resource shape,
 RBAC, references, and informer freshness. Runtime Connections need a writable authority, whether
@@ -309,7 +316,8 @@ execution remain usable while this design is open.
 ### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
 
 **Planned support:** configure exact Actions/argument conditions and auto-approval deciders selected
-by an external Identity or an authenticated Sandbox's configured type. Reuse `DEL` aggregation and
+through reusable policy-set references from an external Identity or an authenticated Sandbox's
+configured type. Reuse `DEL` aggregation and
 the canonical Decision/Execution lifecycle. Mandatory authorization bounds must fail closed even
 when another provider allows; permitted requests without auto-approval may take the human path.
 
@@ -358,9 +366,12 @@ start code or schema work from it until Rai confirms the design.
 
 ### `PROFILES` — cross-cutting capability profiles
 
+The Action-only reusable policy-set slice is planned under `POLICYBIND`/`CALLERPOLICY`; it can serve
+both Sandbox types and external Identities without waiting for this broader profile.
+
 **Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
-reachability, and other tool permissions. Do not widen the landed launch-preset slice or store this
-profile in Kubernetes merely to reserve the concept; the profile owner, inheritance, and policy
+reachability, and other tool permissions. Do not widen the landed launch-preset slice merely to
+reserve the concept; Kubernetes remains a storage candidate, and the profile owner, inheritance, and policy
 read/verification boundary remain open. Do not start implementation before the design is confirmed.
 
 **Acceptance evidence:** one profile can be resolved consistently by each participating authority,
