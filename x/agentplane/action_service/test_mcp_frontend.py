@@ -7,7 +7,6 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -31,6 +30,7 @@ from x.agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
     DecisionInput,
+    Executor,
     Principal,
     PrincipalRole,
     Verdict,
@@ -82,15 +82,28 @@ class EgressSubstitution(httpx.AsyncBaseTransport):
 class Frontend:
     app: FastAPI
     store: ActionStore
+    service: ActionService
     authentication: AsyncMock
     core: AsyncMock
     updates: ActionUpdates
     tokens: dict[str, SandboxPrincipal]
 
     def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
-        def factory(**kwargs: Any) -> httpx.AsyncClient:
+        def factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx.Timeout | None = None,
+            auth: httpx.Auth | None = None,
+            *,
+            follow_redirects: bool = True,
+        ) -> httpx.AsyncClient:
             transport = EgressSubstitution(self.app, token) if egress else httpx.ASGITransport(self.app)
-            return httpx.AsyncClient(transport=transport, **kwargs)
+            return httpx.AsyncClient(
+                transport=transport,
+                headers=headers,
+                timeout=timeout or httpx.Timeout(30),
+                auth=auth,
+                follow_redirects=follow_redirects,
+            )
 
         return Client(
             StreamableHttpTransport(
@@ -102,7 +115,7 @@ class Frontend:
 
 
 @pytest.fixture
-async def frontend(engine: AsyncEngine, db_url: str) -> AsyncIterator[Frontend]:
+async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) -> AsyncIterator[Frontend]:
     tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b")}
     authentication = AsyncMock(spec=AuthenticationV1Api)
     core = AsyncMock(spec=CoreV1Api)
@@ -142,8 +155,8 @@ async def frontend(engine: AsyncEngine, db_url: str) -> AsyncIterator[Frontend]:
             )
         )
 
-    authentication.create_token_review.side_effect = review
-    core.read_namespaced_pod.side_effect = pod
+    authentication.create_token_review = AsyncMock(side_effect=review)
+    core.read_namespaced_pod = AsyncMock(side_effect=pod)
     catalog = ActionCatalog(
         groups={
             "test-group": ActionGroup(
@@ -168,9 +181,7 @@ async def frontend(engine: AsyncEngine, db_url: str) -> AsyncIterator[Frontend]:
         }
     )
     store = ActionStore(make_sessionmaker(engine))
-    # No dispatch in these human-deny tests; admission still requires a bound executor.
-    executor = AsyncMock()
-    service = ActionService(store, catalog, {"test-group": executor})
+    service = ActionService(store, catalog, {"test-group": echo_executor})
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
@@ -186,9 +197,29 @@ async def frontend(engine: AsyncEngine, db_url: str) -> AsyncIterator[Frontend]:
         catalog,
         updates=updates,
     )
-    async with app.router.lifespan_context(app):
-        yield Frontend(app, store, authentication, core, updates, tokens)
-    await service.close()
+    # pytest-asyncio resumes yield-fixture teardown in another task. The MCP lifespan's
+    # AnyIO scopes must enter and exit in the same task, as they do under uvicorn.
+    started: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    stopping = asyncio.Event()
+
+    async def lifespan() -> None:
+        try:
+            async with app.router.lifespan_context(app):
+                started.set_result(None)
+                await stopping.wait()
+        except BaseException as error:
+            if not started.done():
+                started.set_exception(error)
+            raise
+
+    task = asyncio.create_task(lifespan())
+    try:
+        await started
+        yield Frontend(app, store, service, authentication, core, updates, tokens)
+    finally:
+        stopping.set()
+        await task
+        await service.close()
 
 
 async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
@@ -321,6 +352,34 @@ async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> No
             )
             assert invalid.is_error
         assert len(await frontend.store.list_requests(OPERATOR)) == 1
+
+
+async def test_allowed_action_executes_and_returns_canonical_result(frontend: Frontend) -> None:
+    async with frontend.client() as client:
+        result = await client.call_tool(
+            "request_action",
+            {
+                "request": {
+                    "idempotency_key": "test-execute",
+                    "action": {"group": "test-group", "name": "alpha"},
+                    "arguments": {"message": "test-result"},
+                }
+            },
+        )
+        receipt = ActionRequestView.model_validate(result.structured_content)
+        await frontend.service.decide(
+            receipt.id,
+            DecisionInput(verdict=Verdict.ALLOW, expected_version=receipt.version, idempotency_key="test-allow"),
+            OPERATOR,
+        )
+        finished = ActionRequestView.model_validate(
+            (
+                await client.call_tool("get_action_request", {"request_id": str(receipt.id), "wait_seconds": 10})
+            ).structured_content
+        )
+        assert finished.state is ActionState.SUCCEEDED
+        assert finished.execution is not None
+        assert finished.execution.result == {"echo": {"message": "test-result"}}
 
 
 async def test_http_disconnect_releases_wait_without_cancelling_action(

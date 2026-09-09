@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import StrEnum
@@ -16,12 +17,12 @@ from fastmcp.tools import ToolResult
 from pydantic import BaseModel, Field, JsonValue
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from x.agentplane.action_service.auth import workload_principal
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, Key, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
-from x.agentplane.action_service.models import ActionEventView, ActionRequestInput, Principal
+from x.agentplane.action_service.models import ActionEventView, ActionRequestInput, ActionRequestView, Principal
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
 from x.agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
@@ -83,7 +84,21 @@ class WorkloadMcp:
                 scope, receive, send
             )
             return
-        await self._app(scope, receive, send)
+        disconnected = asyncio.Event()
+        request.state.action_disconnected = disconnected
+
+        async def observe_disconnect() -> Message:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                disconnected.set()
+            return message
+
+        try:
+            await self._app(scope, observe_disconnect, send)
+        finally:
+            # The MCP SDK's stateless server task can outlive its HTTP transport. End only
+            # this request's bounded read, without cancelling the canonical Action.
+            disconnected.set()
 
 
 def _principal() -> Principal:
@@ -141,6 +156,22 @@ def create_server(
             ) from None
         if current != principal:
             raise ToolError("Workload identity changed during the wait; recover the request as its original caller.")
+
+    async def wait_for_receipt(request_id: UUID, principal: Principal, options: WaitOptions) -> ActionRequestView:
+        if options.wait_seconds == 0:
+            return await waiter.get(request_id, principal, options)
+        disconnected = cast(asyncio.Event, get_http_request().state.action_disconnected)
+        receipt = asyncio.create_task(waiter.get(request_id, principal, options))
+        disconnect = asyncio.create_task(disconnected.wait())
+        try:
+            await asyncio.wait((receipt, disconnect), return_when=asyncio.FIRST_COMPLETED)
+            if disconnected.is_set():
+                raise asyncio.CancelledError
+            return await receipt
+        finally:
+            receipt.cancel()
+            disconnect.cancel()
+            await asyncio.gather(receipt, disconnect, return_exceptions=True)
 
     @server.tool(annotations={"readOnlyHint": True})
     async def list_actions(
@@ -200,7 +231,7 @@ def create_server(
             principal = _principal()
             view = await service.submit(request, principal)
             if wait_seconds:
-                view = await waiter.get(
+                view = await wait_for_receipt(
                     view.id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
                 )
                 await revalidate(principal)
@@ -217,7 +248,7 @@ def create_server(
         """
         with _tool_errors():
             principal = _principal()
-            view = await waiter.get(
+            view = await wait_for_receipt(
                 request_id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
             )
             if wait_seconds:

@@ -36,6 +36,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
@@ -116,7 +117,11 @@ async def review(
             subjects=frozenset({"target-a", "target-b"}),
         )
         downstream = service_api.create_app(
-            service, cast(SandboxPrincipalAuthenticator, None), OidcOperatorAuthenticator(target), catalog
+            service,
+            cast(SandboxPrincipalAuthenticator, None),
+            OidcOperatorAuthenticator(target),
+            catalog,
+            updates=ActionUpdates(db_url),
         )
         downstream_http = await stack.enter_async_context(
             httpx.AsyncClient(transport=httpx.ASGITransport(app=downstream), base_url="http://test-actions.invalid")
