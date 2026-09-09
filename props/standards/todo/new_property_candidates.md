@@ -1,4 +1,4 @@
-# Conversion candidates from STYLE.md instructions (prioritized)
+# Conversion candidates from STYLE.rst instructions (prioritized)
 
 Criteria
 

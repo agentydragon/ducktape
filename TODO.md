@@ -12,8 +12,8 @@
 
 ## Linting
 
-- [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
-- [ ] Reconsider `<path.md>` angle-bracket convention for local file links — GitHub doesn't render these as clickable links. May want to switch to `[path.md](path.md)` and update STYLE.md accordingly
+- [ ] Add a pre-commit linter to enforce the link style convention from STYLE.rst: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
+- [ ] Reconsider `<path.md>` angle-bracket convention for local file links — GitHub doesn't render these as clickable links. May want to switch to `[path.md](path.md)` and update STYLE.rst accordingly
 
 ## System Configuration
 
@@ -69,4 +69,4 @@ Needs verification:
 ## Repository
 
 - [x] Refreshed <docs/dead_code_2026_01_30.md> on 2026-09-09: removed stale rows for files that no longer exist, including the unused Firecracker manager modules removed in this cleanup.
-- [ ] Add an AGPL-3.0 `LICENSE` file at the repo root and standardize AGPL-3.0 license headers across source files (`README.md` declares AGPL 3.0, but there is no `LICENSE` file and headers are inconsistent)
+- [ ] Add an AGPL-3.0 `LICENSE` file at the repo root and standardize AGPL-3.0 license headers across source files (`README.rst` declares AGPL 3.0, but there is no `LICENSE` file and headers are inconsistent)

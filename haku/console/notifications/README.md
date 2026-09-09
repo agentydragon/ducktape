@@ -1,7 +1,7 @@
 # haku/console/notifications — pushes, console events, and the wake wires
 
 Two halves. Web Push for pending approvals (`push.py`, `push_routes.py`, `console_events.py`,
-`connection_metrics.py`) is specified in <../README.md> § Notifications. The wake wires carry
+`connection_metrics.py`) is specified in <../README.rst> § Notifications. The wake wires carry
 "look now" and never content:
 
 | Module                  | Role                                                                                                                                                                                                                                                                             |

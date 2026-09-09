@@ -10,7 +10,7 @@ server 401, SYN/ACK); large data transfers timed out.
 ## Root cause
 
 `nebula1` MTU was **1300** (Nebula's default). The cluster network stack
-requires `nebula1 = 1420` (see `cluster/docs/network.md`):
+requires `nebula1 = 1420` (see `cluster/docs/network.rst`):
 
 ```
 pod 1370 + VXLAN 50 = 1420 fits nebula1   (1420 + 60 Nebula = 1480 fits eno1 1500)

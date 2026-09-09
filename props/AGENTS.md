@@ -1,4 +1,4 @@
-@README.md
+@README.rst
 
 # Agent Guide
 
@@ -43,7 +43,7 @@ Do not use MCP I/O types (`CriticSubmitPayload`, `ReportedIssue`, etc.) in datab
 
 ## Service Management
 
-**Never start services manually** (no raw `uvicorn`, no manual postgres). Use `docker compose` as described in README.md.
+**Never start services manually** (no raw `uvicorn`, no manual postgres). Use `docker compose` as described in README.rst.
 
 ## Database Safety
 

@@ -1,7 +1,7 @@
 # Build System Decision: Bazel over Pants
 
 Pants was evaluated as the unified build system and rejected; Bazel was chosen and
-adopted (see <../README.md>). Constraints that killed Pants:
+adopted (see <../README.rst>). Constraints that killed Pants:
 
 - **No Rust support** — this repo builds Rust alongside Python; Bazel's `rules_rust`
   is mature.

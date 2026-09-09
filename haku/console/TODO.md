@@ -1,6 +1,6 @@
 # haku/console TODO
 
-Project-level TODOs for the console. Design rationale lives in `README.md`; this is the
+Project-level TODOs for the console. Design rationale lives in `README.rst`; this is the
 actionable checklist. Remove entries once done.
 
 ## Extend the kubectl-passthrough redundancy check past public-coder

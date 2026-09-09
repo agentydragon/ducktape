@@ -1,7 +1,7 @@
 # Talos Cluster Bootstrap Playbook
 
 Step-by-step instructions for cold-starting the hybrid Talos cluster.
-See <../README.md> for architecture overview, node topology, and networking details.
+See <../README.rst> for architecture overview, node topology, and networking details.
 
 ## Prerequisites
 

@@ -42,7 +42,7 @@ gate on frame arrival — the two streams are independent, so a provenance range
 dangle ahead of frame persistence.
 
 **Unknown kind rejects; unknown field is ignored.** This seam is version-negotiated
-(<../console/README.md> § Vocabularies across a roll), so after the handshake settles
+(<../console/README.rst> § Vocabularies across a roll), so after the handshake settles
 `neutral_protocol_version` a kind the settled version does not define is a defect, and the union
 parse below is where it fails. New operation kinds therefore ship as a new negotiated version;
 additive fields are ignorable and may ship freely. The generation cut means no peer of this

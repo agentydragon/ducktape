@@ -1,6 +1,6 @@
 # A change-driven release gate: this exact Console image migrates the schema before
 # Flux rolls the API/static workloads that depend on it. Preserve a failed Job for
-# diagnosis; deleting it is the deliberate retry path (cluster/docs/troubleshooting.md).
+# diagnosis; deleting it is the deliberate retry path (cluster/docs/troubleshooting.rst).
 apiVersion: batch/v1
 kind: Job
 metadata:

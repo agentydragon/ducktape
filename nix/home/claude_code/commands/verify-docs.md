@@ -7,7 +7,7 @@ Systematically verify that documentation, comments, and docstrings accurately de
 ## What This Command Does
 
 1. **Maps the codebase structure** - Understands the logical organization
-2. **Identifies all documentation** - README.md, AGENTS.md, docstrings, inline comments, config examples
+2. **Identifies all documentation** - README.rst / README.md, AGENTS.md, docstrings, inline comments, config examples
 3. **Extracts verifiable claims** - Statements about behavior, structure, APIs, workflows
 4. **Verifies each claim against code** - Actually reads and traces through implementations
 5. **Reports discrepancies** - With specific line references and evidence
@@ -51,15 +51,15 @@ fd -t f -e yaml -e toml -e json .
 
 **Identify documentation types to verify:**
 
-| Type              | Location                 | Verification Method                               |
-| ----------------- | ------------------------ | ------------------------------------------------- |
-| README.md         | Per-directory            | Cross-reference with actual files and commands    |
-| AGENTS.md         | Per-directory            | Verify agent instructions match codebase reality  |
-| Docstrings        | Python functions/classes | Compare to actual signatures and behavior         |
-| Inline comments   | Throughout code          | Verify comment describes adjacent code accurately |
-| Config examples   | Docs, README             | Validate against actual schemas                   |
-| CLI examples      | Docs                     | Run or trace to verify commands work              |
-| Architecture docs | docs/ directories        | Trace described flows through actual code         |
+| Type                   | Location                 | Verification Method                               |
+| ---------------------- | ------------------------ | ------------------------------------------------- |
+| README.rst / README.md | Per-directory            | Cross-reference with actual files and commands    |
+| AGENTS.md              | Per-directory            | Verify agent instructions match codebase reality  |
+| Docstrings             | Python functions/classes | Compare to actual signatures and behavior         |
+| Inline comments        | Throughout code          | Verify comment describes adjacent code accurately |
+| Config examples        | Docs, README             | Validate against actual schemas                   |
+| CLI examples           | Docs                     | Run or trace to verify commands work              |
+| Architecture docs      | docs/ directories        | Trace described flows through actual code         |
 
 ## Phase 2: Decomposition and Agent Spawning
 
@@ -84,7 +84,7 @@ Each subagent receives:
 
 ```
 Subagent 1: haku/console/
-- Verify haku/console/AGENTS.md, haku/console/README.md
+- Verify haku/console/AGENTS.md, haku/console/README.rst
 - Verify all docstrings under haku/console/
 - Flag any claims about mcp_infra/ for cross-verification
 
@@ -233,7 +233,7 @@ Verification:
 
 Before marking verification complete:
 
-- [ ] Every README.md and AGENTS.md in scope was read fully
+- [ ] Every README (RST or Markdown) and AGENTS.md in scope was read fully
 - [ ] Every verifiable claim was traced to code
 - [ ] File/path references were validated to exist
 - [ ] Command examples were verified to work (or at least parse)
@@ -260,8 +260,8 @@ Before marking verification complete:
 
 **Trusting docs about docs:**
 
-- ❌ "AGENTS.md says to see README.md, and README.md exists"
-- ✅ "Verified README.md actually contains the information AGENTS.md claims it does"
+- ❌ "AGENTS.md says to see README, and README exists"
+- ✅ "Verified README actually contains the information AGENTS.md claims it does"
 
 ## Output
 

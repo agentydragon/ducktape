@@ -117,7 +117,7 @@ The easy tier: each finding maps to a concrete command or small edit.
   `lessons_learned/` entry? Concrete proposals only, never "consider adding
   tests".
 - **Quality audit of the diff** (delegate to subagents): logic duplicating
-  shared utilities, patterns repeated 3+ times wanting extraction, STYLE.md
+  shared utilities, patterns repeated 3+ times wanting extraction, STYLE.rst
   violations actually present in the diff — file:line, rule, concrete fix.
 
 ### Structural angles

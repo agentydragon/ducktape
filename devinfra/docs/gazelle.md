@@ -4,7 +4,7 @@ Python BUILD files are gazelle-managed. `bb run //devinfra:gazelle` regenerates 
 a run over a converged tree is a no-op, so `--mode=diff` (exit nonzero on any diff or
 unresolvable import) is the drift check, and CI runs it on every PR (§ Drift check).
 Code-shape conventions (per-file libraries, `main_module` binaries, test-glob
-reservation, the conftest chain) live in <../../STYLE.md> § Gazelle.
+reservation, the conftest chain) live in <../../STYLE.rst> § Gazelle.
 
 The same binary is released (the `gazelle` pin in <../../nix/artifact-pins.json>) and
 the devshell puts it on PATH: `gazelle` from anywhere in a checkout regenerates BUILD

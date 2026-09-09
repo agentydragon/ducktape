@@ -701,7 +701,7 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 # (rules_distroless apt unpacks the deb but never runs update-ca-certificates, so its
 # :flat layer has no usable bundle). The bundle is a release-independent PEM file, so one
 # deb (the newest, from trixie) serves both bookworm- and trixie-based images. See that
-# BUILD file and STYLE.md § "System CA certificates in distroless images".
+# BUILD file and STYLE.rst § "System CA certificates in distroless images".
 http_archive(
     name = "ca_certificates_deb",
     build_file_content = 'exports_files(["data.tar.xz"])',

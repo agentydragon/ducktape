@@ -223,4 +223,4 @@ env today; runner affinity/resources tomorrow). Options, best-first:
 - SeaweedFS BestEffort / descheduler eviction RCA (same "stateful infra needs resource &
   scheduling hygiene" theme, different mechanism):
   <2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md>
-- Node hardware: <../../README.md> § Node Types / Storage.
+- Node hardware: <../../README.rst> § Node Types / Storage.

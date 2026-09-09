@@ -17,7 +17,7 @@ from enum import StrEnum
 class ItemType(StrEnum):
     """What kind of thing an item is.
 
-    A **decision** vocabulary (<../README.md> § Vocabularies across a roll): every reader branches on
+    A **decision** vocabulary (<../README.rst> § Vocabularies across a roll): every reader branches on
     it to know which of the per-type columns mean anything, so no reader-side answer is correct for
     a member it does not have and a new one ships a release behind its reader.
     """

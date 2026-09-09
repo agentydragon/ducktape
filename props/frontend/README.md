@@ -37,7 +37,7 @@ Add test scenarios in `tests/harness/harness.ts` and per-scenario test files (e.
 
 ## Issue overlay colors
 
-Exact color tokens for the snapshot/critique issue overlay (semantics are in <../docs/SPEC.md>; this is the implementation reference):
+Exact color tokens for the snapshot/critique issue overlay (semantics are in <../docs/SPEC.rst>; this is the implementation reference):
 
 | Element                   | Color                                   |
 | ------------------------- | --------------------------------------- |

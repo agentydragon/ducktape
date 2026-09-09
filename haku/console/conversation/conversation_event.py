@@ -18,7 +18,7 @@ itself. What is left is the body, and it is per kind.
 so the release that adds a field to a body writes rows the previous image is still reading; under
 `extra="forbid"` every one of them raises in `conversation_log.body_of`, which runs on every row of
 every conversation read. A field an older reader ignores is exactly what makes an addition
-shippable in one release. The rule and its limits are <../README.md> § Vocabularies across a roll.
+shippable in one release. The rule and its limits are <../README.rst> § Vocabularies across a roll.
 """
 
 from __future__ import annotations
@@ -360,7 +360,7 @@ class UnknownEventBody:
     **A reader must decide what to do with one, and skipping is not free.** A surface rendering the
     stream can leave it out; a reader deciding something from the stream cannot, because "a kind I
     do not know" and "no such event" are the same to it and only one of them is true
-    (<../README.md> § Vocabularies across a roll).
+    (<../README.rst> § Vocabularies across a roll).
     """
 
     kind: str

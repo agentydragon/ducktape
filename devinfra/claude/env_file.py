@@ -111,7 +111,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
     # Anthropic sets these in the container with fresh JWT credentials.
     # Only the bazel wrapper overrides them for its subprocess.
-    # See README.md "Our Design Principle" section.
+    # See README.rst "Our Design Principle" section.
 
     # Fix NO_PROXY: older Anthropic containers set NO_PROXY with *.googleapis.com
     # and *.google.com, which breaks Go module downloads. The Go module proxy

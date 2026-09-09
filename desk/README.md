@@ -2,7 +2,7 @@
 
 Working notes for the home desk setup. Goal: hang every peripheral off
 a Thunderbolt KVM so one button-press swaps the whole desk between
-**atlas** (see top-level <../README.md>) and a hot-plug laptop.
+**atlas** (see top-level <../README.rst>) and a hot-plug laptop.
 
 Living doc: inventory, target topology, cable plan, mounting TODOs,
 cable routing, open questions. Chronological experiments and

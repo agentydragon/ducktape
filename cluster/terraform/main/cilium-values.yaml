@@ -32,7 +32,7 @@ cgroup:
 # nebula.tf), NOT the pod MTU. Cilium subtracts the 50-byte VXLAN overhead itself,
 # so MTU=1420 -> 1370 cross-node pod MTU. Do NOT set the desired pod MTU here:
 # MTU=1370 wrongly yields a 1320 pod MTU (measured 2026-06-08).
-# Full model + layering: cluster/docs/network.md. Helm key is uppercase `MTU`.
+# Full model + layering: cluster/docs/network.rst. Helm key is uppercase `MTU`.
 MTU: 1420
 
 # Gateway API: replaces ingress-nginx (retired March 2026)

@@ -82,7 +82,7 @@ spec:
       # the static OIDC discovery document took ttfb≈1.6s (~14 serialized round trips) while
       # TCP connect to the gateway itself was 4ms. The latency was almost entirely per-query
       # RTT, not the client network and not CPU. That also made `Home down` take SSO with it,
-      # contradicting cluster/README.md's failure-mode table.
+      # contradicting cluster/README.rst's failure-mode table.
       #
       # Selects on the same key/value as the database's own placement
       # (db/postgres-cluster-ovh.yaml), so the two stay together by construction rather than

@@ -1,7 +1,7 @@
 # Canonical Agent authority and enrollment
 
 The durable Postgres graph behind `/mcp`, and the ceremony that admits an interactive OAuth client
-to it. The console-side summary is <../README.md> § MCP server (`/mcp`); this is the contract in
+to it. The console-side summary is <../README.rst> § MCP server (`/mcp`); this is the contract in
 full. Code: all under `identity/` — the agent domain and routes (`agent.py`, `enrollment.py`,
 `enrollment_routes.py`, `naming.py`, `authorization.py`), admission (`mcp_agent_auth.py`), and the
 FastMCP composition adapter (`fastmcp_adapter.py`).

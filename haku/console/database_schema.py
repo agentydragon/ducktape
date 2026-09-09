@@ -549,7 +549,7 @@ class HttpGrantRow(GrantEnvelopeColumns, Base):
     The origin is three relational columns because a grant pins exactly ``(scheme, host, port)``;
     ``methods``/``path_regex`` narrow requests at that origin. The domain canonicalizes and
     validates coverage app-side (`grants.http.models`); Postgres holds only the relational
-    invariants. Status is derived, never stored (root STYLE.md § SQLAlchemy): the row records the
+    invariants. Status is derived, never stored (root STYLE.rst § SQLAlchemy): the row records the
     end fact — ``ended_at`` — and the envelope's ``derive_status`` computes
     the vocabulary from them and the clock, so expiry needs no sweeper.
     """
@@ -1098,7 +1098,7 @@ class Session(Base):
     A session, not a conversation: it ends, and the conversation it belongs to does not —
     successive sessions of one thread share `conversation_id`.
 
-    **`status` is derived, never stored** (root STYLE.md § SQLAlchemy): the row records the facts —
+    **`status` is derived, never stored** (root STYLE.rst § SQLAlchemy): the row records the facts —
     allocation, attachment, the close request, the end — and the vocabulary every consumer speaks
     is computed from them in one place, the `status` hybrid below. Extending the vocabulary is
     therefore a fact change, and the decision-value roll rule (<../README.md> § Vocabularies across
@@ -1307,7 +1307,7 @@ class ConversationEventRow(Base):
     )
     # Narration, so it decodes tolerantly: a reader that has no words for a kind a newer replica
     # wrote passes over it, which is the correct behaviour for an append-only stream rather than a
-    # degradation (<README.md> § Vocabularies across a roll).
+    # degradation (<README.rst> § Vocabularies across a roll).
     kind: Mapped[StoredEventKind | UnknownValue] = mapped_column(
         TolerantTextBackedStrEnumUnionColumn(ConversationEventKind, AuthoredEventKind), nullable=False
     )
@@ -1623,7 +1623,7 @@ class SubmittedPrompt(Base):
     this row precedes the item, which is the point. The old queue serves the Console-side fold and
     retires with it at the generation cut.
 
-    **State is derived** (root STYLE.md § SQLAlchemy): pending is neither stamp, and the stamps —
+    **State is derived** (root STYLE.rst § SQLAlchemy): pending is neither stamp, and the stamps —
     `admitted_at` with the item it materialised, or `withdrawn_at` — are the two terminal facts.
     Deliberately no one-pending-per-conversation index: admission order is the runner's decision,
     and encoding "one at a time" here would bake the current runner's queueing into the schema
