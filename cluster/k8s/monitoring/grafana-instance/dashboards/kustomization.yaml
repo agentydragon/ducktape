@@ -8,6 +8,7 @@ resources:
   - cilium-agent.yaml
   - etcd.yaml
   - gpu.yaml
+  - node-exporter-full.yaml
 
 configMapGenerator:
   - name: flux-cluster-dashboard
