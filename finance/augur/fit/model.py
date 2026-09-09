@@ -1,14 +1,14 @@
 """Trainer- and scorer-facing protocols for augur exogenous models.
 
-`Fittable` and `Scorable` both extend `Sampler` (in `augur/model/exogenous.py`).
-Every augur model is a Sampler — anything that can't be sampled is unusable
-in the augur sim runtime. Adding `Fittable` means the model can be trained
-offline from historical evidence; adding `Scorable` means it exposes a
-predictive distribution the metric battery can project log-density / CRPS /
-marginal density from.
+Fitting, predictive scoring and simulator sampling are independent capabilities.
+`Fittable` trains from historical observations; `Scorable` supplies predictive
+distributions to the metric battery. Neither requires the simulator's `Sampler`
+interface or its instrument and private-equity output declarations.
 
 A model can satisfy any subset:
 
+  - `Fittable & Scorable`: an experimental forecasting model evaluated before
+    implementing simulator sampling.
   - `Sampler` only: test fixtures, future bootstrap-style models that
     refuse to expose density.
   - `Sampler & Scorable`: hand-configured providers like `IndependentModel`
@@ -25,12 +25,11 @@ from typing import Protocol
 
 from numpyro import distributions as dist
 
-from finance.augur.model.exogenous import Sampler
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 
 
-class Fittable(Sampler, Protocol):
-    """A `Sampler` that can be fitted offline from a `HistoricalSeries`.
+class Fittable(Protocol):
+    """A model that can be fitted offline from a `HistoricalSeries`.
 
     Consumed by the trainer in `augur/fit/main.py`. The metric battery
     additionally requires `Scorable`; rolling-origin scoring refits the
@@ -42,8 +41,8 @@ class Fittable(Sampler, Protocol):
     def fit(self, historical: HistoricalSeries) -> None: ...
 
 
-class Scorable(Sampler, Protocol):
-    """A `Sampler` that exposes its predictive distribution. Consumed by
+class Scorable(Protocol):
+    """A model that exposes its predictive distribution. Consumed by
     the metric battery in `augur/fit/metrics.py` via the projection
     utilities in `augur/fit/scoring.py`.
 

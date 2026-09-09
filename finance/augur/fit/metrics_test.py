@@ -1,10 +1,8 @@
 """Metric battery exercised against synthetic, hand-checkable models.
 
-The mock models implement `Scorable` (and stub `Sampler.sample` since
-both protocols are required of the metric-battery argument type, even
-though the test never invokes the sampling path). The closed-form
-checks compare scorer output against direct numpy Gaussian log-density
-calculations on the synthesised log-returns.
+The models implement fitting and predictive scoring without simulator sampling
+or instrument-output declarations. The closed-form checks compare scorer output
+against direct numpy Gaussian log-density calculations on synthesised log-returns.
 """
 
 from __future__ import annotations
@@ -28,13 +26,11 @@ from finance.augur.fit.metrics import (
     multi_step_predictive_score,
     rolling_origin_predictive_score,
 )
-from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
-    IssuerId,
     LevelSeriesKey,
     LocationId,
     RentKey,
@@ -72,27 +68,16 @@ class _ConstantGaussianModel:
     the predictive is closed-form and independent of the train split —
     which makes it hand-checkable.
 
-    Implements Fittable + Scorable + Sampler (Sampler.sample is a stub —
-    the metric tests never invoke it)."""
+    Implements Fittable + Scorable, with no Sampler methods."""
 
     label = "constant_gaussian"
 
     def __init__(self, mu: np.ndarray, sigma: np.ndarray) -> None:
         self._mu = np.asarray(mu, dtype="float64")
         self._sigma = np.asarray(sigma, dtype="float64")
-        self.factor_names: tuple[LevelSeriesKey, ...] = _synthetic_factor_keys(len(self._mu))
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
-
-    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        return frozenset(self.factor_names)
-
-    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
-        return frozenset()
-
-    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        raise NotImplementedError("metric-test fixture; sampling not exercised")
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         # iid Δr ~ N(mu, σ²) → cumulative h-step is N(h·mu, h·σ²).
@@ -109,19 +94,9 @@ class _UnscoredModel:
     """Model that returns None from predictive() — like a bootstrap."""
 
     label = "unscored"
-    factor_names: tuple[LevelSeriesKey, ...] = (SecurityKey(symbol=SP500_SYMBOL),)
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
-
-    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        return frozenset(self.factor_names)
-
-    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
-        return frozenset()
-
-    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        raise NotImplementedError("metric-test fixture; sampling not exercised")
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         del historical, t, horizon

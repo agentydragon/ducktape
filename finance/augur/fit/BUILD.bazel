@@ -36,7 +36,6 @@ py_library(
     name = "model",
     srcs = ["model.py"],
     deps = [
-        "//finance/augur/model:exogenous",
         "//finance/augur/model/path_models:scenarios",
         "@pypi//numpyro",
     ],
@@ -191,7 +190,6 @@ py_test(
         ":metrics",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/model/path_models:scenarios",
         "@pypi//jax",

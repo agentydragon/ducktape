@@ -319,11 +319,11 @@ def level_series_request_channels(keys: Iterable[LevelSeriesKey]) -> LevelReques
 
 
 class Sampler(Protocol):
-    """Runtime sampling boundary — required of every augur exogenous model.
+    """Runtime sampling boundary for models supplying simulator paths.
 
-    Anything that can't be sampled is unusable in the augur sim. `Fittable`
-    (offline trainer) and `Scorable` (metric battery) extend this protocol
-    for models that additionally support training / scoring.
+    Offline fitting and predictive scoring use independent `Fittable` and
+    `Scorable` interfaces. A model used only for forecast evaluation need not
+    implement this simulator-facing interface.
 
     `emittable_level_keys` / `emittable_private_equity_issuers` advertise what the
     sampler is configured to produce. Consumers (sample-sanity / calibration) partition

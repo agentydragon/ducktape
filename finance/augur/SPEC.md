@@ -17,6 +17,10 @@ and exogenous-model provenance. `augur/sim` evaluates scenario sets over already
 materialized exogenous trajectories. `augur/api` adapts product requests into
 model + simulation inputs and shapes responses for the frontend.
 
+Offline fitting and predictive scoring do not require a model to produce simulator
+paths. Models used only for forecast evaluation need no instrument-output or
+private-equity-output declarations.
+
 Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire
 shapes.
