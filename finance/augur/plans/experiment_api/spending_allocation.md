@@ -166,8 +166,11 @@ is submitted once. A failing move, payment, consumption or trade stops this path
 retaining earlier successful actions. Other rollouts continue. The helper's
 immediate-cash or product-term assumptions must match supported execution rules;
 pending proceeds cannot silently finance today's claim. Previewed tax consequences
-use known inputs, not hidden future assessments. GP still needs to pin exactly
-which due claims are visible at each monthly observation.
+use known inputs, not hidden future assessments. In the first one-household
+immediate-cash control, scheduled cashflows and claim assembly precede the policy
+observation. After its ordered actions, any still-unpaid due claim stops that
+rollout. Broader product, housing and cross-actor timing remains scoped future
+work; this sketch does not establish delayed settlement support.
 
 ## Budgets, backstops and receipt-aware behavior
 

@@ -1,10 +1,14 @@
 """Canonical financial stepping, with an experiment-owned monthly loop.
 
+Scheduled cashflows and due-claim assembly precede the monthly observation.
 One observation/call per active actor/month. Advance executes action lists in
 caller order, preserving product cash availability. An unexecutable action is
 atomic and fatal only for its rollout: retain successful prefix, skip later actions
 and never call that path's policies again. No retry, automatic funding, cuts,
 borrowing or hidden allocation. Actor ordering is an environment rule, not row order.
+Any still-unpaid due claim also stops that rollout after its actions. The first
+scope is one household with scripted counterparties and explicit immediate cash;
+expanded product/housing/cross-actor timing requires its own supported contract.
 
 The batched boundary does not choose array layout or require a native executor.
 RUNTIME/GE considers language separately from policy-call and ragged-output layout.

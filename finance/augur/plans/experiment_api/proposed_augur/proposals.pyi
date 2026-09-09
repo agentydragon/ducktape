@@ -23,7 +23,11 @@ class Portfolio:
 
 @dataclass(frozen=True)
 class PreviewAssumptions:
-    """Supported timing/tax assumptions; no hidden future assessment."""
+    """Declared timing/tax assumptions; no hidden future assessment.
+
+    The first control uses immediate cash. Product terms are a destination
+    interface, not a claim that delayed settlement is already supported.
+    """
 
     settlement: Literal["immediate", "product_terms"]
 

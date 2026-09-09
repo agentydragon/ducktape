@@ -106,8 +106,13 @@ Every active actor gets exactly one call per month. Annual studies return empty
 actions in intervening months; their spending/rebalance cadence does not change.
 Annual-only records need the declared synthetic month-grid adapter in
 [study helpers](study_helpers.md), not invented observed monthly returns.
-For real monthly markets, observation placement and settlement availability must
-follow the explicit timing contract; these sketches do not resolve GP by accident.
+The first monthly example has settled ordering: scheduled cashflows and claim
+assembly, then the single policy call, then its ordered actions, then a stop if
+any due claim remains unpaid. Its scope is one household with scripted
+counterparties and the existing explicit immediate-cash control. GP remains for
+expanded product, housing and cross-actor timing, not this first monthly placement.
+The product-terms interfaces below are design targets, not implemented delayed
+settlement support.
 
 ## Actions, observations and helper boundaries
 
@@ -121,6 +126,9 @@ policy calls for that path are skipped. Other paths continue. The batch is not
 all-or-nothing, and there is no retry, reminder, event-driven callback or second
 decision within the month. Invalid input schemas and simulator bugs are errors,
 not fabricated financial failures.
+
+An empty list is valid, but cannot defer a due claim. A still-unpaid due claim
+also stops the rollout after its actions; it is distinct from an invalid action.
 
 Request identity is the actor/path/month decision key plus the action's position
 in its ordered list; receipts retain that identity, not a guessed category match.
