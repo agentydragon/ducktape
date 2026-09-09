@@ -1,11 +1,23 @@
 # gazelle:ignore
 
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = [
     "//cluster:__subpackages__",
     "//devinfra/precommit:__pkg__",
 ])
+
+go_test(
+    name = "cnpg_health_cel_test",
+    srcs = ["cnpg_health_cel_test.go"],
+    data = ["//cluster/k8s:tofu-state/db/flux-kustomization.yaml"],
+    deps = [
+        "@com_github_google_cel_go//cel:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
+        "@io_k8s_sigs_yaml//:yaml",
+    ],
+)
 
 py_test(
     name = "test_terraform_sources",
