@@ -140,7 +140,7 @@ flowchart TB
     DEL -. later Thread delivery .-> ING
     DEL --> MCPFRONT
     AS --> MCPFRONT
-    EID --> MCPFRONT
+    WID --> MCPFRONT
     EID --> MCPOAUTH
     POLICYBIND --> EID
     POLICYBIND --> CALLERPOLICY
@@ -426,7 +426,7 @@ revocation/expiry semantics without putting a reusable privileged credential in 
 
 ### `MCPFRONT` — Action Service MCP frontend
 
-**Planned support — smallest user-visible behavior:** an authenticated external MCP client discovers
+**Planned support — smallest user-visible behavior:** an authenticated MCP client discovers
 Actions, submits one ActionRequest with an optional bounded wait, and reads its pending Decision and
 eventual safe result. This is external MCP presentation over the canonical Action API, not another
 executor, remote MCP runtime, or lifecycle store.
@@ -440,7 +440,9 @@ stays compact. Per-Action projection is an optional experiment contingent on evi
 interface, not a scheduled follow-on or required migration step.
 
 **Dependencies:** `AS` for the canonical catalog, `DEL` for Decision/Action-state and durable events,
-and `EID` for trusted configured external identity. Caller-supplied Agent/Thread names and
+and observed `WID` for the Sandbox bearer path. The shared frontend accepts both Sandbox workload
+bearers and external OAuth access tokens; `EID`/`MCPOAUTH` add the external path and are required for
+`CLAUDEAI`, not for implementing the common tools or Sandbox-authenticated MCP. Caller-supplied Agent/Thread names and
 origin/correlation are not identity authority. `MCPFRONT` is not a prerequisite for `MCP0`.
 The initial clients are Claude.ai and external Claude Code through `MCPOAUTH`; `CALLERPOLICY` adds
 bounded per-Identity deciders. Their combined acceptance is `EXTERNALMCP`. The [connection plan](external_mcp_connections.md)
@@ -448,6 +450,10 @@ keeps the remaining generic-tool schema and authorization design choices explici
 
 **Needed support / contract:**
 
+- **Authentication:** reuse workload bearer validation and live Sandbox resolution, including the
+  existing egress token-substitution path, alongside external Connection/Identity resolution. Preserve
+  each caller kind's ownership and policy context; no DCR requirement for Sandboxes, no operator
+  authority, and no permissive fallback between validators. Both paths expose the same generic tools.
 - **Catalog:** compact list/get views preserve group/name identity; `include_fields` explicitly
   selects existing input schemas and full descriptions. Do not embed the catalog in the generic
   tools' own schemas or return omitted detail through nested fields. Defer output schemas and other
@@ -455,7 +461,7 @@ keeps the remaining generic-tool schema and authorization design choices explici
   Reject unsupported field selections clearly. Never expose executor
   bindings or credentials, create an MCP-owned registry, or dispatch directly to an upstream tool.
 - **Submit:** forward the canonical ActionRequest envelope and caller-scoped idempotency key under
-  the authenticated external Identity's principal. Return the durable request ID and current state,
+  the authenticated external Identity or Sandbox principal. Return the durable request ID and current state,
   including `decision_pending`, immediately by default. Submission and request-status reads both
   offer an explicit bounded wait for decision resolution or terminal execution; expiry returns the
   current receipt, not an Action failure. An MCP wait timeout/disconnect never cancels or retries the
@@ -485,6 +491,9 @@ Exercise bounded polling on submission and reads, including pending deadlines, d
 execution completion, already-complete requests, and reconnect without duplicate execution.
 Verify notification-driven wakeups, setup-race safety, channel-loss handling, and no periodic state
 queries while idle.
+Separately prove the same MCP workflow with a Sandbox workload bearer, without DCR, retaining
+per-Sandbox receipt/idempotency isolation and rejecting invalid credentials. This frontend auth proof
+does not require the new configurable `SBPOLICY` behavior.
 This integration proof comes before any frontend-specific persistence or framework.
 
 ### `MCPAGG` — Haku Console MCP aggregator replacement

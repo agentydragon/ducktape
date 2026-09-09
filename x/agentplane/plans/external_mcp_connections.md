@@ -23,8 +23,29 @@ consent, but multiple-operator management, per-operator Identity ownership, tena
 operator-to-operator delegation are out of scope. This does not weaken isolation between Identities.
 
 Harnesses running in Threads inside Sandboxes also call the Action Service through existing workload
-authentication. [Configured Action policies](action_policies.md) covers both per-Identity deciders and
+authentication, including through this same MCP frontend using Sandbox bearer tokens.
+[Configured Action policies](action_policies.md) covers both per-Identity deciders and
 auto-approval for configured Actions from trusted Sandbox types; hosted callers do not need DCR.
+
+## Two authentication paths, one MCP surface
+
+Accept external OAuth access tokens and Sandbox workload bearer tokens on the same generic MCP
+surface. Resolve external tokens to their authorized Connection/Identity and workload tokens through
+the existing `SandboxPrincipalAuthenticator`/resolver, preserving TokenReview, audience and live
+Pod/Sandbox-owner checks. Reuse the existing egress placeholder/substitution path for hosted harnesses;
+accepting a bearer at the service does not require exposing the real workload token to the runner.
+
+Both paths use the same catalog, submission, bounded waits, receipt/events, and canonical Action
+authorization. Workload callers retain namespace/Sandbox UID ownership and trusted Sandbox-type
+policy selection; no external OAuth Connection or DCR is required. Sharing an ActionPolicySet does
+not merge ownership or grant operator access. Define unambiguous fail-closed token-verifier routing;
+unverified token claims may only select validation, never confer identity or authority. Invalid or
+wrong-audience credentials must not become an anonymous or more privileged caller through fallback.
+Keep operator/BFF authentication separate from this caller-facing MCP surface.
+
+The common frontend and Sandbox-authenticated path can be implemented and tested before external
+Identity/OAuth support. Claude.ai acceptance still requires `EID`/`MCPOAUTH`; do not make those a
+technical prerequisite for serving MCP to an already-authenticated Sandbox.
 
 ## Connection workflow
 
@@ -289,6 +310,12 @@ does not prove a native-client flow. Independently check canonical Action record
 Record Claude.ai's deployed result separately as `CLAUDEAI`, the operator's higher-priority outcome.
 The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenarios:
 
+- separately prove the shared frontend with a real Sandbox caller via workload bearer authentication
+  and existing egress substitution: generic discovery/submission, bounded waits, safe results, and
+  receipt/event recovery without DCR. Preserve per-Sandbox ownership and idempotency; reject expired,
+  invalid/wrong-audience credentials and forged workload identity, prevent cross-caller receipt reads,
+  and verify neither authentication path grants operator methods. Configured Sandbox-type auto-approval
+  is covered by `SBPOLICY`, not a prerequisite for this frontend authentication check;
 - discovery → DCR → operator consent/identity selection → token exchange → authenticated tool use;
 - use the fixed generic tools to list/inspect an Action, request it, and read its receipt/events;
   adding or changing a catalog Action updates discovery without creating an exposed per-Action tool;
