@@ -87,7 +87,8 @@ describe("ConnectionConsent", () => {
       display_name: "Claude on wyrm2",
       identity_id: "public_coder",
     });
-    expect(navigate).toHaveBeenCalledExactlyOnceWith("https://idp.test/held-authorization");
+    expect(navigate).toHaveBeenCalledOnce();
+    expect(navigate).toHaveBeenCalledWith("https://idp.test/held-authorization");
   });
 
   it("can deny without a configured Identity and never follows the client redirect", async () => {
