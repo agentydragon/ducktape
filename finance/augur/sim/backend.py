@@ -78,7 +78,12 @@ class Engine(ABC):
 
     @abstractmethod
     def product_terminal(self, run: CompiledRun, *, primary_agent_id: str, metric: str) -> ProductTerminalSummary:
-        """One metric's terminal distribution."""
+        """One metric's terminal distribution, reduced in the engine like `product_fan`.
+
+        A consumer that needs terminal samples takes this, not `product_metrics`: that one
+        transfers every base series as a `(snapshot, rollout)` slab, which is the cost the
+        product path exists to avoid.
+        """
 
     @abstractmethod
     def product_summaries(
