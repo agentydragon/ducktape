@@ -5,7 +5,7 @@
 # ///
 """Inspect and drive Forgejo Actions from the command line.
 
-Three subcommands:
+Subcommands:
 
 - `timing` — per-job CI duration distribution from `/api/v1/repos/.../actions/tasks`
   (answers "why is CI slow?"). Timing-field gotchas this encodes, verified live:
