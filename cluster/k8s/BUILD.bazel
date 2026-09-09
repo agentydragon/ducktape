@@ -67,7 +67,6 @@ exports_files(
         "kustomization.yaml",
         "monitoring/rules/github-quota-prometheus-rule.yaml",
         "monitoring/rules/roaming-node-prometheus-rule.yaml",
-        "tofu-state/db/flux-kustomization.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
 )
