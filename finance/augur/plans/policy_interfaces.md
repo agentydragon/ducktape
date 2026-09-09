@@ -178,10 +178,11 @@ never the future realized path.
 
 ## Acceptance and remaining choices
 
-P7's first scoped example observes a bill and emits `[Sell(...), PayClaim(...)]`
-in one policy call. Under the explicitly chosen settlement assumptions, sale
-proceeds must be available when the payment executes. Verify request/result
-identity and lot/basis/tax reconciliation, plus a non-sells-first action chain.
+The landed native actor loop in `rust/engine/actors.rs` observes a bill and accepts
+`[Sell(...), PayClaim(...)]` in one batch response. Its native tests cover immediate
+sale cash, request/result identity, lot/basis/tax reconciliation and a
+non-sells-first action chain. P7E adds a separately runnable consumer with CI
+coverage of its real CLI and generated financial inputs.
 
 A failing middle action must leave the successful prefix intact, apply none of
 the failed action, and execute neither later actions nor later policy calls for
@@ -199,7 +200,7 @@ integration. No retry/default/recovery mechanism is part of this interface.
 The existing opening-month/all-or-none cases remain spending-probe parity controls, not
 the destination contract. GL decides batch data representation; RUNTIME/GE
 decides executor placement. If GE retains hybrid execution, P9 promotes the
-measured bridge with P7's actor loop and P8's helpers; otherwise replan the
+measured bridge with the native actor loop and P8's helpers; otherwise replan the
 language-specific steps. P11 migrates executable experiments; P12 cuts over
 configured consumers and removes implicit
 public-portfolio strategy. The roadmap owns these dependencies and their
