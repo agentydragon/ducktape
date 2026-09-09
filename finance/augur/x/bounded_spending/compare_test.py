@@ -78,7 +78,9 @@ def test_bounded_spending_reacts_to_each_path_and_preserves_the_fixed_real_contr
                 receipt = receipts.get(month)
                 assert requested[month] == (receipt["amount_due"] if receipt else 0)
                 assert paid[month] == (receipt["amount_paid"] if receipt else 0)
-            assert document["product_metrics"]["failed_month"][rollout_id] == failed_month
+            assert document["product_metrics"]["failed_month"][rollout_id] == (
+                -1 if failed_month is None else failed_month
+            )
         distribution = json.loads((output / f"{name}.consumption.json").read_text())
         assert distribution["component"] == document["component"]
         assert distribution["months"][0]["observed_path_count"] == 3
@@ -111,7 +113,7 @@ def test_live_zero_consumption_is_not_confused_with_post_stop_absence(tmp_path: 
     assert fixed["product_metrics"]["failed_month"] == [12]
     assert fixed["consumption_requested"] == [[100_000_000, *([0] * 11), 100_000_000]]
     assert fixed["consumption_paid"] == [[100_000_000, *([0] * 12)]]
-    assert bounded["product_metrics"]["failed_month"] == [None]
+    assert bounded["product_metrics"]["failed_month"] == [-1]
     assert (
         bounded["consumption_requested"]
         == bounded["consumption_paid"]

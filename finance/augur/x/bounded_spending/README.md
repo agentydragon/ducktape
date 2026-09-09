@@ -34,7 +34,8 @@ Each contains per-path requested/paid `annual_consumption`, plus existing wealth
 shortfall and failure metrics. The component is not total household consumption.
 Consumption arrays contain event months (no opening snapshot): live zero requests
 are explicit, the failure month is included, and post-stop months are absent.
-Product wealth metrics retain their separate snapshot layout and zeroed-failure convention.
+Product wealth metrics retain their separate snapshot layout and zeroed-failure convention;
+their `failed_month` is `-1` for a path that completes the horizon (null in a forensic trace).
 
 `fixed_real.consumption.json` / `bounded.consumption.json` report monthly 5th/50th/95th
 percentiles in nominal currency quanta, with currency/quantum, observed path count
