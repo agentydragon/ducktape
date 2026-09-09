@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
+from x.agentplane.action_service.caller_auth import CallerAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
 from x.agentplane.action_service.connections import (
     Connection,
@@ -46,6 +47,7 @@ from x.agentplane.action_service.models import (
     Principal,
     PrincipalRole,
 )
+from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
@@ -110,8 +112,10 @@ def create_app(
     updates: ActionUpdates,
     connections: ConnectionAuthority | None = None,
     enrollments: EnrollmentAuthority | None = None,
+    oauth: ActionsOAuthProxy | None = None,
 ) -> FastAPI:
-    mcp_app = create_server(service, catalog, updates, workload_authenticator).http_app(
+    caller_authenticator = CallerAuthenticator(workload_authenticator, oauth)
+    mcp_app = create_server(service, catalog, updates, caller_authenticator).http_app(
         path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
     )
 
@@ -268,7 +272,9 @@ def create_app(
         return await action_service.decide(request_id, body, principal)
 
     # Match only the transport endpoint, without a slash redirect or intercepting unknown REST paths.
-    app.router.routes.append(Route("/mcp", ActionsMcp(mcp_app, workload_authenticator)))
+    if oauth is not None:
+        app.router.routes.extend(oauth.get_routes(mcp_path="/mcp"))
+    app.router.routes.append(Route("/mcp", ActionsMcp(mcp_app, caller_authenticator)))
     return app
 
 
