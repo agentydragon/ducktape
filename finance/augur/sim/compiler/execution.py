@@ -64,7 +64,7 @@ from finance.augur.sim.scenario import (
 
 # Mirrors `INPUT_SCHEMA_VERSION` in `execution.rs`; the simulator rejects any other value, so a
 # schema bump fails loudly here rather than encoding a document the engine will not read.
-INPUT_SCHEMA_VERSION = 11
+INPUT_SCHEMA_VERSION = 12
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -417,7 +417,7 @@ def _target_allocation_policies(scenario: Scenario, *, quantum: Decimal) -> list
                 policy.cash_ceiling, quantum=quantum, context=f"target-allocation ceiling for {policy.agent_id!r}"
             ),
             "cause_id_prefix": policy.cause_id_prefix,
-            "purchase_slots_per_sleeve": int(policy.purchase_slots_per_sleeve),
+            "allow_purchases": policy.allow_purchases,
             "rebalance_tolerance_ppb": (
                 _ppb(policy.rebalancing.tolerance) if isinstance(policy.rebalancing, DriftBand) else None
             ),

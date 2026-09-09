@@ -6,7 +6,6 @@ use super::*;
 #[derive(Clone, Debug)]
 pub(super) struct LotState {
     pub(super) spec: InitialLotSpec,
-    pub(super) fifo_rank: i64,
     pub(super) units_remaining: Quantity,
     pub(super) basis_remaining: Money,
 }
@@ -46,7 +45,8 @@ pub(super) fn execute_distributions(
                     && lot.spec.asset_id == distribution.asset_id
             })
             .collect();
-        let scale = pool_lots[0].spec.quantity_scale;
+        // An enabled purchase policy can name a pool before its first purchase.
+        let scale = pool_lots.first().map_or(1, |lot| lot.spec.quantity_scale);
         let units = pool_lots.iter().try_fold(0_i64, |total, lot| {
             total
                 .checked_add(lot.units_remaining.0)
@@ -137,7 +137,12 @@ pub(super) fn execute_sale(
             asset_id: sale.asset_id.clone(),
         });
     }
-    candidates.sort_by_key(|index| (lots[*index].fifo_rank, lots[*index].spec.lot_id.clone()));
+    candidates.sort_by_key(|index| {
+        (
+            lots[*index].spec.purchase_month,
+            lots[*index].spec.lot_id.clone(),
+        )
+    });
     let available = candidates.iter().try_fold(0_i64, |total, index| {
         total
             .checked_add(lots[*index].units_remaining.0)

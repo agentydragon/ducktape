@@ -59,7 +59,7 @@ def cash_band_case(
     rent: Decimal | int = 0,
     income: Decimal | int = 0,
     rent_months: tuple[int, int | None] = (1, None),
-    purchase_slots: int = 0,
+    allow_purchases: bool = False,
     rebalancing: RebalancingRule = _CASHFLOW_ONLY,
     income_end_month: int | None = None,
     weights: tuple[int, int] = (1, 1),
@@ -81,7 +81,7 @@ def cash_band_case(
             rent=rent,
             rent_months=rent_months,
             income=income,
-            purchase_slots=purchase_slots,
+            allow_purchases=allow_purchases,
             rebalancing=rebalancing,
             income_end_month=income_end_month,
             weights=weights,
@@ -104,7 +104,7 @@ def cash_band_scenario(
     rent: Decimal | int = 0,
     income: Decimal | int = 0,
     rent_months: tuple[int, int | None] = (1, None),
-    purchase_slots: int = 0,
+    allow_purchases: bool = False,
     rebalancing: RebalancingRule = _CASHFLOW_ONLY,
     income_end_month: int | None = None,
     weights: tuple[int, int] = (1, 1),
@@ -150,7 +150,7 @@ def cash_band_scenario(
                 sleeves=[SleeveTarget(asset=VTI, weight=weights[0]), SleeveTarget(asset=BND, weight=weights[1])],
                 cash_floor=floor,
                 cash_ceiling=ceiling,
-                purchase_slots_per_sleeve=purchase_slots,
+                allow_purchases=allow_purchases,
                 rebalancing=rebalancing,
             )
         ],
@@ -197,10 +197,6 @@ def _units(result: SimulationResult, *, month: int) -> dict[str, float]:
 
 def _alice_cash(result: SimulationResult) -> list[int]:
     return result.cash.filter(pl.col("agent_id") == "alice").sort("month_index").get_column("balance_quanta").to_list()
-
-
-def _slots(units: dict[str, float]) -> dict[str, float]:
-    return {lot_id: quantity for lot_id, quantity in units.items() if lot_id.startswith("allocation_sale_buy")}
 
 
 class TargetAllocationAcceptance:
@@ -305,27 +301,14 @@ class TargetAllocationAcceptance:
         # The bond sleeve was never touched, so it must not appear at all — an over-broad
         # decode would emit a zero-unit row for it, and the equality above refuses that.
 
-    def test_configuring_purchase_slots_changes_nothing_until_they_are_filled(self, backend: Backend) -> None:
-        """Slots are capacity, not behaviour. A policy given room to buy still holds only what
-        it started with until something fills them, and the empty slots must not disturb the
-        sale side: they join the same FIFO pool as the sleeve's real lots, so a slot that
-        counted as a lot would shift what a sale reaches for.
-        """
+    def test_enabling_purchases_does_not_create_lots_without_a_buy(self, backend: Backend) -> None:
+        """Enabling the buy side must not change a cash raise or create empty future holdings."""
 
         without = backend(cash_band_case(opening_cash=5_000, floor=10_000, ceiling=40_000))
-        with_slots = backend(cash_band_case(opening_cash=5_000, floor=10_000, ceiling=40_000, purchase_slots=3))
+        enabled = backend(cash_band_case(opening_cash=5_000, floor=10_000, ceiling=40_000, allow_purchases=True))
 
-        units = _units(with_slots, month=1)
-
-        assert {lot_id: q for lot_id, q in units.items() if not lot_id.startswith("allocation_sale_buy")} == _units(
-            without, month=1
-        )
-        # Six slots, two sleeves by three, and every one of them still empty.
-        assert sorted(_slots(units)) == [
-            f"allocation_sale_buy_p0_s{sleeve}_{index}" for sleeve in (0, 1) for index in (0, 1, 2)
-        ]
-        assert set(_slots(units).values()) == {0.0}
-        assert _alice_cash(with_slots) == _alice_cash(without)
+        assert _units(enabled, month=1) == _units(without, month=1)
+        assert _alice_cash(enabled) == _alice_cash(without)
 
     def test_surplus_above_the_ceiling_is_invested_into_the_underweight_sleeve(self, backend: Backend) -> None:
         """The buy side, end to end. $100,000 against a $10,000 floor and a $20,000 ceiling
@@ -339,7 +322,7 @@ class TargetAllocationAcceptance:
         """
 
         units = _units(
-            backend(cash_band_case(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1)), month=1
+            backend(cash_band_case(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True)), month=1
         )
 
         assert units["allocation_sale_buy_p0_s0_0"] == 50.0
@@ -352,33 +335,30 @@ class TargetAllocationAcceptance:
         """A quantum of overshoot would show as the floor minus the overshoot, which is the
         band spending money it promised to keep."""
 
-        result = backend(cash_band_case(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1))
+        result = backend(cash_band_case(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True))
 
         assert _alice_cash(result)[1] == 1_000_000
 
     def test_a_purchase_records_the_price_its_rollout_paid(self, backend: Backend) -> None:
-        """Basis comes from the purchase, and it is not knowable at compile time: the slot
-        carries whatever its own rollout paid the month it crossed the band. Reading a static
+        """Basis comes from whatever the rollout paid the month it crossed the band. Reading a static
         column would report 0, making the whole proceeds a gain on the eventual sale."""
 
-        result = backend(cash_band_case(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1))
+        result = backend(cash_band_case(opening_cash=100_000, floor=10_000, ceiling=20_000, allow_purchases=True))
         bought = result.lots.filter(
             (pl.col("lot_id") == "allocation_sale_buy_p0_s1_0") & (pl.col("month_index") == 1)
         ).to_dicts()[0]
 
         assert bought["cost_basis_per_unit_quanta"] == int(PRICE) * QUANTA_PER_UNIT
 
-    def test_successive_purchases_fill_successive_slots(self, backend: Backend) -> None:
-        """The cursor. Each month's buy takes the next free slot, so two purchases are two lots
-        with two purchase months — which is the whole reason a purchase cannot share a slot:
-        they have different holding periods and would net to one wrong basis.
+    def test_successive_purchases_create_separate_lots(self, backend: Backend) -> None:
+        """Repeated purchases need separate acquisition dates and bases, without a configured count.
 
         Income arrives as an inflow, so the band only sees it the month AFTER it lands and the
         policy invests in months 2 and 3. Both go to bonds: at $10,000 against stock's $90,000,
         the bond sleeve is still underweight after both deposits.
         """
 
-        result = backend(cash_band_case(opening_cash=0, floor=0, ceiling=1_000, income=30_000, purchase_slots=2))
+        result = backend(cash_band_case(opening_cash=0, floor=0, ceiling=1_000, income=30_000, allow_purchases=True))
         rows = (
             result.lots.filter(
                 pl.col("lot_id").str.starts_with("allocation_sale_buy_p0_s1_") & (pl.col("month_index") == HORIZON)
@@ -391,11 +371,9 @@ class TargetAllocationAcceptance:
         assert [row["purchase_month_index"] for row in rows] == [2, 3]
 
     def test_a_runtime_purchase_keeps_its_month_when_later_sold(self, backend: Backend) -> None:
-        """Disposition metadata comes from runtime lot state, not the slot's compile-time
-        placeholder."""
+        """A disposition retains the lot's acquisition date, not the scenario's start date."""
 
-        # One unit in each starting sleeve rather than none, which the strict fixture refuses.
-        # They are month 0 and sell first, so the raise has to reach past them into the slot.
+        # The month-0 holdings sell first, so the raise must reach the subsequent purchase.
         result = backend(
             cash_band_case(
                 opening_cash=0,
@@ -407,7 +385,7 @@ class TargetAllocationAcceptance:
                 income_end_month=1,
                 rent=10_000,
                 rent_months=(3, 3),
-                purchase_slots=1,
+                allow_purchases=True,
             )
         )
         rows = result.events.lot_dispositions.filter(
@@ -417,19 +395,11 @@ class TargetAllocationAcceptance:
         assert rows
         assert {row["purchase_month_index"] for row in rows} == {2}
 
-    def test_running_out_of_purchase_slots_aborts_the_run(self, backend: Backend) -> None:
-        """Aborting, not dropping the surplus purchase — and aborting the RUN, not failing the
-        rollouts that hit the wall. Dropping it is a policy that silently stops investing
-        partway through the horizon; failing only the affected rollouts drops exactly the paths
-        that traded most, and since trading tracks volatility that biases what survives toward
-        calm.
+    def test_sales_only_keeps_surplus_cash_without_buying(self, backend: Backend) -> None:
+        result = backend(cash_band_case(opening_cash=0, floor=0, ceiling=1_000, income=30_000, allow_purchases=False))
 
-        The scenario successive purchases fill, with one slot instead of two, so the second
-        purchase has nowhere to go.
-        """
-
-        with pytest.raises(ValueError, match="ran out of purchase slots: 1 configured, 2 needed"):
-            backend(cash_band_case(opening_cash=0, floor=0, ceiling=1_000, income=30_000, purchase_slots=1))
+        assert _units(result, month=HORIZON) == {"stock": STOCK_UNITS, "bond": BOND_UNITS}
+        assert _alice_cash(result)[-1] == 9_000_000
 
     def test_a_drifted_portfolio_is_rebalanced_in_a_quiet_month(self, backend: Backend) -> None:
         """The mechanism neither side of the band can express. Cash sits at $50,000 inside a
@@ -448,7 +418,7 @@ class TargetAllocationAcceptance:
                 opening_cash=50_000,
                 floor=10_000,
                 ceiling=90_000,
-                purchase_slots=1,
+                allow_purchases=True,
                 rebalancing=DriftBand(tolerance=0.25),
             )
         )
@@ -458,22 +428,20 @@ class TargetAllocationAcceptance:
         assert units["allocation_sale_buy_p0_s1_0"] == 400.0
         # Untouched: the bond sleeve was the underweight one, so the trim never reaches it.
         assert units["bond"] == BOND_UNITS
-        assert units["allocation_sale_buy_p0_s0_0"] == 0.0
+        assert "allocation_sale_buy_p0_s0_0" not in units
         # Cash-neutral to the cent. A rebalance is a portfolio operation, not a funding one.
         assert _alice_cash(result)[1] == 5_000_000
 
     def test_a_rebalanced_portfolio_then_sits_still(self, backend: Backend) -> None:
         """One trigger, not one per month. Once both sleeves are on target the drift is zero,
-        so a flat price path produces exactly one rebalance over the horizon — which is why a
-        single purchase slot per sleeve is enough here, and why a policy that re-triggered
-        every month would exhaust its slots and abort instead of quietly churning."""
+        so a flat price path produces exactly one rebalance over the horizon."""
 
         result = backend(
             cash_band_case(
                 opening_cash=50_000,
                 floor=10_000,
                 ceiling=90_000,
-                purchase_slots=1,
+                allow_purchases=True,
                 rebalancing=DriftBand(tolerance=0.25),
             )
         )
@@ -491,11 +459,11 @@ class TargetAllocationAcceptance:
                 opening_cash=50_000,
                 floor=10_000,
                 ceiling=90_000,
-                purchase_slots=1,
+                allow_purchases=True,
                 rebalancing=DriftBand(tolerance=1.0),
             )
         )
-        without = backend(cash_band_case(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1))
+        without = backend(cash_band_case(opening_cash=50_000, floor=10_000, ceiling=90_000, allow_purchases=True))
 
         assert _units(with_tolerance, month=HORIZON) == _units(without, month=HORIZON)
         assert _alice_cash(with_tolerance) == _alice_cash(without)

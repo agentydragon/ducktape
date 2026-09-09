@@ -141,6 +141,7 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
             initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=100)],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -148,6 +149,7 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
                     cash_ceiling=0,
                 ),
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",

@@ -36,7 +36,12 @@ pub(super) fn execute_private_equity(
             .filter(|(_, lot)| lot.spec.asset_id == asset_id)
             .map(|(index, _)| index)
             .collect();
-        candidates.sort_by_key(|index| (lots[*index].fifo_rank, lots[*index].spec.lot_id.clone()));
+        candidates.sort_by_key(|index| {
+            (
+                lots[*index].spec.purchase_month,
+                lots[*index].spec.lot_id.clone(),
+            )
+        });
         let first = candidates[0];
         let owner_agent_id = lots[first].spec.agent_id.clone();
         let quantity_scale = lots[first].spec.quantity_scale;

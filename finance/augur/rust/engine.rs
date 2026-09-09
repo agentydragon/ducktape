@@ -410,31 +410,7 @@ fn simulate_rollout(
         }
     }
 
-    let purchase_slot_count = fixture
-        .scenario
-        .target_allocation_policies
-        .iter()
-        .try_fold(0_usize, |total, policy| {
-            let slots = usize::try_from(policy.purchase_slots_per_sleeve).map_err(|_| {
-                ArithmeticError::Overflow {
-                    operation: "target-allocation purchase slot count",
-                }
-            })?;
-            let policy_slots =
-                policy
-                    .sleeves
-                    .len()
-                    .checked_mul(slots)
-                    .ok_or(ArithmeticError::Overflow {
-                        operation: "target-allocation purchase slot count",
-                    })?;
-            total
-                .checked_add(policy_slots)
-                .ok_or(ArithmeticError::Overflow {
-                    operation: "target-allocation purchase slot count",
-                })
-        })?;
-    let mut lots = Vec::with_capacity(fixture.scenario.initial_lots.len() + purchase_slot_count);
+    let mut lots = Vec::with_capacity(fixture.scenario.initial_lots.len());
     for spec in &fixture.scenario.initial_lots {
         if spec.basis != Money(0) {
             recorder.apply_entry(
@@ -457,60 +433,9 @@ fn simulate_rollout(
         }
         lots.push(LotState {
             spec: spec.clone(),
-            fifo_rank: i64::from(spec.purchase_month),
             units_remaining: spec.units,
             basis_remaining: spec.basis,
         });
-    }
-    let mut purchase_slot_rank = i64::from(fixture.scenario.horizon_months)
-        .checked_add(
-            i64::try_from(fixture.scenario.initial_lots.len()).map_err(|_| {
-                ArithmeticError::Overflow {
-                    operation: "target-allocation purchase slot rank",
-                }
-            })?,
-        )
-        .ok_or(ArithmeticError::Overflow {
-            operation: "target-allocation purchase slot rank",
-        })?;
-    for (policy_index, policy) in fixture
-        .scenario
-        .target_allocation_policies
-        .iter()
-        .enumerate()
-    {
-        let account_id = policy
-            .source_account_ids
-            .first()
-            .unwrap_or(&policy.account_id);
-        for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
-            for slot_index in 0..policy.purchase_slots_per_sleeve {
-                lots.push(LotState {
-                    spec: InitialLotSpec {
-                        lot_id: format!(
-                            "{}_buy_p{policy_index}_s{sleeve_index}_{slot_index}",
-                            policy.cause_id_prefix
-                        ),
-                        agent_id: policy.agent_id.clone(),
-                        account_id: account_id.clone(),
-                        asset_id: sleeve.asset_id.clone(),
-                        purchase_month: 0,
-                        quantity_scale: sleeve.quantity_scale,
-                        units: Quantity(0),
-                        basis: Money(0),
-                    },
-                    fifo_rank: purchase_slot_rank,
-                    units_remaining: Quantity(0),
-                    basis_remaining: Money(0),
-                });
-                purchase_slot_rank =
-                    purchase_slot_rank
-                        .checked_add(1)
-                        .ok_or(ArithmeticError::Overflow {
-                            operation: "target-allocation purchase slot rank",
-                        })?;
-            }
-        }
     }
     let mut target_allocation_buy_count: Vec<Vec<u32>> = fixture
         .scenario

@@ -9,7 +9,7 @@ use crate::{
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const INPUT_SCHEMA_VERSION: u32 = 11;
+pub const INPUT_SCHEMA_VERSION: u32 = 12;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -390,8 +390,7 @@ pub struct TargetAllocationPolicySpec {
     pub cash_ceiling: AmountSpec,
     #[serde(default = "default_allocation_cause_id_prefix")]
     pub cause_id_prefix: String,
-    #[serde(default)]
-    pub purchase_slots_per_sleeve: u32,
+    pub allow_purchases: bool,
     #[serde(default)]
     pub rebalance_tolerance_ppb: Option<i64>,
 }

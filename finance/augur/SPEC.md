@@ -155,9 +155,10 @@ delinquency balances, recovery/cure, or underpayment penalties.
 
 An agent can buy a dollar amount of a priced asset, creating a tax lot mid-horizon. The
 promises below are about the acquisition itself and hold however the order is raised.
-The durable channel is the target-allocation policy's purchase slots: policy decisions choose
-the month and amount, while the engine owns the shared lot, basis, rounding, and contra-account
-execution substrate.
+Target-allocation policies explicitly enable or disable purchases. Each settled purchase
+creates a lot; callers do not budget lot capacity. Policy decisions choose the month and
+amount, while the engine owns lot creation, basis, rounding, and balanced accounting.
+FIFO sales order lots by acquisition month, with lot identity breaking same-month ties.
 
 The lot's cost basis is **per-rollout** — it is the price that rollout paid — so gains on
 a purchased lot are measured against what was actually spent rather than against any

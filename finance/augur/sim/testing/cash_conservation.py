@@ -150,6 +150,7 @@ def target_allocation_sale_case() -> Case:
             ],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",

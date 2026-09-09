@@ -62,10 +62,8 @@ message, a chat reply — carries enough to reproduce it:
   separable at achievable sample sizes, so a bare ordering of cells is usually reading
   noise.
 
-**Gotcha: a default can be a policy choice.** `TargetAllocationPolicy.purchase_slots_per_sleeve`
-defaults to `0`, which means _the policy never buys_ — so surplus cash above the ceiling
-accumulates instead of being invested. That is a substantive strategy, and a reader who is not
-told will assume otherwise. State such a value, including when it is the default.
+`TargetAllocationPolicy.allow_purchases` is an explicit policy choice. With `False`, surplus
+cash accumulates instead of being invested; reports must state this sales-only behavior.
 
 `rebalancing` on the same model used to be the worse instance of this, defaulting to "never
 rebalance on drift"; it is now a required `CashflowOnly | DriftBand`, so every run says which

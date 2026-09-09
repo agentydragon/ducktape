@@ -320,7 +320,7 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
         )?;
     }
     for policy in &fixture.scenario.target_allocation_policies {
-        if policy.purchase_slots_per_sleeve == 0 {
+        if !policy.allow_purchases {
             continue;
         }
         let account_id = policy
@@ -572,7 +572,7 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 .round() as i64;
             if !(0..=MAX_EXACT_F64_INTEGER).contains(&tolerance)
                 || reconstructed != tolerance
-                || policy.purchase_slots_per_sleeve == 0
+                || !policy.allow_purchases
             {
                 return Err(SimulationError::InvalidTargetAllocationPolicy {
                     agent_id: policy.agent_id.clone(),
@@ -657,13 +657,21 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                     account_id: policy.account_id.clone(),
                 });
             }
-            for slot_index in 0..policy.purchase_slots_per_sleeve {
-                let lot_id = format!(
-                    "{}_buy_p{policy_index}_s{sleeve_index}_{slot_index}",
+            if policy.allow_purchases {
+                let prefix = format!(
+                    "{}_buy_p{policy_index}_s{sleeve_index}_",
                     policy.cause_id_prefix
                 );
-                if !lots.insert(lot_id.clone()) {
-                    return Err(SimulationError::DuplicateLot { lot_id });
+                for lot_id in &lots {
+                    if lot_id.strip_prefix(&prefix).is_some_and(|suffix| {
+                        suffix
+                            .parse::<u32>()
+                            .is_ok_and(|index| index.to_string() == suffix)
+                    }) {
+                        return Err(SimulationError::DuplicateLot {
+                            lot_id: lot_id.clone(),
+                        });
+                    }
                 }
             }
         }

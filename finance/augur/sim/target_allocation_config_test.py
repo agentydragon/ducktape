@@ -35,6 +35,7 @@ def _policy(**overrides: object) -> TargetAllocationPolicy:
             "cash_floor": 10_000,
             "cash_ceiling": 50_000,
             "rebalancing": CashflowOnly(),
+            "allow_purchases": False,
             **overrides,
         }
     )
@@ -114,6 +115,7 @@ def test_a_policy_must_say_how_it_rebalances() -> None:
 
     with pytest.raises(ValidationError, match="rebalancing"):
         TargetAllocationPolicy(
+            allow_purchases=False,
             agent_id="alice",
             account_id="checking",
             sleeves=[SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
@@ -122,17 +124,17 @@ def test_a_policy_must_say_how_it_rebalances() -> None:
         )  # type: ignore[call-arg]
 
 
-def test_a_drift_band_with_nowhere_to_buy_is_rejected() -> None:
-    """A rebalance sells the overweight sleeves and buys the underweight ones. With no purchase
-    slots the buy half cannot execute, so the policy would only ever sell — draining a little
+def test_a_drift_band_with_purchases_disabled_is_rejected() -> None:
+    """A rebalance sells the overweight sleeves and buys the underweight ones. If buying
+    is disabled the policy would only ever sell — draining a little
     more of the portfolio into cash on every trigger, which is a slow ruin rather than a
     rebalance. `CashflowOnly` is unaffected, since it never trades on drift at all."""
 
-    with pytest.raises(ValidationError, match=r"drift band .* but no purchase slots"):
-        _policy(rebalancing=DriftBand(tolerance=0.25), purchase_slots_per_sleeve=0)
+    with pytest.raises(ValidationError, match=r"drift band .* but purchases are disabled"):
+        _policy(rebalancing=DriftBand(tolerance=0.25), allow_purchases=False)
 
-    _policy(rebalancing=DriftBand(tolerance=0.25), purchase_slots_per_sleeve=1)
-    _policy(rebalancing=CashflowOnly(), purchase_slots_per_sleeve=0)
+    _policy(rebalancing=DriftBand(tolerance=0.25), allow_purchases=True)
+    _policy(rebalancing=CashflowOnly(), allow_purchases=False)
 
 
 if __name__ == "__main__":

@@ -602,10 +602,10 @@ class TargetAllocationPolicy(BaseModel):
     Refilling to the floor would put the agent back at its trigger next month, making it a
     forced seller into every dip — which is the risk this whole model exists to price.
 
-    **The ceiling carries two meanings, and which apply depends on `purchase_slots_per_sleeve`.**
-    It is always the refill target a raise aims at. With purchase slots it is also an
+    **The ceiling carries two meanings, and which apply depends on `allow_purchases`.**
+    It is always the refill target a raise aims at. With purchases enabled it is also an
     invest-above-this line: cash projected above the ceiling is invested down to the FLOOR,
-    water-filled into whichever sleeves are furthest below target. With no slots the policy
+    water-filled into whichever sleeves are furthest below target. Otherwise the policy
     never buys and surplus cash simply accumulates.
 
     `rebalancing` decides whether drift alone can trade. `CashflowOnly` moves toward the target
@@ -638,17 +638,12 @@ class TargetAllocationPolicy(BaseModel):
             "about it, and the pick would not appear at the call site or in any report."
         )
     )
-    purchase_slots_per_sleeve: NonNegativeInt = Field(
-        default=0,
+    allow_purchases: bool = Field(
         description=(
-            "How many separate purchases this policy may make into each sleeve over the whole "
-            "horizon. Every purchase needs its own lot — a lot bought in a different month has "
-            "a different holding period and a different basis — and lots are a dense axis, so "
-            "the count is configured rather than grown. Zero means the policy never buys, "
-            "which is the default because surplus cash accumulating above the ceiling is what "
-            "augur did before a policy could invest it. A run that wants more purchases than "
-            "it configured ABORTS rather than quietly buying less: see the exhaustion check."
-        ),
+            "Whether surplus cash is invested and drift rebalancing may buy underweight sleeves. "
+            "False is sales-only: surplus cash accumulates. Required because this changes the "
+            "investment strategy. Each settled purchase creates its own lot and cost basis."
+        )
     )
 
     @model_validator(mode="after")
@@ -670,11 +665,11 @@ class TargetAllocationPolicy(BaseModel):
         # CPI-indexed, hence traced, and a traced value cannot drive a raise. Indexing scales
         # both bounds by the same series, so an ordering that holds here holds on every path.
         validate_band_bounds(floor=_base_amount(self.cash_floor), ceiling=_base_amount(self.cash_ceiling))
-        if isinstance(self.rebalancing, DriftBand) and self.purchase_slots_per_sleeve == 0:
+        if isinstance(self.rebalancing, DriftBand) and not self.allow_purchases:
             raise ValueError(
                 f"target-allocation policy for {self.agent_id}/{self.account_id} sets a drift band of "
-                f"{self.rebalancing.tolerance} but no purchase slots. A rebalance sells the overweight "
-                "sleeves and buys the underweight ones; with nowhere to buy it would only ever sell, "
+                f"{self.rebalancing.tolerance} but purchases are disabled. A rebalance sells the overweight "
+                "sleeves and buys the underweight ones; with buying disabled it would only ever sell, "
                 "draining the portfolio into cash a little more on every trigger"
             )
         return self

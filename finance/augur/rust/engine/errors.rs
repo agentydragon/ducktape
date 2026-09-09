@@ -283,15 +283,6 @@ pub enum SimulationError {
         account_id: String,
     },
     #[error(
-        "target-allocation policy {cause_id_prefix:?} sleeve {sleeve_index} ran out of purchase slots: {configured} configured, {needed} needed. Raise `purchase_slots_per_sleeve` — every purchase needs its own lot, because it has its own basis and its own holding period."
-    )]
-    TargetAllocationPurchaseSlotExhaustion {
-        cause_id_prefix: String,
-        sleeve_index: usize,
-        configured: u32,
-        needed: u32,
-    },
-    #[error(
         "target-allocation policy for {agent_id}:{account_id} names duplicate asset {asset_id:?}"
     )]
     DuplicateTargetAllocationSleeve {

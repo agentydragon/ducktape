@@ -15,7 +15,7 @@ Ken French equity; a synthetic 20-year Moody's Aaa constant-maturity bond fund;
 1926–1995 record intent with actual coverage retained in `paths.json`.
 See <../../study/trinity/README.md> and its `replay.py` for source/construction gaps.
 It also inherits **no taxes**, no fees beyond those in the input series,
-cashflow-only rebalancing, a zero cash band, and **zero purchase slots** (surplus
+cashflow-only rebalancing, a zero cash band, and **purchases disabled** (surplus
 distributions remain cash). This is not the user's taxable portfolio model.
 
 With an evidence checkout containing the Trinity source files, run from the repo root:

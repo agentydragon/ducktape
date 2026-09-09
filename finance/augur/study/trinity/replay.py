@@ -312,6 +312,7 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
         else [],
         target_allocation_policies=[
             TargetAllocationPolicy(
+                allow_purchases=False,
                 rebalancing=CashflowOnly(),
                 agent_id=RETIREE,
                 account_id=CHECKING,
@@ -323,9 +324,7 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
                 ],
                 # No buffer at either end: the portfolio holds no idle cash, and each
                 # withdrawal is funded by selling exactly what it costs, from whichever sleeve
-                # is most overweight. That is the paper's implicit annual rebalance-on-
-                # withdrawal, and the closest augur expresses to it — a drift-triggered
-                # rebalance needs a purchase slot per buy, and the lot axis is dense.
+                # is most overweight. This sales-only study convention does not rebalance by buying.
                 cash_floor=Decimal(0),
                 cash_ceiling=Decimal(0),
             )

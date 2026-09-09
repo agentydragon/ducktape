@@ -1654,6 +1654,7 @@ class YearEndTaxAcceptance:
             ],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -1923,6 +1924,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2029,6 +2031,7 @@ class ObligationAcceptance:
             ],
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2097,6 +2100,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="taxable",
@@ -2157,6 +2161,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2215,6 +2220,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0] * 4),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2331,6 +2337,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2394,6 +2401,7 @@ class ObligationAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2434,6 +2442,7 @@ class ObligationAcceptance:
             ),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2759,6 +2768,7 @@ class RolloutFailureAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",
@@ -2838,6 +2848,7 @@ class RolloutFailureAcceptance:
             external_series=deterministic_series_bundle([100.0, 100.0, 100.0]),
             target_allocation_policies=[
                 TargetAllocationPolicy(
+                    allow_purchases=False,
                     rebalancing=CashflowOnly(),
                     agent_id="alice",
                     account_id="checking",

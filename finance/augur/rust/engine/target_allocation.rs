@@ -123,7 +123,7 @@ pub(super) fn execute_target_allocation_sales(
             (vec![0; values.len()], vec![0; values.len()])
         };
         for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
-            if policy.purchase_slots_per_sleeve > 0 {
+            if policy.allow_purchases {
                 let band_units = quantity_for_value(
                     sleeve_deposits[sleeve_index],
                     prices[sleeve_index],
@@ -193,7 +193,10 @@ pub(super) fn execute_target_allocation_sales(
                     .map(|(index, _)| index)
                     .collect();
                 candidates.sort_by_key(|index| {
-                    (lots[*index].fifo_rank, lots[*index].spec.lot_id.clone())
+                    (
+                        lots[*index].spec.purchase_month,
+                        lots[*index].spec.lot_id.clone(),
+                    )
                 });
                 let available = candidates.iter().try_fold(0_i64, |sum, index| {
                     sum.checked_add(lots[*index].units_remaining.0).ok_or(
@@ -234,7 +237,7 @@ pub(super) fn execute_target_allocation_buys(
     fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
-    lots: &mut [LotState],
+    lots: &mut Vec<LotState>,
     buy_count: &mut [Vec<u32>],
     month: u32,
     pending_buys: &[PendingAllocationBuy],
@@ -251,28 +254,30 @@ pub(super) fn execute_target_allocation_buys(
         }
 
         let used = buy_count[order.policy_index][order.sleeve_index];
-        if used >= policy.purchase_slots_per_sleeve {
-            return Err(SimulationError::TargetAllocationPurchaseSlotExhaustion {
-                cause_id_prefix: policy.cause_id_prefix.clone(),
-                sleeve_index: order.sleeve_index,
-                configured: policy.purchase_slots_per_sleeve,
-                needed: used.checked_add(1).ok_or(ArithmeticError::Overflow {
-                    operation: "target-allocation purchase count",
-                })?,
-            });
-        }
         let lot_id = format!(
             "{}_buy_p{}_s{}_{}",
             policy.cause_id_prefix, order.policy_index, order.sleeve_index, used
         );
-        let lot_index = lots
-            .iter()
-            .position(|lot| lot.spec.lot_id == lot_id)
-            .expect("validated purchase slot must be preallocated");
         let spent = PerUnit(order.unit_price).times(
             Units::new(Quantity(units), sleeve.quantity_scale),
             "target-allocation purchase value",
         )?;
+        let spec = InitialLotSpec {
+            lot_id,
+            agent_id: policy.agent_id.clone(),
+            account_id: policy
+                .source_account_ids
+                .first()
+                .unwrap_or(&policy.account_id)
+                .clone(),
+            asset_id: sleeve.asset_id.clone(),
+            purchase_month: i32::try_from(month).map_err(|_| ArithmeticError::Overflow {
+                operation: "target-allocation purchase month",
+            })?,
+            quantity_scale: sleeve.quantity_scale,
+            units: Quantity(units),
+            basis: spent,
+        };
         let cause_id = format!(
             "{}_buy_m{month}_security:{}",
             policy.cause_id_prefix, sleeve.asset_id
@@ -288,20 +293,17 @@ pub(super) fn execute_target_allocation_buys(
                         amount: spent.checked_neg()?,
                     },
                     Posting {
-                        account: asset_basis_account(&lots[lot_index].spec),
+                        account: asset_basis_account(&spec),
                         amount: spent,
                     },
                 ],
             },
         )?;
-        let lot = &mut lots[lot_index];
-        lot.spec.purchase_month = i32::try_from(month).map_err(|_| ArithmeticError::Overflow {
-            operation: "target-allocation purchase month",
-        })?;
-        lot.spec.units = Quantity(units);
-        lot.spec.basis = spent;
-        lot.units_remaining = Quantity(units);
-        lot.basis_remaining = spent;
+        lots.push(LotState {
+            spec,
+            units_remaining: Quantity(units),
+            basis_remaining: spent,
+        });
         buy_count[order.policy_index][order.sleeve_index] =
             used.checked_add(1).ok_or(ArithmeticError::Overflow {
                 operation: "target-allocation purchase count",

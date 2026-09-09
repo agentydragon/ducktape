@@ -886,6 +886,7 @@ def _target_allocation_policies_from_funding_policy(
     targeted = {sleeve.asset for sleeve in sleeves}
     return [
         TargetAllocationPolicy(
+            allow_purchases=False,
             rebalancing=CashflowOnly(),
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,

@@ -418,7 +418,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 cash_floor=_indexed(Decimal(20_000), INFLATION),
                 cash_ceiling=Decimal(40_000),
                 cause_id_prefix="benchmark-allocation",
-                purchase_slots_per_sleeve=128,
+                allow_purchases=True,
                 rebalancing=DriftBand(tolerance=0.1),
             )
         ],

@@ -299,7 +299,7 @@ def allocation_policy(
     source_account_ids: tuple[str, ...] = ("brokerage-a", "brokerage-b"),
     cash_floor: AmountSpec = Decimal(10_000),
     cash_ceiling: AmountSpec = Decimal(30_000),
-    purchase_slots_per_sleeve: int = 0,
+    allow_purchases: bool = False,
     rebalancing: RebalancingRule = _CASHFLOW_ONLY,
 ) -> TargetAllocationPolicy:
     """An equal-weight VTI/BND band on Alice's `checking` account."""
@@ -311,7 +311,7 @@ def allocation_policy(
         sleeves=[SleeveTarget(asset=VTI, weight=1), SleeveTarget(asset=BND, weight=1)],
         cash_floor=cash_floor,
         cash_ceiling=cash_ceiling,
-        purchase_slots_per_sleeve=purchase_slots_per_sleeve,
+        allow_purchases=allow_purchases,
         rebalancing=rebalancing,
     )
 
@@ -372,16 +372,6 @@ def target_allocation_case() -> Case:
                 amount_due=Decimal(5_000),
             )
         ]
-    )
-
-
-def target_allocation_purchase_case(*, purchase_slots: int = 1) -> Case:
-    """The same band with cash above its ceiling, so the policy buys rather than sells."""
-
-    return allocation_case(
-        horizon_months=2,
-        initial_cash=checking(("alice", Decimal(100_000)), ("landlord", Decimal(0)), ("irs", Decimal(0))),
-        policy=allocation_policy(cash_ceiling=Decimal(20_000), purchase_slots_per_sleeve=purchase_slots),
     )
 
 
