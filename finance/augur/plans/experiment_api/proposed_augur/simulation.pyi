@@ -1,7 +1,8 @@
 """Canonical financial stepping, with an experiment-owned monthly loop.
 
 Scheduled cashflows and due-claim assembly precede the monthly observation.
-One observation/call per active actor/month. Advance executes action lists in
+One observation per active actor/path/month and one policy call per actor's batch.
+Advance executes action lists in
 caller order, preserving product cash availability. An unexecutable action is
 atomic and fatal only for its rollout: retain successful prefix, skip later actions
 and never call that path's policies again. No retry, automatic funding, cuts,
@@ -19,14 +20,9 @@ from dataclasses import dataclass
 from proposed_augur.accounting import Actor
 from proposed_augur.markets import Worlds
 from proposed_augur.observations import Observation
-from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.policies import DecisionKey, Initialize, Response
 from proposed_augur.results import Observer, PathResults, Run
 from proposed_augur.state import Situation
-
-@dataclass(frozen=True)
-class DecisionKey:
-    policy: PolicyKey
-    month_index: int
 
 @dataclass(frozen=True)
 class DecisionBatch:
@@ -60,6 +56,9 @@ def run(
 ) -> Run:
     """Optional monthly loop using precisely the Session contract.
 
-    Initializes fresh memory per original actor/path identity, including trace
-    replay; never serializes closures or mutates reused worlds/situations.
+    Accepts only batch policies, including explicitly adapted scalar functions.
+    Initializes each actor's selected original path identities with fresh memory,
+    including trace replay; never serializes closures or mutates reused worlds.
+    Each call must return exactly its pending decision keys. Path state must be
+    isolated by identity so selecting, reordering or partitioning paths is neutral.
     """

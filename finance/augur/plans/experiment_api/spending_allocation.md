@@ -25,7 +25,7 @@ from proposed_augur.instruments import Instrument, Weights
 from proposed_augur.markets import MarketModel
 from proposed_augur.money import RealAmount
 from proposed_augur.observations import Observation
-from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.policies import PolicyKey, Response, ScalarInitialize, scalar_to_batch
 from proposed_augur.proposals import (
     Portfolio, PreviewAssumptions, PreviewError, preview, raise_cash, rebalance,
 )
@@ -43,7 +43,7 @@ def household_policy(
     portfolio: Portfolio, targets: Weights,
     should_rebalance: Callable[[Observation], bool], reserve_years: float,
     assumptions: PreviewAssumptions,
-) -> Initialize:
+) -> ScalarInitialize:
     def decide(obs: Observation, previous: RealAmount):
         budget = flex(obs, previous) if obs.month_index % 12 == 0 else previous
         actions = transition(obs, budget)  # Concrete terms/actions, not a cheaper-life flag.
@@ -124,7 +124,8 @@ def spending_allocation(inputs: Inputs) -> StudyResult:
                 inputs.should_rebalance, inputs.reserve_years, inputs.assumptions,
             )
             run = run_paths(
-                inputs.situation, policies={household: initialize}, reporting_actor=household,
+                inputs.situation, policies={household: scalar_to_batch(initialize)},
+                reporting_actor=household,
                 worlds=worlds,
                 observers=financial_observers(
                     "total_spending_real", "minimum_annual_spending_real",
@@ -149,7 +150,10 @@ def spending_allocation(inputs: Inputs) -> StudyResult:
     return pl.concat(rows), runs
 ```
 
-These are ordinary editable functions: a guardrail, cash band or target trajectory
+`household_policy` is scalar authoring code for reuse inside composed helpers.
+The experiment explicitly adapts it to the only canonical policy API, a batch
+function, with fresh memory per original path. These are ordinary editable
+functions: a guardrail, cash band or target trajectory
 can be reused without adding a policy variant to the executor. The first useful
 flex candidates are fixed real spending, bounded annual changes and GK-inspired
 rules, with explicit consumption floors. This example reviews budgets annually

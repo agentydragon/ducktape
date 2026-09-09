@@ -18,7 +18,7 @@ from proposed_augur.data import NamedSeries
 from proposed_augur.markets import MarketModel
 from proposed_augur.money import Money
 from proposed_augur.observations import Observation
-from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.policies import Initialize, PolicyKey, Response, ScalarInitialize, scalar_to_batch
 from proposed_augur.proposals import (
     Portfolio, PreviewAssumptions, PreviewError, preview, raise_cash,
 )
@@ -31,7 +31,7 @@ from proposed_augur.state import Situation
 type CashToAccept = Callable[[Observation, LeaseOffer | PurchaseOffer], Money]
 def housing_policy(
     offer: LeaseOffer | PurchaseOffer, portfolio: Portfolio,
-    cash_to_accept: CashToAccept, monthly: Initialize, assumptions: PreviewAssumptions,
+    cash_to_accept: CashToAccept, monthly: ScalarInitialize, assumptions: PreviewAssumptions,
 ) -> Initialize:
     def initialize(key: PolicyKey):
         continue_month, initial_memory = monthly(key)
@@ -59,7 +59,7 @@ def housing_policy(
             return Response(opening + response.actions), memory
 
         return decide, initial_memory
-    return initialize
+    return scalar_to_batch(initialize)
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,7 @@ class Inputs:
     offers: dict[str, LeaseOffer | PurchaseOffer]
     portfolio: Portfolio
     cash_to_accept: CashToAccept
-    monthly_policies: dict[str, Initialize]
+    monthly_policies: dict[str, ScalarInitialize]
     assumptions: PreviewAssumptions
     study_observers: dict[str, Observer]
     years: int
@@ -116,7 +116,9 @@ def housing(inputs: Inputs) -> StudyResult:
     return pl.concat(rows), runs
 ```
 
-`monthly_policies` contains coordinated spending/claim-payment/investment functions
+`monthly_policies` contains scalar authoring helpers for coordinated
+spending/claim-payment/investment; the complete housing function is adapted once
+to the canonical batch-only API. These are functions
 such as the [personal example](spending_allocation.md), not separate engine-owned
 spending and allocation hooks. The author may vary target trajectories, reserve
 rules and consumption without changing mortgage accounting. Newly created

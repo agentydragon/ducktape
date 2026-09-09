@@ -22,7 +22,7 @@ from proposed_augur.data import NamedSeries
 from proposed_augur.markets import MarketModel, Worlds
 from proposed_augur.money import RealAmount
 from proposed_augur.observations import Observation
-from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.policies import Initialize, PolicyKey, Response, scalar_to_batch
 from proposed_augur.results import Runs, StudyResult, financial_observers
 from proposed_augur.simulation import run as run_paths
 from proposed_augur.state import Situation
@@ -59,7 +59,7 @@ def reassessed_policy(
             return Response(monthly_actions(obs, budget)), budget
 
         return decide, initial
-    return initialize
+    return scalar_to_batch(initialize)
 
 
 def forecast_feedback(
@@ -119,7 +119,8 @@ adaptive policy itself; outer outcomes measure the latter.
 `monthly_actions` is ordinary composed Python proposal code, like the
 [personal example](spending_allocation.md): explicit funding, payments, consumption
 and investments. It is not an engine spending hook or target-weight instruction.
-The policy is called only once per outer actor/month; inner simulation is an
+The canonical outer policy is called once per actor's monthly batch; its optional
+scalar adapter evaluates each path once. Inner simulation is an
 independent experiment computation, not another decision opportunity on the outer
 books. Failed actions stop their own inner or outer rollout with prefix receipts
 retained. There is no execution retry or exception-driven budget repair.
@@ -140,5 +141,6 @@ surrogates are later alternatives requiring measured approximation error.
 
 This intentionally demanding example belongs in the runtime/authoring evaluation.
 It permits nested computation without promising that arbitrary Python closures
-compile or that scalar inner loops are fast. Batching/representation and executor
-language are separate choices, not additional semantics of the policy.
+compile or that scalar inner loops are fast. Both outer and inner run helpers
+accept only batch policies. Batch representation and executor language remain
+separate choices, not an option to expose a second scalar engine interface.

@@ -12,7 +12,7 @@ from proposed_augur.instruments import Weights
 from proposed_augur.markets import AnnualConvention
 from proposed_augur.money import Money, RealAmount
 from proposed_augur.observations import Observation
-from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.policies import Initialize, PolicyKey, Response, scalar_to_batch
 from proposed_augur.proposals import Portfolio, PreviewAssumptions, preview, raise_cash, rebalance
 
 IMMEDIATE = PreviewAssumptions(settlement="immediate")
@@ -64,10 +64,12 @@ def annual_policy(
 
     def initialize(key: PolicyKey):
         return decide, initial.value
-    return initialize
+    return scalar_to_batch(initialize)
 ```
 
-This helper withdraws once a year and rebalances once a year; other monthly calls
+The returned initializer supplies a batch policy through the optional scalar
+adapter; the engine has no scalar callback. This helper withdraws once a year and
+rebalances once a year; other monthly decisions
 return no actions. When both occur in one month, this author's order is funding,
 consumption, then rebalancing. Different paper conventions can use a different
 function. There is no engine sorting or post-policy allocation pass.

@@ -51,10 +51,12 @@ framework is implied. Pure model scoring needs no investor or financial executio
 
 ## The experiment owns the monthly loop
 
-One ordinary function receives one actor's monthly observation and memory and
-returns `(Response(ordered_actions), memory)`. Initialization is another ordinary
-function, not a required class. Scalar authoring can be adapted over observations
-in Python while transferring all active paths' actions in one batch:
+The canonical policy function is batch-only: it receives one actor's active
+monthly observations plus author-owned memory, and returns a response mapping
+plus updated memory. Each response contains that path's ordered actions.
+Initialization is another ordinary function, not a required class.
+`scalar_to_batch` optionally adapts scalar functions in Python; it does not add a
+scalar engine hook. The experiment transfers the active population in one batch:
 
 ```python
 from collections.abc import Mapping
@@ -79,12 +81,21 @@ def experiment_loop(
     pending = session.start()
     while not isinstance(pending, Finished):
         responses = {}
-        for key, observation in pending.observations.items():
-            if key.policy not in local:
-                local[key.policy] = policies[key.policy.actor](key.policy)
-            decide, memory = local[key.policy]
-            responses[key], memory = decide(observation, memory)
-            local[key.policy] = decide, memory
+        for decision_actor, initialize in policies.items():
+            observations = {
+                key: obs for key, obs in pending.observations.items()
+                if key.policy.actor == decision_actor
+            }
+            if not observations:
+                continue
+            if decision_actor not in local:
+                local[decision_actor] = initialize(tuple(key.policy for key in observations))
+            decide_batch, memory = local[decision_actor]
+            actor_responses, memory = decide_batch(observations, memory)
+            if actor_responses.keys() != observations.keys():
+                raise ValueError("Batch policy must answer exactly its pending decisions")
+            responses.update(actor_responses)
+            local[decision_actor] = decide_batch, memory
         # One monthly transfer for the active population, not a native call per row.
         pending = session.advance(responses)
     return pending.result
@@ -95,14 +106,18 @@ policies explicitly; its `Run` adds replay using those supplied initializers.
 The raw loop returns `PathResults`, without pretending the session captured
 arbitrary caller functions. The experiment chooses
 paths, models, actors, policies, sweeps and analysis; the executor still owns
-accrual, settlement, contracts, taxes and financial time evolution. Row layout,
-batch-native authoring and chunk size remain open to P6/GL. Response keys include the pending month, so a stale
+accrual, settlement, contracts, taxes and financial time evolution. Policy calls
+are batch-only; row layout and chunk size remain open to P6/GL. Response keys include the pending month, so a stale
 response map is rejected; policy memory uses the stable actor/path identity.
 Runtime language is separately open to RUNTIME/GE; ordinary Python policies do not require all execution
 to remain Rust or imply a per-path native call. No arbitrary closure serialization
 or universal checkpoint API is required.
 
-Every active actor gets exactly one call per month. Annual studies return empty
+Every active actor/path gets exactly one decision per month, carried by the
+actor's batch call. The optional scalar adapter may call its scalar function N
+times inside that batch call; neither the engine nor this outer loop invokes a
+scalar policy interface. Memory remains isolated by original actor/path identity,
+not batch position. Annual studies return empty
 actions in intervening months; their spending/rebalance cadence does not change.
 Annual-only records need the declared synthetic month-grid adapter in
 [study helpers](study_helpers.md), not invented observed monthly returns.

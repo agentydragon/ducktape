@@ -26,7 +26,7 @@ from proposed_augur.state import Situation
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from proposed_augur.policies import Initialize
+from proposed_augur.policies import ScalarInitialize, scalar_to_batch
 from proposed_augur.proposals import Portfolio
 from proposed_augur.accounting import AccountRef
 from proposed_augur.instruments import Instrument, Weights
@@ -60,7 +60,7 @@ class GuytonSettings:
 # Author-owned algorithm, supplied after resolving the paper interpretations.
 # The decision log is separate from actual execution receipts.
 type MakeGuytonPolicy = Callable[
-    [GuytonSettings, Portfolio, dict[tuple[str, int], dict[str, str | int | bool]]], Initialize
+    [GuytonSettings, Portfolio, dict[tuple[str, int], dict[str, str | int | bool]]], ScalarInitialize
 ]
 
 
@@ -127,7 +127,7 @@ def guyton_klinger(
             initialize = make_policy(settings, portfolio, decision_log)
             run = run_paths(
                 situation,
-                policies={actor: initialize}, reporting_actor=actor,
+                policies={actor: scalar_to_batch(initialize)}, reporting_actor=actor,
                 worlds=worlds,
                 observers=financial_observers(
                     "terminal_wealth_nominal", "total_spending_real",
@@ -183,7 +183,8 @@ this reproduction, not an endorsement for personal planning.
 
 The supplied `make_policy` is experiment-owned Python, not an Augur policy enum
 or a claim that this document implements the paper. It returns one ordinary
-monthly function plus fresh actor/path-local memory. That function emits explicit
+scalar monthly function plus fresh actor/path-local memory; the experiment
+explicitly adapts it to the canonical batch-only API. That function emits explicit
 sales, consumption and reserve/reinvestment purchases in its chosen order, using
 canonical preview/accounting. It never submits targets for an engine allocator.
 
