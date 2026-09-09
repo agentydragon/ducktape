@@ -66,6 +66,13 @@ spec:
                 secretKeyRef:
                   name: cli-proxy-api-management
                   key: management-password
+            # Startup log showed: "failed to prepare static directory for management
+            # asset error=mkdir /config/static: read-only file system" -- by default the
+            # app downloads its management.html UI asset into a `static/` dir next to the
+            # config file, but /config is a read-only Secret mount here. Point it at the
+            # writable data PVC instead so the download (and the UI it serves) succeeds.
+            - name: MANAGEMENT_STATIC_PATH
+              value: /data/management-static/management.html
           ports:
             - name: http
               containerPort: 8317
