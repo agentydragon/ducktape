@@ -216,14 +216,8 @@ pub fn simulate_summaries_validated(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(
-                fixture.input,
-                rollout_id,
-                CaptureMode::Summary,
-                None,
-                None,
-            )
-            .map(RolloutComputation::into_summary)
+            simulate_rollout(fixture.input, rollout_id, CaptureMode::Summary, None, None)
+                .map(RolloutComputation::into_summary)
         })
         .collect();
     Ok(PopulationOutput {
