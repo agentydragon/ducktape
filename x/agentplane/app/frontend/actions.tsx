@@ -155,18 +155,32 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
   }, [service]);
 
   useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+    if (service !== actionService) {
+      void refresh();
+      return;
+    }
+    const source = new EventSource("/actions/stream");
+    source.addEventListener("snapshot", (event) => {
+      try {
+        setRequests(JSON.parse((event as MessageEvent).data) as ActionRequestView[]);
+        setError(null);
+      } catch {
+        setError("The live Action update was invalid.");
+      }
+    });
+    source.onerror = () => setError("The live Action stream disconnected; reconnecting.");
+    return () => source.close();
+  }, [refresh, service]);
 
   async function decide(request: ActionRequestView, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
     try {
       const updated = await service.decide(request, verdict);
-      setRequests((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setRequests((current) =>
+        current.map((item) => (item.id === updated.id && updated.version >= item.version ? updated : item))
+      );
       setError(null);
-      await refresh();
+      if (service !== actionService) await refresh();
     } catch (failure) {
       setError(displayableError(failure));
     } finally {

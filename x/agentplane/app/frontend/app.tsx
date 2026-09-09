@@ -7,6 +7,7 @@ import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
+import { PushSettings } from "./push";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
 function sandboxPath(name: string): string {
@@ -79,12 +80,20 @@ function AppRoutes(): JSX.Element {
           >
             Connections
           </Button>
+          <Button
+            variant={location.pathname === "/notifications" ? "filled" : "subtle"}
+            onClick={() => void navigate("/notifications")}
+          >
+            Notifications
+          </Button>
         </Group>
         <Routes>
           <Route path="/" element={<ListRoute />} />
           <Route path="/actions" element={<ActionRequests />} />
+          <Route path="/actions/:requestId" element={<ActionRequests />} />
           <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
           <Route path="/connections" element={<Connections />} />
+          <Route path="/notifications" element={<PushSettings />} />
           <Route path="/sandboxes/:name" element={<SandboxRoute />} />
           <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
           <Route path="*" element={<ListRoute />} />

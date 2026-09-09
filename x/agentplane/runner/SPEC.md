@@ -92,6 +92,14 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 - `Interrupt` ends the active turn, which completes as `INTERRUPTED`; with no active turn it is
   ignored.
 
+## Model changes
+
+- `SwitchModel` changes a running session's model only between turns. A successful switch preserves
+  the native conversation and session instructions, becomes the stored default for a restart, and
+  takes effect on the next model request. The runner records either `ModelSwitchSucceeded` or
+  `ModelSwitchRejected`; each `TurnStarted` records the effective model so mixed-model histories
+  remain auditable.
+
 ## Durability and restart
 
 - The log is written before an event is delivered. Harness, input, and turn lifecycle events are

@@ -38,8 +38,10 @@ use crate::{
 mod accounts;
 pub mod allocation;
 mod cashflows;
+mod claims;
 mod errors;
 mod obligations;
+pub mod observations;
 mod private_equity;
 mod property;
 mod recorder;
@@ -56,6 +58,7 @@ pub use errors::SimulationError;
 
 use accounts::*;
 use cashflows::*;
+use claims::*;
 use obligations::*;
 use private_equity::*;
 use property::*;
@@ -572,7 +575,19 @@ impl<'a> RolloutState<'a> {
             // Decide from opening-of-month holdings and current prices, before this month's
             // cashflows. The resulting demand is funded with the other monthly obligations.
             let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
-                policy.obligation(fixture, rollout_id, month, &self.ledger, &self.lots)?
+                policy.obligation(
+                    fixture,
+                    rollout_id,
+                    month,
+                    observations::Books {
+                        ledger: &self.ledger,
+                        lots: &self.lots,
+                        mortgages: &self.mortgages,
+                        tax: &self.tax,
+                        tax_liabilities: &self.tax_liabilities,
+                        tlh_cumulative_harvest: &self.tlh_cumulative_harvest,
+                    },
+                )?
             } else {
                 None
             };
@@ -657,62 +672,14 @@ impl<'a> RolloutState<'a> {
                 .as_ref()
                 .map_or(Money(0), |claim| claim.amount_due);
             active_obligations.extend(spending_obligation);
-            for obligation in fixture
-                .scenario
-                .obligations
-                .iter()
-                .filter(|obligation| obligation.month == month)
-            {
-                let Some(effect) = configured_obligation_effect(
-                    &self.properties,
-                    obligation.property_id.as_deref(),
-                    obligation.deduction_category.as_deref(),
-                    obligation.deductible_fraction_ppb,
-                ) else {
-                    continue;
-                };
-                active_obligations.push(ActiveObligation {
-                    cause_id: format!("{}_m{month}", obligation.obligation_id),
-                    obligation_type: obligation.obligation_type.clone(),
-                    from: obligation.from.clone(),
-                    to: obligation.to.clone(),
-                    amount_due: amount_value(fixture, rollout_id, month, &obligation.amount_due)?,
-                    effect,
-                });
-            }
-            for obligation in fixture
-                .scenario
-                .recurring_obligations
-                .iter()
-                .filter(|obligation| {
-                    obligation.start_month <= month
-                        && obligation.end_month.is_none_or(|end| month <= end)
-                })
-            {
-                let Some(effect) = configured_obligation_effect(
-                    &self.properties,
-                    obligation.property_id.as_deref(),
-                    obligation.deduction_category.as_deref(),
-                    obligation.deductible_fraction_ppb,
-                ) else {
-                    continue;
-                };
-                active_obligations.push(ActiveObligation {
-                    cause_id: format!("{}_m{month}", obligation.obligation_id),
-                    obligation_type: obligation.obligation_type.clone(),
-                    from: obligation.from.clone(),
-                    to: obligation.to.clone(),
-                    amount_due: amount_value(fixture, rollout_id, month, &obligation.amount_due)?,
-                    effect,
-                });
-            }
-            active_obligations.extend(property_obligations(
+            active_obligations.extend(claims::assemble(
                 fixture,
+                rollout_id,
+                month,
                 &self.properties,
                 &self.mortgages,
-                month,
+                &self.tax_liabilities,
             )?);
-            active_obligations.extend(tax_obligations(fixture, &self.tax_liabilities, month)?);
             let target_allocation_buys = execute_target_allocation_sales(
                 fixture,
                 rollout_id,

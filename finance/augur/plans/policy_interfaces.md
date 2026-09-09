@@ -1,6 +1,6 @@
 # Actor-facing policy interfaces
 
-Target design for P1–P12 and gates GP/GL/GE in [the roadmap](roadmap.md),
+Target design for P2–P12 and gates GP/GL/GE in [the roadmap](roadmap.md),
 not implemented API declarations. Module names and types below are sketches;
 reuse existing domain types and introduce fields only for a supported consumer.
 
@@ -178,7 +178,7 @@ silently sell something else, cut spending or borrow.
 GP resolves P7's information/review times, same-time action order,
 execution versus settlement availability, and rejection/deadline/stop behavior.
 Broader partial-payment, default and recovery models are separate scoped changes.
-The existing opening-month/all-or-none cases remain controls for P1/P2/P6, not
+The existing opening-month/all-or-none cases remain controls for P2/P6, not
 the destination contract. P6/GL decides policy-call representation; RUNTIME/GE
 decides executor placement. If GE retains hybrid execution, P9 promotes the
 measured bridge with P7's actor loop and P8's helpers; otherwise replan the

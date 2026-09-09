@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
@@ -9,7 +10,7 @@ from uuid import UUID
 import grpc
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -270,6 +271,7 @@ Store = Annotated[TrajectoryStore, Depends(_store)]
 
 
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
+push_router = APIRouter(prefix="/push", tags=["push"])
 consent_router = APIRouter(prefix="/connection-enrollments", tags=["connections"])
 
 
@@ -347,6 +349,22 @@ async def list_actions(
     return await client.list_requests(states=tuple(state or ()))
 
 
+@actions_router.get("/stream")
+async def action_stream(request: Request, client: OperatorActions) -> StreamingResponse:
+    async def body() -> AsyncIterator[bytes]:
+        # Force periodic reauthentication (including logout in another replica), not state polling.
+        try:
+            async with asyncio.timeout(30):
+                async for chunk in client.stream_requests():
+                    if operator_session(request) is None or await request.is_disconnected():
+                        return
+                    yield chunk
+        except TimeoutError:
+            return
+
+    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
 @actions_router.get("/{request_id}")
 async def get_action(request_id: UUID, client: OperatorActions) -> ActionRequestView:
     return await client.get(request_id)
@@ -363,6 +381,31 @@ async def action_events(
 
 @actions_router.post("/{request_id}/decision")
 async def decide_action(request_id: UUID, body: DecisionInput, client: OperatorActions) -> ActionRequestView:
+    return await client.decide(request_id, body)
+
+
+@push_router.get("/config")
+async def push_config(client: OperatorActions) -> dict[str, str | None]:
+    return await client.push_config()
+
+
+@push_router.get("/subscriptions")
+async def push_subscriptions(client: OperatorActions) -> list[dict[str, object]]:
+    return await client.push_subscriptions()
+
+
+@push_router.post("/subscriptions", status_code=204)
+async def register_push_subscription(body: dict[str, str], client: OperatorActions, request: Request) -> None:
+    await client.register_push(body, user_agent=request.headers.get("user-agent", "")[:300])
+
+
+@push_router.delete("/subscriptions", status_code=204)
+async def remove_push_subscription(endpoint: str, client: OperatorActions) -> None:
+    await client.remove_push(endpoint)
+
+
+@push_router.post("/decision/{request_id}")
+async def push_decision(request_id: UUID, body: DecisionInput, client: OperatorActions) -> ActionRequestView:
     return await client.decide(request_id, body)
 
 
@@ -460,6 +503,7 @@ def create_app(
         runner_bridge.router,
         threads,
         actions_router,
+        push_router,
         consent_router,
         connections_router,
         egress_router,

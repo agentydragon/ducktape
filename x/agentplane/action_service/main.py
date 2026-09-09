@@ -27,6 +27,7 @@ from x.agentplane.action_service.enrollments import EnrollmentAuthority
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
 from x.agentplane.action_service.oauth import OAuthSettings, running_oauth
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from x.agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore, WebPushSettings
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
@@ -75,6 +76,7 @@ class Settings(BaseSettings):
         default=None,
         description="Opt in to auto-allow only bounded echo(message) on a reviewed credentialless MCP group.",
     )
+    web_push: WebPushSettings | None = Field(default=None, description="Optional Web Push delivery identity.")
 
     @model_validator(mode="after")
     def one_operator_authority(self) -> Settings:
@@ -131,6 +133,21 @@ async def async_main(settings: Settings) -> None:
         executors = await stack.enter_async_context(running_executor(catalog))
         connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
+        push_notifier: ActionPushNotifier | None = None
+        if settings.web_push is not None:
+            push_notifier = ActionPushNotifier(
+                PushIdentity(settings.web_push),
+                PushSubscriptionStore(make_sessionmaker(engine)),
+                base_url=settings.web_push.public_base_url,
+                database_url=settings.database_url,
+                authorized_operators=frozenset(
+                    f"{settings.operator_oidc.issuer}:{subject}" for subject in settings.operator_oidc.subjects
+                )
+                if settings.operator_oidc
+                else frozenset(),
+            )
+            stack.push_async_callback(push_notifier.close)
+            push_notifier.start()
         service = ActionService(
             ActionStore(make_sessionmaker(engine), external_grants=connections), catalog, executors, providers=providers
         )
@@ -170,6 +187,10 @@ async def async_main(settings: Settings) -> None:
             updates=ActionUpdates(settings.database_url),
             enrollments=enrollments if oauth is not None else None,
             oauth=oauth,
+            push_identity=PushIdentity(settings.web_push) if settings.web_push is not None else None,
+            push_subscriptions=PushSubscriptionStore(make_sessionmaker(engine))
+            if settings.web_push is not None
+            else None,
         )
         await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
 

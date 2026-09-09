@@ -18,7 +18,7 @@ pub struct Spending {
 
 /// Opening holdings valued at this month's prices, before monthly cashflows or sales.
 /// No future paths or mutable financial state are supplied to the decision function.
-pub struct Observation {
+pub struct Observation<'a> {
     pub month: u32,
     /// Cash across the payer agent's declared accounts, not just the funding account.
     pub cash: Money,
@@ -27,6 +27,9 @@ pub struct Observation {
     pub public_holdings: Money,
     /// Current CPI / rollout-origin CPI. The function chooses its own reset cadence.
     pub price_level: Factor,
+    /// Actor-scoped opening books, including accessible lots and already-booked
+    /// contract/tax facts. This month's claims have not been assembled at this review.
+    pub books: observations::ActorBooks<'a>,
 }
 
 /// Run forensic timelines using an ordinary function, constructed once per rollout.
@@ -225,22 +228,24 @@ impl Policy<'_> {
         input: &ExecutionInput,
         rollout: u32,
         month: u32,
-        ledger: &Ledger,
-        lots: &[LotState],
+        books: observations::Books<'_>,
     ) -> Result<Option<ActiveObligation>, SimulationError> {
+        let books = observations::ActorBooks {
+            scope: self.holdings,
+            books,
+            input,
+            rollout,
+            month,
+        };
         let amount_due = (self.decide)(Observation {
             month,
-            cash: self.holdings.cash(ledger)?,
-            public_holdings: self.holdings.public_value(
-                input,
-                lots.iter().map(LotState::view),
-                rollout,
-                month,
-            )?,
+            cash: books.cash()?,
+            public_holdings: books.public_value()?,
             price_level: Factor::new(
                 series_value(input, "inflation", rollout, month)?,
                 series_value(input, "inflation", rollout, 0)?,
             ),
+            books,
         })?;
         let cause_id = format!("{}_m{month}", self.spending.cause_id);
         if amount_due.0 < 0 {

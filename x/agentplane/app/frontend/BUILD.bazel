@@ -355,6 +355,22 @@ ts_library(
 )
 
 ts_library(
+    name = "push",
+    srcs = ["push.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+filegroup(
+    name = "service_worker",
+    srcs = ["sw.js"],
+)
+
+ts_library(
     name = "app",
     srcs = ["app.tsx"],
     tsconfig = TSCONFIG,
@@ -362,6 +378,7 @@ ts_library(
         ":actions",
         ":connections",
         ":consent",
+        ":push",
         ":sandbox_page",
         ":sandboxes",
         ":session",
@@ -406,6 +423,7 @@ vitest_bin.vitest_test(
         ":consent_test",
         ":events_test",
         ":launch_presets_test",
+        ":push_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
@@ -516,3 +534,27 @@ VISUAL_DATA = [
         "session_reasoning_phone",
     ]
 ]
+
+js_test(
+    name = "sw_test",
+    size = "small",
+    data = [":service_worker"],
+    entry_point = "sw_test.mjs",
+    env = {"SW_SOURCE": "$(rootpath :service_worker)"},
+)
+
+ts_library(
+    name = "push_test",
+    testonly = True,
+    srcs = ["push.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":push",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)

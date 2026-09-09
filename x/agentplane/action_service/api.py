@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
@@ -48,11 +51,24 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
+from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
+
+class PushSubscriptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    endpoint: str = Field(min_length=1, max_length=2048)
+    p256dh: str = Field(min_length=1, max_length=200)
+    auth: str = Field(min_length=1, max_length=200)
+
+
 _operator_bearer = HTTPBearer(auto_error=False)
+
+
+def _sse_json(value: list[ActionRequestView]) -> bytes:
+    return json.dumps([item.model_dump(mode="json") for item in value], separators=(",", ":")).encode()
 
 
 def _service(request: Request) -> ActionService:
@@ -61,6 +77,10 @@ def _service(request: Request) -> ActionService:
 
 def _catalog(request: Request) -> ActionCatalog:
     return cast(ActionCatalog, request.app.state.action_catalog)
+
+
+def _updates(request: Request) -> ActionUpdates:
+    return cast(ActionUpdates, request.app.state.action_updates)
 
 
 def _workload_authenticator(request: Request) -> SandboxPrincipalAuthenticator:
@@ -103,6 +123,8 @@ def create_app(
     connections: ConnectionAuthority | None = None,
     enrollments: EnrollmentAuthority | None = None,
     oauth: ActionsOAuthProxy | None = None,
+    push_identity: PushIdentity | None = None,
+    push_subscriptions: PushSubscriptionStore | None = None,
 ) -> FastAPI:
     caller_authenticator = CallerAuthenticator(workload_authenticator, oauth)
     mcp_app = create_server(service, catalog, updates, caller_authenticator).http_app(
@@ -112,10 +134,13 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await updates.start()
+        recovery = asyncio.create_task(updates.recover_connections(), name="action-listener-recovery")
         try:
             async with mcp_app.lifespan(mcp_app):
                 yield
         finally:
+            recovery.cancel()
+            await asyncio.gather(recovery, return_exceptions=True)
             await updates.close()
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
@@ -123,6 +148,7 @@ def create_app(
     app.state.workload_authenticator = workload_authenticator
     app.state.operator_authenticator = operator_authenticator
     app.state.action_catalog = catalog
+    app.state.action_updates = updates
 
     if connections is not None:
         _connection_routes(app, connections)
@@ -235,6 +261,40 @@ def create_app(
     ) -> list[ActionRequestView]:
         return await action_service.list_requests(principal, states=tuple(state_filter or ()))
 
+    @app.get("/v1/operator/action-requests/stream")
+    async def operator_stream(
+        principal: Annotated[Principal, Depends(_operator)],
+        action_service: Annotated[ActionService, Depends(_service)],
+        action_updates: Annotated[ActionUpdates, Depends(_updates)],
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+    ) -> StreamingResponse:
+        async def body() -> AsyncIterator[bytes]:
+            # Subscribe before reading; clear before each read, never after it.
+            with action_updates.subscribe_all() as changed:
+                while True:
+                    changed.clear()
+                    action_updates.check_available()
+                    if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
+                        return
+                    yield (
+                        b"event: snapshot\ndata: " + _sse_json(await action_service.list_requests(principal)) + b"\n\n"
+                    )
+                    while not changed.is_set():
+                        try:
+                            async with asyncio.timeout(5):
+                                await changed.wait()
+                        except TimeoutError:
+                            action_updates.check_available()
+                            if (
+                                credentials is None
+                                or await authenticator.authenticate(credentials.credentials) != principal
+                            ):
+                                return
+                            yield b": keepalive\n\n"
+
+        return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
     @app.get("/v1/operator/action-requests/{request_id}", response_model=ActionRequestView)
     async def operator_get_request(
         request_id: UUID,
@@ -242,6 +302,49 @@ def create_app(
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
+
+    @app.get("/v1/operator/push/config")
+    async def push_config(principal: Annotated[Principal, Depends(_operator)]) -> dict[str, str | None]:
+        del principal
+        return {"application_server_key": push_identity.application_server_key if push_identity else None}
+
+    @app.get("/v1/operator/push/subscriptions")
+    async def list_push_subscriptions(principal: Annotated[Principal, Depends(_operator)]) -> list[dict[str, object]]:
+        if push_subscriptions is None:
+            return []
+        return [
+            {"endpoint": row.endpoint, "user_agent": row.user_agent, "created_at": row.created_at.isoformat()}
+            for row in await push_subscriptions.list_for(principal.key)
+        ]
+
+    @app.post("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
+    async def register_push_subscription(
+        body: PushSubscriptionInput, principal: Annotated[Principal, Depends(_operator)], request: Request
+    ) -> None:
+        if push_identity is None or push_subscriptions is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "web push is not configured")
+        try:
+            push_identity.validate_endpoint(body.endpoint)
+        except ValueError:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unsupported push endpoint") from None
+        user_agent = request.headers.get("user-agent")
+        try:
+            await push_subscriptions.save(
+                operator_principal=principal.key,
+                endpoint=body.endpoint,
+                p256dh=body.p256dh,
+                auth=body.auth,
+                user_agent=user_agent[:300] if user_agent else None,
+            )
+        except ValueError:
+            raise HTTPException(status.HTTP_409_CONFLICT, "subscription is already registered") from None
+
+    @app.delete("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
+    async def remove_push_subscription(endpoint: str, principal: Annotated[Principal, Depends(_operator)]) -> None:
+        if push_subscriptions is None or not await push_subscriptions.delete(
+            operator_principal=principal.key, endpoint=endpoint
+        ):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such push subscription")
 
     @app.get("/v1/operator/action-requests/{request_id}/events", response_model=list[ActionEventView])
     async def operator_events(

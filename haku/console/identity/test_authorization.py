@@ -70,7 +70,9 @@ from haku.console.identity.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
+from haku.console.tool_call_actor import AgentActor
 from haku.console.x.runtime import HarnessKey
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers.rlocations import PGVECTOR_PG18
@@ -1105,6 +1107,55 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
     ]
     assert b"first-token" not in stored_fingerprints
     assert b"second-token" not in stored_fingerprints
+
+
+async def test_static_bearer_activity_and_tool_admission_do_not_deadlock(harness: Harness) -> None:
+    """Run the two production lock paths concurrently against migrated PostgreSQL models.
+
+    PostgreSQL reported these statements in real SQLSTATE 40P01 cycles.  The shared helper locks
+    the binding before its Agent in both paths, so every concurrently started pair completes.
+    """
+    token = "deadlock-regression-token"
+    definition = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Deadlock Regression Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:DEADLOCK_REGRESSION_TOKEN",
+        token_fingerprint=fingerprint_static_token(token),
+        access_profile_id="no_auto_approval",
+    )
+    authorization = (await harness.authority.reconcile_static_agents([definition]))[0]
+    actor = AgentActor(
+        agent_id=authorization.agent_id,
+        operator_id=authorization.operator_id,
+        binding_id=authorization.binding_id,
+        access_profile_id=authorization.access_profile_id,
+    )
+
+    async def static_activity() -> None:
+        await harness.authority.static_authorization_for_fingerprint(
+            fingerprint=definition.token_fingerprint, record_seen=True
+        )
+
+    async def tool_admission() -> None:
+        async with harness.sessions.begin() as session:
+            assert await PostgresToolCallLedger._require_active_agent_binding(session, actor) == (
+                definition.display_name,
+                definition.access_profile_id,
+            )
+
+    for _ in range(32):
+        barrier = asyncio.Barrier(2)
+
+        async def static_after_barrier(*, _barrier: asyncio.Barrier = barrier) -> None:
+            await _barrier.wait()
+            await static_activity()
+
+        async def admission_after_barrier(*, _barrier: asyncio.Barrier = barrier) -> None:
+            await _barrier.wait()
+            await tool_admission()
+
+        await asyncio.gather(static_after_barrier(), admission_after_barrier())
 
 
 async def test_static_reconcile_ignores_secret_reference_rename(harness: Harness) -> None:

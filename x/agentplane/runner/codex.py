@@ -91,7 +91,9 @@ class CodexAdapter(HarnessAdapter):
     async def submit(self, input_id: str, text: str) -> None:
         self.session.emit(pb.InputSubmitted(input_id=input_id, text=text), sources=[])
         response, sequence = await self._request(
-            driver.turn_start(next(self._request_ids), thread_id=self._thread_id, text=text)
+            driver.turn_start(
+                next(self._request_ids), thread_id=self._thread_id, text=text, model=self.session.record.model
+            )
         )
         if response.error is not None or response.result is None:
             reason = response.error.message if response.error is not None else "turn/start returned no result"
@@ -99,13 +101,17 @@ class CodexAdapter(HarnessAdapter):
             return
         turn_id = wire.TurnResult.model_validate(response.result).turn.id
         if turn_id != self.session.active_turn_id:
-            self.session.emit(pb.TurnStarted(turn_id=turn_id), sources=[sequence])
+            self.session.emit(pb.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence])
         self.session.emit(pb.InputAccepted(input_id=input_id, turn_id=turn_id), sources=[sequence])
 
     async def interrupt(self) -> None:
         await self._request(
             driver.interrupt(next(self._request_ids), thread_id=self._thread_id, turn_id=self.session.active_turn_id)
         )
+
+    async def switch_model(self, model: str) -> None:
+        # Codex selects a model per turn. The session persists this default before its next turn/start.
+        del model
 
     async def on_frame(self, frame: Frame) -> None:
         match wire.parse_frame(frame):
@@ -120,7 +126,7 @@ class CodexAdapter(HarnessAdapter):
                 )
             case wire.TurnStarted(params=params):
                 if params.turn.id != self.session.active_turn_id:
-                    self.session.emit(pb.TurnStarted(turn_id=params.turn.id))
+                    self.session.emit(pb.TurnStarted(turn_id=params.turn.id, model=self.session.record.model))
             case wire.TurnCompleted(params=params):
                 turn = params.turn
                 status = _TURN_STATUSES.get(turn.status)

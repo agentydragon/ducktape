@@ -9,6 +9,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel obsolete PR checks; other events get independent concurrency groups.
+concurrency:
+  group: pre-commit-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   pre-commit:
     name: Pre-commit checks

@@ -76,6 +76,51 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
         await updates.close()
 
 
+async def test_all_subscribers_receive_cross_replica_commit(waiting: Waiting, db_url: str) -> None:
+    second = ActionUpdates(db_url)
+    await second.start()
+    try:
+        with waiting.updates.subscribe_all() as first, second.subscribe_all() as other:
+            await decide(waiting, Verdict.DENY)
+            async with asyncio.timeout(10):
+                await asyncio.gather(first.wait(), other.wait())
+            assert (await waiting.service.get(waiting.request.id, CALLER)).state is ActionState.DENIED
+        assert not second._all_subscribers
+    finally:
+        await second.close()
+
+
+async def test_all_subscribers_wake_on_channel_loss(waiting: Waiting) -> None:
+    with waiting.updates.subscribe_all() as changed:
+        await waiting.updates.close()
+        assert changed.is_set()
+        with pytest.raises(UpdatesUnavailableError):
+            waiting.updates.check_available()
+
+
+async def test_listener_recovers_after_connection_loss(waiting: Waiting, monkeypatch: pytest.MonkeyPatch) -> None:
+    restarted = asyncio.Event()
+    start = waiting.updates.start
+
+    async def observed_start() -> None:
+        await start()
+        restarted.set()
+
+    monkeypatch.setattr(waiting.updates, "start", observed_start)
+    recovery = asyncio.create_task(waiting.updates.recover_connections())
+    try:
+        await waiting.updates.close()
+        async with asyncio.timeout(10):
+            await restarted.wait()
+        with waiting.updates.subscribe_all() as changed:
+            await decide(waiting, Verdict.DENY)
+            async with asyncio.timeout(10):
+                await changed.wait()
+    finally:
+        recovery.cancel()
+        await asyncio.gather(recovery, return_exceptions=True)
+
+
 async def subscribed(waiting: Waiting) -> None:
     # Authorization read, then the race-closing read after subscription.
     for _ in range(2):

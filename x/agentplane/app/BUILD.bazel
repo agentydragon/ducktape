@@ -78,8 +78,9 @@ py_library(
     srcs = ["main.py"],
     data = [
         "agent_instructions.j2",
-        "//x/agentplane/app/frontend:bundle",  # keep: the SPA the server mounts
-    ],
+        "//x/agentplane/app/frontend:bundle",
+        "//x/agentplane/app/frontend:service_worker",
+    ],  # keep: the SPA and service worker the server mounts
     deps = [
         ":action_federation",
         ":api",
@@ -96,7 +97,6 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//jinja2",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

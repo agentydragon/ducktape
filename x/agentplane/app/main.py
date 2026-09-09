@@ -14,7 +14,6 @@ import httpx
 import uvicorn
 from fastapi import Response
 from fastapi.staticfiles import StaticFiles
-from jinja2 import StrictUndefined, Template
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field
@@ -40,7 +39,7 @@ from x.agentplane.app.trajectory import TrajectoryStore
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
-DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE = "_main/x/agentplane/app/agent_instructions.j2"
+SERVICE_WORKER = "_main/x/agentplane/app/frontend/sw.js"
 
 
 logger = logging.getLogger(__name__)
@@ -101,16 +100,6 @@ class Settings(BaseSettings):
     thread_presets: dict[str, ThreadPreset] = Field(
         default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
     )
-    agent_instructions: str | None = Field(
-        default=None,
-        description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
-    )
-    agent_egress_rules_url: str | None = Field(
-        default=None, description="Rules endpoint rendered into the image-owned agent-instruction template."
-    )
-    agent_actions_service_url: str | None = Field(
-        default=None, description="Actions Service endpoint rendered into the image-owned agent-instruction template."
-    )
     default_policies: list[str] = Field(
         default_factory=list,
         description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
@@ -155,20 +144,6 @@ class Settings(BaseSettings):
             sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
         sources.append(file_secret_settings)
         return tuple(sources)
-
-
-def resolved_agent_instructions(
-    configured: str | None, *, egress_rules_url: str | None, actions_service_url: str | None
-) -> str:
-    """Use the image-owned instructions unless deployment configuration explicitly replaces them."""
-    if configured is not None:
-        return configured
-    if egress_rules_url is None or actions_service_url is None:
-        raise ValueError("image-owned agent instructions require agent_egress_rules_url and agent_actions_service_url")
-    template = Template(
-        get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
-    )
-    return template.render(egress_rules_url=egress_rules_url, actions_service_url=actions_service_url)
 
 
 def main() -> None:
@@ -235,16 +210,14 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
-            presets=PresetCatalog(
-                sandboxes=settings.sandbox_presets,
-                threads=settings.thread_presets,
-                agent_instructions=resolved_agent_instructions(
-                    settings.agent_instructions,
-                    egress_rules_url=settings.agent_egress_rules_url,
-                    actions_service_url=settings.agent_actions_service_url,
-                ),
-            ),
+            presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
         )
+        worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
+
+        @app.get("/sw.js")
+        async def service_worker() -> Response:
+            return Response(content=worker, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         watch_task = asyncio.create_task(watch.run(), name="live-watch")

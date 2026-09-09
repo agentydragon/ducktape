@@ -15,7 +15,7 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 
 - [Task DAG](task_dag.md) — remaining-work dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
 - [Operations and access](operations_and_access.md) — remaining credentialed/hostexec adapter boundaries
-- [Asynchronous approvals](async_approvals.md) — remaining notification/progress delivery and provider-log safety
+- [Asynchronous approvals](async_approvals.md) — NOTIFY implementation burn-down, live acceptance, progress delivery, and provider-log safety
 - [Configured Action policies](action_policies.md) — open policy-binding storage/model gate, then bounded auto-approval by external Identity or concrete Sandbox binding
 - [External MCP connections](external_mcp_connections.md) — staging rollout, real Claude.ai/local Claude Code acceptance, remaining Connection management/reconnect, and Haku migration
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts

@@ -191,6 +191,32 @@ class ExecutorHeartbeatRow(Base):
     heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class PushSubscriptionRow(Base):
+    """One Web Push browser registration, scoped to the authenticated operator principal."""
+
+    __tablename__ = "action_push_subscription"
+
+    endpoint: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator_principal: Mapped[str] = mapped_column(Text, index=True)
+    p256dh: Mapped[str] = mapped_column(Text)
+    auth: Mapped[str] = mapped_column(Text)
+    user_agent: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PushDeliveryRow(Base):
+    """Last acknowledged notification state for one browser and Action."""
+
+    __tablename__ = "action_push_delivery"
+    request_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"), primary_key=True
+    )
+    endpoint: Mapped[str] = mapped_column(
+        Text, ForeignKey("action_push_subscription.endpoint", ondelete="CASCADE"), primary_key=True
+    )
+    kind: Mapped[str] = mapped_column(Text)
+
+
 class ActionNotFoundError(Exception):
     pass
 

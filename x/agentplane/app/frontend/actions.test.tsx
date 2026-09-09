@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ActionRequests, stateLabel } from "./actions";
-import type { ActionRequestView, ActionService, ActionState } from "./client";
+import { actionService, type ActionRequestView, type ActionService, type ActionState } from "./client";
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
@@ -184,4 +184,40 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain(state);
     expect(container.textContent).not.toContain("Pending (1)");
   });
+});
+
+it("renders server-pushed Action state without list polling and closes the stream", async () => {
+  let stream: EventTarget | undefined;
+  const close = vi.fn();
+  class Stream extends EventTarget {
+    onerror = null;
+    close = close;
+    constructor(url: string) {
+      super();
+      expect(url).toBe("/actions/stream");
+      stream = this;
+    }
+  }
+  vi.stubGlobal("EventSource", Stream);
+  const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
+  try {
+    const container = await render(actionService);
+    await act(async () => {
+      stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) }));
+    });
+    expect(container.textContent).toContain("Pending (1)");
+    await act(async () => {
+      stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
+    });
+    expect(container.textContent).toContain("Pending (0)");
+    expect(container.textContent).toContain("denied");
+    expect(list).not.toHaveBeenCalled();
+    const item = mounted.pop();
+    await act(async () => item?.root.unmount());
+    item?.container.remove();
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    list.mockRestore();
+    vi.unstubAllGlobals();
+  }
 });

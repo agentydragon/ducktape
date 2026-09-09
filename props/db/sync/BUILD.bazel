@@ -77,6 +77,9 @@ assert_no_deps(
 
 py_test(
     name = "test_example_generation",
+    # Four fresh Postgres-backed fixture databases run close to the 60s small
+    # budget in isolation and timed out under the full //... test sweep.
+    size = "medium",
     srcs = ["test_example_generation.py"],
     requires_docker = True,
     deps = [

@@ -10,6 +10,12 @@ this backlog. See the [Action Service specification](../action_service/SPEC.md),
 
 ## Operator priority
 
+All Agentplane components and their acceptance contracts are multi-replica by default. Durable
+state belongs to the owning PostgreSQL or Kubernetes authority; cross-replica change fanout uses
+the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Service state), with
+reconnect/replay from durable state rather than process-local memory. A single-replica deployment
+is an explicit temporary operational constraint, never an implicit correctness assumption.
+
 Prioritize working deployed Claude.ai access to the Action Service MCP facade (`CLAUDEAI`).
 Transcript search/lookup (`T3`) is deliberately deferred until a later product-planning point; it
 is not in the current execution sequence. Search is technically independent, so this deferral is a
@@ -38,7 +44,7 @@ flowchart TB
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
-    APPROVALUI["Needed live evidence<br/>deployed operator federation + BFF<br/>identity and approval proof"]:::active
+    APPROVALUI["Needed live evidence<br/>deployed SSE/push operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
@@ -52,7 +58,7 @@ flowchart TB
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
     PROVIDERLOG["Ready fix<br/>safe formatted provider-error logs"]:::active
-    NOTIFY["P0 behavior<br/>web push approval notifications<br/>approve/deny controls"]:::active
+    NOTIFY["Observed evidence<br/>web push approval notifications<br/>delivery implementation complete"]:::milestone
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
@@ -367,26 +373,19 @@ claim or unknown-outcome semantics while doing so.
 ### `APPROVALUI` — verify the deployed integration-app operator approval path
 
 **Observed evidence:** PostgreSQL sessions, request-bound federation, Authentik configuration,
-dedicated acceptance-operator bootstrap, and canonical BFF review/events are implemented.
-The app's Actions page lists pending/recent requests, exact arguments and caller principal, shows
-Decision/result/error state, and offers Allow/Deny for pending requests. `/actions` BFF routes and
-frontend/integration tests cover those controls; this is not a missing UI implementation.
+dedicated acceptance-operator bootstrap, canonical BFF review/events, authenticated SSE snapshots,
+listener recovery, browser registration management, and durable Web Push reconciliation are
+implemented. The app's Actions page lists pending/recent requests, exact arguments and caller
+principal, shows Decision/result/error state, and offers Allow/Deny for pending requests. `/actions`
+BFF routes, `/actions/stream`, `/push/*` routes, frontend tests, and service-worker tests cover the
+controls and live-update path; this is not a missing UI implementation.
 
-**Needed support:** verify actual deployment, provider claims, and allowed/denied operator access,
-then execute the existing BFF approval acceptance without widening allowlists for a test.
-[#5922](https://github.com/agentydragon/ducktape/pull/5922) fixed login-client CSRF handling and
-the source-subject mapping, but its live run did not complete the approval gate. Verify the corrected
-configuration has rolled out before rerunning. Signed mock integration is CI evidence, not deployed
-Authentik proof. Do not add another approval coordinator or require
-push notifications for the polling UI.
-
-**User-visible acceptance:** a Claude.ai-submitted Action appears in the deployed integration app;
-the operator inspects its exact arguments and authenticated submitting Identity/client/Connection,
-allows or denies it there, and Claude.ai receives the resulting durable receipt and safe result
-(one Execution on allow, none on deny). Review controls and external client/Connection/grant
-provenance display are implemented. Verify the browser controls as well as BFF requests.
-This flow is part of `CLAUDEAI`, enabling a useful partial Haku replacement
-without claiming complete tool parity or permission to retire Haku.
+**Needed live evidence:** verify actual deployment, provider claims, allowed/denied operator access,
+VAPID configuration, reviewed push-service egress, and browser/service-worker behavior. Execute the
+existing BFF approval acceptance without widening allowlists for a test. [#5922](https://github.com/agentydragon/ducktape/pull/5922)
+fixed login-client CSRF handling and the source-subject mapping, but its live run did not complete
+the approval gate; verify the corrected configuration has rolled out before rerunning. Signed mock
+integration and CI are evidence for code paths, not deployed Authentik, SSE, or OS push proof.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
@@ -416,25 +415,24 @@ existing provider aggregation behavior; do not label log safety implemented befo
 
 ### `NOTIFY` — web push approval notification delivery
 
-**P0 behavior:** when an Action needs operator approval or denial, the operator can receive a web
-push notification from Agentplane with the request context and explicit Approve/Deny controls. The
-controls must invoke the canonical authenticated Decision route, not create a second approval
-authority or coordinator. The existing polling UI remains valid when push is unavailable.
+**Observed evidence:** PR #5937 implements the Action Service sender and integration-app browser
+surface. PostgreSQL `NOTIFY` wakes replicas while durable Action state and delivery rows provide
+recovery; subscription-row locking prevents concurrent replicas from sending the same logical
+notification simultaneously. Failed sends remain retryable, dead subscriptions are cleaned up,
+and startup/reconnect reconciliation repairs missed notifications. Push endpoints are constrained
+to reviewed HTTPS service hosts, registrations are operator-scoped, payloads omit Action arguments,
+results, credentials, and unrestricted errors, and the service worker rechecks canonical state
+before presenting approval buttons. Approve/Deny uses the existing authenticated Decision route;
+body taps only open review, and resolved/stale notifications do not offer decisions.
 
-**Needed support:** an integration-app Settings surface to register the current browser, list and
-forget the operator's registered browsers, and revoke this browser's subscription; browser
-subscription and delivery lifecycle; authenticated action binding for each control; safe/redacted
-notification payloads; notification retry/expiry behavior; and stale or
-duplicate button presses that resolve as harmless already-decided conflicts. Preserve the private
-operator reason boundary; the notification must not expose credentials or unrestricted backend
-errors. This is delivery support for `APPROVALUI` and does not replace the Action event sequence.
-
-**Acceptance evidence:** a real operator receives a push for a pending Action, approves and denies
-from the buttons, sees the canonical Action state update, and gets no duplicate Decision or
+**Remaining live acceptance:** a real operator must receive a push for a pending Action, approve
+and deny from buttons, see the canonical Action state update, and observe no duplicate Decision or
 Execution under retries, refresh, reconnect, or an already-decided request. Prove subscription
-revocation and an unavailable-push fallback to the existing app UI. This feature is not required
-to prove the first Claude.ai connection, but is required before treating Agentplane approval
-delivery as a replacement for the Haku Console experience.
+revocation and unavailable-push fallback to the existing app UI with configured VAPID keys and
+reviewed push-service egress. Crash-after-send-before-commit may resend under the same notification
+tag; this is retryable delivery, not exactly-once push. This feature is not required to prove the
+first Claude.ai connection, but remains required before treating Agentplane push delivery as a
+replacement for the Haku Console experience.
 
 ### `INPUT_DELIVERY` — native queue evidence before common-protocol changes
 
@@ -504,5 +502,6 @@ and Thread wake/queue semantics. It is not an executor or an Action decision aut
   [`external_access.md`](external_access.md);
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - per-destination workload audiences until recipient isolation is required;
-- broad profiles beyond the landed launch-preset slice; and
+- broad profiles beyond the landed launch-preset slice;
+- live browser/OS push acceptance and production VAPID/egress rollout; and
 - cryptographic Decision signing until Decisions cross a boundary that requires it.

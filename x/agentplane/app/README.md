@@ -249,3 +249,25 @@ per-turn task remain the place for workload-specific constraints and the request
   Pretty-printing also does not help the payloads that are genuinely hard to read, since a long
   string value stays one long line either way; wrapping and highlighting are what make those
   legible.
+
+## Action live updates and browser notifications
+
+`/#/actions` follows the Action Service's operator SSE stream through `/actions/stream`, replacing
+its old two-second timer poll. Streams provide fresh snapshots after reconnect, and an unavailable
+stream is shown as disconnected rather than silently presenting stale state as live. The BFF
+bounds stream lifetime to 30 seconds so each reconnect checks current browser-session state,
+including logout in another replica. These reconnects are authentication checks, not state polling.
+
+`/#/notifications` registers the current browser, lists registered browsers, identifies this one,
+and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable
+`/sw.js` service worker receives background Web Push, offers Approve/Deny, and opens the Actions
+page on a body tap or failed decision. Buttons use the existing operator session and an expected
+Action version, never authority supplied by the push message. A resolved notification has no
+approval buttons. Supported browser notification actions vary; the Actions page remains available
+when a platform cannot show buttons. Background subscriptions/sending belong to the Action Service;
+the app has no process-local subscription authority.
+
+Deployment must configure the Action Service's VAPID identity and exact push-service hostnames
+before enrollment can work. Browser permission is requested only from an explicit registration
+click. Real browser/OS push-service delivery still needs operator acceptance; transport and
+service-worker tests do not establish that production experience.

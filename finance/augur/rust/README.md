@@ -79,6 +79,28 @@ Neither scope implies after-tax liquidation proceeds. Callers supply the observe
 mark month; a stopped book uses its failure-event marks, never future prices.
 CPI in the spending observation is current inflation relative to path origin.
 
+`engine::observations::ActorBooks` gives spending functions borrowed account,
+remaining public-lot/basis, active borrower-mortgage and recorded tax views at
+their opening review. The view fixes the actor and mark month; it cannot read
+another actor's books or request future path values. Tax views expose recorded
+income, jurisdiction facts and assessed outstanding liabilities, not hypothetical
+future assessments. Scheduled purchases are not originated contracts.
+Reduced-form harvesting's cumulative basis reductions remain separate scoped
+account/asset-pool facts; a public lot's `book_basis()` alone is not its complete
+adjusted tax basis when harvesting is enabled.
+
+Assembled claims have a separate payer-scoped `Claim` projection, shared by
+allocation's demand read. Claim amounts come from canonical assembly, not a
+second evaluation of scheduled terms. The opening spending review occurs before
+that assembly, so it does not expose this month's claims. No observation changes
+the current review order or grouped settlement behavior.
+
+`engine/claims.rs` assembles configured demands from the current month's terms,
+live mortgages and assessed tax liabilities. It does not move money or decide
+funding. `engine/obligations.rs` executes their attached payment effects and the
+configured all-or-none funding-group control. The spending callback's chosen
+consumption remains a separate input to that control.
+
 ## Covered behavior
 
 The acceptance suites in `sim/testing/` assert exact integer answers for:
@@ -285,7 +307,7 @@ Scenario features the fixture cannot express are refused rather than encoded wit
 
 `engine.rs` is the orchestrator: the rollout month loop, the public entry points, and the
 shared per-rollout state. Each policy family it drives lives in `engine/` beside it —
-`validation`, `property`, `obligations`, `taxes`, `securities`, `target_allocation`,
+`validation`, `property`, `claims`, `obligations`, `taxes`, `securities`, `target_allocation`,
 `private_equity`, `tlh`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
 the shared state through `use super::*`, and expose to the root only what it calls;
 anything a module uses alone stays private to it, which the single 7.5k-line file could

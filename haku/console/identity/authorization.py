@@ -136,6 +136,51 @@ class StaticAgentRejectedError(Exception):
     """A static binding or fingerprint is not currently authorized."""
 
 
+@dataclass(frozen=True, slots=True)
+class LockedActiveAgentBinding:
+    """The active identity rows held for one transaction in canonical order."""
+
+    binding: CredentialBinding
+    agent: Agent
+    operator: Operator
+    display_name: str
+
+
+async def lock_active_agent_binding(
+    session: AsyncSession,
+    *,
+    binding_id: UUID,
+    agent_id: UUID | None = None,
+    operator_id: UUID | None = None,
+    lock: bool,
+) -> LockedActiveAgentBinding | None:
+    """Revalidate an active binding while locking binding, Agent, then Operator.
+
+    Static bearer activity recording and MCP tool admission share these rows.  Keeping their
+    lock order here prevents PostgreSQL from choosing conflicting orders for joined ``FOR UPDATE``
+    plans.
+    """
+    binding = await session.get(CredentialBinding, binding_id, with_for_update=lock)
+    if binding is None or (agent_id is not None and binding.agent_id != agent_id):
+        return None
+    agent = await session.get(Agent, binding.agent_id, with_for_update=lock)
+    if (
+        agent is None
+        or agent.status is not AgentStatus.ACTIVE
+        or (operator_id is not None and agent.owner_operator_id != operator_id)
+    ):
+        return None
+    operator = await session.get(Operator, agent.owner_operator_id, with_for_update=lock)
+    if operator is None or operator.status is not OperatorStatus.ACTIVE:
+        return None
+    reservation = await session.get(AgentNameReservation, agent.current_name_reservation_id)
+    if reservation is None or reservation.agent_id != agent.agent_id:
+        return None
+    return LockedActiveAgentBinding(
+        binding=binding, agent=agent, operator=operator, display_name=reservation.display_name
+    )
+
+
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
@@ -649,23 +694,23 @@ class PostgresAgentAuthority:
         self, *, binding_id: UUID | None, fingerprint: bytes | None, record_seen: bool = False
     ) -> StaticAgentAuthorization:
         async with self._sessions.begin() as session:
-            statement = (
-                select(Agent, CredentialBinding, StaticCredential, Operator)
-                .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-                .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
-                .join(Operator, Operator.operator_id == Agent.owner_operator_id)
-            )
+            resolved_binding_id: UUID | None
             if binding_id is not None:
-                statement = statement.where(CredentialBinding.binding_id == binding_id)
+                resolved_binding_id = binding_id
             else:
                 assert fingerprint is not None
-                statement = statement.where(StaticCredential.credential_fingerprint == fingerprint)
-            if record_seen:
-                statement = statement.with_for_update()
-            row = (await session.execute(statement)).one_or_none()
-            if row is None:
+                resolved_binding_id = await session.scalar(
+                    select(StaticCredential.binding_id).where(StaticCredential.credential_fingerprint == fingerprint)
+                )
+            if resolved_binding_id is None:
                 raise StaticAgentRejectedError
-            agent, binding, _credential, operator = row
+            active = await lock_active_agent_binding(session, binding_id=resolved_binding_id, lock=record_seen)
+            if active is None:
+                raise StaticAgentRejectedError
+            binding, agent, operator = active.binding, active.agent, active.operator
+            credential = await session.get(StaticCredential, binding.binding_id)
+            if credential is None:
+                raise StaticAgentRejectedError
             if (
                 agent.status is not AgentStatus.ACTIVE
                 or binding.kind is not CredentialKind.STATIC

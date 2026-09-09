@@ -9,8 +9,8 @@ spec:
   path: ./tf/gitops/cpap-data
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
+    namespace: ducktape-flux
 
   # Collaborator grants reference service users provisioned by these modules.
   dependsOn:

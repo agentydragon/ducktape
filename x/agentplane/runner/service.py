@@ -326,6 +326,8 @@ async def _consume(
                     await session.submit(message.input.input_id, message.input.text)
                 case "interrupt":
                     await session.interrupt()
+                case "switch_model":
+                    await session.switch_model(message.switch_model.switch_id, message.switch_model.model)
                 case "shutdown":
                     await session.shutdown()
                     return

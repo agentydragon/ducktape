@@ -29,6 +29,7 @@ class CodexModel(ScriptedModel):
         request = ResponsesRequest.parse(raw)
         return ModelRequest(
             raw=raw,
+            model=request.model,
             system_text="\n".join([request.instructions, *(message.text for message in request.messages("developer"))]),
             user_texts=[message.text for message in request.messages("user")],
             assistant_texts=[message.text for message in request.messages("assistant")],

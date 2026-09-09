@@ -69,6 +69,22 @@ py_library(
 )
 
 py_library(
+    name = "push",
+    srcs = ["push.py"],
+    deps = [
+        ":db",
+        ":models",
+        ":updates",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//py_vapid",
+        "@pypi//pydantic",
+        "@pypi//pywebpush",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
@@ -81,10 +97,12 @@ py_library(
         ":mcp_frontend",
         ":models",
         ":oauth",
+        ":push",
         ":service",
         ":updates",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//fastapi",
+        "@pypi//pydantic",
         "@pypi//starlette",
     ],
 )
@@ -126,6 +144,7 @@ py_library(
         ":fixture_policy",
         ":oauth",
         ":operator_oidc",
+        ":push",
         ":runtime",
         ":service",
         ":updates",
@@ -757,5 +776,23 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_push",
+    size = "medium",
+    srcs = ["test_push.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":models",
+        ":push",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

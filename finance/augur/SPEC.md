@@ -46,6 +46,14 @@ reports identify the policy budget component and separate its requested and paid
 amounts from sales, taxes and other consumption such as committed rent. Live zero
 requests are observed zeros; months after a stopped path are unobserved, not zeros.
 
+The spending function can inspect its actor's declared cash accounts, remaining
+public lots and basis, originated borrower mortgages, and recorded income and
+tax facts. These are read-only opening books, marked at the current review month;
+another actor's private books and future realized values are not observable.
+Planned purchases do not create observable loan contracts before origination,
+and future tax assessments do not appear as current liabilities. This review
+still precedes the month's cashflows and claim assembly.
+
 Native experiments can separately choose monthly allocation targets through a
 rollout-local function for one declared cash-account component. It observes
 opening funding-account cash and sleeve values at current prices, before this

@@ -15,8 +15,8 @@ spec:
     - name: litellm-api-key
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   serviceAccountName: tf-runner
   backendConfig:
     customConfiguration: |

@@ -33,12 +33,9 @@ pub(super) fn execute_target_allocation_sales(
         .enumerate()
     {
         let cash_account = AccountRef::new(&policy.agent_id, &policy.account_id);
-        let hard_demand = obligations
-            .iter()
-            .filter(|obligation| obligation.from == cash_account)
-            .try_fold(Money(0), |sum, obligation| {
-                sum.checked_add(obligation.amount_due)
-            })?;
+        let hard_demand = observations::due_claims(obligations, &policy.agent_id, month)
+            .filter(|claim| claim.from == &cash_account)
+            .try_fold(Money(0), |sum, claim| sum.checked_add(claim.amount_due))?;
         let current_cash = ledger.balance(&cash_account)?;
         let floor = amount_value(fixture, rollout_id, month, &policy.cash_floor)?;
         let ceiling = amount_value(fixture, rollout_id, month, &policy.cash_ceiling)?;

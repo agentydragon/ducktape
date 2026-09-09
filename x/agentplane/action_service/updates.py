@@ -30,11 +30,14 @@ class ActionUpdates:
         self._dsn = make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
         self._connection: asyncpg.Connection[Any] | None = None
         self._subscribers: dict[UUID, set[asyncio.Event]] = {}
+        self._all_subscribers: set[asyncio.Event] = set()
         self._available = False
+        self._lost = asyncio.Event()
 
     async def start(self) -> None:
         if self._connection is not None:
             raise RuntimeError("Action update listener already started")
+        self._lost.clear()
         self._connection = await asyncpg.connect(self._dsn, timeout=10)
         self._connection.add_termination_listener(self._terminated)
         try:
@@ -50,6 +53,18 @@ class ActionUpdates:
         if self._connection is not None:
             await self._connection.close(timeout=2)
             self._connection = None
+
+    async def recover_connections(self) -> None:
+        """Supervise an API listener; existing waits still fail explicitly on channel loss."""
+        while True:
+            await self._lost.wait()
+            await self.close()
+            await asyncio.sleep(1)
+            try:
+                await self.start()
+            except Exception:
+                self._lost.set()
+                logger.warning("Action listener reconnect failed; details withheld")
 
     def check_available(self) -> None:
         if not self._available:
@@ -71,7 +86,20 @@ class ActionUpdates:
             if not subscribers:
                 del self._subscribers[request_id]
 
+    @contextmanager
+    def subscribe_all(self) -> Iterator[asyncio.Event]:
+        """Subscribe to every committed Action event for server-push consumers."""
+        self.check_available()
+        changed = asyncio.Event()
+        self._all_subscribers.add(changed)
+        try:
+            yield changed
+        finally:
+            self._all_subscribers.discard(changed)
+
     def _notified(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
+        for changed in self._all_subscribers:
+            changed.set()
         try:
             request_id = UUID(str(payload))
         except ValueError:
@@ -84,9 +112,14 @@ class ActionUpdates:
             return
         for changed in self._subscribers.get(request_id, ()):
             changed.set()
+        for changed in self._all_subscribers:
+            changed.set()
 
     def _terminated(self, _connection: object) -> None:
         self._available = False
+        self._lost.set()
         for subscribers in self._subscribers.values():
             for changed in subscribers:
                 changed.set()
+        for changed in self._all_subscribers:
+            changed.set()

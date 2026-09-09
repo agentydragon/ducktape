@@ -7,6 +7,21 @@ package(default_visibility = [
     "//devinfra/precommit:__pkg__",
 ])
 
+py_test(
+    name = "test_terraform_sources",
+    srcs = ["test_terraform_sources.py"],
+    data = [
+        "//cluster/k8s:cluster_yaml_files",
+        "//cluster/k8s:flux_bootstrap_files",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
 py_library(
     name = "k8s",
     srcs = ["k8s.py"],

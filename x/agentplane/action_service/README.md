@@ -341,3 +341,38 @@ allowlist. It is mutually exclusive with the legacy file-backed adapter; there i
 The destination records the actual token issuer and subject, not a shared BFF identity. Deployment
 is still disabled until the explicit Authentik federation target is configured. See
 [`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.
+
+## Action live updates and approval Web Push
+
+The operator SSE endpoint `/v1/operator/action-requests/stream` subscribes before reading a
+snapshot, then wakes on PostgreSQL Action commit notifications. Each replica has its own LISTEN
+connection; none depends on the process which accepted the write. Notification loss terminates
+streams explicitly. Reconnection obtains an authoritative snapshot rather than treating NOTIFY
+as a durable log. Operator bearer authorization is rechecked on updates and keepalives.
+
+The optional `web_push` configuration enables browser subscription storage and background delivery:
+
+- `private_key_pem`: stable VAPID private key, supplied through deployment secret management;
+- `subject`: VAPID contact URI;
+- `public_base_url`: integration-app origin used for Action links;
+- `allowed_push_hosts`: exact reviewed HTTPS browser push-service hostnames.
+
+No push configuration is enabled by this code change. Browser subscriptions are registered through
+operator-authenticated `/v1/operator/push/subscriptions`; the integration app forwards its browser
+management requests through federation. Only currently configured OIDC operator principals are
+eligible recipients. A subscription does not confer decision authority. The sender rejects other
+endpoint hosts, credentials in URLs, non-HTTPS ports, and redirects; deployed network policy must
+also constrain push-service access. VAPID rotation requires browser resubscription.
+
+Delivery uses committed Action state, PostgreSQL NOTIFY wakeups, and per-browser delivery records.
+A short subscription-row lock serializes network sends from different replicas without holding an
+Action row lock. Successful send acknowledgement advances the delivery record; transient failure
+leaves it retryable. Startup/reconnect and a 30-second background recovery sweep find missed work.
+The open Actions page does not poll. Browser deletion cascades its delivery records. A crash after
+send but before commit may resend; stable notification tags/topics collapse repeats. This is not
+exactly-once delivery and a push-service acknowledgement is not proof of device display.
+
+Only pending requests need an actionable notification. Requests resolved before reconciliation
+need no new alert; browsers previously notified receive a non-actionable resolution notice. Push
+payloads contain Action identity/version, not arguments, credentials, or results. Notification
+buttons use the integration app's ordinary operator session and canonical Decision contract.

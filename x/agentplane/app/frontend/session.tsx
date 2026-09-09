@@ -6,6 +6,7 @@ import {
   Code,
   Group,
   Paper,
+  Select,
   ScrollArea,
   Stack,
   Switch,
@@ -28,6 +29,8 @@ import {
   renameThread,
   sendInput,
   shutdownSession,
+  models,
+  switchModel,
   type ThreadView,
 } from "./client";
 import "./session.css";
@@ -35,7 +38,7 @@ import "./session.css";
 import { EMPTY, reduce, timeline, type InputState, type Item, type Row, type SessionState, type Turn } from "./events";
 import { FrameView } from "./frame";
 import { Markdown } from "./markdown";
-import { EventSchema, ItemKind, TurnStatus } from "./protocol_pb";
+import { AttachedSchema, EventSchema, ItemKind, Provider, TurnStatus } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
@@ -220,6 +223,9 @@ export function SessionView({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [thread, setThread] = useState<ThreadView | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelPending, setModelPending] = useState(false);
   const bottom = useRef<HTMLDivElement | null>(null);
   // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
   // so a reading can be linked to and survives a reload.
@@ -238,13 +244,22 @@ export function SessionView({
     // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
     // into the runner's cursor, so a dropped connection loses nothing.
     const source = new EventSource(eventsUrl(sandbox, sessionId));
-    source.addEventListener("attached", () => {
+    source.addEventListener("attached", (message: MessageEvent<string>) => {
       setStatus("attached");
+      const attached = fromJson(AttachedSchema, JSON.parse(message.data) as JsonValue);
+      const provider = attached.spec?.provider === Provider.CLAUDE ? "claude" : "codex";
+      setModel(attached.spec?.model ?? null);
+      models().then(
+        (catalog) => setModelOptions(catalog[provider]),
+        (reason: unknown) => setError(displayableError(reason))
+      );
       // The bridge stores the thread before it sends `attached`, so it is there to look up now.
       findThread(sandbox, sessionId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
     });
     source.addEventListener("event", (message: MessageEvent<string>) => {
       const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
+      if (event.observation.case === "modelSwitchSucceeded") setModel(event.observation.value.model);
+      if (event.observation.case === "modelSwitchRejected") setError(event.observation.value.reason);
       setState((current) => reduce(current, event));
     });
     // The runner ending the stream is final: a reconnect would Open the session again, which
@@ -263,6 +278,18 @@ export function SessionView({
     });
     return () => source.close();
   }, [sandbox, sessionId]);
+
+  async function selectModel(next: string | null): Promise<void> {
+    if (!next || next === model) return;
+    setModelPending(true);
+    try {
+      await switchModel(sandbox, sessionId, crypto.randomUUID(), next);
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
+    } finally {
+      setModelPending(false);
+    }
+  }
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -318,6 +345,14 @@ export function SessionView({
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
         <Badge>{status}</Badge>
         {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
+        <Select
+          aria-label="Model"
+          data={modelOptions}
+          value={model}
+          onChange={(next) => void selectModel(next)}
+          disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
+          w={280}
+        />
         <ActionIcon
           variant="light"
           color="red"

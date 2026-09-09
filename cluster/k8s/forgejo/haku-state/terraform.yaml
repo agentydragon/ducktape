@@ -9,8 +9,8 @@ spec:
   path: ./tf/gitops/haku-state
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
+    namespace: ducktape-flux
 
   # forgejo_collaborator.claude grants read to the claude agent account, so the
   # forgejo-claude module (which provisions that user) must apply first.

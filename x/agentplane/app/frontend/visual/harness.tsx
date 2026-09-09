@@ -559,6 +559,10 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
+    if (url.pathname === "/actions/stream") {
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(ACTIONS) }));
+      return;
+    }
     if (sandbox !== null) {
       const snapshot: SandboxSnapshot = {
         sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,

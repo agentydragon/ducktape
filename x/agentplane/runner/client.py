@@ -41,6 +41,9 @@ class Attachment:
     async def interrupt(self) -> None:
         await self._call.write(pb.ClientMessage(interrupt=pb.Interrupt()))
 
+    async def switch_model(self, switch_id: str, model: str) -> None:
+        await self._call.write(pb.ClientMessage(switch_model=pb.SwitchModel(switch_id=switch_id, model=model)))
+
     async def shutdown(self) -> None:
         await self._call.write(pb.ClientMessage(shutdown=pb.Shutdown()))
 
