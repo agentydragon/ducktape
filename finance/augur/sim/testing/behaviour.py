@@ -2794,10 +2794,14 @@ class RolloutFailureAcceptance:
         assert status_row["status"] == "failed_insufficient_cash"
         assert status_row["failed_month"] == 0
 
+        # Five $100 shares were sold, but the $1,000 all-or-none demand paid nothing.
+        assert result.events.lot_dispositions.get_column("proceeds_quanta").to_list() == [50_000]
+        assert result.events.obligation_settlements.get_column("amount_paid_quanta").to_list() == [0]
         failed_cash = result.cash.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
-        assert failed_cash.get_column("balance_quanta").map_elements(
-            quanta_to_usd, return_dtype=pl.Float64
-        ).to_list() == [0.0, 0.0]
+        assert failed_cash.select("month_index", "agent_id", "balance_quanta").rows() == [
+            (1, "alice", 50_000),
+            (1, "landlord", 0),
+        ]
         failed_lots = _lots(result).filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
         assert failed_lots.get_column("remaining_quantity").to_list() == [0.0]
 
@@ -2864,8 +2868,12 @@ class RolloutFailureAcceptance:
 
         assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
         assert result.events.transfers.is_empty()
+        # The sole $100 share becomes cash; the later $10,000 paycheck never arrives.
+        assert result.events.lot_dispositions.get_column("proceeds_quanta").to_list() == [10_000]
+        assert result.events.obligation_settlements.get_column("amount_paid_quanta").to_list() == [0]
         failed_cash = result.cash.filter(pl.col("month_index") >= 1).sort(["month_index", "agent_id"])
-        assert (
-            failed_cash.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
-            == [0.0] * failed_cash.height
-        )
+        assert failed_cash.select("month_index", "agent_id", "balance_quanta").rows() == [
+            (1, "alice", 10_000),
+            (1, "employer", 0),
+            (1, "landlord", 0),
+        ]

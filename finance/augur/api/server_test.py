@@ -132,6 +132,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert fan["monthly_metric_fan"] == {
         "month_index": [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3],
         "percentile": [0.0, 50.0, 100.0] * 4,
+        "observed_count": [2] * 12,
         "value_quanta": [
             "25000000",
             "25000000",
@@ -367,15 +368,16 @@ def test_backend_server_retains_stop_book_and_marks_terminal_wealth_unobserved(s
     terminal = detail["rollout"]["ending_metrics"]
     assert terminal["failed_month_index"] == 0
     assert terminal["snapshot_index"] == 1
-    assert terminal["cash_quanta"] == _usd_quanta(250_000.0)
+    # Month-0 coupons precede the unpaid demand: 100k * 2% / 2 + 50k * 3.5% / 2 = 1,875.
+    assert terminal["cash_quanta"] == _usd_quanta(251_875.0)
     assert terminal["holding_value_quanta"] == _usd_quanta(835_500.0)
-    assert terminal["net_worth_quanta"] == _usd_quanta(1_260_500.0)
+    assert terminal["net_worth_quanta"] == _usd_quanta(1_262_375.0)
     assert terminal["shortfall_quanta"] == _usd_quanta(300_000.0)
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["month_index"] == [0, 1]
-    assert columns["cash_quanta"] == [_usd_quanta(250_000.0)] * 2
+    assert columns["cash_quanta"] == [_usd_quanta(250_000.0), _usd_quanta(251_875.0)]
     assert columns["holding_value_quanta"] == [_usd_quanta(835_500.0)] * 2
-    assert columns["net_worth_quanta"] == [_usd_quanta(1_260_500.0)] * 2
+    assert columns["net_worth_quanta"] == [_usd_quanta(1_260_500.0), _usd_quanta(1_262_375.0)]
     expense, failure = detail["rollout"]["events"]
     assert expense == {
         "month_index": 0,

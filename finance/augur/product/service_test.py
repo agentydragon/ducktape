@@ -626,14 +626,15 @@ def test_failed_rollout_preserves_stop_book_without_post_stop_values(product: se
     assert detail.rollout.failed is True
     assert detail.rollout.ending_metrics.failed_month_index == 0
     assert detail.rollout.ending_metrics.snapshot_index == 1
-    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(250_000.0)
+    # Month-0 coupons precede the unpaid demand: 100k * 2% / 2 + 50k * 3.5% / 2 = 1,875.
+    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(251_875.0)
     assert detail.rollout.ending_metrics.holding_value_quanta == _usd_quanta(835_500.0)
-    assert detail.rollout.ending_metrics.net_worth_quanta == _usd_quanta(1_260_500.0)
+    assert detail.rollout.ending_metrics.net_worth_quanta == _usd_quanta(1_262_375.0)
     assert detail.rollout.ending_metrics.shortfall_quanta == _usd_quanta(300_000.0)
     assert detail.rollout.monthly_metrics["month_index"] == [0, 1]
-    assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(250_000.0)] * 2
+    assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(250_000.0), _usd_quanta(251_875.0)]
     assert detail.rollout.monthly_metrics["holding_value_quanta"] == [_usd_quanta(835_500.0)] * 2
-    assert detail.rollout.monthly_metrics["net_worth_quanta"] == [_usd_quanta(1_260_500.0)] * 2
+    assert detail.rollout.monthly_metrics["net_worth_quanta"] == [_usd_quanta(1_260_500.0), _usd_quanta(1_262_375.0)]
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
     assert isinstance(expense, MonthlyExpenseEvent)
