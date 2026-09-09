@@ -47,17 +47,6 @@ py_library(
 )
 
 py_library(
-    name = "notifications",
-    srcs = ["notifications.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//openai_utils:model",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-    ],
-)
-
-py_library(
     name = "remote_server",
     testonly = True,
     srcs = ["remote_server.py"],

@@ -38,19 +38,6 @@ py_library(
 )
 
 py_library(
-    name = "notifications_buffer",
-    srcs = ["notifications_buffer.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":compositor",
-        "//mcp_infra:resource_utils",
-        "//mcp_infra/notifications:types",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-    ],
-)
-
-py_library(
     name = "rendering",
     srcs = ["rendering.py"],
     data = ["templates/compositor_instructions.md.mako"],

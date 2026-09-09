@@ -61,16 +61,6 @@ py_library(
 )
 
 py_library(
-    name = "docker",
-    srcs = ["docker.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//aiodocker",
-        "@pypi//docker",
-    ],
-)
-
-py_library(
     name = "env",
     srcs = ["env.py"],
     visibility = ["//visibility:public"],
