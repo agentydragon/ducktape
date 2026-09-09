@@ -29,6 +29,10 @@ def compare(
     output_dir: Path,
 ) -> None:
     """Compile once; run two functions on those exact paths and retain full timelines."""
+    if not 0 <= equity_share <= 1:
+        raise ValueError("equity_share must be finite and in [0, 1]")
+    if not 0 < rate_bps <= 10_000 or not 0 <= max_cut_bps <= 10_000 or not 0 <= max_raise_bps <= 10_000:
+        raise ValueError("rate must be in (0, 10000] bps; cut and raise in [0, 10000] bps")
     scenario = build_scenario(equity_share=equity_share, withdrawal_rate=rate_bps / 10_000)
     # The executable function supplies consumption; leave all other financial mechanics.
     scenario = scenario.model_copy(update={"scheduled_obligations": []})
@@ -36,6 +40,17 @@ def compare(
         scenario, rollout_count=rollout_count, external_series=external_series, jurisdictions={}, locations={}
     )
     output_dir.mkdir(parents=True, exist_ok=False)
+    (output_dir / "policies.json").write_text(
+        json.dumps(
+            {
+                "implementation": "policy.rs:annual_spending",
+                "rate_bps": rate_bps,
+                "fixed_real": {"max_cut_bps": 0, "max_raise_bps": 0},
+                "bounded": {"max_cut_bps": max_cut_bps, "max_raise_bps": max_raise_bps},
+            },
+            indent=2,
+        )
+    )
     fixture_path = output_dir / "fixture.json"
     fixture_path.write_text(
         json.dumps(
@@ -80,21 +95,13 @@ def main() -> None:
         max_raise_bps=args.max_raise_bps,
         output_dir=args.output_dir,
     )
-    # Preserve the experiment choices alongside the exact integer fixture and traces.
-    (args.output_dir / "experiment.json").write_text(
+    (args.output_dir / "paths.json").write_text(
         json.dumps(
             {
                 "sampler": "Trinity historical overlapping monthly windows",
                 "record_start": replay.record_start.isoformat(),
                 "record_end": replay.record_end.isoformat(),
                 "rollout_count": replay.window_count,
-                "equity_share": args.equity_share,
-                "rate_bps": args.rate_bps,
-                "max_cut_bps": args.max_cut_bps,
-                "max_raise_bps": args.max_raise_bps,
-                "tax_profiles": [],
-                "purchase_slots_per_sleeve": 0,
-                "rebalancing": "cashflow_only",
             },
             indent=2,
         )

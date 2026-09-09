@@ -43,6 +43,7 @@ py_test(
         "//finance/augur/sim:external_series",
         "//finance/augur/study/trinity:replay",
         "@pypi//numpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

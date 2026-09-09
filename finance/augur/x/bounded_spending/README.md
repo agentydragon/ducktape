@@ -12,7 +12,7 @@ not an engine enum. Each rollout gets fresh closure state.
 
 The shell reuses the Trinity experiment's historical windows and instruments:
 Ken French equity; a synthetic 20-year Moody's Aaa constant-maturity bond fund;
-1926–1995 record intent with actual coverage retained in `experiment.json`.
+1926–1995 record intent with actual coverage retained in `paths.json`.
 See <../../study/trinity/README.md> and its `replay.py` for source/construction gaps.
 It also inherits **no taxes**, no fees beyond those in the input series,
 cashflow-only rebalancing, a zero cash band, and **zero purchase slots** (surplus
@@ -27,12 +27,13 @@ bb run //finance/augur/x/bounded_spending:compare_bin -- \
 ```
 
 Use a new output directory. It retains the exact compiled fixture, experiment
-parameters, and full `fixed_real.json` / `bounded.json` timelines, including
+parameters in `policies.json`, and full `fixed_real.json` / `bounded.json` timelines, including
 requested versus paid spending, sales, and failure month. Forensic capture is
 deliberately small-scale: these files can be large. This does not benchmark or
 solve batched execution. Overlapping historical windows are not independent
 Monte Carlo draws; the shell does not label their fractions as probabilities.
 
-`compare_test` uses two stipulated price/CPI paths, without network access, to
-check the full compiler/function/funding composition and the fixed-real control.
+`compare_test` uses three stipulated price/CPI paths, without network access, to
+check cut/raise limits, an interior target, subsequent resets and the fixed-real control
+through the full compiler/function/funding composition.
 The engine's spending tests separately exercise sales and tax settlement.
