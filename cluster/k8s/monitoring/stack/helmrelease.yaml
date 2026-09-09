@@ -392,6 +392,7 @@ spec:
                       type: Gauge
                       gauge:
                         path: [spec, suspend]
+                        nilIsZero: true
               - groupVersionKind:
                   group: helm.toolkit.fluxcd.io
                   version: v2
@@ -414,6 +415,7 @@ spec:
                       type: Gauge
                       gauge:
                         path: [spec, suspend]
+                        nilIsZero: true
               - groupVersionKind:
                   group: source.toolkit.fluxcd.io
                   version: v1
@@ -436,6 +438,7 @@ spec:
                       type: Gauge
                       gauge:
                         path: [spec, suspend]
+                        nilIsZero: true
                   - name: flux_gitrepository_artifact_size_bytes
                     help: Flux GitRepository artifact size in bytes.
                     each:
