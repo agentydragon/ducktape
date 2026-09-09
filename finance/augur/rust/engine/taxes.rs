@@ -401,18 +401,17 @@ fn salt_cap_for(policy: &crate::execution::FederalSaltDeductionSpec, year_index:
 }
 
 pub(super) fn book_tax_payment(
-    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     month: u32,
     cause_id: &str,
-    profile_index: usize,
+    profile: &crate::execution::TaxProfileSpec,
+    from: &AccountRef,
     amount: Money,
 ) -> Result<(), SimulationError> {
     if amount == Money(0) {
         return Ok(());
     }
-    let profile = &fixture.scenario.tax_profiles[profile_index];
     recorder.apply_entry(
         ledger,
         JournalEntry {
@@ -420,7 +419,7 @@ pub(super) fn book_tax_payment(
             cause_id: cause_id.into(),
             postings: vec![
                 Posting {
-                    account: AccountRef::new(&profile.agent_id, &profile.payment_account_id),
+                    account: from.clone(),
                     amount: amount.checked_neg()?,
                 },
                 Posting {

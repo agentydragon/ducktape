@@ -188,6 +188,7 @@ pub struct HarvestAdjustment<'a> {
 /// An assembled, unpaid demand. `due_month` is the current monthly settlement deadline,
 /// not a statutory deadline. Projecting a claim does not choose how to fund or pay it.
 pub struct Claim<'a> {
+    pub id: claims::ClaimId,
     pub cause_id: &'a str,
     pub obligation_type: &'a str,
     pub from: &'a AccountRef,
@@ -198,19 +199,24 @@ pub struct Claim<'a> {
 
 /// Only already-assembled demands of the named payer; never evaluate future input terms.
 pub(super) fn due_claims<'a>(
-    obligations: &'a [ActiveObligation],
+    claims: &'a claims::Claims,
     agent_id: &'a str,
-    month: u32,
 ) -> impl Iterator<Item = Claim<'a>> {
-    obligations
+    claims
+        .entries
         .iter()
-        .filter(move |obligation| obligation.from.agent_id == agent_id)
-        .map(move |obligation| Claim {
+        .enumerate()
+        .filter(move |(_, obligation)| obligation.from.agent_id == agent_id && !obligation.paid)
+        .map(move |(index, obligation)| Claim {
+            id: claims::ClaimId {
+                month: claims.month,
+                index,
+            },
             cause_id: &obligation.cause_id,
             obligation_type: &obligation.obligation_type,
             from: &obligation.from,
             to: &obligation.to,
             amount_due: obligation.amount_due,
-            due_month: month,
+            due_month: claims.month,
         })
 }

@@ -12,7 +12,7 @@ rollout. At each live month's opening, the function observes current cash,
 public holdings valued at current prices, and origin-relative CPI. Cash and
 holdings are agent-wide; these values are not after-tax liquidation proceeds.
 It returns nominal consumption in the input's currency quanta. The function
-owns review cadence and memory. Zero requests create no obligation; negative
+owns review cadence and memory. Zero requests create no payment action; negative
 requests and function errors reject the run.
 
 `rust/engine/allocation.rs` separately accepts a factory for one declared
@@ -36,16 +36,19 @@ rule, not an implicit claim to reproduce any particular published study.
 
 ## Demands and settlement
 
-Chosen consumption and contractual payments are different economic concepts.
-Both currently enter the same payment mechanism. The internal
-`ActiveObligation` type denotes a demand to settle, not proof that the payment
-was legally committed or could never have been cut.
+Chosen consumption and configured claims are separate payment inputs.
+Claims retain their canonical amount, recipient and financial effect; their
+occurrence handles are distinct even when cause labels collide. Consumption
+names its own component and amount without creating a claim. Full claim payments
+and consumption use one executor and produce request-identified receipts.
 
 Opening review precedes current cashflows/events. The engine then assembles
-demands, including tax payments due; allocation raises cash; same-source
+configured claims, including tax payments due; allocation raises cash for claims
+and the separate chosen consumption; same-source
 funding groups settle all-or-none; only then do surplus purchases execute.
 Purchases reserve the assembled demands and are clamped to cash available
-after settlement. A spending cut must be an authored decision, not a
+after settlement. This grouping is the current runner's explicit control, not
+part of an individual payment action. A spending cut must be an authored decision, not a
 second liquidation or tax calculation hidden in the experiment.
 
 The cash band controls when to raise/invest. Quiet-band drift rebalancing

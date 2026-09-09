@@ -54,7 +54,7 @@ fn minimal_fixture() -> ExecutionInput {
     }
 }
 
-fn spending_fixture() -> (ExecutionInput, spending::Spending) {
+pub(super) fn spending_fixture() -> (ExecutionInput, spending::Spending) {
     let mut fixture = minimal_fixture();
     fixture.rollout_count = 2;
     fixture.scenario.horizon_months = 13;
@@ -1464,7 +1464,7 @@ fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
     }
 }
 
-fn stopped_book_fixture(
+pub(super) fn stopped_book_fixture(
     horizon: u32,
     future_multiplier: i64,
 ) -> (ExecutionInput, spending::Spending) {
@@ -1858,6 +1858,7 @@ fn configured_claims_use_current_contracts_and_assessments_without_settling() {
         assert!(
             claims::assemble(&input, 0, 0, &[], &[], &[])
                 .unwrap()
+                .entries
                 .is_empty()
         );
         let output = simulate(&input).unwrap();
@@ -1872,7 +1873,7 @@ fn configured_claims_use_current_contracts_and_assessments_without_settling() {
         )
         .unwrap();
         assert_eq!(
-            observations::due_claims(&demands, "alice", 12)
+            observations::due_claims(&demands, "alice")
                 .map(|claim| (claim.cause_id, claim.amount_due))
                 .collect::<Vec<_>>(),
             [
@@ -1882,7 +1883,7 @@ fn configured_claims_use_current_contracts_and_assessments_without_settling() {
             ]
         );
         assert!(matches!(
-            demands[1].effect,
+            demands.entries[1].effect,
             ObligationEffect::Mortgage {
                 interest: Money(0),
                 principal: Money(100),
@@ -1890,7 +1891,7 @@ fn configured_claims_use_current_contracts_and_assessments_without_settling() {
             }
         ));
         assert!(matches!(
-            demands[2].effect,
+            demands.entries[2].effect,
             ObligationEffect::TaxTrueUp {
                 tax_year_end_month: 11,
                 ..
@@ -1912,33 +1913,39 @@ fn configured_claims_use_current_contracts_and_assessments_without_settling() {
 
 #[test]
 fn claim_views_keep_assembled_amount_identity_and_payer_scope() {
-    let mut obligations = vec![
-        ActiveObligation {
-            cause_id: "test-rent-m3".into(),
-            obligation_type: "rent".into(),
-            from: AccountRef::new("alice", "checking"),
-            to: AccountRef::new("landlord", "checking"),
-            amount_due: Money(700),
-            effect: ObligationEffect::None,
-        },
-        ActiveObligation {
-            cause_id: "test-tax-m3".into(),
-            obligation_type: "estimated_tax".into(),
-            from: AccountRef::new("alice", "reserve"),
-            to: AccountRef::new("authority", "checking"),
-            amount_due: Money(300),
-            effect: ObligationEffect::TaxPayment { profile_index: 0 },
-        },
-        ActiveObligation {
-            cause_id: "test-other-actor-m3".into(),
-            obligation_type: "rent".into(),
-            from: AccountRef::new("bob", "checking"),
-            to: AccountRef::new("landlord", "checking"),
-            amount_due: Money(9_000),
-            effect: ObligationEffect::None,
-        },
-    ];
-    let claims = observations::due_claims(&obligations, "alice", 3).collect::<Vec<_>>();
+    let mut obligations = claims::Claims {
+        month: 3,
+        entries: vec![
+            ActiveObligation {
+                paid: false,
+                cause_id: "test-rent-m3".into(),
+                obligation_type: "rent".into(),
+                from: AccountRef::new("alice", "checking"),
+                to: AccountRef::new("landlord", "checking"),
+                amount_due: Money(700),
+                effect: ObligationEffect::None,
+            },
+            ActiveObligation {
+                paid: false,
+                cause_id: "test-tax-m3".into(),
+                obligation_type: "estimated_tax".into(),
+                from: AccountRef::new("alice", "reserve"),
+                to: AccountRef::new("authority", "checking"),
+                amount_due: Money(300),
+                effect: ObligationEffect::TaxPayment { profile_index: 0 },
+            },
+            ActiveObligation {
+                paid: false,
+                cause_id: "test-other-actor-m3".into(),
+                obligation_type: "rent".into(),
+                from: AccountRef::new("bob", "checking"),
+                to: AccountRef::new("landlord", "checking"),
+                amount_due: Money(9_000),
+                effect: ObligationEffect::None,
+            },
+        ],
+    };
+    let claims = observations::due_claims(&obligations, "alice").collect::<Vec<_>>();
     assert_eq!(claims.len(), 2);
     assert_eq!(claims[0].cause_id, "test-rent-m3");
     assert_eq!(claims[0].obligation_type, "rent");
@@ -1949,14 +1956,14 @@ fn claim_views_keep_assembled_amount_identity_and_payer_scope() {
     assert_eq!(claims[1].from, &AccountRef::new("alice", "reserve"));
     assert_eq!(claims[1].amount_due, Money(300));
     assert!(
-        observations::due_claims(&obligations, "landlord", 3)
+        observations::due_claims(&obligations, "landlord")
             .next()
             .is_none()
     );
     // A new view reads the canonical amount; there is no synchronized claim copy.
-    obligations[0].amount_due = Money(725);
+    obligations.entries[0].amount_due = Money(725);
     assert_eq!(
-        observations::due_claims(&obligations, "alice", 3)
+        observations::due_claims(&obligations, "alice")
             .next()
             .unwrap()
             .amount_due,

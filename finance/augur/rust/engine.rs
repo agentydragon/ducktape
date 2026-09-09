@@ -38,10 +38,13 @@ use crate::{
 mod accounts;
 pub mod allocation;
 mod cashflows;
-mod claims;
+pub mod claims;
 mod errors;
 mod obligations;
 pub mod observations;
+pub mod payments;
+#[cfg(test)]
+mod payments_test;
 mod private_equity;
 mod property;
 mod recorder;
@@ -600,8 +603,8 @@ impl RolloutState {
         }
         // Decide from opening-of-month holdings and current prices, before this month's
         // cashflows. The resulting demand is funded with the other monthly obligations.
-        let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
-            policy.obligation(
+        let consumption = if let Some(policy) = spending.as_deref_mut() {
+            policy.consumption(
                 fixture,
                 rollout_id,
                 month,
@@ -688,24 +691,17 @@ impl RolloutState {
             )?;
         }
         apply_scheduled_tlh_give_back(&scheduled_tlh, &mut self.tlh_cumulative_harvest)?;
-        let mut active_obligations = Vec::new();
-        // Identify the actual callback demand by its position, never by a user-chosen ID
-        // or category that another configured obligation could share.
-        let spending_obligation_index = spending_obligation
+        let requested = consumption
             .as_ref()
-            .map(|_| active_obligations.len());
-        let requested = spending_obligation
-            .as_ref()
-            .map_or(Money(0), |claim| claim.amount_due);
-        active_obligations.extend(spending_obligation);
-        active_obligations.extend(claims::assemble(
+            .map_or(Money(0), |request| request.amount);
+        let mut claims = claims::assemble(
             fixture,
             rollout_id,
             month,
             &self.properties,
             &self.mortgages,
             &self.tax_liabilities,
-        )?);
+        )?;
         let target_allocation_buys = execute_target_allocation_sales(
             fixture,
             rollout_id,
@@ -715,21 +711,24 @@ impl RolloutState {
             &mut self.tax,
             &mut self.tlh_cumulative_harvest,
             month,
-            &active_obligations,
+            &claims,
+            consumption.as_ref(),
             allocation.as_deref(),
         )?;
-        let settlement = settle_obligations(
-            fixture,
-            &mut self.ledger,
-            &mut self.recorder,
-            &mut self.tax,
-            &self.properties,
-            &mut self.mortgages,
-            &mut self.tax_liabilities,
-            month,
-            &active_obligations,
+        let settlement = settle_grouped(
+            &mut payments::Context {
+                fixture,
+                ledger: &mut self.ledger,
+                recorder: &mut self.recorder,
+                tax: &mut self.tax,
+                properties: &self.properties,
+                mortgages: &mut self.mortgages,
+                tax_liabilities: &mut self.tax_liabilities,
+                month,
+            },
+            &mut claims,
+            consumption,
             product.map(|inputs| inputs.primary_agent_id()),
-            spending_obligation_index,
         )?;
         if self.recorder.capture_mode == CaptureMode::Summary && spending.is_some() {
             self.consumption_requested.push(requested);

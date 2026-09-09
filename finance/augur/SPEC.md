@@ -54,6 +54,14 @@ Planned purchases do not create observable loan contracts before origination,
 and future tax assessments do not appear as current liabilities. This review
 still precedes the month's cashflows and claim assembly.
 
+Chosen consumption is distinct from paying a configured claim. Claim payment
+uses the canonical recipient, financial effect and full due amount, with an
+actor-selected declared funding account. Receipts identify the request and its
+claim occurrence or consumption component; duplicate labels do not alias claims.
+Expected action rejection leaves books unchanged. The current runner retains
+its explicit all-or-none funding-group control; individual payment execution
+does not select an alternative funding strategy or retry a policy.
+
 Native experiments can separately choose monthly allocation targets through a
 rollout-local function for one declared cash-account component. It observes
 opening funding-account cash and sleeve values at current prices, before this

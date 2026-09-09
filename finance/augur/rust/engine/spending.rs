@@ -223,13 +223,13 @@ impl<'a> Policy<'a> {
         }
     }
 
-    pub(super) fn obligation(
+    pub(super) fn consumption(
         &mut self,
         input: &ExecutionInput,
         rollout: u32,
         month: u32,
         books: observations::Books<'_>,
-    ) -> Result<Option<ActiveObligation>, SimulationError> {
+    ) -> Result<Option<payments::Consume>, SimulationError> {
         let books = observations::ActorBooks {
             scope: self.holdings,
             books,
@@ -255,13 +255,13 @@ impl<'a> Policy<'a> {
                 amount: amount_due.0,
             });
         }
-        Ok((amount_due.0 > 0).then(|| ActiveObligation {
+        Ok((amount_due.0 > 0).then(|| payments::Consume {
+            request_id: 0,
             cause_id,
-            obligation_type: "cash_spend".into(),
+            component_id: self.spending.cause_id.clone(),
             from: self.spending.from.clone(),
             to: self.spending.to.clone(),
-            amount_due,
-            effect: ObligationEffect::None,
+            amount: amount_due,
         }))
     }
 }
