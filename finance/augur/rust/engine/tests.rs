@@ -11,6 +11,9 @@ use crate::tax::TaxBracket;
 
 use super::*;
 
+#[path = "trades_test.rs"]
+mod trades;
+
 fn minimal_fixture() -> ExecutionInput {
     ExecutionInput {
         schema_version: INPUT_SCHEMA_VERSION,

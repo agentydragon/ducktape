@@ -74,6 +74,27 @@ arithmetic and full exits remain unsupported. Missing sleeve prices reject, not
 zero-fill. A new target still follows the configured cash-band and quiet-band
 drift conventions below, rather than forcing an immediate full rebalance.
 
+## Exact trades
+
+`engine::trades` defines `SaleRequest` (explicit lot/account/unit selections) and
+`PurchaseRequest` (exact units, holding pool, cash account and new lot identity).
+The month loop supplies execution prices; requests cannot choose a price or mutate
+the book. Scheduled sales, allocation funding/rebalance sales and PE protocol sales
+select FIFO explicitly, then use one sale operation. A caller can instead select a
+newer lot without changing its proceeds, basis or tax-accounting implementation.
+
+Sale preparation checks the whole request and stages only affected lot balances,
+capital-gain rows and TLH entries. Journal and receipt counters are checked before
+posting. Rejection therefore changes none of those books or records. This guarantee
+is per trade, not a rollback of prior monthly actions or a batch of trades.
+
+Purchases use already declared holding pools and exact quantity scales. Allocation
+still chooses/clamps its order after funding; the exact executor rejects insufficient
+cash. Cash accounts and holding pools have different declarations: a lot's holding
+account need not also be a cash account. New actor invocation, transfer admission,
+settlement delays and alternative funding/rebalance strategies are not provided by
+this module.
+
 ## Scoped holdings
 
 `holdings.rs` reads canonical books without a reporting layout. `AgentHoldings`
@@ -314,7 +335,7 @@ Scenario features the fixture cannot express are refused rather than encoded wit
 `engine.rs` is the orchestrator: the rollout month loop, the public entry points, and the
 shared per-rollout state. Each policy family it drives lives in `engine/` beside it —
 `validation`, `property`, `claims`, `obligations`, `taxes`, `securities`, `target_allocation`,
-`private_equity`, `tlh`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
+`private_equity`, `tlh`, `trades`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
 the shared state through `use super::*`, and expose to the root only what it calls;
 anything a module uses alone stays private to it, which the single 7.5k-line file could
 not express.

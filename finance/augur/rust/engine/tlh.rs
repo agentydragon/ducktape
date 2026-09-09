@@ -10,6 +10,45 @@ pub(super) struct ScheduledTlhGiveBack {
     allocated: Vec<Money>,
 }
 
+/// Sale-local changes only; preparing a rejected trade cannot consume deferral.
+pub(super) struct TlhGiveBack {
+    pub(super) by_lot: Vec<Money>,
+    updates: Vec<(usize, Money)>,
+}
+
+pub(super) enum SaleTlh<'a> {
+    Scheduled(&'a mut ScheduledTlhGiveBack),
+    Pool(&'a mut [Money]),
+}
+
+impl SaleTlh<'_> {
+    pub(super) fn prepare(
+        &self,
+        fixture: &ExecutionInput,
+        lots: &[LotState],
+        planned: &[PlannedDisposition],
+    ) -> Result<TlhGiveBack, SimulationError> {
+        match self {
+            Self::Scheduled(state) => {
+                tlh_give_back_for_scheduled_sale(fixture, lots, planned, state)
+            }
+            Self::Pool(cumulative) => {
+                tlh_give_back_for_pool_sale(fixture, lots, planned, cumulative)
+            }
+        }
+    }
+
+    pub(super) fn commit(self, prepared: TlhGiveBack) {
+        let target = match self {
+            Self::Scheduled(state) => &mut state.allocated[..],
+            Self::Pool(cumulative) => cumulative,
+        };
+        for (index, value) in prepared.updates {
+            target[index] = value;
+        }
+    }
+}
+
 pub(super) fn execute_tlh_harvest(
     fixture: &ExecutionInput,
     rollout_id: u32,
@@ -172,13 +211,14 @@ fn harvest_fraction_ppb(
     mul_ppb(base_monthly, kicker, "TLH harvest fraction")
 }
 
-pub(super) fn tlh_give_back_for_pool_sale(
+fn tlh_give_back_for_pool_sale(
     fixture: &ExecutionInput,
     lots: &[LotState],
     planned: &[PlannedDisposition],
-    cumulative_harvest: &mut [Money],
-) -> Result<Vec<Money>, SimulationError> {
+    cumulative_harvest: &[Money],
+) -> Result<TlhGiveBack, SimulationError> {
     let mut give_back = vec![Money(0); planned.len()];
+    let mut updates = Vec::new();
     for (policy_index, policy) in fixture.scenario.harvest_policies.iter().enumerate() {
         let matching: Vec<(usize, &PlannedDisposition)> = planned
             .iter()
@@ -232,10 +272,15 @@ pub(super) fn tlh_give_back_for_pool_sale(
             give_back[planned_index] = give_back[planned_index].checked_add(amount)?;
             allocated = allocated.checked_add(amount)?;
         }
-        cumulative_harvest[policy_index] =
-            cumulative_harvest[policy_index].checked_sub(allocated)?;
+        updates.push((
+            policy_index,
+            cumulative_harvest[policy_index].checked_sub(allocated)?,
+        ));
     }
-    Ok(give_back)
+    Ok(TlhGiveBack {
+        by_lot: give_back,
+        updates,
+    })
 }
 
 pub(super) fn scheduled_tlh_give_back_state(
@@ -270,19 +315,21 @@ pub(super) fn scheduled_tlh_give_back_state(
     })
 }
 
-pub(super) fn tlh_give_back_for_scheduled_sale(
+fn tlh_give_back_for_scheduled_sale(
     fixture: &ExecutionInput,
     lots: &[LotState],
     planned: &[PlannedDisposition],
-    state: &mut ScheduledTlhGiveBack,
-) -> Result<Vec<Money>, SimulationError> {
+    state: &ScheduledTlhGiveBack,
+) -> Result<TlhGiveBack, SimulationError> {
     let mut give_back = vec![Money(0); planned.len()];
+    let mut updates = Vec::new();
     for (policy_index, policy) in fixture.scenario.harvest_policies.iter().enumerate() {
         if state.cumulative_start[policy_index] == Money(0)
             || state.pre_sale_units[policy_index] <= 0
         {
             continue;
         }
+        let mut allocated = state.allocated[policy_index];
         for (planned_index, item) in planned.iter().enumerate() {
             let lot = &lots[item.lot_index];
             if lot.spec.agent_id != policy.owner_agent_id
@@ -297,10 +344,14 @@ pub(super) fn tlh_give_back_for_scheduled_sale(
                 "TLH scheduled-sale give-back",
             )?;
             give_back[planned_index] = give_back[planned_index].checked_add(amount)?;
-            state.allocated[policy_index] = state.allocated[policy_index].checked_add(amount)?;
+            allocated = allocated.checked_add(amount)?;
         }
+        updates.push((policy_index, allocated));
     }
-    Ok(give_back)
+    Ok(TlhGiveBack {
+        by_lot: give_back,
+        updates,
+    })
 }
 
 pub(super) fn apply_scheduled_tlh_give_back(

@@ -21,15 +21,6 @@ impl LotState {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(super) struct PlannedDisposition {
-    pub(super) lot_index: usize,
-    pub(super) units: Quantity,
-    pub(super) basis: Money,
-    pub(super) proceeds: Money,
-    pub(super) realized_gain: Money,
-}
-
 pub(super) fn canonical_lot_asset_id(asset_id: &str) -> String {
     if private_equity_issuer(asset_id).is_some() {
         asset_id.to_owned()
@@ -119,6 +110,7 @@ pub(super) fn execute_distributions(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The scheduled-sale convention chooses FIFO, then submits those exact holdings.
 pub(super) fn execute_sale(
     fixture: &ExecutionInput,
     rollout_id: u32,
@@ -129,7 +121,7 @@ pub(super) fn execute_sale(
     scheduled_tlh: &mut ScheduledTlhGiveBack,
     sale: &crate::execution::ScheduledSaleSpec,
 ) -> Result<(), SimulationError> {
-    let mut candidates: Vec<usize> = lots
+    let candidates: Vec<usize> = lots
         .iter()
         .enumerate()
         .filter(|(_, lot)| {
@@ -148,112 +140,30 @@ pub(super) fn execute_sale(
             asset_id: sale.asset_id.clone(),
         });
     }
-    candidates.sort_by_key(|index| {
-        (
-            lots[*index].spec.purchase_month,
-            lots[*index].spec.lot_id.clone(),
-        )
-    });
-    let available = candidates.iter().try_fold(0_i64, |total, index| {
-        total
-            .checked_add(lots[*index].units_remaining.0)
-            .ok_or(ArithmeticError::Overflow {
-                operation: "sale pool quantity",
-            })
-    })?;
-    if sale.units.0 > available {
-        return Err(SimulationError::InsufficientLotUnits {
-            cause_id: sale.cause_id.clone(),
-            requested: sale.units.0,
-            available,
-        });
-    }
-    let series_id = format!("security:{}", sale.asset_id);
-    let price = PerUnit(series_value(fixture, &series_id, rollout_id, sale.month)?);
-    let mut remaining = sale.units.0;
-    let mut planned = Vec::new();
-    let mut total_proceeds = Money(0);
-    let mut total_gain = Money(0);
-    for index in candidates {
-        if remaining == 0 {
-            break;
-        }
-        let lot = &lots[index];
-        let units = remaining.min(lot.units_remaining.0);
-        let sold = Quantity(units);
-        // The lot's own basis, apportioned by what is being taken out of it. Selling the
-        // last of a lot therefore consumes exactly what is left.
-        let basis =
-            lot.basis_remaining
-                .apportion(sold, lot.units_remaining, "FIFO basis allocation")?;
-        let proceeds = price.times(Units::new(sold, lot.spec.quantity_scale), "sale proceeds")?;
-        let realized_gain = proceeds.checked_sub(basis)?;
-        total_proceeds = total_proceeds.checked_add(proceeds)?;
-        total_gain = total_gain.checked_add(realized_gain)?;
-        planned.push(PlannedDisposition {
-            lot_index: index,
-            units: Quantity(units),
-            basis,
-            proceeds,
-            realized_gain,
-        });
-        remaining -= units;
-    }
-    debug_assert_eq!(remaining, 0);
-    let tlh_give_back = tlh_give_back_for_scheduled_sale(fixture, lots, &planned, scheduled_tlh)?;
-
-    let mut postings = Vec::with_capacity(planned.len() + 2);
-    postings.push(Posting {
-        account: AccountRef::new(&sale.agent_id, &sale.proceeds_account_id),
-        amount: total_proceeds,
-    });
-    for item in &planned {
-        postings.push(Posting {
-            account: asset_basis_account(&lots[item.lot_index].spec),
-            amount: item.basis.checked_neg()?,
-        });
-    }
-    postings.push(Posting {
-        account: realized_gain_account(&sale.agent_id),
-        amount: total_gain.checked_neg()?,
-    });
-    recorder.apply_entry(
+    let request = SaleRequest {
+        cause_id: sale.cause_id.clone(),
+        agent_id: sale.agent_id.clone(),
+        proceeds_account_id: sale.proceeds_account_id.clone(),
+        asset_id: sale.asset_id.clone(),
+        lots: select_fifo(lots, &candidates, sale.units, &sale.cause_id)?,
+    };
+    let price = PerUnit(series_value(
+        fixture,
+        &format!("security:{}", sale.asset_id),
+        rollout_id,
+        sale.month,
+    )?);
+    execute_lot_sale(
+        fixture,
         ledger,
-        JournalEntry {
-            month: sale.month,
-            cause_id: sale.cause_id.clone(),
-            postings,
-        },
-    )?;
-
-    for (item, give_back) in planned.into_iter().zip(tlh_give_back) {
-        let lot = &mut lots[item.lot_index];
-        let long_term = i64::from(sale.month) - i64::from(lot.spec.purchase_month) >= 12;
-        lot.units_remaining.0 -= item.units.0;
-        lot.basis_remaining = lot.basis_remaining.checked_sub(item.basis)?;
-        record_capital_gain(
-            tax,
-            &sale.agent_id,
-            item.realized_gain.checked_add(give_back)?,
-            long_term,
-        )?;
-        recorder.record_disposition(LotDisposition {
-            month: sale.month,
-            cause_id: sale.cause_id.clone(),
-            agent_id: lot.spec.agent_id.clone(),
-            source_account_id: lot.spec.account_id.clone(),
-            asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
-            lot_id: lot.spec.lot_id.clone(),
-            purchase_month: lot.spec.purchase_month,
-            quantity_scale: lot.spec.quantity_scale,
-            units: item.units,
-            basis: item.basis,
-            proceeds: item.proceeds,
-            proceeds_account_id: sale.proceeds_account_id.clone(),
-            realized_gain: item.realized_gain,
-        })?;
-    }
-    Ok(())
+        recorder,
+        lots,
+        tax,
+        SaleTlh::Scheduled(scheduled_tlh),
+        sale.month,
+        price,
+        &request,
+    )
 }
 
 pub(super) fn series_value(

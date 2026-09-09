@@ -46,6 +46,8 @@ rust_library(
         "engine/taxes.rs",
         "engine/tests.rs",
         "engine/tlh.rs",
+        "engine/trades.rs",
+        "engine/trades_test.rs",
         "engine/validation.rs",
         "event_frames.rs",
         "execution.rs",

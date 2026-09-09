@@ -107,31 +107,41 @@ impl Recorder {
         ledger: &mut Ledger,
         entry: JournalEntry,
     ) -> Result<(), SimulationError> {
-        ledger.apply(&entry)?;
-        self.journal_entry_count =
+        let journal_entry_count =
             self.journal_entry_count
                 .checked_add(1)
                 .ok_or(ArithmeticError::Overflow {
                     operation: "journal entry count",
                 })?;
+        ledger.apply(&entry)?;
+        self.journal_entry_count = journal_entry_count;
         if self.capture_mode.captures_journal() {
             self.journal.push(entry);
         }
         Ok(())
     }
 
-    pub(super) fn record_disposition(
+    /// Check both output counters before posting a sale. No fallible bookkeeping follows
+    /// the ledger's atomic application.
+    pub(super) fn apply_sale(
         &mut self,
-        disposition: LotDisposition,
+        ledger: &mut Ledger,
+        entry: JournalEntry,
+        dispositions: Vec<LotDisposition>,
     ) -> Result<(), SimulationError> {
-        self.disposition_count =
+        let count = u64::try_from(dispositions.len()).map_err(|_| ArithmeticError::Overflow {
+            operation: "disposition count",
+        })?;
+        let disposition_count =
             self.disposition_count
-                .checked_add(1)
+                .checked_add(count)
                 .ok_or(ArithmeticError::Overflow {
                     operation: "disposition count",
                 })?;
+        self.apply_entry(ledger, entry)?;
+        self.disposition_count = disposition_count;
         if self.capture_mode.captures_output() {
-            self.dispositions.push(disposition);
+            self.dispositions.extend(dispositions);
         }
         Ok(())
     }

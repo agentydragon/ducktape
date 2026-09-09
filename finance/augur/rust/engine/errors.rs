@@ -119,6 +119,8 @@ pub enum SimulationError {
     InexactBondPeriodRate { bond_id: String },
     #[error("sale {cause_id:?} has non-positive units {units}")]
     InvalidSaleUnits { cause_id: String, units: i64 },
+    #[error("trade {cause_id:?} rejected: {reason}")]
+    InvalidTrade { cause_id: String, reason: String },
     #[error("{kind} {cause_id:?} has non-positive amount {amount}")]
     InvalidAmount {
         kind: &'static str,

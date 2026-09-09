@@ -115,21 +115,24 @@ pub(super) fn execute_private_equity(
                     "private-equity recovery price",
                 )?
                 .0;
-            execute_target_allocation_pool_sale(
+            let cause_id = format!("pe_forced_recovery_m{month}_{issuer_id}");
+            let request = SaleRequest {
+                cause_id: cause_id.clone(),
+                agent_id: owner_agent_id.clone(),
+                proceeds_account_id: policy.proceeds_account_id.clone(),
+                asset_id: format!("{PE_ASSET_PREFIX}{issuer_id}"),
+                lots: select_fifo(lots, &candidates, Quantity(units_held), &cause_id)?,
+            };
+            execute_lot_sale(
                 fixture,
                 ledger,
                 recorder,
                 lots,
                 tax,
-                tlh_cumulative_harvest,
+                SaleTlh::Pool(tlh_cumulative_harvest),
                 month,
-                &format!("pe_forced_recovery_m{month}_{issuer_id}"),
-                &owner_agent_id,
-                &policy.proceeds_account_id,
-                recovery_price,
-                units_held,
-                Some(&owner_agent_id),
-                &candidates,
+                PerUnit(recovery_price),
+                &request,
             )?;
         }
         let units_after_recovery = pe_units_held(lots, &candidates)?;
@@ -141,22 +144,27 @@ pub(super) fn execute_private_equity(
                 )?
                 .0
                 .min(units_after_recovery);
-            execute_target_allocation_pool_sale(
-                fixture,
-                ledger,
-                recorder,
-                lots,
-                tax,
-                tlh_cumulative_harvest,
-                month,
-                &format!("pe_forced_sale_m{month}_{issuer_id}"),
-                &owner_agent_id,
-                &policy.proceeds_account_id,
-                mark,
-                forced_target,
-                Some(&owner_agent_id),
-                &candidates,
-            )?;
+            if forced_target > 0 {
+                let cause_id = format!("pe_forced_sale_m{month}_{issuer_id}");
+                let request = SaleRequest {
+                    cause_id: cause_id.clone(),
+                    agent_id: owner_agent_id.clone(),
+                    proceeds_account_id: policy.proceeds_account_id.clone(),
+                    asset_id: format!("{PE_ASSET_PREFIX}{issuer_id}"),
+                    lots: select_fifo(lots, &candidates, Quantity(forced_target), &cause_id)?,
+                };
+                execute_lot_sale(
+                    fixture,
+                    ledger,
+                    recorder,
+                    lots,
+                    tax,
+                    SaleTlh::Pool(tlh_cumulative_harvest),
+                    month,
+                    PerUnit(mark),
+                    &request,
+                )?;
+            }
         }
 
         let floor = amount_value(fixture, rollout_id, month, &policy.liquid_net_worth_floor)?;
@@ -231,21 +239,23 @@ pub(super) fn execute_private_equity(
             } else {
                 format!("pe_tender_m{month}_{issuer_id}")
             };
-            execute_target_allocation_pool_sale(
+            let request = SaleRequest {
+                cause_id: cause_id.clone(),
+                agent_id: owner_agent_id.clone(),
+                proceeds_account_id: policy.proceeds_account_id.clone(),
+                asset_id: format!("{PE_ASSET_PREFIX}{issuer_id}"),
+                lots: select_fifo(lots, &candidates, Quantity(target), &cause_id)?,
+            };
+            execute_lot_sale(
                 fixture,
                 ledger,
                 recorder,
                 lots,
                 tax,
-                tlh_cumulative_harvest,
+                SaleTlh::Pool(tlh_cumulative_harvest),
                 month,
-                &cause_id,
-                &owner_agent_id,
-                &policy.proceeds_account_id,
-                mark,
-                target,
-                Some(&owner_agent_id),
-                &candidates,
+                PerUnit(mark),
+                &request,
             )?;
         }
     }

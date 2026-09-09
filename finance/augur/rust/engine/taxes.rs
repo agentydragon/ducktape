@@ -40,22 +40,53 @@ pub(super) fn record_ordinary_deduction(
     Ok(tax.income.deduct_from_ordinary(payer_agent_id, deduction)?)
 }
 
+/// Stage only the selected taxpayer's gain fields. Callers can validate a compound
+/// transaction before committing; ordinary accrual uses the same update rule.
+pub(super) struct CapitalGainUpdates<'a> {
+    rows: Vec<(&'a mut TaxFacts, Money, Money)>,
+}
+
+impl<'a> CapitalGainUpdates<'a> {
+    pub(super) fn new(tax: &'a mut TaxState, agent_id: &str) -> Self {
+        Self {
+            rows: tax
+                .facts
+                .iter_mut()
+                .filter(|((taxpayer, _), _)| taxpayer == agent_id)
+                .map(|(_, facts)| {
+                    let short = facts.short_term_gain;
+                    let long = facts.long_term_gain;
+                    (facts, short, long)
+                })
+                .collect(),
+        }
+    }
+
+    pub(super) fn accrue(&mut self, gain: Money, long_term: bool) -> Result<(), SimulationError> {
+        for (_, short, long) in &mut self.rows {
+            let target = if long_term { long } else { short };
+            *target = target.checked_add(gain)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn commit(self) {
+        for (facts, short, long) in self.rows {
+            facts.short_term_gain = short;
+            facts.long_term_gain = long;
+        }
+    }
+}
+
 pub(super) fn record_capital_gain(
     tax: &mut TaxState,
     agent_id: &str,
     gain: Money,
     long_term: bool,
 ) -> Result<(), SimulationError> {
-    for ((taxpayer, _), facts) in &mut tax.facts {
-        if taxpayer != agent_id {
-            continue;
-        }
-        if long_term {
-            facts.long_term_gain = facts.long_term_gain.checked_add(gain)?;
-        } else {
-            facts.short_term_gain = facts.short_term_gain.checked_add(gain)?;
-        }
-    }
+    let mut updates = CapitalGainUpdates::new(tax, agent_id);
+    updates.accrue(gain, long_term)?;
+    updates.commit();
     Ok(())
 }
 

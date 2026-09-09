@@ -137,7 +137,7 @@ pub(super) fn execute_target_allocation_sales(
                 if remaining == 0 {
                     break;
                 }
-                let mut candidates: Vec<_> = lots
+                let candidates: Vec<_> = lots
                     .iter()
                     .enumerate()
                     .filter(|(_, lot)| {
@@ -148,12 +148,6 @@ pub(super) fn execute_target_allocation_sales(
                     })
                     .map(|(index, _)| index)
                     .collect();
-                candidates.sort_by_key(|index| {
-                    (
-                        lots[*index].spec.purchase_month,
-                        lots[*index].spec.lot_id.clone(),
-                    )
-                });
                 let available = candidates.iter().try_fold(0_i64, |sum, index| {
                     sum.checked_add(lots[*index].units_remaining.0).ok_or(
                         ArithmeticError::Overflow {
@@ -165,21 +159,23 @@ pub(super) fn execute_target_allocation_sales(
                 if target == 0 {
                     continue;
                 }
-                execute_target_allocation_pool_sale(
+                let request = SaleRequest {
+                    cause_id: cause_id.clone(),
+                    agent_id: policy.agent_id.clone(),
+                    proceeds_account_id: policy.account_id.clone(),
+                    asset_id: sleeve.asset_id.clone(),
+                    lots: select_fifo(lots, &candidates, Quantity(target), &cause_id)?,
+                };
+                execute_lot_sale(
                     fixture,
                     ledger,
                     recorder,
                     lots,
                     tax,
-                    tlh_cumulative_harvest,
+                    SaleTlh::Pool(tlh_cumulative_harvest),
                     month,
-                    &cause_id,
-                    &policy.agent_id,
-                    &policy.account_id,
-                    prices[sleeve_index],
-                    target,
-                    None,
-                    &candidates,
+                    PerUnit(prices[sleeve_index]),
+                    &request,
                 )?;
                 remaining -= target;
             }
@@ -208,168 +204,40 @@ pub(super) fn execute_target_allocation_buys(
         if units <= 0 {
             continue;
         }
-
         let used = buy_count[order.policy_index][order.sleeve_index];
-        let lot_id = format!(
-            "{}_buy_p{}_s{}_{}",
-            policy.cause_id_prefix, order.policy_index, order.sleeve_index, used
-        );
-        let spent = PerUnit(order.unit_price).times(
-            Units::new(Quantity(units), sleeve.quantity_scale),
-            "target-allocation purchase value",
-        )?;
-        let spec = InitialLotSpec {
-            lot_id,
+        let next = used.checked_add(1).ok_or(ArithmeticError::Overflow {
+            operation: "target-allocation purchase count",
+        })?;
+        let request = PurchaseRequest {
+            cause_id: format!(
+                "{}_buy_m{month}_security:{}",
+                policy.cause_id_prefix, sleeve.asset_id
+            ),
             agent_id: policy.agent_id.clone(),
-            account_id: policy
+            cash_account_id: policy.account_id.clone(),
+            holding_account_id: policy
                 .source_account_ids
                 .first()
                 .unwrap_or(&policy.account_id)
                 .clone(),
             asset_id: sleeve.asset_id.clone(),
-            purchase_month: i32::try_from(month).map_err(|_| ArithmeticError::Overflow {
-                operation: "target-allocation purchase month",
-            })?,
+            lot_id: format!(
+                "{}_buy_p{}_s{}_{}",
+                policy.cause_id_prefix, order.policy_index, order.sleeve_index, used
+            ),
             quantity_scale: sleeve.quantity_scale,
             units: Quantity(units),
-            basis: spent,
         };
-        let cause_id = format!(
-            "{}_buy_m{month}_security:{}",
-            policy.cause_id_prefix, sleeve.asset_id
-        );
-        recorder.apply_entry(
+        execute_purchase(
+            fixture,
             ledger,
-            JournalEntry {
-                month,
-                cause_id,
-                postings: vec![
-                    Posting {
-                        account: cash_account,
-                        amount: spent.checked_neg()?,
-                    },
-                    Posting {
-                        account: asset_basis_account(&spec),
-                        amount: spent,
-                    },
-                ],
-            },
-        )?;
-        lots.push(LotState {
-            spec,
-            units_remaining: Quantity(units),
-            basis_remaining: spent,
-        });
-        buy_count[order.policy_index][order.sleeve_index] =
-            used.checked_add(1).ok_or(ArithmeticError::Overflow {
-                operation: "target-allocation purchase count",
-            })?;
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn execute_target_allocation_pool_sale(
-    fixture: &ExecutionInput,
-    ledger: &mut Ledger,
-    recorder: &mut Recorder,
-    lots: &mut [LotState],
-    tax: &mut TaxState,
-    tlh_cumulative_harvest: &mut [Money],
-    month: u32,
-    cause_id: &str,
-    agent_id: &str,
-    proceeds_account_id: &str,
-    price: i64,
-    target: i64,
-    source_account_override: Option<&str>,
-    candidates: &[usize],
-) -> Result<(), SimulationError> {
-    let mut remaining = target;
-    let mut planned = Vec::new();
-    let mut total_proceeds = Money(0);
-    let mut total_gain = Money(0);
-    for index in candidates.iter().copied() {
-        if remaining == 0 {
-            break;
-        }
-        let lot = &lots[index];
-        let units = remaining.min(lot.units_remaining.0);
-        let basis = lot.basis_remaining.apportion(
-            Quantity(units),
-            lot.units_remaining,
-            "target-allocation FIFO basis",
-        )?;
-        let proceeds = PerUnit(price).times(
-            Units::new(Quantity(units), lot.spec.quantity_scale),
-            "target-allocation sale proceeds",
-        )?;
-        let realized_gain = proceeds.checked_sub(basis)?;
-        total_proceeds = total_proceeds.checked_add(proceeds)?;
-        total_gain = total_gain.checked_add(realized_gain)?;
-        planned.push(PlannedDisposition {
-            lot_index: index,
-            units: Quantity(units),
-            basis,
-            proceeds,
-            realized_gain,
-        });
-        remaining -= units;
-    }
-    debug_assert_eq!(remaining, 0);
-    let tlh_give_back =
-        tlh_give_back_for_pool_sale(fixture, lots, &planned, tlh_cumulative_harvest)?;
-    let mut postings = Vec::with_capacity(planned.len() + 2);
-    postings.push(Posting {
-        account: AccountRef::new(agent_id, proceeds_account_id),
-        amount: total_proceeds,
-    });
-    for item in &planned {
-        postings.push(Posting {
-            account: asset_basis_account(&lots[item.lot_index].spec),
-            amount: item.basis.checked_neg()?,
-        });
-    }
-    postings.push(Posting {
-        account: realized_gain_account(agent_id),
-        amount: total_gain.checked_neg()?,
-    });
-    recorder.apply_entry(
-        ledger,
-        JournalEntry {
+            recorder,
+            lots,
             month,
-            cause_id: cause_id.into(),
-            postings,
-        },
-    )?;
-    for (item, give_back) in planned.into_iter().zip(tlh_give_back) {
-        let lot = &mut lots[item.lot_index];
-        let long_term = i64::from(month) - i64::from(lot.spec.purchase_month) >= 12;
-        lot.units_remaining.0 -= item.units.0;
-        lot.basis_remaining = lot.basis_remaining.checked_sub(item.basis)?;
-        record_capital_gain(
-            tax,
-            agent_id,
-            item.realized_gain.checked_add(give_back)?,
-            long_term,
+            PerUnit(order.unit_price),
+            &request,
         )?;
-        recorder.record_disposition(LotDisposition {
-            month,
-            cause_id: cause_id.into(),
-            agent_id: lot.spec.agent_id.clone(),
-            source_account_id: source_account_override
-                .unwrap_or(&lot.spec.account_id)
-                .to_owned(),
-            asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
-            lot_id: lot.spec.lot_id.clone(),
-            purchase_month: lot.spec.purchase_month,
-            quantity_scale: lot.spec.quantity_scale,
-            units: item.units,
-            basis: item.basis,
-            proceeds: item.proceeds,
-            proceeds_account_id: proceeds_account_id.to_owned(),
-            realized_gain: item.realized_gain,
-        })?;
+        buy_count[order.policy_index][order.sleeve_index] = next;
     }
     Ok(())
 }

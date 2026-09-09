@@ -52,6 +52,7 @@ mod taxes;
 #[cfg(test)]
 mod tests;
 mod tlh;
+pub mod trades;
 mod validation;
 
 pub use errors::SimulationError;
@@ -67,6 +68,7 @@ use securities::*;
 use target_allocation::*;
 use taxes::*;
 use tlh::*;
+use trades::*;
 use validation::*;
 
 const EXTERNAL_AGENT: &str = "__external__";

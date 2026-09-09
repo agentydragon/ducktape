@@ -194,23 +194,30 @@ delinquency balances, recovery/cure, or underpayment penalties.
 
 ### Asset Acquisition
 
-An agent can buy a dollar amount of a priced asset, creating a tax lot mid-horizon. The
-promises below are about the acquisition itself and hold however the order is raised.
-Target-allocation policies explicitly enable or disable purchases. Each settled purchase
-creates a lot; callers do not budget lot capacity. Policy decisions choose the month and
-amount, while the engine owns lot creation, basis, rounding, and balanced accounting.
-FIFO sales order lots by acquisition month, with lot identity breaking same-month ties.
+Trade execution accepts exact lot sales and exact-quantity purchases in declared holding
+pools. It validates ownership, account/asset identity and available units; it never
+substitutes a different lot. FIFO is the configured callers' selection rule, ordered by
+acquisition month and then lot identity, not an accounting requirement.
+
+Each rejected trade leaves cash, lots, gain facts, harvested-loss deferral and transaction
+records unchanged. Successful sales consume the selected lots' actual remaining basis,
+including every remaining basis quantum when a lot is emptied. Execution owns the balanced
+journal and tax attribution, independent of the rule that selected the trade.
+
+Target-allocation policies explicitly enable or disable purchases and choose a dollar
+amount to invest. Each settled purchase creates a lot; callers do not budget lot capacity.
+The configured policy chooses units and lot identity while execution owns acquisition
+month, basis, rounding and balanced accounting.
 
 The lot's cost basis is **per-rollout** — it is the price that rollout paid — so gains on
 a purchased lot are measured against what was actually spent rather than against any
 configured constant. Purchases take whole quantity quanta and leave the sub-quantum
 remainder as cash.
 
-Two ordering promises: a purchase settles **after** the month's obligations, so buying
-can never starve an obligation into a failure; and a purchase whose account holds less
-than the ordered amount **buys what the cash covers** rather than failing the rollout,
-with the executed quantity and basis visible on the lot. Cash spent on a purchase is
-credited to the external `rest_of_world` account, so the ledger stays balanced.
+Configured allocation purchases settle **after** the month's obligations and clamp their
+requested units to what the remaining cash covers. The exact-quantity executor itself
+rejects an unaffordable request rather than silently changing it. Cash is credited and
+the acquired asset's basis debited in the same balanced entry.
 
 Private equity cannot be purchased this way: it is marked rather than priced, so there
 is no per-month price to size an order against. Scenarios model PE acquisition as an
