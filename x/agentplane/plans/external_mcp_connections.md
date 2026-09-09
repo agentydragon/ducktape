@@ -321,15 +321,26 @@ only the generic tools. Exact names, pagination, and idempotency-key ergonomics 
 
 ## Deferred: Identity authority beyond Actions
 
-A static Identity may eventually need access to resources outside the Action Service, such as
-reading conversations from selected classes of agents. Discuss whether that use should move the
-MCP frontend, Connection-to-Identity binding authority, or both into a shared component. Current
-in-process placement is the first delivery slice, not an irrevocable ownership decision.
+The broader use case is access to Agentplane services from both hosted and external harnesses.
+Hosted agents are intended to access multiple services using Sandbox-token authentication;
+external harnesses should also be eligible for explicitly granted access to services beyond Actions,
+without becoming Agentplane-managed Sandboxes or Threads. Conversation search and reading other
+agents' conversations are examples, not the boundary of this work.
+
+Discuss the common identity/authentication boundary and each service's authorization contract for
+both caller types. Decide whether to move the MCP frontend, Connection-to-Identity binding
+authority, or both into a shared component, and whether external access uses a shared facade,
+direct service endpoints, or a combination. Current in-process placement is the first delivery
+slice, not an irrevocable ownership decision; other services need not become Action executors to
+be accessible.
 
 Keep each resource-owning component responsible for its authorization. Shared identity resolution
 would not imply that Action permissions or same-Identity Action reads grant conversation access.
-Settle conversation scope/selectors, trusted identity propagation, revocation consistency, and
-immutable submitting-client provenance before that cross-service extension. SandboxPreset remains
+Settle resource-specific permissions/selectors, credential audiences and service boundaries,
+trusted identity propagation, revocation consistency, and immutable caller/client provenance before
+that cross-service extension. Neither a Sandbox token nor an external Identity implies unrestricted
+access to every service; sharing authentication infrastructure does not require one bearer accepted
+everywhere. SandboxPreset remains
 integration-app-owned; this possibility does not make downstream services interpret its recipes.
 
 This is the deferred `IDENTITY_SCOPE` discussion in [the DAG](task_dag.md), independent of the

@@ -525,14 +525,15 @@ or explicitly unavailable. **Deferred:** generic queue management and unproven p
 
 ### `IDENTITY_SCOPE` — cross-service Identity authority and MCP placement
 
-**Deferred discussion:** static Identities may eventually authorize more than Actions, for example
-reading conversations from selected classes of agents. Reconsider whether the shared MCP frontend
-and Connection-to-Identity binding authority should move out of the Action Service for that use.
-Compare keeping them co-located with a shared identity/MCP service; conversation authorization must
-remain explicit and enforced by the conversation-owning component. Sharing an Identity's Action
-scope does not by itself grant conversation access.
+**Deferred discussion:** hosted agents will access multiple Agentplane services through Sandbox-token
+authentication; external harnesses should likewise be eligible for explicitly authorized access
+beyond Actions without becoming hosted Sandboxes. Conversation search/reading is one example,
+not the scope of the feature. Reconsider whether the MCP frontend and Connection-to-Identity binding
+authority should move out of the Action Service. Compare shared-facade and direct-service access;
+each resource-owning service retains its authorization, independent of caller authentication.
+Sharing an Identity's Action scope does not by itself grant access to another service.
 
-Discuss resource-specific permissions, trusted identity propagation, revocation, and preservation
+Discuss resource-specific permissions, credential audiences, trusted identity propagation, revocation, and preservation
 of exact client provenance across services. The [external connection plan](external_mcp_connections.md)
 records the boundary. This is not a prerequisite for the current DCR/consent slice, not a decision
 to extract now, and not a reason to add speculative service interfaces or preset coupling.
