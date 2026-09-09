@@ -134,6 +134,33 @@ async def test_denial_satisfies_both_predicates(waiting: Waiting, until: WaitUnt
         assert await task == denied
 
 
+@pytest.mark.parametrize("until", list(WaitUntil))
+async def test_cancellation_push_satisfies_both_predicates(waiting: Waiting, until: WaitUntil) -> None:
+    async with asyncio.timeout(10):
+        task = asyncio.create_task(
+            waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10, wait_until=until))
+        )
+        await subscribed(waiting)
+        cancelled = await waiting.writer.cancel(waiting.request.id, CALLER)
+        assert (await task).state is ActionState.CANCELLED
+        assert await task == cancelled.request
+        assert not waiting.updates._subscribers
+
+
+async def test_cancelling_unclaimed_execution_wakes_terminal_wait(waiting: Waiting) -> None:
+    async with asyncio.timeout(10):
+        task = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
+        await subscribed(waiting)
+        await decide(waiting, Verdict.ALLOW)
+        assert (await waiting.service.reads.get()).state is ActionState.ALLOWED
+        assert not task.done()
+        cancelled = await waiting.writer.cancel(waiting.request.id, CALLER)
+        assert await task == cancelled.request
+        assert cancelled.request.execution is not None
+        assert cancelled.request.execution.state is ExecutionState.CANCELLED
+        assert cancelled.request.execution.started_at is None
+
+
 async def test_timeout_returns_current_receipt_and_cancel_only_cleans_wait(waiting: Waiting) -> None:
     receipt = await waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=0.001))
     assert receipt.state is ActionState.DECISION_PENDING
