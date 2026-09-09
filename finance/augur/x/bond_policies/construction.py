@@ -40,7 +40,7 @@ class DatedConstruction:
 
     @property
     def price(self) -> np.ndarray:
-        return self.bond_value + self.cash
+        return np.asarray(self.bond_value + self.cash)
 
 
 @dataclass(frozen=True)

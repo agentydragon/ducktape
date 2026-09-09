@@ -139,7 +139,7 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
     constructions = compare_constructions(np.stack(tuple(curves.values())))
     horizon_months = next(iter(curves.values())).shape[0] - 1
     output_dir.mkdir(parents=True, exist_ok=False)
-    np.savez_compressed(output_dir / "discount_curves.npz", **curves)
+    np.savez_compressed(output_dir / "discount_curves.npz", allow_pickle=False, **curves)
     (output_dir / "config.json").write_text(
         json.dumps(
             {
@@ -170,6 +170,7 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
         if isinstance(construction, DatedConstruction):
             np.savez_compressed(
                 strategy_dir / "construction.npz",
+                allow_pickle=False,
                 bond_value=construction.bond_value,
                 cash=construction.cash,
                 coupon=construction.coupon,
@@ -178,7 +179,12 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
                 redemption=construction.redemption,
             )
         else:
-            np.savez_compressed(strategy_dir / "construction.npz", price=construction.price, coupon=construction.coupon)
+            np.savez_compressed(
+                strategy_dir / "construction.npz",
+                allow_pickle=False,
+                price=construction.price,
+                coupon=construction.coupon,
+            )
         for cell_index, spending in enumerate(annual_spending):
             cell_dir = strategy_dir / f"spending_{cell_index}"
             cell_dir.mkdir()
@@ -187,7 +193,9 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
             events = engine.events(run)
             metrics = engine.product_metrics(run, primary_agent_id=HOUSEHOLD)
             metric_arrays = metrics.metric_arrays()
-            np.savez_compressed(cell_dir / "metrics.npz", **metric_arrays, failed_month=metrics.failed_month)
+            np.savez_compressed(
+                cell_dir / "metrics.npz", allow_pickle=False, **metric_arrays, failed_month=metrics.failed_month
+            )
             for frame in EVENT_FRAME_SPECS:
                 events.frame(frame).write_parquet(cell_dir / f"{frame.name}.parquet")
             for rollout, path_name in enumerate(curves):
