@@ -1,0 +1,18 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: node-exporter-full
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  datasources:
+    - inputName: ds_prometheus
+      datasourceName: Mimir
+  # Upstream Node Exporter Full dashboard. Its Hardware Misc row includes
+  # hwmon temperature thresholds and fan-speed panels for every node-exporter
+  # target; the datasource binding above points those panels at Mimir.
+  grafanaCom:
+    id: 1860
+    revision: 45
