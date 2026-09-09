@@ -139,7 +139,6 @@ py_test(
         ":conftest",
         ":operator_login",
         "//:conftest",
-        "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:models",
         "//x/agentplane/app:api",
         "//x/agentplane/app:client",

@@ -740,7 +740,10 @@ py_test(
 py_test(
     name = "test_agentplane_rules_route",
     srcs = ["test_agentplane_rules_route.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    data = [
+        "//cluster/k8s:cluster_yaml_files",
+        "//x/agentplane/app:agent_instructions.md",
+    ],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//more_itertools",

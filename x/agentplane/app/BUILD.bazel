@@ -5,6 +5,11 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
+exports_files(
+    ["agent_instructions.md"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
 

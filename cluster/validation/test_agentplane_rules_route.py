@@ -39,7 +39,7 @@ def test_default_policy_and_nonsecret_instructions_bootstrap_existing_workload_c
     resources = manifest("egress/kustomization.yaml")["resources"]
     rule = one(policy["spec"]["rules"])
     target = one(credential["spec"]["targets"])
-    instructions = config["thread_presets"][config["sandbox_presets"]["public-coder"]["thread_preset"]]["instructions"]
+    instructions = get_required_path("_main/x/agentplane/app/agent_instructions.md").read_text()
 
     assert "egresspolicy-egress-rules.yaml" in resources
     assert "egresscredential-agentplane-workload.yaml" in resources
