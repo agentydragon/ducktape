@@ -4,7 +4,7 @@
 
 - **Bootstrap secrets**: SOPS-encrypted in git (`*.sops.yaml`), decrypted by Flux
 - **Encryption keys**: Age keypairs in `.sops.yaml` (admin + cluster keys)
-- **Full dependency graph**: <bootstrap_dependencies.md>
+- **Bootstrap dependency graph**: <bootstrap_dependencies.md>
 
 ## Architecture
 

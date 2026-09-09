@@ -97,8 +97,10 @@ See <docs/sso.md> for secret flow, proxy NetworkPolicy template, blueprint tombs
 
 See <docs/secrets.md> for SOPS procedures, adding/rotating secrets, age key management.
 
-**Keep <docs/bootstrap_dependencies.md> up to date** when adding/removing/changing secrets,
-SOPS files, tofu resources, or external credential requirements.
+**Keep <docs/bootstrap_dependencies.md> up to date** when changing prerequisites of
+`bazel run //cluster:bootstrap` or recovery of its infrastructure and access material.
+Document application credentials, Terraform runners, and service dependencies with
+the owning component.
 
 ### Annotating a SOPS-encrypted Secret
 
