@@ -12,7 +12,6 @@ from pathlib import Path
 
 from python.runfiles import runfiles
 
-from finance.augur.rust.fixture_encoder import encode_fixture
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.study.trinity.replay import build_scenario, sample_replay
@@ -51,18 +50,8 @@ def compare(
             indent=2,
         )
     )
-    fixture_path = output_dir / "fixture.json"
-    fixture_path.write_text(
-        json.dumps(
-            encode_fixture(
-                run.scenario,
-                run.plan,
-                external_series=run.external_series,
-                jurisdictions=run.jurisdictions,
-                locations=run.locations,
-            )
-        )
-    )
+    input_path = output_dir / "execution-input.json"
+    input_path.write_text(json.dumps(run.execution_input))
     resolver = runfiles.Create()
     if resolver is None:
         raise RuntimeError("Bazel runfiles are unavailable")
@@ -71,7 +60,7 @@ def compare(
         raise RuntimeError("bounded-spending runner is absent from runfiles")
     for name, cut, raise_ in (("fixed_real", 0, 0), ("bounded", max_cut_bps, max_raise_bps)):
         subprocess.run(
-            [binary, str(fixture_path), str(output_dir / f"{name}.json"), str(rate_bps), str(cut), str(raise_)],
+            [binary, str(input_path), str(output_dir / f"{name}.json"), str(rate_bps), str(cut), str(raise_)],
             check=True,
         )
 

@@ -12,7 +12,7 @@ use augur_rust_simulator::{
         SimulationError,
         spending::{self, Observation, Spending},
     },
-    fixture::Fixture,
+    execution::ExecutionInput,
     ledger::AccountRef,
     money::{Factor, Money},
 };
@@ -60,7 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
     let [input, output, rate, cut, raise] = args.as_slice() else {
         return Err(
-            "usage: runner FIXTURE.json OUTPUT.json RATE_BPS MAX_CUT_BPS MAX_RAISE_BPS".into(),
+            "usage: runner EXECUTION-INPUT.json OUTPUT.json RATE_BPS MAX_CUT_BPS MAX_RAISE_BPS"
+                .into(),
         );
     };
     let rate: u32 = rate.parse()?;
@@ -69,9 +70,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if rate == 0 || rate > 10_000 || cut > 10_000 || raise > 10_000 {
         return Err("rate must be in (0, 10000] bps; cut and raise in [0, 10000] bps".into());
     }
-    let fixture: Fixture = serde_json::from_reader(BufReader::new(File::open(input)?))?;
+    let execution_input: ExecutionInput =
+        serde_json::from_reader(BufReader::new(File::open(input)?))?;
     let output_run = spending::simulate(
-        &fixture,
+        &execution_input,
         &Spending {
             from: AccountRef::new("retiree", "checking"),
             to: AccountRef::new("world", "checking"),

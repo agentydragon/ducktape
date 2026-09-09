@@ -26,7 +26,7 @@ bb run //finance/augur/x/bounded_spending:compare_bin -- \
   --equity-share 0.60 --rate-bps 400 --max-cut-bps 1000 --max-raise-bps 500
 ```
 
-Use a new output directory. It retains the exact compiled fixture, experiment
+Use a new output directory. It retains the prepared `execution-input.json`, experiment
 parameters in `policies.json`, and full `fixed_real.json` / `bounded.json` timelines, including
 requested versus paid spending, sales, and failure month. Forensic capture is
 deliberately small-scale: these files can be large. This does not benchmark or
