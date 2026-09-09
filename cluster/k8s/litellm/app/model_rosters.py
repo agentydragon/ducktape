@@ -17,9 +17,10 @@ model:
   own `:generateContent` / `:embedContent` wire
 - `mistral/oai-chat/*` — Mistral API key
 - `groq/oai-chat/*` — Groq API key, OpenAI-compatible at api.groq.com/openai/v1
-- `ollama/oai-chat/*` / `ollama/olm-chat/*` — self-hosted Ollama, which serves the same
-  models on an OpenAI-compatible `/v1` and on its own `/api/chat`; the model segment
-  carries the `num_ctx` variant (`gpt-oss-20b-512k`) that distinguishes entries
+- `ollama/oai-chat/*` / `ollama/olm-chat/*` / `ollama/olm-embed/*` — self-hosted Ollama,
+  which serves the same models on an OpenAI-compatible `/v1` and on its own native
+  endpoints; the chat model segment carries the `num_ctx` variant (`gpt-oss-20b-512k`)
+  that distinguishes chat entries
 
 The shape is the OUTBOUND wire — the request LiteLLM makes to the provider, never the
 request a client makes to LiteLLM. Nothing about the inbound side is pinned: LiteLLM routes
@@ -85,6 +86,7 @@ class ApiShape(StrEnum):
     GOOG_GENERATE = "goog-generate"
     GOOG_EMBED = "goog-embed"
     OLM_CHAT = "olm-chat"
+    OLM_EMBED = "olm-embed"
 
 
 def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:

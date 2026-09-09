@@ -50,9 +50,9 @@
       enabled: true,
       sources: ["memory"],
       provider: "openai-compatible",
-      // Preserve the model identity stored in the durable index. LiteLLM keeps
-      // this legacy name as an alias for the canonical prefixed route.
-      model: "gemini-embedding-2",
+      // This is a new embedding identity; changing it deliberately requires a
+      // full rebuild of the durable index after the rollout.
+      model: "ollama/olm-embed/qwen3-embedding-4b",
       remote: {
         baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
         apiKey: "${OPENCLAW_LITELLM_API_KEY}",

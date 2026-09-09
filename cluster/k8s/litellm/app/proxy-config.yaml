@@ -108,6 +108,12 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+  - model_name: ollama/olm-embed/qwen3-embedding-4b
+    litellm_params:
+      model: ollama/qwen3-embedding:4b
+      api_base: http://ollama.ollama.svc.cluster.local:11434
+    model_info:
+      mode: embedding
   - model_name: tana/ant-messages/claude-sonnet-4-6
     litellm_params:
       model: anthropic/claude-sonnet-4-6/medium

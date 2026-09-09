@@ -92,7 +92,8 @@ locals {
     "anthropic-max20/ant-messages/claude-fable-5",
     "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
   ]
-  # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
+  # Embedding models (GEMINI_EMBEDDING_MODELS in test_litellm_config.py plus the
+  # Ollama Qwen route). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
   # a direct OpenAI Platform key for memorySearch, but a domain-confined agent has no
   # route to it and should not gain one just to embed. Routing embeddings through
@@ -102,6 +103,7 @@ locals {
     "gemini-embedding-2",
     "google/goog-embed/gemini-embedding-2",
     "google/goog-embed/gemini-embedding-001",
+    "ollama/olm-embed/qwen3-embedding-4b",
   ]
   # Google Gemini models (GEMINI_MODELS in model_rosters.py) fronted through the
   # `gemini/` provider. Current generation only -- see that module for why the

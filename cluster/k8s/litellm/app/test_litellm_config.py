@@ -100,6 +100,7 @@ _SHAPE_MODE = {
     ApiShape.GOOG_GENERATE: "chat",
     ApiShape.GOOG_EMBED: "embedding",
     ApiShape.OLM_CHAT: "chat",
+    ApiShape.OLM_EMBED: "embedding",
 }
 
 

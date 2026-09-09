@@ -120,15 +120,18 @@ def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
     }
 
 
-def test_public_coder_memory_model_preserves_its_litellm_compatibility_alias() -> None:
-    """Renaming the persisted model identity would force a full index rebuild."""
+def test_public_coder_memory_model_uses_ollama_embedding_route() -> None:
+    """The OpenClaw model identity must match the Ollama embedding route."""
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
     model = config["memory"]["search"]["model"]
 
-    assert model == "gemini-embedding-2"
+    assert model == "ollama/olm-embed/qwen3-embedding-4b"
     assert _litellm_models()[model] == {
         "model_name": model,
-        "litellm_params": {"model": "gemini/gemini-embedding-2", "api_key": "os.environ/GEMINI_API_KEY"},
+        "litellm_params": {
+            "model": "ollama/qwen3-embedding:4b",
+            "api_base": "http://ollama.ollama.svc.cluster.local:11434",
+        },
         "model_info": {"mode": "embedding"},
     }
 
