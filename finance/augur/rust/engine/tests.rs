@@ -1758,6 +1758,66 @@ fn actor_books_keep_pool_harvest_adjustments_separate_from_lot_basis() {
 }
 
 #[test]
+fn configured_claims_use_current_contracts_and_assessments_without_settling() {
+    for future_multiplier in [2, 9] {
+        let (input, _) = stopped_book_fixture(15, future_multiplier);
+        // A configured purchase has not yet originated its mortgage at opening m0.
+        assert!(
+            claims::assemble(&input, 0, 0, &[], &[], &[])
+                .unwrap()
+                .is_empty()
+        );
+        let output = simulate(&input).unwrap();
+        let opening = &output.rollouts[0].months[12];
+        let demands = claims::assemble(
+            &input,
+            0,
+            12,
+            &opening.properties,
+            &opening.mortgages,
+            &opening.tax_liabilities,
+        )
+        .unwrap();
+        assert_eq!(
+            observations::due_claims(&demands, "alice", 12)
+                .map(|claim| (claim.cause_id, claim.amount_due))
+                .collect::<Vec<_>>(),
+            [
+                ("unfunded-extra_m12", Money(950)),
+                ("test-loan_payment_m12", Money(100)),
+                ("alice_tax_true_up_y0", Money(50)),
+            ]
+        );
+        assert!(matches!(
+            demands[1].effect,
+            ObligationEffect::Mortgage {
+                interest: Money(0),
+                principal: Money(100),
+                ..
+            }
+        ));
+        assert!(matches!(
+            demands[2].effect,
+            ObligationEffect::TaxTrueUp {
+                tax_year_end_month: 11,
+                ..
+            }
+        ));
+        assert_eq!(opening.mortgages[0].principal, Money(7_900));
+        assert_eq!(opening.tax_liabilities[0].amount_owed, Money(50));
+        assert_eq!(
+            opening
+                .balances
+                .iter()
+                .find(|balance| balance.account == AccountRef::new("alice", "checking"))
+                .unwrap()
+                .balance,
+            Money(1_000)
+        );
+    }
+}
+
+#[test]
 fn claim_views_keep_assembled_amount_identity_and_payer_scope() {
     let mut obligations = vec![
         ActiveObligation {

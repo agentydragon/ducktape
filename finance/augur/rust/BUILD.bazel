@@ -33,6 +33,7 @@ rust_library(
         "engine/accounts.rs",
         "engine/allocation.rs",
         "engine/cashflows.rs",
+        "engine/claims.rs",
         "engine/errors.rs",
         "engine/obligations.rs",
         "engine/observations.rs",
