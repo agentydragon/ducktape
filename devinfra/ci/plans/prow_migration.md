@@ -80,6 +80,118 @@ Evidence: [Tide's supported providers](https://github.com/kubernetes-sigs/prow/b
 [ProwJob clone URI](https://github.com/kubernetes-sigs/prow/blob/104d452f4fced027c5a357b6fd6fe860a1b6064f/pkg/apis/prowjobs/v1/types.go),
 and [Gerrit adapter documentation](https://docs.prow.k8s.io/docs/components/optional/gerrit/).
 
+### How much code would a Prow forge integration take?
+
+Planning estimates, not measured implementation sizes. Units are thousands of
+handwritten implementation lines added or materially changed, excluding generated
+SDKs, vendored code, configuration, and tests. Ranges are subjective 90% planning
+intervals, using a component breakdown and existing adapter sizes; they are not
+statistically fitted confidence intervals or delivery-time promises.
+
+| Scope, for one new forge               | Central estimate | 90% range | What it buys                                                                                                                                                             |
+| -------------------------------------- | ---------------: | --------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Minimal external bridge                |           2 kLOC |  1–4 kLOC | A small event subset creates ProwJobs, supplies clone refs, and reports results. No Tide, broad ChatOps, or full recovery semantics.                                     |
+| Operable CI adapter                    |           6 kLOC | 3–12 kLOC | Webhooks plus resync, credentials, fork trust, changed-head handling, cancellation/retest, status reporting, and configuration. Still no complete Prow merge experience. |
+| CI plus selected Tide/ChatOps features |          15 kLOC | 8–35 kLOC | Adds a forge provider for merge eligibility, reviews, statuses, merge operations, and selected commands/UI assumptions. Not every Prow plugin.                           |
+
+For the 6 kLOC case, the central breakdown is roughly 1k client/auth/model mapping,
+1.5k event normalization and reconciliation, 1.5k job/ref/trust handling, 1k result
+reporting/retries, and 1k configuration/operational integration. A shared bridge
+would reduce the second forge's marginal work, but API and authorization semantics
+still need separate implementations. Do not assume GitLab and Forgejo are equal
+effort or that Gitea compatibility proves Forgejo correctness.
+
+Budget tests/fixtures separately: plausibly another 1–2 times implementation LOC.
+For scale, at the pinned upstream Prow revision above, five Gerrit implementation
+files total 2,788 physical lines: adapter 858, trigger 112, client 850, source 116,
+and reporter 852. Just adapter/client tests total 4,676 lines. These counts include
+comments/blanks, omit other integration code, and are a reference-class anchor,
+not a measurement of how much a GitLab/Forgejo port would reuse.
+[Adapter source](https://github.com/kubernetes-sigs/prow/tree/104d452f4fced027c5a357b6fd6fe860a1b6064f/pkg/gerrit),
+[reporter source](https://github.com/kubernetes-sigs/prow/tree/104d452f4fced027c5a357b6fd6fe860a1b6064f/pkg/crier/reporters/gerrit).
+
+The largest uncertainty is how much GitHub-specific behavior must be abstracted
+across Tide, hook plugins, configuration, and Deck. Upstream review/maintenance can
+dominate effort even if the diff is small. Full plugin parity is outside these
+estimates. None of the rows includes our Flux/artifact/health observer: that work
+is needed whichever CI orchestrator is selected. A bridge is feasible; recreating
+the complete integration is a subsystem project, not a few hundred lines of YAML.
+
+### Is anyone already working on this?
+
+Checked public upstream issues, source, and related projects on 2026-09-09:
+
+- Prow's [GitLab request #105](https://github.com/kubernetes-sigs/prow/issues/105)
+  opened in April 2024 and closed through stale-issue automation in September 2024. This is not a technical rejection or an implementation.
+- The older [multi-provider proposal #10146](https://github.com/kubernetes/test-infra/issues/10146)
+  records abstraction proposals and points to Lighthouse. Maintainer comments
+  describe substantial GitHub coupling and limited review bandwidth; the thread
+  closed in May 2024 with future discussion directed to the new Prow repository.
+- Searches of the current Prow repository found no open issue/PR matching GitLab,
+  Forgejo, or Gitea integration. This bounds what was found publicly; it does not
+  establish that nobody is working privately or in an unindexed fork.
+- **Lighthouse is the concrete existing alternative to writing this port.** Its
+  [README](https://github.com/jenkins-x/lighthouse) describes its Prow origin,
+  multi-forge `go-scm` layer, GitLab support, Gitea configuration, and execution
+  through Tekton/Jenkins/JayeX. It uses LighthouseJob rather than ProwJob. Its
+  repository is not archived; September 2026 commits update dependencies, and
+  July 2026 commits fix repo-owner and Tekton rerun behavior. That demonstrates
+  maintenance, not verified GitLab/Forgejo production acceptance.
+  [Commit history](https://github.com/jenkins-x/lighthouse/commits/HEAD/).
+- Lighthouse's [SCM drivers](https://github.com/jenkins-x/go-scm/tree/HEAD/scm/driver)
+  include GitLab and Gitea, but no distinct Forgejo driver was found. Treat Forgejo
+  compatibility, current merge-controller behavior, external-status enforcement,
+  and standalone deployment burden as proof-of-concept questions. Do not present
+  it as an already verified drop-in multi-forge Tide replacement.
+
+### Alternatives for “B may merge after A is healthy in Kubernetes”
+
+The requirement has three parts: identify A's merged revision, observe its actual
+deployment and health, and enforce a fresh result on B's merge. No reviewed product
+was verified to provide our complete Flux/provenance/health predicate out of the
+box. Several provide useful enforcement and scheduling; all still need a job or
+observer implementing the deployment evidence contract below.
+
+| Candidate                                 | Existing capability                                                                                                                  | What our gate must add / limitation                                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Forgejo Actions or existing CI + observer | Forge-native execution and branch protection; smallest migration for repos already on Forgejo.                                       | Report a required rollout status and verify its exact enforcement on the deployed Forgejo version, including bypasses, missing statuses, and stale results.                                                                                                                                              |
+| Woodpecker + observer                     | Documented GitHub, GitLab, Gitea, and Forgejo PR/push support; credible shared CI option across the contemplated forges.             | The forge enforces merge protection; Woodpecker does not inherently model another PR's production rollout. Keep long waits in a reconciling observer.                                                                                                                                                    |
+| GitLab CI + observer                      | Native MR pipelines and pipeline-success merge controls; external commit statuses are available in Free.                             | Associate the gate with the correct MR pipeline, create its blocking state before a pipeline can be accepted, and reconcile retries/new heads. Dedicated external MR status checks are Ultimate, not the Free commit-status API.                                                                         |
+| Zuul                                      | Purpose-built project gating, cross-project change dependencies, speculative testing, and a native GitLab driver that can merge MRs. | Closest alternative for rich dependency orchestration. `Depends-On` and speculative tests do not prove A has merged and deployed. Add post-merge rollout observation and delay B's eligibility; avoid making a pre-merge job wait for its own merge. No Forgejo/Gitea driver is listed in reviewed docs. |
+| Lighthouse + Tekton/Jenkins/JayeX         | Prow-style commands with a multi-forge SCM layer, including GitLab.                                                                  | Evaluate its current merge enforcement and Forgejo compatibility first; custom rollout evidence remains necessary. Useful if Prow-style interaction is a strong requirement.                                                                                                                             |
+
+Capability sources:
+
+- [Forgejo branch protection](https://forgejo.org/docs/latest/user/repository/protection/)
+  and [Actions guide](https://forgejo.org/docs/latest/user/actions/).
+  These are platform entry points; the specific protected-status configuration
+  still needs an end-to-end test on our chosen version.
+- [Woodpecker forge feature matrix](https://woodpecker-ci.org/docs/administration/configuration/forges/overview).
+- [GitLab external commit statuses](https://docs.gitlab.com/ci/ci_cd_for_external_repos/external_commit_statuses/),
+  [pipeline merge controls](https://docs.gitlab.com/ci/jobs/job_control/), and
+  [Ultimate external status checks](https://docs.gitlab.com/user/project/merge_requests/status_checks/).
+  The dedicated external checks are non-blocking by default until the project
+  enables “Status checks must succeed.” Commit statuses can attach to an unexpected
+  pipeline when duplicates exist; pin pipeline identity and verify merge behavior.
+- [Zuul gating](https://zuul-ci.org/docs/zuul/latest/gating.html),
+  [GitLab driver](https://zuul-ci.org/docs/zuul/latest/drivers/gitlab.html),
+  [driver inventory](https://zuul-ci.org/docs/zuul/latest/drivers/index.html), and
+  [pipeline managers](https://zuul-ci.org/docs/zuul/latest/config/pipeline.html).
+
+Working shortlist: native CI plus the observer for minimum change; Woodpecker if
+one CI needs to serve GitLab and Forgejo; Zuul if GitLab and sophisticated change
+gating are central; Lighthouse if Prow-style ChatOps is important enough to justify
+an integration trial. These are recommendations inferred from documented surfaces,
+not deployed comparisons. Prefer free/self-hosted paths; do not make GitLab
+Ultimate a hidden prerequisite.
+
+The trial should use the same two PRs/MRs on each serious candidate: B stays
+blocked while A is unmerged, published-but-not-applied, or running unhealthy;
+unblocks only after the named workloads pass; and blocks again on rollback/stale
+evidence under `currently-healthy`. Also test a new B head, declaration edits,
+observer outage, and direct merge attempts. A successful pipeline demo alone
+does not settle which system meets this requirement.
+
 ### Cluster integration
 
 The rollout observer watches approved Flux/Kubernetes resources and periodically
