@@ -213,6 +213,15 @@ records unchanged. Successful sales consume the selected lots' actual remaining 
 including every remaining basis quantum when a lot is emptied. Execution owns the balanced
 journal and tax attribution, independent of the rule that selected the trade.
 
+Reduced-form harvested-loss deferral is conserved when lots are sold: realized
+give-back plus remaining deferral equals the opening amount, the remainder is
+nonnegative, and full liquidation clears it exactly. Rounding residuals follow
+the selected lot order and that lot's short-/long-term gain classification. This
+is proportional reduced-form accounting, not statutory per-lot harvesting.
+Splitting the same ordered scheduled-sale sequence within a month preserves its
+give-back and classification; dynamic pool sales retain per-trade proportional
+anchors and can allocate a rounding quantum differently when split.
+
 Target-allocation policies explicitly enable or disable purchases and choose a dollar
 amount to invest. Each settled purchase creates a lot; callers do not budget lot capacity.
 The configured policy chooses units and lot identity while execution owns acquisition

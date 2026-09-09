@@ -241,12 +241,21 @@ are 0/1. The Python adapter reconstructs the typed `PrivateEquityBundle` only wh
 sampled model hands one over; Rust never routes PE marks through ordinary
 security-price series.
 
-TLH policies encode every heuristic parameter as integer PPB. The engine
-evaluates the calibrated float64 maturity/drawdown curve, quantizes the
-resulting monthly factor back to PPB before applying it to integer money, and
-keeps the give-back ledger entirely in currency quanta. The acceptance cases
-cover drawdown versus flat paths, year-end tax facts, two-stage partial
-liquidation, and target-allocation sale give-back.
+TLH policies encode every heuristic parameter as integer PPB. The maturity/drawdown
+curve and give-back ledger use integer arithmetic. A sale allocates each lot the
+difference between rounded cumulative proportions before and after that lot's
+units: `round(H * sold_after / U) - round(H * sold_before / U)`. This conserves the
+rounded total and assigns residual quanta in execution/lot order, with the receiving
+lot's short-/long-term gain character.
+
+Scheduled sales hold `H` and `U` at the month's opening sale phase and advance a
+sold-unit cursor only after successful execution. Splitting the same ordered lot
+sequence into requests therefore leaves its total and per-lot attribution unchanged.
+Dynamic pool sales take a new `H/U` anchor for each trade; fragmentation can shift
+a quantum between lots, but full liquidation still leaves exactly zero deferral.
+These are reduced-form proportional rules, not statutory per-lot TLH. Acceptance
+cases include odd-quantum partial/full liquidation, scheduled fragmentation,
+mixed gain character and rejected-trade cursor preservation.
 
 Initial lots store total basis and never a per-unit figure. A sale apportions
 the basis a lot still holds by the units leaving it, so selling a lot down in

@@ -160,6 +160,143 @@ fn purchase() -> PurchaseRequest {
     }
 }
 
+fn scheduled_sell(
+    books: &mut Books,
+    state: &mut ScheduledTlhGiveBack,
+    units: i64,
+) -> Result<(), SimulationError> {
+    execute_sale(
+        &books.input,
+        0,
+        &mut books.ledger,
+        &mut books.recorder,
+        &mut books.lots,
+        &mut books.tax,
+        state,
+        &ScheduledSaleSpec {
+            month: 0,
+            cause_id: "scheduled-sale".into(),
+            agent_id: "alice".into(),
+            account_id: "brokerage".into(),
+            asset_id: "fund".into(),
+            units: Quantity(units),
+            proceeds_account_id: "checking".into(),
+        },
+    )
+}
+
+#[test]
+fn odd_tlh_quantum_follows_exact_lot_order_and_its_gain_character() {
+    for (first, second, short_term, long_term) in [("old", "new", -22, -6), ("new", "old", -21, -7)]
+    {
+        let mut books = Books::new();
+        books.deferred[0] = Money(1);
+        let request = SaleRequest {
+            lots: vec![
+                sale(first, 10).lots.remove(0),
+                sale(second, 10).lots.remove(0),
+            ],
+            ..sale(first, 10)
+        };
+        books.sell(&request, 10).unwrap();
+        // Economic gains are -7 long / -22 short. Half-up allocates the sole
+        // deferral quantum to the first of the two equal-sized selected lots.
+        for facts in books.tax.facts.values() {
+            assert_eq!(facts.short_term_gain, Money(short_term));
+            assert_eq!(facts.long_term_gain, Money(long_term));
+            assert_eq!(facts.short_term_gain.0 + facts.long_term_gain.0, -28);
+        }
+        assert_eq!(books.deferred, [Money(0)]);
+        assert!(
+            books
+                .lots
+                .iter()
+                .all(|lot| lot.units_remaining == Quantity(0))
+        );
+        assert!(books.lots.iter().all(|lot| lot.basis_remaining == Money(0)));
+        assert_eq!(books.recorder.dispositions[0].lot_id, first);
+        assert_eq!(
+            books
+                .ledger
+                .balance(&AccountRef::new("alice", "checking"))
+                .unwrap(),
+            Money(120)
+        );
+    }
+}
+
+#[test]
+fn splitting_scheduled_sales_preserves_tlh_character_and_full_liquidation() {
+    for chunks in [vec![20], vec![10, 10], vec![5, 5, 10], vec![3, 4, 6, 7]] {
+        let mut books = Books::new();
+        books.deferred[0] = Money(1);
+        let mut state =
+            scheduled_tlh_give_back_state(&books.input, &books.lots, &books.deferred).unwrap();
+        for units in chunks {
+            scheduled_sell(&mut books, &mut state, units).unwrap();
+        }
+        apply_scheduled_tlh_give_back(&state, &mut books.deferred).unwrap();
+        for facts in books.tax.facts.values() {
+            assert_eq!(facts.short_term_gain, Money(-22));
+            assert_eq!(facts.long_term_gain, Money(-6));
+        }
+        assert_eq!(books.deferred, [Money(0)]);
+        assert!(books.lots.iter().all(|lot| lot.basis_remaining == Money(0)));
+        assert_eq!(
+            books
+                .recorder
+                .dispositions
+                .iter()
+                .map(|item| item.proceeds.0)
+                .sum::<i64>(),
+            20
+        );
+        assert_eq!(
+            books
+                .recorder
+                .dispositions
+                .iter()
+                .map(|item| item.basis.0)
+                .sum::<i64>(),
+            49
+        );
+    }
+}
+
+#[test]
+fn dynamic_pool_fragments_keep_their_per_trade_anchor_but_clear_all_deferral() {
+    let mut books = Books::new();
+    books.deferred[0] = Money(1);
+    for (lot, units) in [("old", 5), ("old", 5), ("new", 10)] {
+        books.sell(&sale(lot, units), 10).unwrap();
+        assert!(books.deferred[0].0 >= 0);
+    }
+    // 1/4 and then 1/3 round to zero, leaving the final whole quantum for the
+    // short-term lot. Scheduled sales instead retain the month-opening 1/20 anchor.
+    for facts in books.tax.facts.values() {
+        assert_eq!(facts.short_term_gain, Money(-21));
+        assert_eq!(facts.long_term_gain, Money(-7));
+    }
+    assert_eq!(books.deferred, [Money(0)]);
+}
+
+#[test]
+fn rejected_scheduled_fragment_preserves_successful_prefix_and_rounding_cursor() {
+    let mut books = Books::new();
+    books.deferred[0] = Money(1);
+    let mut state =
+        scheduled_tlh_give_back_state(&books.input, &books.lots, &books.deferred).unwrap();
+    scheduled_sell(&mut books, &mut state, 5).unwrap();
+    assert_eq!(books.recorder.dispositions.len(), 1);
+    books.recorder.journal_entry_count = u64::MAX;
+    let before = format!("{books:?}{state:?}");
+    // This next fragment would cross the half-quantum threshold, but cannot post.
+    assert!(scheduled_sell(&mut books, &mut state, 5).is_err());
+    assert_eq!(format!("{books:?}{state:?}"), before);
+    apply_scheduled_tlh_give_back(&state, &mut books.deferred).unwrap();
+    assert_eq!(books.deferred, [Money(1)]);
+}
+
 #[test]
 fn exact_selection_is_not_fifo_and_full_lot_basis_reconciles() {
     let mut books = Books::new();
