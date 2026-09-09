@@ -13,39 +13,55 @@ in real terms so the effect of changing allocation remains visible.
 
 ```python
 from itertools import product
+from pathlib import Path
+from datetime import date
 
 import numpy as np
 import polars as pl
 
-from augur.markets.vecm import load_vecm
-from augur.money import USD
-from augur.simulation import AnnualConvention, Situation, simulate
-from augur.strategies import AnnualRebalance, FixedWithdrawal, Strategy
-from augur.taxes import NoTax
+from proposed_augur.markets import load_vecm
+from proposed_augur.money import USD
+from proposed_augur.simulation import AnnualConvention, simulate
+from proposed_augur.state import Situation
+from proposed_augur.policies import AnnualRebalance, FixedWithdrawal, Strategy
+from proposed_augur.taxes import NoTax
+from proposed_augur.accounting import Actor
+from proposed_augur.data import NamedSeries
+from proposed_augur.instruments import Instrument, InvestableUniverse, Weights
+from proposed_augur.markets import MarketBinding
+from proposed_augur.money import ReportingBasis
+from proposed_augur.policies import Observations, TargetReview
+from proposed_augur.results import Runs, StudyResult, financial_observers
 
 
-def linear_allocation(stocks, bonds, start_share, end_share, ramp_years):
-    def target(obs):
+def linear_allocation(stocks: Instrument, bonds: Instrument, start_share: float, end_share: float, ramp_years: int) -> TargetReview:
+    def target(obs: Observations) -> Weights:
         elapsed = np.clip(obs.next_period_index / ramp_years, 0, 1)
         share = start_share + elapsed * (end_share - start_share)
         return {stocks: share, bonds: 1 - share}
     return target
 
 
-def glide_paths(artifacts, universe, *, start):
+def glide_paths(
+    artifacts: dict[str, Path], bindings: dict[str, MarketBinding],
+    observations: NamedSeries, universe: InvestableUniverse, *, start: date,
+) -> StudyResult:
     stocks = universe.instrument("equity")
     bonds = universe.instrument("bonds")
     capital = USD("1000000")
-    rows, runs = [], {}
+    actor = Actor("investor")
+    rows: list[pl.DataFrame] = []
+    runs: Runs = {}
     for model_name, artifact in artifacts.items():
-        market = load_vecm(artifact).bind(universe)
-        worlds = market.sample(start=start, years=40, step="year", paths=10000, seed=2014)
+        market = load_vecm(artifact).bind(bindings[model_name]).condition(observations, at=start)
+        worlds = market.sample(years=40, step="year", paths=10000, seed=2014)
         for years, initial_share, final_share, rate in product(
             (20, 30, 40), (0.3, 0.6, 0.8), (0.3, 0.6, 0.8), (0.04, 0.05)
         ):
             paths = worlds.prefix(years=years)
             initial = capital * rate
             situation = Situation.investor(
+                actor=actor, basis=ReportingBasis("USD", market.price_index, start),
                 capital=capital, weights={stocks: initial_share, bonds: 1 - initial_share},
                 taxes=NoTax(), calendar=paths.calendar,
             )
@@ -57,9 +73,9 @@ def glide_paths(artifacts, universe, *, start):
                 ),
             )
             run = simulate(
-                situation, strategy, worlds=paths,
+                situation, policies={actor: strategy}, reporting_actor=actor, worlds=paths,
                 convention=AnnualConvention.withdraw_then_return_then_rebalance(),
-                on_shortfall="stop", observe=("terminal_wealth_real", "total_spending_real"),
+                on_shortfall="stop", observers=financial_observers("terminal_wealth_real", "total_spending_real"),
             )
             outcomes = run.paths.with_columns(
                 failed=(

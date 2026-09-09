@@ -14,28 +14,36 @@ contract is a forecast of the same observable quantities, not identical latent
 states or an identical training algorithm.
 
 ```python
+from collections.abc import Mapping, Sequence
+from datetime import date
+
 import polars as pl
 
-from augur.datasets import align_monthly
-from augur.scoring import LogGrowth, energy_score, variogram_score
+from proposed_augur.data import align_monthly
+from proposed_augur.results import LogGrowth, energy_score, variogram_score
+from proposed_augur.data import NamedSeries
+from proposed_augur.markets import Fitters, MarketModel
 
 
-def compare_forecasts(datasets, fitters, universe, origins, *, evaluation_as_of):
+def compare_forecasts(
+    datasets: NamedSeries, fitters: Fitters, origins: Sequence[date], *, evaluation_as_of: date,
+) -> tuple[pl.DataFrame, pl.DataFrame, dict[tuple[date, str], MarketModel]]:
     # This experiment chooses these observable coordinates, not a global evidence bundle.
     projection = LogGrowth(columns=("equity_tr_index", "corporate_tr_index", "cpi"))
     scoring_series = {
         name: datasets[name].available_by(evaluation_as_of)
         for name in projection.columns
     }
-    rows, fitted = [], {}
+    rows: list[dict[str, str | date | int | float]] = []
+    fitted: dict[tuple[date, str], MarketModel] = {}
     for origin in origins:
         known = {name: series.available_by(origin) for name, series in datasets.items()}
         scale = projection.scale_from(known)  # Shared, learned only from training data.
         for model_name, fit in fitters.items():
-            model = fit(known).bind(universe)
+            model = fit(known)  # Each fitter returns a model with its explicit financial binding.
             fitted[origin, model_name] = model
             forecast = model.condition(known, at=origin).sample(
-                start=origin, years=10, step="month", paths=4096, seed=410,
+                years=10, step="month", paths=4096, seed=410,
             )
             for months in (1, 12, 60, 120):
                 observed = align_monthly(
@@ -94,15 +102,26 @@ outcomes: for example, a spending objective subject to agreed limits on cuts,
 backstop use, and default. There is no model-independent "recommend" method.
 
 ```python
-from augur.simulation import simulate
+from proposed_augur.accounting import Actor
+from proposed_augur.markets import Forecast, Worlds
+from proposed_augur.policies import Strategy
+from proposed_augur.results import PolicySelector, Run, count_budget_changes, ever_accepted_tag, financial_observers
+from proposed_augur.simulation import simulate
+from proposed_augur.state import Situation
 
 
-def evaluate_policies(situation, policies, worlds):
-    rows, runs = [], {}
+def evaluate_policies(
+    situation: Situation, actor: Actor, policies: Mapping[str, Strategy], worlds: Worlds,
+) -> tuple[pl.DataFrame, dict[str, Run]]:
+    rows: list[pl.DataFrame] = []
+    runs: dict[str, Run] = {}
     for name, policy in policies.items():
         run = simulate(
-            situation, policy, worlds=worlds, on_shortfall="stop",
-            observe=("total_spending_real", "cuts", "backstop_used", "terminal_wealth_real"),
+            situation, policies={actor: policy}, reporting_actor=actor, worlds=worlds, on_shortfall="stop",
+            observers=financial_observers("total_spending_real", "terminal_wealth_real") | {
+                "cuts": count_budget_changes(direction="down"),
+                "backstop_used": ever_accepted_tag("backstop"),
+            },
         )
         failure = pl.col("unfunded_withdrawal") | pl.col("contract_default")
         rows.append(run.paths.select(
@@ -119,22 +138,29 @@ def evaluate_policies(situation, policies, worlds):
     return pl.concat(rows), runs
 
 
-def compare_decisions(situation, models, policies, choose, *, years, paths):
-    selections, selection_runs = {}, {}
+def compare_decisions(
+    situation: Situation, actor: Actor, models: Mapping[str, Forecast],
+    policies: Mapping[str, Strategy], choose: PolicySelector, *, years: int, paths: int,
+) -> tuple[dict[str, str | None], pl.DataFrame, dict[str, dict[str, Run]], dict[str, dict[str, Run]]]:
+    selections: dict[str, str | None] = {}
+    selection_runs: dict[str, dict[str, Run]] = {}
     for name, model in models.items():
         worlds = model.sample(
-            start=situation.as_of, years=years, step="month", paths=paths, seed=501
+            years=years, step="month", paths=paths, seed=501
         )
-        table, runs = evaluate_policies(situation, policies, worlds)
+        table, runs = evaluate_policies(situation, actor, policies, worlds)
         selections[name] = choose(table, runs)  # Policy name, or None if none qualifies.
+        if selections[name] is not None and selections[name] not in policies:
+            raise ValueError("The selector returned a policy outside the supplied grid")
         selection_runs[name] = runs
 
-    rows, evaluation_runs = [], {}
+    rows: list[pl.DataFrame] = []
+    evaluation_runs: dict[str, dict[str, Run]] = {}
     for world_name, model in models.items():
         fresh_worlds = model.sample(
-            start=situation.as_of, years=years, step="month", paths=paths, seed=502
+            years=years, step="month", paths=paths, seed=502
         )
-        table, runs = evaluate_policies(situation, policies, fresh_worlds)
+        table, runs = evaluate_policies(situation, actor, policies, fresh_worlds)
         evaluation_runs[world_name] = runs
         for chooser_name, selected in selections.items():
             if selected is not None:

@@ -13,14 +13,19 @@ loaders, then use the same alignment helper.
 
 ```python
 from pathlib import Path
+from datetime import date
 
-from augur.datasets import align_monthly, read_parquet_series
-from augur.datasets.fred import read_fred_series
-from augur.markets import HistoricalMarket, JointBlockBootstrap
-from augur.markets.vecm import load_vecm
+from proposed_augur.data import align_monthly, read_parquet_series
+from proposed_augur.data import read_fred_series
+from proposed_augur.markets import HistoricalMarket, JointBlockBootstrap
+from proposed_augur.markets import load_vecm
+from proposed_augur.data import NamedSeries
+from proposed_augur.instruments import Instrument
+from proposed_augur.markets import MarketBinding, Worlds, FittedModel
+from proposed_augur.money import PriceIndex
 
 
-def load_study_series(sp500_path: Path, corporate_path: Path, cpi_snapshot: Path):
+def load_study_series(sp500_path: Path, corporate_path: Path, cpi_snapshot: Path) -> NamedSeries:
     return {
         "equity_tr_index": read_parquet_series(
             sp500_path, value="total_return_index", observed_at="month",
@@ -34,7 +39,7 @@ def load_study_series(sp500_path: Path, corporate_path: Path, cpi_snapshot: Path
     }
 
 
-def log_state(datasets, as_of):
+def log_state(datasets: NamedSeries, as_of: date) -> NamedSeries:
     # Named, dated observations in exactly the variables this fitted model uses.
     return {
         "log_equity_tr": datasets["equity_tr_index"].available_by(as_of).log(),
@@ -43,35 +48,46 @@ def log_state(datasets, as_of):
     }
 
 
+def study_binding(stocks: Instrument, bonds: Instrument) -> MarketBinding:
+    return MarketBinding(
+        observe=log_state,
+        total_return_indices={stocks: "log_equity_tr", bonds: "log_corporate_tr"},
+        price_index=PriceIndex("us_cpi"), inflation_variable="log_cpi",
+        observable_columns={
+            "equity_tr_index": "log_equity_tr", "corporate_tr_index": "log_corporate_tr", "cpi": "log_cpi",
+        },
+        encoding="log_levels",
+    )
+
+
 def study_worlds(
-    datasets, artifact_path: Path, *, stocks, bonds, historical_as_of,
-    history_start, history_end, first_year, last_year, start, years, paths, block_months,
-):
+    datasets: NamedSeries, artifact_path: Path, *, stocks: Instrument, bonds: Instrument,
+    historical_as_of: date, history_start: date, history_end: date,
+    first_year: int, last_year: int, start: date, years: int, paths: int, block_months: int,
+) -> dict[str, Worlds]:
     history = align_monthly(
         {name: series.available_by(historical_as_of) for name, series in datasets.items()},
         start=history_start, end=history_end, missing="raise",
     )
     bindings = {stocks: "equity_tr_index", bonds: "corporate_tr_index"}
     historical = HistoricalMarket.from_index_levels(
-        history, bindings=bindings, price_index="cpi"
+        history, bindings=bindings, price_index=PriceIndex("us_cpi"), inflation_column="cpi"
     )
     bootstrap = JointBlockBootstrap.from_index_levels(
-        history, bindings=bindings, price_index="cpi",
+        history, bindings=bindings, price_index=PriceIndex("us_cpi"), inflation_column="cpi",
         block_months=block_months, incomplete_blocks="exclude", circular=False,
     )
-    conditional = load_vecm(artifact_path).bind(
-        total_return_indices={stocks: "log_equity_tr", bonds: "log_corporate_tr"},
-        price_index="log_cpi", encoding="log_levels",
-    ).condition(log_state(datasets, start), at=start)
+    market = load_vecm(artifact_path).bind(study_binding(stocks, bonds))
+    conditional = market.condition(datasets, at=start)
     return {
         "historical": historical.windows(
-            first_year=first_year, last_year=last_year, years=years, stride_years=1
+            first_year=first_year, last_year=last_year, years=years, stride_years=1, replay_start=start
         ),
-        "block_bootstrap": bootstrap.sample(
-            start=start, years=years, step="month", paths=paths, seed=811
+        "block_bootstrap": bootstrap.condition(datasets, at=start).sample(
+            years=years, step="month", paths=paths, seed=811
         ),
         "conditional_vecm": conditional.sample(
-            start=start, years=years, step="month", paths=paths, seed=812
+            years=years, step="month", paths=paths, seed=812
         ),
     }
 ```
@@ -97,7 +113,20 @@ history, fund inception, and regime breaks need explicit handling; no zero-fill.
 `from_index_levels` derives adjacent-period gross changes before resampling, not
 blocks of unrelated index levels. Include the preceding month's index observations
 to calculate the first requested month's changes.
-Historical windows retain their actual dates; synthetic forecasts start at `start`.
+Historical source dates remain in provenance; `replay_start` maps their elapsed
+periods onto the common no-tax scenario calendar and rebases each price index at
+that origin. Synthetic forecasts start at `start`. This convenience cannot replay
+different historical tax laws against a single dated opening situation; such a
+study must assemble a separately dated situation for each historical origin.
+
+`study_binding` is the bridge in both directions: `observe` encodes the author's
+raw datasets into the fitted variables; `encoding="log_levels"` decodes sampled
+variables into index levels. `observable_columns` names those decoded levels for
+scoring, and `total_return_indices` assigns them financial meaning. A loader does
+not guess these transformations from names. Binding checks the artifact's variable
+schema, units and frequency; conditioning applies the encoder at the stated
+information cutoff. The resulting forecast owns its origin, so `sample` cannot
+silently supply a different start date.
 
 This particular helper serves no-tax total-return studies. A taxed fund needs
 prices, distributions, and tax character; an individual bond needs issuance terms,
@@ -110,12 +139,13 @@ Fitting is also experiment code when the study varies its evidence window:
 ```python
 import polars as pl
 
-from augur.markets.vecm import fit_vecm
+from proposed_augur.markets import fit_vecm
 
 
 def fitted_worlds(
-    datasets, *, stocks, bonds, fit_start, fit_end, fit_as_of, start, years, paths,
-):
+    datasets: NamedSeries, *, stocks: Instrument, bonds: Instrument,
+    fit_start: date, fit_end: date, fit_as_of: date, start: date, years: int, paths: int,
+) -> tuple[FittedModel, Worlds]:
     levels = align_monthly(
         {name: series.available_by(fit_as_of) for name, series in datasets.items()},
         start=fit_start, end=fit_end, missing="raise",
@@ -131,11 +161,8 @@ def fitted_worlds(
         variables=("log_equity_tr", "log_corporate_tr", "log_cpi"),
         lagged_differences=2, cointegration_rank=1, deterministic="restricted_constant",
     )
-    market = fitted.bind(
-        total_return_indices={stocks: "log_equity_tr", bonds: "log_corporate_tr"},
-        price_index="log_cpi", encoding="log_levels",
-    ).condition(log_state(datasets, start), at=start)
-    worlds = market.sample(start=start, years=years, step="month", paths=paths, seed=813)
+    market = fitted.bind(study_binding(stocks, bonds)).condition(datasets, at=start)
+    worlds = market.sample(years=years, step="month", paths=paths, seed=813)
     return fitted, worlds
 ```
 

@@ -16,59 +16,73 @@ from itertools import product
 import numpy as np
 import polars as pl
 
-from augur.markets.vecm import load_vecm
-from augur.simulation import simulate
-from augur.strategies import AnnualSpending, FixedWithdrawal, Strategy
+from proposed_augur.accounting import Actor
+from proposed_augur.data import NamedSeries
+from proposed_augur.markets import MarketModel
+from proposed_augur.money import RealAmount, RealBatch
+from proposed_augur.policies import BudgetDecision, InvestmentPolicy, Observations
+from proposed_augur.results import Runs, StudyResult, count_budget_changes, financial_observers
+from proposed_augur.simulation import resume, simulate
+from proposed_augur.state import Situation
+from proposed_augur.policies import AnnualSpending, FixedWithdrawal, Strategy
 
 
-def reassessed_spending(initial, index, belief, trading, lower, upper, inner_paths):
-    initial_real = initial.to_number()
-
-    def review(obs, previous_real):
+def reassessed_spending(
+    initial: RealAmount, belief: MarketModel, trading: InvestmentPolicy,
+    lower: float, upper: float, inner_paths: int,
+) -> AnnualSpending:
+    def review(obs: Observations, previous: RealBatch) -> BudgetDecision:
         # A batch of continuations, each conditioned only on that outer path's past.
-        forecasts = belief.condition(obs.market_history).sample_continuations(
-            starts=obs.date, horizons=obs.remaining_horizon,
-            paths_per_situation=inner_paths,
+        forecasts = belief.condition_many(obs.forecast_origins()).sample(
+            paths_per_origin=inner_paths,
             streams=obs.random_stream("planning"),
         )
-        check = simulate(
-            obs.fork_situations(),
-            Strategy(
+        check = resume(
+            obs.checkpoints(),
+            replace_policies={obs.actor: Strategy(
                 spending=FixedWithdrawal.from_real(
-                    previous_real, index=index, interval="month", budget_period="year"
+                    previous, interval="month", budget_period="year"
                 ),
                 trading=trading,
-            ),
-            worlds=forecasts, on_shortfall="stop", observe=(),
+            )},
+            worlds=forecasts, on_shortfall="stop", observers={},
+            reporting_actor=obs.actor,
         )
-        risk = check.by_starting_path.failure_fraction(
+        risk = check.failure_fraction_by_origin(
             events=("unfunded_withdrawal", "contract_default")
         )
         # Illustrative thresholds/actions, not a claim about the source paper.
         factor = np.where(risk > upper, 0.95, np.where(risk < lower, 1.025, 1.0))
-        budget = np.where(obs.review_index == 0, initial_real, previous_real * factor)
-        return budget, budget
+        budget = previous.with_values(np.where(obs.review_index == 0, initial.value, previous.values * factor))
+        return BudgetDecision(budget=budget, state=budget)
 
     return AnnualSpending(
-        review=review, initial_state=initial_real, price_index=index, consume_every="month"
+        review=review, initial_state=initial, consume_every="month"
     )
 
 
-def forecast_feedback(situation, universe, artifacts, trading, *, initial, years, paths):
-    rows, runs = [], {}
-    for outer_name, artifact in artifacts.items():
-        outer = load_vecm(artifact).bind(universe)
-        worlds = outer.sample(start=situation.as_of, years=years, step="month", paths=paths, seed=2011)
+def forecast_feedback(
+    situation: Situation, actor: Actor, models: dict[str, MarketModel], observations: NamedSeries,
+    trading: InvestmentPolicy, *, initial: RealAmount, years: int, paths: int,
+) -> StudyResult:
+    rows: list[pl.DataFrame] = []
+    runs: Runs = {}
+    for outer_name, outer in models.items():
+        worlds = outer.condition(observations, at=situation.as_of).sample(
+            years=years, step="month", paths=paths, seed=2011
+        )
         for belief_name, (lower, upper), inner_paths in product(
-            artifacts, ((0.05, 0.15), (0.10, 0.25)), (256, 1024)
+            models, ((0.05, 0.15), (0.10, 0.25)), (256, 1024)
         ):
-            belief = load_vecm(artifacts[belief_name]).bind(universe)
+            belief = models[belief_name]
             spending = reassessed_spending(
-                initial, outer.price_index, belief, trading, lower, upper, inner_paths
+                initial, belief, trading, lower, upper, inner_paths
             )
             run = simulate(
-                situation, Strategy(spending=spending, trading=trading), worlds=worlds,
-                on_shortfall="stop", observe=("total_spending_real", "cuts", "terminal_wealth_real"),
+                situation, policies={actor: Strategy(spending=spending, trading=trading)},
+                reporting_actor=actor, worlds=worlds, on_shortfall="stop",
+                observers=financial_observers("total_spending_real", "terminal_wealth_real")
+                | {"cuts": count_budget_changes(direction="down")},
             )
             failures = pl.col("unfunded_withdrawal") | pl.col("contract_default")
             rows.append(run.paths.select(
@@ -84,9 +98,14 @@ def forecast_feedback(situation, universe, artifacts, trading, *, initial, years
     return pl.concat(rows), runs
 ```
 
-`obs.fork_situations()` is a read-only fork at the decision point, before the
-current withdrawal, including actual lots, accrued taxes, contracts, and remaining
-horizon. The inner policy is fixed spending, so this is not unbounded recursion.
+`obs.checkpoints()` captures the decision point before the current withdrawal,
+including actual lots, accrued taxes, contracts, policy memory, pending events,
+reporting basis, and remaining horizon. `resume` clones that state per inner draw;
+it does not initialize a new investor. Unchanged trading retains its memory; the
+replacement spending policy starts from the supplied real annual budget. The
+same base-date purchasing power applies on both sides of the fork: there is no
+second rebasing or inflation adjustment at the origin. The inner policy is fixed
+spending, so this is not unbounded recursion.
 Its calculation is conditional risk if spending stays unchanged, not the risk
 of the adaptive policy itself. Outer rollouts measure the latter.
 

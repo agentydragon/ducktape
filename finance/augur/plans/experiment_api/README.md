@@ -1,7 +1,8 @@
 # Experiment programs for a proposed Augur library
 
 Design sketches, 2026-09-08. The Python programs below describe APIs we would like to
-use; the `augur.*` imports do not exist. They are code for review, not runnable
+use; `proposed_augur` names the [proposed modules](#proposed-building-blocks), not an
+implementation. These are code for review, not runnable
 experiments, and produce no results in this change. Paths to historical records,
 model artifacts, tax configurations, and private inputs are supplied by the caller.
 
@@ -30,17 +31,49 @@ not additional user experiments.
 experiment shell. [Further studies](studies.md) explains the broader selection and
 which additional capabilities those studies would exercise.
 
+## Proposed building blocks
+
+The `.pyi` files below are interface sketches, not a runnable package. Each has a
+short responsibility docstring. Signatures make the connections concrete without
+specifying every product, tax rule or implementation detail. The module boundaries
+are a proposal to discuss, not a commitment to Python or a matching set of Rust crates.
+
+| Module                                        | Responsibility                                                             |
+| --------------------------------------------- | -------------------------------------------------------------------------- |
+| [money](proposed_augur/money.pyi)             | Currency amounts, real budgets and purchasing-power bases.                 |
+| [instruments](proposed_augur/instruments.pyi) | Product identities/terms shared by markets, books and policies.            |
+| [accounting](proposed_augur/accounting.pyi)   | Actors, books, lots and balanced financial events.                         |
+| [taxes](proposed_augur/taxes.pyi)             | Statutory consequences in accumulated filing-unit context.                 |
+| [contracts](proposed_augur/contracts.pyi)     | Existing obligations, including mortgages and leases.                      |
+| [data](proposed_augur/data.pyi)               | Author-selected datasets, vintages, loading and alignment.                 |
+| [markets](proposed_augur/markets.pyi)         | Fit/condition/sample models; bind outputs to products and observables.     |
+| [state](proposed_augur/state.pyi)             | Assemble financial situations; preserve complete continuation checkpoints. |
+| [policies](proposed_augur/policies.pyi)       | Executable rules and reusable policy factories; propose, do not settle.    |
+| [simulation](proposed_augur/simulation.pyi)   | Advance timelines and settle decisions using shared financial mechanics.   |
+| [results](proposed_augur/results.pyi)         | Traces, experiment-owned outcome reductions and forecast scoring.          |
+
+These are composable pieces, not eleven mandatory steps. Model-fit comparisons
+use data, markets and scoring without simulating an investor. Trinity adds a
+synthetic opening book, policies and execution with explicit no-tax rules. Personal
+planning supplies actual lots and tax state; housing also adds contracts and
+counterparties. Experiment shells own their input loading, parameter sweeps,
+model/policy selection and presentation; there is no new experiment-framework object.
+
 ## How to read the code
 
 The proposed vocabulary is deliberately shared across the programs. Its spelling is
 negotiable; the behavior the caller asks for is the review target.
+Imports name the defining module so the programs show which building blocks they
+need. This is a design pass, not a typechecked API contract or financial validation.
 
 - An **instrument object** identifies one financial product and its terms. The book,
   market binding, and trading policy reference that same object. A binding states
   the chosen price/cashflow approximation; it cannot independently change the
   product's currency, distribution character, or contractual rights.
-- A **market** binds those instruments to an evidence record or a joint forecast
-  model. `windows` enumerates historical paths; `sample` draws model paths. A
+- A **market binding** maps input observations to fitted variables and sampled
+  variables to instruments and named observables. A bound model's `condition`
+  produces a dated forecast; that forecast's `sample` draws paths. Historical
+  `windows` enumerates paths from an explicit record. A
   supplied `Worlds` can come from an external model. No universal calibration
   interface is required of every provider.
 - **Datasets** are selected and named by the experiment author, using provider
@@ -54,27 +87,30 @@ negotiable; the behavior the caller asks for is the review target.
   factories can return common policies; the engine does not need a closed enum of
   every study's algorithms. Parameters are data, behavior is code, and path-local
   policy memory is explicit. Spending and trading can also be coordinated.
-- `simulate` evaluates one situation and strategy over a population. Python is the
+- `simulate` evaluates one situation and an actor-to-strategy mapping over a population. Python is the
   notation here, not a decision about the implementation language. Loops in the
   experiment shell enumerate cells; the executor advances the simulated calendar.
-  Each call starts fresh state. Neither a prior run nor another strategy can mutate
-  a situation or a world reused by the experiment.
+  Each initial call starts fresh state. `resume` instead clones complete checkpoints
+  and preserves unchanged policy memory. Neither operation mutates an input situation,
+  checkpoint or world reused by another cell.
 - A **run** exposes requested per-path statistics and a reproduction receipt.
   `run.trace(path_id)` executes the identified path with detailed capture. This
   does not depend on a web-app rollout cache.
 
 `run.paths` is a Polars frame with one row per path. Each program requests its
-columns through `observe`; these are reductions during execution, not a request
+columns through an `observers` mapping; these are reductions during execution, not a request
 to retain the complete ledger of every path. `path_id`, `reached_horizon`,
 `unfunded_withdrawal`, and `contract_default` accompany every row. Terminal values
 are null for a stopped path. `total_spending_real` means spending actually paid
 through the stopping date, not hypothetical future spending.
 
-Real-money columns use the scenario's reporting currency at its initial price
-level. A terminal wealth measure includes outstanding liabilities and accrued
+Real-money columns use the explicit `ReportingBasis`: currency, price-index identity,
+and base date, preserved by continuations. A terminal wealth measure includes outstanding liabilities and accrued
 taxes; it does not silently assume every asset was liquidated. An experiment
 wanting liquidation value requests that separately. Exact accounting and rounding
-belong to execution. Python converts money to numbers only for reporting.
+belong to execution. Policy calculations may use approximate numeric arrays through
+`RealBatch.values`; wrapping the result with `with_values` retains its basis and
+path identities. Those arrays are not ledger money.
 
 The programs show ordinary Polars reductions to make denominators and conditioning
 visible. `pl.concat(rows)` yields a table indexed by the sweep parameters. Returned
@@ -112,12 +148,14 @@ not recreate the tax calculation to understand a decision's consequences.
 
 ### Executable policies, execution language undecided
 
-The Vanguard program supplies a function `(observations, state) -> (budget, state)`;
+The Vanguard program supplies a function `(observations, state) -> BudgetDecision`;
 the glide-path program supplies `(observations) -> target_weights`. Values have a
 leading path axis. Changing a function changes the study without extending a
 central schema or teaching the engine a new named policy. Built-in policies use
 the same interface. A coupled policy may return spending, allocation, and actions
 together when independently composed decisions would be inconsistent.
+`Strategy.from_review` admits an author's own state type and a `PolicyStep` carrying
+a coordinated `Proposal`; the simpler budget/allocation adapters are conveniences.
 
 Functions receive read-only observations, return proposals, and cannot directly
 mutate books. Settlement validates and executes proposals with shared instrument,

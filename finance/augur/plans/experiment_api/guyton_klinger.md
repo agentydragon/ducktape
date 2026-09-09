@@ -12,15 +12,21 @@ paths; that conditioning is explicit below.
 
 ```python
 from itertools import product
+from datetime import date
 
 import polars as pl
 
-from augur.instruments import TotalReturnIndex
-from augur.markets import AnnualJointLognormal, History
-from augur.money import USD
-from augur.simulation import AnnualConvention, Situation, simulate
-from augur.strategies import GuytonPortfolioConvention, GuytonRuleOrder, guyton_klinger_policy
-from augur.taxes import NoTax
+from proposed_augur.instruments import TotalReturnIndex
+from proposed_augur.data import History
+from proposed_augur.markets import AnnualJointLognormal
+from proposed_augur.money import USD
+from proposed_augur.simulation import AnnualConvention, simulate
+from proposed_augur.state import Situation
+from proposed_augur.policies import GuytonPortfolioConvention, GuytonRuleOrder, guyton_klinger_policy
+from proposed_augur.taxes import NoTax
+from proposed_augur.accounting import Actor
+from proposed_augur.money import PriceIndex, ReportingBasis
+from proposed_augur.results import Runs, StudyResult, count_accepted_tag, financial_observers
 
 
 def guyton_klinger(
@@ -28,29 +34,33 @@ def guyton_klinger(
     *,
     rule_order: GuytonRuleOrder,
     portfolio_convention: GuytonPortfolioConvention,
-    stock_shares=(0.50, 0.65, 0.80),
-    rate_percents=tuple(x / 10 for x in range(30, 81)),
-):
+    stock_shares: tuple[float, ...] = (0.50, 0.65, 0.80),
+    rate_percents: tuple[float, ...] = tuple(x / 10 for x in range(30, 81)),
+) -> StudyResult:
     stocks = TotalReturnIndex("sp500", currency="USD")
     bonds = TotalReturnIndex("paper_fixed_income", currency="USD")
     bills = TotalReturnIndex("paper_cash", currency="USD")
     capital = USD("1000000")
-    rows, runs = [], {}
+    actor = Actor("investor")
+    rows: list[pl.DataFrame] = []
+    runs: Runs = {}
 
     for fit_period, history in histories.items():
         market = AnnualJointLognormal.fit(
             history,
             bindings={stocks: "equity", bonds: "fixed_income", bills: "cash"},
-            price_index="cpi",
+            price_index=PriceIndex("us_cpi"), inflation_column="cpi",
             moment_space="arithmetic_gross_returns",
         )
-        worlds = market.sample(years=40, paths=14000, seed=2006)
+        forecast = market.condition({}, at=date(2000, 1, 1))  # Synthetic no-tax calendar.
+        worlds = forecast.sample(years=40, step="year", paths=14000, seed=2006)
         for stock_share, rate_percent, prosperity in product(
             stock_shares, rate_percents, (False, True)
         ):
             target = {stocks: stock_share, bonds: 1 - stock_share}
             initial = capital * rate_percent / 100
             situation = Situation.investor(
+                actor=actor, basis=ReportingBasis("USD", market.price_index, worlds.calendar.start),
                 capital=capital, weights=target, taxes=NoTax(), calendar=worlds.calendar
             )
             strategy = guyton_klinger_policy(
@@ -73,14 +83,18 @@ def guyton_klinger(
             )
             run = simulate(
                 situation,
-                strategy,
+                policies={actor: strategy}, reporting_actor=actor,
                 worlds=worlds,
                 convention=AnnualConvention.withdraw_then_return(),
                 on_shortfall="stop",
-                observe=(
+                observers=financial_observers(
                     "terminal_wealth_nominal", "total_spending_real",
-                    "final_spending_real", "cuts", "raises", "freezes",
-                ),
+                    "final_spending_real",
+                ) | {
+                    "cuts": count_accepted_tag("gk.preservation"),
+                    "raises": count_accepted_tag("gk.prosperity"),
+                    "freezes": count_accepted_tag("gk.inflation_freeze"),
+                },
             )
             paths = run.paths.with_columns(
                 success=(

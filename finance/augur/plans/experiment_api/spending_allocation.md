@@ -16,19 +16,21 @@ from itertools import product
 
 import polars as pl
 
-from augur.instruments import InvestableUniverse
-from augur.markets import MarketModel
-from augur.policies import ActionReview, BudgetReview
-from augur.simulation import Situation, simulate
-from augur.strategies import (
-    Allocation, CashReserve, DriftBand, LifestylePlan, SpendingAnchor,
-    Strategy,
-)
+from proposed_augur.instruments import InvestableUniverse
+from proposed_augur.markets import MarketModel
+from proposed_augur.policies import ActionReview, BudgetReview
+from proposed_augur.simulation import simulate
+from proposed_augur.state import Situation
+from proposed_augur.policies import Allocation, CashReserve, DriftBand, LifestylePlan, SpendingAnchor, Strategy
+from proposed_augur.data import NamedSeries
+from proposed_augur.results import Runs, StudyResult, financial_observers, count_budget_changes, count_accepted_tag, ever_accepted_tag, months_per_lifestyle
 
 
 @dataclass(frozen=True)
 class Inputs:
     situation: Situation
+    household_id: str
+    observations: NamedSeries
     universe: InvestableUniverse
     models: dict[str, MarketModel]
     anchors: tuple[SpendingAnchor, ...]
@@ -41,19 +43,21 @@ class Inputs:
     paths: int
 
 
-def spending_allocation(inputs: Inputs):
+def spending_allocation(inputs: Inputs) -> StudyResult:
+    household = inputs.situation.actor(inputs.household_id)
     stocks = inputs.universe.instrument("broad_equity_fund")
     bond_options = (
         inputs.universe.instrument("short_treasury_fund"),
         inputs.universe.instrument("intermediate_treasury_fund"),
         inputs.universe.instrument("municipal_fund"),
     )
-    rows, runs = [], {}
+    rows: list[pl.DataFrame] = []
+    runs: Runs = {}
 
     for model_name, model in inputs.models.items():
-        market = model.bind(inputs.universe)
+        market = model.condition(inputs.observations, at=inputs.situation.as_of)
         worlds = market.sample(
-            start=inputs.situation.as_of, years=inputs.years,
+            years=inputs.years,
             step="month", paths=inputs.paths, seed=731,
         )
         for anchor, (flex_name, flex), (transition_name, transition), stock_share, bonds in product(
@@ -76,13 +80,17 @@ def spending_allocation(inputs: Inputs):
                 ),
             )
             run = simulate(
-                inputs.situation, strategy, worlds=worlds,
+                inputs.situation, policies={household: strategy}, reporting_actor=household, worlds=worlds,
                 on_shortfall="stop",
-                observe=(
+                observers=financial_observers(
                     "total_spending_real", "minimum_annual_spending_real",
-                    "terminal_wealth_real", "cuts", "lifestyle_transitions",
-                    "backstop_used", "months_per_lifestyle", "tax_paid_real",
-                ),
+                    "terminal_wealth_real", "tax_paid_real",
+                ) | {
+                    "cuts": count_budget_changes(direction="down"),
+                    "lifestyle_transitions": count_accepted_tag("lifestyle.changed"),
+                    "backstop_used": ever_accepted_tag("backstop"),
+                    "months_per_lifestyle": months_per_lifestyle(),
+                },
             )
             key = (model_name, anchor.name, flex_name, transition_name, stock_share, bonds.name)
             runs[key] = run
@@ -142,16 +150,16 @@ This does not require an autonomous-agent model of movers or landlords.
 For example, the transition callback can express a simple liquid-runway trigger:
 
 ```python
-from augur.actions import Move
+from proposed_augur.policies import ActionDecision, ActionState, Move, MoveTerms, Observations
 
 
-def runway_backstop(terms, runway_years):
-    def review(obs, state):
+def runway_backstop(terms: MoveTerms, runway_years: float) -> ActionReview:
+    def review(obs: Observations, state: ActionState) -> ActionDecision:
         request = (
-            (obs.liquid_wealth_real < runway_years * obs.annual_budget_real)
+            (obs.liquid_wealth_real.values < runway_years * obs.annual_budget_real.values)
             & ~obs.move_pending & ~obs.at_destination(terms.destination)
         )
-        return Move.request(terms=terms, where=request), state
+        return ActionDecision(Move.request(terms=terms, where=request, accepted_tag="backstop"), state)
     return review
 ```
 

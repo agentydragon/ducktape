@@ -14,38 +14,51 @@ to substitute a Treasury series under the same study label.
 
 ```python
 from itertools import product
+from datetime import date
 from pathlib import Path
 
 import polars as pl
 
-from augur.instruments import TotalReturnIndex
-from augur.markets import HistoricalMarket, History
-from augur.money import USD
-from augur.simulation import AnnualConvention, Situation, simulate
-from augur.strategies import AnnualRebalance, FixedWithdrawal, Strategy
-from augur.taxes import NoTax
+from proposed_augur.instruments import TotalReturnIndex
+from proposed_augur.data import History
+from proposed_augur.markets import HistoricalMarket
+from proposed_augur.money import USD
+from proposed_augur.simulation import AnnualConvention, simulate
+from proposed_augur.state import Situation
+from proposed_augur.policies import AnnualRebalance, FixedWithdrawal, Strategy
+from proposed_augur.taxes import NoTax
+from proposed_augur.accounting import Actor
+from proposed_augur.instruments import Weights
+from proposed_augur.money import PriceIndex, ReportingBasis
+from proposed_augur.results import Runs, StudyResult, financial_observers
 
 
-def trinity(history_path: Path, published: pl.DataFrame, *, convention: AnnualConvention):
+def trinity(history_path: Path, published: pl.DataFrame, *, convention: AnnualConvention) -> StudyResult:
     history = History.load(history_path)
     stocks = TotalReturnIndex("sp500", currency="USD")
     bonds = TotalReturnIndex("long_high_grade_corporates", currency="USD")
     market = HistoricalMarket(
         history=history,
         bindings={stocks: "sp500_total_return", bonds: "corporate_total_return"},
-        price_index="us_cpi",
+        price_index=PriceIndex("us_cpi"), inflation_column="us_cpi",
         observation_period="year",
     )
     capital = USD("1000000")
-    rows, runs = [], {}
+    actor = Actor("investor")
+    rows: list[pl.DataFrame] = []
+    runs: Runs = {}
 
     for years in (15, 20, 25, 30):
-        worlds = market.windows(first_year=1926, last_year=1995, years=years, stride_years=1)
+        worlds = market.windows(
+            first_year=1926, last_year=1995, years=years, stride_years=1,
+            replay_start=date(2000, 1, 1),  # Common no-tax scenario clock; source dates remain metadata.
+        )
         for stock_share, rate_percent, indexed in product(
             (0.0, 0.25, 0.50, 0.75, 1.0), range(3, 13), (False, True)
         ):
-            weights = {stocks: stock_share, bonds: 1 - stock_share}
+            weights: Weights = {stocks: stock_share, bonds: 1 - stock_share}
             situation = Situation.investor(
+                actor=actor, basis=ReportingBasis("USD", market.price_index, worlds.calendar.start),
                 capital=capital, weights=weights, taxes=NoTax(), calendar=worlds.calendar
             )
             strategy = Strategy(
@@ -58,11 +71,11 @@ def trinity(history_path: Path, published: pl.DataFrame, *, convention: AnnualCo
             )
             run = simulate(
                 situation,
-                strategy,
+                policies={actor: strategy}, reporting_actor=actor,
                 worlds=worlds,
                 convention=convention,
                 on_shortfall="stop",
-                observe=("terminal_wealth_nominal",),
+                observers=financial_observers("terminal_wealth_nominal",),
             )
             key = (years, stock_share, rate_percent, indexed)
             runs[key] = run
