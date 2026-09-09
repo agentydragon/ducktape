@@ -180,7 +180,7 @@ pub(super) fn execute_target_allocation_sales(
                     tax,
                     SaleTlh::Pool(tlh_cumulative_harvest),
                     month,
-                    PerUnit(prices[sleeve_index]),
+                    SaleProceeds::Quoted(PerUnit(prices[sleeve_index])),
                     &request,
                 )?;
                 remaining -= target;

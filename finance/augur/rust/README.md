@@ -101,6 +101,14 @@ the book. Scheduled sales, allocation funding/rebalance sales and PE protocol sa
 select FIFO explicitly, then use one sale operation. A caller can instead select a
 newer lot without changing its proceeds, basis or tax-accounting implementation.
 
+Execution terms distinguish per-unit quotes from a stated total recovery cashout.
+Total cashouts are apportioned by selected economic units (including scale differences
+between accounts), flooring each share then assigning leftover currency quanta by largest
+fractional remainder, with request-order ties. PE recovery selects its remaining lots in
+FIFO order. The total survives unchanged in cash and dispositions; each fully disposed
+lot consumes its exact remaining basis. This convention does not promise that splitting
+a lot preserves its tax attribution.
+
 Sale preparation checks the whole request and stages only affected lot balances,
 capital-gain rows and TLH entries. Journal and receipt counters are checked before
 posting. Rejection therefore changes none of those books or records. This guarantee

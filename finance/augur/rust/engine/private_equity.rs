@@ -109,12 +109,6 @@ pub(super) fn execute_private_equity(
         };
 
         if forced_recovery > 0 && units_held > 0 {
-            let recovery_price = Money(forced_recovery)
-                .per_unit(
-                    Units::new(Quantity(units_held), quantity_scale),
-                    "private-equity recovery price",
-                )?
-                .0;
             let cause_id = format!("pe_forced_recovery_m{month}_{issuer_id}");
             let request = SaleRequest {
                 cause_id: cause_id.clone(),
@@ -131,7 +125,7 @@ pub(super) fn execute_private_equity(
                 tax,
                 SaleTlh::Pool(tlh_cumulative_harvest),
                 month,
-                PerUnit(recovery_price),
+                SaleProceeds::Total(Money(forced_recovery)),
                 &request,
             )?;
         }
@@ -161,7 +155,7 @@ pub(super) fn execute_private_equity(
                     tax,
                     SaleTlh::Pool(tlh_cumulative_harvest),
                     month,
-                    PerUnit(mark),
+                    SaleProceeds::Quoted(PerUnit(mark)),
                     &request,
                 )?;
             }
@@ -254,7 +248,7 @@ pub(super) fn execute_private_equity(
                 tax,
                 SaleTlh::Pool(tlh_cumulative_harvest),
                 month,
-                PerUnit(mark),
+                SaleProceeds::Quoted(PerUnit(mark)),
                 &request,
             )?;
         }

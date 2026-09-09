@@ -34,6 +34,85 @@ pub struct SaleRequest {
     pub lots: Vec<LotSale>,
 }
 
+/// Execution terms supplied by the environment, never by the policy's sale request.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SaleProceeds {
+    Quoted(PerUnit),
+    /// A stated cashout for the entire selected position, not a rounded unit price.
+    Total(Money),
+}
+
+impl SaleProceeds {
+    fn amounts(
+        self,
+        lots: &[LotState],
+        selected: &[(usize, Quantity)],
+    ) -> Result<Vec<Money>, SimulationError> {
+        let total = match self {
+            Self::Total(total) => total,
+            Self::Quoted(price) => {
+                return selected
+                    .iter()
+                    .map(|(index, units)| {
+                        price
+                            .times(
+                                Units::new(*units, lots[*index].spec.quantity_scale),
+                                "sale proceeds",
+                            )
+                            .map_err(SimulationError::from)
+                    })
+                    .collect();
+            }
+        };
+
+        // Scales are powers of ten. Normalize economic units before assigning the total,
+        // so equal holdings in differently scaled accounts receive equal ideal shares.
+        let scale = selected
+            .iter()
+            .map(|(index, _)| lots[*index].spec.quantity_scale)
+            .max()
+            .expect("sale selection was checked nonempty");
+        let weights: Vec<i128> = selected
+            .iter()
+            .map(|(index, units)| {
+                i128::from(units.0) * i128::from(scale / lots[*index].spec.quantity_scale)
+            })
+            .collect();
+        let overflow = || ArithmeticError::Overflow {
+            operation: "total sale proceeds allocation",
+        };
+        let weight_sum = weights.iter().try_fold(0_i128, |sum, weight| {
+            sum.checked_add(*weight).ok_or_else(overflow)
+        })?;
+        let mut amounts = Vec::with_capacity(selected.len());
+        let mut remainders = Vec::with_capacity(selected.len());
+        let mut residual = total;
+        for (index, weight) in weights.into_iter().enumerate() {
+            let numerator = i128::from(total.0)
+                .checked_mul(weight)
+                .ok_or_else(overflow)?;
+            let amount = Money(i64::try_from(numerator / weight_sum).map_err(|_| overflow())?);
+            amounts.push(amount);
+            residual = residual.checked_sub(amount)?;
+            remainders.push((index, numerator % weight_sum));
+        }
+        // Largest fractional remainders receive the leftover quanta; request order breaks
+        // ties. Per-lot gains use these assigned proceeds, whose sum is the stated total.
+        remainders.sort_by(|(left_index, left), (right_index, right)| {
+            right.cmp(left).then_with(|| left_index.cmp(right_index))
+        });
+        for (index, _) in remainders {
+            if residual == Money(0) {
+                break;
+            }
+            amounts[index] = amounts[index].checked_add(Money(1))?;
+            residual = residual.checked_sub(Money(1))?;
+        }
+        debug_assert_eq!(residual, Money(0));
+        Ok(amounts)
+    }
+}
+
 /// Buy an exact quantity into a new lot, using the owner's declared cash account.
 /// Affordability clamping and choice of lot ID belong to the caller, not execution.
 #[derive(Clone, Debug)]
@@ -142,7 +221,7 @@ pub(super) fn execute_lot_sale(
     tax: &mut TaxState,
     tlh: SaleTlh<'_>,
     month: u32,
-    price: PerUnit,
+    proceeds: SaleProceeds,
     request: &SaleRequest,
 ) -> Result<(), SimulationError> {
     let proceeds_account = declared_account(
@@ -151,16 +230,18 @@ pub(super) fn execute_lot_sale(
         &request.proceeds_account_id,
         &request.cause_id,
     )?;
-    if request.lots.is_empty() || price.0 < 0 {
+    let negative = match proceeds {
+        SaleProceeds::Quoted(price) => price.0 < 0,
+        SaleProceeds::Total(total) => total.0 < 0,
+    };
+    if request.lots.is_empty() || negative {
         return Err(invalid(
             &request.cause_id,
-            "sale needs lots and a nonnegative execution price",
+            "sale needs lots and nonnegative execution proceeds",
         ));
     }
     let mut seen = BTreeSet::new();
-    let mut planned = Vec::with_capacity(request.lots.len());
-    let mut total_proceeds = Money(0);
-    let mut total_gain = Money(0);
+    let mut selected = Vec::with_capacity(request.lots.len());
     for selection in &request.lots {
         if !seen.insert(&selection.lot_id) {
             return Err(invalid(
@@ -199,21 +280,23 @@ pub(super) fn execute_lot_sale(
                 ),
             ));
         }
-        let basis = lot.basis_remaining.apportion(
-            selection.units,
-            lot.units_remaining,
-            "sale basis allocation",
-        )?;
-        let proceeds = price.times(
-            Units::new(selection.units, lot.spec.quantity_scale),
-            "sale proceeds",
-        )?;
+        selected.push((index, selection.units));
+    }
+    let amounts = proceeds.amounts(lots, &selected)?;
+    let mut planned = Vec::with_capacity(selected.len());
+    let mut total_proceeds = Money(0);
+    let mut total_gain = Money(0);
+    for ((index, units), proceeds) in selected.into_iter().zip(amounts) {
+        let lot = &lots[index];
+        let basis =
+            lot.basis_remaining
+                .apportion(units, lot.units_remaining, "sale basis allocation")?;
         let realized_gain = proceeds.checked_sub(basis)?;
         total_proceeds = total_proceeds.checked_add(proceeds)?;
         total_gain = total_gain.checked_add(realized_gain)?;
         planned.push(PlannedDisposition {
             lot_index: index,
-            units: selection.units,
+            units,
             basis,
             proceeds,
             realized_gain,

@@ -36,6 +36,7 @@ rust_library(
         "engine/payments.rs",
         "engine/payments_test.rs",
         "engine/private_equity.rs",
+        "engine/private_equity_test.rs",
         "engine/property.rs",
         "engine/recorder.rs",
         "engine/securities.rs",

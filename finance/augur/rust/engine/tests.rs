@@ -11,6 +11,8 @@ use crate::tax::TaxBracket;
 
 use super::*;
 
+#[path = "private_equity_test.rs"]
+mod private_equity;
 #[path = "trades_test.rs"]
 mod trades;
 

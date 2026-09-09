@@ -172,6 +172,10 @@ much is sellable. Forced sale and forced-recovery cashout channels
 bypass the voluntary floor and apply directly to the remaining
 position.
 
+A forced-recovery cashout is an exact total for that remaining position, not a
+per-unit quote. Cash received and lot-disposition proceeds conserve that total;
+full liquidation consumes every selected lot's remaining units and basis.
+
 ### Policy types
 
 Policies are first-class typed objects. The current policy vocabulary:

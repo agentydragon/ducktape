@@ -665,6 +665,35 @@ class PrivateEquityAcceptance:
         assert row["proceeds_quanta"] / 100 == pytest.approx(100.0)
         assert row["cause_id"] == "pe_forced_recovery_m5_acme"
 
+    @pytest.mark.parametrize("cashout_quanta", [1, 2, 5])
+    def test_tiny_total_recovery_is_not_rounded_through_a_unit_price(
+        self, backend: Backend, cashout_quanta: int
+    ) -> None:
+        result = backend(
+            Case(
+                scenario=holder(
+                    initial_cash=0,
+                    monthly_spend=0,
+                    pe_units=3.0,
+                    pe_cost_basis_per_unit=1,
+                    pe_holding_period_months=36,
+                    horizon_months=1,
+                    lnw_floor=0,
+                ),
+                rollout_count=1,
+                private_equity=protocol(
+                    initial_mark_usd=100.0,
+                    horizon_months=1,
+                    forced_recovery_cashout_usd=in_month(horizon_months=1, month=0, value=cashout_quanta / 100),
+                ),
+            )
+        )
+        [sale] = dispositions(result, month=0).iter_rows(named=True)
+        assert sale["proceeds_quanta"] == cashout_quanta
+        assert sale["cost_basis_consumed_quanta"] == 300
+        assert units_held(result, month=1) == 0
+        assert cash(result, month=1) == pytest.approx(cashout_quanta / 100)
+
     def test_a_disposition_carries_the_lot_it_consumed(self, backend: Backend) -> None:
         """All 200 units at an $80 mark against a $20 basis: $16,000 out, $4,000 of basis gone."""
 

@@ -107,6 +107,14 @@ impl Books {
     }
 
     fn sell(&mut self, request: &SaleRequest, price: i64) -> Result<(), SimulationError> {
+        self.sell_terms(request, SaleProceeds::Quoted(PerUnit(price)))
+    }
+
+    fn sell_terms(
+        &mut self,
+        request: &SaleRequest,
+        proceeds: SaleProceeds,
+    ) -> Result<(), SimulationError> {
         execute_lot_sale(
             &self.input,
             &mut self.ledger,
@@ -115,7 +123,7 @@ impl Books {
             &mut self.tax,
             SaleTlh::Pool(&mut self.deferred),
             0,
-            PerUnit(price),
+            proceeds,
             request,
         )
     }
@@ -328,6 +336,97 @@ fn exact_selection_is_not_fifo_and_full_lot_basis_reconciles() {
             .iter()
             .all(|item| item.source_account_id == "brokerage")
     );
+}
+
+#[test]
+fn total_proceeds_use_the_same_basis_tax_and_tlh_commit() {
+    let mut books = Books::new();
+    books.deferred[0] = Money(20);
+    let request = SaleRequest {
+        lots: vec![
+            sale("old", 10).lots.remove(0),
+            sale("new", 10).lots.remove(0),
+        ],
+        ..sale("old", 10)
+    };
+    books
+        .sell_terms(&request, SaleProceeds::Total(Money(2)))
+        .unwrap();
+    assert_eq!(
+        books
+            .ledger
+            .balance(&AccountRef::new("alice", "checking"))
+            .unwrap(),
+        Money(102)
+    );
+    assert_eq!(books.deferred[0], Money(0));
+    assert!(
+        books
+            .lots
+            .iter()
+            .all(|lot| lot.units_remaining == Quantity(0) && lot.basis_remaining == Money(0))
+    );
+    assert_eq!(
+        books
+            .recorder
+            .dispositions
+            .iter()
+            .map(|row| (row.basis, row.proceeds, row.realized_gain))
+            .collect::<Vec<_>>(),
+        [
+            (Money(17), Money(1), Money(-16)),
+            (Money(32), Money(1), Money(-31))
+        ]
+    );
+    // The 20 deferred quanta are given back as 10 per equally sized lot; the booked
+    // gains include give-back while disposition gains retain actual proceeds minus basis.
+    for facts in books.tax.facts.values() {
+        assert_eq!(facts.long_term_gain, Money(-6));
+        assert_eq!(facts.short_term_gain, Money(-21));
+    }
+    assert_eq!(books.ledger.trial_balance(), 0);
+}
+
+#[test]
+fn rejected_total_cashouts_leave_lots_cash_tax_tlh_and_capture_unchanged() {
+    for case in 0..8 {
+        let mut books = Books::new();
+        books.deferred[0] = Money(20);
+        let mut request = SaleRequest {
+            lots: vec![
+                sale("old", 10).lots.remove(0),
+                sale("new", 10).lots.remove(0),
+            ],
+            ..sale("old", 10)
+        };
+        let mut total = Money(100);
+        match case {
+            0 => total = Money(-1),
+            1 => request.lots[1].lot_id = "missing".into(),
+            2 => request.lots[1].units = Quantity(11),
+            3 => request.proceeds_account_id = "missing".into(),
+            4 => books.recorder.disposition_count = u64::MAX - 1,
+            5 => books.recorder.journal_entry_count = u64::MAX,
+            6 => {
+                books
+                    .tax
+                    .facts
+                    .get_mut(&("alice".into(), "b".into()))
+                    .unwrap()
+                    .long_term_gain = Money(i64::MAX)
+            }
+            7 => total = Money(i64::MAX), // Existing cash makes the journal's credit overflow.
+            _ => unreachable!(),
+        }
+        let before = format!("{books:?}");
+        assert!(
+            books
+                .sell_terms(&request, SaleProceeds::Total(total))
+                .is_err(),
+            "case {case}"
+        );
+        assert_eq!(format!("{books:?}"), before, "case {case}");
+    }
 }
 
 #[test]

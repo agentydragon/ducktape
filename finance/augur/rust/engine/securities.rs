@@ -161,7 +161,7 @@ pub(super) fn execute_sale(
         tax,
         SaleTlh::Scheduled(scheduled_tlh),
         sale.month,
-        price,
+        SaleProceeds::Quoted(price),
         &request,
     )
 }
