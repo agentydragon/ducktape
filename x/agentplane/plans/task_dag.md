@@ -97,7 +97,7 @@ flowchart TB
     MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
     EID["Planned support<br/>configured static external identity<br/>trusted caller + connection binding"]:::future
     POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
-    MCPOAUTH["Planned support<br/>OAuth/DCR + named Connections<br/>select Identity, rename/unbind/rebind"]:::future
+    MCPOAUTH["Planned support<br/>OAuth/DCR + integration-app enrollment<br/>named Connections, rename/unbind/rebind"]:::future
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     WID["Observed evidence<br/>SandboxPrincipal<br/>workload authentication"]:::milestone
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>from trusted Sandbox types"]:::future
@@ -282,8 +282,16 @@ existing configured `EID`. Connections are persisted at runtime and can be renam
 rebound to another configured Identity. DCR metadata alone grants no Action authority. Keep this inbound
 connection separate from `MCPAUTH`, which connects Executors to credentialed upstream accounts.
 
+**UI ownership:** enrollment consent/name/Identity selection and subsequent Connection management
+live in the integration app. DCR registration is machine-to-machine; the authorization endpoint
+hands the browser to that UI, the app authenticates the single operator and records consent through
+its BFF, and the authorization server returns a code to the client's registered callback. Keep
+operator-login credentials/state separate from the client's OAuth transaction and eventual token.
+
 **Design gate / acceptance:** choose the authorization-server owner and reusable OAuth machinery,
-then prove the real browser flow, naming/Identity selection, resource-bound tokens, refresh,
+including the transaction-bound integration-app handoff and authenticated BFF completion/management
+API. Inspect the existing operator federation for reuse; its current Action-review support does not
+implement this enrollment protocol. Then prove the real browser flow, naming/Identity selection, resource-bound tokens, refresh,
 reconnect, rename, unbind, and rebind. Settle binding history, pending Actions/old receipt scope, and
 whether rebind changes existing tokens' effective authority or requires reauthorization. Registration
 mechanism and mutable names must not determine durable identity. See the

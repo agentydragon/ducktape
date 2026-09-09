@@ -81,6 +81,8 @@ tables. The policy binding and the OAuth Connection are different relationships:
   associates it with a configured Identity, and can later rename, unbind, or rebind it. This mutable
   runtime relationship is separate from the configured Identity's policy bindings and must have a
   writable authority even when all policy configuration is in Git.
+  Enrollment and later management live in the integration app; its BFF calls the canonical runtime
+  authority. This UI choice does not determine which store owns the binding.
 - **Caller resolution:** external token → Connection → configured Identity; workload token →
   SandboxPrincipal → trusted Sandbox classification. Decide whether the latter selects policy
   bindings directly or first resolves a configured Identity. Thread IDs do not supply authority.

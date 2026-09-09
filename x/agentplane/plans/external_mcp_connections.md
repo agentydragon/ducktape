@@ -69,7 +69,8 @@ Connection names, current Identity association (or unbound state), consent, and 
 lifecycle. The [binding/storage gate](action_policies.md) includes PostgreSQL and Kubernetes-backed
 Connection records; do not treat these runtime associations as implicitly Git-owned.
 
-The single operator needs an authenticated enrollment/management surface with:
+The single operator uses the **integration app** for enrollment and Connection management. Its
+existing browser login and BFF are the operator-facing surface for:
 
 - a readable list/detail view showing the operator-assigned name and bound Identity or unbound state;
 - naming and Identity selection as part of the OAuth authorization experience;
@@ -87,6 +88,54 @@ rebinding must never rewrite historical identity, policy evidence, or submitting
 Connections cannot submit or read Actions; access to past receipts remains subject to the original
 caller scope and current authorization. Connection management is operator-only; a client cannot
 rename/rebind itself through the MCP Action surface.
+
+## OAuth enrollment through the integration app
+
+**Chosen UI location, open protocol composition.** DCR itself is a client-to-server registration
+request and has no operator GUI. Naming and Identity selection happen during the subsequent OAuth
+authorization interaction, presented by the integration app:
+
+1. Claude discovers the protected MCP resource and its authorization server, then registers a client
+   through DCR (or uses the supported alternative registration mechanism). Registration grants no
+   Action authority and need not create a named Connection yet.
+2. Claude opens the authorization endpoint with its registered redirect URI, resource, scopes,
+   state, and PKCE challenge. The authorization server validates these and persists a bounded
+   pending transaction before handing the browser to an integration-app enrollment page.
+3. The app uses its existing operator login, returning to that enrollment after login if needed.
+   It shows the validated client/redirect information, Connection name/reconnect choice, configured
+   Identity, and referenced ActionPolicySet. Consent or denial is an authenticated, CSRF-protected
+   app action tied to this exact transaction.
+4. The app's BFF records that choice through the canonical enrollment/Connection authority under
+   authenticated operator authorization. The authorization server consumes the decision once and
+   binds code issuance to the selected Identity and exact Connection/binding revision. The browser
+   cannot authorize this by submitting an Identity name or a guessed transaction ID alone.
+5. The authorization server resumes the original OAuth flow, redirecting an authorization code and
+   the client's state to Claude's registered callback. Claude.ai's hosted callback and local Claude
+   Code's native callback are client-specific; neither is the integration app's operator-login callback.
+6. Claude redeems the code with its PKCE verifier for its own resource-bound token, then uses the
+   MCP frontend as the bound Identity. The operator session/token never becomes Claude's credential.
+
+Keep the external client's OAuth transaction and the app's operator-login transaction separate:
+each retains its own state/PKCE/redirect context. Use an opaque, expiring enrollment handle for the
+handoff, bound to the authenticated browser interaction before mutation. Persist canonical pending
+state across login/service restart and reject expired, replayed, substituted, or cancelled consent.
+Concurrent browser tabs must not exchange enrollment decisions. Completion retries must not create
+duplicate Connections or grants; issuance must recheck the selected binding is still authorized.
+
+The existing [operator federation](../docs/operator_federation.md) and
+[`FederatedOperatorActions`](../app/action_federation.py) already provide an app-session-to-Action
+operator path with destination-side JWT verification. That is a reuse candidate for enrollment and
+management BFF calls, not evidence that these endpoints or their enrollment handoff already exist.
+Assess the required destination audience/permissions and current operator subject mapping before
+extending it. Its Authentik JWT-bearer exchange is distinct from the external client's authorization
+code flow; a shared browser cookie or a caller-supplied identity header is not federation.
+
+The authorization-server protocol endpoints may be co-located with the integration app or run in
+another service which delegates consent UI to it. Decide ownership of pending transactions,
+Connection mutations, token issuance, and the authenticated completion API together; use one owner
+for each fact. The GUI location does not select Kubernetes versus PostgreSQL storage and does not
+make the app another Action policy/Decision authority. Later rename/unbind/rebind operations use
+the same authenticated BFF-to-authority boundary, without replaying DCR for a rename.
 
 ## Authority boundaries
 
@@ -131,7 +180,7 @@ copy the referenced policy configuration into the new Connection.
 ## Design choices to settle before implementation
 
 - **Configuration and consent:** where configured Identities/policies live, how the single operator
-  selects an Identity, and which component owns authorization grants and token lifecycle. Compare shared
+  selects an Identity in the integration app, and which component owns authorization grants and token lifecycle. Compare shared
   OAuth infrastructure with a small Action-facing adapter; keep the Action Service authoritative
   for Action authorization. Do not assume Authentik alone supplies DCR or custom identity selection.
   `POLICYBIND` in the [Action policy plan](action_policies.md) owns policy-binding storage/model choices;
@@ -158,6 +207,11 @@ registration, redirect/callback, token refresh, and reconnect behavior; a hosted
 does not prove a native-client flow. Independently check canonical Action records rather than prose:
 
 - discovery → DCR → operator consent/identity selection → token exchange → authenticated tool use;
+- the real integration-app enrollment/login round trip for each client: bind the decision to the
+  correct pending OAuth transaction, return to the client's validated callback, and demonstrate
+  rename/unbind/rebind from app management. Reject forged/expired/replayed enrollment, CSRF, and
+  wrong-audience or unauthenticated BFF completion; exercise concurrent tabs and restart between
+  login, consent, and token exchange without duplicate grants or lost Identity selection;
 - identity A auto-allows one precisely bounded Action, while changed arguments fall back to review
   or are denied according to configuration; identity B does not inherit A's auto-allow;
 - missing policy, forged identity metadata, unbound registration, wrong-resource tokens, and a
