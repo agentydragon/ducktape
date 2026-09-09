@@ -7,6 +7,22 @@ package(default_visibility = [
     "//devinfra/precommit:__pkg__",
 ])
 
+py_test(
+    name = "test_ollama_terraform",
+    srcs = ["test_ollama_terraform.py"],
+    data = [
+        "//cluster/k8s:ollama/secrets/ollama-bearer-token-tf.yaml",
+        "//cluster/k8s:ollama/secrets/tf-runner.yaml",
+        "//cluster/k8s:tofu-controller/tofu-controller.yaml",
+        "//cluster/k8s:tofu-state/db/credentials.sops.yaml",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
 py_library(
     name = "k8s",
     srcs = ["k8s.py"],

@@ -20,6 +20,8 @@ spec:
         name: tofu-controller
         namespace: flux-system
   values:
+    # Owner-namespaced Terraform CRs consume the shared Git source in flux-system.
+    allowCrossNamespaceRefs: true
     # Enable runner pods to access cluster resources
     runner:
       grpc:

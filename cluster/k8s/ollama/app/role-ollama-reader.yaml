@@ -4,6 +4,9 @@ metadata:
   name: ollama-reader
   namespace: ollama
 rules:
+  - apiGroups: ["infra.contrib.fluxcd.io"]
+    resources: ["terraforms"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources:
       - pods
