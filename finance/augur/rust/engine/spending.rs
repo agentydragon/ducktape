@@ -56,11 +56,7 @@ where
         .into_par_iter()
         .map(|rollout_id| {
             let mut decide = make_policy(rollout_id);
-            let mut policy = Policy {
-                spending,
-                holdings: &holdings,
-                decide: &mut decide,
-            };
+            let mut policy = Policy::new(spending, &holdings, &mut decide);
             simulate_rollout(
                 input,
                 rollout_id,
@@ -112,11 +108,7 @@ where
         .into_par_iter()
         .map(|rollout_id| {
             let mut decide = make_policy(rollout_id);
-            let mut policy = Policy {
-                spending,
-                holdings: &holdings,
-                decide: &mut decide,
-            };
+            let mut policy = Policy::new(spending, &holdings, &mut decide);
             simulate_rollout(
                 input,
                 rollout_id,
@@ -175,11 +167,7 @@ where
     }
     let holdings = validate(input, spending)?;
     let mut decide = make_policy(rollout_id);
-    let mut policy = Policy {
-        spending,
-        holdings: &holdings,
-        decide: &mut decide,
-    };
+    let mut policy = Policy::new(spending, &holdings, &mut decide);
     simulate_rollout(
         input,
         rollout_id,
@@ -222,7 +210,19 @@ pub(super) struct Policy<'a> {
     decide: &'a mut dyn FnMut(Observation) -> Result<Money, SimulationError>,
 }
 
-impl Policy<'_> {
+impl<'a> Policy<'a> {
+    pub(super) fn new(
+        spending: &'a Spending,
+        holdings: &'a AgentHoldings,
+        decide: &'a mut dyn FnMut(Observation) -> Result<Money, SimulationError>,
+    ) -> Self {
+        Self {
+            spending,
+            holdings,
+            decide,
+        }
+    }
+
     pub(super) fn obligation(
         &mut self,
         input: &ExecutionInput,

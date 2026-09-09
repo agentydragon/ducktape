@@ -1,0 +1,2250 @@
+{
+  "summary": {
+    "window": {
+      "since": "2026-09-09T20:00:00Z",
+      "until": "2026-09-09T21:15:00Z"
+    },
+    "collected_at": "2026-09-09T21:16:00Z",
+    "run_count": 462,
+    "job_count": 1024,
+    "workflows": [
+      {
+        "workflow": ".github/workflows/ansible-lint.yml",
+        "jobs": 3,
+        "status": {
+          "completed": 2,
+          "queued": 1
+        },
+        "queue": {
+          "n": 2,
+          "p50": 2,
+          "p90": 416,
+          "max": 416,
+          "sum": 418
+        },
+        "runtime": {
+          "n": 2,
+          "p50": 55,
+          "p90": 60,
+          "max": 60,
+          "sum": 115
+        },
+        "occupied_seconds_in_window": 115
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "jobs": 198,
+        "status": {
+          "completed": 184,
+          "in_progress": 2,
+          "queued": 12
+        },
+        "queue": {
+          "n": 58,
+          "p50": 67,
+          "p90": 374,
+          "max": 767,
+          "sum": 7628
+        },
+        "runtime": {
+          "n": 56,
+          "p50": 89,
+          "p90": 503,
+          "max": 897,
+          "sum": 9979
+        },
+        "occupied_seconds_in_window": 9979
+      },
+      {
+        "workflow": ".github/workflows/container-images.yml",
+        "jobs": 18,
+        "status": {
+          "completed": 17,
+          "queued": 1
+        },
+        "queue": {
+          "n": 2,
+          "p50": 2,
+          "p90": 22,
+          "max": 22,
+          "sum": 24
+        },
+        "runtime": {
+          "n": 2,
+          "p50": 124,
+          "p90": 131,
+          "max": 131,
+          "sum": 255
+        },
+        "occupied_seconds_in_window": 255
+      },
+      {
+        "workflow": ".github/workflows/gazelle-diff.yml",
+        "jobs": 57,
+        "status": {
+          "completed": 52,
+          "queued": 5
+        },
+        "queue": {
+          "n": 49,
+          "p50": 10,
+          "p90": 382,
+          "max": 579,
+          "sum": 5587
+        },
+        "runtime": {
+          "n": 49,
+          "p50": 36,
+          "p90": 40,
+          "max": 44,
+          "sum": 1753
+        },
+        "occupied_seconds_in_window": 1753
+      },
+      {
+        "workflow": ".github/workflows/haku-openclaw-spike-image.yml",
+        "jobs": 3,
+        "status": {
+          "completed": 1,
+          "in_progress": 2
+        },
+        "queue": {
+          "n": 3,
+          "p50": 319,
+          "p90": 382,
+          "max": 382,
+          "sum": 703
+        },
+        "runtime": {
+          "n": 1,
+          "p50": 290,
+          "p90": 290,
+          "max": 290,
+          "sum": 290
+        },
+        "occupied_seconds_in_window": 290
+      },
+      {
+        "workflow": ".github/workflows/nix-attic-push.yml",
+        "jobs": 9,
+        "status": {
+          "completed": 8,
+          "queued": 1
+        },
+        "queue": {
+          "n": 7,
+          "p50": 32,
+          "p90": 338,
+          "max": 338,
+          "sum": 642
+        },
+        "runtime": {
+          "n": 7,
+          "p50": 211,
+          "p90": 259,
+          "max": 259,
+          "sum": 1532
+        },
+        "occupied_seconds_in_window": 1532
+      },
+      {
+        "workflow": ".github/workflows/nix-wheel-check.yml",
+        "jobs": 57,
+        "status": {
+          "completed": 50,
+          "in_progress": 2,
+          "queued": 5
+        },
+        "queue": {
+          "n": 34,
+          "p50": 69,
+          "p90": 308,
+          "max": 767,
+          "sum": 4193
+        },
+        "runtime": {
+          "n": 32,
+          "p50": 129,
+          "p90": 149,
+          "max": 255,
+          "sum": 4337
+        },
+        "occupied_seconds_in_window": 4337
+      },
+      {
+        "workflow": ".github/workflows/nixos-bazel-rbe.yml",
+        "jobs": 3,
+        "status": {
+          "completed": 1,
+          "in_progress": 1,
+          "queued": 1
+        },
+        "queue": {
+          "n": 2,
+          "p50": 2,
+          "p90": 298,
+          "max": 298,
+          "sum": 300
+        },
+        "runtime": {
+          "n": 1,
+          "p50": 366,
+          "p90": 366,
+          "max": 366,
+          "sum": 366
+        },
+        "occupied_seconds_in_window": 366
+      },
+      {
+        "workflow": ".github/workflows/openclaw-image.yml",
+        "jobs": 3,
+        "status": {
+          "completed": 1,
+          "in_progress": 1,
+          "queued": 1
+        },
+        "queue": {
+          "n": 2,
+          "p50": 2,
+          "p90": 25,
+          "max": 25,
+          "sum": 27
+        },
+        "runtime": {
+          "n": 1,
+          "p50": 647,
+          "p90": 647,
+          "max": 647,
+          "sum": 647
+        },
+        "occupied_seconds_in_window": 647
+      },
+      {
+        "workflow": ".github/workflows/pr-visuals-publish.yml",
+        "jobs": 204,
+        "status": {
+          "completed": 195,
+          "in_progress": 1,
+          "queued": 8
+        },
+        "queue": {
+          "n": 39,
+          "p50": 18,
+          "p90": 496,
+          "max": 521,
+          "sum": 6573
+        },
+        "runtime": {
+          "n": 38,
+          "p50": 115,
+          "p90": 189,
+          "max": 205,
+          "sum": 4737
+        },
+        "occupied_seconds_in_window": 4737
+      },
+      {
+        "workflow": ".github/workflows/pre-commit.yml",
+        "jobs": 57,
+        "status": {
+          "completed": 51,
+          "in_progress": 1,
+          "queued": 5
+        },
+        "queue": {
+          "n": 52,
+          "p50": 32,
+          "p90": 351,
+          "max": 519,
+          "sum": 6031
+        },
+        "runtime": {
+          "n": 51,
+          "p50": 148,
+          "p90": 207,
+          "max": 334,
+          "sum": 8140
+        },
+        "occupied_seconds_in_window": 8140
+      },
+      {
+        "workflow": ".github/workflows/sync-pins.yml",
+        "jobs": 3,
+        "status": {
+          "completed": 2,
+          "queued": 1
+        },
+        "queue": {
+          "n": 2,
+          "p50": 2,
+          "p90": 3,
+          "max": 3,
+          "sum": 5
+        },
+        "runtime": {
+          "n": 2,
+          "p50": 25,
+          "p90": 29,
+          "max": 29,
+          "sum": 54
+        },
+        "occupied_seconds_in_window": 54
+      },
+      {
+        "workflow": ".github/workflows/trusted-fork-pr-ci.yml",
+        "jobs": 108,
+        "status": {
+          "completed": 106,
+          "queued": 2
+        },
+        "queue": {
+          "n": 12,
+          "p50": 2,
+          "p90": 77,
+          "max": 455,
+          "sum": 681
+        },
+        "runtime": {
+          "n": 12,
+          "p50": 125,
+          "p90": 207,
+          "max": 281,
+          "sum": 1714
+        },
+        "occupied_seconds_in_window": 1714
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "jobs": 301,
+        "status": {
+          "completed": 216,
+          "in_progress": 9,
+          "queued": 76
+        },
+        "queue": {
+          "n": 176,
+          "p50": 58,
+          "p90": 635,
+          "max": 962,
+          "sum": 39353
+        },
+        "runtime": {
+          "n": 167,
+          "p50": 137,
+          "p90": 476,
+          "max": 712,
+          "sum": 29542
+        },
+        "occupied_seconds_in_window": 29542
+      }
+    ],
+    "occupancy": {
+      "completed_job_peak": 20
+    },
+    "longest_jobs": [
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "bazel-ci / Test & Build",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34399958227/job/102629094609",
+        "queue_seconds": 4,
+        "runtime_seconds": 897
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (python)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402591531/job/102637831563",
+        "queue_seconds": 88,
+        "runtime_seconds": 712
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (python)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34400534940/job/102631043820",
+        "queue_seconds": 2,
+        "runtime_seconds": 693
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (python)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402196901/job/102636530583",
+        "queue_seconds": 2,
+        "runtime_seconds": 666
+      },
+      {
+        "workflow": ".github/workflows/openclaw-image.yml",
+        "name": "Build and Push",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34399957796/job/102629091194",
+        "queue_seconds": 2,
+        "runtime_seconds": 647
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "release / Release debundle",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/33816487054/job/100851469097",
+        "queue_seconds": 27,
+        "runtime_seconds": 600
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (python)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34400994214/job/102632570653",
+        "queue_seconds": 2,
+        "runtime_seconds": 581
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "bazel-ci / Test & Build",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402991175/job/102639127237",
+        "queue_seconds": 127,
+        "runtime_seconds": 547
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "bazel-ci / Test & Build",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403428880/job/102640583341",
+        "queue_seconds": 118,
+        "runtime_seconds": 544
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (python)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403655590/job/102641319948",
+        "queue_seconds": 343,
+        "runtime_seconds": 544
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "bazel-ci / Test & Build",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34401673549/job/102634808670",
+        "queue_seconds": 2,
+        "runtime_seconds": 536
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "bazel-ci / Test & Build",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403585223/job/102641095483",
+        "queue_seconds": 150,
+        "runtime_seconds": 523
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (rust)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403031357/job/102639272770",
+        "queue_seconds": 176,
+        "runtime_seconds": 509
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (rust)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402196901/job/102636530393",
+        "queue_seconds": 2,
+        "runtime_seconds": 506
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (rust)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402349304/job/102637029275",
+        "queue_seconds": 3,
+        "runtime_seconds": 505
+      }
+    ],
+    "longest_queues": [
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (c-cpp)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403272755/job/102640070062",
+        "queue_seconds": 962,
+        "runtime_seconds": 67
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (rust)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404209322/job/102643155500",
+        "queue_seconds": 931,
+        "runtime_seconds": null
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (javascript-typescript)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403272755/job/102640069667",
+        "queue_seconds": 867,
+        "runtime_seconds": 95
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (go)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404448816/job/102643947731",
+        "queue_seconds": 804,
+        "runtime_seconds": null
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (go)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403272755/job/102640069731",
+        "queue_seconds": 793,
+        "runtime_seconds": 143
+      },
+      {
+        "workflow": ".github/workflows/nix-wheel-check.yml",
+        "name": "Build artifacts + imports check",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404429941/job/102643887784",
+        "queue_seconds": 767,
+        "runtime_seconds": null
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "release / Compute release matrix",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404107697/job/102644025586",
+        "queue_seconds": 767,
+        "runtime_seconds": 36
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (c-cpp)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404365483/job/102643681209",
+        "queue_seconds": 765,
+        "runtime_seconds": 64
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (go)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404209322/job/102643155537",
+        "queue_seconds": 750,
+        "runtime_seconds": 165
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (rust)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404283653/job/102643403885",
+        "queue_seconds": 750,
+        "runtime_seconds": null
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (javascript-typescript)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402990364/job/102639128597",
+        "queue_seconds": 703,
+        "runtime_seconds": 76
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (javascript-typescript)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404209322/job/102643155335",
+        "queue_seconds": 700,
+        "runtime_seconds": 80
+      },
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "name": "release / Release debundle",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402592560/job/102639376348",
+        "queue_seconds": 697,
+        "runtime_seconds": 82
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (rust)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403427546/job/102640583031",
+        "queue_seconds": 688,
+        "runtime_seconds": 485
+      },
+      {
+        "workflow": "dynamic/github-code-scanning/codeql",
+        "name": "Analyze (javascript-typescript)",
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404283653/job/102643404085",
+        "queue_seconds": 685,
+        "runtime_seconds": 64
+      }
+    ]
+  },
+  "contention": {
+    "codeql_languages": [
+      {
+        "name": "Analyze (actions)",
+        "jobs": 29,
+        "runner_seconds": 1617
+      },
+      {
+        "name": "Analyze (c-cpp)",
+        "jobs": 28,
+        "runner_seconds": 1959
+      },
+      {
+        "name": "Analyze (go)",
+        "jobs": 29,
+        "runner_seconds": 4667
+      },
+      {
+        "name": "Analyze (javascript-typescript)",
+        "jobs": 29,
+        "runner_seconds": 2910
+      },
+      {
+        "name": "Analyze (python)",
+        "jobs": 26,
+        "runner_seconds": 6757
+      },
+      {
+        "name": "Analyze (rust)",
+        "jobs": 26,
+        "runner_seconds": 11632
+      }
+    ],
+    "bazel_jobs": [
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34398569430/job/102624448459",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:01:48Z",
+        "started_at": "2026-09-09T20:01:50Z",
+        "completed_at": "2026-09-09T20:04:32Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 162
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34398663315/job/102624760055",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:02:43Z",
+        "started_at": "2026-09-09T20:03:26Z",
+        "completed_at": "2026-09-09T20:04:43Z",
+        "queue_seconds": 43,
+        "runtime_seconds": 77
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34399367359/job/102627115570",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:09:47Z",
+        "started_at": "2026-09-09T20:09:49Z",
+        "completed_at": "2026-09-09T20:11:25Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 96
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34399732357/job/102628348236",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:13:27Z",
+        "started_at": "2026-09-09T20:13:30Z",
+        "completed_at": "2026-09-09T20:18:11Z",
+        "queue_seconds": 3,
+        "runtime_seconds": 281
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34399958227/job/102629094609",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:15:40Z",
+        "started_at": "2026-09-09T20:15:44Z",
+        "completed_at": "2026-09-09T20:30:41Z",
+        "queue_seconds": 4,
+        "runtime_seconds": 897
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34400217928/job/102629967493",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:18:17Z",
+        "started_at": "2026-09-09T20:18:18Z",
+        "completed_at": "2026-09-09T20:21:09Z",
+        "queue_seconds": 1,
+        "runtime_seconds": 171
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34400535575/job/102631040424",
+        "status": "completed",
+        "conclusion": "cancelled",
+        "created_at": "2026-09-09T20:21:27Z",
+        "started_at": "2026-09-09T20:21:29Z",
+        "completed_at": "2026-09-09T20:26:43Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 314
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34400656617/job/102631445808",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:22:40Z",
+        "started_at": "2026-09-09T20:22:44Z",
+        "completed_at": "2026-09-09T20:23:11Z",
+        "queue_seconds": 4,
+        "runtime_seconds": 27
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34400768537/job/102631813309",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:23:45Z",
+        "started_at": "2026-09-09T20:23:50Z",
+        "completed_at": "2026-09-09T20:25:09Z",
+        "queue_seconds": 5,
+        "runtime_seconds": 79
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34400993017/job/102632561572",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:25:57Z",
+        "started_at": "2026-09-09T20:26:45Z",
+        "completed_at": "2026-09-09T20:32:01Z",
+        "queue_seconds": 48,
+        "runtime_seconds": 316
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34401257559/job/102633429277",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:28:36Z",
+        "started_at": "2026-09-09T20:28:38Z",
+        "completed_at": "2026-09-09T20:31:59Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 201
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34401673549/job/102634808670",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:32:45Z",
+        "started_at": "2026-09-09T20:32:47Z",
+        "completed_at": "2026-09-09T20:41:43Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 536
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34401701969/job/102634899850",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:33:02Z",
+        "started_at": "2026-09-09T20:33:04Z",
+        "completed_at": "2026-09-09T20:35:55Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 171
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34401923760/job/102635627173",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:35:13Z",
+        "started_at": "2026-09-09T20:35:15Z",
+        "completed_at": "2026-09-09T20:37:11Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 116
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402352397/job/102637042021",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:39:30Z",
+        "started_at": "2026-09-09T20:39:32Z",
+        "completed_at": "2026-09-09T20:41:35Z",
+        "queue_seconds": 2,
+        "runtime_seconds": 123
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402463889/job/102637399598",
+        "status": "completed",
+        "conclusion": "cancelled",
+        "created_at": "2026-09-09T20:40:33Z",
+        "started_at": "2026-09-09T20:40:52Z",
+        "completed_at": "2026-09-09T20:46:09Z",
+        "queue_seconds": 19,
+        "runtime_seconds": 317
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402592560/job/102637828171",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:41:49Z",
+        "started_at": "2026-09-09T20:41:55Z",
+        "completed_at": "2026-09-09T20:45:30Z",
+        "queue_seconds": 6,
+        "runtime_seconds": 215
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402669951/job/102638082623",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:42:35Z",
+        "started_at": "2026-09-09T20:44:35Z",
+        "completed_at": "2026-09-09T20:45:56Z",
+        "queue_seconds": 120,
+        "runtime_seconds": 81
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402670004/job/102638083065",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:42:35Z",
+        "started_at": "2026-09-09T20:45:32Z",
+        "completed_at": "2026-09-09T20:47:01Z",
+        "queue_seconds": 177,
+        "runtime_seconds": 89
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402894225/job/102638821861",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:44:53Z",
+        "started_at": "2026-09-09T20:46:10Z",
+        "completed_at": "2026-09-09T20:49:23Z",
+        "queue_seconds": 77,
+        "runtime_seconds": 193
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402991175/job/102639127237",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:45:49Z",
+        "started_at": "2026-09-09T20:47:56Z",
+        "completed_at": "2026-09-09T20:57:03Z",
+        "queue_seconds": 127,
+        "runtime_seconds": 547
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403036704/job/102639283471",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:46:19Z",
+        "started_at": "2026-09-09T20:47:20Z",
+        "completed_at": "2026-09-09T20:49:40Z",
+        "queue_seconds": 61,
+        "runtime_seconds": 140
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403117968/job/102639547594",
+        "status": "completed",
+        "conclusion": "cancelled",
+        "created_at": "2026-09-09T20:47:07Z",
+        "started_at": "2026-09-09T20:49:23Z",
+        "completed_at": "2026-09-09T20:53:10Z",
+        "queue_seconds": 136,
+        "runtime_seconds": 227
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403275407/job/102640073089",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:48:43Z",
+        "started_at": "2026-09-09T20:49:26Z",
+        "completed_at": "2026-09-09T20:51:14Z",
+        "queue_seconds": 43,
+        "runtime_seconds": 108
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403356777/job/102640343189",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:49:32Z",
+        "started_at": "2026-09-09T20:51:35Z",
+        "completed_at": "2026-09-09T20:55:19Z",
+        "queue_seconds": 123,
+        "runtime_seconds": 224
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403428880/job/102640583341",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:50:16Z",
+        "started_at": "2026-09-09T20:52:14Z",
+        "completed_at": "2026-09-09T21:01:18Z",
+        "queue_seconds": 118,
+        "runtime_seconds": 544
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403440041/job/102640619248",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:50:22Z",
+        "started_at": "2026-09-09T20:51:30Z",
+        "completed_at": "2026-09-09T20:54:57Z",
+        "queue_seconds": 68,
+        "runtime_seconds": 207
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403585223/job/102641095483",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-09-09T20:51:53Z",
+        "started_at": "2026-09-09T20:54:23Z",
+        "completed_at": "2026-09-09T21:03:06Z",
+        "queue_seconds": 150,
+        "runtime_seconds": 523
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:52:06Z",
+        "started_at": "2026-09-09T20:57:04Z",
+        "completed_at": "2026-09-09T20:58:33Z",
+        "queue_seconds": 298,
+        "runtime_seconds": 89
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403656421/job/102641316995",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:52:35Z",
+        "started_at": "2026-09-09T20:53:43Z",
+        "completed_at": "2026-09-09T20:57:13Z",
+        "queue_seconds": 68,
+        "runtime_seconds": 210
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404107697/job/102642811109",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T20:57:15Z",
+        "started_at": "2026-09-09T20:57:50Z",
+        "completed_at": "2026-09-09T21:01:00Z",
+        "queue_seconds": 35,
+        "runtime_seconds": 190
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404370061/job/102643691495",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T21:00:02Z",
+        "started_at": "2026-09-09T21:02:19Z",
+        "completed_at": "2026-09-09T21:04:09Z",
+        "queue_seconds": 137,
+        "runtime_seconds": 110
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404430246/job/102643884381",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T21:00:37Z",
+        "started_at": "2026-09-09T21:02:09Z",
+        "completed_at": "2026-09-09T21:10:17Z",
+        "queue_seconds": 92,
+        "runtime_seconds": 488
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404452035/job/102643951813",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T21:00:48Z",
+        "started_at": "2026-09-09T21:02:47Z",
+        "completed_at": "2026-09-09T21:04:56Z",
+        "queue_seconds": 119,
+        "runtime_seconds": 129
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404711093/job/102644806728",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T21:03:24Z",
+        "started_at": "2026-09-09T21:05:00Z",
+        "completed_at": "2026-09-09T21:13:23Z",
+        "queue_seconds": 96,
+        "runtime_seconds": 503
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404838551/job/102645223070",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T21:04:42Z",
+        "started_at": "2026-09-09T21:05:54Z",
+        "completed_at": "2026-09-09T21:14:13Z",
+        "queue_seconds": 72,
+        "runtime_seconds": 499
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+        "status": "in_progress",
+        "conclusion": null,
+        "created_at": "2026-09-09T21:05:30Z",
+        "started_at": "2026-09-09T21:14:15Z",
+        "completed_at": null,
+        "queue_seconds": 525,
+        "runtime_seconds": null
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404961087/job/102645611083",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-09T21:05:54Z",
+        "started_at": "2026-09-09T21:06:48Z",
+        "completed_at": "2026-09-09T21:10:31Z",
+        "queue_seconds": 54,
+        "runtime_seconds": 223
+      },
+      {
+        "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857",
+        "status": "in_progress",
+        "conclusion": null,
+        "created_at": "2026-09-09T21:06:03Z",
+        "started_at": "2026-09-09T21:14:26Z",
+        "completed_at": null,
+        "queue_seconds": 503,
+        "runtime_seconds": null
+      }
+    ],
+    "timeline": [
+      {
+        "at": "2026-09-09T20:00:00Z",
+        "occupied": 0,
+        "codeql": 0,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:01:00Z",
+        "occupied": 2,
+        "codeql": 0,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:02:00Z",
+        "occupied": 14,
+        "codeql": 6,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:03:00Z",
+        "occupied": 18,
+        "codeql": 10,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34398663315/job/102624760055"]
+      },
+      {
+        "at": "2026-09-09T20:04:00Z",
+        "occupied": 18,
+        "codeql": 8,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:05:00Z",
+        "occupied": 7,
+        "codeql": 3,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:06:00Z",
+        "occupied": 7,
+        "codeql": 2,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:07:00Z",
+        "occupied": 4,
+        "codeql": 2,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:08:00Z",
+        "occupied": 3,
+        "codeql": 2,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:09:00Z",
+        "occupied": 4,
+        "codeql": 1,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:10:00Z",
+        "occupied": 15,
+        "codeql": 6,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:11:00Z",
+        "occupied": 12,
+        "codeql": 4,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:12:00Z",
+        "occupied": 8,
+        "codeql": 3,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:13:00Z",
+        "occupied": 4,
+        "codeql": 1,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:14:00Z",
+        "occupied": 5,
+        "codeql": 1,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:15:00Z",
+        "occupied": 3,
+        "codeql": 1,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:16:00Z",
+        "occupied": 18,
+        "codeql": 7,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:17:00Z",
+        "occupied": 14,
+        "codeql": 5,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:18:00Z",
+        "occupied": 9,
+        "codeql": 3,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:19:00Z",
+        "occupied": 15,
+        "codeql": 7,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:20:00Z",
+        "occupied": 12,
+        "codeql": 4,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:21:00Z",
+        "occupied": 7,
+        "codeql": 3,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:22:00Z",
+        "occupied": 16,
+        "codeql": 8,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:23:00Z",
+        "occupied": 14,
+        "codeql": 6,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:24:00Z",
+        "occupied": 20,
+        "codeql": 11,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:25:00Z",
+        "occupied": 16,
+        "codeql": 8,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:26:00Z",
+        "occupied": 14,
+        "codeql": 5,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34400993017/job/102632561572"]
+      },
+      {
+        "at": "2026-09-09T20:27:00Z",
+        "occupied": 15,
+        "codeql": 8,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:28:00Z",
+        "occupied": 13,
+        "codeql": 7,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:29:00Z",
+        "occupied": 14,
+        "codeql": 5,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:30:00Z",
+        "occupied": 9,
+        "codeql": 4,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:31:00Z",
+        "occupied": 7,
+        "codeql": 3,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:32:00Z",
+        "occupied": 5,
+        "codeql": 3,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:33:00Z",
+        "occupied": 19,
+        "codeql": 9,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:34:00Z",
+        "occupied": 16,
+        "codeql": 5,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:35:00Z",
+        "occupied": 11,
+        "codeql": 4,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:36:00Z",
+        "occupied": 14,
+        "codeql": 7,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:37:00Z",
+        "occupied": 11,
+        "codeql": 4,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:38:00Z",
+        "occupied": 12,
+        "codeql": 8,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:39:00Z",
+        "occupied": 9,
+        "codeql": 7,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:40:00Z",
+        "occupied": 17,
+        "codeql": 11,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:41:00Z",
+        "occupied": 20,
+        "codeql": 13,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:42:00Z",
+        "occupied": 19,
+        "codeql": 8,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:43:00Z",
+        "occupied": 20,
+        "codeql": 10,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34402669951/job/102638082623",
+          "https://github.com/agentydragon/ducktape/actions/runs/34402670004/job/102638083065"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:44:00Z",
+        "occupied": 20,
+        "codeql": 12,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34402669951/job/102638082623",
+          "https://github.com/agentydragon/ducktape/actions/runs/34402670004/job/102638083065"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:45:00Z",
+        "occupied": 20,
+        "codeql": 11,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34402670004/job/102638083065",
+          "https://github.com/agentydragon/ducktape/actions/runs/34402894225/job/102638821861"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:46:00Z",
+        "occupied": 20,
+        "codeql": 12,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34402894225/job/102638821861",
+          "https://github.com/agentydragon/ducktape/actions/runs/34402991175/job/102639127237"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:47:00Z",
+        "occupied": 20,
+        "codeql": 11,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34402991175/job/102639127237",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403036704/job/102639283471"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:48:00Z",
+        "occupied": 19,
+        "codeql": 9,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34403117968/job/102639547594"]
+      },
+      {
+        "at": "2026-09-09T20:49:00Z",
+        "occupied": 20,
+        "codeql": 10,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34403117968/job/102639547594",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403275407/job/102640073089"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:50:00Z",
+        "occupied": 20,
+        "codeql": 10,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34403356777/job/102640343189"]
+      },
+      {
+        "at": "2026-09-09T20:51:00Z",
+        "occupied": 20,
+        "codeql": 8,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34403356777/job/102640343189",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403428880/job/102640583341",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403440041/job/102640619248"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:52:00Z",
+        "occupied": 20,
+        "codeql": 9,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34403428880/job/102640583341",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403585223/job/102641095483"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:53:00Z",
+        "occupied": 20,
+        "codeql": 7,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34403585223/job/102641095483",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403656421/job/102641316995"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:54:00Z",
+        "occupied": 20,
+        "codeql": 6,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34403585223/job/102641095483",
+          "https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641"
+        ]
+      },
+      {
+        "at": "2026-09-09T20:55:00Z",
+        "occupied": 18,
+        "codeql": 8,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641"]
+      },
+      {
+        "at": "2026-09-09T20:56:00Z",
+        "occupied": 20,
+        "codeql": 12,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641"]
+      },
+      {
+        "at": "2026-09-09T20:57:00Z",
+        "occupied": 20,
+        "codeql": 14,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641"]
+      },
+      {
+        "at": "2026-09-09T20:58:00Z",
+        "occupied": 20,
+        "codeql": 10,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T20:59:00Z",
+        "occupied": 20,
+        "codeql": 9,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T21:00:00Z",
+        "occupied": 20,
+        "codeql": 9,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T21:01:00Z",
+        "occupied": 19,
+        "codeql": 9,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404370061/job/102643691495",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404430246/job/102643884381",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404452035/job/102643951813"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:02:00Z",
+        "occupied": 20,
+        "codeql": 10,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404370061/job/102643691495",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404430246/job/102643884381",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404452035/job/102643951813"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:03:00Z",
+        "occupied": 20,
+        "codeql": 9,
+        "bazel_waiting": []
+      },
+      {
+        "at": "2026-09-09T21:04:00Z",
+        "occupied": 20,
+        "codeql": 7,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34404711093/job/102644806728"]
+      },
+      {
+        "at": "2026-09-09T21:05:00Z",
+        "occupied": 20,
+        "codeql": 8,
+        "bazel_waiting": ["https://github.com/agentydragon/ducktape/actions/runs/34404838551/job/102645223070"]
+      },
+      {
+        "at": "2026-09-09T21:06:00Z",
+        "occupied": 20,
+        "codeql": 6,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404961087/job/102645611083"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:07:00Z",
+        "occupied": 18,
+        "codeql": 8,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:08:00Z",
+        "occupied": 18,
+        "codeql": 9,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:09:00Z",
+        "occupied": 17,
+        "codeql": 8,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:10:00Z",
+        "occupied": 17,
+        "codeql": 7,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:11:00Z",
+        "occupied": 15,
+        "codeql": 6,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:12:00Z",
+        "occupied": 13,
+        "codeql": 3,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:13:00Z",
+        "occupied": 9,
+        "codeql": 2,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      },
+      {
+        "at": "2026-09-09T21:14:00Z",
+        "occupied": 4,
+        "codeql": 0,
+        "bazel_waiting": [
+          "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+          "https://github.com/agentydragon/ducktape/actions/runs/34404975536/job/102645657857"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "name": "Agent",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "n": 57,
+      "pending": 9,
+      "conclusions": {
+        "unfinished": 9,
+        "success": 48
+      }
+    },
+    {
+      "name": "Analyze (c-cpp)",
+      "n": 50,
+      "pending": 9,
+      "conclusions": {
+        "unfinished": 9,
+        "success": 41
+      }
+    },
+    {
+      "name": "Analyze (go)",
+      "n": 57,
+      "pending": 9,
+      "conclusions": {
+        "unfinished": 9,
+        "success": 48
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "n": 57,
+      "pending": 9,
+      "conclusions": {
+        "unfinished": 9,
+        "success": 48
+      }
+    },
+    {
+      "name": "Analyze (python)",
+      "n": 57,
+      "pending": 10,
+      "conclusions": {
+        "unfinished": 10,
+        "success": 47
+      }
+    },
+    {
+      "name": "Analyze (rust)",
+      "n": 57,
+      "pending": 10,
+      "conclusions": {
+        "unfinished": 10,
+        "success": 47
+      }
+    },
+    {
+      "name": "Ansible-lint (full, all playbooks)",
+      "n": 4,
+      "pending": 1,
+      "conclusions": {
+        "unfinished": 1,
+        "success": 3
+      }
+    },
+    {
+      "name": "Autovalidate",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "Bazel build and test",
+      "n": 2,
+      "pending": 0,
+      "conclusions": {
+        "failure": 2
+      }
+    },
+    {
+      "name": "Build & publish patched bb",
+      "n": 2,
+      "pending": 0,
+      "conclusions": {
+        "success": 2
+      }
+    },
+    {
+      "name": "Build & push codex-pod",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "Build & push haku-harness-runner",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "Build & push haku-sandbox-image-nix",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "Build and Push",
+      "n": 11,
+      "pending": 4,
+      "conclusions": {
+        "unfinished": 4,
+        "failure": 4,
+        "success": 3
+      }
+    },
+    {
+      "name": "Build artifacts + imports check",
+      "n": 77,
+      "pending": 6,
+      "conclusions": {
+        "unfinished": 6,
+        "cancelled": 6,
+        "failure": 2,
+        "skipped": 22,
+        "success": 41
+      }
+    },
+    {
+      "name": "Cleanup artifacts",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "CodeQL",
+      "n": 52,
+      "pending": 0,
+      "conclusions": {
+        "failure": 1,
+        "neutral": 6,
+        "success": 45
+      }
+    },
+    {
+      "name": "CodeQL analysis (python)",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "Compute affected targets",
+      "n": 9,
+      "pending": 0,
+      "conclusions": {
+        "success": 9
+      }
+    },
+    {
+      "name": "Discover Python projects",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "FHS and NixOS clients to BuildBuddy",
+      "n": 5,
+      "pending": 2,
+      "conclusions": {
+        "unfinished": 2,
+        "skipped": 1,
+        "success": 2
+      }
+    },
+    {
+      "name": "FreeCAD Test",
+      "n": 8,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 8
+      }
+    },
+    {
+      "name": "Gazelle diff",
+      "n": 36,
+      "pending": 4,
+      "conclusions": {
+        "unfinished": 4,
+        "failure": 1,
+        "success": 31
+      }
+    },
+    {
+      "name": "Loom Gym Sandbox",
+      "n": 8,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 8
+      }
+    },
+    {
+      "name": "PR visual diffs",
+      "n": 8,
+      "pending": 0,
+      "conclusions": {
+        "neutral": 2,
+        "success": 6
+      }
+    },
+    {
+      "name": "PR visual review",
+      "n": 32,
+      "pending": 0,
+      "conclusions": {
+        "neutral": 24,
+        "success": 8
+      }
+    },
+    {
+      "name": "Pin Digests",
+      "n": 8,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 8
+      }
+    },
+    {
+      "name": "Pre-commit checks",
+      "n": 87,
+      "pending": 4,
+      "conclusions": {
+        "unfinished": 4,
+        "cancelled": 4,
+        "failure": 9,
+        "success": 70
+      }
+    },
+    {
+      "name": "Prepare",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "Props frontend build (Bazel)",
+      "n": 2,
+      "pending": 0,
+      "conclusions": {
+        "failure": 2
+      }
+    },
+    {
+      "name": "Pytest (adgn)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "failure": 4
+      }
+    },
+    {
+      "name": "Pytest (claude/claude_hooks)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (claude/claude_optimizer)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (difftree)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "failure": 3,
+        "success": 1
+      }
+    },
+    {
+      "name": "Pytest (ember)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (experimental/claude-history)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (experimental/cotrl)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (experimental/dbus_fast_example)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "cancelled": 4
+      }
+    },
+    {
+      "name": "Pytest (gatelet)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "failure": 4
+      }
+    },
+    {
+      "name": "Pytest (gnome-terminal-profile-switcher)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "failure": 4
+      }
+    },
+    {
+      "name": "Pytest (homeassistant/iaqi)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (llm/ducktape_llm_common)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "failure": 4
+      }
+    },
+    {
+      "name": "Pytest (llm/html)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (llm/mcp/habitify)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (llm/repo-template)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (mcp_starter)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (tana)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "success": 4
+      }
+    },
+    {
+      "name": "Pytest (wt)",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "failure": 4
+      }
+    },
+    {
+      "name": "RTL-TCP",
+      "n": 8,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 8
+      }
+    },
+    {
+      "name": "Upload results",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "Visual regression tests (Bazel + Playwright)",
+      "n": 2,
+      "pending": 0,
+      "conclusions": {
+        "failure": 2
+      }
+    },
+    {
+      "name": "agent-server-e2e-test",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "ansible-lint",
+      "n": 8,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 8
+      }
+    },
+    {
+      "name": "ansible-lint-full",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "bazel-build",
+      "n": 3,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 3
+      }
+    },
+    {
+      "name": "bazel-build / Build",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "bazel-check",
+      "n": 2,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 2
+      }
+    },
+    {
+      "name": "bazel-ci",
+      "n": 67,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 67
+      }
+    },
+    {
+      "name": "bazel-ci / Test & Build",
+      "n": 76,
+      "pending": 8,
+      "conclusions": {
+        "unfinished": 8,
+        "failure": 10,
+        "success": 58
+      }
+    },
+    {
+      "name": "bazel-harbor-images",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "bazel-lint",
+      "n": 3,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 3
+      }
+    },
+    {
+      "name": "bazel-lint / Lint",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "failure": 1
+      }
+    },
+    {
+      "name": "bazel-rust-lint",
+      "n": 3,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 3
+      }
+    },
+    {
+      "name": "bazel-rust-lint / Rust Lint",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "success": 1
+      }
+    },
+    {
+      "name": "bazel-test",
+      "n": 5,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 5
+      }
+    },
+    {
+      "name": "bazel-test / Test",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "failure": 1
+      }
+    },
+    {
+      "name": "bazel-typecheck",
+      "n": 3,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 3
+      }
+    },
+    {
+      "name": "bazel-typecheck / Typecheck",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "failure": 1
+      }
+    },
+    {
+      "name": "bb remote Runner",
+      "n": 8,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 8
+      }
+    },
+    {
+      "name": "bb remote Runner (build only)",
+      "n": 8,
+      "pending": 1,
+      "conclusions": {
+        "unfinished": 1,
+        "cancelled": 4,
+        "success": 3
+      }
+    },
+    {
+      "name": "copilot-setup-steps",
+      "n": 7,
+      "pending": 0,
+      "conclusions": {
+        "success": 7
+      }
+    },
+    {
+      "name": "editor-e2e-test",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "nix-attic-push",
+      "n": 3,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 3
+      }
+    },
+    {
+      "name": "nix-flake-check",
+      "n": 6,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 6
+      }
+    },
+    {
+      "name": "nix-wheel-check",
+      "n": 45,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 45
+      }
+    },
+    {
+      "name": "nix-wheel-check / Build artifacts + imports check",
+      "n": 17,
+      "pending": 1,
+      "conclusions": {
+        "unfinished": 1,
+        "cancelled": 1,
+        "failure": 1,
+        "success": 14
+      }
+    },
+    {
+      "name": "openclaw-exec-image",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "openclaw-image",
+      "n": 4,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 4
+      }
+    },
+    {
+      "name": "pre-commit / Pre-commit checks",
+      "n": 9,
+      "pending": 0,
+      "conclusions": {
+        "success": 9
+      }
+    },
+    {
+      "name": "props-agents-image",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "props-backend-image",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "props-e2e-test",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "props-images",
+      "n": 6,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 6
+      }
+    },
+    {
+      "name": "push-images",
+      "n": 74,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 74
+      }
+    },
+    {
+      "name": "rbe-image",
+      "n": 7,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 7
+      }
+    },
+    {
+      "name": "release",
+      "n": 74,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 74
+      }
+    },
+    {
+      "name": "visual-regression",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "skipped": 1
+      }
+    },
+    {
+      "name": "visual-regression / Visual regression tests (Bazel + Puppeteer)",
+      "n": 1,
+      "pending": 0,
+      "conclusions": {
+        "failure": 1
+      }
+    }
+  ]
+}

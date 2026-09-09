@@ -272,6 +272,13 @@
       "target": "//skills/verify_docs:verify_docs_skill",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/verify_docs/verify_docs.skill",
       "filename": "verify_docs.skill"
+    },
+    {
+      "name": "ci_latency",
+      "pkg": "skill-ci_latency",
+      "target": "//devinfra/ci/skills/ci_latency:ci_latency_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/ci/skills/ci_latency/ci_latency.skill",
+      "filename": "ci_latency.skill"
     }
   ]
 }

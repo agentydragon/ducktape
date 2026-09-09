@@ -9,6 +9,12 @@ channels.
 records. `ValidatedInput` checks an input once before any rollout executes. Test and
 benchmark fixture helpers construct that same input; they are not a separate schema.
 
+Internally, `RolloutState` initializes opening books once and advances one month at
+a time. The full-horizon drivers loop over that same advancement. Completed or
+failed states do not advance or invoke policies; an execution error consumes the
+state, preventing continuation from a partly applied month. This is not a public
+actor-session API: native callbacks still review opening-month holdings.
+
 ## Invariants
 
 - Money is always a checked `i64` count of the fixture's declared currency

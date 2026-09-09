@@ -279,10 +279,10 @@ pub fn simulate_product_metrics_validated(
 
 /// Live books and capture for one trajectory. Prepared paths are shared; mutable financial
 /// state, the next event month and the stop boundary belong to this rollout alone.
-struct RolloutState<'a> {
-    fixture: &'a ExecutionInput,
+/// The driver supplies its immutable input context, so a session can own paths and books
+/// side by side without either borrowing the other.
+struct RolloutState {
     rollout_id: u32,
-    product: Option<&'a ProductInputs>,
     month: u32,
     ledger: Ledger,
     lots: Vec<LotState>,
@@ -308,15 +308,16 @@ fn simulate_rollout(
     spending: Option<&mut spending::Policy<'_>>,
     allocation: Option<&mut allocation::Policy<'_>>,
 ) -> Result<RolloutComputation, SimulationError> {
-    RolloutState::new(fixture, rollout_id, capture_mode, product)?.run(spending, allocation)
+    RolloutState::new(fixture, rollout_id, capture_mode, product)?
+        .run(fixture, product, spending, allocation)
 }
 
-impl<'a> RolloutState<'a> {
+impl RolloutState {
     fn new(
-        fixture: &'a ExecutionInput,
+        fixture: &ExecutionInput,
         rollout_id: u32,
         capture_mode: CaptureMode,
-        product: Option<&'a ProductInputs>,
+        product: Option<&ProductInputs>,
     ) -> Result<Self, SimulationError> {
         let mut accounts: Vec<AccountRef> = fixture
             .scenario
@@ -538,9 +539,7 @@ impl<'a> RolloutState<'a> {
             )?);
         }
         Ok(Self {
-            fixture,
             rollout_id,
-            product,
             month: 0,
             ledger,
             lots,
@@ -559,128 +558,205 @@ impl<'a> RolloutState<'a> {
         })
     }
 
+    fn is_finished(&self, fixture: &ExecutionInput) -> bool {
+        self.failed_month.is_some() || self.month == fixture.scenario.horizon_months
+    }
+
     fn run(
         mut self,
+        fixture: &ExecutionInput,
+        product: Option<&ProductInputs>,
         mut spending: Option<&mut spending::Policy<'_>>,
         mut allocation: Option<&mut allocation::Policy<'_>>,
     ) -> Result<RolloutComputation, SimulationError> {
-        let fixture = self.fixture;
+        while !self.is_finished(fixture) {
+            self = self.advance_month(
+                fixture,
+                product,
+                spending.as_deref_mut(),
+                allocation.as_deref_mut(),
+            )?;
+        }
+        self.finish(fixture)
+    }
+
+    /// Execute one month at the existing opening-review boundary. Terminal states are
+    /// unchanged and never invoke policies. Consuming the state makes any execution
+    /// error fatal: a caller cannot resume a month whose books may be partly updated.
+    fn advance_month(
+        mut self,
+        fixture: &ExecutionInput,
+        product: Option<&ProductInputs>,
+        mut spending: Option<&mut spending::Policy<'_>>,
+        mut allocation: Option<&mut allocation::Policy<'_>>,
+    ) -> Result<Self, SimulationError> {
+        if self.is_finished(fixture) {
+            return Ok(self);
+        }
         let rollout_id = self.rollout_id;
-        let product = self.product;
-        while self.month < fixture.scenario.horizon_months && self.failed_month.is_none() {
-            let month = self.month;
-            if let Some(policy) = allocation.as_deref_mut() {
-                policy.review(fixture, rollout_id, month, &self.ledger, &self.lots)?;
-            }
-            // Decide from opening-of-month holdings and current prices, before this month's
-            // cashflows. The resulting demand is funded with the other monthly obligations.
-            let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
-                policy.obligation(
-                    fixture,
-                    rollout_id,
-                    month,
-                    observations::Books {
-                        ledger: &self.ledger,
-                        lots: &self.lots,
-                        mortgages: &self.mortgages,
-                        tax: &self.tax,
-                        tax_liabilities: &self.tax_liabilities,
-                        tlh_cumulative_harvest: &self.tlh_cumulative_harvest,
-                    },
-                )?
-            } else {
-                None
-            };
-            execute_primary_residence_events(
+        let month = self.month;
+        if let Some(policy) = allocation.as_deref_mut() {
+            policy.review(fixture, rollout_id, month, &self.ledger, &self.lots)?;
+        }
+        // Decide from opening-of-month holdings and current prices, before this month's
+        // cashflows. The resulting demand is funded with the other monthly obligations.
+        let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
+            policy.obligation(
                 fixture,
-                &mut self.recorder,
-                &mut self.primary_residence_by_agent,
+                rollout_id,
                 month,
-            )?;
-            execute_property_lifecycle_events(
+                observations::Books {
+                    ledger: &self.ledger,
+                    lots: &self.lots,
+                    mortgages: &self.mortgages,
+                    tax: &self.tax,
+                    tax_liabilities: &self.tax_liabilities,
+                    tlh_cumulative_harvest: &self.tlh_cumulative_harvest,
+                },
+            )?
+        } else {
+            None
+        };
+        execute_primary_residence_events(
+            fixture,
+            &mut self.recorder,
+            &mut self.primary_residence_by_agent,
+            month,
+        )?;
+        execute_property_lifecycle_events(
+            fixture,
+            rollout_id,
+            &mut self.ledger,
+            &mut self.recorder,
+            &mut self.tax,
+            &mut self.properties,
+            &mut self.mortgages,
+            &mut self.primary_residence_by_agent,
+            month,
+        )?;
+        execute_bonds(
+            fixture,
+            rollout_id,
+            &mut self.ledger,
+            &mut self.recorder,
+            &mut self.tax,
+            month,
+        )?;
+        execute_distributions(
+            fixture,
+            rollout_id,
+            &mut self.ledger,
+            &mut self.recorder,
+            &self.lots,
+            &mut self.tax,
+            month,
+        )?;
+        execute_property_purchases(
+            fixture,
+            &mut self.ledger,
+            &mut self.recorder,
+            &mut self.properties,
+            &mut self.mortgages,
+            month,
+        )?;
+        execute_cashflows(
+            fixture,
+            rollout_id,
+            &mut self.ledger,
+            &mut self.recorder,
+            &mut self.tax,
+            &self.properties,
+            month,
+        )?;
+        let mut scheduled_tlh =
+            scheduled_tlh_give_back_state(fixture, &self.lots, &self.tlh_cumulative_harvest)?;
+        for sale in fixture
+            .scenario
+            .scheduled_sales
+            .iter()
+            .filter(|sale| sale.month == month)
+        {
+            execute_sale(
                 fixture,
                 rollout_id,
                 &mut self.ledger,
                 &mut self.recorder,
+                &mut self.lots,
                 &mut self.tax,
-                &mut self.properties,
-                &mut self.mortgages,
-                &mut self.primary_residence_by_agent,
-                month,
+                &mut scheduled_tlh,
+                sale,
             )?;
-            execute_bonds(
+        }
+        apply_scheduled_tlh_give_back(&scheduled_tlh, &mut self.tlh_cumulative_harvest)?;
+        let mut active_obligations = Vec::new();
+        // Identify the actual callback demand by its position, never by a user-chosen ID
+        // or category that another configured obligation could share.
+        let spending_obligation_index = spending_obligation
+            .as_ref()
+            .map(|_| active_obligations.len());
+        let requested = spending_obligation
+            .as_ref()
+            .map_or(Money(0), |claim| claim.amount_due);
+        active_obligations.extend(spending_obligation);
+        active_obligations.extend(claims::assemble(
+            fixture,
+            rollout_id,
+            month,
+            &self.properties,
+            &self.mortgages,
+            &self.tax_liabilities,
+        )?);
+        let target_allocation_buys = execute_target_allocation_sales(
+            fixture,
+            rollout_id,
+            &mut self.ledger,
+            &mut self.recorder,
+            &mut self.lots,
+            &mut self.tax,
+            &mut self.tlh_cumulative_harvest,
+            month,
+            &active_obligations,
+            allocation.as_deref(),
+        )?;
+        let settlement = settle_obligations(
+            fixture,
+            &mut self.ledger,
+            &mut self.recorder,
+            &mut self.tax,
+            &self.properties,
+            &mut self.mortgages,
+            &mut self.tax_liabilities,
+            month,
+            &active_obligations,
+            product.map(|inputs| inputs.primary_agent_id()),
+            spending_obligation_index,
+        )?;
+        if self.recorder.capture_mode == CaptureMode::Summary && spending.is_some() {
+            self.consumption_requested.push(requested);
+            self.consumption_paid
+                .push(settlement.spending_paid.unwrap_or(Money(0)));
+        }
+        if settlement.failed {
+            self.failed_month = Some(month);
+        } else {
+            execute_target_allocation_buys(
                 fixture,
-                rollout_id,
                 &mut self.ledger,
                 &mut self.recorder,
-                &mut self.tax,
+                &mut self.lots,
+                &mut self.target_allocation_buy_count,
                 month,
+                &target_allocation_buys,
             )?;
-            execute_distributions(
+            execute_tlh_harvest(
                 fixture,
                 rollout_id,
-                &mut self.ledger,
-                &mut self.recorder,
                 &self.lots,
                 &mut self.tax,
+                &mut self.tlh_cumulative_harvest,
                 month,
             )?;
-            execute_property_purchases(
-                fixture,
-                &mut self.ledger,
-                &mut self.recorder,
-                &mut self.properties,
-                &mut self.mortgages,
-                month,
-            )?;
-            execute_cashflows(
-                fixture,
-                rollout_id,
-                &mut self.ledger,
-                &mut self.recorder,
-                &mut self.tax,
-                &self.properties,
-                month,
-            )?;
-            let mut scheduled_tlh =
-                scheduled_tlh_give_back_state(fixture, &self.lots, &self.tlh_cumulative_harvest)?;
-            for sale in fixture
-                .scenario
-                .scheduled_sales
-                .iter()
-                .filter(|sale| sale.month == month)
-            {
-                execute_sale(
-                    fixture,
-                    rollout_id,
-                    &mut self.ledger,
-                    &mut self.recorder,
-                    &mut self.lots,
-                    &mut self.tax,
-                    &mut scheduled_tlh,
-                    sale,
-                )?;
-            }
-            apply_scheduled_tlh_give_back(&scheduled_tlh, &mut self.tlh_cumulative_harvest)?;
-            let mut active_obligations = Vec::new();
-            // Identify the actual callback demand by its position, never by a user-chosen ID
-            // or category that another configured obligation could share.
-            let spending_obligation_index = spending_obligation
-                .as_ref()
-                .map(|_| active_obligations.len());
-            let requested = spending_obligation
-                .as_ref()
-                .map_or(Money(0), |claim| claim.amount_due);
-            active_obligations.extend(spending_obligation);
-            active_obligations.extend(claims::assemble(
-                fixture,
-                rollout_id,
-                month,
-                &self.properties,
-                &self.mortgages,
-                &self.tax_liabilities,
-            )?);
-            let target_allocation_buys = execute_target_allocation_sales(
+            execute_private_equity(
                 fixture,
                 rollout_id,
                 &mut self.ledger,
@@ -689,109 +765,67 @@ impl<'a> RolloutState<'a> {
                 &mut self.tax,
                 &mut self.tlh_cumulative_harvest,
                 month,
-                &active_obligations,
-                allocation.as_deref(),
             )?;
-            let settlement = settle_obligations(
+        }
+        if self.failed_month.is_none() {
+            accrue_primary_residence_occupancy(
+                &self.primary_residence_by_agent,
+                &mut self.properties,
+                month,
+            )?;
+            accrue_property_depreciation(&mut self.tax, &mut self.properties)?;
+        }
+        if self.failed_month.is_none() && (month + 1) % 12 == 0 {
+            accrue_year_end_taxes(
                 fixture,
                 &mut self.ledger,
                 &mut self.recorder,
                 &mut self.tax,
-                &self.properties,
-                &mut self.mortgages,
                 &mut self.tax_liabilities,
+                &self.mortgages,
                 month,
-                &active_obligations,
-                product.map(|inputs| inputs.primary_agent_id()),
-                spending_obligation_index,
             )?;
-            if self.recorder.capture_mode == CaptureMode::Summary && spending.is_some() {
-                self.consumption_requested.push(requested);
-                self.consumption_paid
-                    .push(settlement.spending_paid.unwrap_or(Money(0)));
-            }
-            if settlement.failed {
-                self.failed_month = Some(month);
-            } else {
-                execute_target_allocation_buys(
-                    fixture,
-                    &mut self.ledger,
-                    &mut self.recorder,
-                    &mut self.lots,
-                    &mut self.target_allocation_buy_count,
-                    month,
-                    &target_allocation_buys,
-                )?;
-                execute_tlh_harvest(
-                    fixture,
-                    rollout_id,
-                    &self.lots,
-                    &mut self.tax,
-                    &mut self.tlh_cumulative_harvest,
-                    month,
-                )?;
-                execute_private_equity(
-                    fixture,
-                    rollout_id,
-                    &mut self.ledger,
-                    &mut self.recorder,
-                    &mut self.lots,
-                    &mut self.tax,
-                    &mut self.tlh_cumulative_harvest,
-                    month,
-                )?;
-            }
-            if self.failed_month.is_none() {
-                accrue_primary_residence_occupancy(
-                    &self.primary_residence_by_agent,
-                    &mut self.properties,
-                    month,
-                )?;
-                accrue_property_depreciation(&mut self.tax, &mut self.properties)?;
-            }
-            if self.failed_month.is_none() && (month + 1) % 12 == 0 {
-                accrue_year_end_taxes(
-                    fixture,
-                    &mut self.ledger,
-                    &mut self.recorder,
-                    &mut self.tax,
-                    &mut self.tax_liabilities,
-                    &self.mortgages,
-                    month,
-                )?;
-                reset_property_tax_year_state(&mut self.properties, &mut self.mortgages);
-            }
-            if self.recorder.capture_mode.captures_output() {
-                self.recorder.record_month(month_output(
-                    fixture,
-                    rollout_id,
-                    month + 1,
-                    &self.ledger,
-                    &self.lots,
-                    &self.properties,
-                    &self.mortgages,
-                    &self.tax_liabilities,
-                    &self.tax,
-                    &self.tlh_cumulative_harvest,
-                    self.failed_month.is_some(),
-                )?);
-            }
-            if let Some(inputs) = product {
-                self.product_metrics.push(product_snapshot(
-                    fixture,
-                    inputs,
-                    rollout_id,
-                    month + 1,
-                    &self.ledger,
-                    &self.lots,
-                    &self.properties,
-                    &self.mortgages,
-                    settlement.product_shortfall,
-                    self.failed_month.is_some(),
-                )?);
-            }
-            self.month += 1;
+            reset_property_tax_year_state(&mut self.properties, &mut self.mortgages);
         }
+        if self.recorder.capture_mode.captures_output() {
+            self.recorder.record_month(month_output(
+                fixture,
+                rollout_id,
+                month + 1,
+                &self.ledger,
+                &self.lots,
+                &self.properties,
+                &self.mortgages,
+                &self.tax_liabilities,
+                &self.tax,
+                &self.tlh_cumulative_harvest,
+                self.failed_month.is_some(),
+            )?);
+        }
+        if let Some(inputs) = product {
+            self.product_metrics.push(product_snapshot(
+                fixture,
+                inputs,
+                rollout_id,
+                month + 1,
+                &self.ledger,
+                &self.lots,
+                &self.properties,
+                &self.mortgages,
+                settlement.product_shortfall,
+                self.failed_month.is_some(),
+            )?);
+        }
+        self.month += 1;
+        Ok(self)
+    }
+
+    fn finish(self, fixture: &ExecutionInput) -> Result<RolloutComputation, SimulationError> {
+        assert!(
+            self.is_finished(fixture),
+            "only terminal rollouts can be finalized"
+        );
+        let rollout_id = self.rollout_id;
         debug_assert_eq!(self.ledger.trial_balance(), 0);
         Ok(RolloutComputation {
             rollout_id,

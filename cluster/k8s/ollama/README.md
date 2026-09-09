@@ -21,57 +21,43 @@ changes because nginx reads the token from an environment variable. The Deployme
 uses `Recreate`, so rotation includes a service interruption during that restart.
 Clients that cached the previous bearer token must fetch the new one.
 
-## One-time cutover from shared state
+## One-time GitOps cutover from shared state
 
-Land and verify the dedicated database prerequisite (#5955) and shared Git source
-change (#5945) before this cutover. Retire the old writer **before merging the
-cutover**, while the Git source still contains the old Terraform code:
+The cutover uses separate retirement and activation revisions. Complete the
+[database connection checks](../tofu-state/README.md) before either stage.
 
-1. Complete the database connection checks linked above. Confirm the dedicated
-   credential Secret has been reflected into `ollama` and the dedicated database
-   has no existing Terraform state. Keep the previous bearer token only in process
-   memory for the later rejection check; do not print or persist it.
-2. Suspend the owning Flux Kustomization and the old Terraform. Suspending the
-   Terraform does not cancel an apply already in progress; wait for its runner to
-   finish and disappear. Do not forcibly delete an active runner.
-
-   ```bash
-   flux suspend kustomization ollama-secrets -n ducktape-flux
-   kubectl patch terraform ollama-bearer-token -n flux-system --type=merge \
-     -p '{"spec":{"suspend":true,"destroyResourcesOnDeletion":false}}'
-   kubectl wait --for=delete pod/ollama-bearer-token-tf-runner -n flux-system --timeout=10m
-   ```
-
-   If the pod is already absent, the wait is satisfied. If it remains, investigate
-   before proceeding. Check that the controller is idle for this Terraform.
-
-3. Delete the old CR without destroying its resources. In controller v0.16.5,
-   suspension also blocks finalization: request deletion first, then resume the
-   **already-deleting** CR so its finalizer can run.
+1. Land the retirement PR, which removes the old `flux-system/ollama-bearer-token`
+   manifest, resource entry and health check. Its Terraform root stays unchanged.
+   Flux prunes the old CR; `destroyResourcesOnDeletion: false` preserves the token
+   and state. Leave the CR unsuspended so tofu-controller can run its finalizer.
+2. Wait for the retirement revision to reconcile. Confirm both the old Terraform
+   and its runner are absent, and the existing token Secret is preserved. Flux
+   readiness alone is insufficient because pruning can finish asynchronously.
 
    ```bash
-   kubectl delete terraform ollama-bearer-token -n flux-system --wait=false
-   kubectl patch terraform ollama-bearer-token -n flux-system --type=merge \
-     -p '{"spec":{"suspend":false}}'
    kubectl wait --for=delete terraform/ollama-bearer-token -n flux-system --timeout=10m
    kubectl wait --for=delete pod/ollama-bearer-token-tf-runner -n flux-system --timeout=10m
    ```
 
-   Confirm both the old CR and runner are gone. The token Secret and PostgreSQL
-   state remain. Leave the Kustomization suspended until its source contains the
-   cutover; resuming against the old source would recreate the old writer.
+   If either resource is already absent, its wait is satisfied. If a runner remains,
+   investigate before proceeding; do not forcibly delete an active apply.
 
-4. Merge the cutover, reconcile `ducktape-flux/ducktape`, and verify its artifact
-   revision includes the merge. Resume `ducktape-flux/ollama-secrets`. Its Secret
-   manifest preserves the current token until the new Terraform updates it.
-5. Verify the new `ollama/ollama-bearer-token` is Ready, its plan applied, and state
-   was created in the dedicated database. Check the new ServiceAccount cannot read
+3. Land the activation PR (#5957) only after retirement is verified. It introduces
+   the new CR in `ollama` with fresh state and automatic plan approval. Flux creates
+   or adopts the token Secret's metadata, then Terraform replaces its token in place.
+4. Verify the new `ollama/ollama-bearer-token` is Ready, its plan applied, and state
+   was created in the dedicated database. Check that `ollama/tf-runner` cannot read
    Secrets in `flux-system` or `tofu-state`. Verify the bearer changed and its
-   reflected copy matches, without printing either value.
-6. Wait for the Ollama rollout, then call the authenticated `/api/tags` endpoint
+   reflected copy matches without printing either value.
+5. Wait for the Ollama rollout, then call the authenticated `/api/tags` endpoint
    with the new token (expect success), the previous token (expect rejection), and
    no token (expect rejection). Confirm the next Terraform reconciliation has no
    changes. A healthy CR or updated Secret alone does not establish service success.
+
+Keep the retirement and activation stages separate: changing the Terraform resource
+model while the old writer still exists could make it plan against the old state.
+An in-flight apply may finish during retirement; the new writer starts only after
+that runner has gone.
 
 The old `tfstate.ollama_bearer_token` state is intentionally not migrated or reused.
 It records the retired token. Keep the old CR absent: applying that state could

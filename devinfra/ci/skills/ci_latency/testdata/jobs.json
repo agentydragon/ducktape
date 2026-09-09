@@ -1,0 +1,386 @@
+{
+  "collected_at": "2026-09-09T21:16:00Z",
+  "runs": [
+    {
+      "id": 34402196901,
+      "path": "dynamic/github-code-scanning/codeql",
+      "event": "dynamic"
+    },
+    {
+      "id": 34402349304,
+      "path": "dynamic/github-code-scanning/codeql",
+      "event": "dynamic"
+    },
+    {
+      "id": 34402460628,
+      "path": "dynamic/github-code-scanning/codeql",
+      "event": "dynamic"
+    },
+    {
+      "id": 34402463889,
+      "path": ".github/workflows/ci.yml",
+      "event": "pull_request"
+    },
+    {
+      "id": 34402591531,
+      "path": "dynamic/github-code-scanning/codeql",
+      "event": "dynamic"
+    },
+    {
+      "id": 34402592172,
+      "path": ".github/workflows/pre-commit.yml",
+      "event": "push"
+    },
+    {
+      "id": 34402592198,
+      "path": ".github/workflows/nix-wheel-check.yml",
+      "event": "push"
+    },
+    {
+      "id": 34402592239,
+      "path": ".github/workflows/nix-attic-push.yml",
+      "event": "push"
+    },
+    {
+      "id": 34402592560,
+      "path": ".github/workflows/ci.yml",
+      "event": "push"
+    },
+    {
+      "id": 34402667120,
+      "path": "dynamic/github-code-scanning/codeql",
+      "event": "dynamic"
+    },
+    {
+      "id": 34402669608,
+      "path": ".github/workflows/nix-wheel-check.yml",
+      "event": "pull_request"
+    },
+    {
+      "id": 34402669611,
+      "path": ".github/workflows/pre-commit.yml",
+      "event": "pull_request"
+    },
+    {
+      "id": 34402669865,
+      "path": ".github/workflows/pre-commit.yml",
+      "event": "pull_request"
+    },
+    {
+      "id": 34402670004,
+      "path": ".github/workflows/ci.yml",
+      "event": "pull_request"
+    },
+    {
+      "id": 34403608775,
+      "path": ".github/workflows/ci.yml",
+      "event": "pull_request"
+    },
+    {
+      "id": 34404920457,
+      "path": ".github/workflows/ci.yml",
+      "event": "pull_request"
+    }
+  ],
+  "jobs": [
+    {
+      "id": 102636530393,
+      "run_id": 34402196901,
+      "runner_id": 1000478270,
+      "name": "Analyze (rust)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:37:56Z",
+      "started_at": "2026-09-09T20:37:58Z",
+      "completed_at": "2026-09-09T20:46:24Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402196901/job/102636530393",
+      "steps": []
+    },
+    {
+      "id": 102636530583,
+      "run_id": 34402196901,
+      "runner_id": 1000478271,
+      "name": "Analyze (python)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:37:56Z",
+      "started_at": "2026-09-09T20:37:58Z",
+      "completed_at": "2026-09-09T20:49:04Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402196901/job/102636530583",
+      "steps": []
+    },
+    {
+      "id": 102637029275,
+      "run_id": 34402349304,
+      "runner_id": 1000478277,
+      "name": "Analyze (rust)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:39:27Z",
+      "started_at": "2026-09-09T20:39:30Z",
+      "completed_at": "2026-09-09T20:47:55Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402349304/job/102637029275",
+      "steps": []
+    },
+    {
+      "id": 102637394827,
+      "run_id": 34402460628,
+      "runner_id": 1000478288,
+      "name": "Analyze (rust)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:40:32Z",
+      "started_at": "2026-09-09T20:40:35Z",
+      "completed_at": "2026-09-09T20:47:03Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402460628/job/102637394827",
+      "steps": []
+    },
+    {
+      "id": 102637399598,
+      "run_id": 34402463889,
+      "runner_id": 1000478292,
+      "name": "bazel-ci / Test & Build",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-09-09T20:40:33Z",
+      "started_at": "2026-09-09T20:40:52Z",
+      "completed_at": "2026-09-09T20:46:09Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402463889/job/102637399598",
+      "steps": []
+    },
+    {
+      "id": 102637826467,
+      "run_id": 34402592172,
+      "runner_id": 1000478298,
+      "name": "Pre-commit checks",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:49Z",
+      "started_at": "2026-09-09T20:41:51Z",
+      "completed_at": "2026-09-09T20:45:54Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402592172/job/102637826467",
+      "steps": []
+    },
+    {
+      "id": 102637827022,
+      "run_id": 34402592239,
+      "runner_id": 1000478299,
+      "name": "Build & push to Attic",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:49Z",
+      "started_at": "2026-09-09T20:41:51Z",
+      "completed_at": "2026-09-09T20:45:19Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402592239/job/102637827022",
+      "steps": []
+    },
+    {
+      "id": 102637827417,
+      "run_id": 34402592198,
+      "runner_id": 1000478301,
+      "name": "Build artifacts + imports check",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:49Z",
+      "started_at": "2026-09-09T20:41:54Z",
+      "completed_at": "2026-09-09T20:44:17Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402592198/job/102637827417",
+      "steps": []
+    },
+    {
+      "id": 102637828171,
+      "run_id": 34402592560,
+      "runner_id": 1000478302,
+      "name": "bazel-ci / Test & Build",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:49Z",
+      "started_at": "2026-09-09T20:41:55Z",
+      "completed_at": "2026-09-09T20:45:30Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402592560/job/102637828171",
+      "steps": []
+    },
+    {
+      "id": 102637831222,
+      "run_id": 34402591531,
+      "runner_id": 1000478303,
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:50Z",
+      "started_at": "2026-09-09T20:42:01Z",
+      "completed_at": "2026-09-09T20:44:33Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402591531/job/102637831222",
+      "steps": []
+    },
+    {
+      "id": 102637831502,
+      "run_id": 34402591531,
+      "runner_id": 1000478304,
+      "name": "Analyze (rust)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:50Z",
+      "started_at": "2026-09-09T20:42:24Z",
+      "completed_at": "2026-09-09T20:49:42Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402591531/job/102637831502",
+      "steps": []
+    },
+    {
+      "id": 102637831517,
+      "run_id": 34402591531,
+      "runner_id": 1000478305,
+      "name": "Analyze (go)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:50Z",
+      "started_at": "2026-09-09T20:42:32Z",
+      "completed_at": "2026-09-09T20:45:23Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402591531/job/102637831517",
+      "steps": []
+    },
+    {
+      "id": 102637831563,
+      "run_id": 34402591531,
+      "runner_id": 1000478308,
+      "name": "Analyze (python)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:50Z",
+      "started_at": "2026-09-09T20:43:18Z",
+      "completed_at": "2026-09-09T20:55:10Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402591531/job/102637831563",
+      "steps": []
+    },
+    {
+      "id": 102637831586,
+      "run_id": 34402591531,
+      "runner_id": 1000478307,
+      "name": "Analyze (c-cpp)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:50Z",
+      "started_at": "2026-09-09T20:43:06Z",
+      "completed_at": "2026-09-09T20:44:28Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402591531/job/102637831586",
+      "steps": []
+    },
+    {
+      "id": 102637831702,
+      "run_id": 34402591531,
+      "runner_id": 1000478310,
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:41:50Z",
+      "started_at": "2026-09-09T20:43:26Z",
+      "completed_at": "2026-09-09T20:44:22Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402591531/job/102637831702",
+      "steps": []
+    },
+    {
+      "id": 102638075039,
+      "run_id": 34402667120,
+      "runner_id": 1000478309,
+      "name": "Analyze (rust)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:42:34Z",
+      "started_at": "2026-09-09T20:43:23Z",
+      "completed_at": "2026-09-09T20:51:30Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402667120/job/102638075039",
+      "steps": []
+    },
+    {
+      "id": 102638075313,
+      "run_id": 34402667120,
+      "runner_id": 1000478311,
+      "name": "Analyze (python)",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:42:34Z",
+      "started_at": "2026-09-09T20:43:26Z",
+      "completed_at": "2026-09-09T20:46:01Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402667120/job/102638075313",
+      "steps": []
+    },
+    {
+      "id": 102638080723,
+      "run_id": 34402669611,
+      "runner_id": 1000478313,
+      "name": "Pre-commit checks",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:42:35Z",
+      "started_at": "2026-09-09T20:43:45Z",
+      "completed_at": "2026-09-09T20:45:35Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402669611/job/102638080723",
+      "steps": []
+    },
+    {
+      "id": 102638081081,
+      "run_id": 34402669608,
+      "runner_id": 1000478312,
+      "name": "Build artifacts + imports check",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:42:35Z",
+      "started_at": "2026-09-09T20:43:44Z",
+      "completed_at": "2026-09-09T20:45:48Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402669608/job/102638081081",
+      "steps": []
+    },
+    {
+      "id": 102638081849,
+      "run_id": 34402669865,
+      "runner_id": 1000478314,
+      "name": "Pre-commit checks",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:42:35Z",
+      "started_at": "2026-09-09T20:43:46Z",
+      "completed_at": "2026-09-09T20:45:53Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402669865/job/102638081849",
+      "steps": []
+    },
+    {
+      "id": 102638083065,
+      "run_id": 34402670004,
+      "runner_id": 1000478321,
+      "name": "bazel-ci / Test & Build",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:42:35Z",
+      "started_at": "2026-09-09T20:45:32Z",
+      "completed_at": "2026-09-09T20:47:01Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34402670004/job/102638083065",
+      "steps": []
+    },
+    {
+      "id": 102641166641,
+      "run_id": 34403608775,
+      "runner_id": 1000478406,
+      "name": "bazel-ci / Test & Build",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-09T20:52:06Z",
+      "started_at": "2026-09-09T20:57:04Z",
+      "completed_at": "2026-09-09T20:58:33Z",
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34403608775/job/102641166641",
+      "steps": []
+    },
+    {
+      "id": 102645478845,
+      "run_id": 34404920457,
+      "runner_id": 1000478543,
+      "name": "bazel-ci / Test & Build",
+      "status": "in_progress",
+      "conclusion": null,
+      "created_at": "2026-09-09T21:05:30Z",
+      "started_at": "2026-09-09T21:14:15Z",
+      "completed_at": null,
+      "html_url": "https://github.com/agentydragon/ducktape/actions/runs/34404920457/job/102645478845",
+      "steps": []
+    }
+  ]
+}

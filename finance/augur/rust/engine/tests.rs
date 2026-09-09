@@ -855,7 +855,7 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
     let [second, first] = [1, 0]
         .map(|id| RolloutState::new(validated.input, id, CaptureMode::Forensic, None).unwrap());
     for (state, tax_paid, remaining_basis) in [(second, 3_000, 40_000), (first, 2_000, 30_000)] {
-        let output = state.run(None, None).unwrap().into_output();
+        let output = state.run(&input, None, None, None).unwrap().into_output();
         assert_eq!(output.failed_month, None);
         assert_eq!(output.tax_payments[0].month, 12);
         assert_eq!(output.tax_payments[0].amount_paid, Money(tax_paid));
@@ -886,6 +886,99 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
                 .sum::<i64>(),
             remaining_basis
         );
+    }
+}
+
+#[test]
+fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
+    for (input, year_end_tax) in [
+        (allocation_tax_and_consumption_fixture(), Money(2_000)),
+        (stopped_book_fixture(15, 9).0, Money(50)),
+    ] {
+        ValidatedInput::new(&input).unwrap();
+        let product = ProductInputs::resolve(&input, "alice").unwrap();
+        for capture in [
+            CaptureMode::Forensic,
+            CaptureMode::Dense,
+            CaptureMode::Summary,
+        ] {
+            let full = simulate_rollout(&input, 0, capture, Some(&product), None, None).unwrap();
+            let mut state = RolloutState::new(&input, 0, capture, Some(&product)).unwrap();
+            for _ in 0..12 {
+                state = state
+                    .advance_month(&input, Some(&product), None, None)
+                    .unwrap();
+            }
+            // Assessment is retained across the pause before the next year's payment.
+            assert_eq!(state.tax_liabilities[0].amount_owed, year_end_tax);
+            assert!(!state.is_finished(&input));
+            while !state.is_finished(&input) {
+                state = state
+                    .advance_month(&input, Some(&product), None, None)
+                    .unwrap();
+            }
+            // Neither a completed nor a failed path processes another month's events.
+            state = state
+                .advance_month(&input, Some(&product), None, None)
+                .unwrap();
+            let stepped = state.finish(&input).unwrap();
+            assert_eq!(stepped.product_metrics, full.product_metrics);
+            match capture {
+                CaptureMode::Summary => assert_eq!(stepped.into_summary(), full.into_summary()),
+                _ => assert_eq!(stepped.into_output(), full.into_output()),
+            }
+        }
+    }
+}
+
+#[test]
+fn interleaved_month_steps_preserve_policy_memory_and_skip_terminal_callbacks() {
+    let (mut input, spending) = spending_fixture();
+    input.scenario.accounts[0].opening_balance = Money(5);
+    let make_policy = |rollout| {
+        let mut decisions = 0;
+        move |observation: spending::Observation| {
+            assert_eq!(observation.month, decisions);
+            assert!(rollout != 0 || decisions <= 2, "no callbacks after failure");
+            decisions += 1;
+            Ok(Money(if rollout == 0 {
+                i64::from(decisions)
+            } else {
+                0
+            }))
+        }
+    };
+    let full = spending::simulate(&input, &spending, make_policy).unwrap();
+    let holdings = AgentHoldings::resolve(&input, &spending.from.agent_id).unwrap();
+    let mut decisions = [make_policy(0), make_policy(1)];
+    let mut states: Vec<_> = [0, 1]
+        .map(|id| RolloutState::new(&input, id, CaptureMode::Forensic, None).unwrap())
+        .into();
+    while states.iter().any(|state| !state.is_finished(&input)) {
+        states.reverse();
+        states = states
+            .into_iter()
+            .map(|state| {
+                let mut policy = spending::Policy::new(
+                    &spending,
+                    &holdings,
+                    &mut decisions[state.rollout_id as usize],
+                );
+                state
+                    .advance_month(&input, None, Some(&mut policy), None)
+                    .unwrap()
+            })
+            .collect();
+    }
+    for state in states {
+        let expected = &full.rollouts[state.rollout_id as usize];
+        let mut unexpected =
+            |_: spending::Observation| panic!("no callbacks after completion or failure");
+        let mut policy = spending::Policy::new(&spending, &holdings, &mut unexpected);
+        let state = state
+            .advance_month(&input, None, Some(&mut policy), None)
+            .unwrap();
+        assert_eq!(&state.finish(&input).unwrap().into_output(), expected);
     }
 }
 
