@@ -47,6 +47,7 @@ rust_library(
         "engine/validation.rs",
         "event_frames.rs",
         "execution.rs",
+        "holdings.rs",
         "ledger.rs",
         "lib.rs",
         "money.rs",

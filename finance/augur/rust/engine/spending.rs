@@ -48,14 +48,14 @@ where
     Make: Fn(u32) -> Decide + Sync,
     Decide: FnMut(Observation) -> Result<Money, SimulationError>,
 {
-    let inputs = validate(input, spending)?;
+    let holdings = validate(input, spending)?;
     let rollouts: Result<Vec<_>, _> = (0..input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
             let mut decide = make_policy(rollout_id);
             let mut policy = Policy {
                 spending,
-                inputs: &inputs,
+                holdings: &holdings,
                 decide: &mut decide,
             };
             simulate_rollout(
@@ -103,14 +103,15 @@ where
     Make: Fn(u32) -> Decide + Sync,
     Decide: FnMut(Observation) -> Result<Money, SimulationError>,
 {
-    let inputs = validate(input, spending)?;
+    let holdings = validate(input, spending)?;
+    let inputs = ProductInputs::resolve(input, &spending.from.agent_id)?;
     let rollouts: Result<Vec<_>, _> = (0..input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
             let mut decide = make_policy(rollout_id);
             let mut policy = Policy {
                 spending,
-                inputs: &inputs,
+                holdings: &holdings,
                 decide: &mut decide,
             };
             simulate_rollout(
@@ -169,11 +170,11 @@ where
             rollout_count: input.rollout_count,
         });
     }
-    let inputs = validate(input, spending)?;
+    let holdings = validate(input, spending)?;
     let mut decide = make_policy(rollout_id);
     let mut policy = Policy {
         spending,
-        inputs: &inputs,
+        holdings: &holdings,
         decide: &mut decide,
     };
     simulate_rollout(
@@ -187,7 +188,7 @@ where
     .map(RolloutComputation::into_output)
 }
 
-fn validate(input: &ExecutionInput, spending: &Spending) -> Result<ProductInputs, SimulationError> {
+fn validate(input: &ExecutionInput, spending: &Spending) -> Result<AgentHoldings, SimulationError> {
     ValidatedInput::new(input)?;
     let accounts = input
         .scenario
@@ -209,12 +210,12 @@ fn validate(input: &ExecutionInput, spending: &Spending) -> Result<ProductInputs
             )?;
         }
     }
-    Ok(ProductInputs::resolve(input, &spending.from.agent_id)?)
+    Ok(AgentHoldings::resolve(input, &spending.from.agent_id)?)
 }
 
 pub(super) struct Policy<'a> {
     spending: &'a Spending,
-    pub(super) inputs: &'a ProductInputs,
+    holdings: &'a AgentHoldings,
     decide: &'a mut dyn FnMut(Observation) -> Result<Money, SimulationError>,
 }
 
@@ -224,12 +225,18 @@ impl Policy<'_> {
         input: &ExecutionInput,
         rollout: u32,
         month: u32,
-        metrics: BaseMetrics,
+        ledger: &Ledger,
+        lots: &[LotState],
     ) -> Result<Option<ActiveObligation>, SimulationError> {
         let amount_due = (self.decide)(Observation {
             month,
-            cash: Money(metrics[crate::product::CASH]),
-            public_holdings: Money(metrics[crate::product::HOLDING]),
+            cash: self.holdings.cash(ledger)?,
+            public_holdings: self.holdings.public_value(
+                input,
+                lots.iter().map(LotState::view),
+                rollout,
+                month,
+            )?,
             price_level: Factor::new(
                 series_value(input, "inflation", rollout, month)?,
                 series_value(input, "inflation", rollout, 0)?,

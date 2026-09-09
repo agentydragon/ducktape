@@ -115,7 +115,7 @@ impl Policy<'_> {
         let spec = &input.scenario.target_allocation_policies[self.policy_index];
         let weights = (self.decide)(Observation {
             month,
-            cash: ledger.balance(&AccountRef::new(&spec.agent_id, &spec.account_id))?,
+            cash: cash_balance(ledger, [&AccountRef::new(&spec.agent_id, &spec.account_id)])?,
             sleeve_values: sleeve_holdings(input, rollout, month, lots, spec)?
                 .iter()
                 .map(|holding| Money(holding.value))

@@ -10,8 +10,9 @@
 use std::collections::BTreeMap;
 
 use crate::execution::{BondState, ExecutionInput, MortgageState, PropertyState};
-use crate::ledger::{AccountRef, Ledger};
-use crate::money::{Money, PerUnit, Quantity, Units};
+use crate::holdings::{AgentHoldings, HoldingsError, LotView};
+use crate::ledger::{Ledger, LedgerError};
+use crate::money::{Money, PerUnit};
 use crate::property::Valuation;
 
 /// Base metrics per snapshot, in `metric_composition.BASE_METRIC_NAMES` order.
@@ -30,8 +31,8 @@ pub const BASE_METRIC_COUNT: usize = BASE_METRIC_NAMES.len();
 /// One snapshot's base metrics, indexed by `BASE_METRIC_NAMES` position.
 pub type BaseMetrics = [i64; BASE_METRIC_COUNT];
 
-pub(crate) const CASH: usize = 0;
-pub(crate) const HOLDING: usize = 1;
+const CASH: usize = 0;
+const HOLDING: usize = 1;
 const PRIVATE_EQUITY: usize = 2;
 const PROPERTY: usize = 3;
 const MORTGAGE: usize = 4;
@@ -43,33 +44,21 @@ const BOND: usize = 6;
 /// snapshot of every rollout, where `engine::series_value`'s name scan would dominate.
 #[derive(Clone, Debug)]
 pub struct ProductInputs {
-    cash_accounts: Vec<AccountRef>,
-    /// `security:<asset_id>` row for each public asset the selected agent can hold.
-    public_series_by_asset: BTreeMap<String, usize>,
+    holdings: AgentHoldings,
     /// `private_equity_mark:<issuer>` row for each issuer the selected agent can hold.
     private_equity_mark_by_issuer: BTreeMap<String, usize>,
     /// Keyed by `property_id`; a property whose home-value series is absent is omitted and
     /// contributes nothing rather than reducing over a series that is not there.
     property_valuations: BTreeMap<String, Valuation>,
-    primary_agent_id: String,
 }
 
 impl ProductInputs {
     pub fn primary_agent_id(&self) -> &str {
-        &self.primary_agent_id
+        self.holdings.agent_id()
     }
 
     pub fn resolve(fixture: &ExecutionInput, primary_agent_id: &str) -> Result<Self, ProductError> {
-        if !fixture
-            .scenario
-            .accounts
-            .iter()
-            .any(|spec| spec.account.agent_id == primary_agent_id)
-        {
-            return Err(ProductError::UnknownPrimaryAgent {
-                agent_id: primary_agent_id.into(),
-            });
-        }
+        let holdings = AgentHoldings::resolve(fixture, primary_agent_id)?;
         let series_rows: BTreeMap<&str, usize> = fixture
             .series
             .iter()
@@ -77,15 +66,6 @@ impl ProductInputs {
             .map(|(row, series)| (series.series_id.as_str(), row))
             .collect();
 
-        let cash_accounts = fixture
-            .scenario
-            .accounts
-            .iter()
-            .filter(|spec| spec.account.agent_id == primary_agent_id)
-            .map(|spec| spec.account.clone())
-            .collect();
-
-        let mut public_series_by_asset = BTreeMap::new();
         let mut private_equity_mark_by_issuer = BTreeMap::new();
         let mut register_asset = |asset_id: &str| -> Result<(), ProductError> {
             if let Some(issuer_id) = asset_id
@@ -97,13 +77,7 @@ impl ProductInputs {
                     .get(series_id.as_str())
                     .ok_or(ProductError::MissingSeries { series_id })?;
                 private_equity_mark_by_issuer.insert(issuer_id.to_owned(), *row);
-                return Ok(());
             }
-            let series_id = format!("security:{asset_id}");
-            let row = series_rows
-                .get(series_id.as_str())
-                .ok_or(ProductError::MissingSeries { series_id })?;
-            public_series_by_asset.insert(asset_id.to_owned(), *row);
             Ok(())
         };
         for lot in &fixture.scenario.initial_lots {
@@ -132,11 +106,9 @@ impl ProductInputs {
             .collect();
 
         Ok(Self {
-            cash_accounts,
-            public_series_by_asset,
+            holdings,
             private_equity_mark_by_issuer,
             property_valuations,
-            primary_agent_id: primary_agent_id.to_owned(),
         })
     }
 }
@@ -145,8 +117,10 @@ impl ProductInputs {
 pub enum ProductError {
     #[error(transparent)]
     Property(#[from] crate::property::ValuationError),
-    #[error("scenario has no account for primary agent {agent_id:?}")]
-    UnknownPrimaryAgent { agent_id: String },
+    #[error(transparent)]
+    Holdings(#[from] HoldingsError),
+    #[error(transparent)]
+    Ledger(#[from] LedgerError),
     #[error("product metrics need series {series_id:?}, which the fixture does not supply")]
     MissingSeries { series_id: String },
     #[error("series {series_id:?} has no value at rollout {rollout} snapshot {snapshot}")]
@@ -177,14 +151,6 @@ fn series_at(
         })
 }
 
-/// One live lot, borrowed from the engine's own state for the duration of the reduction.
-pub struct LotView<'a> {
-    pub agent_id: &'a str,
-    pub asset_id: &'a str,
-    pub units_remaining: i64,
-    pub quantity_scale: i64,
-}
-
 /// What the reduction reads out of the live engine state at one snapshot.
 pub struct SnapshotState<'a> {
     pub ledger: &'a Ledger,
@@ -211,51 +177,34 @@ pub fn snapshot_metrics(
 ) -> Result<BaseMetrics, ProductError> {
     let mut metrics: BaseMetrics = [0; BASE_METRIC_COUNT];
 
-    for account in &inputs.cash_accounts {
-        let balance = state
-            .ledger
-            .balance(account)
-            .map(|money| money.0)
-            .unwrap_or(0);
-        metrics[CASH] =
-            metrics[CASH]
-                .checked_add(balance)
-                .ok_or(crate::money::ArithmeticError::Overflow {
-                    operation: "product cash total",
-                })?;
-    }
+    metrics[CASH] = inputs.holdings.cash(state.ledger)?.0;
+    metrics[HOLDING] = inputs
+        .holdings
+        .public_value(fixture, state.lots.iter().copied(), rollout, snapshot)?
+        .0;
 
     for lot in state.lots {
-        if lot.agent_id != inputs.primary_agent_id || lot.units_remaining == 0 {
+        if lot.agent_id != inputs.primary_agent_id() || lot.units_remaining == 0 {
             continue;
         }
-        let (slot, series_row) = match lot
+        let Some(issuer_id) = lot
             .asset_id
             .strip_prefix("private_equity:")
             .filter(|id| !id.is_empty())
-        {
-            Some(issuer_id) => match inputs.private_equity_mark_by_issuer.get(issuer_id) {
-                Some(row) => (PRIVATE_EQUITY, *row),
-                None => continue,
-            },
-            None => match inputs.public_series_by_asset.get(lot.asset_id) {
-                Some(row) => (HOLDING, *row),
-                None => continue,
-            },
+        else {
+            continue;
         };
-        let price = series_at(fixture, series_row, rollout, snapshot)?;
-        let value = PerUnit(price)
-            .times(
-                Units::new(Quantity(lot.units_remaining), lot.quantity_scale),
-                "product holding value",
-            )?
+        let Some(&row) = inputs.private_equity_mark_by_issuer.get(issuer_id) else {
+            continue;
+        };
+        let value = lot
+            .value(PerUnit(series_at(fixture, row, rollout, snapshot)?))?
             .0;
-        metrics[slot] =
-            metrics[slot]
-                .checked_add(value)
-                .ok_or(crate::money::ArithmeticError::Overflow {
-                    operation: "product holding total",
-                })?;
+        metrics[PRIVATE_EQUITY] = metrics[PRIVATE_EQUITY].checked_add(value).ok_or(
+            crate::money::ArithmeticError::Overflow {
+                operation: "product holding total",
+            },
+        )?;
     }
 
     for property in state.properties.iter().filter(|property| property.active) {
@@ -271,7 +220,7 @@ pub fn snapshot_metrics(
     }
 
     for mortgage in state.mortgages {
-        if mortgage.agent_id != inputs.primary_agent_id {
+        if mortgage.agent_id != inputs.primary_agent_id() {
             continue;
         }
         metrics[MORTGAGE] = metrics[MORTGAGE].checked_add(mortgage.principal.0).ok_or(
@@ -284,7 +233,7 @@ pub fn snapshot_metrics(
     metrics[SHORTFALL] = state.shortfall.0;
 
     for bond in state.bonds {
-        if bond.agent_id != inputs.primary_agent_id {
+        if bond.agent_id != inputs.primary_agent_id() {
             continue;
         }
         metrics[BOND] = metrics[BOND].checked_add(bond.principal.0).ok_or(

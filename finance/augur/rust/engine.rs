@@ -19,13 +19,14 @@ use crate::{
         RolloutSummary, SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual,
         TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
     },
+    holdings::{AgentHoldings, HoldingsError, LotView, cash_balance},
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{
         ArithmeticError, Factor, Money, PerUnit, PerUnitRate, Quantity, Units, WIRE_RATE_SCALE,
         is_quantity_scale, mul_div_i128_round_half_up, mul_div_round_half_up,
     },
     product::{
-        BaseMetrics, LotView, ProductError, ProductInputs, ProductMetricSeries, SnapshotState,
+        BaseMetrics, ProductError, ProductInputs, ProductMetricSeries, SnapshotState,
         snapshot_metrics,
     },
     tax::{
@@ -513,19 +514,7 @@ fn simulate_rollout(
         // Decide from opening-of-month holdings and current prices, before this month's
         // cashflows. The resulting demand is funded with the other monthly obligations.
         let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
-            let metrics = product_snapshot(
-                fixture,
-                policy.inputs,
-                rollout_id,
-                month,
-                &ledger,
-                &lots,
-                &properties,
-                &mortgages,
-                Money(0),
-                false,
-            )?;
-            policy.obligation(fixture, rollout_id, month, metrics)?
+            policy.obligation(fixture, rollout_id, month, &ledger, &lots)?
         } else {
             None
         };
@@ -813,15 +802,7 @@ fn product_snapshot(
     shortfall: Money,
     failed: bool,
 ) -> Result<BaseMetrics, SimulationError> {
-    let lot_views: Vec<LotView<'_>> = lots
-        .iter()
-        .map(|lot| LotView {
-            agent_id: &lot.spec.agent_id,
-            asset_id: &lot.spec.asset_id,
-            units_remaining: lot.units_remaining.0,
-            quantity_scale: lot.spec.quantity_scale,
-        })
-        .collect();
+    let lot_views: Vec<_> = lots.iter().map(LotState::view).collect();
     let valuation_month = if failed { snapshot - 1 } else { snapshot };
     let bonds = bond_states(fixture, rollout_id, valuation_month)?;
     let state = SnapshotState {

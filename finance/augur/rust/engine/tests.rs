@@ -519,6 +519,176 @@ fn allocation_fixture(horizon_months: u32) -> ExecutionInput {
     input
 }
 
+fn scoped_observation_fixture() -> (ExecutionInput, spending::Spending) {
+    let (mut input, spending) = policy_timing_fixture(3);
+    input.scenario.accounts[0].opening_balance = Money(100);
+    for (agent, account, cash) in [("alice", "reserve", 900), ("bob", "checking", 5_000)] {
+        input.scenario.accounts.push(AccountSpec {
+            account: AccountRef::new(agent, account),
+            opening_balance: Money(cash),
+        });
+    }
+    input.scenario.initial_lots = [
+        ("half-a", "alice", "checking", "stock", 5),
+        ("half-b", "alice", "checking", "stock", 5),
+        ("second", "alice", "checking", "second", 4),
+        ("reserve", "alice", "reserve", "stock", 5),
+        ("other-actor", "bob", "checking", "stock", 1_000),
+    ]
+    .into_iter()
+    .map(|(id, agent, account, asset, units)| InitialLotSpec {
+        lot_id: id.into(),
+        agent_id: agent.into(),
+        account_id: account.into(),
+        asset_id: asset.into(),
+        purchase_month: -24,
+        quantity_scale: 10,
+        units: Quantity(units),
+        basis: Money(0),
+    })
+    .collect();
+    input.series[0].values = vec![1_000_000_000, 1_500_000_000, 2_000_000_000, 3_000_000_000];
+    input.series[1].values = vec![1, 3, 5, 7];
+    input.series.push(SeriesSpec {
+        series_id: "security:second".into(),
+        snapshots: 4,
+        values: vec![2, 4, 6, 8],
+    });
+    input.scenario.target_allocation_policies[0].sleeves = ["stock", "second"]
+        .into_iter()
+        .map(|asset| SleeveTargetSpec {
+            asset_id: asset.into(),
+            weight: 1,
+            quantity_scale: 10,
+        })
+        .collect();
+    (input, spending)
+}
+
+#[test]
+fn scoped_observations_match_output_at_same_marks_and_round_each_lot() {
+    let (mut input, spending) = scoped_observation_fixture();
+    let metrics = simulate_product_metrics(&input, "alice").unwrap();
+    // Three half-share stock lots at price 1 each round to 1; the second sleeve
+    // rounds 0.8 to 1. Summing stock quantities first would instead report 3 total.
+    assert_eq!(metrics.base_series[0], vec![1_000; 4]);
+    assert_eq!(metrics.base_series[1], vec![4, 8, 11, 15]);
+    let baseline = simulate(&input).unwrap();
+    let spending_output = spending::simulate(&input, &spending, |_| {
+        |observation| {
+            let month = observation.month as usize;
+            assert_eq!(observation.cash.0, metrics.base_series[0][month]);
+            assert_eq!(observation.public_holdings.0, metrics.base_series[1][month]);
+            assert_eq!(
+                Money(2)
+                    .scaled_by(observation.price_level, "test CPI")
+                    .unwrap(),
+                Money([2, 3, 4][month])
+            );
+            Ok(Money(0))
+        }
+    })
+    .unwrap();
+    assert_eq!(spending_output, baseline);
+    for include_reserve in [false, true] {
+        input.scenario.target_allocation_policies[0].source_account_ids = if include_reserve {
+            vec!["checking".into(), "reserve".into()]
+        } else {
+            vec!["checking".into()]
+        };
+        let output = allocation::simulate(&input, &spending.from, &[0], |_| {
+            |observation| {
+                let month = observation.month as usize;
+                let account_cash = baseline.rollouts[0].months[month]
+                    .balances
+                    .iter()
+                    .find(|row| row.account == spending.from)
+                    .unwrap()
+                    .balance;
+                assert_eq!(observation.cash, account_cash);
+                assert_eq!(observation.cash, Money(100));
+                let reserve = [1, 2, 3][month];
+                assert_eq!(
+                    observation.sleeve_values[0],
+                    Money(reserve * if include_reserve { 3 } else { 2 })
+                );
+                assert_eq!(observation.sleeve_values[1], Money([1, 2, 2][month]));
+                assert_eq!(
+                    observation
+                        .sleeve_values
+                        .iter()
+                        .map(|value| value.0)
+                        .sum::<i64>(),
+                    metrics.base_series[1][month] - if include_reserve { 0 } else { reserve }
+                );
+                Ok(vec![1, 1])
+            }
+        })
+        .unwrap();
+        assert_eq!(output, baseline);
+    }
+}
+
+#[test]
+fn spending_observations_do_not_read_future_prices_or_cpi() {
+    let (input, spending) = scoped_observation_fixture();
+    let mut changed_future = input.clone();
+    for series in &mut changed_future.series {
+        for value in &mut series.values[2..] {
+            *value *= 2;
+        }
+    }
+    let make_policy = |_| {
+        |observation: spending::Observation| {
+            observation
+                .public_holdings
+                .scaled_by(observation.price_level, "test budget")
+                .map_err(Into::into)
+        }
+    };
+    let baseline = spending::simulate(&input, &spending, make_policy).unwrap();
+    let changed = spending::simulate(&changed_future, &spending, make_policy).unwrap();
+    assert_eq!(
+        baseline.rollouts[0].obligations[..2],
+        changed.rollouts[0].obligations[..2]
+    );
+    assert_eq!(
+        baseline.rollouts[0].months[..3],
+        changed.rollouts[0].months[..3]
+    );
+    assert_ne!(
+        baseline.rollouts[0].obligations[2].amount_due,
+        changed.rollouts[0].obligations[2].amount_due
+    );
+    for (fixture, output) in [(&input, baseline), (&changed_future, changed)] {
+        assert_eq!(
+            spending::trace_rollout(fixture, &spending, 0, make_policy).unwrap(),
+            output.rollouts[0]
+        );
+    }
+}
+
+#[test]
+fn spending_scope_rejects_unpriced_public_positions_before_policy_construction() {
+    let (mut input, spending) = scoped_observation_fixture();
+    input.scenario.target_allocation_policies.clear();
+    input
+        .series
+        .retain(|series| series.series_id != "security:second");
+    assert!(matches!(
+        spending::simulate(&input, &spending,
+            |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
+                panic!("unpriced holdings must reject before constructing a policy")
+            }),
+        Err(SimulationError::Holdings(HoldingsError::MissingSeries { series_id }))
+            if series_id == "security:second"
+    ));
+    assert!(matches!(
+        AgentHoldings::resolve(&input, "absent-actor"),
+        Err(HoldingsError::UnknownAgent { .. })
+    ));
+}
+
 fn allocation_tax_and_consumption_fixture() -> ExecutionInput {
     let mut input = allocation_fixture(13);
     input
@@ -1215,6 +1385,15 @@ fn stopped_books_preserve_positions_debt_tax_and_other_group_consumption() {
         let make_policy = |_| {
             |observation: spending::Observation| {
                 assert!(observation.month <= 12);
+                // Neither the private lot, individual bond nor house belongs in this view.
+                assert_eq!(
+                    observation.public_holdings,
+                    Money(if observation.month == 0 {
+                        100_000
+                    } else {
+                        99_000
+                    })
+                );
                 Ok(Money(if observation.month == 12 { 300 } else { 0 }))
             }
         };

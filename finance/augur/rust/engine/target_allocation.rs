@@ -431,10 +431,7 @@ pub(super) fn sleeve_holdings(
                     })
             })?;
             let value = sleeve_lots.iter().try_fold(Money(0), |sum, lot| {
-                sum.checked_add(PerUnit(price).times(
-                    Units::new(lot.units_remaining, lot.spec.quantity_scale),
-                    "target-allocation sleeve value",
-                )?)
+                sum.checked_add(lot.view().value(PerUnit(price))?)
             })?;
             Ok(SleeveHolding {
                 value: value.0,

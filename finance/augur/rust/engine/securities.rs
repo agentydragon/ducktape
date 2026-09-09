@@ -10,6 +10,17 @@ pub(super) struct LotState {
     pub(super) basis_remaining: Money,
 }
 
+impl LotState {
+    pub(super) fn view(&self) -> LotView<'_> {
+        LotView {
+            agent_id: &self.spec.agent_id,
+            asset_id: &self.spec.asset_id,
+            units_remaining: self.units_remaining.0,
+            quantity_scale: self.spec.quantity_scale,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct PlannedDisposition {
     pub(super) lot_index: usize,

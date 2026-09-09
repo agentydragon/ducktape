@@ -68,6 +68,17 @@ arithmetic and full exits remain unsupported. Missing sleeve prices reject, not
 zero-fill. A new target still follows the configured cash-band and quiet-band
 drift conventions below, rather than forcing an immediate full rebalance.
 
+## Scoped holdings
+
+`holdings.rs` reads canonical books without a reporting layout. `AgentHoldings`
+resolves an actor's declared cash accounts and public price rows once; spending
+observations and product capture use that scope. Allocation instead selects its
+funding account and declared source pools/sleeves. A borrowed `LotView` shares
+per-lot valuation: round each lot to currency quanta before adding values.
+Neither scope implies after-tax liquidation proceeds. Callers supply the observed
+mark month; a stopped book uses its failure-event marks, never future prices.
+CPI in the spending observation is current inflation relative to path origin.
+
 ## Covered behavior
 
 The acceptance suites in `sim/testing/` assert exact integer answers for:

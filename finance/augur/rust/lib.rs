@@ -8,6 +8,7 @@ pub mod allocation;
 pub mod engine;
 pub mod event_frames;
 pub mod execution;
+pub mod holdings;
 pub mod ledger;
 pub mod money;
 pub mod product;
