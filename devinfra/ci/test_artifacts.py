@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest_bazel
 
@@ -14,7 +13,7 @@ def test_artifacts_are_derived_from_release_metadata() -> None:
     assert len(artifacts) == len(ARTIFACTS)
     assert set(artifacts) == set(targets) | {skill["pkg"] for skill in skills}
     for pkg, target in targets.items():
-        assert artifacts[pkg].filename == Path(target.output).name
+        assert artifacts[pkg].filename == target.filename
         assert artifacts[pkg].release_tag_prefix == target.release
     for skill in skills:
         assert artifacts[skill["pkg"]].filename == skill["filename"]

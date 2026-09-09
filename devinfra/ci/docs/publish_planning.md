@@ -51,6 +51,13 @@ or basename guess resolves to a different image's file, quietly. Where only a
 path is available, it is `pathPrefix` + `name`: a source file and the generated
 file of the same name differ only by prefix.
 
+The publish side resolves the same way: `artifact_targets.json` names targets
+and released filenames, never Bazel output paths, and after each build
+`release_assets.py` reads that build's own stream to find where the assets
+landed (`bes.artifact_output` — the one default-group, non-aspect file a label
+reports; bazel-ci's lint aspects complete report files under the same label).
+Unlike the planner it fails loud, because it runs in the job about to publish.
+
 ## The planner fails open; the push job does not
 
 `release` and `push-images` run under `always() && !cancelled()`, so they run

@@ -2,52 +2,52 @@
   "pins": {
     "ducktape": {
       "target": "//:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape-0.1.0-py3-none-any.whl",
+      "filename": "ducktape-0.1.0-py3-none-any.whl",
       "release": "ducktape"
     },
     "bbr": {
       "target": "//:bbr_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
+      "filename": "bbr-0.1.0-py3-none-any.whl",
       "release": "bbr"
     },
     "hakuctl": {
       "target": "//haku/hakuctl:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/hakuctl/hakuctl-0.1.0-py3-none-any.whl",
+      "filename": "hakuctl-0.1.0-py3-none-any.whl",
       "release": "hakuctl"
     },
     "claude-hooks": {
       "target": "//:claude_hooks_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl",
+      "filename": "claude_hooks-0.1.0-py3-none-any.whl",
       "release": "claude-hooks"
     },
     "ducktape-git-hooks": {
       "target": "//:ducktape_git_hooks_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl",
+      "filename": "ducktape_git_hooks-0.1.0-py3-none-any.whl",
       "release": "ducktape-git-hooks"
     },
     "ducktape-util": {
       "target": "//util:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl",
+      "filename": "ducktape_util-0.1.0-py3-none-any.whl",
       "release": "ducktape-util"
     },
     "gterm-theme": {
       "target": "//gnome/gterm_theme:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl",
+      "filename": "gterm_theme-0.1.0-py3-none-any.whl",
       "release": "gterm-theme"
     },
     "aiquota": {
       "target": "//aiquota:aiquota_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl",
+      "filename": "aiquota-0.1.0-py3-none-any.whl",
       "release": "aiquota"
     },
     "aiquota-extension": {
       "target": "//aiquota/gnome:aiquota_zip",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
+      "filename": "aiquota.zip",
       "release": "aiquota"
     },
     "haku-approvals": {
       "target": "//haku/console/gnome:haku_approvals_zip",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/console/gnome/haku-approvals.zip",
+      "filename": "haku-approvals.zip",
       "release": "haku-approvals"
     },
     "haku-runner": {
@@ -57,32 +57,32 @@
     },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
+      "filename": "bbapi",
       "release": "bbapi"
     },
     "claude-hook-rs": {
       "target": "//devinfra/claude/claude_hook:claude_hook",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook",
+      "filename": "claude_hook",
       "release": "claude-hook-rs"
     },
     "hostexecd": {
       "target": "//haku/hostexec/hostexecd:hostexecd",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/hostexec/hostexecd/hostexecd",
+      "filename": "hostexecd",
       "release": "hostexecd"
     },
     "debundle": {
       "target": "//devinfra/js/debundle:debundle",
-      "output": "bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle",
+      "filename": "debundle",
       "release": "debundle"
     },
     "aw-importer": {
       "target": "@ducktape_activitywatch//importer:aw_importer_bin",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/external/ducktape_activitywatch+/importer/aw_importer_bin",
+      "filename": "aw_importer_bin",
       "release": "aw-importer"
     },
     "gazelle": {
       "target": "//devinfra:gazelle_python_binary",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gazelle_python_binary_/gazelle_python_binary",
+      "filename": "gazelle_python_binary",
       "release": "gazelle"
     }
   },

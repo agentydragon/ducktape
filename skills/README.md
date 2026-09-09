@@ -27,7 +27,7 @@ to Bazel/release/pin identifiers:
 
 - `name` — the skill (also the `.skill` subdir and its `~/.claude/skills/` dir)
 - `pkg` — its release/tag/pin name, always `skill-<name>`
-- `target` / `output` — the `skill_package` archive target and its `bb-out/` path
+- `target` — the `skill_package` archive target
 - `filename` — the release asset, always `<name>.skill`
 
 Consumed by `.github/workflows/release.yml` (release matrix),
