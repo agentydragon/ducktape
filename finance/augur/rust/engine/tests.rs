@@ -327,6 +327,249 @@ fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
     ));
 }
 
+/// One deterministic path: $100 cash and $1,000 of stock with $500 basis.
+/// Prices/CPI are constant; no fees, distributions, housing or borrowing.
+fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, spending::Spending) {
+    let (mut input, spending) = spending_fixture();
+    input.rollout_count = 1;
+    input.scenario.horizon_months = horizon_months;
+    input.scenario.accounts[0].opening_balance = Money(10_000);
+    input.series[0].snapshots = horizon_months + 1;
+    input.series[0].values = vec![WIRE_RATE_SCALE; horizon_months as usize + 1];
+    input.scenario.initial_lots.push(InitialLotSpec {
+        lot_id: "timing-stock".into(),
+        agent_id: "alice".into(),
+        account_id: "checking".into(),
+        asset_id: "stock".into(),
+        purchase_month: -24,
+        quantity_scale: 1_000_000,
+        units: Quantity(100_000_000),
+        basis: Money(50_000),
+    });
+    input.series.push(SeriesSpec {
+        series_id: "security:stock".into(),
+        snapshots: horizon_months + 1,
+        values: vec![1_000; horizon_months as usize + 1],
+    });
+    input
+        .scenario
+        .target_allocation_policies
+        .push(TargetAllocationPolicySpec {
+            agent_id: "alice".into(),
+            account_id: "checking".into(),
+            source_account_ids: vec!["checking".into()],
+            sleeves: vec![SleeveTargetSpec {
+                asset_id: "stock".into(),
+                weight: 1,
+                quantity_scale: 1_000_000,
+            }],
+            cash_floor: Money(0).into(),
+            cash_ceiling: Money(0).into(),
+            cause_id_prefix: "timing-funding".into(),
+            allow_purchases: false,
+            rebalance_tolerance_ppb: None,
+        });
+    (input, spending)
+}
+
+#[test]
+fn policy_timing_guardrail_and_unpaid_consumption() {
+    let (mut input, spending) = policy_timing_fixture(1);
+    input.scenario.obligations.push(ObligationSpec {
+        month: 0,
+        obligation_id: "existing-rent".into(),
+        obligation_type: "outside_rent".into(),
+        from: spending.from.clone(),
+        to: spending.to.clone(),
+        amount_due: Money(70_000).into(),
+        property_id: None,
+        deduction_category: None,
+        deductible_fraction_ppb: WIRE_RATE_SCALE,
+    });
+    for allow_cut in [false, true] {
+        let rollout = spending::simulate(&input, &spending, |_| {
+            move |observation| {
+                assert_eq!(observation.month, 0);
+                assert_eq!(observation.cash, Money(10_000));
+                assert_eq!(observation.public_holdings, Money(100_000));
+                let gross_wealth = observation.cash.checked_add(observation.public_holdings)?;
+                Ok(if allow_cut && gross_wealth < Money(120_000) {
+                    Money(30_000)
+                } else {
+                    Money(50_000)
+                })
+            }
+        })
+        .unwrap()
+        .rollouts
+        .remove(0);
+        assert_eq!(rollout.failed_month, if allow_cut { None } else { Some(0) });
+        let consumption = rollout
+            .obligations
+            .iter()
+            .find(|row| row.cause_id == "consumption_m0")
+            .unwrap();
+        assert_eq!(
+            consumption.amount_due,
+            Money(if allow_cut { 30_000 } else { 50_000 })
+        );
+        assert_eq!(
+            consumption.amount_paid,
+            Money(if allow_cut { 30_000 } else { 0 })
+        );
+        assert_eq!(
+            consumption.shortfall,
+            Money(if allow_cut { 0 } else { 50_000 })
+        );
+        let rent = rollout
+            .obligations
+            .iter()
+            .find(|row| row.cause_id == "existing-rent_m0")
+            .unwrap();
+        assert_eq!(rent.amount_due, Money(70_000));
+        assert_eq!(rent.amount_paid, Money(if allow_cut { 70_000 } else { 0 }));
+        // Funding sales precede the group decision and are not rolled back on failure.
+        assert_eq!(
+            rollout
+                .dispositions
+                .iter()
+                .map(|row| row.proceeds.0)
+                .sum::<i64>(),
+            if allow_cut { 90_000 } else { 100_000 }
+        );
+        assert!(rollout.tax_payments.is_empty());
+    }
+}
+
+#[test]
+fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
+    let (mut input, spending) = policy_timing_fixture(13);
+    input
+        .scenario
+        .scheduled_transfers
+        .push(ScheduledTransferSpec {
+            month: 12,
+            cause_id: "test-cash-contribution".into(),
+            from: spending.to.clone(),
+            to: spending.from.clone(),
+            amount: Money(10_000).into(),
+            income_category: None,
+            deduction_category: None,
+        });
+    // Synthetic flat taxes test timing, not any real jurisdiction's rules.
+    input.scenario.tax_profiles.push(TaxProfileSpec {
+        agent_id: "alice".into(),
+        tax_authority_agent_id: "world".into(),
+        payment_account_id: "checking".into(),
+        tax_authority_account_id: "checking".into(),
+        prior_year_tax: Money(0),
+        section_121_exclusion: Money(0),
+        jurisdictions: vec![TaxRules {
+            jurisdiction_id: "test-timing".into(),
+            exempt_interest_from_levels: vec![],
+            exempts_own_issue: false,
+            ordinary_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 200_000_000,
+            }],
+            long_term_capital_gain_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 100_000_000,
+            }],
+            standard_deduction: Money(0),
+            max_capital_loss_ordinary_offset: Money(0),
+            section_1250_rate_ppb: 0,
+        }],
+    });
+    for reinvest_surplus in [false, true] {
+        input.scenario.target_allocation_policies[0].allow_purchases = reinvest_surplus;
+        let rollout = spending::simulate(&input, &spending, |_| {
+            |observation| {
+                assert_eq!(
+                    observation.cash,
+                    Money(if observation.month == 0 { 10_000 } else { 0 })
+                );
+                assert_eq!(
+                    observation.public_holdings,
+                    Money(if observation.month == 0 {
+                        100_000
+                    } else {
+                        60_000
+                    })
+                );
+                // The month-12 observation precedes that month's $100 contribution.
+                Ok(Money(match observation.month {
+                    0 => 50_000,
+                    12 => 5_000,
+                    _ => 0,
+                }))
+            }
+        })
+        .unwrap()
+        .rollouts
+        .remove(0);
+        assert_eq!(rollout.failed_month, None);
+        assert_eq!(
+            rollout
+                .dispositions
+                .iter()
+                .map(|row| (row.month, row.proceeds, row.basis, row.realized_gain))
+                .collect::<Vec<_>>(),
+            vec![(0, Money(40_000), Money(20_000), Money(20_000))]
+        );
+        assert_eq!(
+            rollout
+                .tax_accruals
+                .iter()
+                .map(|row| (row.month, row.total_tax))
+                .collect::<Vec<_>>(),
+            vec![(11, Money(2_000))]
+        );
+        assert_eq!(
+            rollout
+                .tax_payments
+                .iter()
+                .map(|row| (row.month, row.amount_paid))
+                .collect::<Vec<_>>(),
+            vec![(12, Money(2_000))]
+        );
+        assert_eq!(
+            rollout
+                .obligations
+                .iter()
+                .filter(|row| row.obligation_type == "cash_spend")
+                .map(|row| (row.month, row.amount_due, row.amount_paid))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, Money(50_000), Money(50_000)),
+                (12, Money(5_000), Money(5_000))
+            ]
+        );
+        let final_month = rollout.months.last().unwrap();
+        assert_eq!(
+            final_month
+                .balances
+                .iter()
+                .find(|row| row.account == spending.from)
+                .unwrap()
+                .balance,
+            Money(if reinvest_surplus { 0 } else { 3_000 })
+        );
+        let new_lots = final_month
+            .lots
+            .iter()
+            .filter(|lot| lot.purchase_month == 12)
+            .collect::<Vec<_>>();
+        if reinvest_surplus {
+            assert_eq!(new_lots.len(), 1);
+            assert_eq!(new_lots[0].units_remaining, Quantity(3_000_000));
+            assert_eq!(new_lots[0].basis_remaining, Money(3_000));
+        } else {
+            assert!(new_lots.is_empty());
+        }
+    }
+}
+
 #[test]
 fn rejects_invalid_fixture_metadata() {
     let mut fixture = minimal_fixture();

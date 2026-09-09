@@ -1,0 +1,113 @@
+# Policy timing: executable cases and remaining choices
+
+Inputs to **GP** in [the landing plan](roadmap.md). The tests below exercise current
+canonical execution; the proposed interface decisions remain open. This PR changes
+no financial behavior and does not implement compact consumption metrics (OUT).
+
+## Name the cashflows, not just “spending”
+
+Proposed reporting terms, not new runtime fields:
+
+| Term                    | Meaning                                                                                  | Not equivalent to                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `asset_sale_proceeds`   | Gross cash raised by asset sales; separate fees when modeled.                            | Realized gain, consumption, or all cash available.                                                   |
+| `consumption_requested` | Demand for an identified consumption component; here, the policy's discretionary budget. | A sale order, tax-inclusive funding requirement, or an unchosen lifestyle anchor.                    |
+| `consumption_paid`      | The amount settled for that same demand.                                                 | All non-tax outflows: purchases, principal repayments and own-account transfers are not consumption. |
+| `tax_paid`              | Cash paid to taxing authorities, with refunds/prepayments separately identifiable.       | Tax accrued, taxable income, or money spent on the chosen lifestyle.                                 |
+| `contract_payments`     | Payments due under existing commitments, with their own categories.                      | Entirely consumption: rent and interest differ from loan principal.                                  |
+
+For the current spending hook, `consumption_requested` is its return value and
+`consumption_paid` is that demand's `ObligationOutcome.amount_paid`, identified by
+its cause ID. A policy requesting zero emits no obligation row. Do not derive
+consumption by subtracting taxes from sale proceeds or summing all transfers to
+an outside actor. A broader lifestyle-consumption measure must explicitly combine
+policy consumption with eligible contract categories without counting principal
+or double-counting rent already included in a budget.
+
+These examples use nominal USD cents, one supplied deterministic path, constant
+prices/CPI, zero cash bands, cashflow-only allocation and no fees, distributions,
+borrowing or housing assets. The figures are synthetic accounting controls, not
+forecast results. The tax example's flat rates are not a jurisdiction's statutes.
+
+## Case A: a deliberate cut versus an unfunded request
+
+`rust/engine/tests.rs::policy_timing_guardrail_and_unpaid_consumption` starts with
+$100 cash and $1,000 of sellable stock; an existing $700 rent demand is due in
+month 0. The policy's consumption component excludes rent; rent is also household
+consumption, despite being committed. Taxes are explicitly absent. Compare a $500 request with an executable
+rule that cuts it to $300 when opening gross wealth is below $1,200.
+
+| Month-0 quantity                          |        Rigid policy |          Cut enabled |
+| ----------------------------------------- | ------------------: | -------------------: |
+| `consumption_requested`                   |                $500 |                 $300 |
+| `asset_sale_proceeds`                     |              $1,000 |                 $900 |
+| Cash after funding sales, before payments |              $1,100 |               $1,000 |
+| `consumption_paid`                        |                  $0 |                 $300 |
+| Rent paid                                 |                  $0 |                 $700 |
+| Outcome                                   | Funding group fails | Both payments settle |
+
+The rigid policy is only $100 short of funding the whole group, but has $500 of
+unpaid consumption and $700 of unpaid rent. Those quantities answer different
+questions. Current same-source all-or-none settlement does not partially pay
+consumption or prioritize rent, and does not undo the preceding funding sale.
+The cut is a different decision before funding, not an automatic response invented
+by settlement. Failed paths receive no future spending callbacks; existing tests
+also cover deliberate zero requests and stopping after failure.
+
+## Case B: consumption, tax payment and surplus investment
+
+`rust/engine/tests.rs::policy_timing_surplus_investment_reserves_tax_and_consumption` starts
+from the same $100 cash and $1,000 stock, with $500 basis. No rent. The synthetic
+tax profile charges long-term gains at 10%, ordinary income at 20%, no deduction,
+and no prior-year tax target. Compare investing surplus versus leaving it in cash
+using today's `allow_purchases` choice. It is **not** a within-path target-allocation
+callback, which POL has yet to supply.
+
+| Event month | Observation/decision                                              | Execution                                                                                                                                       |
+| ----------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0           | Policy sees $100 cash/$1,000 stock and requests $500 consumption. | Sell $400, using $200 basis and realizing $200 gain. Pay $500 consumption. No tax payment yet.                                                  |
+| 1–10        | Policy sees $0 cash/$600 stock; requests zero.                    | No additional sales or consumption.                                                                                                             |
+| 11          | Same observation and zero request.                                | Accrue $20 tax on the $200 gain at year-end. Accrual is not a cash payment.                                                                     |
+| 12          | Policy still sees $0 cash/$600 stock and requests $50.            | A supplied $100 nontaxable contribution arrives after the observation. Pay $50 consumption and $20 tax; only the remaining $30 can be invested. |
+
+Both arms pay $550 consumption and $20 tax. With reinvestment enabled the last
+snapshot has a new $30-basis lot and no cash; otherwise it has $30 cash and no new
+lot. Payment timing here is **current synthetic engine behavior**, not a claim
+that January true-up represents statutory filing/payment deadlines. The
+[tax checklist](tax_coverage.md) tracks that gap separately.
+
+The current engine phase order is: observe opening holdings at current prices → apply current
+cashflows/events → assemble demands → funding sales → grouped settlement → surplus
+purchases → year-end assessment when due. A failed group stops subsequent
+purchases, but is not a rollback of every action earlier in the month.
+
+Run the two cases without network evidence downloads:
+
+```bash
+bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
+```
+
+## GP decisions to settle before POL
+
+- **Observation time/content.** Keep the existing opening-of-month view for
+  native spending parity. The allocation decision needs its declared decision
+  point, current holdings/cash, and due commitments/taxes; do not pass the sampled
+  future. Known contract schedules are not future market observations. Decide
+  whether same-month distributions/transfers are visible before a joint review.
+- **Proposal versus execution.** A budget and an allocation target/order are
+  requests. Shared mechanics determine funded consumption, realized lots/gains,
+  tax facts and accepted actions. If a policy needs a funding/tax preview, it must
+  use those same mechanics, not duplicate them.
+- **Commitments and priority.** Preserve current grouping in the initial seam.
+  Giving rent/taxes priority, permitting partial consumption, retrying with a cut
+  or modeling recovery changes results and needs a separate explicit contract.
+  Requests that look affordable against gross wealth can still fail settlement.
+- **Decision memory and receipts.** State is local to a rollout. Decide which
+  changes commit on proposal versus on successful settlement. Record meaningful
+  cuts/anchor transitions separately from payment receipts so equal-cost anchors
+  remain distinguishable; do not serialize arbitrary closure internals.
+
+Proposed first POL slice: reproduce today's static allocation on a callable seam,
+then add a constant-versus-glide-path consumer with those timing/state choices
+explicit. The two cases above constrain parity but do not prescribe all future
+study conventions. GP remains open until the choices are accepted.
