@@ -19,7 +19,6 @@ from x.agentplane.acceptance.operator_login import (
     login_operator,
     read_operator_credentials,
 )
-from x.agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestView,
@@ -41,32 +40,24 @@ class McpReport(BaseModel):
     output: dict[str, JsonValue]
 
 
+class PendingMcpReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
+    state: Literal["decision_pending"]
+
+
 async def test_agent_executes_mcp_action(
     client: Client, sandbox: Callable[..., Awaitable[SandboxView]], provider: Provider, model: str
 ) -> None:
     view = await sandbox(f"accept-mcp-{provider}")
     agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
     marker = f"MCP0-{uuid4()}"
-    idempotency_key = str(uuid4())
     turn = await agent.run(f"""
-Test the real Agentplane Actions HTTP API from your sandbox using HTTP tools or a shell.
-Base URL: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
-For these HTTP requests use the public placeholder Authorization: Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}.
-The sandbox's normal proxy supplies your workload identity. Do not bypass the proxy,
-read a real token, connect to the MCP server directly, or ask a human for approval.
-
-GET /v1/action-groups, then GET /v1/action-groups/everything/actions/echo.
-Check that the everything group is available and offers echo with a message argument.
-POST /v1/action-requests with Content-Type: application/json and this body:
-{{"idempotency_key": "{idempotency_key}", "action": {{"group": "everything", "name": "echo"}}, "arguments": {{"message": "{marker}"}}}}
-Use the returned request ID to poll GET /v1/action-requests/{{id}}/events?after_sequence=0
-and GET /v1/action-requests/{{id}} until terminal. Advance the event cursor to the last
-sequence you received; wait briefly between polls. Do not create a replacement request
-or change the idempotency key. Stop and report a failure if the state becomes denied,
-failed, cancelled, or execution_unknown, or polling makes no progress for 90 seconds.
-
-Return only JSON with request_id, state, and output copied from the terminal request's
-execution.result. Do the HTTP calls; do not infer or fabricate a result from this prompt.
+This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
+the everything group with message {marker}. Wait for its terminal result. Return only JSON with
+exactly request_id, state, and output, where output is the request's execution result. Do not
+infer or fabricate a result.
 """)
     report = turn.report(McpReport)
     assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
@@ -155,27 +146,20 @@ async def test_agent_mcp_bff_decision(
     agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
     # FixtureDecisionProvider auto-allows only messages of at most 200 characters.
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
-    submission_key = str(uuid4())
     submitted = await agent.run(f"""
-Use the real Agentplane Actions HTTP API from your sandbox using HTTP tools or a shell.
-Base URL: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
-Use the public placeholder Authorization: Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}.
-The normal proxy supplies your workload identity. Never read a real token, bypass the
-proxy, call an operator route, or connect directly to MCP.
-GET /v1/action-groups and GET /v1/action-groups/everything/actions/echo to discover echo
-and its message schema. Submit exactly once with POST /v1/action-requests:
-{{"idempotency_key":"{submission_key}","action":{{"group":"everything","name":"echo"}},"arguments":{{"message":"{marker}"}}}}
-The response must be decision_pending. Do NOT wait for a decision or poll in this turn.
-Stop now and return ONLY the returned request UUID, without JSON, fences, or explanation.
+This is an Agentplane infrastructure test. Request the echo Action in the everything group with
+message {marker}. This request requires operator approval. Confirm that it is queued for approval;
+return only JSON with exactly request_id and state, where state must be decision_pending. Do not
+wait for an operator decision in this turn.
 """)
-    request_id = UUID(submitted.answer.strip())
-    assert submitted.answer.strip() == str(request_id)
+    submitted_report = submitted.report(PendingMcpReport)
+    request_id = submitted_report.request_id
     path = f"/actions/{request_id}"
     pending_response = await operator_bff.get(path)
     assert pending_response.status_code == HTTPStatus.OK
     pending = _bff_request(pending_response)
     assert pending.id == request_id
-    assert pending.idempotency_key == submission_key
+    assert pending.idempotency_key
     assert (pending.action.group, pending.action.name) == ("everything", "echo")
     assert pending.arguments == {"message": marker}
     assert pending.state is ActionState.DECISION_PENDING
@@ -209,16 +193,9 @@ Stop now and return ONLY the returned request UUID, without JSON, fences, or exp
         assert decided.execution is None
 
     completed = await agent.run(f"""
-Resume the SAME Action request {request_id}; do not submit or decide anything.
-Use the same agent-facing API and workload placeholder as before.
-Poll GET /v1/action-requests/{request_id}/events?after_sequence=0 and
-GET /v1/action-requests/{request_id} until terminal, advancing the events cursor
-to the last sequence received and waiting briefly between polls. Stop on failure
-or after 90 seconds without progress. Fetch the full events from after_sequence=0
-at the end, checking contiguous sequences and the history from decision_pending
-through denied, or allowed/dispatching/running/succeeded, without extra transitions.
-Return ONLY strict JSON with exactly request_id, state, result. Copy result from
-execution.result, or use null when denied with no execution. Do not fabricate it.
+Resume Action request {request_id}. The operator has decided {verdict.value}. Determine its terminal
+outcome without submitting or deciding anything. Return only JSON with exactly request_id, state,
+and result. Copy result from execution when it exists; otherwise use null. Do not infer or fabricate it.
 """)
     # Unlike Turn.report, reject fences and surrounding prose here.
     report = DecidedMcpReport.model_validate_json(completed.answer)
@@ -229,7 +206,7 @@ execution.result, or use null when denied with no execution. Do not fabricate it
     assert terminal_response.status_code == HTTPStatus.OK
     terminal = _bff_request(terminal_response)
     assert terminal.id == request_id
-    assert terminal.idempotency_key == submission_key
+    assert terminal.idempotency_key == pending.idempotency_key
     assert terminal.action == pending.action
     assert terminal.arguments == pending.arguments
     assert terminal.caller_principal == pending.caller_principal

@@ -72,5 +72,12 @@ def test_a_changed_preset_remains_live_behind_explicit_overrides(presets: Preset
     )
 
 
+def test_shared_agent_instructions_precede_the_task_without_replacing_it() -> None:
+    catalog = PresetCatalog(agent_instructions="platform instructions")
+
+    assert catalog.instructions_for("task instructions") == "platform instructions\n\ntask instructions"
+    assert catalog.instructions_for("") == "platform instructions"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

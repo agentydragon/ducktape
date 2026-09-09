@@ -57,6 +57,7 @@ TEST_PRESETS = PresetCatalog(
             instructions="preset instructions",
         )
     },
+    agent_instructions="shared agent instructions",
 )
 
 
@@ -284,11 +285,11 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
         "/state/workspaces/thread-1",
         "thread-model",
         "medium",
-        "thread instructions",
+        "shared agent instructions\n\nthread instructions",
     )
 
 
-def test_no_preset_session_api_is_unchanged(
+def test_shared_instructions_are_also_added_to_direct_session_launches(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: list[pb.SessionSpec] = []
@@ -304,7 +305,11 @@ def test_no_preset_session_api_is_unchanged(
     )
 
     assert response.status_code == 201, response.text
-    assert captured == [pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="plain-model")]
+    assert captured == [
+        pb.SessionSpec(
+            provider=pb.PROVIDER_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
+        )
+    ]
 
 
 def test_a_runner_that_does_not_answer_is_a_503(

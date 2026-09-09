@@ -417,7 +417,9 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
         bootstrap = presets.sandbox(binding.sandbox_preset).bootstrap
         if bootstrap:
             await bridge.initialize(name, bootstrap)
-    attached = await bridge.open_session(name, body.session_id, _parse(pb.SessionSpec(), resolved))
+    spec = _parse(pb.SessionSpec(), resolved)
+    spec.instructions = presets.instructions_for(spec.instructions)
+    attached = await bridge.open_session(name, body.session_id, spec)
     return MessageToDict(attached)
 
 

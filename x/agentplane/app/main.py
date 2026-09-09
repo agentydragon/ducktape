@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     thread_presets: dict[str, ThreadPreset] = Field(
         default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
     )
+    agent_instructions: str = Field(
+        default="", description="Operational instructions prepended to every Agentplane-launched session."
+    )
     default_policies: list[str] = Field(
         default_factory=list,
         description="EgressPolicy names every new sandbox is granted before the caller's own picks: "
@@ -209,7 +212,11 @@ async def async_main(settings: Settings) -> None:
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
-            presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
+            presets=PresetCatalog(
+                sandboxes=settings.sandbox_presets,
+                threads=settings.thread_presets,
+                agent_instructions=settings.agent_instructions,
+            ),
         )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")

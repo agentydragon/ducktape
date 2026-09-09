@@ -96,6 +96,9 @@ class PresetCatalog(BaseModel):
 
     sandboxes: dict[str, SandboxPreset] = Field(default_factory=dict)
     threads: dict[str, ThreadPreset] = Field(default_factory=dict)
+    agent_instructions: str = Field(
+        default="", description="Operational instructions prepended to every Agentplane-launched session."
+    )
 
     @model_validator(mode="after")
     def _references_exist(self) -> PresetCatalog:
@@ -135,6 +138,11 @@ class PresetCatalog(BaseModel):
         sandbox = self.sandbox(binding.sandbox_preset)
         selected = binding.thread_preset or sandbox.thread_preset
         return binding.thread_overrides.over(self.thread(selected).defaults())
+
+    def instructions_for(self, task_instructions: str) -> str:
+        """Combine platform operation guidance with the caller's task-specific instructions."""
+        parts = [part.strip() for part in (self.agent_instructions, task_instructions) if part.strip()]
+        return "\n\n".join(parts)
 
 
 class UnknownPresetError(Exception):
