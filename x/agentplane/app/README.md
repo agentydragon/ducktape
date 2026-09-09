@@ -38,6 +38,7 @@ bbr test //x/agentplane/app/...
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
+- `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
@@ -112,6 +113,31 @@ Kubernetes is the sandbox inventory, including the archived flag and a compact a
 its live preset association plus explicit thread-default edits; the runner holds the live session;
 PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
+
+## External-client consent
+
+The Action Service's OAuth adapter sends a validated authorization request to
+`/#/connection-enrollments/{handle}`. The hash route survives the app's existing operator
+login. The page shows the client-supplied name, client ID, and validated redirect as text,
+asks for a Connection name and enabled configured Identity, and offers Authorize/Deny.
+This first slice does not edit policies or manage existing Connections.
+
+Both `/connection-enrollments/{handle}/preview` and `/decision` are operator-only POSTs
+with the existing exact-Origin check and per-request federation. The BFF stores a random
+browser binding, CSRF token, original version, and decision retry key in the persistent
+operator session. The binding never leaves the server-side app/Actions channel. Distinct
+interactions have distinct bindings; replicas share them, while logout/re-login does not.
+At most 32 unexpired interactions are retained per session. The Actions authority binds
+the first preview to that browser and authenticated operator, owns expiry, and consumes
+one decision. The BFF preserves the exact attempted decision for retry after a lost
+response, including page reload; changing it requires a fresh OAuth authorization.
+
+Authorize resumes only the server-held continuation returned by the authenticated Actions
+authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
+terminal page. Completing consent alone does not activate a grant: the OAuth adapter still
+verifies the same upstream operator and completes issuance. Operator credentials never
+reach the external client. New external-client Actions use human approval; clients sharing
+an Identity share receipts while submitted Actions preserve exact connection provenance.
 
 ## Action review
 

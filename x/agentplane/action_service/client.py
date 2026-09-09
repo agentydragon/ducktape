@@ -8,6 +8,13 @@ from uuid import UUID
 
 import httpx
 
+from x.agentplane.action_service.connections import Identity
+from x.agentplane.action_service.enrollments import (
+    EnrollmentDecisionInput,
+    EnrollmentDecisionResult,
+    EnrollmentPreview,
+    EnrollmentPreviewInput,
+)
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -71,6 +78,22 @@ class ActionServiceClient(_BearerClient):
 
 class OperatorActionServiceClient(_BearerClient):
     """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
+
+    async def list_identities(self) -> dict[str, Identity]:
+        response = await self._request("GET", "/v1/operator/identities")
+        return {key: Identity.model_validate(value) for key, value in response.json().items()}
+
+    async def preview_enrollment(self, handle: str, body: EnrollmentPreviewInput) -> EnrollmentPreview:
+        response = await self._request(
+            "POST", f"/v1/operator/connection-enrollments/{handle}/preview", json=body.model_dump(mode="json")
+        )
+        return EnrollmentPreview.model_validate(response.json())
+
+    async def decide_enrollment(self, handle: str, body: EnrollmentDecisionInput) -> EnrollmentDecisionResult:
+        response = await self._request(
+            "POST", f"/v1/operator/connection-enrollments/{handle}/decision", json=body.model_dump(mode="json")
+        )
+        return EnrollmentDecisionResult.model_validate(response.json())
 
     async def list_requests(self, *, states: tuple[ActionState, ...] = ()) -> list[ActionRequestView]:
         response = await self._request(

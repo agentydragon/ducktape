@@ -463,6 +463,22 @@ routes.push(
   ["GET", /^\/actions$/, () => ACTIONS],
   [
     "POST",
+    /^\/connection-enrollments\/[^/]+\/preview$/,
+    () => ({
+      enrollment: {
+        client_id: "test-client-registration-5d46c4f2",
+        client_name: "Test external client",
+        redirect_uri: "https://test-client.example/oauth/callback",
+        expires_at: new Date(NOW + 10 * 60_000).toISOString(),
+        version: 1,
+      },
+      identities: { public_coder: { enabled: true }, operator_assistant: { enabled: true } },
+      csrf_token: "test-only-csrf",
+      attempted_decision: null,
+    }),
+  ],
+  [
+    "POST",
     /^\/actions\/([^/]+)\/decision$/,
     (match) => ({ ...ACTIONS.find((request) => request.id === match[1]), state: "allowed", version: 2 }),
   ],
@@ -551,6 +567,8 @@ const PAGES: Record<string, string> = {
   sandboxes_stale: "/",
   actions: "/actions",
   actions_phone: "/actions",
+  consent: "/connection-enrollments/test-only-opaque-handle",
+  consent_phone: "/connection-enrollments/test-only-opaque-handle",
   sandbox: "/sandboxes/demo-a1b2",
   // With the github-public binding's rules open, so the shot carries the credential detail — its
   // description, where the proxy puts it, and which secret it comes from — and the other

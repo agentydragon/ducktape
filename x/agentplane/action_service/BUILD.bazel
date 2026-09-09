@@ -92,6 +92,8 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
+        ":connections",
+        ":enrollments",
         ":models",
         "@pypi//httpx",
     ],

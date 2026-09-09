@@ -51,6 +51,45 @@ ts_library(
 )
 
 ts_library(
+    name = "consent_client",
+    srcs = ["consent_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+ts_library(
+    name = "consent",
+    srcs = ["consent.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":consent_client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "consent_test",
+    srcs = ["consent.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":consent",
+        ":consent_client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "actions",
     srcs = ["actions.tsx"],
     tsconfig = TSCONFIG,
@@ -281,6 +320,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
+        ":consent",
         ":sandbox_page",
         ":sandboxes",
         ":session",
@@ -321,6 +361,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":actions_test",
+        ":consent_test",
         ":events_test",
         ":launch_presets_test",
         "//:node_modules/happy-dom",
@@ -407,6 +448,8 @@ VISUAL_DATA = [
     for scenario in [
         "actions",
         "actions_phone",
+        "consent",
+        "consent_phone",
         "sandboxes",
         "sandboxes_stale",
         "sandbox",
