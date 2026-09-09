@@ -279,10 +279,10 @@ pub fn simulate_product_metrics_validated(
 
 /// Live books and capture for one trajectory. Prepared paths are shared; mutable financial
 /// state, the next event month and the stop boundary belong to this rollout alone.
-struct RolloutState<'a> {
-    fixture: &'a ExecutionInput,
+/// The driver supplies its immutable input context, so a session can own paths and books
+/// side by side without either borrowing the other.
+struct RolloutState {
     rollout_id: u32,
-    product: Option<&'a ProductInputs>,
     month: u32,
     ledger: Ledger,
     lots: Vec<LotState>,
@@ -308,15 +308,16 @@ fn simulate_rollout(
     spending: Option<&mut spending::Policy<'_>>,
     allocation: Option<&mut allocation::Policy<'_>>,
 ) -> Result<RolloutComputation, SimulationError> {
-    RolloutState::new(fixture, rollout_id, capture_mode, product)?.run(spending, allocation)
+    RolloutState::new(fixture, rollout_id, capture_mode, product)?
+        .run(fixture, product, spending, allocation)
 }
 
-impl<'a> RolloutState<'a> {
+impl RolloutState {
     fn new(
-        fixture: &'a ExecutionInput,
+        fixture: &ExecutionInput,
         rollout_id: u32,
         capture_mode: CaptureMode,
-        product: Option<&'a ProductInputs>,
+        product: Option<&ProductInputs>,
     ) -> Result<Self, SimulationError> {
         let mut accounts: Vec<AccountRef> = fixture
             .scenario
@@ -538,9 +539,7 @@ impl<'a> RolloutState<'a> {
             )?);
         }
         Ok(Self {
-            fixture,
             rollout_id,
-            product,
             month: 0,
             ledger,
             lots,
@@ -559,19 +558,26 @@ impl<'a> RolloutState<'a> {
         })
     }
 
-    fn is_finished(&self) -> bool {
-        self.failed_month.is_some() || self.month == self.fixture.scenario.horizon_months
+    fn is_finished(&self, fixture: &ExecutionInput) -> bool {
+        self.failed_month.is_some() || self.month == fixture.scenario.horizon_months
     }
 
     fn run(
         mut self,
+        fixture: &ExecutionInput,
+        product: Option<&ProductInputs>,
         mut spending: Option<&mut spending::Policy<'_>>,
         mut allocation: Option<&mut allocation::Policy<'_>>,
     ) -> Result<RolloutComputation, SimulationError> {
-        while !self.is_finished() {
-            self = self.advance_month(spending.as_deref_mut(), allocation.as_deref_mut())?;
+        while !self.is_finished(fixture) {
+            self = self.advance_month(
+                fixture,
+                product,
+                spending.as_deref_mut(),
+                allocation.as_deref_mut(),
+            )?;
         }
-        self.finish()
+        self.finish(fixture)
     }
 
     /// Execute one month at the existing opening-review boundary. Terminal states are
@@ -579,15 +585,15 @@ impl<'a> RolloutState<'a> {
     /// error fatal: a caller cannot resume a month whose books may be partly updated.
     fn advance_month(
         mut self,
+        fixture: &ExecutionInput,
+        product: Option<&ProductInputs>,
         mut spending: Option<&mut spending::Policy<'_>>,
         mut allocation: Option<&mut allocation::Policy<'_>>,
     ) -> Result<Self, SimulationError> {
-        if self.is_finished() {
+        if self.is_finished(fixture) {
             return Ok(self);
         }
-        let fixture = self.fixture;
         let rollout_id = self.rollout_id;
-        let product = self.product;
         let month = self.month;
         if let Some(policy) = allocation.as_deref_mut() {
             policy.review(fixture, rollout_id, month, &self.ledger, &self.lots)?;
@@ -814,12 +820,11 @@ impl<'a> RolloutState<'a> {
         Ok(self)
     }
 
-    fn finish(self) -> Result<RolloutComputation, SimulationError> {
+    fn finish(self, fixture: &ExecutionInput) -> Result<RolloutComputation, SimulationError> {
         assert!(
-            self.is_finished(),
+            self.is_finished(fixture),
             "only terminal rollouts can be finalized"
         );
-        let fixture = self.fixture;
         let rollout_id = self.rollout_id;
         debug_assert_eq!(self.ledger.trial_balance(), 0);
         Ok(RolloutComputation {
