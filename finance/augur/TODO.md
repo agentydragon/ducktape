@@ -3,8 +3,7 @@
 Public, generic Augur backlog. Sim-specific follow-ups live in
 `augur/sim/TODO.md`; downstream repos keep private composition,
 deployment, and user-/company-specific modeling assumptions in their own
-trackers. Priority ordering lives in `augur/plans/roadmap.md` — keep
-this file as a backlog, not a second ordered roadmap.
+trackers. This file is a backlog, not an ordered roadmap.
 
 ## Eliminate magic-prefix series/asset strings (staged)
 
@@ -180,8 +179,7 @@ Remaining:
       loan size, so scenario builders can sample a realistic offer
       instead of hard-coding one. FRED has term-stratified series;
       could fit jointly with the broader rate factor once the consumer
-      side is wired (see Next Lanes "Mortgage-rate path sampling" in
-      `augur/plans/roadmap.md`).
+      side is wired.
 - [ ] Consider whether the deleted legacy exogenous models should be
       revived as runtime-native `augur/model` implementations where they
       are actually useful: `var` as a lighter joint macro baseline,

@@ -1,131 +1,82 @@
-# Allocation program
+# Allocation and spending experiments
 
-Goal: pick a stock/bond split for a long retirement, and know how much to trust the answer.
+This is the experiment backlog accompanying the
+[modularization landing plan](roadmap.md), which owns dependencies and decision
+gates. The question is how spending flexibility and allocation jointly change
+the distribution of acceptable lives—not which allocation wins a single ruin
+probability. The experiment author chooses preferences and any selection rule.
 
-Plan 0 is done — `x/allocation_sensitivity.py` measures which of the known gaps actually move
-that answer. It changed the order of everything below, so its findings come first and the
-lanes follow from them.
+## Acceptance consumers
 
-## What Plan 0 measured
+| Consumer                                                                                                                                                                            | What to implement or retain                                                                                                                                                       | Seam it exercises                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Trinity                                                                                                                                                                             | Retain the existing replay and explicit deviations; migrate path identity without changing its historical window set.                                                             | PATH, canonical execution, annual timing and a stable numerical control.                                                 |
+| [Guyton–Klinger (2006)](https://www.financialplanningassociation.org/article/journal/MAR06-decision-rules-and-maximum-initial-withdrawal-rates)                                     | A runnable rule-combination experiment, including portfolio management as well as spending. Settle rule order, source data and conditional purchasing-power statistics at GS.     | POL and OUT: path-local memory, coordinated decisions and consumption outcomes.                                          |
+| [Vanguard-style dynamic spending (2021)](https://www.vanguard.co.uk/content/dam/intl/europe/documents/en/whitepapers/sustainable-spending-rates-in-turbulent-markets-uk-en-pro.pdf) | Extend the existing bounded-spending example over allocation/flex settings, with our own paths and declared substitutions.                                                        | Executable spending already exists; add spending-quality measurements. Proprietary forecast replication is not required. |
+| [Pfau–Kitces rising glide paths (2014)](https://www.financialplanningassociation.org/article/journal/JAN14-reducing-retirement-risk-rising-equity-glide-path)                       | Compare static, rising and falling allocation on shared paths, with the chosen rebalance convention.                                                                              | POL's first varying-allocation consumer; shortfall severity as well as frequency.                                        |
+| Personal spending × allocation                                                                                                                                                      | Synthetic public book, private downstream actual lots; current/trimmed spending anchors, continuous flexibility, fixed and changing allocation, explicit trading costs and taxes. | RUN, TAX and ROBUST; HOUSE/BOND/MOVE only for arms using those capabilities.                                             |
+| Dated-bond hold/sell/roll                                                                                                                                                           | Retain the supplied-curve example as a control; add a native-position version after BOND.                                                                                         | Distinguishes instrument cashflows from investment strategy and from the constant-maturity proxy.                        |
+| Market-model comparison                                                                                                                                                             | Predictive evaluation plus policy-selection/evaluation across models on separate draws.                                                                                           | SCORE and ROBUST; fitting/scoring can run without any household simulation.                                              |
 
-Two-sleeve monthly-rebalanced portfolio, CPI-indexed monthly withdrawal, no taxes and no
-policy, over 3 horizons x 3 withdrawal rates x 2 bond sleeves, on both samplers. Levels are
-lower bounds and only the shape is meant to be read.
+These are evidence and composition tests, not a promise to reproduce every
+published number. Paper-specific financial simplifications belong in each
+experiment's configuration and documentation, never in a new competing engine.
 
-Rebalancing here is CONTINUOUS: `x/allocation_sensitivity.py` holds the target weights as a
-weighted sum of the two sleeves' monthly returns, in its own arithmetic. It builds no
-`Scenario`, runs no policy and never reaches the engine, so no `rebalancing` rule applies to it
-and none of the findings below turn on one. What a band width costs is a separate question, and
-it belongs to lane 4 behind #5486 — a band-width arm trades on drift alone, so it is exactly the
-arm whose turnover is unpriced today.
+## Broader experiments, selected by the next missing capability
 
-**1. Survival cannot rank allocations.** In **17 of 18** cells the survival-maximizing
-allocation beats its runner-up by 0-2 points against ±0-24 points of sampling error. Above
-roughly 40-60% equity survival saturates, so the metric has no gradient exactly where the
-decision lives. A study that reports P(ruin) per allocation is not answering the question.
+- **Income floor plus flexible upside:**
+  [Finke–Pfau–Williams (2012)](https://www.financialplanningassociation.org/article/journal/MAR12-spending-flexibility-and-safe-withdrawal-rates)
+  motivates varying outside income and consumption preferences.
+  [Scott–Sharpe–Watson](https://web.stanford.edu/~wfsharpe/retecon/4percent.pdf)
+  motivates examining spending shortfalls and unused surpluses, not only success
+  rates. Start with scheduled outside income and existing supported par-held
+  bond cashflows; trading/off-par holdings require BOND. Review the existing
+  indexed-bond slice's TIPS fidelity before expanding it. Annuities additionally
+  need longevity and counterparty contracts. A ladder is not an annuity.
+- **Nonconstant spending needs:**
+  [Blanchett (2014)](https://www.financialplanningassociation.org/article/journal/MAY14-exploring-retirement-consumption-puzzle)
+  motivates age/category-specific budgets. Author those functions in a shell;
+  a population spending pattern is not automatically this household's preference.
+- **Broader evidence and market mechanics:** international records, joint
+  resampling, equity-premium uncertainty, valuation-conditioned returns and
+  adverse regimes are independently testable candidates under GM. For example,
+  [Ang–Piazzesi's term-structure model](https://www.nber.org/papers/w8363) motivates
+  comparing curve/macro dynamics; it does not prescribe Augur's implementation.
+- **Forecast feedback:** consider only when simple authored rules cannot express
+  the desired decision. It additionally requires complete continuation state,
+  conditional forecasts from information available at the decision date, and
+  separate inner random streams. Do not restart taxes or replay opening trades.
 
-**2. The outcome distribution is what separates them.** 50-year payout, 3.5%, taxable sleeve:
-60% equity survives 97% of windows at a 2.1x median real terminal multiple, 80% survives 99%
-at 5.1x, 100% survives 97% at 10.3x. The choice is between outcome distributions at equal
-survival. That is what #5480's tier ladder expresses and what a single ruin probability cannot.
+## Household experiment protocol
 
-**3. The missing bond/equity correlation does not decide the coarse answer.** The two samplers
-pick the same allocation in 15 of 18 cells, and every disagreement is between cells within
-noise of each other. `model/SPEC.md` gap 2 is real, and it is not the binding constraint on
-"roughly how much equity".
+1. Start from supplied holdings, basis, cash and tax state; do not reset every
+   allocation cell to a fictional already-rebalanced tax-free book. Record the
+   trades and costs required to establish each target, or explicitly study
+   gradual deployment.
+2. Vary spending-anchor costs and allowed cuts jointly with allocation. Make
+   reversible flexibility, irreversible transitions, cash bands, surplus
+   reinvestment and rebalancing cadence explicit. Do not bake a one-way tier
+   ladder or automatic backstop into engine semantics.
+3. Use common paths within a model; distinguish historical overlapping-window
+   frequencies from independent draws. Report uncertainty in differences and
+   do not rank statistically unresolved cells. More bootstrap draws are not
+   more observed history.
+4. Report realized consumption distributions, frequency/depth/duration of cuts,
+   time at each anchor, backstop use, shortfall/default, tax cashflows and terminal
+   wealth. Mark stopped paths and conditioning denominators. Keep a selected
+   trajectory's decisions and settlements inspectable.
+5. Preserve a reproduction record: named dataset snapshots/vintages, fit
+   window/artifact, path identities, product constructions, calendar/tax
+   assumptions, opening book, code revision and policy parameters. Capture
+   materialized paths or a reproducible generator; do not rely on browser caches
+   or serialization of arbitrary closures.
+6. Evaluate candidate policies on fresh draws and across model, instrument,
+   tax/future-law, horizon and spending assumptions. Show feasible trade-offs or
+   that no candidate meets the selected constraints. Do not invent a scalar
+   utility function or treat a model's winner as an unconditional recommendation.
 
-**4. They disagree sharply on the LEVEL at long horizons, and that is a different gap.** At 50
-years, 3%, 100% equity: replay 99% survival, fitted 85%. The fitted arm carries both a fatter
-left tail and a fatter right tail than history did (at 40% equity, 2.2x median against the
-replay's 1.1x, at lower survival). That is gap 3 — no mean reversion — more than gap 2. It
-does not change which allocation wins; it changes what "safe" means, so it binds as soon as
-the question is "how safe", not "which".
-
-**5. A 120bp assumption about the bond sleeve moves the answer more than the choice of sampler
-does.** 30 years, 3%, 0% equity: 79% survival on a taxable sleeve against 48% on a muni sleeve
-priced at -120bp in a harness that models no tax. Same lesson as the Trinity all-bond cell —
-a small level difference amplified by a survival boundary. Instrument specification deserves at
-least the attention the macro model gets.
-
-**6. The record's resolution degrades exactly where the question lives.** 3.3 independent
-windows at 30 years, 2.5 at 40, 2.0 at 50. Retiring early is the case with the most at stake
-and the least evidence, and no resampling technique creates observations — so the fine decision
-has to come from the fitted model, which is why lane 3 exists.
-
-## Before the lanes
-
-Discovered after Plan 0 ran, and cheap enough that it should happen before any lane starts.
-
-**The tier ladder's rungs were never sensitivity-tested.** Plan 0 varied the withdrawal rate but
-held the tier structure fixed. A less-trimmed lower tier, and an intermediate rung between the
-extremes, are both cheap to add and plausibly move where the allocation floor sits — a ladder
-whose bottom rung is close to its top rung needs less equity than one that steps a long way
-down.
-
-## Lanes, in order
-
-1. **A tiered spending ladder (#5480 -> #5481, #5482, #5483, #5484).** Finding 1 says the
-   current objective cannot rank the candidates and finding 2 says which one can. #5482 also
-   opens the policy seam SPEC gap 10 needs for a rolling ladder, so two lanes share it.
-
-   The design the lane builds to is `docs/spending_model.md`: spending is a policy the engine
-   consults each month, obligations are contracts, and the tier menu lives in the policy.
-
-   Two things this lane must get right rather than defer. #5484's output is a **panel of
-   metrics over the rollout distribution** — P(holds the top tier) first, alongside P(ruin),
-   time-in-tier and terminal quantiles — and explicitly not a fitted scalar utility, which
-   would launder a modelling choice into an apparent answer. And #5489 (more than one price
-   level) is load-bearing here, not adjacent: a lower tier in a different economy follows a
-   different nominal price path, so a single price level is an assumption that the divergence
-   is exactly zero, with an error that grows with horizon and cannot be signed a priori.
-
-   #5801 (a continuous flex rule alongside the discrete transition) belongs here too, once
-   the discrete ladder works. Real spending is not a step function, and the discrete version
-   is the tractable special case rather than the intended model.
-
-2. **Instrument specification.** Finding 5. A duration axis on the bond sleeve, and the muni
-   arm credited its exemption rather than only charged its discount. Needs SPEC gap 8 (the
-   curve is clamped flat past 10 years) before duration can mean anything past intermediate.
-
-   #5797 (equity pays no distribution, and no tax on one) is the same lane from the equity
-   side: a total-return series with no dividend has no tax drag, which flatters equity by an
-   amount nobody has measured.
-
-3. **The fitted model (#5817 -> #5487 -> #5488).** Finding 4 for the level, finding 6 for why
-   the replay cannot substitute.
-
-   The window question that used to open this lane is answered and recorded in `model/SPEC.md`:
-   held out, the century forecasts inflation better and both rate states worse, at every horizon
-   past a month, so there is no window to switch to. #5817 is what that leaves — per-equation
-   windows, which the estimator already permits since it is one OLS per equation. Cheap, and it
-   establishes how much of the gap is explained by simply not pooling the pre-1951 peg before
-   #5488 spends a regime-switching class on it.
-
-   #5487 is not optional and not a refinement. The model's `rate_beta` fits to zero, so it
-   structurally cannot represent flight-to-quality — bonds rallying while equities fall is
-   the single mechanism that makes holding bonds worth anything in a drawdown, and a model
-   without it cannot price the thing this program exists to price.
-
-   Three issues extend this lane and are ordered after it, since each needs the joint fit
-   first: #5798 (the equity premium is treated as known — price the parameter uncertainty),
-   #5799 (fit against non-US evidence, not only the US century), #5800 (valuation-conditioned
-   returns).
-
-4. **Trading friction then the joint sweep (#5486 -> #5485 -> #5802).** In that order: the
-   sweep is meant to choose a rebalancing band, and today tax is charged on a trade while
-   commission, spread and slippage are not, so tight bands are cheap for a reason that is an
-   artifact. #5486 is now urgent rather than deferred, because drift rebalancing ships and a
-   band-width arm trades on drift alone — its turnover is no longer bounded by cashflow that
-   was going to happen anyway.
-
-   #5802 closes the lane: a sweep that reports a grid has not answered the question. The
-   output is an optimum, a sensitivity around it, and an attribution saying which factors
-   moved it.
-
-5. **Glidepath (#5803).** A constant allocation is a modelling convenience, not a strategy
-   anyone follows. Last because it multiplies the strategy space, and is only worth searching
-   once the objective (lane 1) and the model (lane 3) can tell two strategies apart.
-
-**#5510 (resampling sampler)** gives honest confidence intervals in place of the crude
-`sqrt(p(1-p)/n_eff)` Plan 0 prints. It cannot break the information limit in finding 6, so it
-is useful rather than urgent.
+The existing `x/allocation_sensitivity.py` recurrence remains a deliberately
+simplified tax-free control. Its old rankings and causal interpretations do not
+set the implementation order; comparisons with canonical RUN must hold timing,
+instruments, rebalancing and withdrawal conventions constant before attributing
+differences to taxes or a refactor.

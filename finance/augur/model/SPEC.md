@@ -151,8 +151,7 @@ established at all** — the ranking there depends on which decades it is scored
 lot (the ten-year joint density gap runs -0.13, +0.32, +0.71 across the three periods).
 
 That is the horizon a retirement actually lives on, and it is the one this record cannot resolve.
-The cause is the same one `plans/allocation_program.md` finding 6 names for the replay sampler:
-long-horizon observations are few and overlapping, so a ten-year comparison has very little
+Long-horizon observations are few and overlapping, so a ten-year comparison has very little
 independent evidence behind it however many origins it prints. Switching from replay to a fitted
 model does not create observations, and this is what that limit looks like from the fitted side.
 
