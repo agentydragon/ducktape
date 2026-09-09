@@ -233,7 +233,7 @@ async def test_preview_does_not_return_oauth_secrets_and_handles_are_hashed(
 
 
 async def test_operator_routes_require_auth_and_reject_redirect_injection(
-    consent: Consent, engine: AsyncEngine
+    consent: Consent, engine: AsyncEngine, db_url: str
 ) -> None:
     token = "test-operator-token"
     catalog = ActionCatalog(groups={})
@@ -245,7 +245,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
             token_digest=hashlib.sha256(token.encode()).digest(), subject="test-operator"
         ),
         catalog,
-        updates=ActionUpdates(engine),
+        updates=ActionUpdates(db_url),
         connections=consent.connections,
         enrollments=consent.authority,
     )
