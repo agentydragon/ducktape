@@ -1,6 +1,6 @@
 # Actor-facing policy interfaces
 
-Target design for P1–P12 and gates GP/GL in [the roadmap](roadmap.md),
+Target design for P1–P12 and gates GP/GL/GE in [the roadmap](roadmap.md),
 not implemented API declarations. Module names and types below are sketches;
 reuse existing domain types and introduce fields only for a supported consumer.
 
@@ -105,8 +105,8 @@ produces consequences before the next observation.
 The calling experiment can own the outer decision loop: start the session,
 dispatch pending observations to policies, submit their responses, repeat until
 finished. A library `run(...)` helper can own that loop when custom orchestration
-is unnecessary. Rust's `advance` owns financial time evolution between decisions:
-calendar/event ordering, accruals, settlement and taxes. The caller does not
+is unnecessary. The executor's `advance` owns financial time evolution between
+decisions: calendar/event ordering, accruals, settlement and taxes. The caller does not
 reimplement those rules or advance past unanswered decision opportunities.
 
 Decision opportunities follow information arrivals and opportunities to act, not
@@ -115,6 +115,11 @@ approximation; this does not require a general-purpose event scheduler. Ordering
 between actors in one world is an environment rule, not an accident of batch
 order. Books and paths stay in the existing executor; native and Python drivers
 share its mechanics.
+
+The initial stepping/bridge work uses Rust execution. RUNTIME/GE separately
+reevaluate that language choice, including execution strategy, ragged output
+layout and notebook usability. A Python executor would own the same financial
+time evolution; the economic boundary is not a permanent Python/Rust boundary.
 
 ### Batching: requirement versus open API choice
 
@@ -152,9 +157,11 @@ def rebalance(
 ```
 
 Withdrawal allocation, cash bands, lot selection and guardrails are optional
-ordinary helpers a policy can compose or ignore. Implementations may remain
-native and be callable from Python. The executor must not run another funding or
-rebalancing strategy afterward. Autopay or delegated liquidation requires an
+ordinary helpers a policy can compose or ignore. Prefer Python for notebook-editable
+strategy and calculators; retain native kernels where measured cost warrants them.
+Move implementations with their consumers instead of maintaining Python/Rust copies.
+The executor must not run another funding or rebalancing strategy afterward.
+Autopay or delegated liquidation requires an
 explicit standing instruction with modeled terms. Non-mutating tax/trade previews
 reuse canonical calculations with observable inputs and explicit assumptions,
 never the future realized path.
@@ -172,8 +179,10 @@ GP resolves P7's information/review times, same-time action order,
 execution versus settlement availability, and rejection/deadline/stop behavior.
 Broader partial-payment, default and recovery models are separate scoped changes.
 The existing opening-month/all-or-none cases remain controls for P1/P2/P6, not
-the destination contract. P6/GL decides the language/representation trade-off;
-P9 promotes the measured bridge with P7's actor loop and P8's helpers. P11 migrates
-executable experiments; P12 cuts over configured consumers and removes implicit
+the destination contract. P6/GL decides policy-call representation; RUNTIME/GE
+decides executor placement. If GE retains hybrid execution, P9 promotes the
+measured bridge with P7's actor loop and P8's helpers; otherwise replan the
+language-specific steps. P11 migrates executable experiments; P12 cuts over
+configured consumers and removes implicit
 public-portfolio strategy. The roadmap owns these dependencies and their
 acceptance criteria; this sketch does not introduce another prerequisite chain.
