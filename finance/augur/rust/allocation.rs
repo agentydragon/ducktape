@@ -13,6 +13,8 @@ pub enum AllocationError {
     InvalidWeight,
     #[error("allocation rebalance tolerance must not be negative")]
     InvalidTolerance,
+    #[error("allocation rounding residual exceeds available adjustment capacity")]
+    RoundingCapacity,
     #[error(transparent)]
     Arithmetic(#[from] ArithmeticError),
 }
@@ -295,36 +297,40 @@ fn settle_residual(taken: &mut [i64], caps: &[i64], wanted: i64) -> Result<(), A
             operation: "allocation rounded total",
         })
     })?;
-    let residual = wanted.checked_sub(total).ok_or(ArithmeticError::Overflow {
+    let mut residual = wanted.checked_sub(total).ok_or(ArithmeticError::Overflow {
         operation: "allocation residual",
     })?;
     if residual == 0 {
         return Ok(());
     }
-    let mut target = 0;
-    let mut most_headroom = if residual >= 0 {
-        caps[0] - taken[0]
-    } else {
-        taken[0]
-    };
-    for index in 1..taken.len() {
-        let headroom = if residual >= 0 {
-            caps[index] - taken[index]
-        } else {
-            taken[index]
-        };
-        if headroom > most_headroom {
-            target = index;
-            most_headroom = headroom;
+    // Largest adjustment capacity first, with input-order ties. A rounding residual
+    // can exceed any single sleeve's capacity, so carry it across sleeves.
+    let mut order: Vec<_> = taken
+        .iter()
+        .zip(caps)
+        .enumerate()
+        .map(|(index, (amount, cap))| (index, if residual > 0 { cap - amount } else { *amount }))
+        .collect();
+    order.sort_by(
+        |(left_index, left_capacity), (right_index, right_capacity)| {
+            right_capacity
+                .cmp(left_capacity)
+                .then_with(|| left_index.cmp(right_index))
+        },
+    );
+    for (index, capacity) in order {
+        let adjustment = residual.clamp(-capacity, capacity);
+        taken[index] = taken[index]
+            .checked_add(adjustment)
+            .ok_or(ArithmeticError::Overflow {
+                operation: "allocation residual adjustment",
+            })?;
+        residual -= adjustment;
+        if residual == 0 {
+            return Ok(());
         }
     }
-    taken[target] = taken[target]
-        .checked_add(residual)
-        .ok_or(ArithmeticError::Overflow {
-            operation: "allocation residual adjustment",
-        })?
-        .clamp(0, caps[target]);
-    Ok(())
+    Err(AllocationError::RoundingCapacity)
 }
 
 fn round_half_up_nonnegative(
@@ -345,6 +351,7 @@ fn round_half_up_nonnegative(
 #[cfg(test)]
 mod tests {
     use super::{deposit_by_sleeve, quantity_for_value, rebalance_by_sleeve, withdrawal_by_sleeve};
+    use proptest::prelude::*;
 
     #[test]
     fn withdrawal_drains_the_overweight_sleeve_first() {
@@ -399,6 +406,38 @@ mod tests {
             let given = deposit_by_sleeve(&[1_000_003, 700_001, 3], &[5, 3, 1], wanted).unwrap();
             assert_eq!(given.iter().sum::<i64>(), wanted);
             assert!(given.iter().all(|amount| *amount >= 0));
+        }
+    }
+
+    #[test]
+    fn withdrawal_rounding_residual_can_span_multiple_sleeves() {
+        assert_eq!(
+            withdrawal_by_sleeve(&[1, 1, 1, 1], &[1, 1, 1, 1], 2).unwrap(),
+            [1, 1, 0, 0]
+        );
+    }
+
+    #[test]
+    fn deposit_rounding_residual_can_span_multiple_sleeves() {
+        assert_eq!(
+            deposit_by_sleeve(&[0, 0, 0, 0], &[1, 1, 1, 1], 2).unwrap(),
+            [0, 0, 1, 1]
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn allocation_rounding_preserves_requested_totals_and_sleeve_bounds(
+            sleeves in prop::collection::vec((0_i64..1_000, 1_i64..100), 1..20),
+            requested in 0_i64..30_000,
+        ) {
+            let (values, weights): (Vec<_>, Vec<_>) = sleeves.into_iter().unzip();
+            let withdrawn = withdrawal_by_sleeve(&values, &weights, requested).unwrap();
+            prop_assert_eq!(withdrawn.iter().sum::<i64>(), requested.min(values.iter().sum()));
+            prop_assert!(withdrawn.iter().zip(&values).all(|(amount, value)| *amount >= 0 && amount <= value));
+            let deposited = deposit_by_sleeve(&values, &weights, requested).unwrap();
+            prop_assert_eq!(deposited.iter().sum::<i64>(), requested);
+            prop_assert!(deposited.iter().all(|amount| *amount >= 0));
         }
     }
 
