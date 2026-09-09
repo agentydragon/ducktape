@@ -37,6 +37,45 @@ No live cluster capacity or ruleset audit has been performed for this plan.
 
 ## Architecture and ownership
 
+### Forge compatibility
+
+Upstream source checked on 2026-09-09 at
+[`104d452f4fce`](https://github.com/kubernetes-sigs/prow/tree/104d452f4fced027c5a357b6fd6fe860a1b6064f).
+This migration assumes GitHub remains the PR host; hosting Prow ourselves does
+not by itself make PR automation portable to another forge.
+
+| Forge                      | Upstream integration and consequence                                                                                             |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub / GitHub Enterprise | Native integration; the path used by this plan.                                                                                  |
+| Gerrit                     | Has a dedicated adapter; current Tide source also supports Gerrit. This does not imply compatibility with other forges.          |
+| Forgejo / Gitea            | No native integration found in the reviewed upstream source/docs. Plan on custom integration rather than a configuration switch. |
+| GitLab                     | No native integration found in the reviewed upstream source/docs. Plan on custom integration rather than a configuration switch. |
+
+ProwJob refs support an explicit `clone_uri`, so executing a job against a
+Forgejo/GitLab Git repository is possible in principle. That is separate from
+native PR/MR webhooks, fork authorization, commands, statuses, reviews, and merge
+automation. An adapter could submit ProwJobs and report their results, but Tide
+would still require a new provider or a separate merge controller for those forges.
+GitHub-compatible-looking webhooks alone do not supply these contracts.
+
+Keep deployment evidence evaluation independent of the forge: immutable revision
+and target policy in, timestamped rollout/health evidence out. Put PR/MR identity,
+declaration authorization, status publication, and merge enforcement behind explicit
+forge adapters. For cross-forge prerequisites, include host and repository identity
+instead of interpreting a bare PR number globally.
+
+Before expanding this migration to Forgejo or GitLab, compare the adapter burden
+with retaining that forge's native CI and adding only the shared rollout gate.
+Existing Forgejo CI is outside this migration's scope. Supporting another forge
+requires its own acceptance path from event through status to enforced merge;
+cloning a repository or mirroring it to GitHub is not proof of that support.
+
+Evidence: [Tide's supported providers](https://github.com/kubernetes-sigs/prow/blob/104d452f4fced027c5a357b6fd6fe860a1b6064f/cmd/tide/main.go),
+[ProwJob clone URI](https://github.com/kubernetes-sigs/prow/blob/104d452f4fced027c5a357b6fd6fe860a1b6064f/pkg/apis/prowjobs/v1/types.go),
+and [Gerrit adapter documentation](https://docs.prow.k8s.io/docs/components/optional/gerrit/).
+
+### Cluster integration
+
 GitHub sends webhooks to Prow `hook`. The controller manager launches CI pods;
 `crier` reports results; `deck` displays jobs; `sinker` cleans up. Add `horologium`
 for periodic jobs and Tide when merge automation is ready. CI pods initially
