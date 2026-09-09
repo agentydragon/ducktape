@@ -35,6 +35,7 @@ rust_library(
         "money.rs",
         "money_proptest.rs",
         "product.rs",
+        "property.rs",
         "tax.rs",
     ],
     crate_name = "augur_rust_simulator",

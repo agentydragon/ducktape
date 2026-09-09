@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 
 use crate::execution::{BondState, ExecutionInput, MortgageState, PropertyState};
 use crate::ledger::{AccountRef, Ledger};
-use crate::money::{Factor, Money, PerUnit, Quantity, Units};
+use crate::money::{Money, PerUnit, Quantity, Units};
+use crate::property::Valuation;
 
 /// Base metrics per snapshot, in `metric_composition.BASE_METRIC_NAMES` order.
 pub const BASE_METRIC_NAMES: [&str; 7] = [
@@ -37,15 +38,6 @@ const MORTGAGE: usize = 4;
 const SHORTFALL: usize = 5;
 const BOND: usize = 6;
 
-/// A property's static valuation terms: what the agent paid, and the home-value path
-/// the price is escalated along.
-#[derive(Clone, Debug)]
-struct PropertyValuation {
-    purchase_price: Money,
-    purchase_month: u32,
-    home_value_series: usize,
-}
-
 /// Everything the reduction needs that does not change month to month, resolved once per
 /// fixture. Series are resolved to row indices here because the reduction runs on every
 /// snapshot of every rollout, where `engine::series_value`'s name scan would dominate.
@@ -58,7 +50,7 @@ pub struct ProductInputs {
     private_equity_mark_by_issuer: BTreeMap<String, usize>,
     /// Keyed by `property_id`; a property whose home-value series is absent is omitted and
     /// contributes nothing rather than reducing over a series that is not there.
-    property_valuations: BTreeMap<String, PropertyValuation>,
+    property_valuations: BTreeMap<String, Valuation>,
     primary_agent_id: String,
 }
 
@@ -135,14 +127,7 @@ impl ProductInputs {
             .filter_map(|purchase| {
                 let series_id = format!("home_value:{}", purchase.location_id);
                 let row = series_rows.get(series_id.as_str())?;
-                Some((
-                    purchase.property_id.clone(),
-                    PropertyValuation {
-                        purchase_price: purchase.purchase_price,
-                        purchase_month: purchase.month,
-                        home_value_series: *row,
-                    },
-                ))
+                Some((purchase.property_id.clone(), Valuation::new(purchase, *row)))
             })
             .collect();
 
@@ -158,6 +143,8 @@ impl ProductInputs {
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq)]
 pub enum ProductError {
+    #[error(transparent)]
+    Property(#[from] crate::property::ValuationError),
     #[error("scenario has no account for primary agent {agent_id:?}")]
     UnknownPrimaryAgent { agent_id: String },
     #[error("product metrics need series {series_id:?}, which the fixture does not supply")]
@@ -275,20 +262,7 @@ pub fn snapshot_metrics(
         let Some(valuation) = inputs.property_valuations.get(&property.property_id) else {
             continue;
         };
-        let base = series_at(
-            fixture,
-            valuation.home_value_series,
-            rollout,
-            valuation.purchase_month,
-        )?;
-        if base <= 0 {
-            continue;
-        }
-        let current = series_at(fixture, valuation.home_value_series, rollout, snapshot)?;
-        let market = valuation
-            .purchase_price
-            .scaled_by(Factor::new(current, base), "product property value")?
-            .0;
+        let market = valuation.at(fixture, rollout, snapshot)?.0;
         metrics[PROPERTY] = metrics[PROPERTY].checked_add(market).ok_or(
             crate::money::ArithmeticError::Overflow {
                 operation: "product property total",

@@ -216,7 +216,7 @@ series plus the per-rollout failure month, under the compact capture mode — no
 snapshot, journal, or event trace. `backend.py` wraps it as the product API's
 `ProductMetricArrays` and `ProductProjectionSummaries`, composing the derived metrics and
 the percentile fan with `sim/metric_composition.py` and `sim/quantiles.py`.
-Design, and two behaviours the engine keeps deliberately rather than corrects:
+Metric valuation and observation boundaries:
 [docs/product_metrics.md](docs/product_metrics.md).
 
 `sim/compiler/execution.py` connects this to a live request: the authored scenario,

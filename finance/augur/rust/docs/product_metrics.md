@@ -54,16 +54,19 @@ count. Currency quantiles remain exact integers, with null absence at the produc
 boundary. The selected chart places a stopped book at event month `f`, retaining snapshot
 `f+1` as book identity rather than pretending it observed another month of prices.
 
-## Two base months for one property
+## Property valuation
 
-The product metric escalates a property's price from the home-value level **at its purchase
-month** (`product.rs`). The property _sale_ path escalates from the level at **month 0**
-(`engine/property.rs`). They are two different answers to "what is this property worth",
-and a property bought mid-horizon is valued on one basis in the metric series and another
-at sale.
+`property::Valuation` supplies both the reported gross property value and the sale's
+pre-cost market value: nominal purchase price multiplied by the home-value level at
+the explicit valuation month, divided by its level at the purchase month. Pre-purchase
+index changes do not appreciate a price agreed at acquisition. Stopped books use the
+failure month's mark, not the next snapshot's mark.
 
-Nothing here reconciles them. It is written down because the two sites are far apart and
-each reads correct on its own.
+Seller closing costs, mortgage payoff and tax basis are separate calculations. The
+sale outcome's `gross_proceeds` is already **after seller closing costs**, before
+mortgage payoff; it equals the same-time reported property value only when those costs
+are zero. Buyer closing costs and later capital improvements affect book/tax basis
+under their own rules, not this purchase-price-index valuation.
 
 ## What the encoder has to preserve
 

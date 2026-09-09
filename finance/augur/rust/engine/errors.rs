@@ -9,6 +9,8 @@ use super::*;
 #[derive(Debug, Error)]
 pub enum SimulationError {
     #[error(transparent)]
+    PropertyValuation(#[from] crate::property::ValuationError),
+    #[error(transparent)]
     Product(#[from] ProductError),
     #[error("unsupported fixture schema version {actual}; expected {expected}")]
     SchemaVersion { actual: u32, expected: u32 },

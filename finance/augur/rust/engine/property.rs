@@ -189,12 +189,13 @@ fn execute_property_sales(
             .find(|purchase| purchase.property_id == sale.property_id)
             .expect("validated property sale has a purchase");
         let series_id = format!("home_value:{}", purchase.location_id);
-        let base_value = series_value(fixture, &series_id, rollout_id, 0)?;
-        let sale_value = series_value(fixture, &series_id, rollout_id, month)?;
-        let appreciation = Factor::new(sale_value, base_value);
-        let market_value = purchase
-            .purchase_price
-            .scaled_by(appreciation, "property market value")?;
+        let row = fixture
+            .series
+            .iter()
+            .position(|series| series.series_id == series_id)
+            .ok_or(SimulationError::MissingSeries { series_id })?;
+        let market_value =
+            crate::property::Valuation::new(purchase, row).at(fixture, rollout_id, month)?;
         let retained = Factor::parts_per_billion(sale.closing_cost_ppb)
             .complement("property sale retained share")?;
         let gross_proceeds = market_value.scaled_by(retained, "property sale proceeds")?;

@@ -11,6 +11,7 @@ pub mod execution;
 pub mod ledger;
 pub mod money;
 pub mod product;
+pub mod property;
 pub mod tax;
 
 #[cfg(test)]

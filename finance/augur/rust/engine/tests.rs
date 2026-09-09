@@ -2107,6 +2107,165 @@ fn financed_property_purchase_and_first_monthly_carry_match_contract() {
     }));
 }
 
+fn mid_horizon_property_fixture(financed: bool, closing_cost_ppb: i64) -> ExecutionInput {
+    let mut input = minimal_fixture();
+    input.rollout_count = 2;
+    input.scenario.horizon_months = 6;
+    input.scenario.accounts[0].opening_balance = Money(200_000);
+    input.scenario.accounts.push(AccountSpec {
+        account: AccountRef::new("world", "checking"),
+        opening_balance: Money(0),
+    });
+    input.scenario.locations.push(LocationSpec {
+        location_id: "test-market".into(),
+        display_name: "Test market".into(),
+        jurisdiction_ids: vec![],
+        annual_property_tax_rate_ppb: 0,
+        annual_special_assessment: Money(0),
+    });
+    input
+        .scenario
+        .scheduled_property_purchases
+        .push(ScheduledPropertyPurchaseSpec {
+            month: 2,
+            cause_id: "test-mid-horizon-purchase".into(),
+            property_id: "test-home".into(),
+            location_id: "test-market".into(),
+            buyer_agent_id: "alice".into(),
+            buyer_account_id: "checking".into(),
+            seller_agent_id: "world".into(),
+            seller_account_id: "checking".into(),
+            purchase_price: Money(100_000),
+            down_payment: Money(if financed { 40_000 } else { 100_000 }),
+            buyer_closing_cost: Money(0),
+            rented_fraction_ppb: 0,
+            land_value_fraction_ppb: 200_000_000,
+            mortgage: financed.then(|| MortgageFinancingSpec {
+                liability_id: "test-mortgage".into(),
+                lender_agent_id: "world".into(),
+                lender_account_id: "checking".into(),
+                principal: Money(60_000),
+                annual_interest_rate_ppb: 0,
+                term_months: 60,
+            }),
+        });
+    input.scenario.property_sales.push(PropertySaleSpec {
+        month: 5,
+        property_id: "test-home".into(),
+        closing_cost_ppb,
+    });
+    input.series.push(SeriesSpec {
+        series_id: "home_value:test-market".into(),
+        snapshots: 7,
+        // Same purchase and later marks, different pre-purchase histories.
+        values: vec![
+            50, 100, 200, 240, 300, 360, 800, 500, 7, 200, 240, 300, 360, 800,
+        ],
+    });
+    input
+}
+
+#[test]
+fn mid_horizon_property_mark_and_sale_share_the_purchase_anchor() {
+    for financed in [false, true] {
+        for closing_cost_ppb in [0, 100_000_000] {
+            let input = mid_horizon_property_fixture(financed, closing_cost_ppb);
+            let output = simulate(&input).unwrap();
+            let metrics = simulate_product_metrics(&input, "alice").unwrap();
+            let property_slot = crate::product::BASE_METRIC_NAMES
+                .iter()
+                .position(|name| *name == "property_value_quanta")
+                .unwrap();
+            for rollout in &output.rollouts {
+                assert_eq!(rollout.failed_month, None);
+                assert_eq!(rollout.property_purchases[0].purchase_price, Money(100_000));
+                assert_eq!(
+                    rollout.months[3].properties[0].adjusted_basis,
+                    Money(100_000)
+                );
+                // Buy at index 200; the held property follows 240, 300 and 360.
+                // Snapshot 5 is the opening sale-month book, before disposal.
+                for (snapshot, expected) in [0, 0, 0, 120_000, 150_000, 180_000, 0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    assert_eq!(
+                        metrics.base_series[property_slot]
+                            [snapshot * 2 + rollout.rollout_id as usize],
+                        expected
+                    );
+                }
+                let sale = &rollout.property_sales[0];
+                let seller_cost = if closing_cost_ppb == 0 { 0 } else { 18_000 };
+                let payoff = if financed { 58_000 } else { 0 };
+                // The outcome's gross_proceeds is AFTER seller costs, before debt payoff.
+                assert_eq!(sale.gross_proceeds, Money(180_000 - seller_cost));
+                assert_eq!(sale.mortgage_payoff, Money(payoff));
+                assert_eq!(
+                    sale.net_cash_to_owner,
+                    Money(180_000 - seller_cost - payoff)
+                );
+                assert_eq!(sale.realized_gain, Money(80_000 - seller_cost));
+                assert_eq!(sale.depreciation_recapture, Money(0));
+                assert_eq!(sale.section_121_exclusion, Money(0));
+                let reported_mark =
+                    metrics.base_series[property_slot][5 * 2 + rollout.rollout_id as usize];
+                assert_eq!(sale.gross_proceeds.0 + seller_cost, reported_mark);
+                let cash = rollout.months[6]
+                    .balances
+                    .iter()
+                    .find(|balance| balance.account == AccountRef::new("alice", "checking"))
+                    .unwrap()
+                    .balance;
+                assert_eq!(cash, Money(280_000 - seller_cost));
+                assert!(rollout.journal.iter().all(|entry| {
+                    entry
+                        .postings
+                        .iter()
+                        .map(|posting| i128::from(posting.amount.0))
+                        .sum::<i128>()
+                        == 0
+                }));
+            }
+        }
+    }
+}
+
+#[test]
+fn stopped_mid_horizon_property_uses_only_the_failure_month_mark() {
+    let mut input = mid_horizon_property_fixture(true, 0);
+    input.scenario.obligations.push(ObligationSpec {
+        month: 4,
+        obligation_id: "test-unfundable-demand".into(),
+        obligation_type: "cash_spend".into(),
+        from: AccountRef::new("alice", "checking"),
+        to: AccountRef::new("world", "checking"),
+        amount_due: Money(999_999).into(),
+        property_id: None,
+        deduction_category: None,
+        deductible_fraction_ppb: 0,
+    });
+    // A different unobserved future must not change either stopped book.
+    input.series[0].values[12..].copy_from_slice(&[9_000, 1]);
+    let output = simulate(&input).unwrap();
+    let metrics = simulate_product_metrics(&input, "alice").unwrap();
+    let property_slot = crate::product::BASE_METRIC_NAMES
+        .iter()
+        .position(|name| *name == "property_value_quanta")
+        .unwrap();
+    assert_eq!(metrics.failed_month, vec![4, 4]);
+    for rollout in &output.rollouts {
+        assert_eq!(rollout.months.len(), 6);
+        assert_eq!(rollout.months[5].month, 5);
+        assert!(rollout.months[5].properties[0].active);
+        assert!(rollout.property_sales.is_empty());
+        assert_eq!(
+            metrics.base_series[property_slot][5 * 2 + rollout.rollout_id as usize],
+            150_000
+        );
+    }
+}
+
 #[test]
 fn oversell_is_rejected_before_any_disposition() {
     let alice_cash = AccountRef::new("alice", "checking");

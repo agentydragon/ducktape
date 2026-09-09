@@ -248,6 +248,12 @@ For one rollout, given a `Scenario` and an exogenous trajectory bundle:
    scenario includes a `PropertySaleEvent`; otherwise it remains owned and
    contributes home equity rather than sale cash.
 
+Property reporting and sale execution use the same gross valuation: the nominal
+purchase price grows with the supplied home-value path from the purchase month to
+the observed valuation month. Pre-purchase index changes do not change that anchor.
+Sale costs, loan payoff and tax basis are accounted for separately; a stopped book
+uses the failure month's mark, not an unobserved future price.
+
 ## Outputs
 
 The product API exposes two response shapes against a `ScenarioKey`:
