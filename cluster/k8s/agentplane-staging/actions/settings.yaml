@@ -2,6 +2,9 @@
 # Keep this endpoint aligned with the existing mcp-everything Service (no runner MCP access).
 allowed_service_account_namespaces:
   - agentplane-staging
+identities:
+  personal:
+    enabled: true
 action_groups:
   everything:
     title: Upstream Everything

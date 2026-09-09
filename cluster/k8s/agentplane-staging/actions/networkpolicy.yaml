@@ -1,5 +1,6 @@
 # Workload calls arrive only from the central egress proxy after exact placeholder substitution.
 # The integration app is admitted separately for the session-bound BFF/operator adapter.
+# Public traffic arrives through the Gateway's protocol-only HTTPRoute.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -10,6 +11,12 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-actions
   ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging

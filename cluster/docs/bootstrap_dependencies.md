@@ -339,6 +339,21 @@ regenerate, then SOPS-encrypt.
 | **Nix cache**    | `nix-cache/app/jwt-token.sops.yaml`                                                                                                                                                                                          | Generated at bootstrap                                         |
 | **CNPG**         | `tofu-state/db/credentials.sops.yaml`                                                                                                                                                                                        | Generated (random password)                                    |
 
+### Agentplane external MCP credentials
+
+`sso-providers-tf` owns a separate `agentplane-staging-mcp` Authentik client, restricted to the
+existing Rai user, and persistent signing/encryption keys. The `agentplane-mcp-oauth` Secret in
+`authentik` is reflected only to `agentplane-staging`; only the Action Service mounts its client
+secret and keys. Required Secret references gate startup, and Reloader restarts the consumer on
+changes. Preserve Terraform state and both keys across pod replacements: the encryption key
+protects durable OAuth data in the Action database, and the signing key authenticates issued
+tokens. Rotation requires an explicit grant/session invalidation and recovery plan.
+
+OAuth subject configuration comes from the managed user's authoritative UUID and maps explicitly
+to the existing Action operator principal. App login credentials and operator-federation authority
+are unchanged. The public Gateway route exposes only OAuth/MCP paths; the integration app retains
+consent and operator management. See the [staging MCP rollout](agentplane_mcp_staging.md).
+
 ### Agentplane operator federation
 
 `sso-providers-tf` reads the existing managed Rai user by primary key (API `uid`/`uuid`), creates the

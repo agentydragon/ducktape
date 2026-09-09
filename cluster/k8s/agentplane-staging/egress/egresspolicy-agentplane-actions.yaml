@@ -10,6 +10,7 @@ spec:
       clusterInternal: true
       methods: [GET, POST]
       paths:
+        - /mcp
         - /v1/action-groups
         - /v1/action-groups/**
         - /v1/action-requests

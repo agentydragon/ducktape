@@ -748,3 +748,18 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_agentplane_mcp_route",
+    srcs = ["test_agentplane_mcp_route.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/egress:policy",
+        "//x/agentplane/egress:resources",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

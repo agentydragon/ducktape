@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-actions
   annotations:
-    secret.reloader.stakater.com/reload: agentplane-action-federation
+    secret.reloader.stakater.com/reload: agentplane-action-federation,agentplane-mcp-oauth
 spec:
   replicas: 1
   strategy:
@@ -28,6 +28,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -35,6 +36,11 @@ spec:
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260909100356-0c3fa74 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
           imagePullPolicy: Always
           env: &database-env
+            - name: AGENTPLANE_ACTIONS_OAUTH
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-mcp-oauth
+                  key: oauth
             - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
               valueFrom:
                 secretKeyRef:
@@ -89,6 +95,9 @@ spec:
             - --token-audience=agentplane-egress
           env: *database-env
           volumeMounts:
+            - name: oauth
+              mountPath: /etc/agentplane-mcp
+              readOnly: true
             - name: settings
               mountPath: /etc/agentplane-actions
               readOnly: true
@@ -116,6 +125,17 @@ spec:
               memory: 512Mi
           securityContext: *container-security
       volumes:
+        - name: oauth
+          secret:
+            secretName: agentplane-mcp-oauth
+            defaultMode: 0440
+            items:
+              - key: client-secret
+                path: client-secret
+              - key: jwt-signing-key
+                path: jwt-signing-key
+              - key: encryption-key
+                path: encryption-key
         - name: settings
           configMap:
             name: agentplane-actions-settings

@@ -4,7 +4,7 @@ metadata:
   name: agentplane-staging-actions
   namespace: ducktape-flux
   annotations:
-    description: Standalone Action Service, isolated PostgreSQL contract, migration init gate, shared SandboxPrincipal RBAC, and central-proxy-only workload ingress.
+    description: Action Service with isolated PostgreSQL, migration init gate, workload-proxy ingress and public OAuth/MCP endpoint.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -17,6 +17,8 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
+    - name: gateway
+      namespace: ducktape-flux
     - name: sso-providers-tf
       namespace: ducktape-flux
     - name: reflector
