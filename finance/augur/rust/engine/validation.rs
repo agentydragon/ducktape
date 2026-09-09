@@ -1196,7 +1196,7 @@ fn validate_primary_residence_assignment(
     Ok(())
 }
 
-fn validate_identifier(kind: &'static str, value: &str) -> Result<(), SimulationError> {
+pub(super) fn validate_identifier(kind: &'static str, value: &str) -> Result<(), SimulationError> {
     if value.trim().is_empty() {
         return Err(SimulationError::EmptyIdentifier { kind });
     }

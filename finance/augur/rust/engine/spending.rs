@@ -55,9 +55,7 @@ where
         .collect();
     validate_account(&accounts, &spending.from, "spending payer")?;
     validate_account(&accounts, &spending.to, "spending payee")?;
-    if spending.cause_id.is_empty() {
-        return Err(SimulationError::EmptyIdentifier { kind: "spending" });
-    }
+    validate_identifier("spending", &spending.cause_id)?;
     for rollout in 0..input.rollout_count {
         for month in 0..input.scenario.horizon_months {
             validate_amount_index_level(

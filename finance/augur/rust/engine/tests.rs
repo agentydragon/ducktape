@@ -224,6 +224,12 @@ fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
         spending::simulate(&fixture, &spending, |_| |_| Ok(Money(-1))),
         Err(SimulationError::InvalidAmount { .. })
     ));
+    spending.cause_id = " ".into();
+    assert!(matches!(
+        spending::simulate(&fixture, &spending, |_| |_| panic!("invalid identifier")),
+        Err(SimulationError::EmptyIdentifier { .. })
+    ));
+    spending.cause_id = "consumption".into();
     fixture.series[0].values[12] = 0;
     assert!(matches!(
         spending::simulate(&fixture, &spending, |_| |_| panic!(
