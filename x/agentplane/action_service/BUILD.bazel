@@ -76,6 +76,7 @@ py_library(
         ":catalog",
         ":connections",
         ":db",
+        ":enrollments",
         ":mcp_frontend",
         ":models",
         ":service",
@@ -645,5 +646,44 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_enrollments",
+    srcs = ["test_enrollments.py"],
+    requires_docker = True,
+    deps = [
+        ":api",
+        ":auth",
+        ":catalog",
+        ":conftest",
+        ":connections",
+        ":db",
+        ":enrollments",
+        ":models",
+        ":service",
+        ":updates",
+        "//:conftest",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//alembic",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "enrollments",
+    srcs = ["enrollments.py"],
+    deps = [
+        ":catalog",
+        ":connections",
+        ":db",
+        ":models",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )

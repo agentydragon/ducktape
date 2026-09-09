@@ -49,6 +49,30 @@ class Base(DeclarativeBase):
     pass
 
 
+class EnrollmentRow(Base):
+    __tablename__ = "connection_enrollment"
+    __table_args__ = (UniqueConstraint("client_id", "redirect_uri", "code_challenge"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    handle_hash: Mapped[str] = mapped_column(Text, unique=True)
+    issuer: Mapped[str] = mapped_column(Text)
+    client_id: Mapped[str] = mapped_column(Text)
+    client_name: Mapped[str | None] = mapped_column(Text)
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    code_challenge: Mapped[str] = mapped_column(Text)
+    upstream_url: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer)
+    browser_hash: Mapped[str | None] = mapped_column(Text)
+    operator_issuer: Mapped[str | None] = mapped_column(Text)
+    operator_subject: Mapped[str | None] = mapped_column(Text)
+    verdict: Mapped[str | None] = mapped_column(Text)
+    decision_digest: Mapped[str | None] = mapped_column(Text)
+    identity_id: Mapped[str | None] = mapped_column(Text)
+    display_name: Mapped[str | None] = mapped_column(Text)
+    exchange_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ConnectionRow(Base):
     __tablename__ = "external_connection"
 
