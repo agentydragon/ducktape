@@ -235,7 +235,7 @@ class SecurityDistributionAcceptance:
         """Nothing can ever fill it, so the payout would be zero for the whole horizon — which
         looks exactly like a fund that does not distribute."""
 
-        with pytest.raises(ValueError, match="holds no lots"):
+        with pytest.raises(ValueError, match="references no lots for alice:ira:bnd"):
             backend(distribution_case(holding_account_id="ira"))
 
     def test_a_declared_distribution_with_no_sampled_payout_series_is_rejected(self, backend: Backend) -> None:

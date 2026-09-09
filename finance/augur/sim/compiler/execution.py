@@ -477,6 +477,13 @@ def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum
     location list exists for the property-tax policy to read.
     """
 
+    for purchase in scenario.scheduled_property_purchases:
+        if purchase.location_id not in locations:
+            known_location_ids = ", ".join(repr(location_id) for location_id in sorted(locations)) or "<none>"
+            raise ValueError(
+                f"scheduled property purchase {purchase.cause_id!r} references unknown location_id "
+                f"{purchase.location_id!r}; known location ids: {known_location_ids}"
+            )
     referenced = sorted({purchase.location_id for purchase in scenario.scheduled_property_purchases})
     return [
         {

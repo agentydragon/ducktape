@@ -12,9 +12,8 @@ holdings, FIFO sales and settlement belong to Rust.
 
 The production Rust input type is `ExecutionInput` in `rust/execution.rs`.
 JSON is currently the Python/Rust transport. The Python writer and Rust fields
-still spell the transport schema separately; this change removes the third
-financial representation, not that language-binding work. Unsupported series
-types are refused, and Rust validates the resulting input before execution.
+spell the transport schema separately. Unsupported series types are refused,
+and Rust validates the resulting input before execution.
 
 ## Precision and validation
 
@@ -26,8 +25,8 @@ types are refused, and Rust validates the resulting input before execution.
 - Tax preparation retains filing-status support checks and rejects jurisdictions
   that disagree on the taxpayer's shared capital-loss offset cap.
 - Derived amounts, such as a property's building share, use the engine's checked
-  integer arithmetic and rounding. They need not be exact before multiplication
-  is rounded; the removed dense compiler imposed that extra restriction.
+  integer arithmetic and rounding; intermediate products need not be exact
+  currency amounts before rounding.
 
 Tests author ordinary scenarios and run the same preparation. Test helpers may
 copy or serialize the prepared document, but do not maintain another encoder or
