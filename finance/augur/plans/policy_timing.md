@@ -101,7 +101,7 @@ bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
   execution versus cash availability and same-time action order. The engine
   validates and settles; it does not choose extra trades. Funding/tax previews
   reuse canonical calculations with observable inputs and explicit assumptions.
-- **Commitments and priority.** Keep current grouping for P1/P2/P6 parity controls,
+- **Commitments and priority.** Keep current grouping for P2/P6 parity controls,
   not as the destination contract. Contracts generate claims; actors choose their
   funding/payment actions or explicit standing instructions. GP scopes rejection,
   deadlines and stop behavior for the bill → sale → available funds → payment
