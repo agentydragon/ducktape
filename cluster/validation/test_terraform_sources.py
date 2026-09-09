@@ -15,6 +15,8 @@ def resources() -> list[dict]:
     return [
         document
         for path in root.rglob("*.yaml")
+        # Authentik blueprints use custom YAML tags and are not Kubernetes resources.
+        if "blueprints" not in path.parts
         for document in yaml.safe_load_all(path.read_text())
         if isinstance(document, dict) and document.get("kind") in {"Terraform", "GitRepository", "HelmRelease"}
     ]
