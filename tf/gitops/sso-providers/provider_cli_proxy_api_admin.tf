@@ -28,6 +28,13 @@ resource "authentik_provider_proxy" "cli_proxy_api_admin" {
   authorization_flow    = data.authentik_flow.implicit_consent.id
   invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=1"
+  # CLIProxyAPI's management UI submits its own management-key login as a backend
+  # `Authorization` header. intercept_header_auth defaults to true, which makes the
+  # outpost itself intercept any request carrying that header and 401 it ("Due to
+  # 'Receive header authentication' being set, no redirect is performed") instead of
+  # passing it through -- the app's own auth never gets to run. Disable so the header
+  # reaches CLIProxyAPI, which still enforces MANAGEMENT_PASSWORD underneath.
+  intercept_header_auth = false
 }
 
 resource "authentik_application" "cli_proxy_api_admin" {
