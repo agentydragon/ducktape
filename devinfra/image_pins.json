@@ -5,11 +5,11 @@
   },
   "bbr_runner": {
     "image": "ghcr.io/agentydragon/bbr-runner",
-    "digest": "sha256:95cb81aaa8ab105d702eab24994a80050b215e4bf14fcb1cbbea8d53d7376f52"
+    "digest": "sha256:dc46034a9e10975b3c1880f5234deacadb0877b5ce835d4333a24f733dc14c80"
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
-    "digest": "sha256:8ea8126de727ae546fed6a0a5aa567940b5cf2e129bf55e76932f031e61abdf0",
+    "digest": "sha256:491d3b17d4243cc7d95b66de77651622f39644427f4bc4294d6a7f295f2414c8",
     "platforms": ["linux/amd64"]
   },
   "excalidraw": {

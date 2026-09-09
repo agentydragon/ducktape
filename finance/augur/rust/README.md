@@ -26,8 +26,9 @@ actor-session API: native callbacks still review opening-month holdings.
   integer fixture. Rust does not resample paths.
 - Independent rollouts execute in parallel with Rayon and are collected by
   deterministic rollout index.
-- Obligations sharing one payer/source account settle all-or-none: a funding
-  group is a hard demand, so a shortfall fails the whole group.
+- The configured runner groups claims and chosen consumption by payer/source
+  account and settles each group all-or-none. This is an explicit control, not a
+  restriction imposed by individual payment execution.
 - Failed rollouts stop executing future actions and preserve the actual stopped
   book and causal trace. No later forensic snapshots or events are emitted.
 - Full forensic output and compact population output use the same state-machine
@@ -74,6 +75,27 @@ arithmetic and full exits remain unsupported. Missing sleeve prices reject, not
 zero-fill. A new target still follows the configured cash-band and quiet-band
 drift conventions below, rather than forcing an immediate full rebalance.
 
+## Exact trades
+
+`engine::trades` defines `SaleRequest` (explicit lot/account/unit selections) and
+`PurchaseRequest` (exact units, holding pool, cash account and new lot identity).
+The month loop supplies execution prices; requests cannot choose a price or mutate
+the book. Scheduled sales, allocation funding/rebalance sales and PE protocol sales
+select FIFO explicitly, then use one sale operation. A caller can instead select a
+newer lot without changing its proceeds, basis or tax-accounting implementation.
+
+Sale preparation checks the whole request and stages only affected lot balances,
+capital-gain rows and TLH entries. Journal and receipt counters are checked before
+posting. Rejection therefore changes none of those books or records. This guarantee
+is per trade, not a rollback of prior monthly actions or a batch of trades.
+
+Purchases use already declared holding pools and exact quantity scales. Allocation
+still chooses/clamps its order after funding; the exact executor rejects insufficient
+cash. Cash accounts and holding pools have different declarations: a lot's holding
+account need not also be a cash account. New actor invocation, transfer admission,
+settlement delays and alternative funding/rebalance strategies are not provided by
+this module.
+
 ## Scoped holdings
 
 `holdings.rs` reads canonical books without a reporting layout. `AgentHoldings`
@@ -103,9 +125,27 @@ the current review order or grouped settlement behavior.
 
 `engine/claims.rs` assembles configured demands from the current month's terms,
 live mortgages and assessed tax liabilities. It does not move money or decide
-funding. `engine/obligations.rs` executes their attached payment effects and the
-configured all-or-none funding-group control. The spending callback's chosen
-consumption remains a separate input to that control.
+funding. Each occurrence has a rollout-local month/index handle independent of
+its cause label; paid claims no longer appear in the due-claim view.
+
+`engine/payments.rs` executes `PayClaim` and `Consume` requests using the same
+canonical transfer, deduction, mortgage and tax effects. A claim payment names
+the occurrence, exact full amount and an owned, declared funding account; the
+claim fixes its recipient and effect. Consumption names a separate component,
+another actor's recipient account and positive amount, without becoming a contract
+claim. Transfers between one's own accounts are not consumption. Receipts retain
+the caller's request ID, target, requested amount and paid/rejected outcome.
+Invalid ownership, account, handle, amount, duplicate payment or insufficient
+cash rejects before changing books or capture. Unexpected arithmetic/accounting
+errors remain explicit simulator errors, not financial-failure receipts.
+
+`engine/obligations.rs` retains the configured all-or-none funding-group control
+and its existing demand/failure event projection, over that same executor.
+Allocation reserves both configured claims and the separate consumption request.
+The planned actor loop will instead execute one monthly policy call's ordered
+actions and stop that rollout at its first rejection, retaining earlier successes
+and skipping later actions/months, with no retry or engine rescue. That loop and
+Python action entry points are not introduced here.
 
 ## Covered behavior
 
@@ -314,7 +354,7 @@ Scenario features the fixture cannot express are refused rather than encoded wit
 `engine.rs` is the orchestrator: the rollout month loop, the public entry points, and the
 shared per-rollout state. Each policy family it drives lives in `engine/` beside it —
 `validation`, `property`, `claims`, `obligations`, `taxes`, `securities`, `target_allocation`,
-`private_equity`, `tlh`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
+`private_equity`, `tlh`, `trades`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
 the shared state through `use super::*`, and expose to the root only what it calls;
 anything a module uses alone stays private to it, which the single 7.5k-line file could
 not express.

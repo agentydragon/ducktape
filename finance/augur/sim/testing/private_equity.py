@@ -628,6 +628,7 @@ class PrivateEquityAcceptance:
             named=True
         )
         assert row["proceeds_account_id"] == "checking"
+        assert row["source_account_id"] == "checking"
 
     def test_a_recovery_cashout_takes_the_rest_of_the_position_for_a_stated_amount(self, backend: Backend) -> None:
         """A wind-up pays what it pays: all remaining units go for $100 regardless of the mark.

@@ -4,6 +4,19 @@
 
 use super::*;
 
+/// A particular occurrence in one month's claim set, not a user-supplied cause label.
+/// Handles are scoped to the containing rollout; another month's handle is stale.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClaimId {
+    pub(super) month: u32,
+    pub(super) index: usize,
+}
+
+pub(super) struct Claims {
+    pub month: u32,
+    pub entries: Vec<ActiveObligation>,
+}
+
 /// Configured order is scheduled demands, recurring demands, property charges, then tax.
 /// The caller supplies the current month; this is not an actor-facing future-bill preview.
 pub(super) fn assemble(
@@ -13,7 +26,7 @@ pub(super) fn assemble(
     properties: &[PropertyState],
     mortgages: &[MortgageState],
     tax_liabilities: &[TaxLiabilityState],
-) -> Result<Vec<ActiveObligation>, SimulationError> {
+) -> Result<Claims, SimulationError> {
     let mut active_obligations = Vec::new();
     for obligation in fixture
         .scenario
@@ -30,6 +43,7 @@ pub(super) fn assemble(
             continue;
         };
         active_obligations.push(ActiveObligation {
+            paid: false,
             cause_id: format!("{}_m{month}", obligation.obligation_id),
             obligation_type: obligation.obligation_type.clone(),
             from: obligation.from.clone(),
@@ -55,6 +69,7 @@ pub(super) fn assemble(
             continue;
         };
         active_obligations.push(ActiveObligation {
+            paid: false,
             cause_id: format!("{}_m{month}", obligation.obligation_id),
             obligation_type: obligation.obligation_type.clone(),
             from: obligation.from.clone(),
@@ -65,7 +80,10 @@ pub(super) fn assemble(
     }
     active_obligations.extend(property_obligations(fixture, properties, mortgages, month)?);
     active_obligations.extend(tax_obligations(fixture, tax_liabilities, month)?);
-    Ok(active_obligations)
+    Ok(Claims {
+        month,
+        entries: active_obligations,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -103,6 +121,7 @@ pub(super) struct ActiveObligation {
     pub(super) to: AccountRef,
     pub(super) amount_due: Money,
     pub(super) effect: ObligationEffect,
+    pub(super) paid: bool,
 }
 
 /// What settling one configured obligation does, or `None` when it does not accrue at all
@@ -160,6 +179,7 @@ fn property_obligations(
         );
         let principal = Money((due.0 - interest.0).max(0).min(mortgage.principal.0));
         obligations.push(ActiveObligation {
+            paid: false,
             cause_id: format!("{}_payment_m{month}", mortgage.liability_id),
             obligation_type: "mortgage_payment".into(),
             from: AccountRef::new(&mortgage.agent_id, &mortgage.payment_account_id),
@@ -225,6 +245,7 @@ fn property_obligations(
             })?,
         );
         obligations.push(ActiveObligation {
+            paid: false,
             cause_id: format!("{}_property_tax_m{month}", policy.property_id),
             obligation_type: "property_tax".into(),
             from: AccountRef::new(&policy.owner_agent_id, &policy.from_account_id),
@@ -263,6 +284,7 @@ fn tax_obligations(
                 continue;
             }
             obligations.push(ActiveObligation {
+                paid: false,
                 cause_id: format!(
                     "{}_estimated_tax_q{quarter}_y{}",
                     profile.agent_id,
@@ -301,6 +323,7 @@ fn tax_obligations(
         let q4_due = Money((safe_harbor.0 - first_three_quarters.0).max(0));
         if q4_due != Money(0) {
             obligations.push(ActiveObligation {
+                paid: false,
                 cause_id: format!("{}_estimated_tax_q4_y{tax_year}", profile.agent_id),
                 obligation_type: "estimated_tax".into(),
                 from: AccountRef::new(&profile.agent_id, &profile.payment_account_id),
@@ -315,6 +338,7 @@ fn tax_obligations(
         let true_up_due = Money((actual.0 - safe_harbor.0).max(0));
         if true_up_due != Money(0) {
             obligations.push(ActiveObligation {
+                paid: false,
                 cause_id: format!("{}_tax_true_up_y{tax_year}", profile.agent_id),
                 obligation_type: "tax_true_up".into(),
                 from: AccountRef::new(&profile.agent_id, &profile.payment_account_id),

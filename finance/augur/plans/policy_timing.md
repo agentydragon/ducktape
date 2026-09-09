@@ -1,6 +1,7 @@
 # Policy timing: executable cases and remaining choices
 
-Inputs to **GP** in [the landing plan](roadmap.md). The tests below exercise current
+Scoped timing contract and remaining **GP** choices in [the landing plan](roadmap.md).
+The tests below exercise current
 canonical execution, not the target [actor-facing interface](policy_interfaces.md).
 Economic agency defines that boundary; scoped timing/execution choices remain open.
 
@@ -90,27 +91,51 @@ Run the two cases without network evidence downloads:
 bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
 ```
 
-## Remaining actor-action choices
+## Monthly action contract
 
-- **Observation time/content.** Expose actor-known contracts, claims and tax facts
-  at the first consumer's information/action opportunities. Current callbacks
-  review before same-month distributions/transfers; moving funding logic into
-  that opening callback alone would deprive it of facts the engine currently uses.
-- **Proposal versus execution.** Policies turn budgets and allocation targets into
-  trades/payments, optionally using sleeve helpers. Pin request/result identity,
-  execution versus cash availability and same-time action order. The engine
-  validates and settles; it does not choose extra trades. Funding/tax previews
-  reuse canonical calculations with observable inputs and explicit assumptions.
-- **Commitments and priority.** Keep current grouping for P2/P6 parity controls,
-  not as the destination contract. Contracts generate claims; actors choose their
-  funding/payment actions or explicit standing instructions. GP scopes rejection,
-  deadlines and stop behavior for the bill → sale → available funds → payment
-  example. Broader partial-payment/default/recovery behavior needs separate scope;
-  a collection of actions is not implicitly atomic.
-- **Decision memory and receipts.** State is local to a rollout. Decide which
-  changes commit on proposal versus on successful settlement. Record meaningful
-  cuts/anchor transitions separately from payment receipts so equal-cost anchors
-  remain distinguishable; do not serialize arbitrary closure internals.
+One call per active actor per month returns an ordered action list. Submit the
+whole list at once and execute it in the policy's order, using each action's
+resulting books for the next action. No global sells-before-buys pass is implied.
+There is no within-month policy callback or retry.
 
-These controls do not implement the actor-action loop, zero-target/full-exit
-arithmetic, compact allocation capture or explicit decision-transition receipts.
+An unexecutable action is fatal for its rollout: it changes no books, earlier
+successful actions remain recorded, and later actions/months are not executed.
+Other rollouts continue. This is per-action atomicity, not an all-or-none month.
+Receipts inform next-month policy decisions or the terminal report. A sequence
+such as `[Sell(...), Buy(...), Transfer(...), Buy(...)]` is submitted by one call;
+its cash dependencies must be executable under the chosen settlement rules.
+
+## First actor-action example: agreed timing
+
+Use one decision-making household with rule-driven counterparties:
+
+1. Apply scheduled cashflows/events and assemble the claims due this month.
+2. Expose those current books and due claims; call policy once.
+3. Execute its submitted actions in order, stopping on the first unexecutable action.
+4. If execution succeeds but any due claim remains unpaid, stop with that distinct cause.
+5. Otherwise continue financial accrual/assessment and the next month's decision.
+
+The first supported trade control declares immediate cash availability explicitly;
+it does not claim actual products all settle immediately. Policies may call optional
+funding helpers to ask how to satisfy their needs under supported product terms,
+then compose the returned operations with payments and other actions. Helpers do
+not execute those proposals, and the executor adds no funding or rebalancing pass.
+
+Current opening-month/all-or-none cases remain controls for P6. Moving strategy out
+of the engine does not preserve their old information boundary: the new action
+policy must see the cashflows and claims whose funding it now chooses.
+
+## Remaining choices
+
+GP covers additional product/housing settlement and deadline semantics, and order
+between multiple decision-making actors. Those extensions do not block the first
+scoped example or introduce within-month callbacks/retries. Unsupported settlement
+combinations must remain explicit gaps, not implicitly spendable proceeds.
+
+Policy memory remains actor/path-local. Desired cuts and anchor changes are
+intentions; paid amounts and completed transitions require actual receipts.
+Record them separately without serializing arbitrary closure internals.
+
+The existing timing controls do not implement the new actor loop,
+zero-target/full-exit arithmetic, compact allocation capture or explicit
+decision-transition receipts.

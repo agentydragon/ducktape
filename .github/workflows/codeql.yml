@@ -1,0 +1,67 @@
+# Default setup scanned all six languages on PR updates, consuming 46.6% of
+# measured runner time while required Bazel checks queued (CI latency report #5964).
+# Scan nightly and on demand instead: accept post-merge findings to keep PR
+# feedback responsive. Default setup must be disabled; see devinfra/docs/ci_workflows.md.
+name: CodeQL scheduled
+
+on:
+  schedule:
+    # 03:23 PDT / 02:23 PST; scheduled runs use the default branch (devel).
+    - cron: "23 10 * * *"
+  workflow_dispatch:
+
+# Serialize scheduled/manual scans across refs so max-parallel is a global bound
+# for this workflow. Let the active scan finish; pending requests can coalesce.
+concurrency:
+  group: codeql-scheduled
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        # Preserve default setup's language coverage and extraction modes.
+        include:
+          - language: actions
+            build-mode: none
+          - language: c-cpp
+            build-mode: none
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: rust
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: third_party/go.mod
+          cache: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Analyze and upload results
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -80,6 +80,7 @@ py_library(
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
         "//haku/console/identity:agent",
+        "//haku/console/identity:authorization",
         "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity",
         "//haku/console/session:status",
