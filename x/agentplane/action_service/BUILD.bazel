@@ -81,6 +81,7 @@ py_library(
         ":updates",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//fastapi",
+        "@pypi//starlette",
     ],
 )
 

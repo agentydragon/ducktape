@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
@@ -224,8 +225,8 @@ def create_app(
     ) -> ActionRequestView:
         return await action_service.decide(request_id, body, principal)
 
-    # Last mount catches /mcp exactly without a slash redirect; REST routes above remain distinct.
-    app.mount("/", ActionsMcp(mcp_app, workload_authenticator))
+    # Match only the transport endpoint, without a slash redirect or intercepting unknown REST paths.
+    app.router.routes.append(Route("/mcp", ActionsMcp(mcp_app, workload_authenticator)))
     return app
 
 
