@@ -619,3 +619,27 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "nominal_bond",
+    srcs = ["nominal_bond.py"],
+    deps = [
+        ":float64",
+        "@pypi//jax",
+    ],
+)
+
+py_test(
+    name = "test_nominal_bond",
+    srcs = ["test_nominal_bond.py"],
+    deps = [
+        ":conftest",
+        ":nominal_bond",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

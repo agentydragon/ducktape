@@ -1,0 +1,64 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_binary(
+    name = "run_bin",
+    main_module = "finance.augur.x.bond_policies.run",
+    deps = [":run"],
+)
+
+py_library(
+    name = "construction",
+    srcs = ["construction.py"],
+    deps = [
+        "//finance/augur/model:bond_fund",
+        "//finance/augur/model:nominal_bond",
+        "//finance/augur/sim:bonds",
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "run",
+    srcs = ["run.py"],
+    deps = [
+        ":construction",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:backend",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "test_construction",
+    srcs = ["test_construction.py"],
+    deps = [
+        ":construction",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_run",
+    srcs = ["test_run.py"],
+    deps = [
+        ":construction",
+        ":run",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:backend",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -14,6 +14,10 @@ composed in downstream user repos via the `Config` schema in
 
 See <SPEC.md> for the entity taxonomy + per-rollout evaluation loop.
 
+Runnable composition examples: <x/bounded_spending/README.md> for executable
+spending rules, and <x/bond_policies/README.md> for dated-bond policies on shared
+discount curves with tax-free household withdrawals.
+
 ## Planning boundary
 
 Public, generic Augur work is tracked in this repo: simulator contracts,
