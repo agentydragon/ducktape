@@ -56,6 +56,7 @@ mod taxes;
 mod tests;
 mod tlh;
 pub mod trades;
+pub mod transfers;
 mod validation;
 
 pub use errors::SimulationError;
@@ -72,6 +73,7 @@ use target_allocation::*;
 use taxes::*;
 use tlh::*;
 use trades::*;
+use transfers::*;
 use validation::*;
 
 const EXTERNAL_AGENT: &str = "__external__";

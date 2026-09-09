@@ -113,6 +113,24 @@ account need not also be a cash account. New actor invocation, transfer admissio
 settlement delays and alternative funding/rebalance strategies are not provided by
 this module.
 
+## Transfer accounting
+
+`engine::transfers::TransferRequest` names the cause, source, destination and exact
+amount. The execution operation has two engine-controlled admission contexts:
+an actor ID requires owned, declared, funded cash; no actor ID denotes an already
+scheduled cashflow. All scheduled/recurring transfers and property-gated cashflows
+use this same operation after resolving their current amount.
+
+Actor requests cannot supply tax labels. Scheduled contracts retain the existing
+income-source and ordinary-deduction rules, and can debit their source below zero;
+this preserves exogenous cashflows without giving actors implicit credit. The shared
+posting routine stages only the affected income rows and validates the journal
+counter before posting cash. Overlapping income/deduction rows use the pending value,
+not the original value twice. A failed request preserves cash, tax rows and receipts.
+
+This is a transaction primitive, not an actor invocation loop or claim-payment API.
+No policy selection, automatic funding, delayed settlement or batch rollback is added.
+
 ## Scoped holdings
 
 `holdings.rs` reads canonical books without a reporting layout. `AgentHoldings`
@@ -380,7 +398,7 @@ Scenario features the fixture cannot express are refused rather than encoded wit
 `engine.rs` is the orchestrator: the rollout month loop, the public entry points, and the
 shared per-rollout state. Each policy family it drives lives in `engine/` beside it —
 `validation`, `property`, `claims`, `obligations`, `taxes`, `securities`, `target_allocation`,
-`private_equity`, `tlh`, `trades`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
+`private_equity`, `tlh`, `trades`, `cashflows`, `transfers`, `recorder`, `accounts`, `errors`. Submodules reach
 the shared state through `use super::*`, and expose to the root only what it calls;
 anything a module uses alone stays private to it, which the single 7.5k-line file could
 not express.

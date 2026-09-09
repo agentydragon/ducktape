@@ -52,6 +52,8 @@ rust_library(
         "engine/tlh_test.rs",
         "engine/trades.rs",
         "engine/trades_test.rs",
+        "engine/transfers.rs",
+        "engine/transfers_test.rs",
         "engine/validation.rs",
         "event_frames.rs",
         "execution.rs",

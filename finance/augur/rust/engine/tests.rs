@@ -14,6 +14,9 @@ use super::*;
 #[path = "trades_test.rs"]
 mod trades;
 
+#[path = "transfers_test.rs"]
+mod transfers;
+
 pub(super) fn minimal_fixture() -> ExecutionInput {
     ExecutionInput {
         schema_version: INPUT_SCHEMA_VERSION,

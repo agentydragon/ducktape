@@ -121,6 +121,8 @@ pub enum SimulationError {
     InvalidSaleUnits { cause_id: String, units: i64 },
     #[error("trade {cause_id:?} rejected: {reason}")]
     InvalidTrade { cause_id: String, reason: String },
+    #[error("transfer {cause_id:?} rejected: {reason}")]
+    InvalidTransfer { cause_id: String, reason: String },
     #[error("{kind} {cause_id:?} has non-positive amount {amount}")]
     InvalidAmount {
         kind: &'static str,

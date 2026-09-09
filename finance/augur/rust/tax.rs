@@ -81,7 +81,52 @@ pub struct IncomeLedger {
     by_source: BTreeMap<(String, IncomeSource), Money>,
 }
 
+/// Pending changes to touched income rows, not a copy of the year's ledger.
+pub(crate) struct IncomeUpdates<'a> {
+    ledger: &'a mut IncomeLedger,
+    by_source: BTreeMap<(String, IncomeSource), Money>,
+}
+
+impl IncomeUpdates<'_> {
+    pub(crate) fn accrue(
+        &mut self,
+        agent_id: &str,
+        source: &IncomeSource,
+        amount: Money,
+    ) -> Result<(), ArithmeticError> {
+        let key = (agent_id.to_owned(), source.clone());
+        let Some(current) = self
+            .by_source
+            .get(&key)
+            .or_else(|| self.ledger.by_source.get(&key))
+        else {
+            return Ok(());
+        };
+        self.by_source.insert(key, current.checked_add(amount)?);
+        Ok(())
+    }
+
+    pub(crate) fn deduct_from_ordinary(
+        &mut self,
+        agent_id: &str,
+        amount: Money,
+    ) -> Result<(), ArithmeticError> {
+        self.accrue(agent_id, &IncomeSource::Ordinary, amount.checked_neg()?)
+    }
+
+    pub(crate) fn commit(self) {
+        self.ledger.by_source.extend(self.by_source);
+    }
+}
+
 impl IncomeLedger {
+    pub(crate) fn updates(&mut self) -> IncomeUpdates<'_> {
+        IncomeUpdates {
+            ledger: self,
+            by_source: BTreeMap::new(),
+        }
+    }
+
     /// One zeroed row per taxpayer per source, which fixes what the ledger can report.
     pub fn for_taxpayers<'a>(
         agent_ids: impl IntoIterator<Item = &'a str>,
@@ -107,11 +152,9 @@ impl IncomeLedger {
         source: &IncomeSource,
         amount: Money,
     ) -> Result<(), ArithmeticError> {
-        let key = (agent_id.to_owned(), source.clone());
-        let Some(row) = self.by_source.get_mut(&key) else {
-            return Ok(());
-        };
-        *row = row.checked_add(amount)?;
+        let mut updates = self.updates();
+        updates.accrue(agent_id, source, amount)?;
+        updates.commit();
         Ok(())
     }
 
@@ -121,7 +164,10 @@ impl IncomeLedger {
         agent_id: &str,
         amount: Money,
     ) -> Result<(), ArithmeticError> {
-        self.accrue(agent_id, &IncomeSource::Ordinary, amount.checked_neg()?)
+        let mut updates = self.updates();
+        updates.deduct_from_ordinary(agent_id, amount)?;
+        updates.commit();
+        Ok(())
     }
 
     /// What the taxpayer earned in the bucket every deduction lands in. This is the figure a

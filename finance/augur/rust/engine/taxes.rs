@@ -3,30 +3,6 @@
 
 use super::*;
 
-pub(super) fn record_transfer_income(
-    tax: &mut TaxState,
-    recipient_agent_id: &str,
-    income_category: Option<&IncomeSource>,
-    amount: Money,
-) -> Result<(), SimulationError> {
-    let Some(source) = income_category else {
-        return Ok(());
-    };
-    Ok(tax.income.accrue(recipient_agent_id, source, amount)?)
-}
-
-pub(super) fn record_transfer_deduction(
-    tax: &mut TaxState,
-    payer_agent_id: &str,
-    deduction_category: Option<&str>,
-    amount: Money,
-) -> Result<(), SimulationError> {
-    if deduction_category != Some("ordinary") {
-        return Ok(());
-    }
-    record_ordinary_deduction(tax, payer_agent_id, amount, WIRE_RATE_SCALE)
-}
-
 pub(super) fn record_ordinary_deduction(
     tax: &mut TaxState,
     payer_agent_id: &str,

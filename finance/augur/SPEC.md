@@ -201,6 +201,23 @@ reported, and the stopped book is not horizon-terminal wealth. It does not model
 partial payments, grace periods,
 delinquency balances, recovery/cure, or underpayment penalties.
 
+### Cash Transfers
+
+An explicit transfer moves an exact positive amount from the actor's own declared
+cash account to another declared cash account, provided the source already has the
+funds. It does not trigger a sale, loan, partial fill or claim payment. The current
+operation is immediate; it does not introduce delayed settlement or credit terms.
+
+Bare transfer requests cannot assign tax character. Scheduled contract cashflows
+retain their declared income/deduction treatment and use the same cash, income-ledger
+and receipt accounting. Their existing unconditional source-debit convention can
+produce a negative exogenous counterparty balance; it grants no overdraft authority
+to explicit actor requests.
+
+A rejected transfer changes neither cash nor income/deduction rows nor transaction
+records. This is a per-transfer guarantee, not a rollback of earlier successful
+transfers or other monthly events.
+
 ### Asset Acquisition
 
 Trade execution accepts exact lot sales and exact-quantity purchases in declared holding
