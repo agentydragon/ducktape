@@ -61,6 +61,29 @@ Migration `0006_decision_note` renames the existing human-note column without dr
 downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
 a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
 
+## Consent transactions
+
+`EnrollmentAuthority` accepts trusted, framework-validated authorization metadata from the OAuth
+adapter. Only an opaque enrollment handle crosses to the integration-app URL; PostgreSQL stores
+its hash. The operator-authenticated `/v1/operator/connection-enrollments/{handle}/preview` and
+`/decision` routes bind the interaction to the app's server-side per-session browser secret and
+the independently verified operator principal. The app enforces browser Origin/CSRF protection;
+the service compares the browser-binding hash and operator on every decision.
+
+Preview returns client presentation and expiry, not the held upstream URL or PKCE challenge.
+Allow stores the configured Identity and Connection name, then releases only the stored framework
+URL. Deny returns no redirect. Exact decision retries recover the original response; conflicting
+or stale decisions cannot overwrite it. The configured Identity catalog supplies the UI picker.
+
+The OAuth adapter calls `approved` with the framework code's client/redirect/PKCE tuple and the
+verified, explicitly mapped upstream operator. It binds and validates the resulting pending grant,
+then calls `claim_exchange` immediately before framework code consumption. Only one exchange can
+claim an enrollment; dependency failures before the claim remain retryable, whereas ambiguous
+post-claim failures require fresh OAuth. Activation remains the adapter's responsibility after
+successful token persistence. Migration `0010_connection_enrollments` retains correlation
+tombstones so expired codes cannot select a newer consent. These endpoints do not enable OAuth
+or bypass Action review on their own.
+
 ## Decision providers
 
 All configured synchronous providers run to completion; any deny dominates, otherwise any allow
