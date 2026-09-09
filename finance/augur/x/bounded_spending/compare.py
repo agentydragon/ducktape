@@ -7,16 +7,17 @@ tax-free portfolio and cashflow-only, sales-only funding policy are retained.
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
+from typing import Any
 
 import numpy as np
-from python.runfiles import runfiles
 
+from finance.augur.rust.invocation import invoke, write_prepared_input
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.study.trinity.replay import build_scenario, sample_replay
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 def compare(
@@ -58,29 +59,18 @@ def compare(
         )
     )
     input_path = output_dir / "execution-input.json"
-    input_path.write_text(json.dumps(run.execution_input))
-    resolver = runfiles.Create()
-    if resolver is None:
-        raise RuntimeError("Bazel runfiles are unavailable")
-    binary = resolver.Rlocation("_main/finance/augur/x/bounded_spending/runner")
-    if binary is None:
-        raise RuntimeError("bounded-spending runner is absent from runfiles")
+    write_prepared_input(run, input_path)
+    binary = get_required_path(own_repo_rlocation("finance/augur/x/bounded_spending/runner"))
     for name, cut, raise_ in (("fixed_real", 0, 0), ("bounded", max_cut_bps, max_raise_bps)):
         summary_path = output_dir / f"{name}.json"
-        subprocess.run(
-            [
-                binary,
-                str(input_path),
-                str(summary_path),
-                str(rate_bps),
-                str(cut),
-                str(raise_),
-                *map(str, trace_rollouts),
-            ],
-            check=True,
+        summary = invoke(
+            binary=binary,
+            input_path=input_path,
+            output_path=summary_path,
+            arguments=[str(rate_bps), str(cut), str(raise_), *map(str, trace_rollouts)],
         )
         _write_consumption_distribution(
-            summary_path,
+            summary,
             output_dir / f"{name}.consumption.json",
             horizon_months=scenario.horizon_months,
             currency_code=scenario.currency.code,
@@ -89,10 +79,9 @@ def compare(
 
 
 def _write_consumption_distribution(
-    summary_path: Path, output_path: Path, *, horizon_months: int, currency_code: str, currency_quantum: str
+    summary: dict[str, Any], output_path: Path, *, horizon_months: int, currency_code: str, currency_quantum: str
 ) -> None:
     """Describe the empirical component distribution among paths observed that month."""
-    summary = json.loads(summary_path.read_text())
     percentiles = (5.0, 50.0, 95.0)
     requested = [np.asarray(path, dtype=np.int64) for path in summary["consumption_requested"]]
     paid = [np.asarray(path, dtype=np.int64) for path in summary["consumption_paid"]]

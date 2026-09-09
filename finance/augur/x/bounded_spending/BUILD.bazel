@@ -8,8 +8,8 @@ rust_binary(
     srcs = ["policy.rs"],
     edition = "2024",
     deps = [
+        "//finance/augur/rust:native_invocation",
         "//finance/augur/rust:simulator",
-        "@crates//:serde_json",
     ],
 )
 
@@ -18,12 +18,13 @@ py_library(
     srcs = ["compare.py"],
     data = [":runner"],
     deps = [
+        "//finance/augur/rust:invocation",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:quantiles",
         "//finance/augur/study/trinity:replay",
+        "//util/bazel:runfiles",
         "@pypi//numpy",
-        "@rules_python//python/runfiles",
     ],
 )
 

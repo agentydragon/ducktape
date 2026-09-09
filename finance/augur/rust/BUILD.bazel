@@ -4,6 +4,23 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+rust_library(
+    name = "native_invocation",
+    srcs = ["invocation.rs"],
+    crate_name = "augur_native_invocation",
+    edition = "2024",
+    deps = [
+        ":simulator",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "native_invocation_test",
+    crate = ":native_invocation",
+)
+
 # `simulator` is a `rust_shared_library` staged as `simulator.so`; there is no `.py` for
 # gazelle's import scan to resolve against.
 # gazelle:resolve py finance.augur.rust.simulator //finance/augur/rust:simulator_ext
@@ -176,5 +193,30 @@ py_library(
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:simulation_result",
         "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "invocation",
+    srcs = ["invocation.py"],
+    deps = ["//finance/augur/sim:backend"],
+)
+
+py_test(
+    name = "test_invocation",
+    srcs = ["test_invocation.py"],
+    data = ["//finance/augur/x/bounded_spending:runner"],
+    deps = [
+        ":invocation",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:scenario",
+        "//util/bazel:runfiles",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

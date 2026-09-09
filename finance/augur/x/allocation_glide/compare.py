@@ -7,14 +7,13 @@ This is a composition example, not a named retirement-study reproduction.
 
 import argparse
 import json
-import subprocess
 from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
-from python.runfiles import runfiles
 
 from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.rust.invocation import invoke, write_prepared_input
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
@@ -28,6 +27,7 @@ from finance.augur.sim.scenario import (
     SleeveTarget,
     TargetAllocationPolicy,
 )
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 GROWTH = SecurityKey(symbol="test-growth")
 STEADY = SecurityKey(symbol="test-steady")
@@ -100,19 +100,13 @@ def compare(output_dir: Path) -> None:
         jurisdictions={},
         locations={},
     )
-    resolver = runfiles.Create()
-    if resolver is None:
-        raise RuntimeError("Bazel runfiles are unavailable")
-    binary = resolver.Rlocation("_main/finance/augur/x/allocation_glide/runner")
-    if binary is None:
-        raise RuntimeError("allocation-glide runner is absent from runfiles")
+    binary = get_required_path(own_repo_rlocation("finance/augur/x/allocation_glide/runner"))
     output_dir.mkdir(parents=True, exist_ok=False)
     input_path = output_dir / "execution-input.json"
-    input_path.write_text(json.dumps(run.execution_input))
+    write_prepared_input(run, input_path)
     for name, step in (("constant", 0), ("glide", 5)):
         output_path = output_dir / f"{name}.json"
-        subprocess.run([binary, str(input_path), str(output_path), str(step)], check=True)
-        output = json.loads(output_path.read_text())
+        output = invoke(binary=binary, input_path=input_path, output_path=output_path, arguments=[str(step)])
         for rollout in output["rollouts"]:
             paid = sum(row["amount_paid"] for row in rollout["obligations"] if row["obligation_type"] == "cash_spend")
             print(

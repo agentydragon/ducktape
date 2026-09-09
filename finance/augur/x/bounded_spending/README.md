@@ -10,6 +10,10 @@ for CPI. A zero-cut, zero-raise control holds real spending constant. Money is
 rounded at each annual CPI reset and limit calculation. Rules live in `policy.rs`,
 not an engine enum. Each rollout gets fresh closure state.
 
+Prepared-input and output I/O use the shared
+[native invocation helpers](../../rust/docs/execution_boundary.md#native-experiment-invocation).
+The example owns policy parameters, account bindings, selected traces and analysis.
+
 The shell reuses the Trinity experiment's historical windows and instruments:
 Ken French equity; a synthetic 20-year Moody's Aaa constant-maturity bond fund;
 1926–1995 record intent with actual coverage and the ordered historical start

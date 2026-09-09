@@ -15,6 +15,25 @@ JSON is currently the Python/Rust transport. The Python writer and Rust fields
 spell the transport schema separately. Unsupported series types are refused,
 and Rust validates the resulting input before execution.
 
+## Native experiment invocation
+
+`rust/invocation.py` writes a `CompiledRun` once with `write_prepared_input` and
+invokes an experiment-owned binary with `invoke`. The common argument prefix is
+`INPUT.json OUTPUT.json`; remaining arguments belong to the experiment. The return
+value is the existing decoded output document for experiment-owned analysis.
+Native errors propagate before output is decoded; paths and arguments are passed
+as argv entries, not shell text.
+
+The separate `augur_native_invocation` Rust library loads that input through
+`run` and checks serialization and buffered-write errors through `write_output`.
+The supplied closure still chooses its engine entrypoint, policies, account
+bindings, parameters and selected traces. Financial validation stays in the
+engine. Neither helper changes path identities or caches execution state.
+
+The bounded-spending and allocation-glide examples share this file transport.
+Their ordinary policy functions remain compiled into their own small binaries;
+this does not expose Python callbacks or select policies from a registry.
+
 ## Precision and validation
 
 - Authored money must be exactly representable in its currency quantum.

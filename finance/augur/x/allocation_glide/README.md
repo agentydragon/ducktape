@@ -23,6 +23,10 @@ values are exposed; the fixed sleeve order is growth, steady. Source-account
 bindings, the $0/$10,000 cash band, purchase permission and zero-tolerance
 quiet-band drift rule come from the prepared scenario.
 
+The Python shell and Rust entrypoint use the shared
+[native invocation helpers](../../rust/docs/execution_boundary.md#native-experiment-invocation)
+for prepared-input and output I/O. Policy parameters and analysis remain here.
+
 The glide changes **targets**, not holdings directly. Cash-band raising or
 investment suppresses drift rebalancing in that month. Cashflow-only execution
 would move toward the target only as cash moves; a target update is not a promise
