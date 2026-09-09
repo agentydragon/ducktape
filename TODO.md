@@ -62,5 +62,5 @@ Needs verification:
 
 ## Repository
 
-- [ ] Decide what remains of <docs/dead_code_2026_01_30.md>. Seven of its ten rows name files that no longer exist; the three live ones are all in `tana/export/` (`cli.py`, `sample.py`, `headless_autoexport/`) and were still unreferenced when checked on 2026-08-26 — no BUILD dep, no import, and all three are `py_library`, so nothing can run them. Either remove them and retire the report, or prune the stale rows so it describes the present.
+- [x] Refreshed <docs/dead_code_2026_01_30.md> on 2026-09-09: removed stale rows for files that no longer exist, including the unused Firecracker manager modules removed in this cleanup.
 - [ ] Add an AGPL-3.0 `LICENSE` file at the repo root and standardize AGPL-3.0 license headers across source files (`README.md` declares AGPL 3.0, but there is no `LICENSE` file and headers are inconsistent)

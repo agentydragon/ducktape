@@ -42,23 +42,6 @@ py_library(
 )
 
 py_library(
-    name = "protocol",
-    srcs = ["protocol.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "process_api_client",
-    srcs = ["process_api_client.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":protocol",
-        "@pypi//websockets",
-    ],
-)
-
-py_library(
     name = "snapshots",
     srcs = ["snapshots.py"],
     visibility = ["//visibility:public"],
