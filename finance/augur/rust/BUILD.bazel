@@ -44,6 +44,7 @@ rust_library(
         "engine/recorder.rs",
         "engine/securities.rs",
         "engine/spending.rs",
+        "engine/spending/batch.rs",
         "engine/target_allocation.rs",
         "engine/taxes.rs",
         "engine/tests.rs",
@@ -120,6 +121,21 @@ py_library(
         ":simulator_so",
     ],
     imports = ["../../.."],
+)
+
+py_test(
+    name = "batch_test",
+    srcs = ["batch_test.py"],
+    deps = [
+        ":simulator_ext",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(

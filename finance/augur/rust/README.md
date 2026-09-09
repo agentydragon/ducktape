@@ -15,6 +15,23 @@ failed states do not advance or invoke policies; an execution error consumes the
 state, preventing continuation from a partly applied month. This is not a public
 actor-session API: native callbacks still review opening-month holdings.
 
+The existing extension also exposes `PrototypeSpendingSession`: an experimental
+Python-controlled `observe()` → decision → `advance(requests)` monthly handoff.
+It owns one compiled input and retained books, releases the GIL for native work,
+and uses the same evaluator as the full-horizon spending driver. Its copied integer
+observation columns contain original path IDs, month, actor cash/public value and
+current/origin CPI, not future paths. Requests carry `(path ID, observed month,
+nominal currency quanta)` and may be reordered or chunked. Policy memory belongs
+to the experiment and must follow original IDs, never temporary batch positions.
+Stopped paths disappear from observations; compact result columns follow the
+constructor's selection order, while forensic replay retains original path IDs.
+`finish_json()` consumes terminal results. Invalid requests or native errors close
+the entire prototype session; insufficient funding retains the current per-path
+stop behavior. Call `close()` if a Python policy raises. There is no resubmission
+or within-month policy callback, and this is not the supported actor-action API.
+This first transport boxes/copies integer lists and serializes final output as JSON;
+it makes no zero-copy or high-N throughput claim.
+
 ## Invariants
 
 - Money is always a checked `i64` count of the fixture's declared currency

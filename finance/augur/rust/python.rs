@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 
 use augur_rust_simulator::engine::{
     ValidatedInput, simulate_dense_validated, simulate_product_metrics_validated,
-    simulate_summaries_validated, simulate_validated,
+    simulate_summaries_validated, simulate_validated, spending::batch,
 };
 use augur_rust_simulator::event_frames::FramedOutput;
 use augur_rust_simulator::execution::ExecutionInput;
@@ -114,9 +114,103 @@ fn simulate_summaries_json(fixture_json: &str) -> PyResult<String> {
     serde_json::to_string(&output).map_err(to_py_err)
 }
 
+/// Copied integer columns for the experimental opening-month spending control.
+#[pyclass(frozen, module = "finance.augur.rust.simulator")]
+struct SpendingObservationBatch {
+    #[pyo3(get)]
+    rollout_ids: Vec<u32>,
+    #[pyo3(get)]
+    months: Vec<u32>,
+    #[pyo3(get)]
+    cash: Vec<i64>,
+    #[pyo3(get)]
+    public_holdings: Vec<i64>,
+    #[pyo3(get)]
+    price_numerators: Vec<i64>,
+    #[pyo3(get)]
+    price_denominators: Vec<i64>,
+}
+
+/// Prototype only: Python supplies one spending request per live path/month.
+#[pyclass(module = "finance.augur.rust.simulator")]
+struct PrototypeSpendingSession {
+    session: Option<batch::Session>,
+}
+
+#[pymethods]
+impl PrototypeSpendingSession {
+    #[new]
+    #[pyo3(signature = (fixture_json, spending_json, rollout_ids, forensic=false))]
+    fn new(
+        py: Python<'_>,
+        fixture_json: &str,
+        spending_json: &str,
+        rollout_ids: Vec<u32>,
+        forensic: bool,
+    ) -> PyResult<Self> {
+        let input = parse(fixture_json)?;
+        let spending = serde_json::from_str(spending_json).map_err(to_py_err)?;
+        let session = py
+            .detach(|| batch::Session::new(input, spending, rollout_ids, forensic))
+            .map_err(to_py_err)?;
+        Ok(Self {
+            session: Some(session),
+        })
+    }
+
+    fn observe(&mut self, py: Python<'_>) -> PyResult<SpendingObservationBatch> {
+        let mut session = self
+            .session
+            .take()
+            .ok_or_else(|| to_py_err(batch::BatchError::Closed))?;
+        let batch = py.detach(|| session.observe()).map_err(to_py_err)?;
+        self.session = Some(session);
+        Ok(SpendingObservationBatch {
+            rollout_ids: batch.rollout_ids,
+            months: batch.months,
+            cash: batch.cash,
+            public_holdings: batch.public_holdings,
+            price_numerators: batch.price_numerators,
+            price_denominators: batch.price_denominators,
+        })
+    }
+
+    /// Extraction errors also close the session: there is no corrected resubmission.
+    fn advance(&mut self, py: Python<'_>, requests: &Bound<'_, PyAny>) -> PyResult<()> {
+        let mut session = self
+            .session
+            .take()
+            .ok_or_else(|| to_py_err(batch::BatchError::Closed))?;
+        let requests = requests.extract::<Vec<(u32, u32, i64)>>()?;
+        py.detach(|| session.advance(requests)).map_err(to_py_err)?;
+        self.session = Some(session);
+        Ok(())
+    }
+
+    fn finish_json(&mut self, py: Python<'_>) -> PyResult<String> {
+        let mut session = self
+            .session
+            .take()
+            .ok_or_else(|| to_py_err(batch::BatchError::Closed))?;
+        let output = py.detach(|| session.finish()).map_err(to_py_err)?;
+        match output {
+            batch::Output::Summary(summary) => serde_json::to_string(&summary),
+            batch::Output::Forensic(output) => serde_json::to_string(&FramedOutput::new(&output)),
+        }
+        .map_err(to_py_err)
+    }
+
+    /// Release books and input, including when an experiment's Python policy raises.
+    fn close(&mut self) {
+        self.session = None;
+    }
+}
+
 #[pymodule]
 fn simulator(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<ProductMetrics>()?;
+    module.add_class::<SpendingObservationBatch>()?;
+    module.add_class::<PrototypeSpendingSession>()?;
     module.add_function(wrap_pyfunction!(simulate_product_metrics, module)?)?;
     module.add_function(wrap_pyfunction!(simulate_dense_json, module)?)?;
     module.add_function(wrap_pyfunction!(simulate_forensic_json, module)?)?;
