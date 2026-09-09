@@ -47,8 +47,7 @@ from finance.augur.product.wire import (
     TerminalMetrics,
 )
 from finance.augur.rust.backend import RustEngine
-from finance.augur.sim.backend import CompiledRun, Engine
-from finance.augur.sim.compiler.plan import compile_simulation
+from finance.augur.sim.backend import CompiledRun, Engine, compile_run
 from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
@@ -204,15 +203,9 @@ class ProductService:
         external_series = materialize_sampled_exogenous(sampled)
         jurisdictions = load_jurisdictions_for(scenario)
         return (
-            CompiledRun(
-                scenario=scenario,
-                plan=compile_simulation(
-                    scenario,
-                    rollout_count=len(seeds),
-                    external_series=external_series,
-                    jurisdictions=jurisdictions,
-                    locations=self._locations,
-                ),
+            compile_run(
+                scenario,
+                rollout_count=len(seeds),
                 external_series=external_series,
                 jurisdictions=jurisdictions,
                 locations=self._locations,

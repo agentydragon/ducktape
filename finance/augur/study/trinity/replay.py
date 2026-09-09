@@ -134,8 +134,7 @@ from finance.augur.model.series import (
 )
 from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec
 from finance.augur.rust.backend import RustEngine
-from finance.augur.sim.backend import CompiledRun
-from finance.augur.sim.compiler.plan import compile_simulation
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
@@ -357,15 +356,9 @@ class Replay:
 
         scenario = build_scenario(equity_share=equity_share, withdrawal_rate=withdrawal_rate)
         jurisdictions = load_jurisdictions_for(scenario)
-        run = CompiledRun(
-            scenario=scenario,
-            plan=compile_simulation(
-                scenario,
-                rollout_count=self.window_count,
-                external_series=self.external_series,
-                jurisdictions=jurisdictions,
-                locations={},
-            ),
+        run = compile_run(
+            scenario,
+            rollout_count=self.window_count,
             external_series=self.external_series,
             jurisdictions=jurisdictions,
             locations={},

@@ -26,7 +26,6 @@ py_library(
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:runtime",
         "//finance/augur/sim:scenario",
-        "//finance/augur/sim/compiler:plan",
         "@pypi//numpy",
     ],
 )

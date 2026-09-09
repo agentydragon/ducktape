@@ -24,8 +24,7 @@ import pytest
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.product.metric_composition import METRIC_NAMES
-from finance.augur.sim.backend import CompiledRun, Engine
-from finance.augur.sim.compiler.plan import compile_simulation
+from finance.augur.sim.backend import CompiledRun, Engine, compile_run
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
@@ -109,14 +108,8 @@ def sale_and_tax_year() -> CompiledRun:
         [(VTI, np.full((1, HORIZON_MONTHS + 1), float(SALE_PRICE)))], rollout_count=1, horizon_months=HORIZON_MONTHS
     )
     jurisdictions = load_jurisdictions_for(scenario)
-    return CompiledRun(
-        scenario=scenario,
-        plan=compile_simulation(
-            scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations={}
-        ),
-        external_series=external_series,
-        jurisdictions=jurisdictions,
-        locations={},
+    return compile_run(
+        scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations={}
     )
 
 
@@ -169,14 +162,8 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> CompiledRun:
         )
     }
     jurisdictions = load_jurisdictions_for(scenario)
-    return CompiledRun(
-        scenario=scenario,
-        plan=compile_simulation(
-            scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations=locations
-        ),
-        external_series=external_series,
-        jurisdictions=jurisdictions,
-        locations=locations,
+    return compile_run(
+        scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations=locations
     )
 
 

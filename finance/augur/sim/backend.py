@@ -18,7 +18,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from finance.augur.sim.compiler.plan import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction
@@ -50,6 +50,35 @@ class CompiledRun:
     external_series: ExternalSeriesContext
     jurisdictions: dict[str, Jurisdiction]
     locations: dict[str, Location]
+
+
+def compile_run(
+    scenario: Scenario,
+    *,
+    rollout_count: int,
+    external_series: ExternalSeriesContext,
+    jurisdictions: dict[str, Jurisdiction],
+    locations: dict[str, Location],
+) -> CompiledRun:
+    """Compile a scenario over supplied paths and retain those same inputs for execution.
+
+    Sampling and rule/location loading belong to the caller. An experiment can reuse
+    one path population across policy cells and explicitly supply its financial rules.
+    """
+
+    return CompiledRun(
+        scenario=scenario,
+        plan=compile_simulation(
+            scenario,
+            rollout_count=rollout_count,
+            external_series=external_series,
+            jurisdictions=jurisdictions,
+            locations=locations,
+        ),
+        external_series=external_series,
+        jurisdictions=jurisdictions,
+        locations=locations,
+    )
 
 
 class Engine(ABC):

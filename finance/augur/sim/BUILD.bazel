@@ -267,3 +267,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_backend",
+    srcs = ["test_backend.py"],
+    deps = [
+        ":backend",
+        ":external_series",
+        ":jurisdictions",
+        ":locations",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim/testing:case",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)

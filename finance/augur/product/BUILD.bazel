@@ -78,7 +78,6 @@ py_library(
         "//finance/augur/sim:product_metrics",
         "//finance/augur/sim:runtime",
         "//finance/augur/sim:scenario",
-        "//finance/augur/sim/compiler:plan",
         "//finance/augur/sim/compiler:series",
         "@pypi//numpy",
     ],

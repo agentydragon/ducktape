@@ -27,8 +27,8 @@ from jaxtyping import Float64
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
-from finance.augur.sim.backend import CompiledRun
-from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
+from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
@@ -109,15 +109,9 @@ class Case:
 
         return load_jurisdictions_for(self.scenario)
 
-    @cached_property
+    @property
     def plan(self) -> CompiledSimulation:
-        return compile_simulation(
-            self.scenario,
-            rollout_count=self.rollout_count,
-            external_series=self.external_series,
-            jurisdictions=self.jurisdictions,
-            locations=dict(self.locations),
-        )
+        return self.compiled_run.plan
 
     @cached_property
     def compiled_run(self) -> CompiledRun:
@@ -127,9 +121,9 @@ class Case:
         against is what the product service runs.
         """
 
-        return CompiledRun(
-            scenario=self.scenario,
-            plan=self.plan,
+        return compile_run(
+            self.scenario,
+            rollout_count=self.rollout_count,
             external_series=self.external_series,
             jurisdictions=self.jurisdictions,
             locations=dict(self.locations),

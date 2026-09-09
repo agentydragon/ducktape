@@ -7,8 +7,15 @@ returns typed distribution results.
 
 ## Purpose
 
-The natural public unit is a `ScenarioKey` simulated over an exogenous
-trajectory bundle. A selected one-rollout path is useful for UI inspection,
+The library input is a `Scenario` evaluated over supplied exogenous paths;
+`ScenarioKey` is the product/API's configuration language. `compile_run` in
+<backend.py> takes the scenario, materialized paths, rollout count, jurisdiction
+rules and locations, and returns the `CompiledRun` consumed by `RustEngine`.
+It neither samples paths nor loads rules. Experiment callers can reuse one path
+population across scenarios; the product service uses the same compilation entry
+point. Direct compiler callers inspecting plan arrays can use `compile_simulation`.
+
+A selected one-rollout path is useful for UI inspection,
 but it is one sampled trajectory from a distribution, not a separate
 deterministic product API.
 

@@ -17,7 +17,6 @@ py_library(
         "//finance/augur/sim:locations",
         "//finance/augur/sim:runtime",
         "//finance/augur/sim:scenario",
-        "//finance/augur/sim/compiler:plan",
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
