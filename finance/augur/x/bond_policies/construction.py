@@ -82,11 +82,13 @@ def stipulated_curves() -> dict[str, np.ndarray]:
     up[6:] = 0.08
     down = flat.copy()
     down[6:] = 0.01
+    zero = flat.copy()
+    zero[6:] = 0.0
     twist = flat.copy()
     twist[6:] = 0.02 + 0.06 * tenors / MATURITY_MONTHS
     return {
         name: (1 + rates) ** (-tenors / 12)
-        for name, rates in (("flat", flat), ("rise", up), ("fall", down), ("steepen", twist))
+        for name, rates in (("flat", flat), ("rise", up), ("fall", down), ("steepen", twist), ("zero", zero))
     }
 
 
@@ -185,8 +187,10 @@ def compare_constructions(discount_factors: np.ndarray) -> dict[str, DatedConstr
             coupon_period_months=COUPON_PERIOD_MONTHS,
         )
     )
-    if np.any(yields <= 0):
-        raise ValueError("the existing constant-maturity proxy needs positive yields; no floor is applied here")
+    if np.any(yields < 0):
+        raise ValueError(
+            "the constant-maturity proxy does not support negative-coupon issuance; no floor is applied here"
+        )
     price, coupon = constant_maturity_fund_paths(
         yields, maturity_years=MATURITY_MONTHS / 12, initial_price_usd=INITIAL_PRICE
     )

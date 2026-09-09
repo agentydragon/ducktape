@@ -5,9 +5,11 @@
 //! remain engine responsibilities. This is a native Rust seam, not a Python callback API.
 
 use super::*;
+use serde::Serialize;
 
 /// Where consumption is paid, with an experiment-chosen prefix for its event IDs.
 /// Requests add to (never replace) the input's obligations.
+#[derive(Clone, Debug, Serialize)]
 pub struct Spending {
     pub from: AccountRef,
     pub to: AccountRef,
@@ -72,18 +74,30 @@ where
     })
 }
 
-/// Run the same spending functions as [`simulate`], retaining only product metrics.
+/// Compact amounts for the identified policy component, not total household consumption.
+#[derive(Debug, Serialize)]
+pub struct Summary {
+    pub component: Spending,
+    pub product_metrics: ProductMetricSeries,
+    /// `[rollout][event month]` amounts in input currency quanta, including live zeros.
+    /// Each path ends after its failure month, or after the last month of the horizon.
+    /// There is no opening snapshot or post-stop padding in these consumption arrays.
+    pub consumption_requested: Vec<Vec<Money>>,
+    /// Actual receipts for the same demand. Other claims, trades and taxes are excluded.
+    /// A different funding group's failure does not turn a paid demand into an unpaid one.
+    pub consumption_paid: Vec<Vec<Money>>,
+}
+
+/// Run the same functions as [`simulate`] without retaining snapshots, journals or events.
 ///
-/// Returns the existing seven base metric series and failure month for the payer agent
-/// (`spending.from.agent_id`), in [`ProductMetricSeries`]'s snapshot-major layout.
-/// No monthly state snapshots, journal or event traces are retained. These are wealth
-/// and shortfall metrics, not requested/realized consumption or spending-quality metrics.
-/// Factory isolation, validation and failure behavior are the same as [`simulate`].
-pub fn simulate_product_metrics<Make, Decide>(
+/// Consumption arrays cover observed event months only; the unchanged product metrics
+/// retain their snapshot-major layout and failure convention. Factory isolation,
+/// validation and financial behavior are the same as [`simulate`].
+pub fn simulate_summary<Make, Decide>(
     input: &ExecutionInput,
     spending: &Spending,
     make_policy: Make,
-) -> Result<ProductMetricSeries, SimulationError>
+) -> Result<Summary, SimulationError>
 where
     Make: Fn(u32) -> Decide + Sync,
     Decide: FnMut(Observation) -> Result<Money, SimulationError>,
@@ -105,13 +119,69 @@ where
                 Some(&inputs),
                 Some(&mut policy),
             )
-            .map(|computation| (computation.product_metrics, computation.failed_month))
+            .map(|computation| {
+                (
+                    computation.product_metrics,
+                    computation.failed_month,
+                    computation.consumption_requested,
+                    computation.consumption_paid,
+                )
+            })
         })
         .collect();
-    Ok(ProductMetricSeries::from_rollouts(
-        input.scenario.horizon_months + 1,
-        &rollouts?,
-    )?)
+    let mut consumption_requested = Vec::new();
+    let mut consumption_paid = Vec::new();
+    let metrics: Vec<_> = rollouts?
+        .into_iter()
+        .map(|(metrics, failed_month, requested, paid)| {
+            consumption_requested.push(requested);
+            consumption_paid.push(paid);
+            (metrics, failed_month)
+        })
+        .collect();
+    Ok(Summary {
+        component: spending.clone(),
+        product_metrics: ProductMetricSeries::from_rollouts(
+            input.scenario.horizon_months + 1,
+            &metrics,
+        )?,
+        consumption_requested,
+        consumption_paid,
+    })
+}
+
+/// Replay one original path with fresh policy state and its original factory/series ID.
+pub fn trace_rollout<Make, Decide>(
+    input: &ExecutionInput,
+    spending: &Spending,
+    rollout_id: u32,
+    make_policy: Make,
+) -> Result<RolloutOutput, SimulationError>
+where
+    Make: FnOnce(u32) -> Decide,
+    Decide: FnMut(Observation) -> Result<Money, SimulationError>,
+{
+    if rollout_id >= input.rollout_count {
+        return Err(SimulationError::UnknownRollout {
+            rollout_id,
+            rollout_count: input.rollout_count,
+        });
+    }
+    let inputs = validate(input, spending)?;
+    let mut decide = make_policy(rollout_id);
+    let mut policy = Policy {
+        spending,
+        inputs: &inputs,
+        decide: &mut decide,
+    };
+    simulate_rollout(
+        input,
+        rollout_id,
+        CaptureMode::Forensic,
+        None,
+        Some(&mut policy),
+    )
+    .map(RolloutComputation::into_output)
 }
 
 fn validate(input: &ExecutionInput, spending: &Spending) -> Result<ProductInputs, SimulationError> {

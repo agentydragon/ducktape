@@ -2,7 +2,7 @@
 
 A first working composition, not a published-study reproduction or financial advice:
 Python loads/materializes paths and compiles a portfolio; an ordinary Rust closure
-chooses annual spending; the existing engine funds it and records the timeline.
+chooses annual spending; the existing engine funds it and records compact outcomes.
 
 The rule withdraws a percentage of current cash plus public holdings at months
 0, 12, …, bounded by cut/raise limits relative to the last withdrawal adjusted
@@ -24,17 +24,35 @@ With an evidence checkout containing the Trinity source files, run from the repo
 ```bash
 bb run //finance/augur/x/bounded_spending:compare_bin -- \
   --evidence-dir /path/to/evidence --output-dir /tmp/spending-comparison \
-  --equity-share 0.60 --rate-bps 400 --max-cut-bps 1000 --max-raise-bps 500
+  --equity-share 0.60 --rate-bps 400 --max-cut-bps 1000 --max-raise-bps 500 \
+  --trace-rollout 0
 ```
 
 Use a new output directory. It retains the prepared `execution-input.json`, experiment
-parameters in `policies.json`, and full `fixed_real.json` / `bounded.json` timelines, including
-requested versus paid spending, sales, and failure month. Forensic capture is
-deliberately small-scale: these files can be large. This does not benchmark or
-solve batched execution. Overlapping historical windows are not independent
-Monte Carlo draws; the shell does not label their fractions as probabilities.
+parameters in `policies.json`, and compact `fixed_real.json` / `bounded.json` summaries.
+Each contains per-path requested/paid `annual_consumption`, plus existing wealth,
+shortfall and failure metrics. The component is not total household consumption.
+Consumption arrays contain event months (no opening snapshot): live zero requests
+are explicit, the failure month is included, and post-stop months are absent.
+Product wealth metrics retain their separate snapshot layout and zeroed-failure convention;
+their `failed_month` is `-1` for a path that completes the horizon (null in a forensic trace).
+
+`fixed_real.consumption.json` / `bounded.consumption.json` report monthly 5th/50th/95th
+percentiles in nominal currency quanta, with currency/quantum, observed path count
+and failure months. These distributions condition on paths still observed in that
+month, including paths that fail then; no observations produces null percentiles,
+not zero consumption. They do not describe all original paths' future lifestyles.
+Overlapping historical windows are not independent Monte Carlo draws; no independent-
+sampling error bars or probability claims are made.
+
+Omit `--trace-rollout` for compact output only; repeat it to retain selected full
+`fixed_real.trace-N.json` / `bounded.trace-N.json` timelines. Replay reconstructs
+fresh policy state using the original path identity, without capturing the rest
+of the population. This does not benchmark or introduce batched policy callbacks.
 
 `compare_test` uses three stipulated price/CPI paths, without network access, to
 check cut/raise limits, an interior target, subsequent resets and the fixed-real control
-through the full compiler/function/funding composition.
-The engine's spending tests separately exercise sales and tax settlement.
+through the full compiler/function/funding composition and reconcile compact
+requests/payments to selected forensic receipts. A depletion control distinguishes
+live zeros from unmet consumption and post-stop absence. Engine tests separately
+exercise sales, tax settlement, component identity and other-account failure.

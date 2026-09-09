@@ -1,12 +1,11 @@
 # Policy timing: executable cases and remaining choices
 
 Inputs to **GP** in [the landing plan](roadmap.md). The tests below exercise current
-canonical execution; the proposed interface decisions remain open. This PR changes
-no financial behavior and does not implement compact consumption metrics (OUT).
+canonical execution; the proposed interface decisions remain open.
 
 ## Name the cashflows, not just “spending”
 
-Proposed reporting terms, not new runtime fields:
+Reporting terms (`consumption_requested` / `consumption_paid` are native summary fields):
 
 | Term                    | Meaning                                                                                  | Not equivalent to                                                                                    |
 | ----------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -17,8 +16,10 @@ Proposed reporting terms, not new runtime fields:
 | `contract_payments`     | Payments due under existing commitments, with their own categories.                      | Entirely consumption: rent and interest differ from loan principal.                                  |
 
 For the current spending hook, `consumption_requested` is its return value and
-`consumption_paid` is that demand's `ObligationOutcome.amount_paid`, identified by
-its cause ID. A policy requesting zero emits no obligation row. Do not derive
+`consumption_paid` is that demand's `ObligationOutcome.amount_paid`. Summary capture
+tracks the actual demand, independently of configured claims' chosen cause IDs.
+A policy requesting zero emits no obligation row but has an observed zero in the
+compact series; post-stop months are absent. Do not derive
 consumption by subtracting taxes from sale proceeds or summing all transfers to
 an outside actor. A broader lifestyle-consumption measure must explicitly combine
 policy consumption with eligible contract categories without counting principal

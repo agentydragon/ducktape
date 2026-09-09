@@ -4,13 +4,19 @@ Status: **planned product track; design choices below remain open, no implementa
 The initial consumers are Claude.ai and independently running harnesses such as Claude Code on
 the operator's own machines (for example, wyrm2), connecting to the Action Service's remote MCP
 frontend through OAuth, including Dynamic Client Registration (DCR). An operator binds each Connection to a configured static
-identity whose bounded DecisionProviders determine which Actions can run automatically. This is the
+identity. The first slice uses human approval; configurable per-Identity auto-approval follows later. This is the
 first external-client slice toward replacing Haku Console's MCP server. Scheduling and dependencies
 live in [the task DAG](task_dag.md): `POLICYBIND`, `EID`, `MCPOAUTH`, `CALLERPOLICY`, `MCPFRONT`, and `EXTERNALMCP`.
 
 **Operator priority:** working deployed Claude.ai MCP access (`CLAUDEAI`) first, transcript
 search/lookup (`T3`) next. This orders work without a technical dependency between those features.
 The broader `EXTERNALMCP` milestone additionally proves local Claude Code.
+
+**Authentication before configurable policies:** `EID`/`MCPOAUTH` require stable caller identity,
+runtime Connection/grant bookkeeping, consent and revocation, but not `POLICYBIND`. Prove real
+external Action submission, human allow/deny, and result recovery first. Existing service safety
+constraints remain in force; omitting configurable auto-approval never grants automatic execution.
+Policy definitions, assignments, inheritance, and preset composition can be designed independently.
 
 Use **Identity** (provisionally, static identity) for the configured authority and **Connection** for
 the runtime, operator-named client enrollment and its current Identity binding.
@@ -25,7 +31,9 @@ operator-to-operator delegation are out of scope. This does not weaken isolation
 Harnesses running in Threads inside Sandboxes also call the Action Service through existing workload
 authentication, including through this same MCP frontend using Sandbox bearer tokens.
 [Configured Action policies](action_policies.md) covers both per-Identity deciders and
-auto-approval for configured Actions from trusted Sandbox types; hosted callers do not need DCR.
+auto-approval through concrete Sandbox policy bindings; hosted callers do not need DCR.
+SandboxPreset belongs only to the integration app, which resolves defaults and per-Sandbox additions
+into each subsystem's own bindings. Neither Actions nor egress interprets preset names.
 
 ## Two authentication paths, one MCP surface
 
@@ -36,8 +44,8 @@ Pod/Sandbox-owner checks. Reuse the existing egress placeholder/substitution pat
 accepting a bearer at the service does not require exposing the real workload token to the runner.
 
 Both paths use the same catalog, submission, bounded waits, receipt/events, and canonical Action
-authorization. Workload callers retain namespace/Sandbox UID ownership and trusted Sandbox-type
-policy selection; no external OAuth Connection or DCR is required. Sharing an ActionPolicySet does
+authorization. Workload callers retain namespace/Sandbox UID ownership and Actions-owned policy
+bindings; no external OAuth Connection or DCR is required. Sharing an ActionPolicySet does
 not merge ownership or grant operator access. Define unambiguous fail-closed token-verifier routing;
 unverified token claims may only select validation, never confer identity or authority. Invalid or
 wrong-audience credentials must not become an anonymous or more privileged caller through fallback.
@@ -49,27 +57,27 @@ technical prerequisite for serving MCP to an already-authenticated Sandbox.
 
 ## Connection workflow
 
-1. The operator configures a stable identity, for example `claude-personal`, and its permitted
-   Actions and auto-approval conditions. Static means its identity and policy association are
-   configured independently of conversations and credentials; it does not mean a static bearer.
-   The association references a reusable policy set: `claude-wyrm2` may use the same `public-coder`
-   ActionPolicySet as many hosted Sandboxes, with one canonical definition and separate caller ownership.
+1. The operator configures a stable identity, for example `claude-personal`, independent of
+   conversations and credentials; static does not mean a static bearer. Initially external requests
+   use human approval. Later, an explicit policy association may let `claude-wyrm2` reference the same
+   ActionPolicySet as hosted Sandboxes without sharing caller ownership or copying policies.
 2. The operator adds the remote MCP URL in Claude.ai or configures it in a local Claude Code
    installation. Discovery and registration begin the client's OAuth flow, including the DCR path.
    Registration alone grants no Action access and creates no privileged identity.
 3. During the registration/authorization experience, the authenticated operator assigns the client
-   a Connection name, selects an existing configured Identity, and reviews its policy. The server
+   a Connection name, selects an existing configured Identity, and sees the human-approval requirement
+   (or its configured policy once that feature exists). The server
    records the runtime Connection and binds the resulting authorization grant to that Identity.
    Client names, redirect metadata, requested scopes, and supplied identity
    names cannot authorize that choice. Unbound or denied connections cannot submit Actions.
 4. The client uses its access token to discover and invoke the MCP Action surface. The Action
    Service resolves the static identity and exact connection binding from trusted authentication,
-   applies the identity's policy, and records both ownership and binding provenance. The caller
+   applies service authorization and the human-review path, and records ownership plus binding/client provenance. The caller
    cannot choose a decider or impersonate an identity through tool arguments or provenance fields.
-5. An in-bounds auto-allow produces the canonical Decision and at most one Execution. An otherwise
-   permitted request needing human review returns its durable pending receipt; Claude can resume
+5. A permitted request needing human review returns its durable pending receipt; Claude can resume
    polling after the operator decides through the existing BFF. A prohibited request cannot be
-   rescued by another provider's allow or by the ordinary review path.
+   rescued by another provider's allow or by the ordinary review path. Later configured auto-approval
+   must preserve this same canonical Decision and at-most-one-Execution lifecycle.
 6. The operator can list Connections, rename one, unbind it, or select a different configured
    Identity for it. Rename changes presentation only. Unbind removes Action authority. Rebind is
    an explicit authority change; it must preserve the original binding on prior/pending Actions.
@@ -91,8 +99,8 @@ the execution manager or sandbox for Claude Code on wyrm2.
 DCR and consent happen at runtime, so Connections cannot require a configuration deployment to be
 created. Even with Git-managed Identities and policy definitions, a runtime authority must persist
 Connection names, current Identity association (or unbound state), consent, and credential/grant
-lifecycle. The [binding/storage gate](action_policies.md) includes PostgreSQL and Kubernetes-backed
-Connection records; do not treat these runtime associations as implicitly Git-owned.
+lifecycle. Choose the minimum runtime auth store under `MCPOAUTH`; the later policy-binding storage
+gate must not block it. Do not treat runtime associations as implicitly Git-owned.
 
 The single operator uses the **integration app** for enrollment and Connection management. Its
 existing browser login and BFF are the operator-facing surface for:
@@ -190,14 +198,14 @@ projections, and one-Execution contract. Carry authenticated identity into both 
 and execution context without forwarding the client's token to an upstream MCP server. The external
 client remains a caller, including when its operator is the person who authorized the connection.
 
-The shared [Action policy plan](action_policies.md) owns mandatory bounds, decider composition, and
+When configurable policies are added, the shared [Action policy plan](action_policies.md) owns mandatory bounds, decider composition, and
 policy-change/dispatch consistency. Apply those rules to the resolved Identity and retain its exact
 submitting Connection; pending work must not silently inherit a replacement Connection's authority.
 Its reusable policy sets let an external Identity and a Sandbox type share Action permissions without
 duplicating policy or conflating Identity with type. Enrollment selects the Identity; it does not
 copy the referenced policy configuration into the new Connection.
 
-## Existing pieces and reuse probe
+## Existing pieces and implementation baseline
 
 - [`MCPFRONT` and `MCPAGG`](task_dag.md) already describe external Action presentation and Haku
   replacement. This track supplies their concrete initial clients and identity/policy requirements.
@@ -209,15 +217,21 @@ copy the referenced policy configuration into the new Connection.
 - Haku's [Agent authority](../../../haku/console/docs/agent_authority.md) already separates OAuth
   client registration, operator consent, identity, and credential binding. Inspect its enrollment
   tests and the [`FastMCP adapter`](../../../haku/console/identity/fastmcp_adapter.py), plus shared
-  `mcp_infra` auth/persistence, before choosing reusable pieces. The first probe should map which
-  existing protocol machinery can support selection of a configured identity without importing
-  Haku's conversation lifecycle, multi-operator ownership graph, or version-sensitive private adapter hooks.
+  `mcp_infra` auth/persistence, for reusable pieces. Build on the operator-approved assumption that
+  Haku Console's DCR works; additional compatibility probes and live Claude.ai proof are not
+  prerequisites for implementation. Reuse pinned FastMCP/Authlib registration, PKCE, callback, token,
+  and persistence machinery, including narrowly isolated and regression-tested private hooks where
+  existing Haku behavior requires them. Do not import its conversation lifecycle or multi-operator
+  graph. Test new authority/consent boundaries during implementation; perform real browser/client
+  acceptance afterward and fix compatibility gaps found there. This assumption is permission to
+  proceed, not a claim that Agentplane's new integration is already verified.
 
 ## Initial MCP tools: generic Actions
 
 **Placement selected:** the MCP server lives in the Action Service process, sharing canonical
 authentication, catalog, request/Decision/Execution services, and lifecycle-owned resources. A
-separate pod or sidecar is not required for the initial frontend. This selects the resource-server
+separate pod or sidecar is not required for the initial frontend. Use FastMCP for consistency;
+name the common frontend for Actions, not workloads, since both caller kinds use it. This selects the resource-server
 placement, not the still-open OAuth authorization-server owner or integration-app enrollment handoff.
 
 **Selected first-slice direction:** expose a small fixed set of tools which treat Actions as data.
@@ -234,6 +248,7 @@ Working tool names and contracts (final wire schemas remain implementation work)
 | `get_action`                 | Action group/name and `include_fields`.                                                                                             | Read compact metadata for one definition, optionally requesting its existing input schema or full description.                      |
 | `request_action`             | Structured Action group/name, arguments, caller-scoped idempotency key, optional untrusted provenance, and bounded polling options. | Submit once; return the durable request ID and current receipt/state immediately or after the requested bounded wait.               |
 | `get_action_request`         | Request ID and bounded polling options.                                                                                             | Read this caller's durable request state, Decision, and safe Execution result/error, optionally waiting for decision or completion. |
+| `cancel_action_request`      | Request ID; no expected version.                                                                                                    | Cancel as the owning caller through the canonical service; return its typed cancellation outcome and current receipt.               |
 | `list_action_request_events` | Request ID, `after_sequence`, bounded page size.                                                                                    | Read canonical ordered events and resume from the last received sequence.                                                           |
 
 Here an **Action** is a catalog definition and an **ActionRequest** is a particular submission.
@@ -261,30 +276,17 @@ would be another opt-in field describing the safe caller-visible result, which m
 raw upstream MCP result. This is neither an `MCPFRONT` nor a `CLAUDEAI` acceptance requirement.
 Selective presentation does not weaken server-side input validation, policy enforcement, or result redaction.
 
-**Bounded long-poll API, notification-driven waits:** support "wait up to N seconds until no longer
-pending human decision / pending execution" on both `request_action` and `get_action_request`.
-Working parameters are `wait_seconds` (omitted or zero means immediate) and `wait_until` (decision
-resolved or terminal result; default terminal). An allowed Decision satisfies the decision predicate,
-but does not satisfy terminal while execution is queued/running. Denial or another terminal state
-satisfies either predicate; an already-satisfied predicate returns immediately. Intermediate events
-do not end a wait unless the requested predicate is satisfied. Validate a finite nonnegative duration
-against a documented server maximum compatible with client/proxy timeouts. At the deadline, return
-the current durable receipt even if still pending; expiry is not an Action failure or cancellation.
-Create/recover the durable request before waiting. Disconnect/cancel of the MCP wait does not cancel
-or resubmit the Action; reuse the request ID or original idempotency key to recover it. Waiting is a
-read of canonical state, not an execution retry, and must preserve caller authorization throughout.
-Exact parameter names, duration cap, and mapping to canonical states remain implementation choices.
+**Bounded waits and cancellation:** reuse the landed
+[bounded-receipt wait contract](../action_service/SPEC.md#bounded-receipt-waits) on both submission
+and request reads. `wait_seconds` defaults to zero and is capped at 30; `wait_until` selects
+`decision` or `terminal` (default). The shared implementation waits on committed notifications,
+including cross-process updates, not periodic database/API queries. MCP owns transport integration
+and disconnect cleanup, not another subscription mechanism. Disconnect cancels only the wait.
 
-Implement waiting through channels/subscriptions that push committed Action-state updates, not a
-busy loop or periodic database/API polling (including sleep-and-recheck loops). Suspend the waiter
-until a relevant notification, deadline, cancellation, or channel failure. Notifications are wakeups;
-the canonical durable state remains authoritative. Subscribe before checking state, or use an
-equivalent version/cursor handshake, so an update racing wait setup cannot be missed. Re-read state
-on a wakeup and keep waiting if the predicate is still false; tolerate duplicate/coalesced notifications.
-Delivery must reach waiters even when the Decision/Execution writer is in another process or replica.
-Handle channel loss explicitly with reconnect-and-recheck or a recoverable response, not silent
-fallback to periodic polling. Release subscriptions on completion, timeout, and disconnect. The
-notification mechanism is implementation work, not a new MCP-owned lifecycle store or durable event log.
+Expose [canonical cancellation](../action_service/SPEC.md#cancellation) through
+`cancel_action_request`: owner-only, no expected version, dispatch claim is the cutoff, no executor
+stop/kill propagation. Preserve typed outcomes, audit, original-key replay, and waiter wakeup.
+These foundations are implemented; their MCP tools and protocol-level tests remain frontend work.
 
 All tools present the existing catalog and Action lifecycle. Submission waits only when explicitly
 requested and never indefinitely for human approval; reads never submit or retry execution. On an ambiguous submission response the caller must
@@ -306,8 +308,9 @@ only the generic tools. Exact names, pagination, and idempotency-key ergonomics 
   Connections may share an Identity, and the consent/rebinding UI. Caller-own reads and idempotency are identity-scoped;
   sharing an identity therefore shares that scope unless a narrower contract is deliberately added.
   Reconnection must not merge identities by client name, username, or a fresh DCR `client_id`.
-- **Policy integration:** resolve this Connection's Identity into the trusted context used by
-  [configured Action policies](action_policies.md); keep external and Sandbox-type selectors distinct.
+- **Later policy integration:** resolve this Connection's Identity into the trusted context used by
+  [configured Action policies](action_policies.md); retain distinct external and Sandbox ownership.
+  This is not a prerequisite for the human-approved external slice.
 - **Generic tool ergonomics:** finalize the schemas above against actual Claude.ai and local
   Claude Code use. Keep canonical request IDs and retry semantics; pending human review must return
   within the requested bounded wait (immediately by default) and remain queryable. Decide how a client retains the same submission key after an
@@ -353,12 +356,16 @@ The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenari
   login, consent, and token exchange without duplicate grants or lost Identity selection;
 - submit the Identity selected in the consent picker, reject missing or disabled configured
   Identities at completion, and prove Deny creates no grant; policy display/edit is deferred;
-- identity A auto-allows one precisely bounded Action, while changed arguments fall back to review
-  or are denied according to configuration; identity B does not inherit A's auto-allow;
-- missing policy, forged identity metadata, unbound registration, wrong-resource tokens, and a
-  failing mandatory bound cannot execute; clients cannot invoke operator Decisions;
+- identity A submits a permitted Action and receives a pending receipt; no execution starts until
+  human approval. Denial produces no execution. Identity B cannot read or cancel A's requests;
+- forged identity metadata, unbound registration, wrong-resource tokens, and a failing existing
+  safety constraint cannot execute; clients cannot invoke operator Decisions;
 - human allow/deny uses the existing BFF; request, Decision, and Execution retain the resolved
-  identity/binding, safe result, and bounded policy evidence;
+  identity/binding/client provenance and safe result;
+- the deployed integration-app Actions page displays Claude.ai's pending request, exact arguments,
+  owning Identity and specific authenticated client/Connection; its Allow/Deny controls drive the
+  canonical Decision and Claude.ai recovers the receipt/result. Basic display and controls already
+  exist; extend their presentation for external-client provenance and prove the real browser flow;
 - duplicate submission and reconnect/restart reuse durable receipts without another Execution;
   B cannot read A's requests/events; refresh retains identity without copying operator authority;
 - two distinct OAuth clients bound to the same Identity submit distinct Actions: both have the same
@@ -369,9 +376,12 @@ The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenari
   and rebind A → B enforces the chosen token/reauthorization contract without transferring A's
   pending work or historical provenance to B. A fresh DCR enrollment can reconnect an existing named
   Connection only through explicit operator authorization;
-- connection revoke, Identity disable, and policy tightening enforce the chosen bounds, including
+- connection revoke and Identity disable enforce the chosen bounds, including
   queued work and old tokens. Names, bindings, and their changes survive service restart. Tokens,
   codes, and backend credentials stay out of logs/results.
+
+Configurable auto-approval, policy-miss behavior, and policy tightening are accepted separately under
+`CALLERPOLICY`/`SBPOLICY`; they do not gate `CLAUDEAI` or the two-client `EXTERNALMCP` proof.
 
 Then inventory Haku's actual client/tool workflows and migrate them individually through `MCPAGG`.
 Include the required mounted upstream MCP servers, policy assignment, pending human approvals, and

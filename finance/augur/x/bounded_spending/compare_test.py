@@ -48,16 +48,18 @@ def test_bounded_spending_reacts_to_each_path_and_preserves_the_fixed_real_contr
         max_cut_bps=1000,
         max_raise_bps=500,
         output_dir=output,
+        trace_rollouts=(0, 1, 2),
     )
     fixed = json.loads((output / "fixed_real.json").read_text())
     bounded = json.loads((output / "bounded.json").read_text())
     policies = json.loads((output / "policies.json").read_text())
     assert policies["bounded"] == {"max_cut_bps": 1000, "max_raise_bps": 500}
-    for document, second_year, third_year in (
-        (fixed, (5_000_000, 5_000_000, 5_000_000), (5_000_000, 5_000_000, 5_000_000)),
-        (bounded, (5_250_000, 4_500_000, 4_992_000), (5_512_500, 4_050_000, 4_792_320)),
+    for name, document, second_year, third_year in (
+        ("fixed_real", fixed, (5_000_000, 5_000_000, 5_000_000), (5_000_000, 5_000_000, 5_000_000)),
+        ("bounded", bounded, (5_250_000, 4_500_000, 4_992_000), (5_512_500, 4_050_000, 4_792_320)),
     ):
-        for rollout, expected, next_expected in zip(document["rollouts"], second_year, third_year, strict=True):
+        for rollout_id, (expected, next_expected) in enumerate(zip(second_year, third_year, strict=True)):
+            rollout = json.loads((output / f"{name}.trace-{rollout_id}.json").read_text())
             withdrawals = rollout["obligations"]
             assert withdrawals[0]["amount_paid"] == 4_000_000
             assert withdrawals[1]["month"] == 12
@@ -66,6 +68,66 @@ def test_bounded_spending_reacts_to_each_path_and_preserves_the_fixed_real_contr
             assert withdrawals[2]["amount_paid"] == next_expected
             assert rollout["dispositions"]  # actual funding sales, not a portfolio-value calculator
             assert rollout["tax_accruals"] == []  # this control is intentionally tax-free
+            failed_month = rollout["failed_month"]
+            observed_months = HORIZON_MONTHS if failed_month is None else failed_month + 1
+            requested = document["consumption_requested"][rollout_id]
+            paid = document["consumption_paid"][rollout_id]
+            assert len(requested) == len(paid) == observed_months
+            receipts = {row["month"]: row for row in withdrawals}
+            for month in range(observed_months):
+                receipt = receipts.get(month)
+                assert requested[month] == (receipt["amount_due"] if receipt else 0)
+                assert paid[month] == (receipt["amount_paid"] if receipt else 0)
+            assert document["product_metrics"]["failed_month"][rollout_id] == (
+                -1 if failed_month is None else failed_month
+            )
+        distribution = json.loads((output / f"{name}.consumption.json").read_text())
+        assert distribution["component"] == document["component"]
+        assert distribution["months"][0]["observed_path_count"] == 3
+        assert distribution["months"][0]["consumption_paid"] == [4_000_000] * 3
+        assert distribution["months"][12]["consumption_paid"][1] == sorted(second_year)[1]
+
+
+def test_live_zero_consumption_is_not_confused_with_post_stop_absence(tmp_path: Path) -> None:
+    # Spend the whole flat portfolio at month 0. The control cannot pay next year;
+    # the bounded rule permits cutting to zero and continues observing live months.
+    prices = np.full((1, HORIZON_MONTHS + 1), 100.0)
+    paths = ExternalSeriesContext.from_level_blocks(
+        [(SecurityKey(symbol=EQUITY), prices), (InflationKey(), np.ones_like(prices))],
+        rollout_count=1,
+        horizon_months=HORIZON_MONTHS,
+    )
+    output = tmp_path / "stop-comparison"
+    compare(
+        external_series=paths,
+        rollout_count=1,
+        equity_share=1.0,
+        rate_bps=10_000,
+        max_cut_bps=10_000,
+        max_raise_bps=0,
+        output_dir=output,
+    )
+    assert not list(output.glob("*.trace-*.json"))  # Population output does not request full traces.
+    fixed = json.loads((output / "fixed_real.json").read_text())
+    bounded = json.loads((output / "bounded.json").read_text())
+    assert fixed["product_metrics"]["failed_month"] == [12]
+    assert fixed["consumption_requested"] == [[100_000_000, *([0] * 11), 100_000_000]]
+    assert fixed["consumption_paid"] == [[100_000_000, *([0] * 12)]]
+    assert bounded["product_metrics"]["failed_month"] == [-1]
+    assert (
+        bounded["consumption_requested"]
+        == bounded["consumption_paid"]
+        == [[100_000_000, *([0] * (HORIZON_MONTHS - 1))]]
+    )
+    fixed_distribution = json.loads((output / "fixed_real.consumption.json").read_text())
+    bounded_distribution = json.loads((output / "bounded.consumption.json").read_text())
+    assert fixed_distribution["months"][12]["observed_path_count"] == 1
+    assert fixed_distribution["months"][12]["consumption_paid"] == [0, 0, 0]
+    assert fixed_distribution["months"][13]["observed_path_count"] == 0
+    assert fixed_distribution["months"][13]["consumption_requested"] is None
+    assert fixed_distribution["months"][13]["consumption_paid"] is None
+    assert bounded_distribution["months"][13]["observed_path_count"] == 1
+    assert bounded_distribution["months"][13]["consumption_paid"] == [0, 0, 0]
 
 
 if __name__ == "__main__":

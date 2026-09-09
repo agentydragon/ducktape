@@ -33,6 +33,7 @@ from x.agentplane.action_service.connections import (
 from x.agentplane.action_service.db import ActionNotFoundError, ActionStore, Base, ConnectionGrantRow, make_sessionmaker
 from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
@@ -204,7 +205,9 @@ async def test_disabled_removed_and_expired_grants_do_not_authorize(engine: Asyn
         await disabled.resolve(live.id, issuer=ISSUER, client_id=live.client_id)
 
 
-async def test_operator_routes_do_not_expose_binding_or_accept_workload_credentials(engine: AsyncEngine) -> None:
+async def test_operator_routes_do_not_expose_binding_or_accept_workload_credentials(
+    engine: AsyncEngine, db_url: str
+) -> None:
     service = authority(engine)
     grant = await service.bind(binding())
     token = "test-operator-token"
@@ -216,6 +219,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         ConfiguredOperatorBearerAuthenticator(token_digest=hashlib.sha256(token.encode()).digest(), subject="operator"),
         catalog,
         connections=service,
+        updates=ActionUpdates(db_url),
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://service") as http:
         assert (await http.get("/v1/operator/connections")).status_code == 401

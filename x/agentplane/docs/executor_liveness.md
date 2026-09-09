@@ -1,10 +1,9 @@
 # Executor liveness and orphan recovery
 
-Status: **decided and landed for the in-process fixture executor.** This resolves part of the
-`EW` (Executor wiring contract) gate in [`../plans/task_dag.md`](../plans/task_dag.md): the
-exactly-one-claim/no-retry invariant (item 6) and the worker-authentication primitive (part of
-item 5). Dispatch transport (a real out-of-process worker), the credential boundary (item 4), and
-the first production adapter (item 9) remain open; `agentplane:v0.echo` is still fixture-only.
+Status: **implemented**, including the in-process MCP adapter. The
+[Action Service](../action_service/README.md) owns production composition; fixture executors remain
+test-only. This contract does not require an out-of-process worker transport or backend credentials
+for the current credentialless MCP adapter.
 
 ## Problem
 
@@ -111,7 +110,7 @@ None of these carry adapter/provider text; `FAILED` executions still classify by
 
 - Transport for a real out-of-process worker (still in-process; `ExecutionLease` is the contract a
   network call would eventually carry).
-- Which credential a worker process may hold, or its Kubernetes ServiceAccount boundary (EW item 4).
+- Which credential a worker process may hold, or its Kubernetes ServiceAccount boundary.
 - Any concrete authoritative status lookup — `reconcile_from_authority` exists as a store primitive;
   no adapter calls it yet.
 - Executor identity lifecycle: `executor_id` is a fresh random value per coordinator process

@@ -1,135 +1,53 @@
-# Asynchronous approvals and delivery
+# Asynchronous approvals: remaining delivery work
 
-Status: **the human Decision path, synchronous DecisionProvider aggregation, and durable Action
-event/query polling, shared decision notes, and lease-based unknown-outcome recovery are implemented;
-human-provider notification, withdrawal, concrete progress consumers, and Thread batching remain open.** This plan is the `DEL` gate in [`task_dag.md`](task_dag.md),
-not a second request or tool lifecycle.
+Human Decisions, synchronous provider aggregation, shared notes, durable cursor-based events,
+notification-driven bounded waits, and owner-only pre-claim cancellation are implemented. Use the
+[Action Service specification](../action_service/SPEC.md) and [README](../action_service/README.md),
+not a second lifecycle contract here. Native harness approvals remain disabled under the
+[runner contract](../runner/SPEC.md).
 
-## Preserved decisions
+## Human notification (`NOTIFY`)
 
-- Native harness approval prompts remain off. Sandboxes are the harness blast radius; a
-  credential-bearing action must execute outside the harness rather than handing the credential to
-  a native prompt path.
-- `ActionRequest` is the invariant request shape for both human-reviewed and future auto-decided
-  actions.
-- Submission is non-blocking. A caller receives a durable `decision_pending` receipt and may
-  continue; the caller can query the redacted Action state/events API. Delivery as a later
-  machine-readable Agent/Thread input belongs to the Event & Notification Hub.
-- Decision and Execution are separate. An allow auto-dispatches at most one Execution; a deny creates
-  none.
-- The v0 DecisionProvider is human/operator-backed. Future auto-approval policies are modular
-  DecisionProviders over the same ActionRequest and Decision lifecycle, not a second request or
-  authority path. A provider makes an authoritative provider decision of `allow`, `deny`, or
-  `no_opinion`; it is not merely returning a UI hint or proposal. Each outcome includes a bounded
-  provider-authored reason code and description suitable for the Action audit/projection; it does
-  not expose unrestricted internal reasoning.
-- There are no blind retries. An ambiguous in-flight loss becomes `execution_unknown`.
-- Push/UI approval is a delivery channel into the same DecisionProvider, never a second authority.
-  Pending human decisions may eventually produce a push notification. Final Decision/Execution
-  delivery into the originating Agent/Thread belongs to the later Event & Notification Hub, not this
-  initial Action Service/MCP execution slice.
-- Standing grants are separate access objects, not repeated Executions of one ActionRequest.
+Notify the operator that an ActionRequest needs review, linking to the integration app's existing
+Actions page. The authenticated UI/notification client submits intent through the canonical
+Decision endpoint. Duplicate or stale callbacks cannot overwrite a winning Decision or create a
+parallel human lifecycle. Prove notification retries and review races without duplicate effects.
 
-## Observed evidence from the landed Action Service
+This is optional delivery, not a prerequisite for the current polling UI or human-approved
+Claude.ai acceptance. The deployed browser/BFF verification is `APPROVALUI` in the
+[task DAG](task_dag.md).
 
-PR [#5700](https://github.com/agentydragon/ducktape/pull/5700) proves:
+## Concrete progress and unknown-outcome observations
 
-- a workload-authenticated caller can submit one request and read only its own redacted state;
-- an independently authenticated operator can list/read all requests and issue `allow` or `deny`;
-- expected-version checks reject stale decisions;
-- provider/issuer/idempotency checks make duplicate same decisions harmless and conflicting reuse an
-  error;
-- concurrent duplicate Decisions produce one winning Decision and at most one Execution;
-- allow auto-dispatches while deny does not;
-- the state event sequence is durable and ordered;
-- ambiguous dispatch/recovery becomes `execution_unknown` instead of replaying; and
-- each new pending request records a durable Action event without arguments or credentials.
+A concrete long-running consumer must define supported bounded, authorized progress/status reads.
+Use authoritative reconciliation only where the backend supports it; otherwise an unknown outcome
+remains unknown. Tie observations to the existing Execution, without another claim or replay.
+Adapter acceptance belongs in
+[operations and access](operations_and_access.md).
 
-That evidence stops at the Action Service boundary. No originating-Agent/Thread consumer is required for
-this initial MCP execution slice.
+## Originating-Thread delivery (`ING`)
 
-PR [#5732](https://github.com/agentydragon/ducktape/pull/5732) adds synchronous DecisionProvider
-aggregation on top of that: configured providers run concurrently to completion (never first-wins),
-deny dominates, otherwise allow, otherwise the request defers unchanged to the existing human path;
-a provider timeout/exception is `no_opinion`, never `allow`, with its raw text never persisted or
-logged; and human and auto-provider Decisions commit through the same optimistic-version/idempotency
-path, so whichever wins a race, the loser's stale callback surfaces as an explicit already-decided
-conflict rather than overriding the winner. No real policy provider or Thread notification is added;
-staging now configures the bounded Everything echo fixture policy; broader policies remain deferred.
+Consume the canonical Action event sequence for notification matching, batching, rate limits,
+offline delivery, and Thread wake/ingress. Preserve individual events and ordering; do not add a
+second Action outbox or event store. Cross-Identity delivery requires an explicit read policy.
+Thread input queueing/replay is independent `INPUT_DELIVERY` work and requires native Claude/Codex
+research and capture review before common-protocol changes.
 
-The planned `CALLERPOLICY` slice in [configured Action policies](action_policies.md) adds bounded
-deciders selected by a trusted configured Identity or authenticated Sandbox type. Hosted harnesses
-in Sandbox Threads keep their workload-authenticated Action path. Mandatory Action authorization
-bounds are distinct from permission to skip human review: an error in a mandatory bound cannot
-become `no_opinion` and let another provider's allow win. Configuration, type classification, and
-policy-change semantics remain design work; this document owns existing Decision aggregation.
+## Provider-error log safety (`PROVIDERLOG`)
 
-## Open delivery contract
+The previous plan claimed raw provider exception text was never logged. Current
+`ActionService._ask` calls `logger.exception`, and the test only inspects `record.getMessage()`,
+excluding traceback formatting. Prevent sensitive exception material in rendered logs and test
+the complete formatted output with a sentinel secret. Durable bounded error codes and provider
+aggregation behavior already exist and must remain unchanged.
 
-### P0 behavior
+## Configurable policies
 
-A caller submits an ActionRequest, continues work, and can query one durable, redacted Action state
-that says whether the request remains pending, was denied, or executed and produced a result/error.
-Originating-Agent/Thread notification is a later integration node, not a prerequisite for proving that an
-Agent can use an Action backed by MCP. Synchronous non-human providers are evaluated first; the
-default aggregation is any `deny` -> deny, otherwise any `allow` -> allow, otherwise defer to the
-asynchronous human provider.
+[Action policies](action_policies.md) owns configurable mandatory authorization bounds and reusable
+auto-approval deciders. Failure of a mandatory bound must fail closed rather than becoming a
+no-opinion vote overridden by another provider. This future distinction is not a claim about the
+current optional provider aggregation. The first external OAuth slice uses human approval and
+does not depend on selecting policy storage or composition.
 
-### Needed support
-
-1. **Machine envelope.** Define the minimum receipt/provider-outcome/Decision/Execution fields, reason
-   codes, bounded explanations, redaction, and references. The Action schema gate owns projection
-   rules, not a generic `sensitivity` field on every Action.
-2. **Human provider contract.** Notify the human provider that a new ActionRequest needs a Decision,
-   then let its authenticated UI/notification client call the Action Service's canonical decision
-   endpoint. The endpoint returns a stale/already-decided result when another provider won; it never
-   creates a parallel human lifecycle.
-3. **Cancellation.** Implement the resolved `CANCEL` contract in [the DAG](task_dag.md): only the
-   owning caller, no expected-version requirement, and the atomic dispatch claim as cutoff. A
-   successful cancellation prevents execution; claimed/running/unknown execution cannot be cancelled.
-   Preserve prior Decisions, cancellation audit, idempotent replay, and canonical state events.
-   No executor cancellation propagation or process killing is in scope.
-4. **Unknown outcome.** The Agent/API-visible `execution_unknown` state and authenticated
-   reconciliation are implemented; a concrete adapter must establish any authoritative status lookup. Status reconciliation may update the
-   existing Execution; it never starts another one.
-5. **Progress.** If an adapter is long-running, define bounded status/progress observations and
-   authorized output-so-far reads. Progress must be tied to the existing Execution and must not
-   create a second claim, retry, or completion path.
-6. **Batching.** If several events target one Action API consumer together, preserve each event and
-   ordering in the Action event/query surface. Thread-specific batching belongs to the later Event &
-   Notification Hub.
-
-**Landed:** the durable Action event sequence, cursor-based (`after_sequence`) query behavior, and
-process-restart recovery, without a second source-of-truth queue. The single human `decision_note`
-is shared unchanged through existing caller polling and operator/BFF projections; provider reasons
-remain separate bounded outcome evidence. This does not add push or Event Hub delivery. See
-`x/agentplane/action_service/README.md`.
-
-### Acceptance evidence
-
-Use a scripted scenario with the fixture executor first, then repeat it for the first real adapter:
-
-1. submit returns `decision_pending` without blocking;
-2. the durable Action event sequence survives an Action Service restart;
-3. repeated reads/callbacks do not duplicate the pending Decision or Execution;
-4. synchronous allow/deny/no-opinion providers aggregate with deny dominance and human fallback;
-5. human allow and deny callbacks race through the same canonical Decision route, with one final Decision;
-6. allow produces exactly one Execution and deny produces none;
-7. duplicate callback/event reads do not create a second Decision or Execution;
-8. the exact human `decision_note`, or bounded provider `reason_code`/`reason_description` with no
-   human note, reaches both caller and operator projections alongside the safe terminal result;
-   sensitive caller arguments, credentials, and backend exception text remain excluded; and
-9. ambiguous dispatch loss reaches the Action API as `execution_unknown` without backend replay.
-
-Thread input queueing/replay is the independent `INPUT_DELIVERY` item in [the DAG](task_dag.md).
-It requires native Claude/Codex research and capture review before common-protocol changes; it is
-not a new Action event store or the Action withdrawal contract.
-
-## Deferred
-
-- expiry merely because queues conventionally expire;
-- operator-presence heuristics;
-- LLM DecisionProvider or policy DSL;
-- standing-grant issuance through ActionRequest;
-- a general notification bus or subscription framework; and
-- cross-agent delivery before Agent identity and read policy exist.
+Expiry, operator-presence heuristics, LLM deciders, a policy DSL, and standing-grant issuance remain
+outside this delivery slice.

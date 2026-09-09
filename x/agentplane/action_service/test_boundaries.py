@@ -28,6 +28,7 @@ from x.agentplane.action_service.client import (
 )
 from x.agentplane.action_service.models import ActionRequestInput, ActionRequestView, ActionState, Principal
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
@@ -192,6 +193,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         authenticator,
         cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
         ActionCatalog(),
+        updates=ActionUpdates("postgresql://unused-test-listener"),
     )
     body = ActionRequestInput(
         idempotency_key="central-replay",

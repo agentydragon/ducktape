@@ -38,6 +38,11 @@ each provider supplies only curves it represents. Historical replay can supply o
 yields; the structural model rejects them because it has no credit factor. Sharing instrument
 descriptions does not imply that every model supports every instrument.
 
+Scalar-yield bond valuation supports zero and negative annual-compounded yields
+greater than -1, without substituting a positive rate. Non-finite inputs and
+invalid compounding domains reject. The providers' positive-yield floor remains
+a separate modeling approximation, not a numerical requirement of valuation.
+
 Historical replay materializes caller-selected starting dates in caller order. A
 date's path is unchanged by partitioning, reordering or extending the selection;
 duplicate or unavailable starts reject. Output rollout indices are batch-local,

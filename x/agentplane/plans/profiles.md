@@ -10,6 +10,12 @@ sandbox wants to pick one thing, not tick a list of policies. The first slice de
 that product concept to app-owned SandboxPreset and ThreadPreset defaults; capability policy remains
 owned by its existing authorities.
 
+**Modularity boundary:** SandboxPreset remains exclusively integration-app-owned. The app resolves
+preset defaults and per-Sandbox additions into concrete egress and Actions bindings; neither
+enforcement service knows preset names or depends on the other. Similar composition/scope conventions
+do not require a shared runtime profile or policy engine. Policy representation can follow the first
+human-approved external OAuth/MCP slice.
+
 ## Why the broad profile remains deferred
 
 **A profile is expected to span more than egress.** Per-tool-call approvals and other capability

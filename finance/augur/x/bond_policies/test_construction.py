@@ -96,8 +96,19 @@ def test_existing_bond_prices_through_zero_and_negative_rates_without_a_floor(cu
     curves[:, 6:, 1:] = 1.01
     negative = construct(curves, hold)
     assert negative.price[0, 6] == pytest.approx(113.12)
-    with pytest.raises(ValueError, match="proxy needs positive yields"):
+    with pytest.raises(ValueError, match="negative-coupon issuance"):
         compare_constructions(curves)
+
+
+def test_zero_yield_proxy_values_the_existing_coupon_then_reissues_without_income() -> None:
+    curves = stipulated_curves()["zero"][None, ...]
+    proxy = compare_constructions(curves)["constant_maturity_proxy"]
+    # The proxy retains three annual payments of 4, 4, 104 at the zero-rate mark.
+    assert proxy.price[0, 6] == pytest.approx(112)
+    np.testing.assert_allclose(proxy.price[0, 6:], 112)
+    # Month 6 still pays the preceding month's coupon; subsequent new bonds pay zero.
+    assert proxy.coupon[0, 6] == pytest.approx(4 / 12)
+    np.testing.assert_array_equal(proxy.coupon[0, 7:], 0)
 
 
 @pytest.mark.parametrize("invalid", [0, -1, float("nan"), float("inf")])

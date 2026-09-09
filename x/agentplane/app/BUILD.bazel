@@ -152,6 +152,7 @@ py_test(
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:operator_oidc",
         "//x/agentplane/action_service:service",
+        "//x/agentplane/action_service:updates",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

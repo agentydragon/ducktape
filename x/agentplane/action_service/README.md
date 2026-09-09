@@ -46,6 +46,16 @@ Migration `0006_decision_note` renames the existing human-note column without dr
 downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
 a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
 
+## Decision providers
+
+All configured synchronous providers run to completion; any deny dominates, otherwise any allow
+wins, otherwise the request remains on the human-review path. Timeouts and exceptions contribute
+`no_opinion` with bounded reason codes. Provider explanations are bounded audit evidence, not
+unrestricted reasoning. Human and provider decisions commit through the same versioned,
+idempotent Decision path; a losing provider callback cannot overwrite a winning human decision or
+caller cancellation. Mandatory authorization bounds for future configurable policies are distinct
+from these optional votes.
+
 ## Cancellation
 
 `POST /v1/action-requests/{id}/cancel` takes no body or expected version and returns
@@ -97,6 +107,49 @@ connection per service instance and coalesces wakeups per waiting request. It su
 rechecking durable state and releases registrations on every exit path. A lost listener fails
 bounded waits explicitly until the listener is restarted; it never falls back to timed queries.
 The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
+
+## Generic MCP frontend
+
+The same service process serves stateless Streamable HTTP at `/mcp`. The FastAPI lifespan starts
+the PostgreSQL update listener and MCP transport and unwinds both on shutdown/startup failure.
+This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
+Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
+Operator/OIDC bearers remain confined to `/v1/operator/...`; external OAuth/DCR enrollment is not
+implemented. No public ingress or harness deployment is added here. FastMCP's automatic Host/Origin
+guard protects loopback access without categorically rejecting requests carrying Origin; authority
+comes from the explicit validated bearer, not Origin or browser cookies. Browser CORS policy can
+be configured alongside future external exposure.
+Staging's current `egresspolicy-agentplane-actions.yaml` permits only the REST paths; deploying
+Sandbox MCP clients also requires an explicit `/mcp` egress allowance with the same workload
+credential substitution. The protocol tests exercise substitution at that boundary, not a claim
+that the current cluster policy already permits the new route.
+
+| Tool                         | Use                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                    |
+| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both. |
+| `request_action`             | The existing request envelope under `request`; caller-scoped idempotency and input validation are unchanged.                                      |
+| `get_action_request`         | One own-caller receipt by `request_id`, not an Action definition.                                                                                 |
+| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                        |
+| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                             |
+
+`cancel_action_request(request_id)` explicitly withdraws an own-caller request before dispatch
+claim, without a version parameter. It returns the canonical outcome (`cancelled`,
+`already_cancelled`, `already_finished`, or `too_late`) and receipt; it never interrupts an
+executor. Retry the original submission key to recover that same cancelled receipt. It is
+independent of cancelling or disconnecting a wait.
+
+Both submission and receipt reads accept `wait_seconds` (0–30, default 0) and `wait_until`
+(`decision` or `terminal`, default terminal). Waits use commit notifications rather than periodic
+queries. A deadline returns a receipt, not a cancellation. On an ambiguous response, reuse the
+original request/key; transport or notification failure must not prompt a new Action. Workload
+authorization is revalidated after a bounded wait, before returning data. The generic MCP tool
+schemas never expand the dynamic Action catalog, and no Action output-schema metadata is added.
+
+Workflow: list identifiers, fetch one input schema if needed, submit once, then wait/read the
+request ID or resume events. Discovery/read failures cannot submit anything; a wrong caller sees
+the same not-found response as an absent request. Discovery projects no executor configuration,
+group descriptions, or hidden schemas through nested payloads.
 
 ## Action catalog
 

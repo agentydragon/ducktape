@@ -331,7 +331,7 @@ pub fn snapshot_metrics(
 
 /// Every base metric series for a whole population, in the layout the Python product
 /// read model consumes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct ProductMetricSeries {
     pub rollout_count: u32,
     pub snapshot_count: u32,

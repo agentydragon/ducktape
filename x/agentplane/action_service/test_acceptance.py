@@ -36,6 +36,7 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipal
 
@@ -102,6 +103,7 @@ async def _client(service: ActionService, *, catalog: ActionCatalog | None = Non
         cast(SandboxPrincipalAuthenticator, FakeSandboxAuthenticator()),
         cast(OperatorAuthenticator, FakeOperatorAuthenticator()),
         catalog or ActionCatalog(),
+        updates=ActionUpdates("postgresql://unused-test-listener"),
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")
 

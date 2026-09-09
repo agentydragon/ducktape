@@ -340,7 +340,8 @@ pub(super) fn settle_obligations(
     month: u32,
     obligations: &[ActiveObligation],
     product_agent_id: Option<&str>,
-) -> Result<(bool, Money), SimulationError> {
+    spending_obligation_index: Option<usize>,
+) -> Result<Settlement, SimulationError> {
     let mut due_by_source = BTreeMap::<AccountRef, Money>::new();
     for obligation in obligations {
         let due = due_by_source
@@ -362,7 +363,8 @@ pub(super) fn settle_obligations(
 
     let mut any_failure = false;
     let mut product_shortfall = Money(0);
-    for obligation in obligations {
+    let mut spending_paid = None;
+    for (index, obligation) in obligations.iter().enumerate() {
         let funded = funded_by_source[&obligation.from];
         let firing_id = obligation.cause_id.clone();
         let attempted_funding_sources =
@@ -590,6 +592,9 @@ pub(super) fn settle_obligations(
                 attempted_funding_sources: attempted_funding_sources.clone(),
             });
         }
+        if spending_obligation_index == Some(index) {
+            spending_paid = Some(amount_paid);
+        }
         recorder.record_obligation(ObligationOutcome {
             month,
             cause_id: firing_id.clone(),
@@ -607,7 +612,19 @@ pub(super) fn settle_obligations(
             product_shortfall = product_shortfall.checked_add(shortfall)?;
         }
     }
-    Ok((any_failure, product_shortfall))
+    Ok(Settlement {
+        failed: any_failure,
+        product_shortfall,
+        spending_paid,
+    })
+}
+
+/// Actual payment outcome from the canonical funding groups.
+pub(super) struct Settlement {
+    pub(super) failed: bool,
+    pub(super) product_shortfall: Money,
+    /// None when this month contained no policy consumption demand.
+    pub(super) spending_paid: Option<Money>,
 }
 
 fn target_allocation_attempted_sources(fixture: &ExecutionInput, account: &AccountRef) -> String {

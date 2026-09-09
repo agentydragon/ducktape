@@ -1,4 +1,4 @@
-"""Acceptance fixture for the first concrete MCP-backed Executor (EW gate item 9).
+"""Acceptance fixture for the MCP-backed Executor.
 
 Scenarios 1-3 and 5-6 drive `McpActionGroupExecutor` directly against an in-process real
 `fastmcp.FastMCP()` server (a real MCP protocol exchange over an in-memory transport), because they

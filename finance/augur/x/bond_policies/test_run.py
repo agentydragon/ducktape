@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.rust.backend import RustEngine
-from finance.augur.x.bond_policies.construction import ProxyConstruction
+from finance.augur.x.bond_policies.construction import ProxyConstruction, compare_constructions
 from finance.augur.x.bond_policies.run import HOUSEHOLD, compile_construction, run_experiment
 
 
@@ -50,6 +50,22 @@ def test_current_coupon_funds_spending_before_units_are_sold(controlled_construc
     assert events.tax_accruals.is_empty()
 
 
+def test_zero_yield_proxy_funds_withdrawals_from_principal_without_coupon_income() -> None:
+    proxy = compare_constructions(np.ones((1, 74, 37)))["constant_maturity_proxy"]
+    run = compile_construction(proxy, annual_spending=Decimal(5000))
+    engine = RustEngine()
+    events = engine.events(run)
+    metrics = engine.product_metrics(run, primary_agent_id=HOUSEHOLD).metric_arrays()
+    # Six $5,000 withdrawals consume $30,000 of the opening $100,000, with no income.
+    assert events.lot_dispositions.get_column("proceeds_quanta").to_list() == [500_000] * 6
+    assert events.obligation_settlements.get_column("amount_paid_quanta").sum() == 3_000_000
+    assert metrics["holding_value_quanta"][-1, 0] == 7_000_000
+    assert metrics["cash_quanta"][-1, 0] == 0
+    assert metrics["net_worth_quanta"][-1, 0] == 7_000_000
+    assert events.rollout_failures.is_empty()
+    assert events.tax_accruals.is_empty()
+
+
 @pytest.mark.parametrize("spending", [Decimal(-1), Decimal("NaN"), Decimal("Infinity")])
 def test_invalid_spending_is_rejected(controlled_construction: ProxyConstruction, spending: Decimal) -> None:
     with pytest.raises(ValueError, match="finite and nonnegative"):
@@ -61,8 +77,10 @@ def test_example_exports_inputs_and_auditable_household_timelines(tmp_path: Path
     run_experiment(output_dir=output, annual_spending=(Decimal(5000),))
     summary = json.loads((output / "summary.json").read_text())
     config = json.loads((output / "config.json").read_text())
+    assert "zero" in config["path_names"]
     with np.load(output / "discount_curves.npz") as curves:
         assert set(curves.files) == set(config["path_names"])
+        np.testing.assert_array_equal(curves["zero"][6:], 1)
     assert summary
     for cell in summary:
         cell_dir = output / cell["output"]

@@ -1,80 +1,12 @@
 # Agentplane task DAG
 
-This is the authoritative project overview for Agentplane. It records landed behavior as evidence and
-keeps only work with a current user-visible outcome or a named design gate in the active path. Edges
-are technical dependencies; packages without an edge can proceed independently. Operator priority
-is recorded separately below and does not add dependency edges. Labels mean:
-
-- **P0 behavior**: the next user-visible behavior;
-- **needed support**: implementation needed to prove that behavior;
-- **observed evidence**: already landed or measured; and
-- **deferred**: deliberately outside the current slice.
-
-## Current truth on `devel`
-
-**Observed evidence — workload authentication and LLM ingress landed.** PR
-[#5685](https://github.com/agentydragon/ducktape/pull/5685) added the generic
-`authenticatedWorkloadToken` credential source. PR
-[#5696](https://github.com/agentydragon/ducktape/pull/5696) added the shared immutable
-`SandboxPrincipal` resolver. PR [#5698](https://github.com/agentydragon/ducktape/pull/5698) added and
-wired the independently deployable authenticated LLM ingress. Staging runners present only the
-`agentplane-credential-agentplane-workload` placeholder; central egress substitutes the authenticated
-Pod-bound bearer for the selected destination, which resolves the live Sandbox and forwards
-provider-native traffic to LiteLLM with a server-held virtual key. The compatibility audience is
-still `agentplane-egress`; `agentplane-workload` remains a possible coordinated rename, not missing
-P0 behavior. See [`../docs/workload_authentication.md`](../docs/workload_authentication.md).
-
-**Observed evidence — the standalone Action Service landed.** PR
-[#5700](https://github.com/agentydragon/ducktape/pull/5700) made the service the PostgreSQL owner of
-`ActionRequest`, `Decision`, `Execution`, and state events. The unused outbox has since been dropped. The
-current caller envelope accepts exactly a 1–200 character `idempotency_key`, a structured
-`action` object with separate `group` and `name` fields, a JSON-object `arguments`, and optional JSON-object `origin`/`correlation`; extra
-top-level fields are rejected, and origin/correlation are untrusted provenance. Workload callers can read their own redacted records; the operator surface can read all
-and issue an expected-version, idempotent human allow/deny Decision. Allow auto-dispatches exactly
-one Execution; there are no blind retries, and an ambiguous outcome becomes `execution_unknown`
-through the bounded lease/recovery contract in [`../docs/executor_liveness.md`](../docs/executor_liveness.md).
-
-The canonical service now composes reviewed MCP groups through `McpActionGroupExecutor`,
-with stdio and credentialless streamable HTTP, initial discovery, schema rechecks, and
-lifecycle-owned cleanup. Real MCP fixtures exercise dispatch; isolated counting/failure
-executors remain for concurrency and recovery tests. There is no dedicated Echo executor.
-
-**Observed evidence — remote MCP and operator review implementation.**
-[#5886](https://github.com/agentydragon/ducktape/pull/5886) hardens the existing streamable-HTTP
-runtime and tests rendered staging configuration against the existing Everything Service. Production
-composition, discovery/schema checks, and the bounded fixture policy are implemented, not open tasks.
-[#5820](https://github.com/agentydragon/ducktape/pull/5820) implements PostgreSQL browser sessions
-and request-bound operator federation; [#5827](https://github.com/agentydragon/ducktape/pull/5827)
-adds Authentik configuration. [#5876](https://github.com/agentydragon/ducktape/pull/5876) exposes
-canonical events through the BFF; [#5881](https://github.com/agentydragon/ducktape/pull/5881) shares
-one human `decision_note` with caller and operator.
-
-**Needed support — live verification only.** Run `//x/agentplane/acceptance:test_mcp` with the
-real harnesses, Everything deployment, dedicated acceptance operator, and normal OIDC/BFF path.
-The bootstrap and scenarios are implemented; rollout, real Authentik claims, network reachability,
-and live Agent results remain unverified here. Do not reimplement those components or treat CI as
-that deployed proof. See [acceptance](../acceptance/README.md) and
-[operator federation](../docs/operator_federation.md). Workload identities never gain operator authority.
-
-**Observed evidence — launch presets landed.** PR
-[#5648](https://github.com/agentydragon/ducktape/pull/5648) landed the app-owned `SandboxPreset` and
-`ThreadPreset` first slice, including `public-coder`, runner initialization, UI selection, and the
-manual live acceptance target. Broader capability profiles remain deferred; see
-[`../docs/launch_presets.md`](../docs/launch_presets.md) and [`profiles.md`](profiles.md).
-
-**Observed evidence — executor liveness and orphan recovery.** Executor health heartbeats,
-per-Execution leases, bounded expiry, and authenticated reconciliation of `execution_unknown`
-are implemented. In-process MCP composition is landed; a future out-of-process adapter must
-justify and prove its own dispatch transport rather than reopening the existing claim contract.
-See [executor liveness](../docs/executor_liveness.md).
-
-**Observed evidence — egress rules API boundary landed.** PR
-[#5701](https://github.com/agentydragon/ducktape/pull/5701) made
-`http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` an ordinary destination:
-normal policy and exact workload-placeholder substitution, then independent destination bearer
-validation through `SandboxPrincipalAuthenticator`. Service port 80 targets a separate API listener
-in the same process/Pod; port 8888 remains the forward proxy. `RulesProjection` shares the enforcement
-index and the redacted response contract. No local-dispatch branch or new credential mode is needed.
+This is the authoritative map of remaining Agentplane work. Edges are technical dependencies;
+operator priority is separate. Completed implementation belongs in the component contracts, not
+this backlog. See the [Action Service specification](../action_service/SPEC.md),
+[service integration details](../action_service/README.md),
+[workload authentication](../docs/workload_authentication.md),
+[operator federation](../docs/operator_federation.md), and
+[launch presets](../docs/launch_presets.md).
 
 ## Operator priority
 
@@ -92,11 +24,6 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    AS["Observed evidence<br/>Action schema/catalog and projections"]:::milestone
-    EW["Observed evidence<br/>MCP runtime/config, claim and liveness<br/>CI proof; live verification in MCP0"]:::milestone
-    DEL["Observed evidence<br/>Decision aggregation, shared note,<br/>canonical event/query API"]:::milestone
-    CANCEL["Ready behavior<br/>owning caller cancels before dispatch claim<br/>no expected-version requirement"]:::active
-    DEL --> CANCEL
     MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
@@ -105,9 +32,8 @@ flowchart TB
     POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
     MCPOAUTH["Planned support<br/>OAuth/DCR + integration-app enrollment<br/>named Connections, rename/unbind/rebind"]:::future
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
-    WID["Observed evidence<br/>SandboxPrincipal<br/>workload authentication"]:::milestone
-    SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>from trusted Sandbox types"]:::future
-    MCPFRONT["Planned support<br/>generic Action MCP tools<br/>discover, request, read receipts/events"]:::future
+    SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
+    MCPFRONT["Planned support<br/>generic Action MCP tools<br/>discover, request, read, cancel"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>external harness/client compatibility"]:::future
@@ -123,39 +49,27 @@ flowchart TB
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
+    PROVIDERLOG["Ready fix<br/>safe formatted provider-error logs"]:::active
+    NOTIFY["Deferred delivery<br/>human approval notifications"]:::future
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
 
-    AS --> MCP0
-    EW --> MCP0
-    DEL --> MCP0
     MCP0 --> MCPACCEPT
     MCP0 --> MCPAUTH
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    DEL -. later Thread delivery .-> ING
-    DEL --> MCPFRONT
-    AS --> MCPFRONT
-    WID --> MCPFRONT
     EID --> MCPOAUTH
-    POLICYBIND --> EID
     POLICYBIND --> CALLERPOLICY
-    DEL --> CALLERPOLICY
-    AS --> CALLERPOLICY
     CALLERPOLICY --> SBPOLICY
-    WID --> SBPOLICY
     MCPFRONT --> CLAUDEAI
     MCPOAUTH --> CLAUDEAI
-    CALLERPOLICY --> CLAUDEAI
-    EW --> CLAUDEAI
     APPROVALUI --> CLAUDEAI
     CLAUDEAI --> EXTERNALMCP
     EXTERNALMCP --> MCPAGG
     MCPFRONT -. replacement surface .-> MCPAGG
     MCPFRONT -. replacement surface .-> RETIRE_TOOLS
-    EW --> HOSTEXEC
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
     EID -. external identity .-> RETIRE_AGENT
@@ -165,70 +79,40 @@ flowchart TB
     T3 -. product work .-> PROD
     PR -. independent reliability .-> PROD
 
-    AS --> DT
-    EW --> DT
     MCP0 --> AG
-    EW -. retention cleanup .-> LIVE_CLEAN
 ```
 
-The first executable Action/MCP path is `AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
-credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
-acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
-PROD`. Input-delivery research, trajectory search, and proxy survivability are technically independent;
-the operator priority above orders the work on search.
-The AS/EW/DEL nodes record landed contracts, not implementation prerequisites still waiting to be built.
-These independent tracks do not prove deployed Action execution. Shared app/auth/client/test setup
-has no outstanding extraction justified by the current consumers; deduplication is not a scheduled
-work item or a production-readiness prerequisite.
+The credentialless deployed gate is `MCP0 -> MCPACCEPT`: use the existing staging-owned
+streamable-HTTP fixture and real Claude/Codex acceptance turns. Implementation and CI evidence
+already exist; deployed proof remains. Credentialed upstream access is separate (`MCPAUTH`).
+Input delivery and proxy survivability can proceed independently of the external-client track.
 
 The external-client track is single-operator and independent of `MCP0` and the broader `AG` model.
 Its product terms are Identity (configured authority), Connection (runtime named client enrollment), and Thread
 (execution/conversation state); it adds no multi-operator management or per-operator ownership model.
-`POLICYBIND` first settles policy-binding storage and the Identity/workload model, including whether
-Sandbox types bind policies directly or resolve a configured Identity. The [Action policy plan](action_policies.md)
-records app-configuration, Kubernetes, PostgreSQL, and mixed alternatives; no storage/schema choice is selected.
 Its first Identity is configured and static (`EID`); OAuth/DCR enrollment (`MCPOAUTH`) binds a Connection to
-it, and `CALLERPOLICY` supplies bounded per-Identity auto-approval. These join the canonical MCP frontend
+it. The first external slice uses human approval, not configurable per-Identity auto-approval. These join the canonical MCP frontend
 (`MCPFRONT`), landed Executor support, and deployed operator review first at `CLAUDEAI`: a real
 Claude.ai connection running governed Actions. `EXTERNALMCP` additionally proves independently
 running Claude Code. The [external connection plan](external_mcp_connections.md)
 owns the workflow and remaining design choices. Static identity does not select static credentials
 or wait for `CRED`/`PROFILES`; outbound backend-account OAuth remains the separate `MCPAUTH` track.
 `EXTERNALMCP` is the initial client proof for `MCPAGG`, not proof of full Haku tool parity.
-Hosted harnesses continue to call Actions from their Sandbox Threads: `WID + CALLERPOLICY -> SBPOLICY`
-adds configurable auto-approval by trusted Sandbox type. The [Action policy plan](action_policies.md)
-owns the shared bounds and deciders. Its Sandbox slice is independent of `EID` and `MCPOAUTH`; a type
-is a policy selector, not a shared caller identity or authenticated Thread.
-Hostexec is another Executor adapter behind `EW`; its final ordering relative to the credentialed
+`POLICYBIND` separately settles policy definition/assignment storage before `CALLERPOLICY`; neither
+gates `EID`, `MCPOAUTH`, or the human-approved `CLAUDEAI`/`EXTERNALMCP` proof. Stable caller identity,
+runtime Connection/grant bookkeeping, and revocation still need real contracts before OAuth implementation.
+Hosted harnesses continue to call Actions from their Sandbox Threads: `CALLERPOLICY -> SBPOLICY`
+adds configurable auto-approval through concrete Actions-owned Sandbox bindings. SandboxPreset stays
+an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
+subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
+[Action policy plan](action_policies.md) owns shared bounds and deciders; policy representation remains open.
+Hostexec is another adapter behind the existing Executor contract; its final ordering relative to the credentialed
 MCP path is deferred.
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
 
 ## Named gates and acceptance evidence
-
-### `AS` — Action schema contract
-
-**P0 behavior:** a caller can submit one stable, reviewable, namespaced Action whose parameters are
-validated before a Decision or dispatch, and whose result/error can be safely replayed.
-
-**Observed evidence:** separate group/name identity, reviewed runtime bindings, discovered schemas,
-admission and execution rechecks, and canonical safe result/error projections are implemented.
-See [Action Service](../action_service/README.md). Remaining work is deployed MCP0 verification;
-credentialed or non-MCP adapters must separately establish their boundaries.
-
-### `EW` — Executor wiring contract
-
-**Observed evidence:** the in-process MCP executor supports stdio and credentialless streamable HTTP.
-Reviewed settings select groups/backends; invalid bindings or initial discovery abort startup.
-The existing Everything Service is bound in staging settings. CI tests exercise production
-composition with real HTTP MCP and PostgreSQL, and render Kustomize through the settings parser.
-One Execution, atomic claim, no blind retry, lease expiry, and unknown-outcome reconciliation are
-implemented. [#5886](https://github.com/agentydragon/ducktape/pull/5886) records the readiness tests.
-
-**Needed support:** run the deployed MCP0 acceptance below. **Deferred:** out-of-process transport,
-credentialed adapters, adapter-specific status lookup, and bounded progress for a real long-running
-consumer. None requires another generic executor framework before that consumer exists.
 
 ### `MCP0` — credentialless remote MCP vertical slice
 
@@ -274,10 +158,11 @@ enrollment and its current binding, and Thread for execution/conversation state.
 Connections. Multiple-operator management and per-operator ownership are out of scope, as are the
 full `AG` lifecycle and static-bearer schemes. Username and caller-supplied provenance are not authority.
 
-**Design gate:** resolve `POLICYBIND` for Identity references and policy associations, then
-single-operator consent, Connection granularity, caller read/idempotency scope, and
-revocation/dispatch consistency in the
-[external connection plan](external_mcp_connections.md) before implementing the schema.
+**Design gate:** settle stable configured Identity references, single-operator consent, Connection
+granularity, caller read/idempotency scope, runtime auth bookkeeping, and revocation/dispatch consistency
+in the [external connection plan](external_mcp_connections.md). Policy representation is not a
+prerequisite: the first external callers use human approval; add policy associations through
+`CALLERPOLICY` later without replacing identity or rewriting original client provenance.
 
 **Acceptance evidence:** a trusted connection resolves to identity A throughout an Action's
 lifecycle; B cannot impersonate A or read its receipts. Refresh preserves identity, reconnect
@@ -309,13 +194,19 @@ reconnect, rename, unbind, and rebind. Settle binding history, pending Actions/o
 whether rebind changes existing tokens' effective authority or requires reauthorization. Registration
 mechanism and mutable names must not determine durable identity. See the
 [external connection plan](external_mcp_connections.md), including DCR/CIMD compatibility.
+Build on the operator-approved assumption that Haku Console's DCR works, reusing pinned
+FastMCP/Authlib and existing `mcp_infra` protocol/persistence machinery. Do not require more
+compatibility probes or live Claude.ai proof before implementation; test the new consent/authority
+boundaries and fix client compatibility during subsequent acceptance. No configurable policy or
+SandboxPreset representation is required.
 
 ### `POLICYBIND` — policy-binding model and storage
 
 **Open design decision:** identify where policy definitions, Identity-to-policy bindings, and
-Sandbox-type/instance associations live and how they are modeled. Distinguish configured policy
+concrete Sandbox-to-policy bindings live and how they are modeled. Distinguish configured policy
 bindings from runtime named Connection-to-Identity bindings created/edited during enrollment and
-management. Choose direct workload policy selection versus workload-to-Identity mapping,
+management. Keep SandboxPreset resolution and per-Sandbox additions in the integration app;
+downstream services only consume their own policy bindings. Choose
 cardinality/precedence, stable IDs, mutation ownership, and rollout/revocation semantics. This is
 single-operator; multiple-operator management is out of scope.
 
@@ -331,14 +222,15 @@ PostgreSQL, and mixed ownership. No option is selected. For Kubernetes, define r
 RBAC, references, and informer freshness. Runtime Connections need a writable authority, whether
 PostgreSQL or service-owned Kubernetes resources, even with Git-managed policy definitions.
 Walk one external and one hosted request through enrollment/rebind, resolution, policy edit, and dispatch
-before implementing `EID` or `CALLERPOLICY` persistence. Existing Sandbox authentication and Action
+before implementing `CALLERPOLICY` persistence, not before `EID` or OAuth bookkeeping. Existing Sandbox authentication and Action
 execution remain usable while this design is open.
 
 ### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
 
 **Planned support:** configure exact Actions/argument conditions and auto-approval deciders selected
-through reusable policy-set references from an external Identity or an authenticated Sandbox's
-configured type. Reuse `DEL` aggregation and
+through reusable policy-set bindings for an external Identity or an authenticated Sandbox.
+The integration app may derive concrete Sandbox bindings from its presets and instance additions;
+the Action Service does not interpret presets. Reuse the existing DecisionProvider aggregation and
 the canonical Decision/Execution lifecycle. Mandatory authorization bounds must fail closed even
 when another provider allows; permitted requests without auto-approval may take the human path.
 
@@ -348,25 +240,27 @@ Prove matching auto-allow, changed-argument review/deny, caller-class isolation,
 failed mandatory bounds. External selector integration needs `EID`; the shared machinery and Sandbox
 slice do not wait for it. Broad `PROFILES` and a policy DSL remain deferred.
 
-### `SBPOLICY` — configured auto-approval for Sandbox types
+### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
 
 **Planned behavior:** an agent harness running in a Thread in a Sandbox calls the Action Service
-through its existing workload authentication. Configured Actions can auto-approve for configured
-Sandbox types under bounded conditions, without introducing an OAuth Connection for that harness.
-`WID` records the landed `SandboxPrincipal` authentication; trusted type classification is new work.
+through its existing workload authentication. The integration app resolves SandboxPreset defaults
+and per-Sandbox additions into concrete Actions-owned policy bindings, independently of the egress
+bindings it also manages. Neither enforcement service knows preset names or depends on the other.
+Sandbox authentication already exists; configurable bindings are new work.
 
-**Design gate / acceptance:** choose the authority for type (preset, template association, or another
-configured category), who may assign/change it, and classification lifetime. Verify real workload
-submissions with matching/different types and arguments, forged or stale classifications, and policy
-changes before dispatch. Same-type Sandboxes retain separate caller reads/idempotency; Threads within
-one Sandbox retain the current shared workload scope. See [Action policies](action_policies.md).
+**Design gate / acceptance:** choose policy reference/addition semantics, binding writer authority,
+ownership/reconciliation and update/revocation rules. Verify matching/different Sandbox bindings and
+arguments, forged references, app outage, instance additions surviving preset updates, and policy
+changes before dispatch. Same-preset Sandboxes retain separate caller reads/idempotency; Threads
+within one Sandbox retain current shared workload scope. See [Action policies](action_policies.md).
 
 ### `CLAUDEAI` — working Claude.ai MCP facade before transcript search
 
 **Operator-priority milestone:** the operator can connect Claude.ai to the deployed Action Service
 MCP facade, name/bind the Connection through integration-app enrollment, discover Actions, and use
-them under the configured Identity/policy with real results. Prove the bounded fixture auto-approval
-and human-review/result paths against canonical Action records through the actual Claude.ai client.
+them under the configured Identity with real human-approved results. Preserve service safety constraints
+and exact authenticated client provenance. Configurable per-Identity auto-approval is subsequent
+`CALLERPOLICY` work, not an acceptance requirement for this milestone.
 Registration alone, mocks, and CI composition tests do not establish this user-visible outcome.
 
 The broader `EXTERNALMCP` milestone also covers local Claude Code. The operator priority above names
@@ -380,10 +274,10 @@ unrelated lifecycle reliability work are not reclassified as search implementati
 
 ### `EXTERNALMCP` — hosted clients and external harnesses using governed Actions
 
-**Planned milestone:** `EID`/`MCPOAUTH`, `CALLERPOLICY`, and `MCPFRONT` compose with the existing Executor
+**Planned milestone:** `EID`/`MCPOAUTH` and `MCPFRONT` compose with the existing Executor
 and operator-review paths. Real Claude.ai and local Claude Code connections (for example on wyrm2)
-use selected static Identities to discover and run one credentialless Action under bounded
-auto-approval, or receive a durable pending receipt
+use selected static Identities to discover and submit one credentialless Action for human approval,
+receive a durable pending receipt
 and read the result after human review. Independently verify Action ownership, binding, Decisions,
 Execution, replay, isolation, and revocation as specified in the
 [external connection plan](external_mcp_connections.md). This milestone precedes Haku migration and
@@ -434,23 +328,26 @@ executor, remote MCP runtime, or lifecycle store.
 
 **Placement selected:** host the MCP server in the Action Service process, sharing its catalog,
 authentication, service/store, and lifecycle. No separate pod or sidecar is required for the first
-slice. OAuth authorization-server placement remains a separate `MCPOAUTH` design question.
+slice. Use FastMCP for consistency and caller-neutral naming (such as `ActionsMcp`):
+external Identities use the same surface. OAuth authorization-server placement remains
+a separate `MCPOAUTH` design question.
 
 **Initial surface chosen:** fixed generic tools such as `list_actions`, `get_action`, and
-`request_action`, plus request-status/event reads. An Action definition and a submitted ActionRequest
+`request_action`, plus request-status/event reads and `cancel_action_request`. An Action definition and a submitted ActionRequest
 are distinct. Do not mirror Actions into individually exposed MCP tools in this first slice; the
 [connection plan](external_mcp_connections.md) owns the working inventory, schemas to settle, and
 client workflow. Detailed schemas/descriptions are opt-in through `include_fields`; default discovery
 stays compact. Per-Action projection is an optional experiment contingent on evidence from the generic
 interface, not a scheduled follow-on or required migration step.
 
-**Dependencies:** `AS` for the canonical catalog, `DEL` for Decision/Action-state and durable events,
-and observed `WID` for the Sandbox bearer path. The shared frontend accepts both Sandbox workload
+**Available foundations:** canonical catalog, Decision/Action-state, durable events, notification-driven
+bounded waits, owner-only pre-claim cancellation, and Sandbox authentication. The shared frontend accepts both Sandbox workload
 bearers and external OAuth access tokens; `EID`/`MCPOAUTH` add the external path and are required for
 `CLAUDEAI`, not for implementing the common tools or Sandbox-authenticated MCP. Caller-supplied Agent/Thread names and
 origin/correlation are not identity authority. `MCPFRONT` is not a prerequisite for `MCP0`.
-The initial clients are Claude.ai and external Claude Code through `MCPOAUTH`; `CALLERPOLICY` adds
-bounded per-Identity deciders. Their combined acceptance is `EXTERNALMCP`. The [connection plan](external_mcp_connections.md)
+The initial external clients are Claude.ai and Claude Code through `MCPOAUTH`, initially using human
+approval. Their combined acceptance is `EXTERNALMCP`; `CALLERPOLICY` adds bounded per-Identity deciders
+later. The [connection plan](external_mcp_connections.md)
 keeps the remaining generic-tool schema and authorization design choices explicit.
 
 **Needed support / contract:**
@@ -470,15 +367,18 @@ keeps the remaining generic-tool schema and authorization design choices explici
   including `decision_pending`, immediately by default. Submission and request-status reads both
   offer an explicit bounded wait for decision resolution or terminal execution; expiry returns the
   current receipt, not an Action failure. An MCP wait timeout/disconnect never cancels or retries the
-  durable Action. Internally, await pushed update notifications over channels/subscriptions; no busy
-  loop or periodic database/API polling. Avoid missed updates at subscription setup, support writers
-  in other processes/replicas, and clean up waiters. The [connection plan](external_mcp_connections.md)
-  specifies bounded-wait and notification semantics.
+  durable Action. Reuse the landed notification-driven wait implementation and
+  [bounded-wait contract](../action_service/SPEC.md#bounded-receipt-waits); no transport-owned polling loop.
 - **Get / events:** read only that caller's canonical request and ordered durable Action events.
   `after_sequence` is the last event sequence already received; return later events in order, use
   the last returned sequence for the next poll, and return an empty list when none are newer.
   Reconnect/restart resumes from the same request ID and cursor, without another submission or
   execution. Do not add a frontend-owned cursor, queue, or event log.
+- **Cancel:** `cancel_action_request(request_id)` calls canonical owner-only cancellation without
+  an expected version. Preserve typed outcomes, dispatch-claim cutoff, audit, idempotence, and
+  wakeups of receipt waiters. See [cancellation](../action_service/SPEC.md#cancellation).
+- **Deployment:** add the `/mcp` route to the staging Actions egress destination policy with the
+  existing token substitution. Current REST-only allow rules do not establish harness reachability.
 - **Approvals:** canonical DecisionProviders and the existing operator UI/BFF remain the decision
   path, including expected-version/idempotent allow/deny. MCP clients cannot acquire operator
   authority or bypass the canonical single-Execution/no-blind-retry lifecycle.
@@ -499,7 +399,7 @@ queries while idle.
 Separately prove the same MCP workflow with a Sandbox workload bearer, without DCR, retaining
 per-Sandbox receipt/idempotency isolation and rejecting invalid credentials. This frontend auth proof
 does not require the new configurable `SBPOLICY` behavior.
-This integration proof comes before any frontend-specific persistence or framework.
+Use the existing FastMCP stack; no frontend-specific persistence is needed.
 
 ### `MCPAGG` — Haku Console MCP aggregator replacement
 
@@ -517,7 +417,7 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 
 **Deferred support:** add hostexec as an Action Service Executor adapter, preserving hostexec's
 existing machine/user authorization, credential exchange, process-state, output, and no-retry
-boundaries. This is an adapter behind `EW`, not a reason to build a generic worker framework first.
+boundaries. This is an adapter behind the existing execution contract, not a reason to build a generic worker framework first.
 
 **Acceptance evidence:** one approved host command produces one durable Execution with bounded output
 and safe terminal/unknown handling; duplicate starts do not run the command twice, and the Action
@@ -534,11 +434,22 @@ claim or unknown-outcome semantics while doing so.
 
 **Observed evidence:** PostgreSQL sessions, request-bound federation, Authentik configuration,
 dedicated acceptance-operator bootstrap, and canonical BFF review/events are implemented.
+The app's Actions page lists pending/recent requests, exact arguments and caller principal, shows
+Decision/result/error state, and offers Allow/Deny for pending requests. `/actions` BFF routes and
+frontend/integration tests cover those controls; this is not a missing UI implementation.
 
 **Needed support:** verify actual deployment and provider claims, distinct authorized identities
 and rejected identities, then execute the existing BFF approval acceptance. Signed mock integration
 is CI evidence, not deployed Authentik proof. Do not add another approval coordinator or require
 push notifications for the polling UI.
+
+**User-visible acceptance:** a Claude.ai-submitted Action appears in the deployed integration app;
+the operator inspects its exact arguments and authenticated submitting Identity/client/Connection,
+allows or denies it there, and Claude.ai receives the resulting durable receipt and safe result
+(one Execution on allow, none on deny). The basic review UI is present; displaying the new external
+client/Connection provenance is additional integration when `EID` lands. Verify the browser controls
+as well as BFF requests. This flow is part of `CLAUDEAI`, enabling a useful partial Haku replacement
+without claiming complete tool parity or permission to retire Haku.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
@@ -558,74 +469,20 @@ This track may move independently of Agent/conversation management: Haku Console
 conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
 Preserve tool-call audit/export and rollback evidence before removing the old owner.
 
-### `DEL` — decision and Action-state contract
+### `PROVIDERLOG` — safe provider failure logging
 
-**P0 behavior:** submission remains non-blocking; the Action API and durable Action events expose a pending
-human Decision and the eventual Decision/Execution result with bounded provider-authored reason
-evidence. Originating-Agent/Thread notification is a later integration node, not a prerequisite for
-proving that an Agent can use an Action backed by MCP.
+**Ready fix:** `ActionService._ask` uses `logger.exception`; its formatted traceback can contain
+credential-bearing provider exception text. The existing test inspects `record.getMessage()`,
+which excludes exception formatting. Remove unsafe exception material from emitted logs and test
+the full formatted output with a sentinel secret. Preserve bounded durable error codes and the
+existing provider aggregation behavior; do not label log safety implemented before this fix.
 
-**Observed evidence — synchronous DecisionProvider aggregation landed.** PR
-[#5732](https://github.com/agentydragon/ducktape/pull/5732) added deny-dominant aggregation of
-configured synchronous non-human providers ahead of the existing human path, with bounded
-provider-authored reason evidence and a shared optimistic-version/idempotency commit path for both
-human and auto-provider Decisions. See [`async_approvals.md`](async_approvals.md).
+### `NOTIFY` — human approval notification delivery
 
-**Needed support:** human-provider notifications, pre-claim cancellation through `CANCEL` below,
-and bounded progress for a concrete consumer. Human callbacks, safe projections, and the
-`execution_unknown` API state are implemented. Durable Action event
-append/query with cursor-based (`after_sequence`) polling is landed; see `action_service/README.md`.
-A separate outbox is not required for this slice, and the never-drained `action_outbox` table has
-been dropped.
-
-**Acceptance evidence:** a scripted replay covering submit -> pending -> allow/deny -> one execution
-or no execution -> Action API polling, including process restart and duplicate callback delivery.
-Landed: restart-surviving event sequence, cursor/pagination polling, and redaction of
-credential-shaped arguments/results/errors and unsafe exceptions while surfacing the unchanged
-human `decision_note`, bounded non-human provider reason evidence, and safe terminal result.
-Open: human-provider notification and withdrawal evidence.
-
-### `CANCEL` — owning-caller cancellation before dispatch claim
-
-**Ready for implementation; semantic gate resolved:** cancellation guarantees the request will not
-execute. Only its authenticated owning caller may cancel; use the existing caller ownership scope
-(Sandbox namespace/UID for workloads, not Thread or shared policy). Require no expected version.
-The atomic dispatch claim is the cutoff, even before the executor physically begins its work.
-
-| Current state                                 | Cancellation result                             |
-| --------------------------------------------- | ----------------------------------------------- |
-| `decision_pending`                            | Transition to `cancelled`.                      |
-| `allowed`, Execution still `pending_dispatch` | Cancel the request and its unclaimed Execution. |
-| `dispatching` or `running`                    | Refuse as too late; leave execution untouched.  |
-| `cancelled`                                   | Idempotent success.                             |
-| `succeeded`, `failed`, or `denied`            | Report already finished; leave unchanged.       |
-| `execution_unknown`                           | Refuse; execution may have happened.            |
-
-Cancellation, Decision commit, and dispatch claim must serialize atomically. If cancellation wins,
-no queued task, late approval, duplicate submission, or restart can subsequently start execution.
-An intervening approval alone does not prevent cancellation while the Execution remains unclaimed.
-Retain any earlier Decision and record cancellation actor/time plus the canonical state event.
-Submission with the original idempotency key returns the same cancelled request; a deliberate new
-attempt requires a new submission key. Repeated cancellation is safe without a version precondition.
-
-There is no in-progress cancellation propagation, executor stop request, process killing, or promise
-to undo side effects. Disconnecting/cancelling an MCP wait is not Action cancellation. Publish the
-canonical cancellation transition through the same update-notification path as other state changes
-when notification-driven waits are present; this does not make the cancellation API depend on the
-MCP frontend. Conversely, the initial MCP frontend can land without a cancellation tool.
-
-**Acceptance:** own-caller authorization and other-caller rejection; the full state table; competing
-allow/deny/cancel/claim operations; already-scheduled dispatch; restart and duplicate delivery;
-original-submission-key replay; preserved Decision/audit and state-event visibility. Prove that a
-successful cancellation prevents executor invocation, not merely that the API returned `cancelled`.
-
-### Decision note — existing query/BFF projection
-
-**Landed behavior:** one bounded human-authored `decision_note` is stored and returned unchanged to
-requesting caller and operator through the existing Action API polling/BFF. The migration preserves
-existing notes; there is no private human-note field. Non-human provider `reason_code` and
-`reason_description` remain separate bounded outcome evidence. API/BFF tests cover exact note
-visibility and duplicate/stale decisions; push notification and offline Thread wake remain in `ING`.
+**Deferred support:** notify the human that a request needs review, linking to the existing
+integration-app approval surface. Responses use the canonical authenticated Decision route;
+duplicate/stale callbacks cannot create another authority or lifecycle. This does not gate the
+existing polling UI or `CLAUDEAI`. See [remaining delivery work](async_approvals.md).
 
 ### `INPUT_DELIVERY` — native queue evidence before common-protocol changes
 
@@ -671,18 +528,6 @@ or explicitly unavailable. **Deferred:** generic queue management and unproven p
 user/Agent subscriptions, and deliver structured events into an Agent/Thread ingress. The Hub owns
 subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
 and Thread wake/queue semantics. It is not an executor or an Action decision authority.
-
-## Preserved decisions
-
-These are observed product decisions and must not be reopened by the schema or wiring gates:
-
-- `ActionRequest` is one logical intent with an invariant request shape.
-- `Decision` and `Execution` are separate durable records.
-- One ActionRequest may create at most one Execution.
-- A final allow Decision may auto-dispatch; there is no universal agent `commit` step.
-- The v0 DecisionProvider is human/operator-backed.
-- Dispatch is never blindly retried; ambiguity becomes `execution_unknown`.
-- Caller-own and operator-all reads remain the v0 access scope. Operator arguments are exact; caller arguments and executor results/errors retain recursive credential-shaped redaction.
 
 ## Deferred
 

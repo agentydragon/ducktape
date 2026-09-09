@@ -20,7 +20,9 @@ py_library(
     deps = [
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:quantiles",
         "//finance/augur/study/trinity:replay",
+        "@pypi//numpy",
         "@rules_python//python/runfiles",
     ],
 )
