@@ -8,16 +8,15 @@ package(default_visibility = [
 ])
 
 py_test(
-    name = "test_ollama_terraform",
-    srcs = ["test_ollama_terraform.py"],
+    name = "test_terraform_sources",
+    srcs = ["test_terraform_sources.py"],
     data = [
-        "//cluster/k8s:ollama/secrets/ollama-bearer-token-tf.yaml",
-        "//cluster/k8s:ollama/secrets/tf-runner.yaml",
-        "//cluster/k8s:tofu-controller/tofu-controller.yaml",
-        "//cluster/k8s:tofu-state/db/credentials.sops.yaml",
+        "//cluster/k8s:cluster_yaml_files",
+        "//cluster/k8s:flux_bootstrap_files",
     ],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

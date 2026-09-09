@@ -10,8 +10,8 @@ spec:
   path: ./tf/gitops/sso-providers
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   serviceAccountName: tf-runner
   backendConfig:
     customConfiguration: |

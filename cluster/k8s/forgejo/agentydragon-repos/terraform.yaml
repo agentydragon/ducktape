@@ -9,8 +9,8 @@ spec:
   path: ./tf/gitops/forgejo-agentydragon-repos
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
+    namespace: ducktape-flux
 
   # Haku source-read collaborator grants look up the haku user provisioned by
   # tf/gitops/haku-state.
