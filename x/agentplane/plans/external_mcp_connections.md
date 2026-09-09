@@ -181,6 +181,71 @@ copy the referenced policy configuration into the new Connection.
   existing protocol machinery can support selection of a configured identity without importing
   Haku's conversation lifecycle, multi-operator ownership graph, or version-sensitive private adapter hooks.
 
+## Initial MCP tools: generic Actions
+
+**Selected first-slice direction:** expose a small fixed set of tools which treat Actions as data.
+Do not mirror each Action or mounted upstream MCP tool into a separate exposed MCP tool. Changing
+the canonical Action catalog changes discovery results, not the frontend's tool roster. Per-Action
+MCP projection is an optional future experiment only if evidence from generic-tool use justifies it;
+it may never be needed and is not a scheduled follow-on or migration prerequisite.
+
+Working tool names and contracts (final wire schemas remain implementation work):
+
+| Tool                         | Input                                                                                                                               | Result / purpose                                                                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Optional group/filter, bounded pagination, and `include_fields`.                                                                    | Discover compact published Action identifiers; return detailed fields only when explicitly requested.                               |
+| `get_action`                 | Action group/name and `include_fields`.                                                                                             | Read compact metadata for one definition, optionally requesting its existing input schema or full description.                      |
+| `request_action`             | Structured Action group/name, arguments, caller-scoped idempotency key, optional untrusted provenance, and bounded polling options. | Submit once; return the durable request ID and current receipt/state immediately or after the requested bounded wait.               |
+| `get_action_request`         | Request ID and bounded polling options.                                                                                             | Read this caller's durable request state, Decision, and safe Execution result/error, optionally waiting for decision or completion. |
+| `list_action_request_events` | Request ID, `after_sequence`, bounded page size.                                                                                    | Read canonical ordered events and resume from the last received sequence.                                                           |
+
+Here an **Action** is a catalog definition and an **ActionRequest** is a particular submission.
+Keep that distinction in tool names and descriptions so `get_action` cannot be mistaken for polling
+execution. The ordinary workflow is discover → inspect schema → request → read receipt/events as
+needed; the client can reuse known Action definitions. Discovery is read-only and does not imply
+permission to execute. The service validates arguments and evaluates the authenticated caller's
+policy on submission; no tool accepts an authoritative Identity, policy-set choice, or decider.
+
+**Context budget:** omission of `include_fields` (or an empty list) returns compact identifiers and
+minimal metadata, excluding input/output schemas and full descriptions. Explicitly request only the
+fields needed, for example `get_action(group="everything", name="echo",
+include_fields=["input_schema"])`. Initially allowlist the existing `input_schema` and `description`
+(the full description); apply the same selection to bounded `list_actions` pages.
+Do not insert omitted fields through nested group details, request receipts, or the generic tools'
+own MCP schemas/descriptions. Their schemas must not inline the Action catalog or enumerate every
+Action as parameter alternatives. Reject unsupported field names with an actionable error naming
+the supported choices; never synthesize unavailable metadata.
+
+The current canonical catalog carries full descriptions and input schemas, but no output-schema
+field. **Defer adding output schemas or other new Action metadata until after the working MCP
+frontend.** MCP's [`outputSchema` is optional](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool),
+and a generic frontend does not require per-Action output schemas. If added later, `output_schema`
+would be another opt-in field describing the safe caller-visible result, which may differ from the
+raw upstream MCP result. This is neither an `MCPFRONT` nor a `CLAUDEAI` acceptance requirement.
+Selective presentation does not weaken server-side input validation, policy enforcement, or result redaction.
+
+**Bounded polling on submission and request reads:** support "wait up to N seconds until no longer
+pending human decision / pending execution" on both `request_action` and `get_action_request`.
+Working parameters are `wait_seconds` (omitted or zero means immediate) and `wait_until` (decision
+resolved or terminal result; default terminal). An allowed Decision satisfies the decision predicate,
+but does not satisfy terminal while execution is queued/running. Denial or another terminal state
+satisfies either predicate; an already-satisfied predicate returns immediately. Intermediate events
+do not end a wait unless the requested predicate is satisfied. Validate a finite nonnegative duration
+against a documented server maximum compatible with client/proxy timeouts. At the deadline, return
+the current durable receipt even if still pending; expiry is not an Action failure or cancellation.
+Create/recover the durable request before waiting. Disconnect/cancel of the MCP wait does not cancel
+or resubmit the Action; reuse the request ID or original idempotency key to recover it. Waiting is a
+read of canonical state, not an execution retry, and must preserve caller authorization throughout.
+Exact parameter names, duration cap, and mapping to canonical states remain implementation choices.
+
+All tools present the existing catalog and Action lifecycle. Submission waits only when explicitly
+requested and never indefinitely for human approval; reads never submit or retry execution. On an ambiguous submission response the caller must
+retain and reuse the same idempotency key, not create a replacement request. Get/events responses
+preserve canonical caller scope, redaction, and shared decision notes. Human decisions and Connection
+management stay in the integration app's operator surface. Define actionable errors and bounded
+discovery results, and test that both clients can obtain the schema and complete this workflow using
+only the generic tools. Exact names, pagination, and idempotency-key ergonomics remain to be settled.
+
 ## Design choices to settle before implementation
 
 - **Configuration and consent:** where configured Identities/policies live, how the single operator
@@ -195,11 +260,11 @@ copy the referenced policy configuration into the new Connection.
   Reconnection must not merge identities by client name, username, or a fresh DCR `client_id`.
 - **Policy integration:** resolve this Connection's Identity into the trusted context used by
   [configured Action policies](action_policies.md); keep external and Sandbox-type selectors distinct.
-- **MCP presentation:** compare schema-preserving per-Action tools with discover/submit/get/events
-  tools against actual Claude.ai and local Claude Code use. Keep canonical request IDs and retry semantics; pending human
-  review must return promptly and remain queryable. Decide how a client recovers the same submission
-  key after an ambiguous tool response. Do not assume a tool call remains open until approval or
-  that either client will poll or wake autonomously after the conversation stops.
+- **Generic tool ergonomics:** finalize the schemas above against actual Claude.ai and local
+  Claude Code use. Keep canonical request IDs and retry semantics; pending human review must return
+  within the requested bounded wait (immediately by default) and remain queryable. Decide how a client retains the same submission key after an
+  ambiguous tool response. Do not assume either client will poll or wake autonomously after the
+  conversation stops.
 - **Lifecycle:** storage/refresh/revoke behavior, consistency at dispatch, cleanup of abandoned
   registrations, and explicit behavior after reconnect. Agree on these before schema/API work.
 
@@ -214,6 +279,17 @@ Record Claude.ai's deployed result separately as `CLAUDEAI`, the operator's high
 The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenarios:
 
 - discovery → DCR → operator consent/identity selection → token exchange → authenticated tool use;
+- use the fixed generic tools to list/inspect an Action, request it, and read its receipt/events;
+  adding or changing a catalog Action updates discovery without creating an exposed per-Action tool;
+- with long descriptions and large schemas in the catalog, default list/get results omit those
+  fields; selecting `input_schema` returns only that extra field, and explicit full-description
+  requests return that data without unrelated catalog expansion. Unsupported fields fail clearly;
+  new Action metadata, including output schemas, is not required for this milestone;
+- both submission and request reads support immediate/default and bounded waits: already-complete
+  requests return immediately, decision-only waits return on allow/deny, completion waits span queued
+  and running execution, and deadlines return pending receipts. Exercise state changes racing wait
+  setup, denial/failure, disconnect/reconnect, and duplicate submission with the same idempotency key
+  without losing a transition or creating another Execution;
 - the real integration-app enrollment/login round trip for each client: bind the decision to the
   correct pending OAuth transaction, return to the client's validated callback, and demonstrate
   rename/unbind/rebind from app management. Reject forged/expired/replayed enrollment, CSRF, and

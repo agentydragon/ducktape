@@ -109,7 +109,7 @@ flowchart TB
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     WID["Observed evidence<br/>SandboxPrincipal<br/>workload authentication"]:::milestone
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>from trusted Sandbox types"]:::future
-    MCPFRONT["Planned support<br/>Action Service MCP frontend<br/>external presentation over canonical Action API"]:::future
+    MCPFRONT["Planned support<br/>generic Action MCP tools<br/>discover, request, read receipts/events"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>external harness/client compatibility"]:::future
@@ -427,25 +427,39 @@ revocation/expiry semantics without putting a reusable privileged credential in 
 ### `MCPFRONT` — Action Service MCP frontend
 
 **Planned support — smallest user-visible behavior:** an authenticated external MCP client discovers
-Actions, submits one ActionRequest without waiting for approval, and reads its pending Decision and
+Actions, submits one ActionRequest with an optional bounded wait, and reads its pending Decision and
 eventual safe result. This is external MCP presentation over the canonical Action API, not another
 executor, remote MCP runtime, or lifecycle store.
+
+**Initial surface chosen:** fixed generic tools such as `list_actions`, `get_action`, and
+`request_action`, plus request-status/event reads. An Action definition and a submitted ActionRequest
+are distinct. Do not mirror Actions into individually exposed MCP tools in this first slice; the
+[connection plan](external_mcp_connections.md) owns the working inventory, schemas to settle, and
+client workflow. Detailed schemas/descriptions are opt-in through `include_fields`; default discovery
+stays compact. Per-Action projection is an optional experiment contingent on evidence from the generic
+interface, not a scheduled follow-on or required migration step.
 
 **Dependencies:** `AS` for the canonical catalog, `DEL` for Decision/Action-state and durable events,
 and `EID` for trusted configured external identity. Caller-supplied Agent/Thread names and
 origin/correlation are not identity authority. `MCPFRONT` is not a prerequisite for `MCP0`.
 The initial clients are Claude.ai and external Claude Code through `MCPOAUTH`; `CALLERPOLICY` adds
 bounded per-Identity deciders. Their combined acceptance is `EXTERNALMCP`. The [connection plan](external_mcp_connections.md)
-keeps the remaining tool-presentation and authorization design choices explicit.
+keeps the remaining generic-tool schema and authorization design choices explicit.
 
 **Needed support / contract:**
 
-- **Catalog:** present the canonical ActionGroup/Action catalog and input schemas; preserve separate
-  group/name identity and never expose executor bindings or credentials. Do not create an MCP-owned
-  registry or dispatch directly to an upstream tool.
+- **Catalog:** compact list/get views preserve group/name identity; `include_fields` explicitly
+  selects existing input schemas and full descriptions. Do not embed the catalog in the generic
+  tools' own schemas or return omitted detail through nested fields. Defer output schemas and other
+  new Action metadata until after a working frontend; they do not gate `MCPFRONT` or `CLAUDEAI`.
+  Reject unsupported field selections clearly. Never expose executor
+  bindings or credentials, create an MCP-owned registry, or dispatch directly to an upstream tool.
 - **Submit:** forward the canonical ActionRequest envelope and caller-scoped idempotency key under
   the authenticated external Identity's principal. Return the durable request ID and current state,
-  including `decision_pending`, rather than holding an MCP call open for human approval.
+  including `decision_pending`, immediately by default. Submission and request-status reads both
+  offer an explicit bounded wait for decision resolution or terminal execution; expiry returns the
+  current receipt, not an Action failure. An MCP wait timeout/disconnect never cancels or retries the
+  durable Action. The [connection plan](external_mcp_connections.md) specifies polling semantics.
 - **Get / events:** read only that caller's canonical request and ordered durable Action events.
   `after_sequence` is the last event sequence already received; return later events in order, use
   the last returned sequence for the next poll, and return an empty list when none are newer.
@@ -464,6 +478,8 @@ restart. Allow through the canonical operator BFF produces exactly one Execution
 result as the Action API; deny produces none. Replay duplicate submission/Decision delivery and
 prove Identity B cannot get or poll A's request, forged provenance cannot change ownership, and no
 operator-only arguments, credential-bearing bindings, or unsafe executor payloads leak through MCP.
+Exercise bounded polling on submission and reads, including pending deadlines, decision-only versus
+execution completion, already-complete requests, and reconnect without duplicate execution.
 This integration proof comes before any frontend-specific persistence or framework.
 
 ### `MCPAGG` — Haku Console MCP aggregator replacement
@@ -473,8 +489,10 @@ Console's aggregator. Verify the required external harness/client workflows agai
 retiring the old surface; do not build a second frontend, approval coordinator, or authority store.
 `EXTERNALMCP` proves Claude.ai and independently running Claude Code with OAuth and configured Identities.
 Inventory and migrate the remaining Haku tools, policies, and client workflows separately; backend
-credential requirements remain adapter-specific. MCP tool projection and migration order remain
-open. Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` milestone.
+credential requirements remain adapter-specific. The initial facade uses generic Action tools;
+per-Action projection may never be needed and is not required for migration. Actual generic-client
+evidence determines whether to explore it. The migration order remains open.
+Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` milestone.
 
 ### `HOSTEXEC` — hostexec-backed Action execution
 
