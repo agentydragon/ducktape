@@ -7,6 +7,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from urllib.parse import parse_qs
 
@@ -24,8 +25,10 @@ from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from x.agentplane.action_service import api as service_api
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
+from x.agentplane.action_service.connections import ConnectionAuthority, Identity
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
+from x.agentplane.action_service.enrollments import EnrollmentAuthority, EnrollmentInput
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -64,6 +67,7 @@ class Review:
     login_as: Callable[[str], None]
     issuer: str
     exchanged_subjects: list[str]
+    enrollments: EnrollmentAuthority
 
 
 @pytest.fixture
@@ -116,11 +120,17 @@ async def review(
             jwks_uri=f"{idp_url}jwks/",
             subjects=frozenset({"target-a", "target-b"}),
         )
+        connections = ConnectionAuthority(
+            make_sessionmaker(engine), {"public_coder": Identity(), "disabled": Identity(enabled=False)}
+        )
+        enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
             service,
             cast(SandboxPrincipalAuthenticator, None),
             OidcOperatorAuthenticator(target),
             catalog,
+            connections=connections,
+            enrollments=enrollments,
             updates=ActionUpdates(db_url),
         )
         downstream_http = await stack.enter_async_context(
@@ -246,7 +256,7 @@ async def review(
                 mounts={app_url: httpx.ASGITransport(app=replica)},
             )
         )
-        yield Review(browser, service, calls, second_browser, login_as, target_issuer, exchanged_subjects)
+        yield Review(browser, service, calls, second_browser, login_as, target_issuer, exchanged_subjects, enrollments)
 
 
 async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: Review) -> None:
@@ -425,6 +435,132 @@ async def test_concurrent_cross_replica_callbacks_consume_pending_login_once(rev
     responses = await asyncio.gather(a.get(callback, follow_redirects=False), b.get(callback, follow_redirects=False))
     assert sorted(response.status_code for response in responses) == [303, 401]
     assert sorted([(await a.get("/auth/me")).status_code, (await b.get("/auth/me")).status_code]) == [200, 401]
+
+
+async def enrollment_path(review: Review, client_id: str = "test-external-client") -> str:
+    created = await review.enrollments.create(
+        EnrollmentInput(
+            issuer="https://actions.test",
+            client_id=client_id,
+            client_name="Claude on wyrm2",
+            redirect_uri="https://external-client.test/callback",
+            code_challenge=f"test-pkce-{client_id}",
+            upstream_url="https://authentik.test/authorize?state=server-held-state",
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+        )
+    )
+    return f"/connection-enrollments/{created.handle}"
+
+
+async def test_consent_requires_operator_same_origin_and_preview_csrf(review: Review) -> None:
+    path = await enrollment_path(review)
+    browser = review.browser
+    assert (await browser.post(f"{path}/preview")).status_code == 401
+    assert (await browser.post(f"{path}/preview", headers=AGENT_AUTH)).status_code == 403
+    await browser.get("/auth/login")
+    assert (await browser.post(f"{path}/preview", headers={"Origin": "https://evil.test"})).status_code == 403
+    assert (await browser.post(f"{path}/preview", headers={"Origin": "null"})).status_code == 403
+    body = {"verdict": "deny", "csrf_token": "never-previewed"}
+    assert (await browser.post(f"{path}/decision", json=body)).status_code == 403
+    response = await browser.post(f"{path}/preview")
+    assert response.status_code == 200, response.text
+    preview = response.json()
+    assert preview["enrollment"]["client_id"] == "test-external-client"
+    assert preview["enrollment"]["redirect_uri"] == "https://external-client.test/callback"
+    assert preview["identities"] == {"public_coder": {"enabled": True}, "disabled": {"enabled": False}}
+    assert preview["attempted_decision"] is None
+    assert "browser_binding" not in response.text
+    assert "access_token" not in response.text
+    assert "server-held-state" not in response.text
+    assert (await browser.post(f"{path}/decision", json=body)).status_code == 403
+    body["csrf_token"] = preview["csrf_token"]
+    assert (
+        await browser.post(f"{path}/decision", headers={"Origin": "https://evil.test"}, json=body)
+    ).status_code == 403
+    denied = await browser.post(f"{path}/decision", json=body)
+    assert denied.status_code == 200, denied.text
+    assert denied.json() == {"verdict": "deny", "redirect_url": None}
+    assert (await browser.post(f"{path}/decision", json=body)).json() == denied.json()
+
+
+async def test_consent_allow_round_trip_replays_across_app_replicas(review: Review) -> None:
+    path = await enrollment_path(review)
+    browser = review.browser
+    await browser.get("/auth/login")
+    preview = (await browser.post(f"{path}/preview")).json()
+    body = {
+        "verdict": "allow",
+        "csrf_token": preview["csrf_token"],
+        "display_name": "My Claude on wyrm2",
+        "identity_id": "public_coder",
+    }
+    result = await browser.post(f"{path}/decision", json=body)
+    assert result.status_code == 200, result.text
+    assert result.json() == {
+        "verdict": "allow",
+        "redirect_url": "https://authentik.test/authorize?state=server-held-state",
+    }
+    replica = review.second_browser
+    replica.cookies.update(browser.cookies)
+    reloaded = await replica.post(f"{path}/preview")
+    assert reloaded.status_code == 200, reloaded.text
+    assert reloaded.json()["attempted_decision"] == body
+    assert reloaded.json()["csrf_token"] == preview["csrf_token"]
+    assert (await replica.post(f"{path}/decision", json=body)).json() == result.json()
+    changed = {**body, "display_name": "different name"}
+    assert (await replica.post(f"{path}/decision", json=changed)).status_code == 409
+    assert (
+        await replica.post(f"{path}/decision", json={"verdict": "deny", "csrf_token": body["csrf_token"]})
+    ).status_code == 409
+    # The BFF does not activate a grant. The OAuth adapter must still verify the same upstream operator.
+    approved = await review.enrollments.approved(
+        client_id="test-external-client",
+        redirect_uri="https://external-client.test/callback",
+        code_challenge="test-pkce-test-external-client",
+        operator=Principal(issuer=review.issuer, subject="target-a", role=PrincipalRole.OPERATOR),
+    )
+    assert approved.identity_id == "public_coder"
+    assert review.exchanged_subjects
+    assert set(review.exchanged_subjects) == {SUBJECT_A}
+
+
+async def test_consent_browser_binding_survives_replica_but_not_another_login(review: Review) -> None:
+    path = await enrollment_path(review)
+    a, b = review.browser, review.second_browser
+    await a.get("/auth/login")
+    preview = (await a.post(f"{path}/preview")).json()
+    await b.get("/auth/login")
+    assert (await b.post(f"{path}/preview")).status_code == 403
+    assert (
+        await b.post(f"{path}/decision", json={"verdict": "deny", "csrf_token": preview["csrf_token"]})
+    ).status_code == 403
+    await a.post("/auth/logout")
+    await a.get("/auth/login")
+    assert (await a.post(f"{path}/preview")).status_code == 403
+
+
+async def test_consent_interactions_have_distinct_csrf_and_reject_extra_authority(review: Review) -> None:
+    first, second = await enrollment_path(review, "one"), await enrollment_path(review, "two")
+    browser = review.browser
+    await browser.get("/auth/login")
+    previews = await asyncio.gather(browser.post(f"{first}/preview"), browser.post(f"{second}/preview"))
+    one, two = [response.json() for response in previews]
+    assert one["csrf_token"] != two["csrf_token"]
+    assert (
+        await browser.post(f"{second}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"]})
+    ).status_code == 403
+    for extra in (
+        {"redirect_url": "https://evil.test"},
+        {"browser_binding": "attacker-supplied"},
+        {"identity_id": "public_coder"},
+    ):
+        response = await browser.post(
+            f"{first}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"], **extra}
+        )
+        assert response.status_code == 422, response.text
+    denied = await browser.post(f"{first}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"]})
+    assert denied.status_code == 200
+    assert (await browser.post(f"{second}/preview")).json()["attempted_decision"] is None
 
 
 if __name__ == "__main__":
