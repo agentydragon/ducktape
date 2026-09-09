@@ -43,6 +43,7 @@ py_library(
         ":presets",
         ":trajectory",
         "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:connections",
         "//x/agentplane/action_service:enrollments",
         "//x/agentplane/action_service:models",
         "//x/agentplane/runner:client",

@@ -10,7 +10,6 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
@@ -20,8 +19,9 @@ from x.agentplane.action_service.connections import (
     Connection,
     ConnectionAuthority,
     ConnectionConflictError,
-    ConnectionName,
     ConnectionNotFoundError,
+    ConnectionRename,
+    ConnectionVersion,
     Identity,
 )
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
@@ -53,16 +53,6 @@ from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 _operator_bearer = HTTPBearer(auto_error=False)
-
-
-class ConnectionVersion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    expected_version: int = Field(ge=1)
-
-
-class ConnectionRename(ConnectionVersion):
-    display_name: ConnectionName
 
 
 def _service(request: Request) -> ActionService:

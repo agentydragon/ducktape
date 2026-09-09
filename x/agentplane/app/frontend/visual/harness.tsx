@@ -13,6 +13,7 @@ import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
+import { sampleConnection } from "../connections_fixture";
 import type { ActionRequestView, BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
 import {
@@ -462,6 +463,26 @@ routes.push(
   ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/actions$/, () => ACTIONS],
   [
+    "GET",
+    /^\/connections$/,
+    () => [
+      sampleConnection(),
+      {
+        ...sampleConnection(),
+        id: "10000000-0000-4000-8000-000000000002",
+        display_name: "Retired research client",
+        grants: sampleConnection().grants.map((grant) => ({
+          ...grant,
+          id: "20000000-0000-4000-8000-000000000002",
+          identity_id: "retired",
+          status: "revoked",
+          revoked_at: "2026-09-09T12:03:00Z",
+        })),
+      },
+    ],
+  ],
+  ["GET", /^\/connection-identities$/, () => ({ personal: { enabled: false } })],
+  [
     "POST",
     /^\/connection-enrollments\/[^/]+\/preview$/,
     () => ({
@@ -569,6 +590,8 @@ const PAGES: Record<string, string> = {
   actions_phone: "/actions",
   consent: "/connection-enrollments/test-only-opaque-handle",
   consent_phone: "/connection-enrollments/test-only-opaque-handle",
+  connections: "/connections",
+  connections_phone: "/connections",
   sandbox: "/sandboxes/demo-a1b2",
   // With the github-public binding's rules open, so the shot carries the credential detail — its
   // description, where the proxy puts it, and which secret it comes from — and the other

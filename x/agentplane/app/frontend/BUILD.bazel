@@ -118,6 +118,44 @@ ts_library(
 )
 
 ts_library(
+    name = "connections",
+    srcs = ["connections.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "connections_fixture",
+    testonly = True,
+    srcs = ["connections_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "connections_test",
+    testonly = True,
+    srcs = ["connections.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":connections",
+        ":connections_fixture",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "live",
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
@@ -320,6 +358,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
+        ":connections",
         ":consent",
         ":sandbox_page",
         ":sandboxes",
@@ -361,6 +400,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":actions_test",
+        ":connections_test",
         ":consent_test",
         ":events_test",
         ":launch_presets_test",
@@ -374,6 +414,7 @@ vitest_bin.vitest_test(
 # PNG published for PR visual review on the shared //util/testing/frontend_visual machinery.
 ts_library(
     name = "visual_harness_lib",
+    testonly = True,
     srcs = [
         "visual/harness.tsx",
         "visual/network.ts",
@@ -382,6 +423,7 @@ ts_library(
     deps = [
         ":app",
         ":client",
+        ":connections_fixture",
         ":live",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",
@@ -396,6 +438,7 @@ ts_library(
 # A classic script (iife) so visual/index.html loads it from file:// without module CORS.
 esbuild(
     name = "visual_bundle",
+    testonly = True,
     config = {"jsx": "automatic"},
     entry_point = "visual/harness.js",
     format = "iife",
@@ -411,11 +454,13 @@ esbuild(
 # Single-file views so $(rootpath) resolves to one path each.
 filegroup(
     name = "visual_bundle_js",
+    testonly = True,
     srcs = ["visual/bundle.js"],
 )
 
 filegroup(
     name = "visual_bundle_css",
+    testonly = True,
     srcs = ["visual/bundle.css"],
 )
 
@@ -448,6 +493,8 @@ VISUAL_DATA = [
     for scenario in [
         "actions",
         "actions_phone",
+        "connections",
+        "connections_phone",
         "consent",
         "consent_phone",
         "sandboxes",

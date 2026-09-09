@@ -14,6 +14,7 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
+from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion, Identity
 from x.agentplane.action_service.enrollments import EnrollmentDecisionResult
 from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
@@ -276,7 +277,7 @@ async def _operator_actions(
     request: Request, caller: Annotated[CallerIdentity, Depends(require_caller)]
 ) -> AsyncIterator[OperatorActionServiceClient]:
     if caller.kind is not CallerKind.OPERATOR:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Action review requires an operator session")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Action Service management requires an operator session")
     provider = request.app.state.operator_actions
     if provider is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, {"code": "operator_federation_not_configured"})
@@ -308,6 +309,34 @@ async def connection_decision(
     request: Request, handle: EnrollmentHandle, body: ConsentDecision, client: OperatorActions
 ) -> EnrollmentDecisionResult:
     return await decide_enrollment(request, handle, body, client)
+
+
+connections_router = APIRouter(tags=["connections"])
+
+
+@connections_router.get("/connection-identities")
+async def connection_identities(client: OperatorActions) -> dict[str, Identity]:
+    return await client.list_identities()
+
+
+@connections_router.get("/connections")
+async def list_connections(client: OperatorActions) -> list[Connection]:
+    return await client.connections()
+
+
+@connections_router.get("/connections/{connection_id}")
+async def get_connection(connection_id: UUID, client: OperatorActions) -> Connection:
+    return await client.connection(connection_id)
+
+
+@connections_router.patch("/connections/{connection_id}")
+async def rename_connection(connection_id: UUID, body: ConnectionRename, client: OperatorActions) -> Connection:
+    return await client.rename_connection(connection_id, body)
+
+
+@connections_router.post("/connections/{connection_id}/unbind")
+async def unbind_connection(connection_id: UUID, body: ConnectionVersion, client: OperatorActions) -> Connection:
+    return await client.unbind_connection(connection_id, body)
 
 
 @actions_router.get("")
@@ -432,6 +461,7 @@ def create_app(
         threads,
         actions_router,
         consent_router,
+        connections_router,
         egress_router,
         live_router,
     ):

@@ -8,7 +8,7 @@ from uuid import UUID
 
 import httpx
 
-from x.agentplane.action_service.connections import Identity
+from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion, Identity
 from x.agentplane.action_service.enrollments import (
     EnrollmentDecisionInput,
     EnrollmentDecisionResult,
@@ -94,6 +94,26 @@ class OperatorActionServiceClient(_BearerClient):
             "POST", f"/v1/operator/connection-enrollments/{handle}/decision", json=body.model_dump(mode="json")
         )
         return EnrollmentDecisionResult.model_validate(response.json())
+
+    async def connections(self) -> list[Connection]:
+        response = await self._request("GET", "/v1/operator/connections")
+        return [Connection.model_validate(row) for row in response.json()]
+
+    async def connection(self, connection_id: UUID) -> Connection:
+        response = await self._request("GET", f"/v1/operator/connections/{connection_id}")
+        return Connection.model_validate(response.json())
+
+    async def rename_connection(self, connection_id: UUID, body: ConnectionRename) -> Connection:
+        response = await self._request(
+            "PATCH", f"/v1/operator/connections/{connection_id}", json=body.model_dump(mode="json")
+        )
+        return Connection.model_validate(response.json())
+
+    async def unbind_connection(self, connection_id: UUID, body: ConnectionVersion) -> Connection:
+        response = await self._request(
+            "POST", f"/v1/operator/connections/{connection_id}/unbind", json=body.model_dump(mode="json")
+        )
+        return Connection.model_validate(response.json())
 
     async def list_requests(self, *, states: tuple[ActionState, ...] = ()) -> list[ActionRequestView]:
         response = await self._request(

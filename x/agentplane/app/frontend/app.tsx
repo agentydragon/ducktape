@@ -2,6 +2,7 @@ import { Button, Container, Group, Stack } from "@mantine/core";
 import { HashRouter, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions";
+import { Connections } from "./connections";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
@@ -72,11 +73,18 @@ function AppRoutes(): JSX.Element {
           >
             Actions
           </Button>
+          <Button
+            variant={location.pathname === "/connections" ? "filled" : "subtle"}
+            onClick={() => void navigate("/connections")}
+          >
+            Connections
+          </Button>
         </Group>
         <Routes>
           <Route path="/" element={<ListRoute />} />
           <Route path="/actions" element={<ActionRequests />} />
           <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
+          <Route path="/connections" element={<Connections />} />
           <Route path="/sandboxes/:name" element={<SandboxRoute />} />
           <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
           <Route path="*" element={<ListRoute />} />

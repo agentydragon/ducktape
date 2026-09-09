@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from urllib.parse import parse_qs
+from uuid import uuid4
 
 import httpx
 import jwt
@@ -25,7 +26,13 @@ from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from x.agentplane.action_service import api as service_api
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from x.agentplane.action_service.connections import ConnectionAuthority, Identity
+from x.agentplane.action_service.connections import (
+    ConnectionAuthority,
+    GrantBinding,
+    GrantStatus,
+    Identity,
+    NewConnection,
+)
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
 from x.agentplane.action_service.enrollments import EnrollmentAuthority, EnrollmentInput
@@ -68,6 +75,7 @@ class Review:
     issuer: str
     exchanged_subjects: list[str]
     enrollments: EnrollmentAuthority
+    connections: ConnectionAuthority
 
 
 @pytest.fixture
@@ -256,7 +264,82 @@ async def review(
                 mounts={app_url: httpx.ASGITransport(app=replica)},
             )
         )
-        yield Review(browser, service, calls, second_browser, login_as, target_issuer, exchanged_subjects, enrollments)
+        yield Review(
+            browser, service, calls, second_browser, login_as, target_issuer, exchanged_subjects, enrollments, connections
+        )
+
+
+async def test_connection_management_preserves_federation_csrf_versions_and_history(review: Review) -> None:
+    grant = await review.connections.bind(
+        GrantBinding(
+            grant_id=uuid4(),
+            identity_id="public_coder",
+            issuer="https://test-actions.invalid",
+            client_id="test-external-client",
+            activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
+            connection=NewConnection(display_name="Original"),
+        )
+    )
+    await review.connections.activate(grant.id)
+    original = await review.connections.get(grant.connection_id)
+    path = f"/connections/{original.id}"
+    browser = review.browser
+    for endpoint in ["/connections", "/connection-identities", path]:
+        assert (await browser.get(endpoint)).status_code == 401
+        assert (await browser.get(endpoint, headers=AGENT_AUTH)).status_code == 403
+    for method, endpoint, body in [
+        ("PATCH", path, {"display_name": "Renamed", "expected_version": original.version}),
+        ("POST", f"{path}/unbind", {"expected_version": original.version}),
+    ]:
+        assert (await browser.request(method, endpoint, json=body)).status_code == 401
+        assert (await browser.request(method, endpoint, json=body, headers=AGENT_AUTH)).status_code == 403
+    await browser.get("/auth/login")
+    assert (await browser.get("/connection-identities")).json() == {
+        "public_coder": {"enabled": True},
+        "disabled": {"enabled": False},
+    }
+    assert (await browser.get("/connections")).json() == [original.model_dump(mode="json")]
+    assert (await browser.get(path)).json() == original.model_dump(mode="json")
+    rename = {"display_name": " Renamed ", "expected_version": original.version}
+    for origin in ["https://cross-origin.invalid", "http://test-app.invalid.evil.example"]:
+        assert (await browser.patch(path, json=rename, headers={"Origin": origin})).status_code == 403
+        assert (
+            await browser.post(
+                f"{path}/unbind", json={"expected_version": original.version}, headers={"Origin": origin}
+            )
+        ).status_code == 403
+    saved_origin = browser.headers.pop("Origin")
+    assert (await browser.patch(path, json=rename)).status_code == 403
+    assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 403
+    browser.headers["Origin"] = saved_origin
+    assert await review.connections.get(original.id) == original
+    assert (await browser.patch(path, json={**rename, "identity_id": "disabled"})).status_code == 422
+    assert (await browser.patch(path, json={**rename, "expected_version": 0})).status_code == 422
+    renamed = await browser.patch(path, json=rename)
+    assert renamed.status_code == 200
+    assert renamed.json()["display_name"] == "Renamed"
+    assert renamed.json()["id"] == str(original.id)
+    assert renamed.json()["grants"] == original.model_dump(mode="json")["grants"]
+    assert (await browser.patch(path, json=rename)).status_code == 409
+    assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 409
+    assert (await review.connections.get(original.id)).grants[0].status is GrantStatus.ACTIVE
+    unbound = await browser.post(f"{path}/unbind", json={"expected_version": renamed.json()["version"]})
+    assert unbound.status_code == 200
+    assert unbound.json()["grants"][0]["status"] == "revoked"
+    assert unbound.json()["grants"][0]["client_id"] == grant.client_id
+    assert unbound.json()["grants"][0]["id"] == str(grant.id)
+    assert len((await browser.get("/connections")).json()) == 1
+    assert review.calls == []
+
+
+@pytest.mark.parametrize("operator_connection", ["disabled", "rejected", "wrong-audience"])
+async def test_connection_management_fails_closed_without_valid_federation(
+    review: Review, operator_connection: str
+) -> None:
+    await review.browser.get("/auth/login")
+    expected = 503 if operator_connection == "disabled" else 403
+    assert (await review.browser.get("/connections")).status_code == expected
+    assert (await review.browser.get("/connection-identities")).status_code == expected
 
 
 async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: Review) -> None:

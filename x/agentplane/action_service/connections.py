@@ -23,6 +23,16 @@ from x.agentplane.action_service.models import ExternalGrantProvenance, Principa
 ConnectionName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
+class ConnectionVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
+class ConnectionRename(ConnectionVersion):
+    display_name: ConnectionName
+
+
 class Identity(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

@@ -170,6 +170,22 @@ multi-replica/two-operator test targets. Existing browser sessions must log in a
 Only operator Action arguments are unredacted; caller arguments and execution result/error
 redaction are unchanged. There is no app-owned Action/Decision/Execution authority.
 
+## Connection management
+
+`/#/connections` lists the Action Service's runtime named Connections and immutable grant history.
+The operator can rename or explicitly confirm unbind; unbind revokes active/pending authority,
+without deleting history or stopping already claimed executions. Configured Identity availability
+is displayed separately from each grant's lifecycle status. A missing Identity is not displayed as
+enabled, and an active grant does not imply its Identity remains enabled.
+
+The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
+`POST /connections/{id}/unbind`, and `GET /connection-identities` through the same request-bound
+operator federation as Action review. Unsafe browser requests require exact Origin. Canonical
+`ConnectionRename` and `ConnectionVersion` models carry the version the operator reviewed; a 409
+refreshes the inventory and asks for review, never automatically retrying a destructive operation.
+The app owns no Connection state. Rebind/reconnect, enrollment, policy editing and deployment are
+outside this management slice.
+
 ## Launch presets
 
 `GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.

@@ -37,6 +37,55 @@ export type Decision = components["schemas"]["Decision"];
 export type ActionRequestView = components["schemas"]["ActionRequestView"];
 export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
+export type Connection = components["schemas"]["Connection"];
+export type ConnectionIdentity = components["schemas"]["Identity"];
+
+export class ConnectionRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+export interface ConnectionService {
+  list(): Promise<Connection[]>;
+  identities(): Promise<Record<string, ConnectionIdentity>>;
+  rename(connection: Connection, displayName: string): Promise<Connection>;
+  unbind(connection: Connection): Promise<Connection>;
+}
+
+export const connectionService: ConnectionService = {
+  async list() {
+    const { data, error, response } = await api.GET("/connections");
+    const status = response.status;
+    if (error) throw new ConnectionRequestError(status, displayableError(error));
+    return data;
+  },
+  async identities() {
+    const { data, error, response } = await api.GET("/connection-identities");
+    const status = response.status;
+    if (error) throw new ConnectionRequestError(status, displayableError(error));
+    return data;
+  },
+  async rename(connection, displayName) {
+    const { data, error, response } = await api.PATCH("/connections/{connection_id}", {
+      params: { path: { connection_id: connection.id } },
+      body: { display_name: displayName, expected_version: connection.version },
+    });
+    if (error) throw new ConnectionRequestError(response.status, displayableError(error));
+    return data;
+  },
+  async unbind(connection) {
+    const { data, error, response } = await api.POST("/connections/{connection_id}/unbind", {
+      params: { path: { connection_id: connection.id } },
+      body: { expected_version: connection.version },
+    });
+    if (error) throw new ConnectionRequestError(response.status, displayableError(error));
+    return data;
+  },
+};
 
 export interface ActionService {
   list(): Promise<ActionRequestView[]>;
