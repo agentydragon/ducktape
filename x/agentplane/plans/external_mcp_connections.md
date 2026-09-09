@@ -164,6 +164,17 @@ the same authenticated BFF-to-authority boundary, without replaying DCR for a re
 
 ## Authority boundaries
 
+**Preserve the specific submitting OAuth client:** every externally submitted Action retains its
+owning Identity plus the exact runtime Connection, OAuth client registration (`client_id` and its
+authorization-server namespace), and authorizing grant/binding revision. Resolve these from verified
+authentication and persist them as canonical submission provenance, never from caller-supplied
+`origin`/`correlation`. Several clients sharing an Identity may share its caller scope, but must remain
+distinguishable in the Action audit. Rename, unbind/rebind, refresh, registration cleanup, or removal
+must not rewrite or erase the historical client linkage; retain enough immutable registration and
+binding history to resolve it. Connection display names are mutable presentation, not audit keys.
+Replay with the same Identity-scoped submission key returns the original Action and original
+submitting-client provenance, not attribution to the client that happened to retry it.
+
 Keep these concepts distinct even if the first implementation stores them together:
 
 | Concept                    | Meaning                                                                                                                                  |
@@ -348,6 +359,10 @@ The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenari
   identity/binding, safe result, and bounded policy evidence;
 - duplicate submission and reconnect/restart reuse durable receipts without another Execution;
   B cannot read A's requests/events; refresh retains identity without copying operator authority;
+- two distinct OAuth clients bound to the same Identity submit distinct Actions: both have the same
+  owner but retain their exact authenticated client/Connection/grant linkage. Rename/rebind/revoke
+  and registration cleanup preserve that history; a cross-client retry of the same submission key
+  cannot rewrite the original provenance, and forged caller metadata cannot select it;
 - runtime naming and management: rename preserves authority, unbind rejects old-token Action access,
   and rebind A → B enforces the chosen token/reauthorization contract without transferring A's
   pending work or historical provenance to B. A fresh DCR enrollment can reconnect an existing named

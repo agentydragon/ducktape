@@ -282,6 +282,9 @@ revocation/dispatch consistency in the
 **Acceptance evidence:** a trusted connection resolves to identity A throughout an Action's
 lifecycle; B cannot impersonate A or read its receipts. Refresh preserves identity, reconnect
 requires authorized binding, and disabling A invalidates its bindings under the defined contract.
+Preserve the exact authenticated OAuth client registration, Connection, and grant/binding revision
+on each Action independently of its owning Identity. Two clients sharing one Identity remain
+distinguishable in audit; rename/rebind/removal and duplicate submission cannot rewrite attribution.
 
 ### `MCPOAUTH` — OAuth/DCR enrollment and runtime Connection management
 
