@@ -59,8 +59,8 @@ basis calculations need one supported cost-classification contract under GT/TAX.
 Pin which acquisition/financing costs are capitalized, deducted or excluded;
 then test purchase, depreciation and disposal against independently calculated
 basis and gains, including nonzero opening costs. Do not preserve the mismatch
-as a regression expectation. This is separate from VAL's purchase-date price-index
-correction and blocks only housing arms that rely on this treatment.
+as a regression expectation. Tax basis is separate from gross market valuation;
+this work blocks only housing arms that rely on this treatment.
 
 ### Primary sources to pin into acceptance cases
 
