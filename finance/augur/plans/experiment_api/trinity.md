@@ -23,9 +23,13 @@ from proposed_augur.instruments import TotalReturnIndex
 from proposed_augur.data import History
 from proposed_augur.markets import HistoricalMarket
 from proposed_augur.money import USD
-from proposed_augur.simulation import AnnualConvention, simulate
+from proposed_augur.markets import AnnualConvention, annual_study_grid
+from proposed_augur.simulation import run as run_paths
 from proposed_augur.state import Situation
-from proposed_augur.policies import AnnualRebalance, FixedWithdrawal, Strategy
+from proposed_augur.proposals import Portfolio
+from proposed_augur.accounting import AccountRef
+from proposed_augur.money import RealAmount
+from study_helpers import annual_policy
 from proposed_augur.taxes import NoTax
 from proposed_augur.accounting import Actor
 from proposed_augur.instruments import Weights
@@ -53,6 +57,7 @@ def trinity(history_path: Path, published: pl.DataFrame, *, convention: AnnualCo
             first_year=1926, last_year=1995, years=years, stride_years=1,
             replay_start=date(2000, 1, 1),  # Common no-tax scenario clock; source dates remain metadata.
         )
+        worlds = annual_study_grid(worlds, convention=convention)
         for stock_share, rate_percent, indexed in product(
             (0.0, 0.25, 0.50, 0.75, 1.0), range(3, 13), (False, True)
         ):
@@ -61,20 +66,19 @@ def trinity(history_path: Path, published: pl.DataFrame, *, convention: AnnualCo
                 actor=actor, basis=ReportingBasis("USD", market.price_index, worlds.calendar.start),
                 capital=capital, weights=weights, taxes=NoTax(), calendar=worlds.calendar
             )
-            strategy = Strategy(
-                spending=FixedWithdrawal(
-                    initial=capital * rate_percent / 100,
-                    index=market.price_index if indexed else None,
-                    interval="year",
-                ),
-                trading=AnnualRebalance(target=weights, transaction_cost=0),
+            portfolio = Portfolio(AccountRef(actor, "portfolio"), {
+                instrument: AccountRef(actor, "portfolio") for instrument in weights
+            })
+            initialize = annual_policy(
+                RealAmount.at_base(capital * rate_percent / 100, situation.basis),
+                portfolio, convention, indexed=indexed,
+                budget=lambda obs, previous: previous,
+                target=lambda completed_years, target_weights=weights: target_weights,
             )
-            run = simulate(
+            run = run_paths(
                 situation,
-                policies={actor: strategy}, reporting_actor=actor,
+                policies={actor: initialize}, reporting_actor=actor,
                 worlds=worlds,
-                convention=convention,
-                on_shortfall="stop",
                 observers=financial_observers("terminal_wealth_nominal",),
             )
             key = (years, stock_share, rate_percent, indexed)
@@ -112,10 +116,13 @@ def trinity(history_path: Path, published: pl.DataFrame, *, convention: AnnualCo
 ```
 
 `published` has a success fraction and source locator for every requested cell;
-missing matches must be reported as unavailable comparisons. `AnnualRebalance`
-funds the withdrawal and restores target weights in the order named by the
-convention. A zero-weight asset is absent, and there is no persistent idle-cash
-buffer. All fractions describe the enumerated overlapping windows.
+missing matches must be reported as unavailable comparisons. The ordinary
+[annual policy](study_helpers.md) requests funding, consumption and rebalancing
+explicitly; the engine adds no portfolio strategy. The required convention names
+annual-return, withdrawal and rebalance slots; the synthetic monthly grid retains
+annual actions and does not invent observed monthly prices. A zero-weight asset
+is absent, and there is no persistent cash buffer. All fractions describe the
+enumerated overlapping windows.
 
 The existing [reproduction](../../study/trinity/replay.py) is evidence to consult
 when implementing this program. This sketch intentionally asks for original

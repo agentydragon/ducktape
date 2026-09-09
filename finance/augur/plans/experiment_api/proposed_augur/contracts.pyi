@@ -1,37 +1,44 @@
-"""Agreed obligations and their financial lifecycle, including housing finance.
+"""Known contracts, due claims and counterparty-supplied offers.
 
-Owns payment schedules, amortization and explicit termination/payoff terms.
-Policies request origination or cancellation; they cannot erase existing promises.
-Execution settles the resulting cashflows across the actors' books, with taxes
-applied separately. A house-price forecast belongs to markets, not the mortgage.
+Claims are information, not automatic funding instructions. Execution creates
+contracts only after validating the actor's acceptance against offered terms.
+Offer eligibility, payment deadlines and settlement timing remain explicit.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-
 from proposed_augur.accounting import Actor
-from proposed_augur.data import NamedSeries
 from proposed_augur.instruments import Home
 from proposed_augur.money import Money
 
+type ClaimId = str
+
 @dataclass(frozen=True)
-class Obligation:
+class Claim:
+    id: ClaimId
     payer: Actor
     payee: Actor
     due: date
     amount: Money
 
-class Contract:
-    def due(self, *, at: date, observations: NamedSeries) -> Sequence[Obligation]:
-        """Payments required by existing terms and known indices, not discretionary policy requests."""
+class Contract: ...
 
 class MortgageOffer:
+    """Lender-supplied eligibility and financing terms, not a policy request."""
+
     name: str
 
-class Lease:
-    """Lease terms; the housing decision supplies counterparties when requesting origination."""
-class PropertyPurchase: ...
+class LeaseOffer:
+    home: Home
+    landlord: Actor
 
-class FixedRateMortgage(Contract):
-    def __init__(self, *, offer: MortgageOffer, borrower: Actor, lender: Actor, collateral: Home) -> None: ...
+class PurchaseOffer:
+    """Seller terms and, when used, the lender's mortgage offer."""
+
+    home: Home
+    seller: Actor
+    mortgage: MortgageOffer | None
+
+class Lease(Contract): ...
+class PropertyPurchase(Contract): ...
+class FixedRateMortgage(Contract): ...

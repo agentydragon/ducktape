@@ -1,15 +1,12 @@
-"""Financial starting situations and complete continuation checkpoints.
+"""Opening financial facts, independent of a policy or web scenario.
 
-Assembles books, contracts, tax state, calendar and reporting basis. A situation
-contains financial facts, not a web-app scenario or a sweep of policies. A checkpoint
-also preserves pending events, execution position and path-local policy memory.
-It is not a new opening balance sheet; continuing must not repeat opening trades
-or rebase the purchasing-power unit.
+Actual books retain lots, basis, known contracts and filing/payment state.
+Synthetic NoTax index studies may construct a clean opening allocation. Policy
+memory belongs to the experiment, not a portable full-executor checkpoint.
 """
 
 from collections.abc import Mapping, Sequence
 from datetime import date
-
 from proposed_augur.accounting import Actor, Book
 from proposed_augur.contracts import Contract
 from proposed_augur.data import Calendar
@@ -32,18 +29,11 @@ class Situation:
     ) -> None: ...
     @classmethod
     def investor(
-        cls,
-        *,
-        actor: Actor,
-        capital: Money,
-        weights: Weights,
-        taxes: NoTax,
-        calendar: Calendar,
-        basis: ReportingBasis,
+        cls, *, actor: Actor, capital: Money, weights: Weights, taxes: NoTax, calendar: Calendar, basis: ReportingBasis
     ) -> Situation:
-        """Synthetic clean opening book for index studies; actual holdings use the full constructor."""
+        """Synthetic clean book in AccountRef(actor, "portfolio") for cash and lots.
+
+        Cannot replace an actual taxed portfolio or re-establish a continuing book.
+        """
     def actor(self, name: str) -> Actor: ...
     def with_actors(self, *actors: Actor) -> Situation: ...
-
-class CheckpointBatch:
-    basis: ReportingBasis

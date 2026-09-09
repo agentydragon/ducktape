@@ -1,95 +1,97 @@
 # A policy that periodically runs its own planning calculation
 
 Proposed Python. [Frank, Mitchell, and Blanchett (2011)](https://www.financialplanningassociation.org/article/journal/NOV11-probability-failure-based-decision-rules-manage-sequence-risk-retirement)
-motivates responding to an evolving estimate of failure risk. The concrete
-algorithm below is our extension, not their published implementation: once a
-year, estimate failure risk under unchanged real spending, then optionally make
-one bounded adjustment. The next review reassesses the changed situation.
+motivates responding to an evolving estimate of failure risk. This algorithm is
+our extension, not their published implementation: annually estimate risk under
+unchanged real spending, then optionally make one bounded adjustment. Consumption
+remains monthly. The next annual review reassesses the changed situation.
 
-There are two distinct models: the outer world being evaluated, and the policy's
-beliefs when making decisions. Crossing them tests model misspecification. The
-policy must never inspect the outer world's sampled future.
+The outer world and the policy's beliefs are distinct models. Crossing them tests
+misspecification without exposing the outer sampled future.
 
 ```python
+from collections.abc import Callable
+from datetime import date
 from itertools import product
 
-import numpy as np
 import polars as pl
 
 from proposed_augur.accounting import Actor
+from proposed_augur.actions import Action
 from proposed_augur.data import NamedSeries
-from proposed_augur.markets import MarketModel
-from proposed_augur.money import RealAmount, RealBatch
-from proposed_augur.policies import BudgetDecision, InvestmentPolicy, Observations
-from proposed_augur.results import Runs, StudyResult, count_budget_changes, financial_observers
-from proposed_augur.simulation import resume, simulate
+from proposed_augur.markets import MarketModel, Worlds
+from proposed_augur.money import RealAmount
+from proposed_augur.observations import Observation
+from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.results import Runs, StudyResult, financial_observers
+from proposed_augur.simulation import run as run_paths
 from proposed_augur.state import Situation
-from proposed_augur.policies import AnnualSpending, FixedWithdrawal, Strategy
+
+type PlanningSituation = Callable[[Observation, Worlds], Situation]
+type FixedPolicy = Callable[[RealAmount], Initialize]
+type MonthlyActions = Callable[[Observation, RealAmount], tuple[Action, ...]]
+type PlanningSeed = Callable[[str, date, str], int]
 
 
-def reassessed_spending(
-    initial: RealAmount, belief: MarketModel, trading: InvestmentPolicy,
-    lower: float, upper: float, inner_paths: int,
-) -> AnnualSpending:
-    def review(obs: Observations, previous: RealBatch) -> BudgetDecision:
-        # A batch of continuations, each conditioned only on that outer path's past.
-        forecasts = belief.condition_many(obs.forecast_origins()).sample(
-            paths_per_origin=inner_paths,
-            streams=obs.random_stream("planning"),
-        )
-        check = resume(
-            obs.checkpoints(),
-            replace_policies={obs.actor: Strategy(
-                spending=FixedWithdrawal.from_real(
-                    previous, interval="month", budget_period="year"
-                ),
-                trading=trading,
-            )},
-            worlds=forecasts, on_shortfall="stop", observers={},
-            reporting_actor=obs.actor,
-        )
-        risk = check.failure_fraction_by_origin(
-            events=("unfunded_withdrawal", "contract_default")
-        )
-        # Illustrative thresholds/actions, not a claim about the source paper.
-        factor = np.where(risk > upper, 0.95, np.where(risk < lower, 1.025, 1.0))
-        budget = previous.with_values(np.where(obs.review_index == 0, initial.value, previous.values * factor))
-        return BudgetDecision(budget=budget, state=budget)
+def reassessed_policy(
+    initial: RealAmount, belief: MarketModel, fixed_policy: FixedPolicy,
+    monthly_actions: MonthlyActions, planning_situation: PlanningSituation,
+    seed_for: PlanningSeed, lower: float, upper: float, inner_paths: int,
+) -> Initialize:
+    def initialize(key: PolicyKey):
+        def decide(obs: Observation, previous: RealAmount):
+            budget = previous
+            if obs.month_index > 0 and obs.month_index % 12 == 0:
+                inner_worlds = belief.condition(obs.market, at=obs.at).sample(
+                    years=obs.months_remaining // 12, step="month", paths=inner_paths,
+                    seed=seed_for(key.path_id, obs.at, "fixed-spending-check"),
+                )
+                known_situation = planning_situation(obs, inner_worlds)
+                if known_situation.basis != initial.basis:
+                    raise ValueError("An inner forecast must retain the original real-money basis")
+                check = run_paths(
+                    known_situation, policies={obs.actor: fixed_policy(previous)},
+                    reporting_actor=obs.actor, worlds=inner_worlds, observers={},
+                )
+                risk = check.paths.select((~pl.col("reached_horizon")).mean()).item()
+                factor = 0.95 if risk > upper else 1.025 if risk < lower else 1.0
+                budget = RealAmount(previous.value * factor, previous.basis)
+            return Response(monthly_actions(obs, budget)), budget
 
-    return AnnualSpending(
-        review=review, initial_state=initial, consume_every="month"
-    )
+        return decide, initial
+    return initialize
 
 
 def forecast_feedback(
-    situation: Situation, actor: Actor, models: dict[str, MarketModel], observations: NamedSeries,
-    trading: InvestmentPolicy, *, initial: RealAmount, years: int, paths: int,
+    situation: Situation, actor: Actor, models: dict[str, MarketModel],
+    observations: NamedSeries, fixed_policy: FixedPolicy, monthly_actions: MonthlyActions,
+    planning_situation: PlanningSituation, seed_for: PlanningSeed,
+    *, initial: RealAmount, years: int, paths: int,
 ) -> StudyResult:
     rows: list[pl.DataFrame] = []
     runs: Runs = {}
     for outer_name, outer in models.items():
         worlds = outer.condition(observations, at=situation.as_of).sample(
-            years=years, step="month", paths=paths, seed=2011
+            years=years, step="month", paths=paths, seed=2011,
         )
         for belief_name, (lower, upper), inner_paths in product(
-            models, ((0.05, 0.15), (0.10, 0.25)), (256, 1024)
+            models, ((0.05, 0.15), (0.10, 0.25)), (256, 1024),
         ):
-            belief = models[belief_name]
-            spending = reassessed_spending(
-                initial, belief, trading, lower, upper, inner_paths
+            initialize = reassessed_policy(
+                initial, models[belief_name], fixed_policy, monthly_actions,
+                planning_situation, seed_for, lower, upper, inner_paths,
             )
-            run = simulate(
-                situation, policies={actor: Strategy(spending=spending, trading=trading)},
-                reporting_actor=actor, worlds=worlds, on_shortfall="stop",
-                observers=financial_observers("total_spending_real", "terminal_wealth_real")
-                | {"cuts": count_budget_changes(direction="down")},
+            run = run_paths(
+                situation, policies={actor: initialize}, reporting_actor=actor, worlds=worlds,
+                observers=financial_observers("total_spending_real", "terminal_wealth_real"),
             )
-            failures = pl.col("unfunded_withdrawal") | pl.col("contract_default")
+            failures = ~pl.col("reached_horizon")
             rows.append(run.paths.select(
                 failures.mean().alias("failure_fraction"),
                 (failures.cast(pl.Float64).std() / pl.len().sqrt()).alias("failure_se"),
                 pl.col("total_spending_real").quantile(0.05).alias("p05_paid_through_stop"),
-                pl.col("cuts").mean().alias("mean_cuts"),
+                pl.col("terminal_wealth_real").filter(pl.col("reached_horizon"))
+                .median().alias("median_terminal_completed"),
             ).with_columns(
                 outer_model=pl.lit(outer_name), belief_model=pl.lit(belief_name),
                 lower=pl.lit(lower), upper=pl.lit(upper), inner_paths=pl.lit(inner_paths),
@@ -98,29 +100,45 @@ def forecast_feedback(
     return pl.concat(rows), runs
 ```
 
-`obs.checkpoints()` captures the decision point before the current withdrawal,
-including actual lots, accrued taxes, contracts, policy memory, pending events,
-reporting basis, and remaining horizon. `resume` clones that state per inner draw;
-it does not initialize a new investor. Unchanged trading retains its memory; the
-replacement spending policy starts from the supplied real annual budget. The
-same base-date purchasing power applies on both sides of the fork: there is no
-second rebasing or inflation adjustment at the origin. The inner policy is fixed
-spending, so this is not unbounded recursion.
-Its calculation is conditional risk if spending stays unchanged, not the risk
-of the adaptive policy itself. Outer rollouts measure the latter.
+`planning_situation` is an author-supplied assembly function from **actor-known**
+books/lots, basis, known contracts, filing/payment records and explicit assumptions
+about unknowns/counterparties. It is not `obs.checkpoints()` or permission to clone
+the entire hidden executor. It must preserve liabilities, known pending settlement,
+the original reporting basis and the remaining horizon. A missing capability to
+represent those facts is an input/design gap, not a fresh tax-free investor.
 
-The calendar and price-index identity must agree across models. Future inflation
-in an inner forecast comes from the belief model, not the outer sampled path.
-Fitted beliefs are fixed at the declared training date in this example; a learning
-policy would need an explicit refitting rule and then-available evidence.
+The inner function holds the current real budget fixed and uses the same declared
+stateless investment/claim-payment rules as `monthly_actions`; it does not
+recursively reassess forecasts. Any stateful investment variant must explicitly
+pass its actor-known memory to the inner initializer too. Inner scenario assembly
+must not repeat initial portfolio establishment or housing acquisition already
+completed in the outer world. Synthetic scenario month zero is not “start life
+again.” This is conditional risk under unchanged spending, not risk of the
+adaptive policy itself; outer outcomes measure the latter.
 
-The inner sample-size sweep is important: noisy risk estimates can cause policy
-chatter or change spending. Inner streams are disjoint from outer streams and
-identified by outer path, review date, and purpose. Paired comparisons should
-reuse inner draws where appropriate. Confidence-aware triggers and an offline
-surrogate are later alternatives; a surrogate needs measured approximation error.
+`monthly_actions` is ordinary composed Python proposal code, like the
+[personal example](spending_allocation.md): explicit funding, payments, consumption
+and investments. It is not an engine spending hook or target-weight instruction.
+The policy is called only once per outer actor/month; inner simulation is an
+independent experiment computation, not another decision opportunity on the outer
+books. Failed actions stop their own inner or outer rollout with prefix receipts
+retained. There is no execution retry or exception-driven budget repair.
 
-Nested forecasting makes this an intentionally demanding authoring example.
-The design should permit it without promising it is cheap. This workload belongs
-in any later comparison of scalar Python, batching/compilation, and native
-execution; the interface should not force every policy into this cost model.
+The belief model conditions only on dated observations available to the actor.
+Calendar, products, currency and price-index identity must agree. Future inflation
+comes from the belief model, not outer realizations. Fitted beliefs are fixed at
+the declared training date; a learning variant needs an explicit refitting rule
+using then-available evidence.
+
+`seed_for` is a reproducible experiment-owned derivation from stable outer path,
+review date and purpose, not row order or Python's process-randomized hash. Inner
+streams are disjoint from outer streams and may be paired across policy cells
+where meaningful. Selected replay uses the same identity with fresh memory.
+Changing inner sample count may cause chatter; compare 256/1024 draws and log
+budget decisions separately from paid receipts. Confidence-aware rules or offline
+surrogates are later alternatives requiring measured approximation error.
+
+This intentionally demanding example belongs in the runtime/authoring evaluation.
+It permits nested computation without promising that arbitrary Python closures
+compile or that scalar inner loops are fast. Batching/representation and executor
+language are separate choices, not additional semantics of the policy.

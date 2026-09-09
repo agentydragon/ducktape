@@ -16,6 +16,9 @@ from proposed_augur.accounting import FinancialEvent
 class TaxState:
     """Filing units, residency, year-to-date facts, carryovers, liabilities and payments."""
 
+class TaxRecords:
+    """Actor-known filing/payment records, not hidden state of every filing unit."""
+
 class TaxAssessment:
     """Updated tax state plus liabilities and payments due, not cash already paid."""
 

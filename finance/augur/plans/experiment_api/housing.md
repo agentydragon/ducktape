@@ -1,25 +1,65 @@
-# Housing and investments: a distributional experiment with several agents
+# Housing and investments: several actors, one household policy
 
-Proposed Python. Compare renting with buying, varying financing terms and the
-investment policy over the same joint market paths. This preserves the useful
-housing experiment independently of any particular web app. All prices, rents,
-offers, local rules, and household details are supplied inputs.
+Proposed Python, not runnable. Compare renting and buying over the same joint
+market paths, varying supplied financing offers and ordinary investment functions.
+This preserves the housing use case independently of the old web app.
 
 ```python
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import product
 
 import polars as pl
 
-from proposed_augur.contracts import FixedRateMortgage, Lease, MortgageOffer, PropertyPurchase
-from proposed_augur.instruments import Home, InvestableUniverse
-from proposed_augur.markets import MarketModel
 from proposed_augur.accounting import Actor
-from proposed_augur.simulation import simulate
-from proposed_augur.state import Situation
-from proposed_augur.policies import HousingDecision, InvestmentPolicy, SpendingPolicy, Strategy
+from proposed_augur.actions import Action, AcceptLease, PurchaseHome
+from proposed_augur.contracts import LeaseOffer, PurchaseOffer
 from proposed_augur.data import NamedSeries
-from proposed_augur.results import Runs, StudyResult, financial_observers, ever_accepted_tag
+from proposed_augur.markets import MarketModel
+from proposed_augur.money import Money
+from proposed_augur.observations import Observation
+from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.proposals import (
+    Portfolio, PreviewAssumptions, PreviewError, preview, raise_cash,
+)
+from proposed_augur.results import Observer, Runs, StudyResult, financial_observers
+from proposed_augur.simulation import run as run_paths
+from proposed_augur.state import Situation
+
+# These functions belong to the experiment. Closing costs are read from supplied
+# offers using canonical calculations, not re-derived tax/mortgage arithmetic.
+type CashToAccept = Callable[[Observation, LeaseOffer | PurchaseOffer], Money]
+def housing_policy(
+    offer: LeaseOffer | PurchaseOffer, portfolio: Portfolio,
+    cash_to_accept: CashToAccept, monthly: Initialize, assumptions: PreviewAssumptions,
+) -> Initialize:
+    def initialize(key: PolicyKey):
+        continue_month, initial_memory = monthly(key)
+
+        def decide(obs: Observation, memory: object):
+            opening: tuple[Action, ...] = ()
+            projected = obs
+            if obs.month_index == 0:
+                opening = raise_cash(
+                    obs, portfolio, required_cash=cash_to_accept(obs, offer),
+                    lot_order="fifo", assumptions=assumptions,
+                )
+                acceptance = (
+                    AcceptLease(portfolio.cash, offer) if isinstance(offer, LeaseOffer)
+                    else PurchaseHome(portfolio.cash, offer)
+                )
+                opening += (acceptance,)
+                try:
+                    projected = preview(obs, opening, assumptions=assumptions)
+                except PreviewError:
+                    return Response(opening), memory
+            # A normal Python function composition within this one monthly call,
+            # not a second engine observation or callback after executing a purchase.
+            response, memory = continue_month(projected, memory)
+            return Response(opening + response.actions), memory
+
+        return decide, initial_memory
+    return initialize
 
 
 @dataclass(frozen=True)
@@ -28,111 +68,85 @@ class Inputs:
     household_id: str
     market_model: MarketModel
     observations: NamedSeries
-    universe: InvestableUniverse
-    home: Home
-    lease: Lease
-    purchase: PropertyPurchase
-    mortgage_offers: tuple[MortgageOffer, ...]
-    investments: tuple[InvestmentPolicy, ...]
-    nonhousing_spending: SpendingPolicy
+    offers: dict[str, LeaseOffer | PurchaseOffer]
+    portfolio: Portfolio
+    cash_to_accept: CashToAccept
+    monthly_policies: dict[str, Initialize]
+    assumptions: PreviewAssumptions
+    study_observers: dict[str, Observer]
     years: int
     paths: int
 
 
 def housing(inputs: Inputs) -> StudyResult:
     household = inputs.situation.actor(inputs.household_id)
-    lender = Actor.external("mortgage_lender")
-    seller = Actor.external("property_seller")
-    landlord = Actor.external("landlord")
-    situation = inputs.situation.with_actors(lender, seller, landlord)
-    # Already bound to these investments, the home, and local rent dynamics.
-    market = inputs.market_model.condition(inputs.observations, at=situation.as_of)
-    worlds = market.sample(
-        years=inputs.years,
-        step="month", paths=inputs.paths, seed=731,
+    # Supplied offers must reference these same counterparties and their accounts.
+    situation = inputs.situation.with_actors(
+        Actor.external("mortgage_lender"), Actor.external("property_seller"),
+        Actor.external("landlord"),
     )
-
-    housing_choices = {
-        "rent": HousingDecision.lease(
-            inputs.lease, tenant=household, landlord=landlord
-        )
-    }
-    for offer in inputs.mortgage_offers:
-        housing_choices[offer.name] = HousingDecision.buy(
-            inputs.purchase,
-            home=inputs.home, buyer=household, seller=seller,
-            financing=FixedRateMortgage(
-                offer=offer, borrower=household, lender=lender,
-                collateral=inputs.home,
-            ),
-            disposition="retain_at_horizon",
-            accepted_tag="home.purchase",
-        )
-
+    worlds = inputs.market_model.condition(inputs.observations, at=situation.as_of).sample(
+        years=inputs.years, step="month", paths=inputs.paths, seed=731,
+    )
     rows: list[pl.DataFrame] = []
     runs: Runs = {}
-    for (housing_name, decision), investment in product(
-        housing_choices.items(), inputs.investments
+    for (housing_name, offer), (policy_name, monthly) in product(
+        inputs.offers.items(), inputs.monthly_policies.items(),
     ):
-        strategy = Strategy(
-            spending=inputs.nonhousing_spending,
-            trading=investment,
-            actions=(decision,),
+        initialize = housing_policy(
+            offer, inputs.portfolio, inputs.cash_to_accept, monthly, inputs.assumptions,
         )
-        run = simulate(
-            situation, policies={household: strategy}, worlds=worlds, on_shortfall="stop",
-            reporting_actor=household,
+        run = run_paths(
+            situation, policies={household: initialize}, reporting_actor=household, worlds=worlds,
             observers=financial_observers(
-                "terminal_wealth_real", "terminal_liquid_wealth_real",
-                "total_spending_real", "housing_cost_real", "tax_paid_real",
-                "mortgage_balance_real",
-            ) | {"purchase_completed": ever_accepted_tag("home.purchase")},
+                "terminal_wealth_real", "terminal_liquid_wealth_real", "housing_cost_real",
+                "tax_paid_real", "mortgage_balance_real",
+            ) | inputs.study_observers,
         )
-        rows.append(
-            run.paths.select(
-                pl.col("contract_default").mean().alias("default_fraction"),
-                pl.col("unfunded_withdrawal").mean().alias("spending_shortfall_fraction"),
-                pl.col("reached_horizon").mean().alias("completed_fraction"),
-                (pl.lit(None) if housing_name == "rent" else pl.col("purchase_completed").mean())
-                .alias("purchase_completed_fraction"),
-                pl.col("terminal_wealth_real").filter(pl.col("reached_horizon"))
-                .median().alias("median_terminal_wealth_completed"),
-                pl.col("terminal_liquid_wealth_real").filter(pl.col("reached_horizon"))
-                .quantile(0.05).alias("p05_liquid_wealth_completed"),
-            ).with_columns(housing=pl.lit(housing_name), investment=pl.lit(investment.name))
-        )
-        runs[housing_name, investment.name] = run
-
+        rows.append(run.paths.select(
+            (~pl.col("reached_horizon")).mean().alias("stopped_fraction"),
+            pl.col("contract_default").mean().alias("default_fraction"),
+            pl.col("purchase_completed").mean().alias("purchase_fraction"),
+            pl.col("terminal_wealth_real").filter(pl.col("reached_horizon"))
+            .median().alias("median_terminal_completed"),
+            pl.col("terminal_liquid_wealth_real").filter(pl.col("reached_horizon"))
+            .quantile(0.05).alias("p05_liquid_completed"),
+        ).with_columns(housing=pl.lit(housing_name), policy=pl.lit(policy_name)))
+        runs[housing_name, policy_name] = run
     return pl.concat(rows), runs
 ```
 
-`PropertyPurchase` specifies the execution date, price rule, closing costs,
-down payment and occupancy. `MortgageOffer` supplies rate, principal/term and
-eligibility conditions. `Lease` supplies dates, rent/reset terms and exit or
-renewal behavior. The home supplies carrying-cost and tax-relevant attributes;
-the joint model binds home prices and local rent alongside financial markets.
-These inputs must cover the horizon or explicitly schedule their replacement.
+`monthly_policies` contains coordinated spending/claim-payment/investment functions
+such as the [personal example](spending_allocation.md), not separate engine-owned
+spending and allocation hooks. The author may vary target trajectories, reserve
+rules and consumption without changing mortgage accounting. Newly created
+obligations and remaining cash appear in the preview used to compose the ordered
+list, and actual receipts arrive at the next monthly call.
 
-The experiment assumes credit is available on the supplied offers and counterparties
-honor their contracts. External actors maintain balancing accounts and claims but
-do not optimize or receive an invented personal tax profile. A study of lender
-risk could replace the external lender with a modeled actor without rewriting
-mortgage arithmetic.
+Purchase offers contain seller terms, closing costs and any actual lender offer:
+principal, rate, term, eligibility and collateral. Acceptance is validated; the
+policy does not construct a loan to declare credit granted. The source of any
+required closing cash is explicit. Lease offers include rent/reset, exit/renewal
+terms and dates. Carrying costs and tax-relevant attributes belong to the property.
+A joint model supplies compatible investment, home-price and local-rent paths;
+these products cannot be inferred from a generic equity/bond forecast.
 
-All outcome measures above belong to `household`, which must be the situation's
-explicit reporting actor. Their wealth excludes the lender's receivable and the
-seller's cash. The same loan creates a household liability and a lender claim;
-origination, payment, interest, and payoff must remain visible on both books.
+External actors have balancing accounts/claims and supplied contractual behavior,
+not invented household tax profiles. Only the household gets this decision
+function; a later lender-risk experiment can model lender decisions separately.
+Reporting is explicitly household-scoped: a lender receivable or seller's cash
+cannot inflate the household's wealth. The mortgage must reconcile across books.
 
-Buying spends cash and can require taxable sales. It creates enforceable future
-payments. The investment policy acts on the remaining assets. A purchase that
-cannot close is recorded as an unexecuted decision, distinct from a later mortgage
-default. The purchase event observer is false when no purchase completed. The
-summary marks the rent arm's purchase fraction not applicable (null); a failed
-purchase in a buy arm is false, not successful buying.
+An unaffordable or ineligible purchase is a fatal action for its rollout, not a
+silent fallback to renting or another financing attempt. A successful funding sale
+before the failed purchase remains in the trace. Purchase failure and later
+mortgage default are distinct; the observer records actual completion, and the rent
+arm's purchase fraction is not applicable (null).
 
-`retain_at_horizon` reports home equity net of debt; it does not sell the house for
-free. A disposition experiment can add explicit sale-date and cost variants. A
-decision to move must settle or retain the mortgage according to its actual
-property action. Monthly housing payments belong to contracts and are excluded
-from `nonhousing_spending`.
+This example retains the house at the horizon and reports its value net of debt;
+it does not sell for free. Explicit sale-date/cost variants require supported
+property-sale actions. Moving cannot erase the mortgage. Monthly housing claims
+are paid explicitly by the policy and excluded from nonhousing consumption.
+Property valuation, transaction basis and statutory closing-cost treatment must
+share the canonical financial rules; this API sketch is not evidence they are
+all implemented or correct.

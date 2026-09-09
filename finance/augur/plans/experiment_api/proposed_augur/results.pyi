@@ -43,21 +43,14 @@ type FinancialMetric = Literal[
 ]
 
 def financial_observers(*names: FinancialMetric) -> dict[str, Observer]: ...
-def count_budget_changes(*, direction: Literal["down", "up"]) -> Observer: ...
-def count_accepted_tag(tag: str) -> Observer: ...
-def ever_accepted_tag(tag: str) -> Observer: ...
-def months_per_lifestyle() -> Observer: ...
 
-class Run:
+class PathResults:
     paths: pl.DataFrame
+
+class Run(PathResults):
+    """Convenience-run result retaining its supplied initializers for fresh replay."""
+
     def trace(self, path_id: str) -> Events: ...
-
-class ContinuationRun(Run):
-    """Continuation outcomes grouped by origin; returned arrays follow the requesting observation batch."""
-
-    def failure_fraction_by_origin(
-        self, *, events: tuple[Literal["unfunded_withdrawal", "contract_default"], ...]
-    ) -> FloatArray: ...
 
 class LogGrowth:
     columns: tuple[str, ...]

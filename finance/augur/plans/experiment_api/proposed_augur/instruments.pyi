@@ -8,9 +8,7 @@ accounting, not product definitions. Concrete product schemas remain to be desig
 
 from collections.abc import Mapping
 
-from proposed_augur.money import FloatArray
-
-type Weights = Mapping[Instrument, float | FloatArray]
+type Weights = Mapping[Instrument, float]
 
 class Instrument:
     name: str

@@ -1,12 +1,9 @@
 # Experiment programs for a proposed Augur library
 
-Design sketches, 2026-09-08. The Python programs below describe APIs we would like to
-use; `proposed_augur` names the [proposed modules](#proposed-building-blocks), not an
-implementation. These are code for review, not runnable
-experiments, and produce no results in this change. Paths to historical records,
-model artifacts, tax configurations, and private inputs are supplied by the caller.
-
-Read the experiments before deciding which abstractions to implement:
+Design sketches, updated 2026-09-09. These Python programs and `proposed_augur/*.pyi`
+describe a destination, **not runnable Augur APIs or financially validated studies**.
+They produce no results in this PR. The caller supplies historical records, model
+artifacts, product/tax configurations and private inputs.
 
 | Program                                           | Question                                                                                 | Distinct demand on the library                                           |
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -19,203 +16,161 @@ Read the experiments before deciding which abstractions to implement:
 | [Spending and allocation](spending_allocation.md) | Which combinations of lifestyle flexibility and investments produce acceptable outcomes? | Actual lots, taxes, reinvestment, transitions, model sensitivity         |
 | [Housing and investments](housing.md)             | How does buying and financing a home change the distribution?                            | Several agents, contracts, asset acquisition and disposition             |
 
-The model-comparison row is its own experiment family, not an accessory to spending
-flexibility. These are capability examples, not a commitment to match every paper's numbers.
-Trinity is a useful historical reproduction target; the other studies motivate
-experiments whose substitutions and assumptions are visible. Proprietary forecast
-replication is not a goal. Every row is a distributional experiment with a parameter
-sweep. Financial-mechanics acceptance tests support these experiments; they are
-not additional user experiments.
+These are distributional experiments with parameter sweeps, not a commitment to
+match every paper's numbers. Proprietary forecast replication is not a goal.
+[Exogenous models](exogenous.md) keeps loading, fitting and sampling in experiment
+shells; [further studies](studies.md) records other relevant research families.
+[Study helpers](study_helpers.md) shows ordinary reusable Python policy functions.
 
-[Exogenous models](exogenous.md) shows loading, fitting, and sampling in the
-experiment shell. [Further studies](studies.md) explains the broader selection and
-which additional capabilities those studies would exercise.
+## Proposed modules
 
-## Proposed building blocks
+Each stub has a brief responsibility docstring. Names are negotiable; economic
+boundaries are the point. The current [architecture plan](../roadmap.md) owns
+sequencing, [policy interfaces](../policy_interfaces.md) owns the common contract,
+and [timing](../policy_timing.md) owns unresolved financial timing choices.
 
-The `.pyi` files below are interface sketches, not a runnable package. Each has a
-short responsibility docstring. Signatures make the connections concrete without
-specifying every product, tax rule or implementation detail. The module boundaries
-are a proposal to discuss, not a commitment to Python or a matching set of Rust crates.
+| Module                                          | Responsibility                                                        |
+| ----------------------------------------------- | --------------------------------------------------------------------- |
+| [money](proposed_augur/money.pyi)               | Exact amounts and explicit purchasing-power bases.                    |
+| [instruments](proposed_augur/instruments.pyi)   | Product identities/terms shared by models, books and policies.        |
+| [accounting](proposed_augur/accounting.pyi)     | Read-only books, accounts, exact lots and financial receipts.         |
+| [taxes](proposed_augur/taxes.pyi)               | Canonical tax consequences in accumulated filing-unit context.        |
+| [contracts](proposed_augur/contracts.pyi)       | Known obligations and counterparty-supplied offers.                   |
+| [data](proposed_augur/data.pyi)                 | Author-selected datasets, vintages and alignment.                     |
+| [markets](proposed_augur/markets.pyi)           | Load/fit/sample exogenous paths and construct supported products.     |
+| [state](proposed_augur/state.pyi)               | Assemble opening facts, not a web-app scenario.                       |
+| [observations](proposed_augur/observations.pyi) | Information available to one actor at a monthly decision.             |
+| [actions](proposed_augur/actions.pyi)           | Explicit sales, purchases, transfers, claim payments and consumption. |
+| [policies](proposed_augur/policies.pyi)         | Ordinary functions and actor/path-local memory.                       |
+| [proposals](proposed_augur/proposals.pyi)       | Optional Python-friendly action calculators and canonical previews.   |
+| [simulation](proposed_augur/simulation.pyi)     | Canonical stepping/execution; optional monthly-loop helper.           |
+| [results](proposed_augur/results.pyi)           | Requested reductions, replay and independent forecast scoring.        |
 
-| Module                                        | Responsibility                                                             |
-| --------------------------------------------- | -------------------------------------------------------------------------- |
-| [money](proposed_augur/money.pyi)             | Currency amounts, real budgets and purchasing-power bases.                 |
-| [instruments](proposed_augur/instruments.pyi) | Product identities/terms shared by markets, books and policies.            |
-| [accounting](proposed_augur/accounting.pyi)   | Actors, books, lots and balanced financial events.                         |
-| [taxes](proposed_augur/taxes.pyi)             | Statutory consequences in accumulated filing-unit context.                 |
-| [contracts](proposed_augur/contracts.pyi)     | Existing obligations, including mortgages and leases.                      |
-| [data](proposed_augur/data.pyi)               | Author-selected datasets, vintages, loading and alignment.                 |
-| [markets](proposed_augur/markets.pyi)         | Fit/condition/sample models; bind outputs to products and observables.     |
-| [state](proposed_augur/state.pyi)             | Assemble financial situations; preserve complete continuation checkpoints. |
-| [policies](proposed_augur/policies.pyi)       | Executable rules and reusable policy factories; propose, do not settle.    |
-| [simulation](proposed_augur/simulation.pyi)   | Advance timelines and settle decisions using shared financial mechanics.   |
-| [results](proposed_augur/results.pyi)         | Traces, experiment-owned outcome reductions and forecast scoring.          |
+No registry, required policy superclass, action dependency graph or experiment
+framework is implied. Pure model scoring needs no investor or financial execution.
 
-These are composable pieces, not eleven mandatory steps. Model-fit comparisons
-use data, markets and scoring without simulating an investor. Trinity adds a
-synthetic opening book, policies and execution with explicit no-tax rules. Personal
-planning supplies actual lots and tax state; housing also adds contracts and
-counterparties. Experiment shells own their input loading, parameter sweeps,
-model/policy selection and presentation; there is no new experiment-framework object.
+## The experiment owns the monthly loop
 
-## How to read the code
+One ordinary function receives one actor's monthly observation and memory and
+returns `(Response(ordered_actions), memory)`. Initialization is another ordinary
+function, not a required class. Scalar authoring can be adapted over observations
+in Python while transferring all active paths' actions in one batch:
 
-The proposed vocabulary is deliberately shared across the programs. Its spelling is
-negotiable; the behavior the caller asks for is the review target.
-Imports name the defining module so the programs show which building blocks they
-need. This is a design pass, not a typechecked API contract or financial validation.
+```python
+from collections.abc import Mapping
 
-- An **instrument object** identifies one financial product and its terms. The book,
-  market binding, and trading policy reference that same object. A binding states
-  the chosen price/cashflow approximation; it cannot independently change the
-  product's currency, distribution character, or contractual rights.
-- A **market binding** maps input observations to fitted variables and sampled
-  variables to instruments and named observables. A bound model's `condition`
-  produces a dated forecast; that forecast's `sample` draws paths. Historical
-  `windows` enumerates paths from an explicit record. A
-  supplied `Worlds` can come from an external model. No universal calibration
-  interface is required of every provider.
-- **Datasets** are selected and named by the experiment author, using provider
-  loaders or ordinary file reads. Shared alignment joins those selected series;
-  it does not select a global evidence bundle. Fit code names its variables and
-  transformations, and model bindings name their financial meanings.
-- A **situation** contains the opening books, agents, contracts, calendar, and tax
-  state. `Situation.investor` is a convenience for a single investor. The housing
-  program constructs multiple agents directly.
-- A **strategy** chooses spending and trades through executable policies. Library
-  factories can return common policies; the engine does not need a closed enum of
-  every study's algorithms. Parameters are data, behavior is code, and path-local
-  policy memory is explicit. Spending and trading can also be coordinated.
-- `simulate` evaluates one situation and an actor-to-strategy mapping over a population. Python is the
-  notation here, not a decision about the implementation language. Loops in the
-  experiment shell enumerate cells; the executor advances the simulated calendar.
-  Each initial call starts fresh state. `resume` instead clones complete checkpoints
-  and preserves unchanged policy memory. Neither operation mutates an input situation,
-  checkpoint or world reused by another cell.
-- A **run** exposes requested per-path statistics and a reproduction receipt.
-  `run.trace(path_id)` executes the identified path with detailed capture. This
-  does not depend on a web-app rollout cache.
+from proposed_augur.accounting import Actor
+from proposed_augur.markets import Worlds
+from proposed_augur.policies import Initialize
+from proposed_augur.results import Observer, PathResults
+from proposed_augur.simulation import Finished, Session
+from proposed_augur.state import Situation
 
-`run.paths` is a Polars frame with one row per path. Each program requests its
-columns through an `observers` mapping; these are reductions during execution, not a request
-to retain the complete ledger of every path. `path_id`, `reached_horizon`,
-`unfunded_withdrawal`, and `contract_default` accompany every row. Terminal values
-are null for a stopped path. `total_spending_real` means spending actually paid
-through the stopping date, not hypothetical future spending.
 
-Real-money columns use the explicit `ReportingBasis`: currency, price-index identity,
-and base date, preserved by continuations. A terminal wealth measure includes outstanding liabilities and accrued
-taxes; it does not silently assume every asset was liquidated. An experiment
-wanting liquidation value requests that separately. Exact accounting and rounding
-belong to execution. Policy calculations may use approximate numeric arrays through
-`RealBatch.values`; wrapping the result with `with_values` retains its basis and
-path identities. Those arrays are not ledger money.
+def experiment_loop(
+    situation: Situation, worlds: Worlds, policies: Mapping[Actor, Initialize],
+    actor: Actor, observers: Mapping[str, Observer],
+) -> PathResults:
+    session = Session(
+        situation, worlds=worlds, decision_actors=tuple(policies),
+        reporting_actor=actor, observers=observers,
+    )
+    local = {}
+    pending = session.start()
+    while not isinstance(pending, Finished):
+        responses = {}
+        for key, observation in pending.observations.items():
+            if key.policy not in local:
+                local[key.policy] = policies[key.policy.actor](key.policy)
+            decide, memory = local[key.policy]
+            responses[key], memory = decide(observation, memory)
+            local[key.policy] = decide, memory
+        # One monthly transfer for the active population, not a native call per row.
+        pending = session.advance(responses)
+    return pending.result
+```
 
-The programs show ordinary Polars reductions to make denominators and conditioning
-visible. `pl.concat(rows)` yields a table indexed by the sweep parameters. Returned
-`runs` allow examination of the distribution and any selected path, not just its
-mean. A run receipt need not retain the full simulation in RAM.
+`run(...)` is the optional convenience for this same loop. The experiment chooses
+policies explicitly; its `Run` adds replay using those supplied initializers.
+The raw loop returns `PathResults`, without pretending the session captured
+arbitrary caller functions. The experiment chooses
+paths, models, actors, policies, sweeps and analysis; the executor still owns
+accrual, settlement, contracts, taxes and financial time evolution. Row layout,
+batch-native authoring and chunk size remain open to P6/GL. Response keys include the pending month, so a stale
+response map is rejected; policy memory uses the stable actor/path identity.
+Runtime language is separately open to RUNTIME/GE; ordinary Python policies do not require all execution
+to remain Rust or imply a per-path native call. No arbitrary closure serialization
+or universal checkpoint API is required.
 
-## Shared requirements these programs exercise
+Every active actor gets exactly one call per month. Annual studies return empty
+actions in intervening months; their spending/rebalance cadence does not change.
+Annual-only records need the declared synthetic month-grid adapter in
+[study helpers](study_helpers.md), not invented observed monthly returns.
+For real monthly markets, observation placement and settlement availability must
+follow the explicit timing contract; these sketches do not resolve GP by accident.
 
-### Composition must catch financial mismatches
+## Actions, observations and helper boundaries
 
-Assembly checks more than whether a named price series exists. Every held or
-purchasable product must have compatible valuation, cashflow, trading, and tax
-support. A total-return index already reinvests distributions; it cannot acquire a
-second dividend stream or enter a taxed account as a substitute for a real fund.
-A distributing fund requires its payouts even if the caller forgot to request
-them. An unsupported case fails before returning an apparent financial answer.
+The engine executes each submitted list in caller order. `Sell → Buy → Transfer →
+Buy` is valid when each step meets its financial conditions; there is no global
+sells-first pass. Submission does not make unsettled proceeds available.
 
-The same instrument can have different explicit model bindings in different
-experiments. A historical index proxy and a tax-aware ETF are different products,
-even when both represent broad equity exposure. A bond fund and an individual
-bond likewise have different cashflows and trading behavior.
+An action that cannot execute changes no book and is fatal for **that rollout**.
+Earlier successful actions and receipts remain; later actions and all future
+policy calls for that path are skipped. Other paths continue. The batch is not
+all-or-nothing, and there is no retry, reminder, event-driven callback or second
+decision within the month. Invalid input schemas and simulator bugs are errors,
+not fabricated financial failures.
 
-### Time and observations are financial inputs
+Request identity is the actor/path/month decision key plus the action's position
+in its ordered list; receipts retain that identity, not a guessed category match.
 
-`AnnualConvention` declares the within-year order for an annual-return study.
-Trinity's ambiguous withdrawal timing is a required argument, not an engine default.
-The personal programs use a dated monthly calendar and actual tax-year boundaries.
+Policies see their own accessible accounts/lots, known claims/contracts, observed
+market information, filing/payment records and prior execution receipts. They do
+not see future sampled prices, other actors' private state or a mutable ledger.
+Intentions and successful execution are distinct. Later memory updates can use
+receipts; a rejected action cannot trigger an immediate revised plan.
 
-Policies receive observations available at their decision time, their own prior
-decisions, and known future contracts. They cannot read the remaining sampled
-future. A fitted-model policy may use a forecast conditioned on that information;
-it cannot use the realized continuation. The observation surface can expose a
-non-mutating funding/tax preview using shared financial mechanics; the policy must
-not recreate the tax calculation to understand a decision's consequences.
+Budgets and weights are inputs to an author's algorithm, not engine commands.
+Optional funding, FIFO, reserve and rebalance helpers calculate explicit actions.
+A policy may replace or ignore them, and execution must not invent trades afterward.
+Non-mutating previews share canonical accounting with execution under actor-known
+facts and named assumptions; they do not supply hidden future taxes or prices.
+The personal example composes funding, payments, consumption and investment in one
+function. Housing acceptance cannot manufacture loan approval.
 
-### Executable policies, execution language undecided
+## Financial fidelity and outputs
 
-The Vanguard program supplies a function `(observations, state) -> BudgetDecision`;
-the glide-path program supplies `(observations) -> target_weights`. Values have a
-leading path axis. Changing a function changes the study without extending a
-central schema or teaching the engine a new named policy. Built-in policies use
-the same interface. A coupled policy may return spending, allocation, and actions
-together when independently composed decisions would be inconsistent.
-`Strategy.from_review` admits an author's own state type and a `PolicyStep` carrying
-a coordinated `Proposal`; the simpler budget/allocation adapters are conveniences.
+Product construction must agree with valuation, payouts, trading and taxes for
+every held or purchasable instrument. A gross total-return index is a declared
+NoTax study proxy, not a taxable price series with dividends silently reinvested.
+A distributing fund requires explicit payouts; a bond fund and an individual
+tradable bond require different mechanics. Unsupported combinations fail at
+assembly, before reporting apparently credible financial outcomes.
 
-Functions receive read-only observations, return proposals, and cannot directly
-mutate books. Settlement validates and executes proposals with shared instrument,
-contract, and tax rules. A lifestyle move may create a contract; a later policy
-cannot erase its obligations. Requested changes and accepted changes are distinct
-events. Policy state is isolated per path and follows path identities through
-batching; no population averages may leak between independent timelines.
+All cells reuse immutable worlds and opening facts. Actual lots retain basis;
+changing allocation executes trades, not a replacement opening book.
+Money and tax rounding belong to canonical execution. Approximate policy numbers
+are not ledger balances. Real values use the explicit currency/index/base date,
+including inner planning situations; no silent rebasing at a forecast origin.
 
-The array code illustrates batching, not a choice of NumPy over JAX, or a promise
-that arbitrary Python is compilable. Scalar callbacks, batched Python callbacks
-into a native engine, compiled array functions, and native functions remain
-implementation candidates. Host calls once per batch/review differ substantially
-from calls once per path/month. We should measure both, with realistic lots and
-taxes, before requiring Rust extensions or discarding Rust. Compilation latency,
-memory movement, traceability, and ease of authoring matter alongside throughput.
-The current runtime remains unchanged by these sketches.
+`Run.paths` has one row per original path identity with requested reductions,
+`reached_horizon`, `failed_action` and `stop_reason`; scoped spending/default
+indicators remain distinct. Terminal metrics are null for stopped paths. Paid
+consumption includes only actual receipts through stopping, not hypothetical
+post-failure spending. Terminal wealth includes liabilities and accrued taxes,
+but is not automatically liquidation value. Observer names and reducers belong to
+the experiment; no central registry of all lifestyle or policy outcomes is needed.
 
-Pre-sampling assumes these investors do not change the external market. Other
-agents can still exchange money, hold claims, and make decisions within the
-simulation. Experiments requiring market impact would need a different execution
-contract; none of these examples assumes it implicitly.
+`run.trace(path_id)` replays the identified path with fresh isolated policy memory.
+It does not require web-app rollout caching. The receipt pins path identities,
+dataset vintages, fit/model/product choices, opening facts, tax assumptions,
+calendar, policy code revision/parameters and engine version. The experiment must
+also pin any author-owned decision log used in its analysis; a note is not a receipt.
 
-### Population identity and interpretation survive execution
-
-Within a model, cells reuse the same worlds. Random streams are identified by
-economic driver and path, so adding a scenario or an unused instrument cannot
-change existing paths. Prefixing a long path set preserves its history. Comparing
-different models is a sensitivity analysis; matching integer seeds does not by
-itself make their worlds economically paired.
-
-Every run receipt resolves each named dataset's source and snapshot/vintage, the
-model artifact and fit window, instrument bindings, starting situation,
-tax-law assumptions, policy parameters,
-calendar, engine version, and path identities. Executable policies add a pinned
-code revision and captured parameters; the receipt need not serialize arbitrary
-closures. A report carries that receipt.
-Historical overlapping-window fractions are not independent Monte Carlo
-probabilities. Monte Carlo uncertainty should be computed from paired path
-differences when comparing cells; model uncertainty is a separate axis.
-
-### Outcomes belong to the experiment
-
-An unfunded desired withdrawal, a missed contract payment, a lifestyle transition,
-and asset exhaustion remain distinct observations. Failure does not erase an
-agent's remaining house, debt, or other assets. `on_shortfall="stop"` deliberately
-ends these example paths; terminal statistics identify that censoring. A later
-experiment can specify a recovery process without redefining the ledger.
-
-Published comparisons use each paper's definition of success and conditional
-statistics. Personal planning reports both financial failure and the distribution
-of consumption, cuts, and backstop use. It does not infer that nonzero terminal
-wealth means an acceptable life, or reduce preferences to an unrequested utility
-function.
-
-## Review questions
-
-Can an experiment author understand and change the independent variables without
-reimplementing settlement or taxes? Do the examples leave important strategy
-choices hidden in constructors? Which repeated assembly belongs in a reusable
-financial component, and which is legitimately specific to the experiment?
-
-Review these programs first. Comparing their requirements with today's Augur and
-writing an implementation/migration plan is the next task, not part of this draft.
+Within a model, path selection/reordering/chunking preserves identity and results.
+Across models, equal seeds alone do not create economically paired paths. Historical
+overlapping-window frequencies are not IID probabilities. Report conditional
+statistics with their denominators, paired Monte Carlo uncertainty where applicable,
+and model uncertainty separately. Neither wealth above zero nor a model class name
+establishes an acceptable lifestyle or institutional forecasting quality.

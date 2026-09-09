@@ -71,23 +71,11 @@ class Forecast:
     price_index: PriceIndex
     def sample(self, *, years: int, step: Literal["month", "year"], paths: int, seed: int) -> Worlds: ...
 
-class ForecastOrigins:
-    """Keyed decision origins: visible history, date, remaining horizon and time grid."""
-
-class RandomStreams: ...
-
-class ContinuationWorlds:
-    """Inner paths keyed by origin and draw, not implicitly joined to checkpoints by row number."""
-
-class ConditionalBatch:
-    def sample(self, *, paths_per_origin: int, streams: RandomStreams) -> ContinuationWorlds: ...
-
 class MarketModel:
     """A financially bound provider; conditioning produces a dated forecast before sampling."""
 
     price_index: PriceIndex
     def condition(self, observations: NamedSeries, *, at: date) -> Forecast: ...
-    def condition_many(self, origins: ForecastOrigins) -> ConditionalBatch: ...
 
 class HistoricalMarket:
     price_index: PriceIndex
@@ -138,3 +126,25 @@ class AnnualJointLognormal:
         inflation_column: str,
         moment_space: Literal["arithmetic_gross_returns"],
     ) -> MarketModel: ...
+
+@dataclass(frozen=True)
+class AnnualConvention:
+    """NoTax study slots, not executor action-order rules.
+
+    Annual price/CPI changes occur at opening of return_month; all other months
+    are flat. Withdrawals/rebalances are authored policy actions in named slots.
+    The synthetic slots do not represent observed intra-year market history.
+    """
+
+    name: str
+    withdrawal_month: int
+    return_month: int
+    rebalance_month: int
+
+def annual_study_grid(worlds: Worlds, *, convention: AnnualConvention) -> Worlds:
+    """Expand annual gross index/CPI observations into declared synthetic months.
+
+    Preserve annual endpoints, source dates, original path IDs and horizon. No
+    smoothing, invented payouts or tax-aware product approximation. Require
+    NoTax-compatible gross indices; annual studies choose this adapter explicitly.
+    """

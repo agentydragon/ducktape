@@ -1,29 +1,90 @@
 # Personal planning: spending flexibility and allocation together
 
-Proposed Python. This is a new experiment, not a published-study reproduction.
-Its inputs live downstream: a dated opening balance sheet, tax lots, cash already
-received, outstanding taxes, contracts, spending anchors, and transition terms.
-No values here describe an actual account or person.
+Proposed Python, not runnable. This is a new experiment, not a published-study
+reproduction. Inputs are a dated actual balance sheet, tender proceeds already
+received, real tax lots/basis, outstanding taxes, contracts, spending anchors and
+transition terms. No values here describe an actual account or person.
 
-Vary initial spending, reversible flexibility, optional lifestyle transitions,
-equity weight, and the kind of bonds purchased. Repeat under separately identified
-market models. Inspect actual spending, transition use, default, and residual
-wealth together. No single optimum is inferred without a preference criterion.
+Vary lifestyle budget, flexibility, optional backstop, equity share and bond
+product together, then repeat under separately identified market models. Inspect
+actual consumption, cuts, transitions, default and wealth; choosing one optimum
+requires an explicit preference criterion.
+
+## One monthly function coordinates the actions
 
 ```python
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import product
 
 import polars as pl
 
-from proposed_augur.instruments import InvestableUniverse
-from proposed_augur.markets import MarketModel
-from proposed_augur.policies import ActionReview, BudgetReview
-from proposed_augur.simulation import simulate
-from proposed_augur.state import Situation
-from proposed_augur.policies import Allocation, CashReserve, DriftBand, LifestylePlan, SpendingAnchor, Strategy
+from proposed_augur.actions import Action, PayClaim
 from proposed_augur.data import NamedSeries
-from proposed_augur.results import Runs, StudyResult, financial_observers, count_budget_changes, count_accepted_tag, ever_accepted_tag, months_per_lifestyle
+from proposed_augur.instruments import Instrument, Weights
+from proposed_augur.markets import MarketModel
+from proposed_augur.money import RealAmount
+from proposed_augur.observations import Observation
+from proposed_augur.policies import Initialize, PolicyKey, Response
+from proposed_augur.proposals import (
+    Portfolio, PreviewAssumptions, PreviewError, preview, raise_cash, rebalance,
+)
+from proposed_augur.results import Observer, Runs, StudyResult, financial_observers
+from proposed_augur.simulation import run as run_paths
+from proposed_augur.state import Situation
+from study_helpers import funded_consumption
+
+type BudgetRule = Callable[[Observation, RealAmount], RealAmount]
+type Transition = Callable[[Observation, RealAmount], tuple[Action, ...]]
+
+
+def household_policy(
+    initial: RealAmount, flex: BudgetRule, transition: Transition,
+    portfolio: Portfolio, targets: Weights,
+    should_rebalance: Callable[[Observation], bool], reserve_years: float,
+    assumptions: PreviewAssumptions,
+) -> Initialize:
+    def decide(obs: Observation, previous: RealAmount):
+        budget = flex(obs, previous) if obs.month_index % 12 == 0 else previous
+        actions = transition(obs, budget)  # Concrete terms/actions, not a cheaper-life flag.
+        try:
+            projected = preview(obs, actions, assumptions=assumptions)
+        except PreviewError:
+            # Submit the same proposal; execution identifies the fatal action.
+            return Response(actions), budget
+
+        # This author pays known due claims before discretionary consumption.
+        for claim in projected.due_claims:
+            funding = raise_cash(
+                projected, portfolio, required_cash=claim.amount,
+                lot_order="fifo", assumptions=assumptions,
+            )
+            payment = funding + (PayClaim(portfolio.cash, claim.id, claim.amount),)
+            actions += payment
+            try:
+                projected = preview(projected, payment, assumptions=assumptions)
+            except PreviewError:
+                return Response(actions), budget
+
+        consumption, projected = funded_consumption(
+            projected, portfolio,
+            projected.nominal(RealAmount(budget.value / 12, budget.basis)),
+            assumptions=assumptions,
+        )
+        actions += consumption
+        if projected is None:
+            return Response(actions), budget
+        if obs.month_index == 0 or should_rebalance(projected):
+            actions += rebalance(
+                projected, portfolio, targets=targets,
+                retain_cash=projected.nominal(RealAmount(budget.value * reserve_years, budget.basis)),
+                lot_order="fifo", assumptions=assumptions,
+            )
+        return Response(actions), budget
+
+    def initialize(key: PolicyKey):
+        return decide, initial
+    return initialize
 
 
 @dataclass(frozen=True)
@@ -31,165 +92,114 @@ class Inputs:
     situation: Situation
     household_id: str
     observations: NamedSeries
-    universe: InvestableUniverse
     models: dict[str, MarketModel]
-    anchors: tuple[SpendingAnchor, ...]
-    flex_rules: dict[str, BudgetReview]
-    transition_rules: dict[str, ActionReview]
-    lifestyles: LifestylePlan
-    reserve: CashReserve
-    rebalance: DriftBand
+    stocks: Instrument
+    bonds: tuple[Instrument, ...]
+    portfolio: Portfolio
+    anchors: dict[str, RealAmount]
+    flex_rules: dict[str, BudgetRule]
+    transitions: dict[str, Transition]
+    should_rebalance: Callable[[Observation], bool]
+    reserve_years: float
+    assumptions: PreviewAssumptions
+    study_observers: dict[str, Observer]
     years: int
     paths: int
 
 
 def spending_allocation(inputs: Inputs) -> StudyResult:
     household = inputs.situation.actor(inputs.household_id)
-    stocks = inputs.universe.instrument("broad_equity_fund")
-    bond_options = (
-        inputs.universe.instrument("short_treasury_fund"),
-        inputs.universe.instrument("intermediate_treasury_fund"),
-        inputs.universe.instrument("municipal_fund"),
-    )
     rows: list[pl.DataFrame] = []
     runs: Runs = {}
-
     for model_name, model in inputs.models.items():
-        market = model.condition(inputs.observations, at=inputs.situation.as_of)
-        worlds = market.sample(
-            years=inputs.years,
-            step="month", paths=inputs.paths, seed=731,
+        worlds = model.condition(inputs.observations, at=inputs.situation.as_of).sample(
+            years=inputs.years, step="month", paths=inputs.paths, seed=731,
         )
-        for anchor, (flex_name, flex), (transition_name, transition), stock_share, bonds in product(
-            inputs.anchors, inputs.flex_rules.items(), inputs.transition_rules.items(),
-            (0.40, 0.60, 0.80, 1.0), bond_options,
+        for (anchor_name, anchor), (flex_name, flex), (move_name, transition), share, bonds in product(
+            inputs.anchors.items(), inputs.flex_rules.items(), inputs.transitions.items(),
+            (0.40, 0.60, 0.80, 1.0), inputs.bonds,
         ):
-            strategy = Strategy(
-                spending=inputs.lifestyles.policy(
-                    initial_anchor=anchor, flex=flex, transitions=transition,
-                    review_every="year", consume_every="month",
-                ),
-                trading=Allocation(
-                    target={stocks: stock_share, bonds: 1 - stock_share},
-                    reserve=inputs.reserve,
-                    rebalance=inputs.rebalance,
-                    establish_target="trade_from_opening_book",
-                    reinvest_surplus=True,
-                    lot_selection="fifo",
-                    transaction_costs=inputs.universe.execution_costs,
-                ),
+            initialize = household_policy(
+                anchor, flex, transition, inputs.portfolio, {inputs.stocks: share, bonds: 1 - share},
+                inputs.should_rebalance, inputs.reserve_years, inputs.assumptions,
             )
-            run = simulate(
-                inputs.situation, policies={household: strategy}, reporting_actor=household, worlds=worlds,
-                on_shortfall="stop",
+            run = run_paths(
+                inputs.situation, policies={household: initialize}, reporting_actor=household,
+                worlds=worlds,
                 observers=financial_observers(
                     "total_spending_real", "minimum_annual_spending_real",
                     "terminal_wealth_real", "tax_paid_real",
-                ) | {
-                    "cuts": count_budget_changes(direction="down"),
-                    "lifestyle_transitions": count_accepted_tag("lifestyle.changed"),
-                    "backstop_used": ever_accepted_tag("backstop"),
-                    "months_per_lifestyle": months_per_lifestyle(),
-                },
+                ) | inputs.study_observers,
             )
-            key = (model_name, anchor.name, flex_name, transition_name, stock_share, bonds.name)
+            key = model_name, anchor_name, flex_name, move_name, share, bonds.name
             runs[key] = run
-            rows.append(
-                run.paths.select(
-                    pl.col("contract_default").mean().alias("default_fraction"),
-                    pl.col("unfunded_withdrawal").mean().alias("spending_shortfall_fraction"),
-                    (pl.col("unfunded_withdrawal").cast(pl.Float64).std() / pl.len().sqrt())
-                    .alias("spending_shortfall_se"),
-                    pl.col("backstop_used").mean().alias("backstop_fraction"),
-                    pl.col("reached_horizon").mean().alias("completed_fraction"),
-                    pl.col("total_spending_real").quantile(0.05).alias("p05_paid_through_stop"),
-                    pl.col("terminal_wealth_real").filter(pl.col("reached_horizon"))
-                    .quantile(0.05).alias("p05_terminal_wealth_completed"),
-                    pl.col("terminal_wealth_real").filter(pl.col("reached_horizon"))
-                    .median().alias("median_terminal_wealth_completed"),
-                ).with_columns(
-                    model=pl.lit(model_name), anchor=pl.lit(anchor.name),
-                    flex=pl.lit(flex_name), transition=pl.lit(transition_name),
-                    stock_share=pl.lit(stock_share), bonds=pl.lit(bonds.name),
-                )
-            )
-
+            rows.append(run.paths.select(
+                (~pl.col("reached_horizon")).mean().alias("stopped_fraction"),
+                pl.col("contract_default").mean().alias("default_fraction"),
+                pl.col("unfunded_withdrawal").mean().alias("spending_shortfall_fraction"),
+                pl.col("backstop_used").mean().alias("backstop_fraction"),
+                pl.col("total_spending_real").quantile(0.05).alias("p05_paid_through_stop"),
+                pl.col("terminal_wealth_real").filter(pl.col("reached_horizon"))
+                .quantile(0.05).alias("p05_terminal_completed"),
+            ).with_columns(
+                model=pl.lit(model_name), anchor=pl.lit(anchor_name),
+                flex=pl.lit(flex_name), transition=pl.lit(move_name),
+                stock_share=pl.lit(share), bonds=pl.lit(bonds.name),
+            ))
     return pl.concat(rows), runs
 ```
 
-The equity weights are illustrative sweep points. The 100%-equity duplicates can
-be collapsed for presentation; equivalent cells remain the same strategy. The
-portfolio starts from the supplied book in every cell. Establishing a target
-executes purchases and any required sales, with taxes and costs. It does not
-replace existing holdings with invented basis or assume existing tax bills were
-paid. Fees and fund distribution treatment come from the shared instruments.
+These are ordinary editable functions: a guardrail, cash band or target trajectory
+can be reused without adding a policy variant to the executor. The first useful
+flex candidates are fixed real spending, bounded annual changes and GK-inspired
+rules, with explicit consumption floors. This example reviews budgets annually
+but **pays consumption monthly**; it does not change the annual published studies.
 
-## What the spending inputs mean
+`Portfolio` supplies explicit accounts for every held/traded product, including
+assets that need selling to establish a new target. Omitted target weights must
+mean a declared full exit, not an invisible unchanged sleeve. The 100%-equity
+duplicates can be collapsed in presentation. Initial allocation changes require
+actual trades against the original book and taxes, not invented opening basis.
 
-`SpendingAnchor` supplies a named initial consumption budget and its price index.
-It excludes taxes, saving, debt principal, and costs already charged by contracts.
-A supplied budget adapter must reconcile those categories against the original
-budget so mortgage/rent payments cannot be counted twice.
+Previews do not execute anything or permit another callback. Each returned list
+is submitted once. A failing move, payment, consumption or trade stops this path,
+retaining earlier successful actions. Other rollouts continue. The helper's
+immediate-cash or product-term assumptions must match supported execution rules;
+pending proceeds cannot silently finance today's claim. Previewed tax consequences
+use known inputs, not hidden future assessments. GP still needs to pin exactly
+which due claims are visible at each monthly observation.
 
-`flex_rules` maps report labels to executable budget-review functions, not schema
-variants. The first useful candidates are fixed real spending, bounded real annual
-changes, and Guyton–Klinger-style adjustments, with an explicit minimum consumption
-amount. `BudgetReview` and `ActionReview` name callback signatures, not closed unions
-of built-in behaviors. The author can define these functions in the experiment.
-The observation used to size a budget includes known upcoming payments and the
-tax consequences of proposed funding, through shared execution queries.
+## Budgets, backstops and receipt-aware behavior
 
-`LifestylePlan` is a small menu of consumption costs and available transitions.
-For example, a move transition names its trigger, notice period, moving costs,
-lease termination, property action if needed, and new consumption schedule.
-Whether returning is possible and its costs are configured. A transition requests
-those actions; their contractual and tax effects remain shared financial code.
-If the move is unaffordable or disallowed, the trace records the rejection.
-This does not require an autonomous-agent model of movers or landlords.
+Anchors exclude taxes, saving, debt principal and amounts already owed by contracts.
+Reconcile the original budget so rent/mortgage costs cannot be counted twice.
+Gross sales, consumption, taxes, transfers and reinvestment are separate cashflows.
 
-For example, the transition callback can express a simple liquid-runway trigger:
+A transition function can compare observed liquid wealth with several years of
+the budget and return explicit actions on supplied terms. It reads prior receipts
+and current contracts to avoid repeating a completed or pending transition. Merely
+requesting a move is not evidence that it happened. More complex policies can keep
+their own memory alongside the budget; no separate event-driven callback is needed.
 
-```python
-from proposed_augur.policies import ActionDecision, ActionState, Move, MoveTerms, Observations
+A Europe backstop is not modeled by a cheap budget flag. It needs notice periods,
+moving costs, lease/property actions, financing, residence/tax rules, FX and price
+indices, including any option to return. These inputs and additional supported
+actions remain a capability gap; no `Move` action is invented here. A budget-cut-only
+cell is useful but cannot claim to model relocation. Unsupported relevant product
+or jurisdiction treatment must reject assembly.
 
+The situation carries current-year income/payments, filing units, accrued
+liabilities, carryovers, enacted-law versions and explicit future assumptions.
+Interest-only payouts, gross equity total-return proxies and untradable dated
+bonds cannot be silently substituted for financially supported actual products.
 
-def runway_backstop(terms: MoveTerms, runway_years: float) -> ActionReview:
-    def review(obs: Observations, state: ActionState) -> ActionDecision:
-        request = (
-            (obs.liquid_wealth_real.values < runway_years * obs.annual_budget_real.values)
-            & ~obs.move_pending & ~obs.at_destination(terms.destination)
-        )
-        return ActionDecision(Move.request(terms=terms, where=request, accepted_tag="backstop"), state)
-    return review
-```
+`study_observers` supplies reductions for cuts, actual completed transitions,
+backstop use and months in each lifestyle. Desired budget changes come from an
+author-owned decision log; paid consumption and completed transitions come from
+execution receipts, not a matching category label or intended action alone.
 
-This is an illustrative trigger, not an endorsed safety threshold. `terms` carries
-the actual notice, costs, contractual actions and residency change; the callback
-does not merely flip a cheaper-lifestyle flag. No relocation and different runway
-thresholds are ordinary cells. With zero/negative wealth, requesting a move is not
-proof it can be financed; execution can reject it.
-
-A transition changing jurisdiction also needs a supplied tax-residency timeline,
-relevant cross-border rules, price indices, and FX model. Assembly must reject an
-incomplete move scenario. A lower budget alone may be studied, but its name cannot
-claim it models relocation. This draft supplies no country choice or tax rules.
-
-`Situation` supplies a dated tax plan covering the run: starting-year income and
-payments, accrued liabilities, lots, filing units, enacted-law version, future
-indexation assumptions, and payment schedules. Unsupported relevant income or
-instrument treatment is an error. Gross withdrawals, consumption, taxes, and
-reinvestment are distinct cashflows.
-
-## Looking beyond the summary table
-
-For any returned cell, examine distributions of annual cuts, months in each
-lifestyle, and tax paid from `run.paths`. `run.trace(path_id)` returns that
-world's monthly financial events, observations, policy decisions, and balances.
-To explain a difference, select the same `path_id` from two cells under the same
-model and compare those traces. A path selected by terminal percentile is an
-actual trajectory; the sequence of monthly percentiles is not one trajectory.
-
-The study reports frequencies under each model separately. No model is designated
-"institutional quality" by its class name: calibration evidence, fit window,
-joint dynamics, stress behavior, and parameter uncertainty accompany the supplied
-artifact and remain reviewable modeling inputs.
+For any returned cell, compare `run.trace(path_id)` on the same path under another
+policy. Replay initializes fresh memory keyed by original actor/path identity.
+A sequence of monthly percentiles is not a trajectory. Report model panels,
+paired sampling uncertainty, fit/vintage evidence, joint tails and stress behavior
+separately; a model class name is not a quality certification.

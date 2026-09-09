@@ -16,35 +16,33 @@ from itertools import product
 from pathlib import Path
 from datetime import date
 
-import numpy as np
 import polars as pl
 
 from proposed_augur.instruments import InvestableUniverse
 from proposed_augur.markets import load_vecm
 from proposed_augur.money import GBP
-from proposed_augur.simulation import AnnualConvention, simulate
+from proposed_augur.markets import AnnualConvention, annual_study_grid
+from proposed_augur.simulation import run as run_paths
 from proposed_augur.state import Situation
-from proposed_augur.policies import AnnualRebalance, AnnualSpending, Strategy
+from proposed_augur.proposals import Portfolio
+from proposed_augur.accounting import AccountRef
+from study_helpers import annual_policy
 from proposed_augur.taxes import NoTax
 from proposed_augur.accounting import Actor
 from proposed_augur.data import NamedSeries
 from proposed_augur.markets import MarketBinding
-from proposed_augur.money import RealAmount, RealBatch, ReportingBasis
-from proposed_augur.policies import BudgetDecision, Observations
+from proposed_augur.money import RealAmount, ReportingBasis
+from proposed_augur.observations import Observation
 from proposed_augur.results import Runs, financial_observers
 
 
-def bounded_spending(initial: RealAmount, fraction: float, down: float, up: float) -> AnnualSpending:
-
-    def review(obs: Observations, previous: RealBatch) -> BudgetDecision:
-        target = obs.wealth_real.values * fraction
-        amount = np.clip(target, previous.values * (1 - down), previous.values * (1 + up))
-        budget = previous.with_values(np.where(obs.review_index == 0, initial.value, amount))
-        return BudgetDecision(budget=budget, state=budget)
-
-    return AnnualSpending(
-        review=review, initial_state=initial
-    )
+def bounded_spending(initial: RealAmount, fraction: float, down: float, up: float):
+    def budget(obs: Observation, previous: float) -> float:
+        if obs.month_index < 12:
+            return initial.value
+        target = obs.wealth_real.value * fraction
+        return min(previous * (1 + up), max(previous * (1 - down), target))
+    return budget
 
 
 def vanguard(
@@ -52,7 +50,9 @@ def vanguard(
     *, start: date, convention: AnnualConvention,
 ) -> tuple[pl.DataFrame, pl.DataFrame, Runs]:
     market = load_vecm(artifact).bind(binding).condition(observations, at=start)
-    worlds = market.sample(years=30, step="year", paths=10000, seed=2021)
+    worlds = annual_study_grid(
+        market.sample(years=30, step="year", paths=10000, seed=2021), convention=convention,
+    )
     uk_stocks = universe.instrument("uk_equity")
     other_stocks = universe.instrument("international_equity")
     uk_bonds = universe.instrument("uk_fixed_income")
@@ -78,18 +78,20 @@ def vanguard(
             actor=actor, basis=basis,
             capital=capital, weights=weights, taxes=NoTax(), calendar=paths.calendar
         )
-        strategy = Strategy(
-            spending=bounded_spending(
-                initial=RealAmount.at_base(capital * rate_percent / 100, basis),
-                fraction=rate_percent / 100,
-                down=0.025 if dynamic else 0.0,
-                up=0.05 if dynamic else 0.0,
+        portfolio = Portfolio(AccountRef(actor, "portfolio"), {
+            instrument: AccountRef(actor, "portfolio") for instrument in weights
+        })
+        initial = RealAmount.at_base(capital * rate_percent / 100, basis)
+        initialize = annual_policy(
+            initial, portfolio, convention,
+            budget=bounded_spending(
+                initial, rate_percent / 100,
+                down=0.025 if dynamic else 0.0, up=0.05 if dynamic else 0.0,
             ),
-            trading=AnnualRebalance(target=weights, transaction_cost=0),
+            target=lambda completed_years, target_weights=weights: target_weights,
         )
-        run = simulate(
-            situation, policies={actor: strategy}, reporting_actor=actor, worlds=paths, convention=convention,
-            on_shortfall="stop",
+        run = run_paths(
+            situation, policies={actor: initialize}, reporting_actor=actor, worlds=paths,
             observers=financial_observers("terminal_wealth_nominal", "total_spending_real", "final_spending_real"),
         )
         outcomes = run.paths.with_columns(
@@ -127,12 +129,12 @@ grid resolution must accompany any reported frontier.
 
 ## Policy and model substitutions
 
-The function executes on the current batch, without inspecting future returns.
-`previous` is path-local state initialized by broadcasting the opening real budget;
-the adapter converts the returned real budget to dated money using shared rounding.
-With both limits zero this is fixed real spending. An unaffordable lower bound
-produces a shortfall, not an extra automatic cut. The function can be replaced
-without adding another engine policy variant.
+The scalar budget function runs at the annual withdrawal slot inside one ordinary
+monthly policy. Its previous budget is isolated per actor/path; other monthly
+calls do not become extra withdrawals. Shared money conversion handles CPI and
+rounding. With both limits zero this is fixed real spending. An unaffordable floor
+causes a fatal consumption action, not another cut or callback. The proposed
+funding and annual-rebalance functions emit explicit actions in author order.
 
 The supplied universe uses gross-return study instruments. The artifact must
 support their joint dynamics, UK inflation, and declared currency/hedging treatment.

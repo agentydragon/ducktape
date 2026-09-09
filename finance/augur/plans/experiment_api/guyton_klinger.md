@@ -20,23 +20,60 @@ from proposed_augur.instruments import TotalReturnIndex
 from proposed_augur.data import History
 from proposed_augur.markets import AnnualJointLognormal
 from proposed_augur.money import USD
-from proposed_augur.simulation import AnnualConvention, simulate
+from proposed_augur.markets import AnnualConvention, annual_study_grid
+from proposed_augur.simulation import run as run_paths
 from proposed_augur.state import Situation
-from proposed_augur.policies import GuytonPortfolioConvention, GuytonRuleOrder, guyton_klinger_policy
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from proposed_augur.policies import Initialize
+from proposed_augur.proposals import Portfolio
+from proposed_augur.accounting import AccountRef
+from proposed_augur.instruments import Instrument, Weights
+from proposed_augur.money import Money
 from proposed_augur.taxes import NoTax
 from proposed_augur.accounting import Actor
 from proposed_augur.money import PriceIndex, ReportingBasis
-from proposed_augur.results import Runs, StudyResult, count_accepted_tag, financial_observers
+from proposed_augur.results import Runs, StudyResult, financial_observers
+
+
+@dataclass(frozen=True)
+class GuytonSettings:
+    target: Weights
+    equities: tuple[Instrument, ...]
+    fixed_income: tuple[Instrument, ...]
+    reserve: Instrument
+    initial_withdrawal: Money
+    price_index: PriceIndex
+    convention: AnnualConvention
+    rule_order: str
+    portfolio_convention: str
+    freeze: str = "negative_return_and_rate_above_initial"
+    inflation_cap: float | None = None
+    preserve_above_initial_ratio: float = 1.20
+    preservation_cut: float = 0.10
+    preservation_inactive_final_years: int = 15
+    prosper_below_initial_ratio: float | None = None
+    prosperity_raise: float = 0.10
+
+
+# Author-owned algorithm, supplied after resolving the paper interpretations.
+# The decision log is separate from actual execution receipts.
+type MakeGuytonPolicy = Callable[
+    [GuytonSettings, Portfolio, dict[tuple[str, int], dict[str, str | int | bool]]], Initialize
+]
 
 
 def guyton_klinger(
     histories: dict[str, History],
     *,
-    rule_order: GuytonRuleOrder,
-    portfolio_convention: GuytonPortfolioConvention,
+    make_policy: MakeGuytonPolicy,
+    rule_order: str,
+    portfolio_convention: str,
     stock_shares: tuple[float, ...] = (0.50, 0.65, 0.80),
     rate_percents: tuple[float, ...] = tuple(x / 10 for x in range(30, 81)),
 ) -> StudyResult:
+    convention = AnnualConvention("withdraw-return-manage", 0, 11, 11)
     stocks = TotalReturnIndex("sp500", currency="USD")
     bonds = TotalReturnIndex("paper_fixed_income", currency="USD")
     bills = TotalReturnIndex("paper_cash", currency="USD")
@@ -53,7 +90,9 @@ def guyton_klinger(
             moment_space="arithmetic_gross_returns",
         )
         forecast = market.condition({}, at=date(2000, 1, 1))  # Synthetic no-tax calendar.
-        worlds = forecast.sample(years=40, step="year", paths=14000, seed=2006)
+        worlds = annual_study_grid(
+            forecast.sample(years=40, step="year", paths=14000, seed=2006), convention=convention,
+        )
         for stock_share, rate_percent, prosperity in product(
             stock_shares, rate_percents, (False, True)
         ):
@@ -63,7 +102,7 @@ def guyton_klinger(
                 actor=actor, basis=ReportingBasis("USD", market.price_index, worlds.calendar.start),
                 capital=capital, weights=target, taxes=NoTax(), calendar=worlds.calendar
             )
-            strategy = guyton_klinger_policy(
+            settings = GuytonSettings(
                 target=target,
                 equities=(stocks,),
                 fixed_income=(bonds,),
@@ -79,24 +118,34 @@ def guyton_klinger(
                 prosperity_raise=0.10,
                 rule_order=rule_order,
                 portfolio_convention=portfolio_convention,
-                transaction_cost=0,
+                convention=convention,
             )
-            run = simulate(
+            decision_log: dict[tuple[str, int], dict[str, str | int | bool]] = {}
+            portfolio = Portfolio(AccountRef(actor, "portfolio"), {
+                instrument: AccountRef(actor, "portfolio") for instrument in (stocks, bonds, bills)
+            })
+            initialize = make_policy(settings, portfolio, decision_log)
+            run = run_paths(
                 situation,
-                policies={actor: strategy}, reporting_actor=actor,
+                policies={actor: initialize}, reporting_actor=actor,
                 worlds=worlds,
-                convention=AnnualConvention.withdraw_then_return(),
-                on_shortfall="stop",
                 observers=financial_observers(
                     "terminal_wealth_nominal", "total_spending_real",
                     "final_spending_real",
-                ) | {
-                    "cuts": count_accepted_tag("gk.preservation"),
-                    "raises": count_accepted_tag("gk.prosperity"),
-                    "freezes": count_accepted_tag("gk.inflation_freeze"),
-                },
+                ),
             )
-            paths = run.paths.with_columns(
+            # One log row at each annual spending decision, keyed by original path.
+            # Cut/freeze labels describe decisions, not assumed successful payments.
+            counts = pl.DataFrame(
+                list(decision_log.values()),
+                schema={"path_id": pl.String, "year": pl.Int64,
+                        "cuts": pl.Boolean, "raises": pl.Boolean, "freezes": pl.Boolean},
+            ).group_by("path_id").agg(
+                pl.col("cuts").sum(), pl.col("raises").sum(), pl.col("freezes").sum(),
+            )
+            paths = run.paths.join(counts, on="path_id", how="left").with_columns(
+                pl.col("cuts", "raises", "freezes").fill_null(0),
+            ).with_columns(
                 success=(
                     pl.col("reached_horizon")
                     & ~pl.col("unfunded_withdrawal")
@@ -132,15 +181,25 @@ distribution of gross returns and inflation factors; it reports an incompatible
 covariance instead of silently changing it. Its IID-year assumption is part of
 this reproduction, not an endorsement for personal planning.
 
-`guyton_klinger_policy` is a factory for a coordinated executable strategy, not an
-engine enum. Its spending and portfolio callbacks can be replaced independently
-or together; the factory is shorthand for a reusable implementation of this
-particular study's algorithm. Its portfolio-management component
-raises reserves from eligible overweight assets and follows the paper's funding
-order. It is not the ordinary target-allocation policy with two spending knobs.
-Annual decisions retain prior withdrawal, initial rate, prior portfolio return,
-per-asset returns, current weights, and years remaining. Skipped inflation is not
-subsequently caught up. Raised spending can exceed its initial real level.
+The supplied `make_policy` is experiment-owned Python, not an Augur policy enum
+or a claim that this document implements the paper. It returns one ordinary
+monthly function plus fresh actor/path-local memory. That function emits explicit
+sales, consumption and reserve/reinvestment purchases in its chosen order, using
+canonical preview/accounting. It never submits targets for an engine allocator.
+
+The function writes each annual decision to `decision_log[path_id, year]`,
+replacing that row during replay. This output-only sink is never read as policy
+memory; reordering or replay cannot change decisions or double-count reviews.
+Decision labels are not evidence of successful payments.
+
+The portfolio algorithm raises reserves from eligible overweight assets and
+follows the paper's funding order, not ordinary target rebalancing with two
+spending knobs. Annual reviews retain prior withdrawal, initial rate, observed
+portfolio/per-asset returns, current weights and years remaining. Skipped inflation
+is not caught up; raised spending can exceed its initial real level. Other months
+return empty actions. The synthetic grid changes index/CPI levels at month 11;
+spending occurs at month 0. A different annual ordering requires an explicit
+grid and authored-function change, not an executor strategy.
 
 ## Reproduction boundaries to resolve
 

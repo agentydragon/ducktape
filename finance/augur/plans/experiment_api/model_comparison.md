@@ -104,26 +104,24 @@ backstop use, and default. There is no model-independent "recommend" method.
 ```python
 from proposed_augur.accounting import Actor
 from proposed_augur.markets import Forecast, Worlds
-from proposed_augur.policies import Strategy
-from proposed_augur.results import PolicySelector, Run, count_budget_changes, ever_accepted_tag, financial_observers
-from proposed_augur.simulation import simulate
+from proposed_augur.policies import Initialize
+from proposed_augur.results import Observer, PolicySelector, Run, financial_observers
+from proposed_augur.simulation import run as run_paths
 from proposed_augur.state import Situation
 
 
 def evaluate_policies(
-    situation: Situation, actor: Actor, policies: Mapping[str, Strategy], worlds: Worlds,
+    situation: Situation, actor: Actor, policies: Mapping[str, Initialize], worlds: Worlds,
+    study_observers: Mapping[str, Observer],
 ) -> tuple[pl.DataFrame, dict[str, Run]]:
     rows: list[pl.DataFrame] = []
     runs: dict[str, Run] = {}
     for name, policy in policies.items():
-        run = simulate(
-            situation, policies={actor: policy}, reporting_actor=actor, worlds=worlds, on_shortfall="stop",
-            observers=financial_observers("total_spending_real", "terminal_wealth_real") | {
-                "cuts": count_budget_changes(direction="down"),
-                "backstop_used": ever_accepted_tag("backstop"),
-            },
+        run = run_paths(
+            situation, policies={actor: policy}, reporting_actor=actor, worlds=worlds,
+            observers={**financial_observers("total_spending_real", "terminal_wealth_real"), **study_observers},
         )
-        failure = pl.col("unfunded_withdrawal") | pl.col("contract_default")
+        failure = ~pl.col("reached_horizon")
         rows.append(run.paths.select(
             failure.mean().alias("failure_fraction"),
             (failure.cast(pl.Float64).std() / pl.len().sqrt()).alias("failure_se"),
@@ -140,7 +138,8 @@ def evaluate_policies(
 
 def compare_decisions(
     situation: Situation, actor: Actor, models: Mapping[str, Forecast],
-    policies: Mapping[str, Strategy], choose: PolicySelector, *, years: int, paths: int,
+    policies: Mapping[str, Initialize], choose: PolicySelector,
+    study_observers: Mapping[str, Observer], *, years: int, paths: int,
 ) -> tuple[dict[str, str | None], pl.DataFrame, dict[str, dict[str, Run]], dict[str, dict[str, Run]]]:
     selections: dict[str, str | None] = {}
     selection_runs: dict[str, dict[str, Run]] = {}
@@ -148,7 +147,7 @@ def compare_decisions(
         worlds = model.sample(
             years=years, step="month", paths=paths, seed=501
         )
-        table, runs = evaluate_policies(situation, actor, policies, worlds)
+        table, runs = evaluate_policies(situation, actor, policies, worlds, study_observers)
         selections[name] = choose(table, runs)  # Policy name, or None if none qualifies.
         if selections[name] is not None and selections[name] not in policies:
             raise ValueError("The selector returned a policy outside the supplied grid")
@@ -160,7 +159,7 @@ def compare_decisions(
         fresh_worlds = model.sample(
             years=years, step="month", paths=paths, seed=502
         )
-        table, runs = evaluate_policies(situation, actor, policies, fresh_worlds)
+        table, runs = evaluate_policies(situation, actor, policies, fresh_worlds, study_observers)
         evaluation_runs[world_name] = runs
         for chooser_name, selected in selections.items():
             if selected is not None:
@@ -170,6 +169,11 @@ def compare_decisions(
     matrix = pl.concat(rows) if rows else pl.DataFrame()
     return selections, matrix, selection_runs, evaluation_runs
 ```
+
+`study_observers` supplies experiment-owned cuts/backstop reducers, with labels
+that distinguish requested changes from completed transitions. Each initializer
+creates fresh state for the ordinary monthly policy, including selected replay.
+A fatal action failure is included even when it is not a spending shortfall.
 
 The matrix separates policy-selection noise from evaluation draws and exposes
 model disagreement. All policies remain available, not only selection winners.
