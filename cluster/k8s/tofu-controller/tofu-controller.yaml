@@ -20,6 +20,8 @@ spec:
         name: tofu-controller
         namespace: flux-system
   values:
+    # Terraform CRs in flux-system consume ducktape-flux/ducktape.
+    allowCrossNamespaceRefs: true
     # Enable runner pods to access cluster resources
     runner:
       grpc:
