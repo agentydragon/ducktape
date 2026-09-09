@@ -3,6 +3,62 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+py_library(
+    name = "python_policy",
+    srcs = ["python_policy.py"],
+    deps = [
+        "//finance/augur/rust:simulator_ext",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "stress_paths",
+    srcs = ["stress_paths.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/study/trinity:replay",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "profile",
+    srcs = ["profile.py"],
+    data = [":runner"],
+    deps = [
+        ":python_policy",
+        ":stress_paths",
+        "//finance/augur/rust:invocation",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_binary(
+    name = "profile_bin",
+    main_module = "finance.augur.x.bounded_spending.profile",
+    deps = [":profile"],
+)
+
+py_test(
+    name = "python_policy_test",
+    srcs = ["python_policy_test.py"],
+    data = [":runner"],
+    deps = [
+        ":python_policy",
+        ":stress_paths",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:invocation",
+        "//util/bazel:runfiles",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 rust_binary(
     name = "runner",
     srcs = ["policy.rs"],
