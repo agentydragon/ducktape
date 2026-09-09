@@ -89,6 +89,10 @@ This is the production `main.py` composition, not a sidecar, upstream-tool proxy
 Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
 Operator/OIDC bearers remain confined to `/v1/operator/...`; external OAuth/DCR enrollment and
 browser-origin access are not implemented. No public ingress or harness deployment is added here.
+Staging's current `egresspolicy-agentplane-actions.yaml` permits only the REST paths; deploying
+Sandbox MCP clients also requires an explicit `/mcp` egress allowance with the same workload
+credential substitution. The protocol tests exercise substitution at that boundary, not a claim
+that the current cluster policy already permits the new route.
 
 | Tool                         | Use                                                                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
