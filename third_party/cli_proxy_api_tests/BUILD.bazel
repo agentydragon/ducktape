@@ -1,0 +1,32 @@
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_test")
+
+oci_layout_rloc(
+    name = "image_layout",
+    image = "@ducktape_cli_proxy_api//:image",
+)
+
+py_test(
+    name = "test_image",
+    srcs = ["test_image.py"],
+    data = [
+        ":image_layout",
+        "@crane",
+    ],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":test_image",
+        "@ducktape_cli_proxy_api//:tests",
+    ],
+)

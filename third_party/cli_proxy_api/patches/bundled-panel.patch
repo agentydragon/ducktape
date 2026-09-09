@@ -1,0 +1,71 @@
+diff --git a/internal/managementasset/updater.go b/internal/managementasset/updater.go
+index b967d29..a2fa003 100644
+--- a/internal/managementasset/updater.go
++++ b/internal/managementasset/updater.go
+@@ -105,6 +105,9 @@ func runAutoUpdater(ctx context.Context) {
+ }
+ 
+ func autoUpdateSkipReason(cfg *config.Config) (string, bool) {
++	if os.Getenv("MANAGEMENT_STATIC_READONLY") == "true" {
++		return "bundled management panel is read-only", true
++	}
+ 	if cfg == nil {
+ 		return "config not yet available", true
+ 	}
+@@ -189,6 +192,12 @@ func FilePath(configFilePath string) string {
+ // EnsureLatestManagementHTML checks the latest management.html asset and updates the local copy when needed.
+ // It coalesces concurrent sync attempts and returns whether the asset exists after the sync attempt.
+ func EnsureLatestManagementHTML(ctx context.Context, staticDir string, proxyURL string, panelRepository string) bool {
++	// Image builders can require the bundled panel even when runtime config enables
++	// updates. Never fetch a replacement, including when the bundle is missing.
++	if os.Getenv("MANAGEMENT_STATIC_READONLY") == "true" {
++		info, err := os.Stat(filepath.Join(staticDir, managementAssetName))
++		return err == nil && info.Mode().IsRegular()
++	}
+ 	if ctx == nil {
+ 		ctx = context.Background()
+ 	}
+diff --git a/internal/managementasset/updater_test.go b/internal/managementasset/updater_test.go
+index 29e6a78..0cece16 100644
+--- a/internal/managementasset/updater_test.go
++++ b/internal/managementasset/updater_test.go
+@@ -3,6 +3,8 @@ package managementasset
+ import (
+ 	"net/http"
+ 	"net/http/httptest"
++	"os"
++	"path/filepath"
+ 	"testing"
+ 
+ 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+@@ -119,3 +121,30 @@ func TestAutoUpdateSkipReason(t *testing.T) {
+ 		})
+ 	}
+ }
++
++func TestReadOnlyPanelNeverDownloads(t *testing.T) {
++	t.Setenv("MANAGEMENT_STATIC_READONLY", "true")
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		t.Error("read-only panel made an HTTP request")
++		w.WriteHeader(500)
++	}))
++	defer server.Close()
++	if _, skip := autoUpdateSkipReason(&config.Config{}); !skip {
++		t.Fatal("background updater enabled")
++	}
++	dir := t.TempDir()
++	if EnsureLatestManagementHTML(t.Context(), dir, "", server.URL) {
++		t.Fatal("missing bundled panel accepted")
++	}
++	path := filepath.Join(dir, managementAssetName)
++	if err := os.WriteFile(path, []byte("pinned panel"), 0600); err != nil {
++		t.Fatal(err)
++	}
++	if !EnsureLatestManagementHTML(t.Context(), dir, "", server.URL) {
++		t.Fatal("bundled panel rejected")
++	}
++	contents, err := os.ReadFile(path)
++	if err != nil || string(contents) != "pinned panel" {
++		t.Fatal("bundled panel changed")
++	}
++}

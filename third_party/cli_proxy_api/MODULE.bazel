@@ -1,0 +1,85 @@
+module(
+    name = "ducktape_cli_proxy_api",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "rules_nodejs", version = "6.7.5")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node", isolate = True)
+node.toolchain(node_version = "24.13.0")
+use_repo(node, "nodejs_linux_amd64")
+
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm.pnpm(
+    pnpm_version = "9.15.9",
+    pnpm_version_integrity = "sha512-aARhQYk8ZvrQHAeSMRKOmvuJ74fiaR1p5NQO7iKJiClf1GghgbrlW1hBjDolO95lpQXsfF+UA+zlzDzTfc8lMQ==",
+)
+use_repo(pnpm, "pnpm")
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = True)
+npm.npm_translate_lock(
+    name = "npm_cli_proxy_webui",
+    lifecycle_hooks = {"*": []},
+    link_workspace = "cli_proxy_webui",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    # Upstream imports these transitive dependencies from its flat Bun install.
+    public_hoist_packages = {
+        "@codemirror/search": [""],
+        "@codemirror/state": [""],
+        "@codemirror/view": [""],
+        "motion-dom": [""],
+        "react-router": [""],
+    },
+    update_pnpm_lock = False,
+    use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
+)
+use_repo(npm, "npm_cli_proxy_webui")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "cli_proxy_webui",
+    build_file = "//:webui.BUILD.bazel",
+    patch_args = ["-p1"],
+    patches = ["//patches:frontend.patch"],
+    sha256 = "06531b11071292dfa61fa0713232371611a821e9505d48d6ef66407dec160a6e",
+    strip_prefix = "Cli-Proxy-API-Management-Center-ed5f1c48e11ba7335f1e8f676f228c280196af85",
+    urls = ["https://github.com/router-for-me/Cli-Proxy-API-Management-Center/archive/ed5f1c48e11ba7335f1e8f676f228c280196af85.tar.gz"],
+)
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "cli_proxy_distroless_cc",
+    digest = "sha256:e1cc90d06703f5dc30ae869fbfce78fce688f21a97efecd226375233a882e62f",
+    image = "gcr.io/distroless/cc-debian13",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "cli_proxy_distroless_cc_linux_amd64")
+
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.26.4")
+
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", isolate = True)
+go_deps.from_file(go_mod = "//:go.mod")
+go_deps.module(
+    path = "github.com/router-for-me/CLIProxyAPI/v7",
+    version = "v7.0.0-20260908173309-7fac6b15bcfe",
+)
+go_deps.archive_override(
+    patch_strip = 1,
+    patches = [
+        "//patches:management-oidc.patch",
+        "//patches:bundled-panel.patch",
+        "//patches:bazel.patch",
+    ],
+    path = "github.com/router-for-me/CLIProxyAPI/v7",
+    sha256 = "3f829041f62175a546750520d1c160cba1a7618d30f17618731e250c048d77e5",
+    strip_prefix = "CLIProxyAPI-7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974",
+    urls = ["https://github.com/router-for-me/CLIProxyAPI/archive/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974.tar.gz"],
+)
+use_repo(go_deps, "com_github_router_for_me_cliproxyapi_v7")

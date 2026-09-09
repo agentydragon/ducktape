@@ -15,6 +15,11 @@
       "test": "@ducktape_activitywatch//:tests",
       "registry": "forgejo"
     },
+    "cli-proxy-api": {
+      "target": "@ducktape_cli_proxy_api//:image",
+      "test": "//third_party/cli_proxy_api_tests:tests",
+      "registry": "forgejo"
+    },
     "augur": {
       "target": "//finance/augur/api:image",
       "test": "//finance/augur/api/..."

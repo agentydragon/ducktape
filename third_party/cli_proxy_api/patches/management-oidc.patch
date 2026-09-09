@@ -1,0 +1,697 @@
+diff --git a/docs/management-oidc.md b/docs/management-oidc.md
+new file mode 100644
+index 0000000..3f66a80
+--- /dev/null
++++ b/docs/management-oidc.md
+@@ -0,0 +1,34 @@
++# Management browser login with OpenID Connect
++
++Management OIDC is optional and does not change model API authentication. Existing
++management keys remain available for automation. Register an authorization-code
++client with your identity provider and configure these process environment variables:
++
++| Variable | Value |
++| --- | --- |
++| `MANAGEMENT_OIDC_ISSUER` | HTTPS issuer URL; unset disables OIDC |
++| `MANAGEMENT_OIDC_CLIENT_ID` | Registered client ID |
++| `MANAGEMENT_OIDC_CLIENT_SECRET` | Secret for a confidential client |
++| `MANAGEMENT_OIDC_REDIRECT_URL` | `https://<admin-host>/v0/management/callback` |
++| `MANAGEMENT_OIDC_ALLOWED_SUBJECTS` | Comma-separated allowed `sub` values |
++
++Subjects are the exact immutable identifiers issued by the configured provider,
++not email addresses or display names. Configuring OIDC enables management routes
++independently of the management-key remote-access setting. Configuration changes
++require a restart. Issuer and redirect URLs must use HTTPS; terminate TLS at the
++server or a reverse proxy. Serve the management UI on the redirect URL's origin.
++
++A session-aware management UI discovers `GET /v0/management/session`, which returns
++`oidcEnabled` and `authenticated` booleans without requiring credentials. Navigate
++to `GET /v0/management/login` to start login. The callback returns to
++`/management.html`. Cookie-authenticated API requests must send
++`X-Management-CSRF: 1`, including GET requests; foreign Origin headers and cross-site
++fetches are rejected. `POST /v0/management/logout` requires the same header and
++revokes the local browser session. It does not sign out of the identity provider.
++
++Sessions and five-minute login transactions are held in memory, each capped at
++1024 entries. Use one instance or sticky routing. Sessions expire at the earlier
++of one hour and ID-token expiry, and restarting the process revokes all sessions.
++Provider access and refresh tokens are not retained. The backend verifies PKCE,
++browser-bound state, nonce, token signature, issuer, audience, and expiry before
++checking the subject allowlist. Forwarded identity headers do not authenticate.
+diff --git a/go.mod b/go.mod
+index 1f5d12f..797d781 100644
+--- a/go.mod
++++ b/go.mod
+@@ -8,9 +8,11 @@ require (
+ 	github.com/charmbracelet/bubbles v1.0.0
+ 	github.com/charmbracelet/bubbletea v1.3.10
+ 	github.com/charmbracelet/lipgloss v1.1.0
++	github.com/coreos/go-oidc/v3 v3.14.1
+ 	github.com/fsnotify/fsnotify v1.9.0
+ 	github.com/gin-gonic/gin v1.10.1
+ 	github.com/go-git/go-git/v6 v6.0.0-alpha.4.0.20260520124234-0860a7d8a164
++	github.com/go-jose/go-jose/v4 v4.0.5
+ 	github.com/google/uuid v1.6.0
+ 	github.com/gorilla/websocket v1.5.3
+ 	github.com/jackc/pgx/v5 v5.9.2
+diff --git a/go.sum b/go.sum
+index 3d3458d..cc91ffd 100644
+--- a/go.sum
++++ b/go.sum
+@@ -50,6 +50,8 @@ github.com/cloudwego/base64x v0.1.4 h1:jwCgWpFanWmN8xoIUHa2rtzmkd5J2plF/dnLS6Xd/
+ github.com/cloudwego/base64x v0.1.4/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJgA0rcu/8w=
+ github.com/cloudwego/iasm v0.2.0 h1:1KNIy1I1H9hNNFEEH3DVnI4UujN+1zjpuk6gwHLTssg=
+ github.com/cloudwego/iasm v0.2.0/go.mod h1:8rXZaNYT2n95jn+zTI1sDr+IgcD2GVs0nlbbQPiEFhY=
++github.com/coreos/go-oidc/v3 v3.14.1 h1:9ePWwfdwC4QKRlCXsJGou56adA/owXczOzwKdOumLqk=
++github.com/coreos/go-oidc/v3 v3.14.1/go.mod h1:HaZ3szPaZ0e4r6ebqvsLWlk2Tn+aejfmrfah6hnSYEU=
+ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+@@ -79,6 +81,8 @@ github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1 h1:gmqi2jvsreu0s8JMLylYDFq4s
+ github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1/go.mod h1:ECf1MqJlBdYpKggBrOXjo/0EnvRZx6D++I86UYjPgAQ=
+ github.com/go-git/go-git/v6 v6.0.0-alpha.4.0.20260520124234-0860a7d8a164 h1:chk74EHqDOHvIx/WH43JfdLImedxN98qGvEFd7WYgus=
+ github.com/go-git/go-git/v6 v6.0.0-alpha.4.0.20260520124234-0860a7d8a164/go.mod h1:OTUSi3RzPFoC0j/+uxHdVG1X/xXz84QCxLzYvXRvyXk=
++github.com/go-jose/go-jose/v4 v4.0.5 h1:M6T8+mKZl/+fNNuFHvGIzDz7BTLQPIounk/b9dw3AaE=
++github.com/go-jose/go-jose/v4 v4.0.5/go.mod h1:s3P1lRrkT8igV8D9OjyL4WRyHvjB6a4JSllnOrmmBOA=
+ github.com/go-playground/assert/v2 v2.2.0 h1:JvknZsQTYeFEAhQwI4qEt9cyV5ONwRHC+lYKSsYSR8s=
+ github.com/go-playground/assert/v2 v2.2.0/go.mod h1:VDjEfimB/XKnb+ZQfWdccd7VUvScMdVu0Titje2rxJ4=
+ github.com/go-playground/locales v0.14.1 h1:EWaQ/wswjilfKLTECiXz7Rh+3BjFhfDFKv/oXslEjJA=
+diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
+index 0426bb6..bba9935 100644
+--- a/internal/api/handlers/management/handler.go
++++ b/internal/api/handlers/management/handler.go
+@@ -38,6 +38,7 @@ const attemptMaxIdleTime = 2 * time.Hour
+ 
+ // Handler aggregates config reference, persistence path and helpers.
+ type Handler struct {
++	oidc                    *managementOIDC
+ 	cfg                     *config.Config
+ 	configFilePath          string
+ 	mu                      sync.Mutex
+@@ -81,6 +82,11 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
+ 		allowRemoteOverride: envSecret != "",
+ 		envSecret:           envSecret,
+ 	}
++	var err error
++	h.oidc, err = newManagementOIDC()
++	if err != nil {
++		log.Fatal(err)
++	}
+ 	h.startAttemptCleanup()
+ 	return h
+ }
+@@ -260,7 +266,7 @@ func (h *Handler) SetPostAuthPersistHook(hook coreauth.PostAuthHook) {
+ }
+ 
+ // Middleware enforces access control for management endpoints.
+-// All requests (local and remote) require a valid management key.
++// Requests require a valid management key or an authorized OIDC browser session.
+ // Additionally, remote access requires allow-remote-management=true.
+ func (h *Handler) Middleware() gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+@@ -269,6 +275,20 @@ func (h *Handler) Middleware() gin.HandlerFunc {
+ 		c.Header("X-CPA-BUILD-DATE", buildinfo.BuildDate)
+ 		c.Header("X-CPA-SUPPORT-PLUGIN", pluginhost.SupportPluginHeaderValue())
+ 
++		if h.OIDCEnabled() && c.GetHeader("Authorization") == "" && c.GetHeader("X-Management-Key") == "" {
++			if _, ok := h.oidc.session(c); ok {
++				c.Header("Cache-Control", "no-store")
++				if !h.oidc.sameOrigin(c) {
++					c.AbortWithStatus(http.StatusForbidden)
++					return
++				}
++				c.Next()
++				return
++			}
++			// Expired browser sessions are not failed management-key attempts.
++			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "management login required"})
++			return
++		}
+ 		clientIP := c.ClientIP()
+ 		localClient := clientIP == "127.0.0.1" || clientIP == "::1"
+ 
+diff --git a/internal/api/handlers/management/oidc.go b/internal/api/handlers/management/oidc.go
+new file mode 100644
+index 0000000..1ffbf0f
+--- /dev/null
++++ b/internal/api/handlers/management/oidc.go
+@@ -0,0 +1,249 @@
++package management
++
++import (
++	"context"
++	"crypto/rand"
++	"encoding/base64"
++	"fmt"
++	"net/http"
++	"net/url"
++	"os"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/coreos/go-oidc/v3/oidc"
++	"github.com/gin-gonic/gin"
++	"golang.org/x/oauth2"
++)
++
++const (
++	sessionCookie  = "__Host-management-session"
++	flowCookie     = "__Host-management-login"
++	maxOIDCEntries = 1024
++)
++
++type oidcFlow struct {
++	state, nonce, verifier string
++	expires                time.Time
++}
++type oidcSession struct {
++	subject string
++	expires time.Time
++}
++
++// OIDC configuration is immutable for the lifetime of the process. Sessions and
++// login transactions are local to this instance; restart revokes all of them.
++type managementOIDC struct {
++	mu       sync.Mutex
++	issuer   string
++	clientID string
++	secret   string
++	redirect string
++	origin   string
++	subjects map[string]bool
++	flows    map[string]oidcFlow
++	sessions map[string]oidcSession
++	provider *oidc.Provider
++	oauth    oauth2.Config
++}
++
++func newManagementOIDC() (*managementOIDC, error) {
++	issuer := strings.TrimSpace(os.Getenv("MANAGEMENT_OIDC_ISSUER"))
++	if issuer == "" {
++		return nil, nil
++	}
++	o := &managementOIDC{issuer: issuer, clientID: os.Getenv("MANAGEMENT_OIDC_CLIENT_ID"), secret: os.Getenv("MANAGEMENT_OIDC_CLIENT_SECRET"), redirect: os.Getenv("MANAGEMENT_OIDC_REDIRECT_URL"), subjects: map[string]bool{}, flows: map[string]oidcFlow{}, sessions: map[string]oidcSession{}}
++	for _, sub := range strings.Split(os.Getenv("MANAGEMENT_OIDC_ALLOWED_SUBJECTS"), ",") {
++		if sub = strings.TrimSpace(sub); sub != "" {
++			o.subjects[sub] = true
++		}
++	}
++	for _, raw := range []string{o.issuer, o.redirect} {
++		u, err := url.Parse(raw)
++		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
++			return nil, fmt.Errorf("management OIDC requires HTTPS issuer and redirect URLs without credentials, query or fragment")
++		}
++	}
++	u, _ := url.Parse(o.redirect)
++	if u.Path != "/v0/management/callback" {
++		return nil, fmt.Errorf("management OIDC redirect path must be /v0/management/callback")
++	}
++	o.origin = "https://" + u.Host
++	if o.clientID == "" || len(o.subjects) == 0 {
++		return nil, fmt.Errorf("management OIDC requires client ID and a nonempty subject allowlist")
++	}
++	return o, nil
++}
++
++func (h *Handler) OIDCEnabled() bool { return h != nil && h.oidc != nil }
++
++func randomOIDCToken() string {
++	b := make([]byte, 32)
++	if _, err := rand.Read(b); err != nil {
++		panic(err)
++	}
++	return base64.RawURLEncoding.EncodeToString(b)
++}
++
++func setOIDCCookie(c *gin.Context, name, value string, age int) {
++	http.SetCookie(c.Writer, &http.Cookie{Name: name, Value: value, Path: "/", MaxAge: age, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
++}
++
++func (o *managementOIDC) pruneLocked() {
++	now := time.Now()
++	for k, v := range o.flows {
++		if !now.Before(v.expires) {
++			delete(o.flows, k)
++		}
++	}
++	for k, v := range o.sessions {
++		if !now.Before(v.expires) {
++			delete(o.sessions, k)
++		}
++	}
++}
++
++func (o *managementOIDC) session(c *gin.Context) (oidcSession, bool) {
++	key, err := c.Cookie(sessionCookie)
++	if err != nil {
++		return oidcSession{}, false
++	}
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	o.pruneLocked()
++	s, ok := o.sessions[key]
++	return s, ok
++}
++
++// A non-simple header protects even legacy management GET handlers that mutate
++// state. Origin is compared with configuration, never forwarded/request headers.
++func (o *managementOIDC) sameOrigin(c *gin.Context) bool {
++	origin := c.GetHeader("Origin")
++	return c.GetHeader("X-Management-CSRF") == "1" && (origin == "" || origin == o.origin) && c.GetHeader("Sec-Fetch-Site") != "cross-site"
++}
++
++func (h *Handler) ManagementSession(c *gin.Context) {
++	c.Header("Cache-Control", "no-store")
++	authenticated := false
++	if h.OIDCEnabled() {
++		_, authenticated = h.oidc.session(c)
++	}
++	c.JSON(http.StatusOK, gin.H{"oidcEnabled": h.OIDCEnabled(), "authenticated": authenticated})
++}
++
++func (o *managementOIDC) initialize(ctx context.Context) error {
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	if o.provider != nil {
++		return nil
++	}
++	provider, err := oidc.NewProvider(ctx, o.issuer)
++	if err != nil {
++		return err
++	}
++	o.provider = provider
++	o.oauth = oauth2.Config{ClientID: o.clientID, ClientSecret: o.secret, RedirectURL: o.redirect, Endpoint: provider.Endpoint(), Scopes: []string{oidc.ScopeOpenID}}
++	return nil
++}
++
++func (h *Handler) ManagementLogin(c *gin.Context) {
++	c.Header("Cache-Control", "no-store")
++	if !h.OIDCEnabled() {
++		c.AbortWithStatus(http.StatusNotFound)
++		return
++	}
++	o := h.oidc
++	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
++	defer cancel()
++	if err := o.initialize(ctx); err != nil {
++		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "identity provider unavailable"})
++		return
++	}
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	o.pruneLocked()
++	if len(o.flows) >= maxOIDCEntries {
++		c.AbortWithStatus(http.StatusTooManyRequests)
++		return
++	}
++	binding := randomOIDCToken()
++	flow := oidcFlow{state: randomOIDCToken(), nonce: randomOIDCToken(), verifier: oauth2.GenerateVerifier(), expires: time.Now().Add(5 * time.Minute)}
++	o.flows[binding] = flow
++	setOIDCCookie(c, flowCookie, binding, 300)
++	c.Redirect(http.StatusFound, o.oauth.AuthCodeURL(flow.state, oidc.Nonce(flow.nonce), oauth2.S256ChallengeOption(flow.verifier)))
++}
++
++func (h *Handler) ManagementCallback(c *gin.Context) {
++	c.Header("Cache-Control", "no-store")
++	c.Header("Referrer-Policy", "no-referrer")
++	if !h.OIDCEnabled() {
++		c.AbortWithStatus(http.StatusNotFound)
++		return
++	}
++	o := h.oidc
++	binding, _ := c.Cookie(flowCookie)
++	setOIDCCookie(c, flowCookie, "", -1)
++	o.mu.Lock()
++	flow, ok := o.flows[binding]
++	delete(o.flows, binding)
++	o.mu.Unlock()
++	if !ok || !time.Now().Before(flow.expires) || c.Query("state") != flow.state || c.Query("code") == "" {
++		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid login transaction"})
++		return
++	}
++	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
++	defer cancel()
++	token, err := o.oauth.Exchange(ctx, c.Query("code"), oauth2.VerifierOption(flow.verifier))
++	if err != nil {
++		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "login failed"})
++		return
++	}
++	raw, ok := token.Extra("id_token").(string)
++	if !ok {
++		c.AbortWithStatus(http.StatusUnauthorized)
++		return
++	}
++	id, err := o.provider.Verifier(&oidc.Config{ClientID: o.clientID}).Verify(ctx, raw)
++	if err != nil || id.Nonce != flow.nonce || !o.subjects[id.Subject] {
++		c.AbortWithStatus(http.StatusForbidden)
++		return
++	}
++	o.mu.Lock()
++	defer o.mu.Unlock()
++	o.pruneLocked()
++	if len(o.sessions) >= maxOIDCEntries {
++		c.AbortWithStatus(http.StatusTooManyRequests)
++		return
++	}
++	if previous, err := c.Cookie(sessionCookie); err == nil {
++		delete(o.sessions, previous)
++	}
++	key := randomOIDCToken()
++	expires := time.Now().Add(time.Hour)
++	if id.Expiry.Before(expires) {
++		expires = id.Expiry
++	}
++	o.sessions[key] = oidcSession{subject: id.Subject, expires: expires}
++	setOIDCCookie(c, sessionCookie, key, int(time.Until(expires).Seconds()))
++	c.Redirect(http.StatusSeeOther, "/management.html")
++}
++
++func (h *Handler) ManagementLogout(c *gin.Context) {
++	c.Header("Cache-Control", "no-store")
++	if !h.OIDCEnabled() {
++		c.AbortWithStatus(http.StatusNotFound)
++		return
++	}
++	o := h.oidc
++	if !o.sameOrigin(c) {
++		c.AbortWithStatus(http.StatusForbidden)
++		return
++	}
++	key, _ := c.Cookie(sessionCookie)
++	o.mu.Lock()
++	delete(o.sessions, key)
++	o.mu.Unlock()
++	setOIDCCookie(c, sessionCookie, "", -1)
++	c.Status(http.StatusNoContent)
++}
+diff --git a/internal/api/handlers/management/oidc_test.go b/internal/api/handlers/management/oidc_test.go
+new file mode 100644
+index 0000000..9638e9a
+--- /dev/null
++++ b/internal/api/handlers/management/oidc_test.go
+@@ -0,0 +1,262 @@
++package management
++
++import (
++	"context"
++	"crypto/rand"
++	"crypto/rsa"
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/coreos/go-oidc/v3/oidc"
++	"github.com/gin-gonic/gin"
++	jose "github.com/go-jose/go-jose/v4"
++	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
++	"golang.org/x/oauth2"
++)
++
++func testOIDC() *managementOIDC {
++	return &managementOIDC{issuer: "https://issuer.example", clientID: "management", redirect: "https://admin.example/v0/management/callback", origin: "https://admin.example", subjects: map[string]bool{"owner": true}, flows: map[string]oidcFlow{}, sessions: map[string]oidcSession{}}
++}
++
++func oidcRequest(handler gin.HandlerFunc, method, target string, cookies []*http.Cookie, headers map[string]string) *httptest.ResponseRecorder {
++	w := httptest.NewRecorder()
++	c, _ := gin.CreateTestContext(w)
++	c.Request = httptest.NewRequest(method, target, nil)
++	for _, cookie := range cookies {
++		c.Request.AddCookie(cookie)
++	}
++	for key, value := range headers {
++		c.Request.Header.Set(key, value)
++	}
++	handler(c)
++	c.Writer.WriteHeaderNow()
++	return w
++}
++
++func TestOIDCManagementBoundary(t *testing.T) {
++	o := testOIDC()
++	o.sessions["valid"] = oidcSession{subject: "owner", expires: time.Now().Add(time.Hour)}
++	h := &Handler{oidc: o, cfg: &config.Config{}, failedAttempts: map[string]*attemptInfo{}}
++	cookie := []*http.Cookie{{Name: sessionCookie, Value: "valid"}}
++	for _, tc := range []struct {
++		name, method string
++		cookies      []*http.Cookie
++		headers      map[string]string
++		status       int
++	}{
++		{"session read", "GET", cookie, map[string]string{"X-Management-CSRF": "1"}, 200},
++		{"session write", "POST", cookie, map[string]string{"X-Management-CSRF": "1", "Origin": o.origin}, 200},
++		{"legacy GET CSRF", "GET", cookie, nil, 403},
++		{"write CSRF", "POST", cookie, nil, 403},
++		{"foreign origin", "POST", cookie, map[string]string{"X-Management-CSRF": "1", "Origin": "https://evil.example"}, 403},
++		{"foreign fetch", "GET", cookie, map[string]string{"X-Management-CSRF": "1", "Sec-Fetch-Site": "cross-site"}, 403},
++		{"identity header spoof", "GET", nil, map[string]string{"X-authentik-uid": "owner", "X-Management-CSRF": "1"}, 401},
++		{"unknown cookie", "GET", []*http.Cookie{{Name: sessionCookie, Value: "fake"}}, map[string]string{"X-Management-CSRF": "1"}, 401},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			w := oidcRequest(h.Middleware(), tc.method, "https://admin.example/v0/management/config", tc.cookies, tc.headers)
++			if w.Code != tc.status {
++				t.Fatalf("got %d want %d: %s", w.Code, tc.status, w.Body)
++			}
++		})
++	}
++	// Explicit credentials retain key authentication and do not fall back to cookies.
++	h.envSecret = "key"
++	h.allowRemoteOverride = true
++	for _, tc := range []struct {
++		key    string
++		status int
++	}{{"key", 200}, {"wrong", 401}} {
++		w := oidcRequest(h.Middleware(), "POST", "https://admin.example/v0/management/config", cookie, map[string]string{"Authorization": "Bearer " + tc.key})
++		if w.Code != tc.status {
++			t.Fatalf("key auth got %d want %d", w.Code, tc.status)
++		}
++	}
++	o.sessions["valid"] = oidcSession{subject: "owner", expires: time.Now().Add(-time.Second)}
++	w := oidcRequest(h.ManagementSession, "GET", "/", cookie, nil)
++	if !strings.Contains(w.Body.String(), `"authenticated":false`) {
++		t.Fatal(w.Body)
++	}
++}
++
++func TestOIDCConfig(t *testing.T) {
++	t.Setenv("MANAGEMENT_OIDC_ISSUER", "https://issuer.example")
++	t.Setenv("MANAGEMENT_OIDC_CLIENT_ID", "management")
++	t.Setenv("MANAGEMENT_OIDC_REDIRECT_URL", "https://admin.example/v0/management/callback")
++	t.Setenv("MANAGEMENT_OIDC_ALLOWED_SUBJECTS", " owner, ")
++	if _, err := newManagementOIDC(); err != nil {
++		t.Fatal(err)
++	}
++	for _, tc := range []struct{ key, value string }{
++		{"MANAGEMENT_OIDC_ISSUER", "http://issuer.example"},
++		{"MANAGEMENT_OIDC_REDIRECT_URL", "https://admin.example/wrong"},
++		{"MANAGEMENT_OIDC_REDIRECT_URL", "https://user:pass@admin.example/v0/management/callback"},
++		{"MANAGEMENT_OIDC_ALLOWED_SUBJECTS", " , "},
++		{"MANAGEMENT_OIDC_CLIENT_ID", ""},
++	} {
++		t.Run(tc.key+tc.value, func(t *testing.T) {
++			t.Setenv(tc.key, tc.value)
++			if _, err := newManagementOIDC(); err == nil {
++				t.Fatal("accepted invalid config")
++			}
++		})
++	}
++}
++
++func TestOIDCLoginCallback(t *testing.T) {
++	key, err := rsa.GenerateKey(rand.Reader, 2048)
++	if err != nil {
++		t.Fatal(err)
++	}
++	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var issuer, rawToken, expectedVerifier string
++	tokenCalls := 0
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		switch r.URL.Path {
++		case "/.well-known/openid-configuration":
++			json.NewEncoder(w).Encode(map[string]any{"issuer": issuer, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token", "jwks_uri": issuer + "/keys", "id_token_signing_alg_values_supported": []string{"RS256"}})
++		case "/keys":
++			json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, Algorithm: "RS256", Use: "sig"}}})
++		case "/token":
++			tokenCalls++
++			if err := r.ParseForm(); err != nil {
++				t.Error(err)
++			}
++			if r.Form.Get("code_verifier") != expectedVerifier {
++				t.Error("missing PKCE verifier")
++			}
++			json.NewEncoder(w).Encode(map[string]any{"access_token": "unused", "token_type": "Bearer", "id_token": rawToken})
++		default:
++			http.NotFound(w, r)
++		}
++	}))
++	defer server.Close()
++	issuer = server.URL
++	provider, err := oidc.NewProvider(context.Background(), issuer)
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, tc := range []struct {
++		name, sub, nonce, audience, tokenIssuer, state string
++		expired                                        bool
++		status                                         int
++	}{
++		{"authorized", "owner", "nonce", "management", issuer, "state", false, 303},
++		{"tampered signature", "owner", "nonce", "management", issuer, "state", false, 403},
++		{"wrong subject", "other", "nonce", "management", issuer, "state", false, 403},
++		{"wrong nonce", "owner", "other", "management", issuer, "state", false, 403},
++		{"wrong audience", "owner", "nonce", "other", issuer, "state", false, 403},
++		{"wrong issuer", "owner", "nonce", "management", "https://evil.example", "state", false, 403},
++		{"expired token", "owner", "nonce", "management", issuer, "state", true, 403},
++		{"wrong state", "owner", "nonce", "management", issuer, "other", false, 400},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			o := testOIDC()
++			o.provider = provider
++			o.oauth = oauth2.Config{ClientID: o.clientID, Endpoint: provider.Endpoint(), RedirectURL: o.redirect}
++			expectedVerifier = oauth2.GenerateVerifier()
++			o.flows["binding"] = oidcFlow{state: "state", nonce: "nonce", verifier: expectedVerifier, expires: time.Now().Add(time.Minute)}
++			expiry := time.Now().Add(time.Hour)
++			if tc.expired {
++				expiry = time.Now().Add(-time.Hour)
++			}
++			payload, _ := json.Marshal(map[string]any{"iss": tc.tokenIssuer, "sub": tc.sub, "aud": tc.audience, "exp": expiry.Unix(), "iat": time.Now().Unix(), "nonce": tc.nonce})
++			signed, err := signer.Sign(payload)
++			if err != nil {
++				t.Fatal(err)
++			}
++			rawToken, err = signed.CompactSerialize()
++			if err != nil {
++				t.Fatal(err)
++			}
++			if tc.name == "tampered signature" {
++				rawToken += "x"
++			}
++			h := &Handler{oidc: o}
++			cookies := []*http.Cookie{{Name: flowCookie, Value: "binding"}}
++			before := tokenCalls
++			w := oidcRequest(h.ManagementCallback, "GET", "/v0/management/callback?state="+tc.state+"&code=code", cookies, nil)
++			if w.Code != tc.status {
++				t.Fatalf("got %d want %d: %s", w.Code, tc.status, w.Body)
++			}
++			if tc.state != "state" && tokenCalls != before {
++				t.Fatal("exchanged code before state verification")
++			}
++			replay := oidcRequest(h.ManagementCallback, "GET", "/v0/management/callback?state=state&code=code", cookies, nil)
++			if replay.Code != 400 {
++				t.Fatal("accepted replay")
++			}
++			if tc.status == 303 {
++				var session *http.Cookie
++				for _, cookie := range w.Result().Cookies() {
++					if cookie.Name == sessionCookie {
++						session = cookie
++					}
++				}
++				if session == nil || !session.Secure || !session.HttpOnly || session.SameSite != http.SameSiteLaxMode || session.Path != "/" || session.Domain != "" {
++					t.Fatal("unsafe session cookie")
++				}
++				blocked := oidcRequest(h.ManagementLogout, "POST", "/", []*http.Cookie{session}, nil)
++				if blocked.Code != 403 || len(o.sessions) != 1 {
++					t.Fatal("logout allowed CSRF")
++				}
++				out := oidcRequest(h.ManagementLogout, "POST", "/", []*http.Cookie{session}, map[string]string{"X-Management-CSRF": "1", "Origin": o.origin})
++				if out.Code != 204 || len(o.sessions) != 0 {
++					t.Fatal("logout did not revoke session")
++				}
++			} else if len(o.sessions) != 0 {
++				t.Fatal("unauthorized session created")
++			}
++		})
++	}
++	o := testOIDC()
++	o.provider = provider
++	o.oauth = oauth2.Config{ClientID: o.clientID, Endpoint: provider.Endpoint(), RedirectURL: o.redirect}
++	h := &Handler{oidc: o}
++	w := oidcRequest(h.ManagementLogin, "GET", "/", nil, nil)
++	redirect, err := url.Parse(w.Header().Get("Location"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if w.Code != 302 || redirect.Query().Get("code_challenge_method") != "S256" || redirect.Query().Get("nonce") == "" || redirect.Query().Get("state") == "" {
++		t.Fatal("missing PKCE/state/nonce")
++	}
++	for i := 0; i < maxOIDCEntries; i++ {
++		o.flows[randomOIDCToken()] = oidcFlow{expires: time.Now().Add(time.Minute)}
++	}
++	if oidcRequest(h.ManagementLogin, "GET", "/", nil, nil).Code != 429 {
++		t.Fatal("unbounded login transactions")
++	}
++}
++
++func TestOIDCCallbackBrowserBinding(t *testing.T) {
++	for _, tc := range []struct {
++		name, cookie string
++		expired      bool
++	}{
++		{"missing cookie", "", false}, {"tampered cookie", "other", false}, {"expired transaction", "binding", true},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			o := testOIDC()
++			expiry := time.Now().Add(time.Minute)
++			if tc.expired {
++				expiry = time.Now().Add(-time.Minute)
++			}
++			o.flows["binding"] = oidcFlow{state: "state", expires: expiry}
++			h := &Handler{oidc: o}
++			w := oidcRequest(h.ManagementCallback, "GET", "/v0/management/callback?state=state&code=code", []*http.Cookie{{Name: flowCookie, Value: tc.cookie}}, nil)
++			if w.Code != 400 || len(o.sessions) != 0 {
++				t.Fatal("accepted unbound or expired callback")
++			}
++		})
++	}
++}
+diff --git a/internal/api/server.go b/internal/api/server.go
+index f12ff4b..8c2a109 100644
+--- a/internal/api/server.go
++++ b/internal/api/server.go
+@@ -232,7 +232,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+ 
+ 	// Register management routes when configuration or environment secrets are available,
+ 	// or when a local management password is provided (e.g. TUI mode).
+-	hasManagementSecret := cfg.RemoteManagement.SecretKey != "" || envManagementSecret || s.localPassword != ""
++	hasManagementSecret := cfg.RemoteManagement.SecretKey != "" || envManagementSecret || s.localPassword != "" || s.mgmt.OIDCEnabled()
+ 	s.managementRoutesEnabled.Store(hasManagementSecret)
+ 	redisqueue.SetEnabled(hasManagementSecret || (cfg != nil && cfg.Home.Enabled))
+ 	if hasManagementSecret {
+diff --git a/internal/api/server_management.go b/internal/api/server_management.go
+index fef0889..6f77213 100644
+--- a/internal/api/server_management.go
++++ b/internal/api/server_management.go
+@@ -24,6 +24,11 @@ func (s *Server) registerManagementRoutes() {
+ 	s.engine.POST("/v0/management/oauth-callback", s.managementAvailabilityMiddleware(), s.mgmt.PostOAuthCallback)
+ 	s.engine.GET("/v0/management/oauth-callback", s.managementAvailabilityMiddleware(), s.mgmt.GetOAuthCallback)
+ 
++	s.engine.GET("/v0/management/session", s.managementAvailabilityMiddleware(), s.mgmt.ManagementSession)
++	s.engine.GET("/v0/management/login", s.managementAvailabilityMiddleware(), s.mgmt.ManagementLogin)
++	s.engine.GET("/v0/management/callback", s.managementAvailabilityMiddleware(), s.mgmt.ManagementCallback)
++	s.engine.POST("/v0/management/logout", s.managementAvailabilityMiddleware(), s.mgmt.ManagementLogout)
++
+ 	mgmt := s.engine.Group("/v0/management")
+ 	mgmt.Use(s.managementAvailabilityMiddleware(), s.mgmt.Middleware())
+ 	{
+diff --git a/internal/api/server_reload.go b/internal/api/server_reload.go
+index fb867ea..bf75196 100644
+--- a/internal/api/server_reload.go
++++ b/internal/api/server_reload.go
+@@ -131,7 +131,7 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
+ 		prevSecretEmpty = oldCfg.RemoteManagement.SecretKey == ""
+ 	}
+ 	newSecretEmpty := cfg.RemoteManagement.SecretKey == ""
+-	if s.envManagementSecret {
++	if s.envManagementSecret || s.mgmt.OIDCEnabled() {
+ 		s.registerManagementRoutes()
+ 		if s.managementRoutesEnabled.CompareAndSwap(false, true) {
+ 			log.Info("management routes enabled via MANAGEMENT_PASSWORD")

@@ -1,0 +1,51 @@
+diff --git a/internal/api/handlers/management/BUILD.bazel b/internal/api/handlers/management/BUILD.bazel
+--- a/internal/api/handlers/management/BUILD.bazel
++++ b/internal/api/handlers/management/BUILD.bazel
+@@ -18,6 +18,7 @@
+         "logs.go",
+         "model_definitions.go",
+         "oauth_callback.go",
++        "oidc.go",
+         "oauth_sessions.go",
+         "plugin_store.go",
+         "plugin_store_release.go",
+@@ -53,7 +54,9 @@
+         "//sdk/config",
+         "//sdk/pluginapi",
+         "//sdk/proxyutil",
++        "@com_github_coreos_go_oidc_v3//oidc",
+         "@com_github_gin_gonic_gin//:gin",
++        "@org_golang_x_oauth2//:oauth2",
+         "@com_github_sirupsen_logrus//:logrus",
+         "@com_github_tidwall_gjson//:gjson",
+         "@in_gopkg_yaml_v3//:yaml_v3",
+@@ -124,3 +127,18 @@
+         "@in_gopkg_yaml_v3//:yaml_v3",
+     ],
+ )
++
++# OIDC boundary coverage is independently runnable from unrelated upstream tests.
++go_test(
++    name = "oidc_test",
++    srcs = ["oidc_test.go"],
++    embed = [":management"],
++    deps = [
++        "//internal/config",
++        "@com_github_coreos_go_oidc_v3//oidc",
++        "@com_github_gin_gonic_gin//:gin",
++        "@com_github_go_jose_go_jose_v4//:go-jose",
++        "@org_golang_x_oauth2//:oauth2",
++    ],
++    visibility = ["//visibility:public"],
++)
+diff --git a/internal/managementasset/BUILD.bazel b/internal/managementasset/BUILD.bazel
+--- a/internal/managementasset/BUILD.bazel
++++ b/internal/managementasset/BUILD.bazel
+@@ -24,6 +24,7 @@
+ 
+ go_test(
+     name = "managementasset_test",
++    visibility = ["//visibility:public"],
+     srcs = ["updater_test.go"],
+     embed = [":managementasset"],
+     deps = ["//internal/config"],
