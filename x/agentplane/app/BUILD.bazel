@@ -76,7 +76,10 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
-    data = ["//x/agentplane/app/frontend:bundle"],  # keep: the SPA the server mounts
+    data = [
+        "agent_instructions.md",
+        "//x/agentplane/app/frontend:bundle",  # keep: the SPA the server mounts
+    ],
     deps = [
         ":action_federation",
         ":api",

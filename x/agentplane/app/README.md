@@ -206,10 +206,11 @@ the current configured default instead of freezing a copied form.
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
 persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
-available when no preset is selected. Every launch prepends `agent_instructions` from the app
-configuration to the task or preset instructions, including direct `SessionSpec` API launches.
-That shared block teaches agents the platform's egress and Actions Service protocol; a preset and
-the per-turn task remain the place for workload-specific constraints and the requested outcome.
+available when no preset is selected. Every launch prepends the image's `agent_instructions.md` to
+the task or preset instructions, including direct `SessionSpec` API launches. A configured
+`agent_instructions` key replaces that image default, including an explicitly empty value. The
+shared block teaches agents the platform's egress and Actions Service protocol; a preset and the
+per-turn task remain the place for workload-specific constraints and the requested outcome.
 
 ## Decisions
 

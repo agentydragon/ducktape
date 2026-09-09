@@ -39,6 +39,7 @@ from x.agentplane.app.trajectory import TrajectoryStore
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
+DEFAULT_AGENT_INSTRUCTIONS = "_main/x/agentplane/app/agent_instructions.md"
 
 
 logger = logging.getLogger(__name__)
@@ -99,8 +100,9 @@ class Settings(BaseSettings):
     thread_presets: dict[str, ThreadPreset] = Field(
         default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
     )
-    agent_instructions: str = Field(
-        default="", description="Operational instructions prepended to every Agentplane-launched session."
+    agent_instructions: str | None = Field(
+        default=None,
+        description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
     )
     default_policies: list[str] = Field(
         default_factory=list,
@@ -146,6 +148,13 @@ class Settings(BaseSettings):
             sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
         sources.append(file_secret_settings)
         return tuple(sources)
+
+
+def resolved_agent_instructions(configured: str | None) -> str:
+    """Use the image-owned instructions unless deployment configuration explicitly replaces them."""
+    if configured is not None:
+        return configured
+    return get_required_path(DEFAULT_AGENT_INSTRUCTIONS).read_text(encoding="utf-8")
 
 
 def main() -> None:
@@ -215,7 +224,7 @@ async def async_main(settings: Settings) -> None:
             presets=PresetCatalog(
                 sandboxes=settings.sandbox_presets,
                 threads=settings.thread_presets,
-                agent_instructions=settings.agent_instructions,
+                agent_instructions=resolved_agent_instructions(settings.agent_instructions),
             ),
         )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.

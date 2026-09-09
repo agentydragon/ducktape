@@ -9,7 +9,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from x.agentplane.app.main import Settings, SpaFiles
+from x.agentplane.app.main import Settings, SpaFiles, resolved_agent_instructions
 from x.agentplane.app.oidc import load_settings
 
 # gazelle:include_dep @pypi//httpx
@@ -75,6 +75,11 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     )
     # https, so the cookie takes the __Host- prefix that binds it to this exact origin.
     assert oidc.cookie_name.startswith("__Host-")
+
+
+def test_image_instructions_are_the_default_and_config_can_override_them() -> None:
+    assert "The Actions Service is available" in resolved_agent_instructions(None)
+    assert resolved_agent_instructions("deployment instructions") == "deployment instructions"
 
 
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:
