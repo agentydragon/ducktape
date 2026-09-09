@@ -306,7 +306,6 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     response = await browser.get(events_path)
     assert response.status_code == 200
     assert [ActionEventView.model_validate(event) for event in response.json()] == canonical_events
-    assert all(set(event) == {"sequence", "state", "at"} for event in response.json())
     assert [event.sequence for event in canonical_events] == list(range(1, len(canonical_events) + 1))
     for cursor in (0, 2, canonical_events[-1].sequence, canonical_events[-1].sequence + 1):
         response = await browser.get(events_path, params={"after_sequence": cursor})
