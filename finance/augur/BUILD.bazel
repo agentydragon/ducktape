@@ -2,6 +2,9 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# The Rust extension has no Python source for Gazelle's import scan.
+# gazelle:resolve py finance.augur.rust.simulator //finance/augur/rust:simulator_ext
+
 # Shared `augur_config` fixture for every augur test tree (api, product). pytest discovers it by
 # walking up from each test; the per-package conftests depend on this target so it lands in their
 # runfiles.

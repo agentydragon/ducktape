@@ -21,10 +21,6 @@ rust_test(
     crate = ":native_invocation",
 )
 
-# `simulator` is a `rust_shared_library` staged as `simulator.so`; there is no `.py` for
-# gazelle's import scan to resolve against.
-# gazelle:resolve py finance.augur.rust.simulator //finance/augur/rust:simulator_ext
-
 rust_library(
     name = "simulator",
     srcs = [
