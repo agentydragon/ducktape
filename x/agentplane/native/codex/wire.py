@@ -345,9 +345,11 @@ class TextInput(BaseModel):
     text_elements: list[Any] = []
 
 
-class TurnStartParams(Wire):
+class TurnStartParams(Wire, OmitNone):
     thread_id: str
     input: list[TextInput]
+    # Codex lets a turn override its thread's original model.
+    model: str | None = None
 
 
 class TurnStartRequest(Wire):
