@@ -1,16 +1,8 @@
-"""Typed identifiers for sim/product asset references.
+"""Asset identity shared by market models, scenario holdings and result consumers.
 
-The `asset_id` column on sim event frames and the `asset_id` field on product
-wire events used to encode the asset's kind in a magic prefix
-(`"private_equity:..."`, `"security:..."`) that Python dispatch sites then matched
-with `.startswith(...)`. That dispatch is now typed: an `AssetKey` is a Pydantic
-discriminated union with a `StrEnum` `kind` discriminator. Scenario lots/sales
-carry the typed key directly (`InitialLot.asset`, `ScheduledAssetSale.asset`,
-`SleeveTarget.asset`); the wire string is recovered by
-`parse_asset_key` only at the frame/wire boundaries that still serialize it.
-
-The wire string format is preserved for serialization (JSON, polars
-columns, fixture YAML). Producers obtain it via `AssetKey.wire_id`.
+Security keys identify price series; private-equity keys identify issuers in a
+typed bundle. Frame/wire boundaries serialize these keys through `wire_id` and
+`parse_asset_key`; identity does not depend on the app or an execution strategy.
 """
 
 from __future__ import annotations

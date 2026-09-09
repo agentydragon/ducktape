@@ -28,8 +28,8 @@ from pydantic import (
 )
 
 from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
+from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
-from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"

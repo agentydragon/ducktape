@@ -6,8 +6,8 @@ py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = [
-        ":asset_key",
         "//finance/augur/api:schemas",
+        "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/sim:fixed_point",
         "@pypi//pydantic",
@@ -18,11 +18,11 @@ py_library(
     name = "scenarios",
     srcs = ["scenarios.py"],
     deps = [
-        ":asset_key",
         ":wire",
         "//finance/augur/api:config",
         "//finance/augur/api:portfolio",
         "//finance/augur/api:wire",
+        "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:locations",
@@ -33,23 +33,11 @@ py_library(
 )
 
 py_library(
-    name = "metric_composition",
-    srcs = ["metric_composition.py"],
-    deps = ["@pypi//numpy"],
-)
-
-py_library(
-    name = "quantiles",
-    srcs = ["quantiles.py"],
-    deps = ["@pypi//numpy"],
-)
-
-py_library(
     name = "projection",
     srcs = ["projection.py"],
     deps = [
-        ":asset_key",
         ":wire",
+        "//finance/augur/model:asset_key",
         "//finance/augur/sim:events",
         "//finance/augur/sim:product_metrics",
         "//finance/augur/sim:scenario",
@@ -63,7 +51,6 @@ py_library(
     srcs = ["service.py"],
     deps = [
         ":projection",
-        ":quantiles",
         ":scenarios",
         ":wire",
         "//finance/augur/api:config",
@@ -76,6 +63,7 @@ py_library(
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:product_metrics",
+        "//finance/augur/sim:quantiles",
         "//finance/augur/sim:runtime",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/compiler:series",
@@ -87,11 +75,11 @@ py_library(
     name = "portfolio",
     srcs = ["portfolio.py"],
     deps = [
-        ":asset_key",
         ":wire",
         "//finance/augur/api:finance",
         "//finance/augur/api:portfolio",
         "//finance/augur/api:schemas",
+        "//finance/augur/model:asset_key",
         "//finance/augur/sim:fixed_point",
         "@pypi//pydantic",
     ],
@@ -176,9 +164,7 @@ py_test(
         "//finance/augur/api:public_fixture_properties",
     ],
     deps = [
-        ":asset_key",
         ":conftest",
-        ":quantiles",
         ":scenarios",
         ":service",
         ":testing",
@@ -188,6 +174,7 @@ py_test(
         "//finance/augur/api:config",
         "//finance/augur/api:finance",
         "//finance/augur/api:wire",
+        "//finance/augur/model:asset_key",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:independent",
         "//finance/augur/model:provider_config",
@@ -196,6 +183,7 @@ py_test(
         "//finance/augur/rust:backend",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:product_metrics",
+        "//finance/augur/sim:quantiles",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
         "@pypi//more_itertools",
@@ -230,16 +218,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "asset_key",
-    srcs = ["asset_key.py"],
-    deps = [
-        "//finance/augur/model:schemas",
-        "//finance/augur/model:series",
-        "@pypi//pydantic",
     ],
 )
 

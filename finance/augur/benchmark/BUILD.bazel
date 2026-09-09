@@ -11,9 +11,9 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
+        "//finance/augur/model:asset_key",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:tlh_harvest",

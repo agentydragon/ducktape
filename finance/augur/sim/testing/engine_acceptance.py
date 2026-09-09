@@ -23,11 +23,11 @@ import polars as pl
 import pytest
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
-from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.sim.backend import CompiledRun, Engine, compile_run
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
+from finance.augur.sim.metric_composition import METRIC_NAMES
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     Agent,

@@ -17,6 +17,7 @@ from decimal import Decimal
 import numpy as np
 from jaxtyping import Float64
 
+from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
     HomeValueKey,
@@ -31,7 +32,6 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,

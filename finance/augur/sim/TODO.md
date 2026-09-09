@@ -264,10 +264,6 @@ recovery cashouts. Still missing:
 
 ## Refactor follow-ups
 
-- **`MetricSeries` / `MetricValue` need not be Protocols.** They exist in
-  `product/metric_composition.py` only because two backends' array types (numpy
-  host arrays and `jnp` device arrays) could not be named together. One backend
-  remains, so name the concrete type (STYLE.md § General: Protocol is a smell).
 - **Settle what a mark published during the failure month reports.** The engine
   stops at the phase that could not pay; reporting the whole failure month is
   the other defensible answer. It was previously pinned as a per-engine

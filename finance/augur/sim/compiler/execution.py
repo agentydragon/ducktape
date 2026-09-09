@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 from jaxtyping import Float64, Int64
 
+from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
     HomeValueKey,
@@ -24,7 +25,6 @@ from finance.augur.model.series import (
     SecurityDistributionKey,
     SecurityKey,
 )
-from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.sim.compiler.helpers import StringTable
 from finance.augur.sim.compiler.private_equity import PEChannels, compile_pe_channels
 from finance.augur.sim.compiler.series import (

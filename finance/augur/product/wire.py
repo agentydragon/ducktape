@@ -24,8 +24,8 @@ from finance.augur.api.schemas import (
     Percentage,
     PositiveCurrencyAmount,
 )
+from finance.augur.model.asset_key import AssetKey
 from finance.augur.model.series import SecuritySymbol
-from finance.augur.product.asset_key import AssetKey
 from finance.augur.sim.fixed_point import validate_currency_quantum
 
 

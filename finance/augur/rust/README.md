@@ -192,7 +192,7 @@ does not use.
 series plus the per-rollout failure month, under the compact capture mode — no monthly
 snapshot, journal, or event trace. `backend.py` wraps it as the product API's
 `ProductMetricArrays` and `ProductProjectionSummaries`, composing the derived metrics and
-the percentile fan with `product/metric_composition.py` and `product/quantiles.py`.
+the percentile fan with `sim/metric_composition.py` and `sim/quantiles.py`.
 Design, and two behaviours the engine keeps deliberately rather than corrects:
 [docs/product_metrics.md](docs/product_metrics.md).
 

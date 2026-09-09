@@ -23,6 +23,7 @@ from numpyro import distributions as dist
 from pydantic import Field, model_validator
 
 from finance.augur.dates import months_between
+from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.conditioning import (
     ExogenousConditioningContext,
     ObservationTreatment,
@@ -47,7 +48,6 @@ from finance.augur.model.series import SP500_SYMBOL, IssuerId, LevelSeriesKey, S
 from finance.augur.model.series_model import derive_stream_rollout_seeds
 from finance.augur.model.state_space_factor import FactorKey, PrivateEquityMarkKey, parse_factor_key
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityScalePrior, private_equity_soft_cap_penalty
-from finance.augur.product.asset_key import PrivateEquityAssetKey
 
 _MIN_MONTHLY_VARIANCE = 1e-8
 _OFF_BLOCK_SHRINKAGE = 0.0

@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import (
@@ -27,7 +28,6 @@ from finance.augur.model.state_space import (
     write_state_space_artifact,
 )
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityScalePrior
-from finance.augur.product.asset_key import PrivateEquityAssetKey
 
 
 def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Path) -> None:

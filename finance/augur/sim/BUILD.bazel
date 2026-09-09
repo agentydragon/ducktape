@@ -109,7 +109,7 @@ py_library(
     name = "fixed_point",
     srcs = ["fixed_point.py"],
     deps = [
-        "//finance/augur/product:asset_key",
+        "//finance/augur/model:asset_key",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
@@ -175,9 +175,9 @@ py_library(
         ":enums",
         ":fixed_point",
         ":tlh_harvest",
+        "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
-        "//finance/augur/product:asset_key",
         "@pypi//pydantic",
     ],
 )
@@ -191,7 +191,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -233,7 +232,7 @@ py_library(
     name = "product_metrics",
     srcs = ["product_metrics.py"],
     deps = [
-        "//finance/augur/product:metric_composition",
+        ":metric_composition",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
@@ -281,6 +280,30 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/sim/testing:case",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "metric_composition",
+    srcs = ["metric_composition.py"],
+    deps = ["@pypi//numpy"],
+)
+
+py_library(
+    name = "quantiles",
+    srcs = ["quantiles.py"],
+    deps = ["@pypi//numpy"],
+)
+
+py_test(
+    name = "test_quantiles",
+    srcs = ["test_quantiles.py"],
+    deps = [
+        ":quantiles",
+        "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],

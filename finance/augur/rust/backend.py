@@ -18,18 +18,18 @@ from typing import Any, cast, overload
 import numpy as np
 from jaxtyping import Int64
 
-from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_metric, terminal_series
-from finance.augur.product.quantiles import currency_quantile_plan, interpolate_currency_quantiles
 from finance.augur.rust import simulator
 from finance.augur.rust.event_log import decode_event_log
 from finance.augur.sim.backend import CompiledRun, Engine
 from finance.augur.sim.events import EventLog
+from finance.augur.sim.metric_composition import BASE_METRIC_NAMES, compose_metric, terminal_series
 from finance.augur.sim.product_metrics import (
     ProductMetricArrays,
     ProductMetricFanSummary,
     ProductProjectionSummaries,
     ProductTerminalSummary,
 )
+from finance.augur.sim.quantiles import currency_quantile_plan, interpolate_currency_quantiles
 
 
 def _base_series(metrics: simulator.ProductMetrics) -> tuple[Int64[np.ndarray, " snapshot rollout"], ...]:

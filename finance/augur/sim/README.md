@@ -22,6 +22,10 @@ deterministic product API.
 
 ## Boundaries
 
+- Shared asset identities live in `model/asset_key.py`. Financial metric
+  composition and exact currency percentiles live in <metric_composition.py>
+  and <quantiles.py>. Simulation/model definitions and the Rust adapter do not
+  depend on product or HTTP modules; app projections consume these definitions.
 - `augur/sim/`: validates typed simulation inputs, applies policies/events
   over materialized trajectories, records accounting truth, and returns
   typed distribution results. The durable simulation backend.

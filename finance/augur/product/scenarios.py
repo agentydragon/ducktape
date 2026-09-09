@@ -10,8 +10,8 @@ from more_itertools import one
 from finance.augur.api.config import Config, LocationConfig, SecurityDistributionConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
+from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
-from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,

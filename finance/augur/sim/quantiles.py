@@ -1,4 +1,4 @@
-"""Exact percentile interpolation for integer currency quantum counts."""
+"""Exact currency percentile arithmetic shared by engine and app reductions."""
 
 from __future__ import annotations
 

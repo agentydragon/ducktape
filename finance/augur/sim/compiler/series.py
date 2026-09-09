@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 import numpy as np
 from jaxtyping import Bool, Float64, Int64
 
+from finance.augur.model.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
@@ -21,7 +22,6 @@ from finance.augur.model.series import (
     SecurityDistributionKey,
     SecurityKey,
 )
-from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.fixed_point import sampled_array_to_per_unit_rate, sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 

@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from finance.augur.product.asset_key import AssetKey, parse_asset_key
+from finance.augur.model.asset_key import AssetKey, parse_asset_key
 from finance.augur.product.wire import (
     ROLLOUT_EVENT_KIND_ORDER,
     CapitalImprovementMarkerEvent,

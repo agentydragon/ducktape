@@ -25,7 +25,6 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.product.projection import project_product_rollout
-from finance.augur.product.quantiles import currency_quantiles
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
     build_scenario,
@@ -56,6 +55,7 @@ from finance.augur.sim.product_metrics import (
     ProductProjectionSummaries,
     ProductTerminalSummary,
 )
+from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import HarvestPolicy, Scenario
 

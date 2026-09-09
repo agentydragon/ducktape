@@ -182,8 +182,8 @@ py_library(
     srcs = ["portfolio.py"],
     deps = [
         ":schemas",
+        "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
         "//finance/augur/sim:scenario",
         "@pypi//pydantic",
     ],

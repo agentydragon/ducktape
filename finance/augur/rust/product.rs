@@ -1,6 +1,6 @@
 //! The seven base product metric series, reduced per snapshot for one selected agent.
 //!
-//! `finance/augur/product/metric_composition.py` composes `home_equity`,
+//! `finance/augur/sim/metric_composition.py` composes `home_equity`,
 //! `liquid_net_worth` and `net_worth` from these, and does so once for every backend —
 //! so this module deliberately stops at the base series and derives nothing.
 //!

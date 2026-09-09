@@ -22,9 +22,9 @@ import numpy.typing as npt
 import polars as pl
 import pytest
 
+from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
-from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.scenario import (
     FixedAmount,
     InitialAccountBalance,

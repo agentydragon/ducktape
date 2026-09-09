@@ -15,7 +15,7 @@ from finance.augur.api.portfolio import (
     SecurityHoldingConfig,
 )
 from finance.augur.api.schemas import ApiModel
-from finance.augur.product.asset_key import AssetKey
+from finance.augur.model.asset_key import AssetKey
 from finance.augur.product.wire import CurrencyQuanta
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 

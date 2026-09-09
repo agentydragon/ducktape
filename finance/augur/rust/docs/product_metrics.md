@@ -8,7 +8,7 @@ owes the product read model, and two behaviours it keeps deliberately rather tha
 
 The engine emits only the seven base series plus the per-rollout failure month. Everything
 above that — the derived metrics, the terminal reduction, the percentile brackets, the
-interpolation — is `product/metric_composition.py` and `product/quantiles.py`, reached
+interpolation — is `sim/metric_composition.py` and `sim/quantiles.py`, reached
 through the backend-neutral `Engine` contract rather than from this package.
 
 The split is what the contract is for: an engine owes integers, and the read model owes

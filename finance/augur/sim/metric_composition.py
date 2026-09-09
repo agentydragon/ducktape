@@ -1,8 +1,7 @@
-"""How the derived product metrics are built out of the base ones. The only place.
+"""Financial metric arithmetic shared by engine adapters and result consumers.
 
-An engine emits the base series and nothing above them: the arithmetic relating metrics
-is defined once, here, and never re-derived by a caller. Nothing here re-values lots,
-properties, or bonds.
+Derive wealth measures and terminal reductions from integer-money base series.
+Valuation of lots, properties and bonds remains the executor's responsibility.
 
 `base` is a callable rather than a mapping to keep the reduction lazy: only the base
 series a requested metric actually needs get materialized.

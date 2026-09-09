@@ -2,7 +2,7 @@
 
 These carry no backend detail: a backend supplies the seven base series and the failure
 vector, and everything above that — the derived metrics, the percentile fan, the terminal
-distribution — is composed here, once, from `product.metric_composition`. An engine
+distribution — is composed here, once, from `sim.metric_composition`. An engine
 therefore owes the product API these objects and not a read model of its own.
 """
 
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 from jaxtyping import Int64
 
-from finance.augur.product.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
+from finance.augur.sim.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
 
 
 @dataclass(frozen=True)

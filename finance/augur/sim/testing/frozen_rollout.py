@@ -21,9 +21,9 @@ from decimal import Decimal
 import numpy as np
 import pytest
 
+from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
-from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.scenario import (
     Agent,
     FixedAmount,

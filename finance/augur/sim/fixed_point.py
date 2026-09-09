@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 from jaxtyping import Float64, Int64
 
-from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
+from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 
 BTC_SATOSHIS = 100_000_000
 ETH_GWEI = 1_000_000_000

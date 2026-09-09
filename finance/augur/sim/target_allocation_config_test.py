@@ -12,8 +12,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.augur.model.series import InflationKey, SecuritySymbol
-from finance.augur.product.asset_key import SecurityKey
+from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.scenario import (
     CashflowOnly,
     DriftBand,

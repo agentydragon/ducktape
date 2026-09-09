@@ -182,6 +182,7 @@ py_library(
     name = "state_space",
     srcs = ["state_space.py"],
     deps = [
+        ":asset_key",
         ":conditioning",
         ":exogenous",
         ":float64",
@@ -195,7 +196,6 @@ py_library(
         ":trained_private_equity",
         "//finance/augur:dates",
         "//finance/augur/model/path_models:scenarios",
-        "//finance/augur/product:asset_key",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -243,6 +243,7 @@ py_test(
     name = "state_space_test",
     srcs = ["state_space_test.py"],
     deps = [
+        ":asset_key",
         ":conditioning",
         ":conftest",
         ":exogenous",
@@ -251,7 +252,6 @@ py_test(
         ":trained_private_equity",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/product:asset_key",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -641,5 +641,15 @@ py_test(
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "asset_key",
+    srcs = ["asset_key.py"],
+    deps = [
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
     ],
 )

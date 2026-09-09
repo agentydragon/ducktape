@@ -33,7 +33,7 @@ and responsibility docstrings beside the implementing modules.
   Existing contracts survive a policy change; experiments need not implement
   optimizing lenders, landlords, or a general-equilibrium economy.
 
-The library milestone is OWN/CACHE/PATH/OUT/BIND/POL, exercised by STUDY and the
+The library milestone is CACHE/PATH/OUT/BIND/POL, exercised by STUDY and the
 HOUSE preservation example. A new experiment must not require a new engine policy
 variant, app configuration, or copy of financial mechanics.
 
@@ -102,7 +102,6 @@ Paths are relative to `finance/augur/`. Each row names the change that removes i
 
 | Existing problem and evidence                                                                                                                                                                 | Replacement / deletion criterion                                                                                                                                 | Landing unit        |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| Core imports product vocabulary/math: `sim/scenario.py → product/asset_key.py`, `sim/product_metrics.py → product/metric_composition.py`.                                                     | Shared financial definitions below both callers; atomically update imports and BUILD deps, no forwarding aliases.                                                | OWN                 |
 | Unbounded selected-rollout history in `frontend/product.tsx`'s `rolloutDetails` map.                                                                                                          | Only current detail/request state; no multi-rollout cache or cache invalidation machinery. Preserve displayed fan state.                                         | CACHE               |
 | General execution reports through product-named, fixed wealth metrics; native spending explicitly lacks consumption metrics (`sim/backend.py`, `rust/engine/spending.rs`).                    | Compact requested/paid consumption and explicit stop/default outcomes reconcile to events; UI projections are consumers.                                         | OUT                 |
 | Allocation decisions and lot/tax mutation share `rust/engine/target_allocation.rs`; `TargetAllocationPolicy` is static data.                                                                  | Replaceable executable decisions, canonical execution. Current static allocation becomes a built-in function on the same seam.                                   | POL                 |
@@ -129,7 +128,6 @@ of this plan in one PR. Several nodes explicitly split into smaller PRs.
 
 ```mermaid
 flowchart TB
-    OWN["OWN: shared-domain ownership"]
     CACHE["CACHE: remove browser rollout cache"]
     PATH["PATH: explicit path identities"]
     OUT["OUT: consumption and failure outcomes"]
@@ -172,7 +170,7 @@ flowchart TB
     POL --> LANG
 ```
 
-**Deliberate non-edges:** OWN/CACHE need not precede experiments; native POL does
+**Deliberate non-edges:** CACHE need not precede experiments; native POL does
 not wait for LANG; STUDY does not wait for TAX; pricing BOND does not wait for a
 generative curve or BIND's sampler extraction; RUN/ROBUST do not wait for MODEL or
 every study. RUN can begin with generated paths and static allocation varied
@@ -185,7 +183,6 @@ those actions. These scope-specific edges do not require unrelated comparisons t
 
 | Unit   | Independently reviewable change(s)                                                                                                                                                                                                                                                                                                                                               | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                                                   |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OWN    | Move shared asset identity, then shared financial metric composition if separable. Keep interface spelling changes separate from numerical changes.                                                                                                                                                                                                                              | Core no longer imports product/API code; existing app and experiment callers build, financial outputs unchanged. Audit dependency direction rather than adding source-text tests.                                                                                                                                                                                                              |
 | CACHE  | Delete browser rollout-detail memoization.                                                                                                                                                                                                                                                                                                                                       | Changing scenario/seed fetches the right detail; stale responses cannot overwrite the current selection; bounded retained state. No server-cache work.                                                                                                                                                                                                                                         |
 | PATH   | Let the caller select historical starts and materialize those exact paths. Preserve identities in artifacts and selected-trace execution.                                                                                                                                                                                                                                        | Same paths/results when reordered, split or extended; unchanged window set reproduces current Trinity output. Do not change historical methodology during the API migration.                                                                                                                                                                                                                   |
 | OUT    | First add compact requested/paid consumption with event parity. Separately distinguish spending shortfall, contract default and stopped paths in results; remove zero-filled post-failure wealth being interpreted as actual terminal books.                                                                                                                                     | Matching compact/forensic amounts and failure cause, including zero spend and failure with a remaining house/debt. Paid-through-stop, censored terminal outcomes and reporting CPI/base date are explicit. This does not add recovery or partial settlement.                                                                                                                                   |
@@ -238,7 +235,7 @@ all the others to be solved first.
 
 ## What to dispatch first
 
-1. **OWN**, **CACHE**, **PATH**, and OUT's consumption-capture slice are separate
+1. **CACHE**, **PATH**, and OUT's consumption-capture slice are separate
    ready PRs. They have concrete consumers and deletion/parity criteria.
 2. Run **GP**, **GT**, and **GS** as bounded decisions alongside those changes;
    draft POL's constant/glide consumer and TAX's acceptance cases from the answers.
