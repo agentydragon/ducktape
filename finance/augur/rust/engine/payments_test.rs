@@ -4,13 +4,14 @@ use super::*;
 use payments::{Consume, Outcome, PayClaim, Receipt, Rejection, Request, Target};
 
 fn execute(
-    state: &mut RolloutState<'_>,
+    input: &ExecutionInput,
+    state: &mut RolloutState,
     claims: &mut claims::Claims,
     actor: &str,
     request: &Request,
 ) -> Receipt {
     payments::Context {
-        fixture: state.fixture,
+        fixture: input,
         ledger: &mut state.ledger,
         recorder: &mut state.recorder,
         tax: &mut state.tax,
@@ -56,7 +57,7 @@ fn claim_occurrences_are_not_labels_and_consumption_is_not_a_claim() {
         from: component.from.clone(),
         amount: Money(40),
     });
-    let receipt = execute(&mut state, &mut claims, "alice", &request);
+    let receipt = execute(&input, &mut state, &mut claims, "alice", &request);
     assert_eq!(receipt.request_id, 42);
     assert_eq!(receipt.target, Target::Claim(ids[1]));
     assert_eq!(receipt.amount_paid(), Money(40));
@@ -68,11 +69,12 @@ fn claim_occurrences_are_not_labels_and_consumption_is_not_a_claim() {
     );
     let before = state.ledger.clone();
     assert_eq!(
-        execute(&mut state, &mut claims, "alice", &request).outcome,
+        execute(&input, &mut state, &mut claims, "alice", &request).outcome,
         Outcome::Rejected(Rejection::AlreadyPaid)
     );
     assert_eq!(state.ledger, before);
     let receipt = execute(
+        &input,
         &mut state,
         &mut claims,
         "alice",
@@ -157,6 +159,7 @@ fn rejected_payments_change_neither_books_nor_capture() {
         ),
     ] {
         let receipt = execute(
+            &input,
             &mut state,
             &mut claims,
             "alice",
@@ -170,6 +173,7 @@ fn rejected_payments_change_neither_books_nor_capture() {
     }
     for amount in [Money(0), Money(-1), Money(101)] {
         let receipt = execute(
+            &input,
             &mut state,
             &mut claims,
             "alice",
@@ -194,7 +198,7 @@ fn rejected_payments_change_neither_books_nor_capture() {
         amount: Money(150),
     });
     assert_eq!(
-        execute(&mut state, &mut claims, "alice", &foreign_claim).outcome,
+        execute(&input, &mut state, &mut claims, "alice", &foreign_claim).outcome,
         Outcome::Rejected(Rejection::WrongActor)
     );
     for (to, component_id, reason) in [
@@ -214,7 +218,7 @@ fn rejected_payments_change_neither_books_nor_capture() {
             amount: Money(1),
         });
         assert_eq!(
-            execute(&mut state, &mut claims, "alice", &request).outcome,
+            execute(&input, &mut state, &mut claims, "alice", &request).outcome,
             Outcome::Rejected(reason)
         );
         assert_eq!(state.ledger, before);
@@ -282,7 +286,7 @@ fn tax_and_mortgage_claims_use_selected_funding_account() {
     assert_eq!(requests.len(), 2);
     for request in &requests {
         assert_eq!(
-            execute(&mut state, &mut claims, "alice", request).outcome,
+            execute(&input, &mut state, &mut claims, "alice", request).outcome,
             Outcome::Paid
         );
     }
@@ -330,6 +334,7 @@ fn moving_cash_within_the_actor_is_not_paid_consumption() {
         let count = state.recorder.journal_entry_count;
         let mut claims = claims::assemble(&input, 0, 0, &[], &[], &[]).unwrap();
         let receipt = execute(
+            &input,
             &mut state,
             &mut claims,
             "alice",
