@@ -38,6 +38,14 @@ spec:
   monitoring:
     enablePodMonitor: true
 
+  postgresql:
+    pg_hba:
+      # Isolate the Ollama state login and database in both directions before
+      # CNPG's default host rule. Other state runners keep their existing access.
+      - hostssl tfstate_ollama_bearer_token tfstate_ollama_bearer_token all scram-sha-256
+      - host all tfstate_ollama_bearer_token all reject
+      - host tfstate_ollama_bearer_token all all reject
+
   managed:
     roles:
       - name: tfstate
@@ -45,3 +53,14 @@ spec:
         login: true
         passwordSecret:
           name: tofu-state-db-credentials
+      - name: tfstate_ollama_bearer_token
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-ollama-bearer-token-credentials

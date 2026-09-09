@@ -14,6 +14,12 @@ spec:
   path: ./cluster/k8s/tofu-state/db
   prune: true
   wait: true
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      current: >-
+        has(status) && has(status.applied) && status.applied &&
+        has(status.observedGeneration) && status.observedGeneration == metadata.generation
   decryption:
     provider: sops
     secretRef:

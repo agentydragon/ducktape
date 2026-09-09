@@ -1,0 +1,11 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: tofu-state-ollama-bearer-token
+  namespace: tofu-state
+spec:
+  cluster:
+    name: tofu-state-db-ovh
+  name: tfstate_ollama_bearer_token
+  owner: tfstate_ollama_bearer_token
+  databaseReclaimPolicy: retain
