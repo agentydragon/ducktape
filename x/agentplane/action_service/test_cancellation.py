@@ -72,7 +72,8 @@ async def test_pending_cancellation_is_durable_and_idempotent(
     result = await store.cancel(pending.id, CALLER)
     assert result.outcome is CancellationOutcome.CANCELLED
     assert result.request.state is ActionState.CANCELLED
-    assert result.request.decision is result.request.execution is None
+    assert result.request.decision is None
+    assert result.request.execution is None
     assert result.request.version == pending.version + 1
     restarted = ActionStore(make_sessionmaker(engine))
     duplicate = await restarted.cancel(pending.id, CALLER)
@@ -245,7 +246,8 @@ async def test_cancellation_during_provider_evaluation_is_returned_by_submit(
                 await service.cancel(pending_requests[0].id, CALLER)
                 provider.release.set()
         assert submitted.result().state is ActionState.CANCELLED
-        assert submitted.result().decision is submitted.result().execution is None
+        assert submitted.result().decision is None
+        assert submitted.result().execution is None
         assert await store.pending_dispatches() == []
     finally:
         await service.close()
