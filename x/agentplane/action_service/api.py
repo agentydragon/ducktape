@@ -14,7 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
-from x.agentplane.action_service.mcp_frontend import WorkloadMcp, create_server
+from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -79,7 +79,7 @@ def create_app(
     updates: ActionUpdates,
 ) -> FastAPI:
     mcp_app = create_server(service, catalog, updates, workload_authenticator).http_app(
-        path="/mcp", stateless_http=True, json_response=False
+        path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
     )
 
     @asynccontextmanager
@@ -225,7 +225,7 @@ def create_app(
         return await action_service.decide(request_id, body, principal)
 
     # Last mount catches /mcp exactly without a slash redirect; REST routes above remain distinct.
-    app.mount("/", WorkloadMcp(mcp_app, workload_authenticator))
+    app.mount("/", ActionsMcp(mcp_app, workload_authenticator))
     return app
 
 

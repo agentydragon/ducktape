@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
+from functools import wraps
 from typing import Annotated, cast
 from uuid import UUID
 
@@ -58,7 +58,7 @@ class EventPage(BaseModel):
     next_after_sequence: int | None = None
 
 
-class WorkloadMcp:
+class ActionsMcp:
     """Authenticate every transport request, never just MCP initialization or a session id."""
 
     def __init__(self, app: ASGIApp, authenticator: SandboxPrincipalAuthenticator) -> None:
@@ -70,13 +70,6 @@ class WorkloadMcp:
             await self._app(scope, receive, send)
             return
         request = Request(scope)
-        # This first frontend is for workload clients, not browser sessions. External OAuth
-        # will have its own explicitly reviewed origin/auth policy when it is exposed.
-        if "origin" in request.headers:
-            await JSONResponse({"detail": "browser origins are not accepted on workload MCP"}, status_code=403)(
-                scope, receive, send
-            )
-            return
         try:
             request.state.action_principal = workload_principal(await self._authenticator(request))
         except HTTPException as error:
@@ -105,18 +98,23 @@ def _principal() -> Principal:
     return cast(Principal, get_http_request().state.action_principal)
 
 
-@contextmanager
-def _tool_errors() -> Iterator[None]:
-    try:
-        yield
-    except ActionNotFoundError:
-        raise ToolError(
-            "Action request not found for this caller; use a request ID returned to this connection."
-        ) from None
-    except (ActionConflictError, UnknownActionError, InvalidActionArgumentsError, UpdatesUnavailableError) as error:
-        raise ToolError(str(error)) from None
-    except UnsupportedActionError:
-        raise ToolError("Action is unknown or unavailable; use list_actions/get_action to check the catalog.") from None
+def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+    @wraps(tool)
+    async def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return await tool(*args, **kwargs)
+        except ActionNotFoundError:
+            raise ToolError(
+                "Action request not found for this caller; use a request ID returned to this connection."
+            ) from None
+        except (ActionConflictError, UnknownActionError, InvalidActionArgumentsError, UpdatesUnavailableError) as error:
+            raise ToolError(str(error)) from None
+        except UnsupportedActionError:
+            raise ToolError(
+                "Action is unknown or unavailable; use list_actions/get_action to check the catalog."
+            ) from None
+
+    return wrapped
 
 
 def _summary(catalog: ActionCatalog, identity: ActionIdentity, fields: set[IncludeField]) -> ActionSummary:
@@ -174,6 +172,7 @@ def create_server(
             await asyncio.gather(receipt, disconnect, return_exceptions=True)
 
     @server.tool(annotations={"readOnlyHint": True})
+    @_tool_errors
     async def list_actions(
         group: Key | None = None,
         after: ActionIdentity | None = None,
@@ -207,18 +206,19 @@ def create_server(
         return _result(ActionPage(actions=page, next_after=next_after), exclude_none=True)
 
     @server.tool(annotations={"readOnlyHint": True})
+    @_tool_errors
     async def get_action(group: Key, name: Key, include_fields: set[IncludeField] | None = None) -> ToolResult:
         """Read one Action definition, not a submitted request or its execution status.
         Provide group/name from list_actions; request input_schema before constructing unfamiliar arguments.
         Full description and input_schema appear only when named in include_fields; defaults are compact.
         Unknown names fail clearly; use get_action_request instead when you have a durable request ID.
         """
-        with _tool_errors():
-            return _result(
-                _summary(catalog, ActionIdentity(group=group, name=name), include_fields or set()), exclude_none=True
-            )
+        return _result(
+            _summary(catalog, ActionIdentity(group=group, name=name), include_fields or set()), exclude_none=True
+        )
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+    @_tool_errors
     async def request_action(
         request: ActionRequestInput, wait_seconds: WaitSeconds = 0, wait_until: WaitUntil = WaitUntil.TERMINAL
     ) -> ToolResult:
@@ -227,17 +227,17 @@ def create_server(
         Returns the durable receipt immediately by default; optionally wait up to 30 seconds for decision or terminal state.
         Pending is not success. After response loss reuse the identical request/key or read its ID, never submit a new key.
         """
-        with _tool_errors():
-            principal = _principal()
-            view = await service.submit(request, principal)
-            if wait_seconds:
-                view = await wait_for_receipt(
-                    view.id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
-                )
-                await revalidate(principal)
-            return _result(view)
+        principal = _principal()
+        view = await service.submit(request, principal)
+        if wait_seconds:
+            view = await wait_for_receipt(
+                view.id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
+            )
+            await revalidate(principal)
+        return _result(view)
 
     @server.tool(annotations={"readOnlyHint": True})
+    @_tool_errors
     async def get_action_request(
         request_id: UUID, wait_seconds: WaitSeconds = 0, wait_until: WaitUntil = WaitUntil.TERMINAL
     ) -> ToolResult:
@@ -246,16 +246,26 @@ def create_server(
         Optionally wait up to 30 seconds for decision or terminal state; a deadline returns the current pending receipt.
         This never submits, retries, or cancels execution, and other callers' request IDs are not readable.
         """
-        with _tool_errors():
-            principal = _principal()
-            view = await wait_for_receipt(
-                request_id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
-            )
-            if wait_seconds:
-                await revalidate(principal)
-            return _result(view)
+        principal = _principal()
+        view = await wait_for_receipt(
+            request_id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
+        )
+        if wait_seconds:
+            await revalidate(principal)
+        return _result(view)
+
+    @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
+    @_tool_errors
+    async def cancel_action_request(request_id: UUID) -> ToolResult:
+        """Withdraw your Action request only before its execution has been claimed for dispatch.
+        Provide the durable request ID; no version is required, and another caller's requests are inaccessible.
+        Returns cancelled, already_cancelled, already_finished, or too_late together with the current receipt.
+        Dispatching/running or unknown executions cannot be stopped; retrying the original submission key retains its receipt.
+        """
+        return _result(await service.cancel(request_id, _principal()))
 
     @server.tool(annotations={"readOnlyHint": True})
+    @_tool_errors
     async def list_action_request_events(
         request_id: UUID, after_sequence: Annotated[int, Field(ge=0)] = 0, limit: PageSize = 30
     ) -> ToolResult:
@@ -264,14 +274,12 @@ def create_server(
         Each event carries its sequence, state, and timestamp; get_action_request provides the current receipt and result.
         This read never submits or retries execution and cannot reveal another caller's events.
         """
-        with _tool_errors():
-            events = await service.events(request_id, _principal(), after_sequence=after_sequence, limit=limit + 1)
-            return _result(
-                EventPage(
-                    events=events[:limit],
-                    next_after_sequence=events[limit - 1].sequence if len(events) > limit else None,
-                ),
-                exclude_none=True,
-            )
+        events = await service.events(request_id, _principal(), after_sequence=after_sequence, limit=limit + 1)
+        return _result(
+            EventPage(
+                events=events[:limit], next_after_sequence=events[limit - 1].sequence if len(events) > limit else None
+            ),
+            exclude_none=True,
+        )
 
     return server

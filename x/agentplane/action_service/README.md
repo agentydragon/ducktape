@@ -87,8 +87,11 @@ The same service process serves stateless Streamable HTTP at `/mcp`. The FastAPI
 the PostgreSQL update listener and MCP transport and unwinds both on shutdown/startup failure.
 This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
 Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
-Operator/OIDC bearers remain confined to `/v1/operator/...`; external OAuth/DCR enrollment and
-browser-origin access are not implemented. No public ingress or harness deployment is added here.
+Operator/OIDC bearers remain confined to `/v1/operator/...`; external OAuth/DCR enrollment is not
+implemented. No public ingress or harness deployment is added here. FastMCP's automatic Host/Origin
+guard protects loopback access without categorically rejecting requests carrying Origin; authority
+comes from the explicit validated bearer, not Origin or browser cookies. Browser CORS policy can
+be configured alongside future external exposure.
 Staging's current `egresspolicy-agentplane-actions.yaml` permits only the REST paths; deploying
 Sandbox MCP clients also requires an explicit `/mcp` egress allowance with the same workload
 credential substitution. The protocol tests exercise substitution at that boundary, not a claim
@@ -100,7 +103,14 @@ that the current cluster policy already permits the new route.
 | `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both. |
 | `request_action`             | The existing request envelope under `request`; caller-scoped idempotency and input validation are unchanged.                                      |
 | `get_action_request`         | One own-caller receipt by `request_id`, not an Action definition.                                                                                 |
+| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                        |
 | `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                             |
+
+`cancel_action_request(request_id)` explicitly withdraws an own-caller request before dispatch
+claim, without a version parameter. It returns the canonical outcome (`cancelled`,
+`already_cancelled`, `already_finished`, or `too_late`) and receipt; it never interrupts an
+executor. Retry the original submission key to recover that same cancelled receipt. It is
+independent of cancelling or disconnecting a wait.
 
 Both submission and receipt reads accept `wait_seconds` (0–30, default 0) and `wait_until`
 (`decision` or `terminal`, default terminal). Waits use commit notifications rather than periodic

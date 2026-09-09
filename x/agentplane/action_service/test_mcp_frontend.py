@@ -7,6 +7,7 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -29,6 +30,8 @@ from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
+    CancellationOutcome,
+    CancellationResult,
     DecisionInput,
     Executor,
     Principal,
@@ -225,7 +228,11 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
 async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
     async with frontend.client(egress=True) as client:
         tools = await client.list_tools()
-        assert len(tools) == 5
+        assert len(tools) == 6
+        cancellation = next(tool for tool in tools if tool.name == "cancel_action_request")
+        assert set(cancellation.inputSchema["properties"]) == {"request_id"}
+        assert cancellation.inputSchema["required"] == ["request_id"]
+        assert all("args" not in tool.inputSchema["properties"] for tool in tools)
         assert "test-full-description" not in " ".join(tool.model_dump_json() for tool in tools)
         page = await client.call_tool("list_actions", {"limit": 1})
         assert page.structured_content == {
@@ -298,7 +305,7 @@ async def test_transport_requires_real_workload_bearer(frontend: Frontend, autho
             assert response.status_code == 401
 
 
-async def test_revalidates_live_pod_and_rejects_duplicate_auth_origin_and_forgery(frontend: Frontend) -> None:
+async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(frontend: Frontend) -> None:
     async with frontend.client() as client:
         invalid = await client.call_tool(
             "request_action",
@@ -326,10 +333,24 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_origin_and_forger
             "/mcp", headers=[("Authorization", "Bearer test-token-a"), ("Authorization", "Bearer test-token-b")]
         )
         assert duplicate.status_code == 401
-        origin = await http.post(
-            "/mcp", headers={"Authorization": "Bearer test-token-a", "Origin": "https://test-untrusted.example"}
-        )
-        assert origin.status_code == 403
+
+
+async def test_origin_is_not_categorically_rejected_and_loopback_guard_stays_active(frontend: Frontend) -> None:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://127.0.0.1") as http:
+        headers = {
+            "Authorization": "Bearer test-token-a",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2025-11-25",
+            "Origin": "http://127.0.0.1",
+        }
+        body = {"jsonrpc": "2.0", "id": 99, "method": "tools/list"}
+        assert (await http.post("/mcp", headers=headers, json=body)).status_code == 200
+        assert (
+            await http.post("/mcp", headers={**headers, "Origin": "https://test-untrusted.example"}, json=body)
+        ).status_code == 403
+        assert (
+            await http.post("/mcp", headers={**headers, "Host": "test-rebinding.example"}, json=body)
+        ).status_code == 421
 
 
 async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> None:
@@ -382,22 +403,33 @@ async def test_allowed_action_executes_and_returns_canonical_result(frontend: Fr
         assert finished.execution.result == {"echo": {"message": "test-result"}}
 
 
-async def test_http_disconnect_releases_wait_without_cancelling_action(
-    frontend: Frontend, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    registered, released = asyncio.Event(), asyncio.Event()
+@dataclass
+class WaitSignals:
+    registered: asyncio.Event
+    released: asyncio.Event
+
+
+@pytest.fixture
+def subscription_signals(frontend: Frontend, monkeypatch: pytest.MonkeyPatch) -> WaitSignals:
+    signals = WaitSignals(asyncio.Event(), asyncio.Event())
     subscribe = frontend.updates.subscribe
 
     @contextmanager
     def observed_subscription(request_id: UUID) -> Iterator[asyncio.Event]:
         with subscribe(request_id) as changed:
-            registered.set()
+            signals.registered.set()
             try:
                 yield changed
             finally:
-                released.set()
+                signals.released.set()
 
     monkeypatch.setattr(frontend.updates, "subscribe", observed_subscription)
+    return signals
+
+
+async def test_http_disconnect_releases_wait_without_cancelling_action(
+    frontend: Frontend, subscription_signals: WaitSignals
+) -> None:
     incoming: asyncio.Queue[Message] = asyncio.Queue()
     incoming.put_nowait(
         {
@@ -449,14 +481,104 @@ async def test_http_disconnect_releases_wait_without_cancelling_action(
 
     async with asyncio.timeout(10):
         request_task = asyncio.create_task(frontend.app(scope, incoming.get, send))
-        await registered.wait()
+        await subscription_signals.registered.wait()
         incoming.put_nowait({"type": "http.disconnect"})
         await request_task
-        await released.wait()
+        await subscription_signals.released.wait()
     requests = await frontend.store.list_requests(OPERATOR)
     assert len(requests) == 1
     assert requests[0].state is ActionState.DECISION_PENDING
     assert not frontend.updates._subscribers
+
+
+@pytest.mark.parametrize(
+    "state", [ActionState.DECISION_PENDING, ActionState.ALLOWED, ActionState.DISPATCHING, ActionState.DENIED]
+)
+async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
+    frontend: Frontend, state: ActionState
+) -> None:
+    async with frontend.client() as caller, frontend.client("test-token-b") as other:
+        request = {
+            "idempotency_key": "test-cancel",
+            "action": {"group": "test-group", "name": "alpha"},
+            "arguments": {"message": "test-cancel"},
+        }
+        receipt = ActionRequestView.model_validate(
+            (await caller.call_tool("request_action", {"request": request})).structured_content
+        )
+        if state is not ActionState.DECISION_PENDING:
+            await frontend.store.decide(
+                receipt.id,
+                DecisionInput(
+                    verdict=Verdict.DENY if state is ActionState.DENIED else Verdict.ALLOW,
+                    expected_version=receipt.version,
+                    idempotency_key="test-cancel-decision",
+                ),
+                OPERATOR,
+                provider="test-human",
+            )
+        if state is ActionState.DISPATCHING:
+            assert (
+                await frontend.store.claim_execution(
+                    receipt.id, executor_id="test-executor", lease_duration=timedelta(seconds=30)
+                )
+                is not None
+            )
+        args = {"request_id": str(receipt.id)}
+        assert (await other.call_tool("cancel_action_request", args, raise_on_error=False)).is_error
+        cancelled = CancellationResult.model_validate(
+            (await caller.call_tool("cancel_action_request", args)).structured_content
+        )
+        repeated = CancellationResult.model_validate(
+            (await caller.call_tool("cancel_action_request", args)).structured_content
+        )
+        if state is ActionState.DISPATCHING:
+            assert cancelled.outcome is repeated.outcome is CancellationOutcome.TOO_LATE
+            assert cancelled.request.state is ActionState.DISPATCHING
+        elif state is ActionState.DENIED:
+            assert cancelled.outcome is repeated.outcome is CancellationOutcome.ALREADY_FINISHED
+            assert cancelled.request.state is ActionState.DENIED
+        else:
+            assert cancelled.outcome is CancellationOutcome.CANCELLED
+            assert repeated.outcome is CancellationOutcome.ALREADY_CANCELLED
+            assert cancelled.request.state is ActionState.CANCELLED
+        assert repeated.request == cancelled.request
+        assert (
+            ActionRequestView.model_validate(
+                (await caller.call_tool("request_action", {"request": request})).structured_content
+            )
+            == cancelled.request
+        )
+
+
+async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscription_signals: WaitSignals) -> None:
+    async with frontend.client() as client:
+        receipt = ActionRequestView.model_validate(
+            (
+                await client.call_tool(
+                    "request_action",
+                    {
+                        "request": {
+                            "idempotency_key": "test-cancel-wake",
+                            "action": {"group": "test-group", "name": "alpha"},
+                            "arguments": {"message": "test-cancel-wake"},
+                        }
+                    },
+                )
+            ).structured_content
+        )
+        async with asyncio.timeout(10):
+            pending = asyncio.create_task(
+                client.call_tool("get_action_request", {"request_id": str(receipt.id), "wait_seconds": 30})
+            )
+            await subscription_signals.registered.wait()
+            cancelled = CancellationResult.model_validate(
+                (await client.call_tool("cancel_action_request", {"request_id": str(receipt.id)})).structured_content
+            )
+            assert cancelled.outcome is CancellationOutcome.CANCELLED
+            assert ActionRequestView.model_validate((await pending).structured_content) == cancelled.request
+            await subscription_signals.released.wait()
+        assert not frontend.updates._subscribers
 
 
 if __name__ == "__main__":
