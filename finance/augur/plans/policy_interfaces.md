@@ -141,7 +141,7 @@ optional scalar-to-batch helper may invoke an author's scalar function once per
 row while routing its per-path memory; it returns the same keyed response batch.
 Neither the engine nor runner dispatches through a separate scalar policy hook.
 
-P6/GL compares that adapter with a directly batch-authored function on the same
+GL compares that adapter with a directly batch-authored function on the same
 workload. It chooses data representation and evaluates costs/usability, not
 whether to maintain scalar and batch engine APIs.
 
@@ -196,8 +196,8 @@ are settled. An unpaid due
 claim stops that example after the action list, distinctly from an invalid action.
 GP gates expanded product/housing and multi-policy-actor timing, not this first
 integration. No retry/default/recovery mechanism is part of this interface.
-The existing opening-month/all-or-none cases remain P6 parity controls, not
-the destination contract. P6/GL decides batch data representation; RUNTIME/GE
+The existing opening-month/all-or-none cases remain spending-probe parity controls, not
+the destination contract. GL decides batch data representation; RUNTIME/GE
 decides executor placement. If GE retains hybrid execution, P9 promotes the
 measured bridge with P7's actor loop and P8's helpers; otherwise replan the
 language-specific steps. P11 migrates executable experiments; P12 cuts over
