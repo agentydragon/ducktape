@@ -3,7 +3,7 @@
 Status: **deferred pending a real consumer.** Provider behavior is settled in
 [`../docs/driver_tools.md`](../docs/driver_tools.md) and
 [`../docs/background_work.md`](../docs/background_work.md). Any future runner surface must reuse the
-Action schema and Executor wiring contracts in [`task_dag.md`](task_dag.md), not invent a second
+implemented [Action Service contracts](../action_service/SPEC.md), not invent a second
 incompatible tool-request lifecycle.
 
 ## Input-delivery research prerequisite
@@ -18,11 +18,11 @@ Execution nor proof that both providers support the same per-input acknowledgeme
 A driver may eventually declare model-visible tools, but that declaration is not an ActionRequest
 and does not grant execution authority. If a declared tool invokes work outside the Sandbox:
 
-- its stable Action identity and parameter/result contract come from the `AS` Action schema gate;
+- its stable Action identity and parameter/result contract come from the canonical Action catalog;
 - invocation creates the same invariant ActionRequest used by other callers;
 - Decision and at-most-one Execution remain separate;
-- the `EW` gate selects and configures the Executor; and
-- pending/result delivery uses the `DEL` path.
+- reviewed Action Service configuration selects the Executor; and
+- pending/result delivery uses canonical receipts and durable events.
 
 Do not build an MCP registry, parallel `ToolRequest`, or harness-specific approval object. The
 provider-specific declaration adapter may still need to decide whether its tool set is immutable per

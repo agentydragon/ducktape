@@ -29,6 +29,16 @@ Migration `0006_decision_note` renames the existing human-note column without dr
 downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
 a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
 
+## Decision providers
+
+All configured synchronous providers run to completion; any deny dominates, otherwise any allow
+wins, otherwise the request remains on the human-review path. Timeouts and exceptions contribute
+`no_opinion` with bounded reason codes. Provider explanations are bounded audit evidence, not
+unrestricted reasoning. Human and provider decisions commit through the same versioned,
+idempotent Decision path; a losing provider callback cannot overwrite a winning human decision or
+caller cancellation. Mandatory authorization bounds for future configurable policies are distinct
+from these optional votes.
+
 ## Cancellation
 
 `POST /v1/action-requests/{id}/cancel` takes no body or expected version and returns

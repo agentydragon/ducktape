@@ -228,7 +228,8 @@ copy the referenced policy configuration into the new Connection.
 
 **Placement selected:** the MCP server lives in the Action Service process, sharing canonical
 authentication, catalog, request/Decision/Execution services, and lifecycle-owned resources. A
-separate pod or sidecar is not required for the initial frontend. This selects the resource-server
+separate pod or sidecar is not required for the initial frontend. Use FastMCP for consistency;
+name the common frontend for Actions, not workloads, since both caller kinds use it. This selects the resource-server
 placement, not the still-open OAuth authorization-server owner or integration-app enrollment handoff.
 
 **Selected first-slice direction:** expose a small fixed set of tools which treat Actions as data.
@@ -245,6 +246,7 @@ Working tool names and contracts (final wire schemas remain implementation work)
 | `get_action`                 | Action group/name and `include_fields`.                                                                                             | Read compact metadata for one definition, optionally requesting its existing input schema or full description.                      |
 | `request_action`             | Structured Action group/name, arguments, caller-scoped idempotency key, optional untrusted provenance, and bounded polling options. | Submit once; return the durable request ID and current receipt/state immediately or after the requested bounded wait.               |
 | `get_action_request`         | Request ID and bounded polling options.                                                                                             | Read this caller's durable request state, Decision, and safe Execution result/error, optionally waiting for decision or completion. |
+| `cancel_action_request`      | Request ID; no expected version.                                                                                                    | Cancel as the owning caller through the canonical service; return its typed cancellation outcome and current receipt.               |
 | `list_action_request_events` | Request ID, `after_sequence`, bounded page size.                                                                                    | Read canonical ordered events and resume from the last received sequence.                                                           |
 
 Here an **Action** is a catalog definition and an **ActionRequest** is a particular submission.
@@ -272,30 +274,17 @@ would be another opt-in field describing the safe caller-visible result, which m
 raw upstream MCP result. This is neither an `MCPFRONT` nor a `CLAUDEAI` acceptance requirement.
 Selective presentation does not weaken server-side input validation, policy enforcement, or result redaction.
 
-**Bounded long-poll API, notification-driven waits:** support "wait up to N seconds until no longer
-pending human decision / pending execution" on both `request_action` and `get_action_request`.
-Working parameters are `wait_seconds` (omitted or zero means immediate) and `wait_until` (decision
-resolved or terminal result; default terminal). An allowed Decision satisfies the decision predicate,
-but does not satisfy terminal while execution is queued/running. Denial or another terminal state
-satisfies either predicate; an already-satisfied predicate returns immediately. Intermediate events
-do not end a wait unless the requested predicate is satisfied. Validate a finite nonnegative duration
-against a documented server maximum compatible with client/proxy timeouts. At the deadline, return
-the current durable receipt even if still pending; expiry is not an Action failure or cancellation.
-Create/recover the durable request before waiting. Disconnect/cancel of the MCP wait does not cancel
-or resubmit the Action; reuse the request ID or original idempotency key to recover it. Waiting is a
-read of canonical state, not an execution retry, and must preserve caller authorization throughout.
-Exact parameter names, duration cap, and mapping to canonical states remain implementation choices.
+**Bounded waits and cancellation:** reuse the landed
+[bounded-receipt wait contract](../action_service/SPEC.md#bounded-receipt-waits) on both submission
+and request reads. `wait_seconds` defaults to zero and is capped at 30; `wait_until` selects
+`decision` or `terminal` (default). The shared implementation waits on committed notifications,
+including cross-process updates, not periodic database/API queries. MCP owns transport integration
+and disconnect cleanup, not another subscription mechanism. Disconnect cancels only the wait.
 
-Implement waiting through channels/subscriptions that push committed Action-state updates, not a
-busy loop or periodic database/API polling (including sleep-and-recheck loops). Suspend the waiter
-until a relevant notification, deadline, cancellation, or channel failure. Notifications are wakeups;
-the canonical durable state remains authoritative. Subscribe before checking state, or use an
-equivalent version/cursor handshake, so an update racing wait setup cannot be missed. Re-read state
-on a wakeup and keep waiting if the predicate is still false; tolerate duplicate/coalesced notifications.
-Delivery must reach waiters even when the Decision/Execution writer is in another process or replica.
-Handle channel loss explicitly with reconnect-and-recheck or a recoverable response, not silent
-fallback to periodic polling. Release subscriptions on completion, timeout, and disconnect. The
-notification mechanism is implementation work, not a new MCP-owned lifecycle store or durable event log.
+Expose [canonical cancellation](../action_service/SPEC.md#cancellation) through
+`cancel_action_request`: owner-only, no expected version, dispatch claim is the cutoff, no executor
+stop/kill propagation. Preserve typed outcomes, audit, original-key replay, and waiter wakeup.
+These foundations are implemented; their MCP tools and protocol-level tests remain frontend work.
 
 All tools present the existing catalog and Action lifecycle. Submission waits only when explicitly
 requested and never indefinitely for human approval; reads never submit or retry execution. On an ambiguous submission response the caller must
