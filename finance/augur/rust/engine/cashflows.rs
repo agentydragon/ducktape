@@ -20,7 +20,6 @@ pub(super) fn execute_cashflows(
     {
         execute_transfer(
             fixture,
-            None,
             ledger,
             recorder,
             tax,
@@ -31,8 +30,11 @@ pub(super) fn execute_cashflows(
                 to: cashflow.to.clone(),
                 amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
             },
-            cashflow.income_category.as_ref(),
-            cashflow.deduction_category.as_deref(),
+            TransferContext {
+                actor_id: None,
+                income_category: cashflow.income_category.as_ref(),
+                deduction_category: cashflow.deduction_category.as_deref(),
+            },
         )?;
     }
     for cashflow in fixture
@@ -45,7 +47,6 @@ pub(super) fn execute_cashflows(
     {
         execute_transfer(
             fixture,
-            None,
             ledger,
             recorder,
             tax,
@@ -56,8 +57,11 @@ pub(super) fn execute_cashflows(
                 to: cashflow.to.clone(),
                 amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
             },
-            cashflow.income_category.as_ref(),
-            cashflow.deduction_category.as_deref(),
+            TransferContext {
+                actor_id: None,
+                income_category: cashflow.income_category.as_ref(),
+                deduction_category: cashflow.deduction_category.as_deref(),
+            },
         )?;
     }
     for cashflow in fixture
@@ -72,7 +76,6 @@ pub(super) fn execute_cashflows(
         {
             execute_transfer(
                 fixture,
-                None,
                 ledger,
                 recorder,
                 tax,
@@ -83,8 +86,11 @@ pub(super) fn execute_cashflows(
                     to: cashflow.to.clone(),
                     amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
                 },
-                cashflow.income_category.as_ref(),
-                cashflow.deduction_category.as_deref(),
+                TransferContext {
+                    actor_id: None,
+                    income_category: cashflow.income_category.as_ref(),
+                    deduction_category: cashflow.deduction_category.as_deref(),
+                },
             )?;
         }
     }
@@ -102,7 +108,6 @@ pub(super) fn execute_cashflows(
         {
             execute_transfer(
                 fixture,
-                None,
                 ledger,
                 recorder,
                 tax,
@@ -113,8 +118,11 @@ pub(super) fn execute_cashflows(
                     to: cashflow.to.clone(),
                     amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
                 },
-                cashflow.income_category.as_ref(),
-                cashflow.deduction_category.as_deref(),
+                TransferContext {
+                    actor_id: None,
+                    income_category: cashflow.income_category.as_ref(),
+                    deduction_category: cashflow.deduction_category.as_deref(),
+                },
             )?;
         }
     }

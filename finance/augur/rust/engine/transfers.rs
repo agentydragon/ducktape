@@ -15,18 +15,27 @@ pub struct TransferRequest {
     pub amount: Money,
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Admission and tax character supplied by the engine, never by the actor's payload.
+pub(super) struct TransferContext<'a> {
+    pub(super) actor_id: Option<&'a str>,
+    pub(super) income_category: Option<&'a IncomeSource>,
+    pub(super) deduction_category: Option<&'a str>,
+}
+
 pub(super) fn execute_transfer(
     input: &ExecutionInput,
-    actor_id: Option<&str>,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     tax: &mut TaxState,
     month: u32,
     request: &TransferRequest,
-    income_category: Option<&IncomeSource>,
-    deduction_category: Option<&str>,
+    context: TransferContext<'_>,
 ) -> Result<(), SimulationError> {
+    let TransferContext {
+        actor_id,
+        income_category,
+        deduction_category,
+    } = context;
     // None is reserved for engine-scheduled cashflows, not caller-requested credit.
     if let Some(actor_id) = actor_id {
         if request.cause_id.is_empty() {
@@ -74,10 +83,7 @@ pub(super) fn execute_transfer(
         recorder,
         tax,
         month,
-        &request.cause_id,
-        &request.from,
-        &request.to,
-        request.amount,
+        request,
         income_category,
         deduction_category,
     )
@@ -86,19 +92,22 @@ pub(super) fn execute_transfer(
 /// The accounting operation for both admitted actor transfers and scheduled cashflows.
 /// Scheduled external flows may debit an exogenous counterparty below zero; that
 /// does not grant an actor permission to overdraw. Every fallible update is staged.
-#[allow(clippy::too_many_arguments)]
 fn post_cashflow(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     tax: &mut TaxState,
     month: u32,
-    cause_id: &str,
-    from: &AccountRef,
-    to: &AccountRef,
-    amount: Money,
+    request: &TransferRequest,
     income_category: Option<&IncomeSource>,
     deduction_category: Option<&str>,
 ) -> Result<(), SimulationError> {
+    let TransferRequest {
+        cause_id,
+        from,
+        to,
+        amount,
+    } = request;
+    let amount = *amount;
     if let Some(category) = deduction_category
         && category != "ordinary"
     {
@@ -124,7 +133,7 @@ fn post_cashflow(
     income.commit();
     recorder.record_transfer(TransferOutcome {
         month,
-        cause_id: cause_id.into(),
+        cause_id: cause_id.clone(),
         from: from.clone(),
         to: to.clone(),
         amount,

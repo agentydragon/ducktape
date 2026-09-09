@@ -80,14 +80,16 @@ impl Books {
     ) -> Result<(), SimulationError> {
         execute_transfer(
             &self.input,
-            actor,
             &mut self.ledger,
             &mut self.recorder,
             &mut self.tax,
             0,
             request,
-            income,
-            deduction,
+            TransferContext {
+                actor_id: actor,
+                income_category: income,
+                deduction_category: deduction,
+            },
         )
     }
 
