@@ -15,8 +15,8 @@ with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
 Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant-specific `revoke`;
 there is no HTTP endpoint accepting client-provided Identity/issuer/client/grant bindings. Bind is
 idempotent by its consent grant UUID, reconnect locks the Connection and ends the old grant, and
-activation is bounded by its deadline. The app BFF/consent UI and FastMCP protocol adapter are
-separate implementation slices. An authenticated external adapter submits a resolved
+activation is bounded by its deadline. The [app consent UI](../app/README.md) and
+[OAuth adapter](#external-oauth) use this authority. An authenticated external adapter submits a resolved
 `Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
 never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
 snapshot atomically with the first request. Shared-Identity idempotent retries preserve the original
@@ -32,9 +32,8 @@ the historical Decision. Already claimed work is not stopped. Receipt and execut
 the original snapshot; no credentials are stored in it. Migration `0009_action_external_grant`
 adds its nullable column without inventing provenance for pre-existing requests.
 
-The external OAuth bearer adapter itself remains a separate implementation slice.
-This slice assumes Action Service/PostgreSQL owns Connection authority, with the integration app
-owning its operator UI. It adds no policy language, Thread lifecycle or deployment configuration.
+Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
+Configurable policies and the Thread lifecycle are separate from this authority.
 
 The v0 executable seam is deliberately small:
 

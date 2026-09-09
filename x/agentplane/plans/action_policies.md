@@ -4,8 +4,8 @@ Status: **`POLICYBIND` design gate before `CALLERPOLICY` and `SBPOLICY` implemen
 [the task DAG](task_dag.md).** The single
 operator configures bounded auto-approval for both external MCP connections and harnesses running
 in Threads inside Sandboxes. Both use the canonical Action Service and Decision lifecycle.
-This gate does not block `EID`/`MCPOAUTH` or the initial human-approved Claude.ai connection.
-Runtime OAuth/Connection bookkeeping is designed separately from policy representation.
+Identity/OAuth/Connection authority is implemented independently of policy representation.
+This gate does not block the initial human-approved Claude.ai connection.
 
 ## Callers and policy selectors
 
@@ -77,8 +77,9 @@ remains deferred; do not create a competing Action-policy owner when that profil
 ### Open model and storage choices
 
 **Open design gate, not a selected schema.** Specify how policy configuration is associated with
-authority and where that association is stored before implementing policy selectors or identity
-tables. The policy binding and the OAuth Connection are different relationships:
+authority and where that association is stored before implementing policy selectors or policy-binding
+persistence. Configured Identities and runtime Connection authority already exist. The policy binding
+and the OAuth Connection are different relationships:
 
 - **Policy definition / set:** canonical named, versioned Action conditions and decider
   configuration reusable across caller classes, as above.
@@ -90,7 +91,8 @@ tables. The policy binding and the OAuth Connection are different relationships:
   runtime relationship is separate from the configured Identity's policy bindings and must have a
   writable authority even when all policy configuration is in Git.
   Enrollment and later management live in the integration app; its BFF calls the canonical runtime
-  authority. This UI choice does not determine which store owns the binding.
+  PostgreSQL authority. This is implemented independently of policy-assignment storage; the remaining
+  management and reconnect UI work is tracked in the external connection plan.
 - **Caller resolution:** external token → Connection → configured Identity; workload token →
   SandboxPrincipal → concrete Actions-owned Sandbox policy bindings. The integration app alone
   resolves SandboxPreset defaults/additions into these bindings. Thread/preset IDs do not supply authority.
@@ -126,19 +128,17 @@ the evaluated version and stable identity across resource changes; deleting and 
 name must not silently transfer existing grants or pending Actions. Kubernetes RBAC on configuration
 writers and per-Action authorization solve different parts of that contract.
 
-Runtime Connection/Identity/grant storage is decided independently under `EID`/`MCPOAUTH`, so the
-human-approved external slice can proceed first. Runtime Connection records, names, current Identity bindings, and grant/revocation state could
-remain in PostgreSQL while referring to Kubernetes- or configuration-owned Identities. Alternatively,
-a service-owned Kubernetes Connection resource could hold enrollment metadata and the active
-association, with credential state in an appropriate private store. Compare both for runtime create,
-rename, unbind, and rebind; this is not a choice between predeclaring every DCR client in Git and
-supporting no enrollment. A GitOps reconciler must not overwrite runtime-owned Connection changes.
+Runtime Connections/grants/enrollments already live in the Action Service's PostgreSQL authority,
+referencing configured Identities; OAuth SDK state uses encrypted PostgreSQL storage. Keep that
+runtime ownership separate from the open policy-definition/assignment choice. A GitOps reconciler
+must not overwrite runtime-owned Connection changes.
 
-Neither split is selected: decide how dangling references, renamed/deleted resources, and policy
-changes invalidate access without treating cached or mirrored data as another authority. Do not copy
-the same editable binding into both Kubernetes and PostgreSQL. The
-[Connection lifecycle](external_mcp_connections.md) requires old Action provenance to survive rebind;
-token behavior and binding revisions are part of this storage/model decision.
+For policy references, decide how dangling/deleted resources and policy changes invalidate access
+without treating cached or mirrored data as another authority. Do not copy the same editable policy
+binding into Kubernetes and PostgreSQL. The
+[Connection contract](../action_service/SPEC.md#external-connection-authority) already defines
+immutable revisions, historical provenance, and fresh authorization on replacement; policy work
+must preserve it rather than reopen token-retargeting semantics.
 
 The design decision must name the canonical owner for every relationship, identifier stability,
 cardinality and precedence, cross-reference validation, mutation path, and reload/revocation behavior
@@ -178,8 +178,8 @@ and retain bounded policy/version evidence with the canonical Action records.
   reconciliation and unavailable policy/binding data. Prevent stale bindings from retaining removed
   auto-approval. Preset inheritance stays in the app; broader capability profiles are not required.
 - **Configuration/composition:** resolve `POLICYBIND` above, then choose minimal typed conditions and
-  precedence of mandatory bounds and deciders. External selectors require `EID`; the shared
-  policy machinery and Sandbox slice can proceed before external identity/OAuth implementation.
+  precedence of mandatory bounds and deciders. Trusted external Identity and Sandbox caller
+  resolution are already available; neither policy slice needs new OAuth implementation.
 - **Pending work and revocation:** define admission/Decision/dispatch consistency and record the
   evaluated policy version. Revalidate required authority before dispatch and specify the
   linearization point and revocation bound. A replacement Connection or changed Sandbox binding must

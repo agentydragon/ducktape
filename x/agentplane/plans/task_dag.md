@@ -28,12 +28,11 @@ flowchart TB
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
-    EID["Planned support<br/>configured static external identity<br/>trusted caller + connection binding"]:::future
     POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
-    MCPOAUTH["Planned support<br/>OAuth/DCR + integration-app enrollment<br/>named Connections, rename/unbind/rebind"]:::future
+    MCPDEPLOY["In progress<br/>OAuth-capable images + staging wiring<br/>public MCP and Sandbox reachability"]:::active
+    RECONNECT["Remaining support<br/>fresh consent for existing Connection<br/>explicit reconnect or Identity change"]:::future
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
-    MCPFRONT["Planned support<br/>generic Action MCP tools<br/>discover, request, read, cancel"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>external harness/client compatibility"]:::future
@@ -61,19 +60,14 @@ flowchart TB
     MCP0 --> MCPAUTH
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    EID --> MCPOAUTH
     POLICYBIND --> CALLERPOLICY
     CALLERPOLICY --> SBPOLICY
-    MCPFRONT --> CLAUDEAI
-    MCPOAUTH --> CLAUDEAI
+    MCPDEPLOY --> CLAUDEAI
     APPROVALUI --> CLAUDEAI
     CLAUDEAI --> EXTERNALMCP
     EXTERNALMCP --> MCPAGG
-    MCPFRONT -. replacement surface .-> MCPAGG
-    MCPFRONT -. replacement surface .-> RETIRE_TOOLS
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
-    EID -. external identity .-> RETIRE_AGENT
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
@@ -85,23 +79,26 @@ flowchart TB
 
 The credentialless deployed gate is `MCP0 -> MCPACCEPT`: use the existing staging-owned
 streamable-HTTP fixture and real Claude/Codex acceptance turns. Implementation and CI evidence
-already exist; deployed proof remains. Credentialed upstream access is separate (`MCPAUTH`).
+already exist. A real two-provider echo pass is recorded in
+[#5922](https://github.com/agentydragon/ducktape/pull/5922); the full rerunnable evidence gate remains.
+Credentialed upstream access is separate (`MCPAUTH`).
 Input delivery and proxy survivability can proceed independently of the external-client track.
 
 The external-client track is single-operator and independent of `MCP0` and the broader `AG` model.
 Its product terms are Identity (configured authority), Connection (runtime named client enrollment), and Thread
 (execution/conversation state); it adds no multi-operator management or per-operator ownership model.
-Its first Identity is configured and static (`EID`); OAuth/DCR enrollment (`MCPOAUTH`) binds a Connection to
-it. The first external slice uses human approval, not configurable per-Identity auto-approval. These join the canonical MCP frontend
-(`MCPFRONT`), landed Executor support, and deployed operator review first at `CLAUDEAI`: a real
-Claude.ai connection running governed Actions. `EXTERNALMCP` additionally proves independently
-running Claude Code. The [external connection plan](external_mcp_connections.md)
-owns the workflow and remaining design choices. Static identity does not select static credentials
-or wait for `CRED`/`PROFILES`; outbound backend-account OAuth remains the separate `MCPAUTH` track.
-`EXTERNALMCP` is the initial client proof for `MCPAGG`, not proof of full Haku tool parity.
-`POLICYBIND` separately settles policy definition/assignment storage before `CALLERPOLICY`; neither
-gates `EID`, `MCPOAUTH`, or the human-approved `CLAUDEAI`/`EXTERNALMCP` proof. Stable caller identity,
-runtime Connection/grant bookkeeping, and revocation still need real contracts before OAuth implementation.
+Configured static Identities, runtime Connection/grant authority, OAuth/DCR enrollment with app
+consent, the generic MCP frontend, Connection list/rename/unbind UI, and provenance display are implemented.
+The remaining first-delivery work is staging rollout (`MCPDEPLOY`) and real operator/client proof
+(`APPROVALUI` / `CLAUDEAI`). `RECONNECT` extends management independently and does not gate
+the initial new-Connection flow. `EXTERNALMCP` additionally proves independently
+running Claude Code. The [external connection plan](external_mcp_connections.md) owns remaining
+delivery and compatibility work, not a duplicate of the implemented contracts.
+The first external slice uses human approval. `POLICYBIND` settles policy-definition/assignment
+storage before `CALLERPOLICY`; neither gates the human-approved client proof. Connection authority
+already lives in PostgreSQL and is not part of that open storage decision. Static Identity does
+not select backend credentials or wait for `CRED`/`PROFILES`; outbound account OAuth remains
+`MCPAUTH`. Initial client proof does not establish full Haku tool parity.
 Hosted harnesses continue to call Actions from their Sandbox Threads: `CALLERPOLICY -> SBPOLICY`
 adds configurable auto-approval through concrete Actions-owned Sandbox bindings. SandboxPreset stays
 an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
@@ -123,6 +120,10 @@ server without the Agent or Action Service holding a provider credential.
 
 **Observed evidence:** production composition, remote transport, staging Everything binding,
 bounded echo auto-allow policy, and `x/agentplane/acceptance/test_mcp.py` are implemented.
+[#5922](https://github.com/agentydragon/ducktape/pull/5922) records a real Claude/Codex echo pass.
+The broader independent-evidence scenarios in
+[#5822](https://github.com/agentydragon/ducktape/pull/5822) remain open; reconcile that PR against
+current federation/cancellation contracts before adding overlapping acceptance work.
 
 **Needed support:** verify deployed images/configuration and run that suite through the real
 OIDC/BFF and harness paths. Keep real MCP tools for success cases and isolated doubles only for
@@ -149,57 +150,34 @@ refresh, one safe GitHub read, token refresh/reconnect, and negative isolation f
 different account. This milestone must not block `MCP0` or be folded into the credentialless fixture
 test.
 
-### `EID` — configured external Identity and authentication
+### `MCPDEPLOY` — stage the external MCP endpoint
 
-**Planned first slice:** a configured static external identity, independent of Thread, Sandbox,
-OAuth client registration, and credential lifetime. It is the caller known to Action authorization,
-DecisionProviders, and execution; an authorized connection binding preserves exact submission
-provenance and revocation. Use Identity for this authority, Connection for the runtime named client
-enrollment and its current binding, and Thread for execution/conversation state. The single operator configures Identities and authorizes
-Connections. Multiple-operator management and per-operator ownership are out of scope, as are the
-full `AG` lifecycle and static-bearer schemes. Username and caller-supplied provenance are not authority.
+**In progress:** [#5926](https://github.com/agentydragon/ducktape/pull/5926) prepares the
+dedicated Authentik provider, persistent OAuth keys, configured Identity, public protocol routes,
+and Sandbox `/mcp` egress substitution. Keep it draft until published Action Service, migration,
+and integration-app images contain the merged consent/OAuth implementation and the deployment pins
+are compatible. A merged source PR or a healthy old pod does not establish readiness.
 
-**Design gate:** settle stable configured Identity references, single-operator consent, Connection
-granularity, caller read/idempotency scope, runtime auth bookkeeping, and revocation/dispatch consistency
-in the [external connection plan](external_mcp_connections.md). Policy representation is not a
-prerequisite: the first external callers use human approval; add policy associations through
-`CALLERPOLICY` later without replacing identity or rewriting original client provenance.
+**Acceptance:** after operator-approved rollout, verify migrations, required reflected configuration,
+public discovery/callback/resource URLs, and external MCP reachability. Follow the rollout runbook
+in that PR. Then run `CLAUDEAI`; this configuration task alone cannot satisfy it. Verify Sandbox
+MCP reachability in parallel; that caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
-**Acceptance evidence:** a trusted connection resolves to identity A throughout an Action's
-lifecycle; B cannot impersonate A or read its receipts. Refresh preserves identity, reconnect
-requires authorized binding, and disabling A invalidates its bindings under the defined contract.
-Preserve the exact authenticated OAuth client registration, Connection, and grant/binding revision
-on each Action independently of its owning Identity. Two clients sharing one Identity remain
-distinguishable in audit; rename/rebind/removal and duplicate submission cannot rewrite attribution.
+### `RECONNECT` — authorize an existing Connection through fresh consent
 
-### `MCPOAUTH` — OAuth/DCR enrollment and runtime Connection management
+**Remaining support:** extend enrollment and the app consent UI with an explicit new/existing
+Connection choice, reviewed Connection version, and authority-change confirmation. The trusted
+`ReconnectConnection` primitive already exists, but enrollment currently always uses
+`NewConnection`. Reuse the existing browser-bound consent and operator authority.
 
-**Planned support:** Claude.ai and independently running harnesses such as Claude Code discover the
-remote MCP endpoint and complete their OAuth flow, including DCR support, operator consent,
-and token exchange. During enrollment the operator names the client Connection and selects an
-existing configured `EID`. Connections are persisted at runtime and can be renamed, unbound, or
-rebound to another configured Identity. DCR metadata alone grants no Action authority. Keep this inbound
-connection separate from `MCPAUTH`, which connects Executors to credentialed upstream accounts.
+The grant semantics are settled: replacement ends the old grant when the pending revision is
+bound; old tokens never gain the replacement Identity, and failed activation does not restore the
+old grant. Preserve historical Action provenance and original-grant dispatch checks. Do not infer
+an existing Connection from a display name or fresh DCR client ID.
 
-**UI ownership:** enrollment consent/name/Identity selection and subsequent Connection management
-live in the integration app. DCR registration is machine-to-machine; the authorization endpoint
-hands the browser to that UI, the app authenticates the single operator and records consent through
-its BFF, and the authorization server returns a code to the client's registered callback. Keep
-operator-login credentials/state separate from the client's OAuth transaction and eventual token.
-
-**Design gate / acceptance:** choose the authorization-server owner and reusable OAuth machinery,
-including the transaction-bound integration-app handoff and authenticated BFF completion/management
-API. Inspect the existing operator federation for reuse; its current Action-review support does not
-implement this enrollment protocol. Then prove the real browser flow, naming/Identity selection, resource-bound tokens, refresh,
-reconnect, rename, unbind, and rebind. Settle binding history, pending Actions/old receipt scope, and
-whether rebind changes existing tokens' effective authority or requires reauthorization. Registration
-mechanism and mutable names must not determine durable identity. See the
-[external connection plan](external_mcp_connections.md), including DCR/CIMD compatibility.
-Build on the operator-approved assumption that Haku Console's DCR works, reusing pinned
-FastMCP/Authlib and existing `mcp_infra` protocol/persistence machinery. Do not require more
-compatibility probes or live Claude.ai proof before implementation; test the new consent/authority
-boundaries and fix client compatibility during subsequent acceptance. No configurable policy or
-SandboxPreset representation is required.
+**Acceptance:** same-Identity reconnect and explicit A-to-B rebind, stale/conflicting browser
+submissions, failed replacement issuance, old-token rejection, and unchanged historical receipts.
+Neither this feature nor configurable policies gates the initial Claude.ai connection.
 
 ### `POLICYBIND` — policy-binding model and storage
 
@@ -220,11 +198,10 @@ owns the worked example, composition choices, and shared-policy acceptance.
 
 The [Action policy plan](action_policies.md) compares app configuration, Kubernetes resources,
 PostgreSQL, and mixed ownership. No option is selected. For Kubernetes, define resource shape,
-RBAC, references, and informer freshness. Runtime Connections need a writable authority, whether
-PostgreSQL or service-owned Kubernetes resources, even with Git-managed policy definitions.
-Walk one external and one hosted request through enrollment/rebind, resolution, policy edit, and dispatch
-before implementing `CALLERPOLICY` persistence, not before `EID` or OAuth bookkeeping. Existing Sandbox authentication and Action
-execution remain usable while this design is open.
+RBAC, references, and informer freshness. Runtime Connections/grants already use the Action
+Service's PostgreSQL authority. Walk one external and one hosted request through policy resolution,
+policy edit, and dispatch before implementing `CALLERPOLICY` persistence. Existing human-approved
+external access, Sandbox authentication, and Action execution remain usable while this design is open.
 
 ### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
 
@@ -238,8 +215,8 @@ when another provider allows; permitted requests without auto-approval may take 
 **Design gate / acceptance:** after `POLICYBIND`, the [Action policy plan](action_policies.md) owns typed caller
 selectors, mandatory bounds, decider composition, and policy changes between submission and dispatch.
 Prove matching auto-allow, changed-argument review/deny, caller-class isolation, and rejection on
-failed mandatory bounds. External selector integration needs `EID`; the shared machinery and Sandbox
-slice do not wait for it. Broad `PROFILES` and a policy DSL remain deferred.
+failed mandatory bounds. Trusted external Identity and Sandbox caller resolution already exist;
+this task adds policy associations and enforcement. Broad `PROFILES` and a policy DSL remain deferred.
 
 ### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
 
@@ -275,8 +252,8 @@ unrelated lifecycle reliability work are not reclassified as search implementati
 
 ### `EXTERNALMCP` — hosted clients and external harnesses using governed Actions
 
-**Planned milestone:** `EID`/`MCPOAUTH` and `MCPFRONT` compose with the existing Executor
-and operator-review paths. Real Claude.ai and local Claude Code connections (for example on wyrm2)
+**Remaining client acceptance:** use the implemented OAuth, generic MCP, Executor, and operator-review
+paths. Real Claude.ai and local Claude Code connections (for example on wyrm2)
 use selected static Identities to discover and submit one credentialless Action for human approval,
 receive a durable pending receipt
 and read the result after human review. Independently verify Action ownership, binding, Decisions,
@@ -288,8 +265,8 @@ Sandbox/Thread or upstream credentials; only Actions routed through this service
 
 ### `CRED` — static credential and binding design
 
-This gate concerns static credentials and backend bindings; the configured static identity in
-`EID` authenticates through OAuth in `MCPOAUTH` and does not depend on selecting a static credential.
+This gate concerns static credentials and backend bindings. Configured static Identities already
+authenticate through inbound OAuth and do not depend on selecting a static backend credential.
 
 **Deferred decision — Rai confirmation required:** define what a static credential is bound to
 (Identity, external account, MCP server, or another authority), which component owns issuance and
@@ -320,91 +297,9 @@ external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for `
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
 
-### `MCPFRONT` — Action Service MCP frontend
-
-**Planned support — smallest user-visible behavior:** an authenticated MCP client discovers
-Actions, submits one ActionRequest with an optional bounded wait, and reads its pending Decision and
-eventual safe result. This is external MCP presentation over the canonical Action API, not another
-executor, remote MCP runtime, or lifecycle store.
-
-**Placement selected:** host the MCP server in the Action Service process, sharing its catalog,
-authentication, service/store, and lifecycle. No separate pod or sidecar is required for the first
-slice. Use FastMCP for consistency and caller-neutral naming (such as `ActionsMcp`):
-external Identities use the same surface. OAuth authorization-server placement remains
-a separate `MCPOAUTH` design question.
-
-**Initial surface chosen:** fixed generic tools such as `list_actions`, `get_action`, and
-`request_action`, plus request-status/event reads and `cancel_action_request`. An Action definition and a submitted ActionRequest
-are distinct. Do not mirror Actions into individually exposed MCP tools in this first slice; the
-[connection plan](external_mcp_connections.md) owns the working inventory, schemas to settle, and
-client workflow. Detailed schemas/descriptions are opt-in through `include_fields`; default discovery
-stays compact. Per-Action projection is an optional experiment contingent on evidence from the generic
-interface, not a scheduled follow-on or required migration step.
-
-**Available foundations:** canonical catalog, Decision/Action-state, durable events, notification-driven
-bounded waits, owner-only pre-claim cancellation, and Sandbox authentication. The shared frontend accepts both Sandbox workload
-bearers and external OAuth access tokens; `EID`/`MCPOAUTH` add the external path and are required for
-`CLAUDEAI`, not for implementing the common tools or Sandbox-authenticated MCP. Caller-supplied Agent/Thread names and
-origin/correlation are not identity authority. `MCPFRONT` is not a prerequisite for `MCP0`.
-The initial external clients are Claude.ai and Claude Code through `MCPOAUTH`, initially using human
-approval. Their combined acceptance is `EXTERNALMCP`; `CALLERPOLICY` adds bounded per-Identity deciders
-later. The [connection plan](external_mcp_connections.md)
-keeps the remaining generic-tool schema and authorization design choices explicit.
-
-**Needed support / contract:**
-
-- **Authentication:** reuse workload bearer validation and live Sandbox resolution, including the
-  existing egress token-substitution path, alongside external Connection/Identity resolution. Preserve
-  each caller kind's ownership and policy context; no DCR requirement for Sandboxes, no operator
-  authority, and no permissive fallback between validators. Both paths expose the same generic tools.
-- **Catalog:** compact list/get views preserve group/name identity; `include_fields` explicitly
-  selects existing input schemas and full descriptions. Do not embed the catalog in the generic
-  tools' own schemas or return omitted detail through nested fields. Defer output schemas and other
-  new Action metadata until after a working frontend; they do not gate `MCPFRONT` or `CLAUDEAI`.
-  Reject unsupported field selections clearly. Never expose executor
-  bindings or credentials, create an MCP-owned registry, or dispatch directly to an upstream tool.
-- **Submit:** forward the canonical ActionRequest envelope and caller-scoped idempotency key under
-  the authenticated external Identity or Sandbox principal. Return the durable request ID and current state,
-  including `decision_pending`, immediately by default. Submission and request-status reads both
-  offer an explicit bounded wait for decision resolution or terminal execution; expiry returns the
-  current receipt, not an Action failure. An MCP wait timeout/disconnect never cancels or retries the
-  durable Action. Reuse the landed notification-driven wait implementation and
-  [bounded-wait contract](../action_service/SPEC.md#bounded-receipt-waits); no transport-owned polling loop.
-- **Get / events:** read only that caller's canonical request and ordered durable Action events.
-  `after_sequence` is the last event sequence already received; return later events in order, use
-  the last returned sequence for the next poll, and return an empty list when none are newer.
-  Reconnect/restart resumes from the same request ID and cursor, without another submission or
-  execution. Do not add a frontend-owned cursor, queue, or event log.
-- **Cancel:** `cancel_action_request(request_id)` calls canonical owner-only cancellation without
-  an expected version. Preserve typed outcomes, dispatch-claim cutoff, audit, idempotence, and
-  wakeups of receipt waiters. See [cancellation](../action_service/SPEC.md#cancellation).
-- **Deployment:** add the `/mcp` route to the staging Actions egress destination policy with the
-  existing token substitution. Current REST-only allow rules do not establish harness reachability.
-- **Approvals:** canonical DecisionProviders and the existing operator UI/BFF remain the decision
-  path, including expected-version/idempotent allow/deny. MCP clients cannot acquire operator
-  authority or bypass the canonical single-Execution/no-blind-retry lifecycle.
-- **Isolation / projection:** preserve caller-own reads and canonical redaction of arguments,
-  results, errors, and events. The human `decision_note` remains shared unchanged with caller and
-  operator, not a private channel; non-human `reason_code`/`reason_description` remain separate.
-
-**Acceptance evidence:** a real external MCP client, authenticated as Identity A, discovers a configured
-Action, submits it, observes pending state, and resumes event polling after reconnect and service
-restart. Allow through the canonical operator BFF produces exactly one Execution and the same safe
-result as the Action API; deny produces none. Replay duplicate submission/Decision delivery and
-prove Identity B cannot get or poll A's request, forged provenance cannot change ownership, and no
-operator-only arguments, credential-bearing bindings, or unsafe executor payloads leak through MCP.
-Exercise bounded polling on submission and reads, including pending deadlines, decision-only versus
-execution completion, already-complete requests, and reconnect without duplicate execution.
-Verify notification-driven wakeups, setup-race safety, channel-loss handling, and no periodic state
-queries while idle.
-Separately prove the same MCP workflow with a Sandbox workload bearer, without DCR, retaining
-per-Sandbox receipt/idempotency isolation and rejecting invalid credentials. This frontend auth proof
-does not require the new configurable `SBPOLICY` behavior.
-Use the existing FastMCP stack; no frontend-specific persistence is needed.
-
 ### `MCPAGG` — Haku Console MCP aggregator replacement
 
-**Deferred migration:** use `MCPFRONT` as the replacement external MCP presentation surface for Haku
+**Deferred migration:** use the implemented generic Action MCP frontend as the replacement surface for Haku
 Console's aggregator. Verify the required external harness/client workflows against it before
 retiring the old surface; do not build a second frontend, approval coordinator, or authority store.
 `EXTERNALMCP` proves Claude.ai and independently running Claude Code with OAuth and configured Identities.
@@ -439,17 +334,20 @@ The app's Actions page lists pending/recent requests, exact arguments and caller
 Decision/result/error state, and offers Allow/Deny for pending requests. `/actions` BFF routes and
 frontend/integration tests cover those controls; this is not a missing UI implementation.
 
-**Needed support:** verify actual deployment and provider claims, distinct authorized identities
-and rejected identities, then execute the existing BFF approval acceptance. Signed mock integration
-is CI evidence, not deployed Authentik proof. Do not add another approval coordinator or require
+**Needed support:** verify actual deployment, provider claims, and allowed/denied operator access,
+then execute the existing BFF approval acceptance without widening allowlists for a test.
+[#5922](https://github.com/agentydragon/ducktape/pull/5922) fixed login-client CSRF handling and
+the source-subject mapping, but its live run did not complete the approval gate. Verify the corrected
+configuration has rolled out before rerunning. Signed mock integration is CI evidence, not deployed
+Authentik proof. Do not add another approval coordinator or require
 push notifications for the polling UI.
 
 **User-visible acceptance:** a Claude.ai-submitted Action appears in the deployed integration app;
 the operator inspects its exact arguments and authenticated submitting Identity/client/Connection,
 allows or denies it there, and Claude.ai receives the resulting durable receipt and safe result
-(one Execution on allow, none on deny). The basic review UI is present; displaying the new external
-client/Connection provenance is additional integration when `EID` lands. Verify the browser controls
-as well as BFF requests. This flow is part of `CLAUDEAI`, enabling a useful partial Haku replacement
+(one Execution on allow, none on deny). Review controls and external client/Connection/grant
+provenance display are implemented. Verify the browser controls as well as BFF requests.
+This flow is part of `CLAUDEAI`, enabling a useful partial Haku replacement
 without claiming complete tool parity or permission to retire Haku.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
@@ -463,7 +361,7 @@ removing the old owner.
 ### `RETIRE_TOOLS` — Haku Console tool-call and approval management migration
 
 **Deferred migration:** retire Haku Console's connected-MCP catalog, tool-call application/approval
-queue, and related tool-call management only after `MCPFRONT`, the `MCPAGG` compatibility migration,
+queue, and related tool-call management only after the `MCPAGG` compatibility migration,
 integration-app approval UI, credential bindings, and canonical Action/Decision APIs cover the
 required workflows.
 This track may move independently of Agent/conversation management: Haku Console may continue to own

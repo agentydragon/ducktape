@@ -16,7 +16,7 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 - [Operations and access](operations_and_access.md) — remaining credentialed/hostexec adapter boundaries
 - [Asynchronous approvals](async_approvals.md) — remaining notification/progress delivery and provider-log safety
 - [Configured Action policies](action_policies.md) — open policy-binding storage/model gate, then bounded auto-approval by external Identity or concrete Sandbox binding
-- [External MCP connections](external_mcp_connections.md) — Claude.ai and local Claude Code OAuth connections, runtime naming/rename/unbind/rebind, configured Identities, and Haku MCP replacement
+- [External MCP connections](external_mcp_connections.md) — staging rollout, real Claude.ai/local Claude Code acceptance, remaining Connection management/reconnect, and Haku migration
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [BuildBuddy hosted remote-run authentication](buildbuddy_remote_auth.md) — unresolved hosted-run credential boundary
@@ -26,7 +26,9 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 ## Implemented contracts
 
 Use the [Action Service specification](../action_service/SPEC.md) and
-[README](../action_service/README.md) for catalog, Decisions, events, bounded waits, and cancellation.
+[README](../action_service/README.md) for catalog, Decisions, events, bounded waits, cancellation,
+generic MCP, configured Identities, Connection grants, and OAuth/consent. The
+[app README](../app/README.md) owns the consent and Action-review presentation contracts.
 [Executor liveness](../docs/executor_liveness.md), [operator federation](../docs/operator_federation.md),
 [workload authentication](../docs/workload_authentication.md), and
 [launch presets](../docs/launch_presets.md) own the other implemented contracts.
