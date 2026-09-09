@@ -19,14 +19,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from x.agentplane.action_service.auth import workload_principal
+from x.agentplane.action_service.caller_auth import CallerAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, Key, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
-from x.agentplane.action_service.models import ActionEventView, ActionRequestInput, ActionRequestView, Principal
+from x.agentplane.action_service.models import (
+    ActionEventView,
+    ActionRequestInput,
+    ActionRequestView,
+    ExternalGrantProvenance,
+    Principal,
+)
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
 from x.agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in this page (1-100).")]
 WaitSeconds = Annotated[
@@ -61,7 +66,7 @@ class EventPage(BaseModel):
 class ActionsMcp:
     """Authenticate every transport request, never just MCP initialization or a session id."""
 
-    def __init__(self, app: ASGIApp, authenticator: SandboxPrincipalAuthenticator) -> None:
+    def __init__(self, app: ASGIApp, authenticator: CallerAuthenticator) -> None:
         self._app = app
         self._authenticator = authenticator
 
@@ -71,7 +76,7 @@ class ActionsMcp:
             return
         request = Request(scope)
         try:
-            request.state.action_principal = workload_principal(await self._authenticator(request))
+            request.state.action_principal = await self._authenticator(request)
         except HTTPException as error:
             await JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)(
                 scope, receive, send
@@ -133,7 +138,7 @@ def _result(model: BaseModel, *, exclude_none: bool = False) -> ToolResult:
 
 
 def create_server(
-    service: ActionService, catalog: ActionCatalog, updates: ActionUpdates, authenticator: SandboxPrincipalAuthenticator
+    service: ActionService, catalog: ActionCatalog, updates: ActionUpdates, authenticator: CallerAuthenticator
 ) -> FastMCP:
     waiter = ActionWaiter(service, updates)
     server = FastMCP(
@@ -147,13 +152,13 @@ def create_server(
 
     async def revalidate(principal: Principal) -> None:
         try:
-            current = workload_principal(await authenticator(get_http_request()))
+            current = await authenticator(get_http_request())
         except HTTPException:
             raise ToolError(
-                "Workload authorization expired during the wait; reconnect with a valid workload bearer."
+                "Caller authorization expired during the wait; reconnect with a valid caller bearer."
             ) from None
         if current != principal:
-            raise ToolError("Workload identity changed during the wait; recover the request as its original caller.")
+            raise ToolError("Caller identity changed during the wait; recover the request as its original caller.")
 
     async def wait_for_receipt(request_id: UUID, principal: Principal, options: WaitOptions) -> ActionRequestView:
         if options.wait_seconds == 0:
@@ -228,7 +233,8 @@ def create_server(
         Pending is not success. After response loss reuse the identical request/key or read its ID, never submit a new key.
         """
         principal = _principal()
-        view = await service.submit(request, principal)
+        external_grant = cast(ExternalGrantProvenance | None, get_http_request().state.action_external_grant)
+        view = await service.submit(request, principal, external_grant=external_grant)
         if wait_seconds:
             view = await wait_for_receipt(
                 view.id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)

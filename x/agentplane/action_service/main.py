@@ -23,7 +23,9 @@ from x.agentplane.action_service.auth import (
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
 from x.agentplane.action_service.connections import ConnectionAuthority, Identity
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
+from x.agentplane.action_service.enrollments import EnrollmentAuthority
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
+from x.agentplane.action_service.oauth import OAuthSettings, running_oauth
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
@@ -59,6 +61,7 @@ class Settings(BaseSettings):
     )
     operator_bearer_file: Path | None = None
     operator_oidc: OperatorOidcSettings | None = None
+    oauth: OAuthSettings | None = None
     operator_subject: str = "configured-bff"
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
@@ -127,6 +130,7 @@ async def async_main(settings: Settings) -> None:
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
         executors = await stack.enter_async_context(running_executor(catalog))
         connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
+        enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         service = ActionService(
             ActionStore(make_sessionmaker(engine), external_grants=connections), catalog, executors, providers=providers
         )
@@ -143,6 +147,13 @@ async def async_main(settings: Settings) -> None:
             operator_authenticator = ConfiguredOperatorBearerAuthenticator.from_file(
                 settings.operator_bearer_file, subject=settings.operator_subject
             )
+        oauth = (
+            await stack.enter_async_context(
+                running_oauth(settings.oauth, settings.database_url, enrollments, connections)
+            )
+            if settings.oauth is not None
+            else None
+        )
         app = create_app(
             service,
             SandboxPrincipalAuthenticator(
@@ -157,6 +168,8 @@ async def async_main(settings: Settings) -> None:
             catalog,
             connections=connections,
             updates=ActionUpdates(settings.database_url),
+            enrollments=enrollments if oauth is not None else None,
+            oauth=oauth,
         )
         await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
 

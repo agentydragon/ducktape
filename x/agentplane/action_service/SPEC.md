@@ -86,13 +86,24 @@ not mirrored into MCP tools. Catalog responses omit input schemas and full descr
 explicitly requested. Lists and wait durations are bounded, and backend configuration is never
 exposed.
 
-Every MCP HTTP request authenticates through the existing Sandbox bearer resolver, including live
-workload validation. Reused MCP session identifiers confer no authority. Long waits revalidate
-workload authorization before returning data. Operator bearers, unexchanged credential placeholders,
+Every MCP HTTP request authenticates its bearer, with live workload validation for Sandbox callers.
+Reused MCP session identifiers confer no authority. Long waits revalidate
+caller authorization before returning data. Operator bearers, unexchanged credential placeholders,
 and caller-supplied identity/policy claims cannot acquire this authority. An Origin header does not
 grant authority or categorically disqualify a caller; FastMCP provides automatic Host/Origin
 protection for loopback access. Browser cookies are not authentication on this endpoint.
-The frontend currently accepts Sandbox callers; external OAuth/DCR is not implemented yet.
+When external OAuth is configured, the frontend also accepts verified, active Connection grants.
+DCR registration alone is not authority. Consent binds one configured Identity and named Connection
+to the validated authorization interaction and approving operator; upstream issuer/subject must
+match the explicit operator mapping before token issuance. One consent permits at most one token
+family. Ambiguous post-claim issuance requires fresh authorization.
+
+Refresh and bearer admission resolve current canonical grant validity. Ended bindings cannot
+acquire replacement Identity authority. External receipts/idempotency are Identity-scoped while
+each Action permanently records exact submitting Connection/grant/revision/issuer/client evidence.
+Sandbox authentication remains live-workload-based; neither path accepts operator credentials as
+a caller bypass. OAuth protocol state shares durable encrypted storage and stable configured keys
+across replacement/replicas. Enabling these contracts does not imply deployed client acceptance.
 
 MCP cancellation uses the same owner-only, pre-dispatch-claim cutoff and typed outcomes as the
 HTTP cancellation route. It requires no version and never stops in-progress execution. This is
