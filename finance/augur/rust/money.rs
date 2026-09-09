@@ -28,7 +28,7 @@ pub struct PerUnit(pub i64);
 /// at $56 a unit yielding 10bp pays under half a cent a unit a month -- while the amount it
 /// comes to over a real position is ordinary money. Carrying it in whole quanta like a price
 /// rounds away up to half a quantum per unit BEFORE the multiply by the position, and sends a
-/// small enough rate to zero, which the fixture validator then rejects (#5832).
+/// small enough rate to zero instead of preserving the amount earned (#5832).
 ///
 /// A separate type from `PerUnit` rather than a second constructor on it, because the two are
 /// different units and nothing else distinguishes them: an `i64` off the wire looks the same

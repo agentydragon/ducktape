@@ -798,7 +798,7 @@ class ValidationEdgeAcceptance:
             SecurityKey(symbol=SecuritySymbol("vti")), [[bad_price, bad_price]]
         )
 
-        with pytest.raises(ValueError, match=r"(?i)(non-positive value|not finite)"):
+        with pytest.raises(ValueError, match=r"(?i)(non-positive value|not finite|no finite level)"):
             backend(Case(scenario=scenario, rollout_count=1, paths=external, locations={}))
 
 
@@ -812,7 +812,7 @@ class HarvestAcceptance:
         scenario = _harvest_scenario(horizon_months=2, with_harvest=True)
         external_series = _sp500_levels([[1.0, bad_level, 1.0]])
 
-        with pytest.raises(ValueError, match=r"(?i)(negative or non-finite price|non-positive value)"):
+        with pytest.raises(ValueError, match=r"(?i)(negative or non-finite price|non-positive value|no finite level)"):
             backend(Case(scenario=scenario, rollout_count=1, paths=external_series, locations={}))
 
     def test_down_month_harvests_strictly_more_than_flat_month(self, backend: Backend) -> None:

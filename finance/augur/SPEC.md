@@ -26,6 +26,10 @@ that prepared value without rereading the original scenario, sampled frames or
 jurisdiction configuration. Monetary conversion and tax-rule resolution happen
 once; execution owns runtime state and settlement.
 
+Security and home-value price paths must be strictly positive. Per-unit security
+distributions are nonnegative: zero explicitly means no payment that month.
+Missing or non-finite sampled levels are rejected, not treated as zero payouts.
+
 Native experiments can supply a rollout-local spending function over current
 cash, public holdings and inflation. Its requests use the same funding, tax and
 all-or-none settlement mechanics as scheduled consumption; a policy cannot
