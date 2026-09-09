@@ -459,7 +459,10 @@ keeps the remaining generic-tool schema and authorization design choices explici
   including `decision_pending`, immediately by default. Submission and request-status reads both
   offer an explicit bounded wait for decision resolution or terminal execution; expiry returns the
   current receipt, not an Action failure. An MCP wait timeout/disconnect never cancels or retries the
-  durable Action. The [connection plan](external_mcp_connections.md) specifies polling semantics.
+  durable Action. Internally, await pushed update notifications over channels/subscriptions; no busy
+  loop or periodic database/API polling. Avoid missed updates at subscription setup, support writers
+  in other processes/replicas, and clean up waiters. The [connection plan](external_mcp_connections.md)
+  specifies bounded-wait and notification semantics.
 - **Get / events:** read only that caller's canonical request and ordered durable Action events.
   `after_sequence` is the last event sequence already received; return later events in order, use
   the last returned sequence for the next poll, and return an empty list when none are newer.
@@ -480,6 +483,8 @@ prove Identity B cannot get or poll A's request, forged provenance cannot change
 operator-only arguments, credential-bearing bindings, or unsafe executor payloads leak through MCP.
 Exercise bounded polling on submission and reads, including pending deadlines, decision-only versus
 execution completion, already-complete requests, and reconnect without duplicate execution.
+Verify notification-driven wakeups, setup-race safety, channel-loss handling, and no periodic state
+queries while idle.
 This integration proof comes before any frontend-specific persistence or framework.
 
 ### `MCPAGG` — Haku Console MCP aggregator replacement

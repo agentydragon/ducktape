@@ -224,7 +224,7 @@ would be another opt-in field describing the safe caller-visible result, which m
 raw upstream MCP result. This is neither an `MCPFRONT` nor a `CLAUDEAI` acceptance requirement.
 Selective presentation does not weaken server-side input validation, policy enforcement, or result redaction.
 
-**Bounded polling on submission and request reads:** support "wait up to N seconds until no longer
+**Bounded long-poll API, notification-driven waits:** support "wait up to N seconds until no longer
 pending human decision / pending execution" on both `request_action` and `get_action_request`.
 Working parameters are `wait_seconds` (omitted or zero means immediate) and `wait_until` (decision
 resolved or terminal result; default terminal). An allowed Decision satisfies the decision predicate,
@@ -237,6 +237,17 @@ Create/recover the durable request before waiting. Disconnect/cancel of the MCP 
 or resubmit the Action; reuse the request ID or original idempotency key to recover it. Waiting is a
 read of canonical state, not an execution retry, and must preserve caller authorization throughout.
 Exact parameter names, duration cap, and mapping to canonical states remain implementation choices.
+
+Implement waiting through channels/subscriptions that push committed Action-state updates, not a
+busy loop or periodic database/API polling (including sleep-and-recheck loops). Suspend the waiter
+until a relevant notification, deadline, cancellation, or channel failure. Notifications are wakeups;
+the canonical durable state remains authoritative. Subscribe before checking state, or use an
+equivalent version/cursor handshake, so an update racing wait setup cannot be missed. Re-read state
+on a wakeup and keep waiting if the predicate is still false; tolerate duplicate/coalesced notifications.
+Delivery must reach waiters even when the Decision/Execution writer is in another process or replica.
+Handle channel loss explicitly with reconnect-and-recheck or a recoverable response, not silent
+fallback to periodic polling. Release subscriptions on completion, timeout, and disconnect. The
+notification mechanism is implementation work, not a new MCP-owned lifecycle store or durable event log.
 
 All tools present the existing catalog and Action lifecycle. Submission waits only when explicitly
 requested and never indefinitely for human approval; reads never submit or retry execution. On an ambiguous submission response the caller must
@@ -290,6 +301,8 @@ The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenari
   and running execution, and deadlines return pending receipts. Exercise state changes racing wait
   setup, denial/failure, disconnect/reconnect, and duplicate submission with the same idempotency key
   without losing a transition or creating another Execution;
+- prove idle waits perform no periodic state queries, committed updates wake waiters across process
+  boundaries, and setup races, duplicate notifications, channel loss, and waiter cleanup are handled;
 - the real integration-app enrollment/login round trip for each client: bind the decision to the
   correct pending OAuth transaction, return to the client's validated callback, and demonstrate
   rename/unbind/rebind from app management. Reject forged/expired/replayed enrollment, CSRF, and
