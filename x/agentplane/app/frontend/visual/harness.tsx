@@ -474,6 +474,7 @@ routes.push(
         grants: sampleConnection().grants.map((grant) => ({
           ...grant,
           id: "20000000-0000-4000-8000-000000000002",
+          connection_id: "10000000-0000-4000-8000-000000000002",
           identity_id: "retired",
           status: "revoked",
           revoked_at: "2026-09-09T12:03:00Z",
