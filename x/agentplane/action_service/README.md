@@ -49,7 +49,7 @@ The v0 executable seam is deliberately small:
 - restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
   until its own bounded lease expires, then becomes `execution_unknown` and may later be reconciled
   by an authenticated late completion or an authoritative status lookup — see
-  [`../docs/executor_liveness.md`](../docs/executor_liveness.md);
+  [`../docs/executor_liveness.rst`](../docs/executor_liveness.rst);
 - MCP adapters to reviewed upstream servers, with test-only injected executors in unit tests; and
 - a durable, restart-surviving Action event sequence as the result-delivery surface: a caller polls
   `GET /v1/action-requests/{id}/events?after_sequence=<n>` from `decision_pending` to a terminal

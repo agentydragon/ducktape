@@ -1,6 +1,6 @@
 """Executor liveness: heartbeats, bounded lease expiry, and authenticated reconciliation.
 
-State-transition diagram and reason-code catalog: docs/executor_liveness.md.
+State-transition diagram and reason-code catalog: docs/executor_liveness.rst.
 """
 
 from __future__ import annotations
