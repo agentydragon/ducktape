@@ -86,6 +86,8 @@ struct RolloutComputation {
     failed_month: Option<u32>,
     /// One row per snapshot (`horizon_months + 1`), empty when no product agent was selected.
     product_metrics: Vec<BaseMetrics>,
+    consumption_requested: Vec<Money>,
+    consumption_paid: Vec<Money>,
 }
 
 impl RolloutComputation {
@@ -460,6 +462,8 @@ fn simulate_rollout(
 
     let mut failed_month = None;
     let mut product_metrics = Vec::new();
+    let mut consumption_requested = Vec::new();
+    let mut consumption_paid = Vec::new();
     if recorder.capture_mode.captures_output() {
         recorder.record_month(month_output(
             fixture,
@@ -613,6 +617,14 @@ fn simulate_rollout(
         }
         apply_scheduled_tlh_give_back(&scheduled_tlh, &mut tlh_cumulative_harvest)?;
         let mut active_obligations = Vec::new();
+        // Identify the actual callback demand by its position, never by a user-chosen ID
+        // or category that another configured obligation could share.
+        let spending_obligation_index = spending_obligation
+            .as_ref()
+            .map(|_| active_obligations.len());
+        let requested = spending_obligation
+            .as_ref()
+            .map_or(Money(0), |claim| claim.amount_due);
         active_obligations.extend(spending_obligation);
         for obligation in fixture
             .scenario
@@ -681,7 +693,7 @@ fn simulate_rollout(
             month,
             &active_obligations,
         )?;
-        let (settlement_failed, product_shortfall) = settle_obligations(
+        let settlement = settle_obligations(
             fixture,
             &mut ledger,
             &mut recorder,
@@ -692,8 +704,13 @@ fn simulate_rollout(
             month,
             &active_obligations,
             product.map(|inputs| inputs.primary_agent_id()),
+            spending_obligation_index,
         )?;
-        if settlement_failed {
+        if capture_mode == CaptureMode::Summary && spending.is_some() {
+            consumption_requested.push(requested);
+            consumption_paid.push(settlement.spending_paid.unwrap_or(Money(0)));
+        }
+        if settlement.failed {
             failed_month = Some(month);
         } else {
             execute_target_allocation_buys(
@@ -769,7 +786,7 @@ fn simulate_rollout(
                 &lots,
                 &properties,
                 &mortgages,
-                product_shortfall,
+                settlement.product_shortfall,
                 failed_month.is_some(),
             )?);
         }
@@ -795,6 +812,8 @@ fn simulate_rollout(
         recorder,
         failed_month,
         product_metrics,
+        consumption_requested,
+        consumption_paid,
     })
 }
 

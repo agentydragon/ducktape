@@ -14,6 +14,8 @@ pub enum SimulationError {
     SchemaVersion { actual: u32, expected: u32 },
     #[error("fixture must contain at least one rollout")]
     EmptyRollouts,
+    #[error("rollout {rollout_id} is outside the input's {rollout_count} paths")]
+    UnknownRollout { rollout_id: u32, rollout_count: u32 },
     #[error("fixture horizon must contain at least one month")]
     EmptyHorizon,
     #[error("currency code {currency_code:?} must be three uppercase ASCII letters")]

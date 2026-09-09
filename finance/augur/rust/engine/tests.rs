@@ -175,11 +175,11 @@ fn executable_spending_matches_scheduled_funding_and_tax_events() {
         serde_json::to_value(&executable).unwrap(),
         serde_json::to_value(&scheduled).unwrap()
     );
-    let compact = spending::simulate_product_metrics(&fixture, &spending, |_| {
+    let compact = spending::simulate_summary(&fixture, &spending, |_| {
         |observation| Ok(Money(1_000).scaled_by(observation.price_level, "fixed real spending")?)
     })
     .unwrap();
-    assert_eq!(compact, scheduled_metrics);
+    assert_eq!(compact.product_metrics, scheduled_metrics);
     for rollout in &executable.rollouts {
         assert_eq!(rollout.failed_month, None);
         assert!(!rollout.dispositions.is_empty());
@@ -234,11 +234,45 @@ fn compact_spending_matches_forensic_cash_and_shortfall_on_live_and_failed_paths
         }
     };
     let forensic = spending::simulate(&fixture, &spending, make_policy).unwrap();
-    let compact = spending::simulate_product_metrics(&fixture, &spending, make_policy).unwrap();
+    let summary = spending::simulate_summary(&fixture, &spending, make_policy).unwrap();
+    assert_eq!(
+        summary.consumption_requested[0],
+        vec![Money(1), Money(2), Money(3)]
+    );
+    assert_eq!(
+        summary.consumption_paid[0],
+        vec![Money(1), Money(2), Money(0)]
+    );
+    assert_eq!(summary.consumption_requested[1], vec![Money(0); 13]);
+    assert_eq!(summary.consumption_paid[1], vec![Money(0); 13]);
+    let compact = &summary.product_metrics;
     assert_eq!(compact.failed_month, vec![2, -1]);
     assert_eq!(compact.rollout_count, fixture.rollout_count);
     assert_eq!(compact.snapshot_count, fixture.scenario.horizon_months + 1);
     for rollout in &forensic.rollouts {
+        let path = rollout.rollout_id as usize;
+        let observed_months = rollout
+            .failed_month
+            .map_or(fixture.scenario.horizon_months, |month| month + 1);
+        assert_eq!(
+            summary.consumption_requested[path].len(),
+            observed_months as usize
+        );
+        assert_eq!(
+            summary.consumption_paid[path].len(),
+            observed_months as usize
+        );
+        for month in 0..observed_months {
+            let receipt = rollout.obligations.iter().find(|row| row.month == month);
+            assert_eq!(
+                summary.consumption_requested[path][month as usize],
+                receipt.map_or(Money(0), |row| row.amount_due)
+            );
+            assert_eq!(
+                summary.consumption_paid[path][month as usize],
+                receipt.map_or(Money(0), |row| row.amount_paid)
+            );
+        }
         assert_eq!(
             compact.failed_month[rollout.rollout_id as usize],
             rollout.failed_month.map_or(-1, i64::from)
@@ -290,11 +324,13 @@ fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
         Err(SimulationError::InvalidAmount { .. })
     ));
     assert_eq!(
-        spending::simulate_product_metrics(&fixture, &spending, |_| |_| Ok(Money(0))).unwrap(),
+        spending::simulate_summary(&fixture, &spending, |_| |_| Ok(Money(0)))
+            .unwrap()
+            .product_metrics,
         simulate_product_metrics(&fixture, &spending.from.agent_id).unwrap()
     );
     assert!(matches!(
-        spending::simulate_product_metrics(&fixture, &spending, |_| |_| Ok(Money(-1))),
+        spending::simulate_summary(&fixture, &spending, |_| |_| Ok(Money(-1))),
         Err(SimulationError::InvalidAmount { .. })
     ));
     spending.cause_id = " ".into();
@@ -311,7 +347,7 @@ fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
         Err(SimulationError::NonPositiveSeriesAmountLevel { .. })
     ));
     assert!(matches!(
-        spending::simulate_product_metrics(
+        spending::simulate_summary(
             &fixture,
             &spending,
             |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
@@ -324,6 +360,93 @@ fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
     assert!(matches!(
         spending::simulate(&fixture, &spending, |_| |_| Ok(Money(1))),
         Err(SimulationError::UnknownAccountReference { .. })
+    ));
+}
+
+#[test]
+fn compact_consumption_uses_its_receipt_when_another_funding_group_fails() {
+    let (mut input, spending) = spending_fixture();
+    input.scenario.accounts[0].opening_balance = Money(20);
+    input.scenario.accounts.push(AccountSpec {
+        account: AccountRef::new("other", "checking"),
+        opening_balance: Money(0),
+    });
+    for (from, amount, id) in [
+        (spending.from.clone(), 7, "consumption"),
+        (AccountRef::new("other", "checking"), 1, "other-demand"),
+    ] {
+        input.scenario.obligations.push(ObligationSpec {
+            month: 0,
+            obligation_id: id.into(),
+            obligation_type: "cash_spend".into(),
+            from,
+            to: spending.to.clone(),
+            amount_due: Money(amount).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+    }
+    let make_policy = |_| {
+        |observation: spending::Observation| {
+            assert_eq!(
+                observation.month, 0,
+                "no callback after the other group's failure"
+            );
+            Ok(Money(3))
+        }
+    };
+    let summary = spending::simulate_summary(&input, &spending, make_policy).unwrap();
+    let forensic = spending::simulate(&input, &spending, make_policy).unwrap();
+    assert_eq!(summary.product_metrics.failed_month, vec![0, 0]);
+    assert_eq!(summary.consumption_requested, vec![vec![Money(3)]; 2]);
+    assert_eq!(summary.consumption_paid, vec![vec![Money(3)]; 2]);
+    assert_eq!(summary.component.cause_id, spending.cause_id);
+    for rollout in forensic.rollouts {
+        // The configured claim deliberately shares both category and cause ID with
+        // the callback; the compact result must identify the actual demand itself.
+        assert_eq!(
+            rollout.obligations[0].cause_id,
+            rollout.obligations[1].cause_id
+        );
+        assert_eq!(rollout.obligations[0].amount_paid, Money(3));
+        assert_eq!(rollout.obligations[1].amount_paid, Money(7));
+        assert_eq!(rollout.obligations[2].amount_paid, Money(0));
+    }
+}
+
+#[test]
+fn spending_selected_trace_preserves_original_path_and_factory_identity() {
+    let (input, spending) = spending_fixture();
+    let make_policy = |rollout| {
+        let mut requests = 0;
+        move |observation: spending::Observation| {
+            assert_eq!(requests, observation.month);
+            requests += 1;
+            Money(i64::from((rollout + 1) * requests))
+                .scaled_by(observation.price_level, "test request")
+                .map_err(Into::into)
+        }
+    };
+    let population = spending::simulate(&input, &spending, make_policy).unwrap();
+    for rollout in population.rollouts {
+        let selected =
+            spending::trace_rollout(&input, &spending, rollout.rollout_id, make_policy).unwrap();
+        assert_eq!(
+            serde_json::to_value(selected).unwrap(),
+            serde_json::to_value(rollout).unwrap()
+        );
+    }
+    assert!(matches!(
+        spending::trace_rollout(
+            &input,
+            &spending,
+            input.rollout_count,
+            |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
+                panic!("invalid selection must not construct a policy")
+            }
+        ),
+        Err(SimulationError::UnknownRollout { .. })
     ));
 }
 
@@ -387,8 +510,8 @@ fn policy_timing_guardrail_and_unpaid_consumption() {
         deductible_fraction_ppb: WIRE_RATE_SCALE,
     });
     for allow_cut in [false, true] {
-        let rollout = spending::simulate(&input, &spending, |_| {
-            move |observation| {
+        let make_policy = |_| {
+            move |observation: spending::Observation| {
                 assert_eq!(observation.month, 0);
                 assert_eq!(observation.cash, Money(10_000));
                 assert_eq!(observation.public_holdings, Money(100_000));
@@ -399,10 +522,12 @@ fn policy_timing_guardrail_and_unpaid_consumption() {
                     Money(50_000)
                 })
             }
-        })
-        .unwrap()
-        .rollouts
-        .remove(0);
+        };
+        let summary = spending::simulate_summary(&input, &spending, make_policy).unwrap();
+        let rollout = spending::simulate(&input, &spending, make_policy)
+            .unwrap()
+            .rollouts
+            .remove(0);
         assert_eq!(rollout.failed_month, if allow_cut { None } else { Some(0) });
         let consumption = rollout
             .obligations
@@ -421,6 +546,11 @@ fn policy_timing_guardrail_and_unpaid_consumption() {
             consumption.shortfall,
             Money(if allow_cut { 0 } else { 50_000 })
         );
+        assert_eq!(
+            summary.consumption_requested[0],
+            vec![consumption.amount_due]
+        );
+        assert_eq!(summary.consumption_paid[0], vec![consumption.amount_paid]);
         let rent = rollout
             .obligations
             .iter()
@@ -483,8 +613,8 @@ fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
     });
     for reinvest_surplus in [false, true] {
         input.scenario.target_allocation_policies[0].allow_purchases = reinvest_surplus;
-        let rollout = spending::simulate(&input, &spending, |_| {
-            |observation| {
+        let make_policy = |_| {
+            |observation: spending::Observation| {
                 assert_eq!(
                     observation.cash,
                     Money(if observation.month == 0 { 10_000 } else { 0 })
@@ -504,11 +634,24 @@ fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
                     _ => 0,
                 }))
             }
-        })
-        .unwrap()
-        .rollouts
-        .remove(0);
+        };
+        let summary = spending::simulate_summary(&input, &spending, make_policy).unwrap();
+        let rollout = spending::simulate(&input, &spending, make_policy)
+            .unwrap()
+            .rollouts
+            .remove(0);
         assert_eq!(rollout.failed_month, None);
+        for month in 0..13 {
+            let receipt = rollout.obligations.iter().find(|row| row.month == month);
+            assert_eq!(
+                summary.consumption_requested[0][month as usize],
+                receipt.map_or(Money(0), |row| row.amount_due)
+            );
+            assert_eq!(
+                summary.consumption_paid[0][month as usize],
+                receipt.map_or(Money(0), |row| row.amount_paid)
+            );
+        }
         assert_eq!(
             rollout
                 .dispositions

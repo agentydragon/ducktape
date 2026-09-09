@@ -5,6 +5,7 @@ use std::{
     env,
     fs::File,
     io::{BufReader, BufWriter},
+    path::Path,
 };
 
 use augur_rust_simulator::{
@@ -58,9 +59,9 @@ fn annual_spending(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
-    let [input, output, rate, cut, raise] = args.as_slice() else {
+    let [input, output, rate, cut, raise, trace_rollouts @ ..] = args.as_slice() else {
         return Err(
-            "usage: runner EXECUTION-INPUT.json OUTPUT.json RATE_BPS MAX_CUT_BPS MAX_RAISE_BPS"
+            "usage: runner EXECUTION-INPUT.json SUMMARY.json RATE_BPS MAX_CUT_BPS MAX_RAISE_BPS [TRACE_ROLLOUT ...]"
                 .into(),
         );
     };
@@ -72,15 +73,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let execution_input: ExecutionInput =
         serde_json::from_reader(BufReader::new(File::open(input)?))?;
-    let output_run = spending::simulate(
-        &execution_input,
-        &Spending {
-            from: AccountRef::new("retiree", "checking"),
-            to: AccountRef::new("world", "checking"),
-            cause_id: "annual_consumption".into(),
-        },
-        |_| annual_spending(rate, cut, raise),
-    )?;
+    let component = Spending {
+        from: AccountRef::new("retiree", "checking"),
+        to: AccountRef::new("world", "checking"),
+        cause_id: "annual_consumption".into(),
+    };
+    let output_run = spending::simulate_summary(&execution_input, &component, |_| {
+        annual_spending(rate, cut, raise)
+    })?;
     serde_json::to_writer(BufWriter::new(File::create(output)?), &output_run)?;
+    for rollout in trace_rollouts {
+        let rollout: u32 = rollout.parse()?;
+        let trace = spending::trace_rollout(&execution_input, &component, rollout, |_| {
+            annual_spending(rate, cut, raise)
+        })?;
+        let path = Path::new(output).with_extension(format!("trace-{rollout}.json"));
+        serde_json::to_writer(BufWriter::new(File::create(path)?), &trace)?;
+    }
     Ok(())
 }

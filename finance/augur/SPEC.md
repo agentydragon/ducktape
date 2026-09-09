@@ -41,7 +41,10 @@ cash, public holdings and inflation. Its requests use the same funding, tax and
 all-or-none settlement mechanics as scheduled consumption; a policy cannot
 directly mutate financial state through its observation. The same functions can
 produce forensic timelines or compact wealth, shortfall and failure metrics for
-the payer, without retaining full traces for population runs.
+the payer, without retaining full traces for population runs. Compact consumption
+reports identify the policy budget component and separate its requested and paid
+amounts from sales, taxes and other consumption such as committed rent. Live zero
+requests are observed zeros; months after a stopped path are unobserved, not zeros.
 
 Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire

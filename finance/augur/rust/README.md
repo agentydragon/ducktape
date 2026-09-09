@@ -39,11 +39,18 @@ constructed separately for each rollout. It sees opening holdings at current
 prices and origin-relative CPI before monthly cashflows; it returns nominal
 consumption, funded alongside the execution input's other obligations. The function owns
 its review cadence and memory. This entry point retains forensic output;
-`engine::spending::simulate_product_metrics(...)` executes the same functions with
-compact capture, returning the payer agent's existing seven base metric series
-and failure months without retaining monthly snapshots, journal or event traces.
-These metrics do not yet include requested/realized consumption or spending quality.
-Both entry points are native-only; Python/batched callbacks are not exposed here.
+`engine::spending::simulate_summary(...)` returns the identified component's
+`consumption_requested` and `consumption_paid` plus the payer's existing seven base
+metric series and failure months, without retaining monthly snapshots, journals or
+event traces. Consumption arrays are `[rollout][event month]` in input currency
+quanta: live zero requests are zero, the failure month is included, and subsequent
+unobserved months are absent. Product metrics retain their separate snapshot-major
+layout, opening snapshot and zeroed-failure convention. Actual payment comes from
+that demand's receipt, even when another funding group's failure stops the path.
+Other consumption (including committed rent), taxes and asset purchases are not
+part of the policy component. `engine::spending::trace_rollout(...)` replays one
+original path with fresh policy state and its original factory/series identity.
+These entry points are native-only; Python/batched callbacks are not exposed here.
 
 ## Covered behavior
 
