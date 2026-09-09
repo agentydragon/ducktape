@@ -39,7 +39,8 @@ from haku.console.database_schema import (
     Operator,
     Session,
 )
-from haku.console.identity.agent import AgentStatus, CredentialBindingStatus
+from haku.console.identity.agent import CredentialBindingStatus
+from haku.console.identity.authorization import lock_active_agent_binding
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp.execution import McpExecutionContext, mcp_execution_request_meta
@@ -769,33 +770,13 @@ class PostgresToolCallLedger:
 
     @staticmethod
     async def _require_active_agent_binding(session: AsyncSession, actor: AgentActor) -> tuple[str, str | None]:
-        identity = await session.execute(
-            select(AgentNameReservation.display_name, Agent.access_profile_id)
-            .select_from(CredentialBinding)
-            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
-            .join(Operator, Operator.operator_id == Agent.owner_operator_id)
-            .join(
-                AgentNameReservation,
-                and_(
-                    AgentNameReservation.agent_id == Agent.agent_id,
-                    AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
-                ),
-            )
-            .where(
-                CredentialBinding.binding_id == actor.binding_id,
-                CredentialBinding.agent_id == actor.agent_id,
-                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
-                Agent.agent_id == actor.agent_id,
-                Agent.owner_operator_id == actor.operator_id,
-                Agent.status == AgentStatus.ACTIVE,
-                Operator.operator_id == actor.operator_id,
-                Operator.status == OperatorStatus.ACTIVE,
-            )
-            .with_for_update()
+        active = await lock_active_agent_binding(
+            session, binding_id=actor.binding_id, agent_id=actor.agent_id, operator_id=actor.operator_id, lock=True
         )
-        if (identity_row := identity.one_or_none()) is None:
+        if active is None or active.binding.status is not CredentialBindingStatus.ACTIVE:
             raise ToolCallStateConflictError("agent credential binding is not active")
-        display_name, current_profile_id = identity_row
+        display_name = active.display_name
+        current_profile_id = active.agent.access_profile_id
         if actor.session_id is None:
             return display_name, current_profile_id
         pinned_profile_id = await session.scalar(

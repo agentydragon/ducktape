@@ -232,6 +232,7 @@ py_test(
         "//haku/console:database_migrate",
         "//haku/console:database_schema",
         "//haku/console/harnesses:kind",
+        "//haku/console/mcp:approval",
         "//haku/console/session:launch_identity",
         "//haku/console/x:runtime",
         "//mcp_infra/authentik_auth:oidc_principal",
