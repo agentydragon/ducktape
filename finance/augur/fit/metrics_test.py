@@ -198,7 +198,13 @@ class TestRollingOriginPredictiveScore:
         assert result.n_origins == 40
         assert abs(result.joint_log_density_total - expected_total) < 1e-2
         assert abs(result.joint_log_density_per_month - expected_total / 40) < 1e-3
-        assert result.joint_log_density_mean_se > 0.0
+        assert "Unestimated" in result.uncertainty_unestimated_reason
+        assert [score.origin_index for score in result.origin_scores] == list(range(10, 50))
+        for score in result.origin_scores:
+            assert score.origin_month == historical.months[score.origin_index]
+            assert score.joint_log_density == pytest.approx(
+                _gaussian_log_density(log_returns[score.origin_index], mu, sigma), abs=1e-3
+            )
         assert result.factor_breakdown is not None
         assert (
             abs(sum(result.factor_breakdown.marginal_log_density_total.values()) - result.joint_log_density_total)
@@ -245,6 +251,8 @@ class TestMultiStepPredictiveScore:
             h = row.horizon_months
             n_origins_expected = (60 - h) - train_end + 1
             assert row.n_origins == n_origins_expected
+            assert "overlap" in row.uncertainty_unestimated_reason
+            assert [score.origin_index for score in row.origin_scores] == list(range(train_end, 60 - h + 1))
             expected_total = 0.0
             for t in range(train_end, 60 - h + 1):
                 observed = log_returns[t : t + h].sum(axis=0)
@@ -253,12 +261,66 @@ class TestMultiStepPredictiveScore:
                 diff = observed - cum_mu
                 expected_total += float(np.sum(-0.5 * ((diff**2) / cum_var + np.log(cum_var) + math.log(2 * math.pi))))
             assert abs(row.joint_log_density_total - expected_total) < 1e-1
+            assert sum(score.joint_log_density for score in row.origin_scores) == row.joint_log_density_total
 
     def test_unscored_model_records_reason_per_horizon(self) -> None:
         historical = _toy_historical(20, mu=np.array([0.0]), sigma=np.array([0.01]), seed=31)
         result = multi_step_predictive_score(_UnscoredModel(), historical, horizons=(1, 3), train_fraction=0.5)
         for row in result.rows:
             assert isinstance(row, UnscoredMultiStepRow)
+
+
+@pytest.mark.parametrize("rolling", [False, True])
+@pytest.mark.parametrize("bad_score", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_origins_survive_and_propagate_to_the_mean(
+    monkeypatch: pytest.MonkeyPatch, rolling: bool, bad_score: float
+) -> None:
+    historical = _toy_historical(10, mu=np.array([0.0]), sigma=np.array([0.01]), seed=40)
+    scores = [1.0, bad_score, 2.0, 3.0, 4.0]
+    pending = iter(scores)
+    monkeypatch.setattr("finance.augur.fit.metrics.joint_log_density", lambda *_: next(pending))
+
+    def factory() -> _ConstantGaussianModel:
+        return _ConstantGaussianModel(mu=np.array([0.0]), sigma=np.array([0.01]))
+
+    result = (
+        rolling_origin_predictive_score(factory, historical, min_train=5)
+        if rolling
+        else multi_step_predictive_score(factory(), historical, horizons=(1,), train_fraction=0.5).rows[0]
+    )
+    assert isinstance(result, (ScoredRollingOriginResult, ScoredMultiStepRow))
+    assert result.n_origins == 5
+    assert [score.origin_index for score in result.origin_scores] == [5, 6, 7, 8, 9]
+    np.testing.assert_equal([score.joint_log_density for score in result.origin_scores], scores)
+    np.testing.assert_equal(result.joint_log_density_total, bad_score)
+    mean = (
+        result.joint_log_density_per_month
+        if isinstance(result, ScoredRollingOriginResult)
+        else result.joint_log_density_per_origin
+    )
+    np.testing.assert_equal(mean, bad_score)
+    assert "Unestimated" in result.uncertainty_unestimated_reason
+
+
+@pytest.mark.parametrize("rolling", [False, True])
+def test_unavailable_predictive_retains_preceding_origins_without_a_partial_mean(rolling: bool) -> None:
+    class _PartiallyScorableModel(_ConstantGaussianModel):
+        def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
+            return None if t == 7 else super().predictive(historical, t, horizon=horizon)
+
+    def factory() -> _PartiallyScorableModel:
+        return _PartiallyScorableModel(mu=np.array([0.0]), sigma=np.array([0.01]))
+
+    historical = _toy_historical(10, mu=np.array([0.0]), sigma=np.array([0.01]), seed=41)
+    result = (
+        rolling_origin_predictive_score(factory, historical, min_train=5)
+        if rolling
+        else multi_step_predictive_score(factory(), historical, horizons=(1,), train_fraction=0.5).rows[0]
+    )
+    assert isinstance(result, (UnscoredRollingOriginResult, UnscoredMultiStepRow))
+    assert "t=7" in result.unscored_reason
+    assert result.n_origins == 2
+    assert [score.origin_index for score in result.origin_scores] == [5, 6]
 
 
 if __name__ == "__main__":

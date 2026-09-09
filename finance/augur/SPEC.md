@@ -21,6 +21,12 @@ Offline fitting and predictive scoring do not require a model to produce simulat
 paths. Models used only for forecast evaluation need no instrument-output or
 private-equity-output declarations.
 
+Rolling-origin and multi-step forecast scores retain each evaluated origin and
+its joint score, including non-finite values. Their means are descriptive: shared
+history and overlapping targets do not justify IID standard errors. These reports
+explicitly leave uncertainty unestimated and do not establish significance rankings.
+Undefined score differences cannot count as evidence of a stable comparison.
+
 Scenario preparation produces one self-contained execution input. Engines consume
 that prepared value without rereading the original scenario, sampled frames or
 jurisdiction configuration. Monetary conversion and tax-rule resolution happen

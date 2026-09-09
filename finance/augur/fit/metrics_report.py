@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -118,7 +119,7 @@ def evaluate_all(
         )
         multi_step_rows.append({"model": spec.label, **asdict(multi_step)})
     return {
-        "factor_names": list(historical.series_names),
+        "factor_names": [key.wire_id for key in historical.series_names],
         "n_steps": historical.levels.shape[0] - 1,
         "first_month": historical.months[0],
         "last_month": historical.months[-1],
@@ -128,7 +129,25 @@ def evaluate_all(
         "held_out_split": held_out_rows,
         "rolling_origin": rolling_rows,
         "multi_step": multi_step_rows,
+        "score_reporting_note": (
+            "Scores are descriptive, not significance rankings. Non-finite scores are retained: "
+            "NaN means undefined; Infinity and -Infinity are signed non-finite values. "
+            "In JSON these values are strings, not omitted origins or nulls."
+        ),
     }
+
+
+def _json_score_values(value: Any) -> Any:
+    """Preserve signed non-finite scores without emitting non-standard JSON numbers."""
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            return "NaN"
+        return "Infinity" if value > 0 else "-Infinity"
+    if isinstance(value, dict):
+        return {key: _json_score_values(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_score_values(item) for item in value]
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -139,9 +158,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     summary = evaluate_all(train_fraction=args.train_fraction, rolling_min_train=args.rolling_min_train)
-    print(json.dumps(summary, indent=2, sort_keys=True))
+    rendered = json.dumps(_json_score_values(summary), indent=2, sort_keys=True, allow_nan=False)
+    print(rendered)
     if args.out is not None:
-        args.out.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+        args.out.write_text(rendered, encoding="utf-8")
     return 0
 
 

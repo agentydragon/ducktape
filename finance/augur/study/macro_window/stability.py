@@ -19,6 +19,7 @@ a default would not be.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -61,15 +62,19 @@ class Comparison:
     differences: tuple[float, ...]
 
     @property
-    def flips(self) -> bool:
+    def flips(self) -> bool | None:
         """Whether the sign changed. NOT whether the difference was material.
 
         A comparison whose difference is near zero in every period "holds" trivially — the sign
         is consistent because there is nothing there. The differences are reported alongside so a
         reader can see which case they are looking at; a stable sign on a hair is not evidence of
         a stable ordering.
+        `None` means at least one difference is non-finite: its sign cannot establish
+        stability. Such periods remain in the output, not dropped from the comparison.
         """
 
+        if not self.differences or not all(math.isfinite(difference) for difference in self.differences):
+            return None
         return len({difference > 0.0 for difference in self.differences}) > 1
 
 
@@ -110,14 +115,19 @@ def describe(comparisons: Sequence[Comparison], *, origin_starts: Sequence[date]
     periods = "  ".join(f"{start:%Y}" for start in origin_starts)
     lines = [f"origin sets: {periods}", ""]
     lines.extend(
-        f"  {'FLIPS' if comparison.flips else 'holds':<6} {comparison.left} vs {comparison.right}  "
+        f"  {('UNDEFINED' if comparison.flips is None else 'FLIPS' if comparison.flips else 'holds'):<9} "
+        f"{comparison.left} vs {comparison.right}  "
         f"h={comparison.horizon:<4} {comparison.metric:<16} "
         + "  ".join(f"{difference:+.5f}" for difference in comparison.differences)
         for comparison in comparisons
     )
-    flipped = sum(1 for comparison in comparisons if comparison.flips)
+    defined = [comparison for comparison in comparisons if comparison.flips is not None]
+    flipped = sum(1 for comparison in defined if comparison.flips)
     lines.append("")
-    lines.append(f"{flipped} of {len(comparisons)} comparisons change sign across the scoring periods.")
+    lines.append(f"{flipped} of {len(defined)} defined comparisons change sign across the scoring periods.")
+    lines.append(
+        f"{len(comparisons) - len(defined)} comparisons have undefined stability (non-finite or no differences)."
+    )
     lines.append("'holds' means the sign was consistent, not that the gap was material — read the numbers.")
     return "\n".join(lines)
 

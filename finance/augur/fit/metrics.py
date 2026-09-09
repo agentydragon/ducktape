@@ -7,12 +7,10 @@ origin and projects three quantities from the returned distribution:
   - per-factor marginal log-density (`augur.fit.scoring.marginal_log_densities`)
   - per-factor CRPS              (`augur.fit.scoring.gaussian_crps`)
 
-Result types are discriminated unions: every score is either *scored* (all
-numeric fields populated, no unscored_reason) or *unscored* (only
-`unscored_reason` populated). The union shape makes invalid combinations
-unrepresentable — see `HeldOutResult = ScoredHeldOutResult | UnscoredHeldOutResult`,
-etc. Callers `isinstance(result, ScoredHeldOutResult)` to access numeric
-fields.
+Scored results contain descriptive aggregates, which can be non-finite.
+Unscored results give the unavailable-predictive reason, without an aggregate
+over a partial subset. Rolling-origin and multi-step results retain completed
+origin scores in either case and leave uncertainty explicitly unestimated.
 
 Fitting is the caller's responsibility — scorers don't refit (except
 rolling-origin, which refits at each origin via the supplied factory).
@@ -22,8 +20,6 @@ plug into the same battery as a fittable model.
 
 from __future__ import annotations
 
-import math
-import statistics
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -34,20 +30,25 @@ from finance.augur.fit.scoring import gaussian_crps, joint_log_density, marginal
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 
 
-def _summarise_scores(scores: list[float]) -> tuple[float, float, float]:
-    """Return (total, per_origin, mean_se) for a list of per-origin scores.
+@dataclass(frozen=True)
+class OriginScore:
+    """Joint score at a historical origin, including non-finite outcomes unchanged."""
 
-    `mean_se` is the sample-stdev / √n estimate, NaN when fewer than two
-    *finite* scores are available (single observation; or all-non-finite,
-    e.g., an MC-fit predictive that exploded). Used by rolling-origin and
-    multi-step scorers; held-out single-split summary just sums.
-    """
-    n = len(scores)
-    total = float(sum(scores))
-    per_origin = total / n
-    finite = [s for s in scores if math.isfinite(s)]
-    mean_se = float("nan") if len(finite) < 2 else statistics.stdev(finite) / math.sqrt(len(finite))
-    return total, per_origin, mean_se
+    origin_index: int
+    origin_month: str
+    joint_log_density: float
+
+
+DEPENDENT_ORIGIN_UNCERTAINTY = (
+    "Unestimated: forecast origins share a time series and training data, and multi-step targets may overlap. "
+    "No dependence model or uncertainty estimator has been specified; score means do not establish a ranking."
+)
+
+
+def _summarise_scores(scores: list[OriginScore]) -> tuple[float, float]:
+    """Descriptive total and mean over every origin; non-finite scores propagate."""
+    total = float(sum(score.joint_log_density for score in scores))
+    return total, total / len(scores)
 
 
 @dataclass(frozen=True)
@@ -177,7 +178,8 @@ class ScoredRollingOriginResult:
     n_origins: int
     joint_log_density_total: float
     joint_log_density_per_month: float
-    joint_log_density_mean_se: float
+    origin_scores: tuple[OriginScore, ...]
+    uncertainty_unestimated_reason: str
     factor_breakdown: FactorBreakdown | None
 
 
@@ -187,6 +189,7 @@ class UnscoredRollingOriginResult:
     min_train: int
     refit_every: int
     n_origins: int
+    origin_scores: tuple[OriginScore, ...]
     unscored_reason: str
 
 
@@ -221,7 +224,7 @@ def rolling_origin_predictive_score(
     factor_labels = tuple(factor.wire_id for factor in historical.series_names)
     fit_cache: FittableScorable | None = None
     fit_origin: int | None = None
-    log_densities: list[float] = []
+    origin_scores: list[OriginScore] = []
     marginal_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     crps_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     log_levels = np.log(historical.levels)
@@ -245,17 +248,22 @@ def rolling_origin_predictive_score(
                 min_train=min_train,
                 refit_every=refit_every,
                 n_origins=t - min_train,
+                origin_scores=tuple(origin_scores),
                 unscored_reason=(f"{label_holder}.predictive returned None at t={t} (fit at origin {fit_origin})"),
             )
         observed = log_levels[t + 1] - log_levels[t]
-        log_densities.append(joint_log_density(pred, observed))
+        origin_scores.append(
+            OriginScore(
+                origin_index=t, origin_month=historical.months[t], joint_log_density=joint_log_density(pred, observed)
+            )
+        )
         for name, value in marginal_log_densities(pred, observed, factor_labels).items():
             marginal_totals[name] += value
         for name, value in gaussian_crps(pred, observed, factor_labels).items():
             crps_totals[name] += value
 
-    total, per_month, mean_se = _summarise_scores(log_densities)
-    n_origins = len(log_densities)
+    total, per_month = _summarise_scores(origin_scores)
+    n_origins = len(origin_scores)
     factor_breakdown = FactorBreakdown(
         marginal_log_density_total=marginal_totals,
         marginal_log_density_per_month={name: value / n_origins for name, value in marginal_totals.items()},
@@ -269,7 +277,8 @@ def rolling_origin_predictive_score(
         n_origins=n_origins,
         joint_log_density_total=total,
         joint_log_density_per_month=per_month,
-        joint_log_density_mean_se=mean_se,
+        origin_scores=tuple(origin_scores),
+        uncertainty_unestimated_reason=DEPENDENT_ORIGIN_UNCERTAINTY,
         factor_breakdown=factor_breakdown,
     )
 
@@ -283,13 +292,15 @@ class ScoredMultiStepRow:
     n_origins: int
     joint_log_density_total: float
     joint_log_density_per_origin: float
-    joint_log_density_mean_se: float
+    origin_scores: tuple[OriginScore, ...]
+    uncertainty_unestimated_reason: str
 
 
 @dataclass(frozen=True)
 class UnscoredMultiStepRow:
     horizon_months: int
     n_origins: int
+    origin_scores: tuple[OriginScore, ...]
     unscored_reason: str
 
 
@@ -337,7 +348,7 @@ def multi_step_predictive_score(
     log_levels = np.log(historical.levels)
     horizon_rows: list[MultiStepRow] = []
     for h in horizons:
-        scores: list[float] = []
+        scores: list[OriginScore] = []
         unscored_reason: str | None = None
         for t in range(train_end, n_steps - h + 1):
             pred = model.predictive(historical, t, horizon=h)
@@ -345,24 +356,32 @@ def multi_step_predictive_score(
                 unscored_reason = f"{model.label}.predictive returned None at t={t}, h={h}"
                 break
             observed = log_levels[t + h] - log_levels[t]
-            scores.append(joint_log_density(pred, observed))
+            scores.append(
+                OriginScore(
+                    origin_index=t,
+                    origin_month=historical.months[t],
+                    joint_log_density=joint_log_density(pred, observed),
+                )
+            )
         if unscored_reason is not None or not scores:
             horizon_rows.append(
                 UnscoredMultiStepRow(
                     horizon_months=h,
-                    n_origins=0,
+                    n_origins=len(scores),
+                    origin_scores=tuple(scores),
                     unscored_reason=unscored_reason or f"no origins available for horizon {h}",
                 )
             )
             continue
-        total, per_origin, mean_se = _summarise_scores(scores)
+        total, per_origin = _summarise_scores(scores)
         horizon_rows.append(
             ScoredMultiStepRow(
                 horizon_months=h,
                 n_origins=len(scores),
                 joint_log_density_total=total,
                 joint_log_density_per_origin=per_origin,
-                joint_log_density_mean_se=mean_se,
+                origin_scores=tuple(scores),
+                uncertainty_unestimated_reason=DEPENDENT_ORIGIN_UNCERTAINTY,
             )
         )
 

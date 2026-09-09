@@ -443,3 +443,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_metrics_report",
+    srcs = ["test_metrics_report.py"],
+    deps = [
+        ":conftest",
+        ":metrics_report",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/model/path_models:scenarios",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

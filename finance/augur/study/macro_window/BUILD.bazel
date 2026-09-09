@@ -131,3 +131,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_stability_reporting",
+    srcs = ["test_stability_reporting.py"],
+    deps = [
+        ":stability",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
