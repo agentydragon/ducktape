@@ -964,7 +964,8 @@ fn interleaved_month_steps_preserve_policy_memory_and_skip_terminal_callbacks() 
     }
     for state in states {
         let expected = &full.rollouts[state.rollout_id as usize];
-        let mut unexpected = |_| panic!("no callbacks after completion or failure");
+        let mut unexpected =
+            |_: spending::Observation| panic!("no callbacks after completion or failure");
         let mut policy = spending::Policy::new(&spending, &holdings, &mut unexpected);
         let state = state.advance_month(Some(&mut policy), None).unwrap();
         assert_eq!(&state.finish().unwrap().into_output(), expected);
