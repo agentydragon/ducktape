@@ -197,7 +197,8 @@ full liquidation consumes every selected lot's remaining units and basis.
 
 ### Policy types
 
-Policies are first-class typed objects. The current policy vocabulary:
+The configured runner uses typed policy objects. Its current control vocabulary
+is separate from the callable batch action interface described above:
 
 | Policy                    | Inputs                                                       | Action(s) emitted                                                                                          |
 | ------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -360,7 +361,8 @@ conditioning past values on eventual completion.
 - It is not a portfolio optimizer. Policies are user-specified rules; augur
   reports their consequences, not what optimal policies would be.
 - It does not model agent learning or strategic interaction (game-theoretic
-  best response). Each agent's policy is fixed by scenario configuration.
+  best response). Configured-control parameters are fixed by the scenario;
+  callable batch policies keep experiment-owned memory and decision logic.
 - It currently assumes FIFO lot selection for sale-basis accounting where a
   simulator slice needs concrete cost-basis math. HIFO, specific-identification,
   and average-cost lot selection are future extensions.
