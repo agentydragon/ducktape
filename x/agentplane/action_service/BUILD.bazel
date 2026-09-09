@@ -49,6 +49,7 @@ py_library(
     deps = [
         ":catalog",
         ":models",
+        ":updates",
         "@pypi//asyncpg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -474,5 +475,44 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "updates",
+    srcs = ["updates.py"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "waits",
+    srcs = ["waits.py"],
+    deps = [
+        ":models",
+        ":service",
+        ":updates",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_waits",
+    srcs = ["test_waits.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":models",
+        ":service",
+        ":updates",
+        ":waits",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

@@ -1,0 +1,197 @@
+"""Real commit notifications, bounded waits, races, and cross-writer receipt ownership."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from datetime import timedelta
+from uuid import UUID, uuid4
+
+import pytest
+import pytest_bazel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
+from x.agentplane.action_service.db import ActionNotFoundError, ActionStore, make_sessionmaker
+from x.agentplane.action_service.models import (
+    ActionRequestInput,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+    ExecutionResult,
+    ExecutionState,
+    Principal,
+    PrincipalRole,
+    Verdict,
+)
+from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.updates import CHANNEL, ActionUpdates, UpdatesUnavailableError
+from x.agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
+
+CALLER = Principal(issuer="test", subject="caller", role=PrincipalRole.CALLER)
+OTHER = Principal(issuer="test", subject="other", role=PrincipalRole.CALLER)
+OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
+
+
+class ObservedService(ActionService):
+    """A read boundary signal lets tests order commits against actual waiter reads."""
+
+    def __init__(self, store: ActionStore, catalog: ActionCatalog) -> None:
+        super().__init__(store, catalog, {})
+        self.reads: asyncio.Queue[ActionRequestView] = asyncio.Queue()
+
+    async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
+        view = await super().get(request_id, principal)
+        self.reads.put_nowait(view)
+        return view
+
+
+@dataclass
+class Waiting:
+    writer: ActionStore
+    service: ObservedService
+    updates: ActionUpdates
+    waiter: ActionWaiter
+    request: ActionRequestView
+
+
+@pytest.fixture
+async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog) -> AsyncIterator[Waiting]:
+    # The writer uses a separate session/store from the reader; only PostgreSQL connects them.
+    writer = ActionStore(make_sessionmaker(engine))
+    reader = ObservedService(ActionStore(make_sessionmaker(engine)), echo_catalog)
+    request, _ = await writer.submit(
+        ActionRequestInput(
+            action=ActionIdentity(group="agentplane", name="echo"), arguments={}, idempotency_key="test-wait"
+        ),
+        CALLER,
+    )
+    updates = ActionUpdates(db_url)
+    await updates.start()
+    try:
+        yield Waiting(writer, reader, updates, ActionWaiter(reader, updates), request)
+    finally:
+        await updates.close()
+
+
+async def subscribed(waiting: Waiting) -> None:
+    # Authorization read, then the race-closing read after subscription.
+    for _ in range(2):
+        assert (await waiting.service.reads.get()).state is ActionState.DECISION_PENDING
+
+
+async def decide(waiting: Waiting, verdict: Verdict) -> ActionRequestView:
+    view, _ = await waiting.writer.decide(
+        waiting.request.id,
+        DecisionInput(verdict=verdict, expected_version=1, idempotency_key="test-decision"),
+        OPERATOR,
+        provider="test-human",
+    )
+    return view
+
+
+async def test_cross_writer_decision_and_terminal_predicates(waiting: Waiting) -> None:
+    async with asyncio.timeout(10):
+        terminal = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
+        await subscribed(waiting)
+        allowed = await decide(waiting, Verdict.ALLOW)
+        assert (await waiting.service.reads.get()).state is ActionState.ALLOWED
+        assert not terminal.done()
+        assert (
+            await waiting.waiter.get(
+                waiting.request.id, CALLER, WaitOptions(wait_seconds=10, wait_until=WaitUntil.DECISION)
+            )
+            == allowed
+        )
+        claim = await waiting.writer.claim_execution(
+            waiting.request.id, executor_id="test-executor", lease_duration=timedelta(seconds=30)
+        )
+        assert claim is not None
+        await waiting.writer.mark_running(waiting.request.id)
+        await waiting.writer.finish_execution(
+            waiting.request.id,
+            claim.executor_id,
+            claim.lease_token,
+            ExecutionResult(state=ExecutionState.SUCCEEDED, result={"token": "test-secret"}),
+        )
+        completed = await terminal
+        assert completed.state is ActionState.SUCCEEDED
+        assert completed.execution is not None
+        assert completed.execution.result == {"token": "[redacted]"}
+        assert not waiting.updates._subscribers
+
+
+@pytest.mark.parametrize("until", list(WaitUntil))
+async def test_denial_satisfies_both_predicates(waiting: Waiting, until: WaitUntil) -> None:
+    async with asyncio.timeout(10):
+        task = asyncio.create_task(
+            waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10, wait_until=until))
+        )
+        await subscribed(waiting)
+        denied = await decide(waiting, Verdict.DENY)
+        assert await task == denied
+
+
+async def test_timeout_returns_current_receipt_and_cancel_only_cleans_wait(waiting: Waiting) -> None:
+    receipt = await waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=0.001))
+    assert receipt.state is ActionState.DECISION_PENDING
+    assert not waiting.updates._subscribers
+    while not waiting.service.reads.empty():
+        waiting.service.reads.get_nowait()
+    task = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
+    await subscribed(waiting)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not waiting.updates._subscribers
+    assert (await waiting.writer.get(waiting.request.id, CALLER)).state is ActionState.DECISION_PENDING
+
+
+async def test_listener_loss_fails_wait_but_immediate_read_recovers(waiting: Waiting) -> None:
+    async with asyncio.timeout(10):
+        task = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
+        await subscribed(waiting)
+        assert waiting.updates._connection is not None
+        waiting.updates._connection.terminate()
+        with pytest.raises(UpdatesUnavailableError, match="wait_seconds=0"):
+            await task
+        assert not waiting.updates._subscribers
+        assert (await waiting.waiter.get(waiting.request.id, CALLER, WaitOptions())).id == waiting.request.id
+
+
+async def test_other_caller_cannot_subscribe(waiting: Waiting) -> None:
+    with pytest.raises(ActionNotFoundError):
+        await waiting.waiter.get(waiting.request.id, OTHER, WaitOptions(wait_seconds=10))
+    assert not waiting.updates._subscribers
+
+
+async def test_rollback_and_duplicate_invalidations_keep_durable_state_authoritative(
+    waiting: Waiting, engine: AsyncEngine
+) -> None:
+    async with asyncio.timeout(10):
+        # A barrier notification on the same channel establishes delivery order without sleeps.
+        barrier = uuid4()
+        with waiting.updates.subscribe(waiting.request.id) as changed, waiting.updates.subscribe(barrier) as delivered:
+            async with engine.connect() as connection:
+                transaction = await connection.begin()
+                await connection.execute(select(func.pg_notify(CHANNEL, str(waiting.request.id))))
+                await transaction.rollback()
+                await connection.execute(select(func.pg_notify(CHANNEL, str(barrier))))
+                await connection.commit()
+            await delivered.wait()
+            assert not changed.is_set()
+        task = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
+        await subscribed(waiting)
+        async with engine.begin() as connection:
+            for _ in range(2):
+                await connection.execute(select(func.pg_notify(CHANNEL, str(waiting.request.id))))
+        assert (await waiting.service.reads.get()).state is ActionState.DECISION_PENDING
+        assert not task.done()
+        await decide(waiting, Verdict.DENY)
+        assert (await task).state is ActionState.DENIED
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

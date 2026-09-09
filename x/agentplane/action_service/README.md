@@ -28,7 +28,7 @@ Migration `0006_decision_note` renames the existing human-note column without dr
 downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
 a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
 
-## Delivery: polling, not an outbox
+## Delivery: durable events and bounded waits
 
 The durable Action event sequence (`action_event`, exposed at `.../events`) is the first-slice
 result-delivery surface. `after_sequence` is the last sequence number the caller already holds;
@@ -41,6 +41,15 @@ already in `action_event`/`action_request`, so it has been dropped (migration
 `0004_drop_action_outbox`). The `.../events` polling surface above is not a prerequisite on the
 later Event & Notification Hub, which is expected to consume the Action event sequence directly
 rather than an outbox.
+
+`waits.ActionWaiter` provides bounded, notification-driven receipt reads for transports that offer
+waiting. `WaitOptions` defaults to immediate reads and caps waits at 30 seconds, with `decision`
+and `terminal` predicates. Each ORM insertion of a canonical Action event emits a UUID-only
+PostgreSQL `NOTIFY` in the same transaction. `updates.ActionUpdates` owns one dedicated listener
+connection per service instance and coalesces wakeups per waiting request. It subscribes before
+rechecking durable state and releases registrations on every exit path. A lost listener fails
+bounded waits explicitly until the listener is restarted; it never falls back to timed queries.
+The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
 
 ## Action catalog
 

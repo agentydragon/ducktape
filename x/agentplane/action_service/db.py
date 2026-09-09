@@ -8,10 +8,11 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, select
+from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, event, func, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
@@ -32,6 +33,7 @@ from x.agentplane.action_service.models import (
     UnknownOutcomeReason,
     Verdict,
 )
+from x.agentplane.action_service.updates import CHANNEL
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer that runtime dependency.
 # gazelle:include_dep @pypi//asyncpg
@@ -69,6 +71,13 @@ class ActionEventRow(Base):
     sequence: Mapped[int] = mapped_column(Integer, primary_key=True)
     state: Mapped[str] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+@event.listens_for(ActionEventRow, "after_insert")
+def _notify_event(_mapper: Mapper[ActionEventRow], connection: Connection, row: ActionEventRow) -> None:
+    # NOTIFY is delivered only on commit, including for writers in other service replicas.
+    # Keep this on canonical event insertion so every lifecycle transition wakes readers.
+    connection.execute(select(func.pg_notify(CHANNEL, str(row.request_id))))
 
 
 class DecisionRow(Base):
