@@ -16,24 +16,31 @@ states or an identical training algorithm.
 ```python
 import polars as pl
 
-from augur.evidence import EvidenceSnapshot
-from augur.scoring import energy_score, variogram_score
+from augur.datasets import align_monthly
+from augur.scoring import LogGrowth, energy_score, variogram_score
 
 
-def compare_forecasts(evidence_path, fitters, universe, origins, projection):
-    evidence = EvidenceSnapshot.open(evidence_path)
+def compare_forecasts(datasets, fitters, universe, origins, *, evaluation_as_of):
+    # This experiment chooses these observable coordinates, not a global evidence bundle.
+    projection = LogGrowth(columns=("equity_tr_index", "corporate_tr_index", "cpi"))
+    scoring_series = {
+        name: datasets[name].available_by(evaluation_as_of)
+        for name in projection.columns
+    }
     rows, fitted = [], {}
     for origin in origins:
-        known = evidence.available_by(origin)
+        known = {name: series.available_by(origin) for name, series in datasets.items()}
         scale = projection.scale_from(known)  # Shared, learned only from training data.
         for model_name, fit in fitters.items():
             model = fit(known).bind(universe)
             fitted[origin, model_name] = model
-            forecast = model.condition(known.latest()).sample(
+            forecast = model.condition(known, at=origin).sample(
                 start=origin, years=10, step="month", paths=4096, seed=410,
             )
             for months in (1, 12, 60, 120):
-                observed = evidence.realized_after(origin, months=months)
+                observed = align_monthly(
+                    scoring_series, start=origin, months=months, include_start=True, missing="raise"
+                )
                 samples = projection.forecast(forecast.prefix(months=months)) / scale
                 actual = projection.observed(observed) / scale
                 rows.append({
@@ -48,8 +55,13 @@ def compare_forecasts(evidence_path, fitters, universe, origins, projection):
     return scores, means, fitted
 ```
 
-`projection` explicitly defines its vector: for example, cumulative equity and
-bond total returns, cumulative CPI change, and changes in short and long yields.
+The caller loads and names `datasets`, as in [the loading shell](exogenous.md).
+Each fitter explicitly chooses its columns and transformations; it receives no
+automatically selected datasets. Candidate bindings expose the three named index
+level paths consumed here. The `LogGrowth` projection computes each column's
+log end/start ratio, in the declared order, for both forecasts and observations.
+There are no implicit yield or other macro coordinates in this example. A study
+scoring yield changes would name those datasets and add those transformations.
 Score additional path projections such as drawdowns and prolonged inflation
 separately; terminal marginals alone miss sequence risk. The same transformation,
 units, target record, origins, and scale apply to every candidate. All selected
@@ -71,6 +83,8 @@ inner training/validation split; final evaluation periods must remain untouched.
 Record whether evidence is release-vintage or revised: a truncated revised series
 does not reproduce what a forecaster actually knew. In-sample fit statistics may
 be reported separately, never substituted for this held-out evaluation.
+`evaluation_as_of` freezes each target dataset's scoring vintage; those later
+observations reach only the scorer, never fitting, scaling or conditioning.
 
 ## Which model would select which policy, and how fragile is that selection?
 

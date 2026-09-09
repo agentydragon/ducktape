@@ -43,6 +43,10 @@ negotiable; the behavior the caller asks for is the review target.
   model. `windows` enumerates historical paths; `sample` draws model paths. A
   supplied `Worlds` can come from an external model. No universal calibration
   interface is required of every provider.
+- **Datasets** are selected and named by the experiment author, using provider
+  loaders or ordinary file reads. Shared alignment joins those selected series;
+  it does not select a global evidence bundle. Fit code names its variables and
+  transformations, and model bindings name their financial meanings.
 - A **situation** contains the opening books, agents, contracts, calendar, and tax
   state. `Situation.investor` is a convenience for a single investor. The housing
   program constructs multiple agents directly.
@@ -144,8 +148,9 @@ change existing paths. Prefixing a long path set preserves its history. Comparin
 different models is a sensitivity analysis; matching integer seeds does not by
 itself make their worlds economically paired.
 
-Every run receipt resolves the evidence snapshot, model artifact and fit window,
-instrument bindings, starting situation, tax-law assumptions, policy parameters,
+Every run receipt resolves each named dataset's source and snapshot/vintage, the
+model artifact and fit window, instrument bindings, starting situation,
+tax-law assumptions, policy parameters,
 calendar, engine version, and path identities. Executable policies add a pinned
 code revision and captured parameters; the receipt need not serialize arbitrary
 closures. A report carries that receipt.
