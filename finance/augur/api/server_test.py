@@ -240,7 +240,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "net_worth_quanta",
         "shortfall_quanta",
     }
-    terminal = detail["rollout"]["terminal_metrics"]
+    terminal = detail["rollout"]["ending_metrics"]
     assert terminal["cash_quanta"] == "24887500"
     assert int(terminal["holding_value_quanta"]) > 0
     assert int(terminal["private_equity_value_quanta"]) > 0
@@ -339,7 +339,7 @@ def test_backend_server_exposes_deployment_image_commits(server_url: str) -> Non
     }
 
 
-def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -> None:
+def test_backend_server_retains_stop_book_and_marks_terminal_wealth_unobserved(server_url: str) -> None:
     scenario = {
         "model_id": "current_model",
         "horizon_months": 3,
@@ -356,25 +356,26 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert fan["failed_count"] == 1
     assert "rollout_summaries" not in fan
     assert fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
-    # Month 0 = cash 250k + holdings 835.5k + PHA 25k + bonds 150k at face; failure zeros
-    # subsequent months.
-    assert fan["monthly_metric_fan"]["value_quanta"] == [_usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]]
-    assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value_quanta": [_usd_quanta(0.0)]}
+    assert fan["monthly_metric_fan"]["observed_count"] == [1, 0, 0, 0]
+    assert fan["monthly_metric_fan"]["value_quanta"] == [_usd_quanta(1_260_500.0), None, None, None]
+    assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value_quanta": [None]}
+    assert fan["completed_count"] == 0
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
     assert detail["rollout"]["failed"] is True
-    terminal = detail["rollout"]["terminal_metrics"]
+    terminal = detail["rollout"]["ending_metrics"]
     assert terminal["failed_month_index"] == 0
-    assert terminal["cash_quanta"] == _usd_quanta(0.0)
-    assert terminal["holding_value_quanta"] == _usd_quanta(0.0)
-    assert terminal["net_worth_quanta"] == _usd_quanta(0.0)
+    assert terminal["snapshot_index"] == 1
+    assert terminal["cash_quanta"] == _usd_quanta(250_000.0)
+    assert terminal["holding_value_quanta"] == _usd_quanta(835_500.0)
+    assert terminal["net_worth_quanta"] == _usd_quanta(1_260_500.0)
     assert terminal["shortfall_quanta"] == _usd_quanta(300_000.0)
     columns = detail["rollout"]["monthly_metrics"]
-    assert columns["month_index"] == [0, 1, 2, 3]
-    assert columns["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 0.0, 0.0, 0.0]]
-    assert columns["holding_value_quanta"] == [_usd_quanta(value) for value in [835_500.0, 0.0, 0.0, 0.0]]
-    assert columns["net_worth_quanta"] == [_usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]]
+    assert columns["month_index"] == [0, 1]
+    assert columns["cash_quanta"] == [_usd_quanta(250_000.0)] * 2
+    assert columns["holding_value_quanta"] == [_usd_quanta(835_500.0)] * 2
+    assert columns["net_worth_quanta"] == [_usd_quanta(1_260_500.0)] * 2
     expense, failure = detail["rollout"]["events"]
     assert expense == {
         "month_index": 0,
@@ -422,7 +423,7 @@ def test_backend_server_product_zero_width_band_sells_exactly_the_required_spend
     assert columns["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 0.0]]
     assert columns["holding_value_quanta"][0] == _usd_quanta(835_500.0)
     assert int(columns["holding_value_quanta"][1]) > 0
-    terminal = detail["rollout"]["terminal_metrics"]
+    terminal = detail["rollout"]["ending_metrics"]
     assert terminal["cash_quanta"] == _usd_quanta(0.0)
     assert terminal["shortfall_quanta"] == _usd_quanta(0.0)
     # Bonds are the third term now: net worth is liquid + home equity + PE + bonds, and with
@@ -523,8 +524,8 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
     assert rollout_response.status_code == 200
     detail = rollout_response.json()
-    assert detail["rollout"]["terminal_metrics"]["cash_quanta"] == _usd_quanta(256_125.0)
-    assert detail["rollout"]["terminal_metrics"]["private_equity_value_quanta"] == _usd_quanta(18_750.0)
+    assert detail["rollout"]["ending_metrics"]["cash_quanta"] == _usd_quanta(256_125.0)
+    assert detail["rollout"]["ending_metrics"]["private_equity_value_quanta"] == _usd_quanta(18_750.0)
     [opportunity] = [event for event in detail["rollout"]["events"] if event["kind"] == "private_equity_opportunity"]
     assert opportunity["event_kind"] == "tender"
     assert opportunity["outcome"] == "sold"
@@ -559,8 +560,8 @@ def test_backend_server_product_cash_band_refills_to_the_ceiling_from_the_overwe
     # Landing on the ceiling, not back on the floor: refilling to the floor would put the owner
     # right back at the trigger next month.
     assert columns["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 280_000.0]]
-    assert detail["rollout"]["terminal_metrics"]["cash_quanta"] == _usd_quanta(280_000.0)
-    assert detail["rollout"]["terminal_metrics"]["shortfall_quanta"] == _usd_quanta(0.0)
+    assert detail["rollout"]["ending_metrics"]["cash_quanta"] == _usd_quanta(280_000.0)
+    assert detail["rollout"]["ending_metrics"]["shortfall_quanta"] == _usd_quanta(0.0)
     # Exactly two events: btc is inside the target but underweight, so it is not touched.
     sale, expense = detail["rollout"]["events"]
     assert sale == {

@@ -208,17 +208,13 @@ pub struct SnapshotState<'a> {
     /// by `engine::bond_states`.
     pub bonds: &'a [BondState],
     /// The month's settled-obligation shortfall for the selected agent. Zero at snapshot 0
-    /// and for every snapshot after the rollout freezes.
+    /// There are no observations after stopping.
     pub shortfall: Money,
-    pub failed: bool,
 }
 
 /// Reduce one snapshot to its base metrics.
 ///
-/// Failure semantics are uneven, and kept that way on purpose: dollar state (cash, lots,
-/// mortgage principal) is already drained by the caller, and bonds are zeroed here because
-/// their face is a static input the freeze never touches. Property value is NOT zeroed —
-/// see `docs/product_metrics.md` § Failed rollouts.
+/// State and marks must refer to the same observed point, including a book at stopping.
 pub fn snapshot_metrics(
     fixture: &ExecutionInput,
     inputs: &ProductInputs,
@@ -313,17 +309,15 @@ pub fn snapshot_metrics(
 
     metrics[SHORTFALL] = state.shortfall.0;
 
-    if !state.failed {
-        for bond in state.bonds {
-            if bond.agent_id != inputs.primary_agent_id {
-                continue;
-            }
-            metrics[BOND] = metrics[BOND].checked_add(bond.principal.0).ok_or(
-                crate::money::ArithmeticError::Overflow {
-                    operation: "product bond total",
-                },
-            )?;
+    for bond in state.bonds {
+        if bond.agent_id != inputs.primary_agent_id {
+            continue;
         }
+        metrics[BOND] = metrics[BOND].checked_add(bond.principal.0).ok_or(
+            crate::money::ArithmeticError::Overflow {
+                operation: "product bond total",
+            },
+        )?;
     }
 
     Ok(metrics)
@@ -336,7 +330,7 @@ pub struct ProductMetricSeries {
     pub rollout_count: u32,
     pub snapshot_count: u32,
     /// One entry per `BASE_METRIC_NAMES` position, each a row-major `[snapshot][rollout]`
-    /// block — the `(snapshot, rollout)` shape `ProductMetricArrays.base_series` expects.
+    /// block. Values after `failed_month + 1` are unobserved transport padding, not money.
     pub base_series: Vec<Vec<i64>>,
     /// Per-rollout failure month, `-1` for a rollout that never failed.
     pub failed_month: Vec<i64>,
@@ -351,10 +345,11 @@ impl ProductMetricSeries {
     ) -> Result<Self, ProductError> {
         let rollout_count = rollouts.len();
         let snapshots = snapshot_count as usize;
-        for (metrics, _) in rollouts {
-            if metrics.len() != snapshots {
+        for (metrics, failed) in rollouts {
+            let expected = failed.map_or(snapshots, |month| month as usize + 2);
+            if metrics.len() != expected {
                 return Err(ProductError::SnapshotCount {
-                    expected: snapshots,
+                    expected,
                     actual: metrics.len(),
                 });
             }

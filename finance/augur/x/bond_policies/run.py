@@ -194,7 +194,11 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
             metrics = engine.product_metrics(run, primary_agent_id=HOUSEHOLD)
             metric_arrays = metrics.metric_arrays()
             np.savez_compressed(
-                cell_dir / "metrics.npz", allow_pickle=False, **metric_arrays, failed_month=metrics.failed_month
+                cell_dir / "metrics.npz",
+                allow_pickle=False,
+                **metric_arrays,
+                observed=metrics.observed,
+                failed_month=metrics.failed_month,
             )
             for frame in EVENT_FRAME_SPECS:
                 events.frame(frame).write_parquet(cell_dir / f"{frame.name}.parquet")
@@ -208,7 +212,9 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
                         "output": str(cell_dir.relative_to(output_dir)),
                         "currency_code": metrics.currency_code,
                         "currency_quantum": metrics.currency_quantum,
-                        "terminal_wealth_quanta": int(metric_arrays["net_worth_quanta"][-1, rollout]),
+                        "terminal_wealth_quanta": int(metric_arrays["net_worth_quanta"][-1, rollout])
+                        if metrics.failed_month[rollout] < 0
+                        else None,
                         "spending_paid_quanta": events.obligation_settlements.filter(selected)
                         .get_column("amount_paid_quanta")
                         .sum(),

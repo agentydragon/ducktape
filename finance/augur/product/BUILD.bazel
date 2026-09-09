@@ -10,6 +10,7 @@ py_library(
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:product_metrics",
         "@pypi//pydantic",
     ],
 )
@@ -106,6 +107,26 @@ py_test(
         "//finance/augur/api:finance",
         "//finance/augur/api:portfolio",
         "//finance/augur/model:series",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "stopped_outcomes_test",
+    srcs = ["stopped_outcomes_test.py"],
+    deps = [
+        ":conftest",
+        ":service",
+        ":wire",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/api:portfolio",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/model:testing",
+        "//finance/augur/sim:product_metrics",
+        "@pypi//numpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

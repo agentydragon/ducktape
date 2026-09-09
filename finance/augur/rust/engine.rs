@@ -85,7 +85,7 @@ struct RolloutComputation {
     ending_tlh_cumulative_harvest: Vec<Money>,
     recorder: Recorder,
     failed_month: Option<u32>,
-    /// One row per snapshot (`horizon_months + 1`), empty when no product agent was selected.
+    /// Observed snapshots only, empty when no product agent was selected.
     product_metrics: Vec<BaseMetrics>,
     consumption_requested: Vec<Money>,
     consumption_paid: Vec<Money>,
@@ -505,36 +505,7 @@ fn simulate_rollout(
     }
     for month in 0..fixture.scenario.horizon_months {
         if failed_month.is_some() {
-            if recorder.capture_mode.captures_output() {
-                recorder.record_month(month_output(
-                    fixture,
-                    rollout_id,
-                    month + 1,
-                    &ledger,
-                    &lots,
-                    &properties,
-                    &mortgages,
-                    &tax_liabilities,
-                    &tax,
-                    &tlh_cumulative_harvest,
-                    true,
-                )?);
-            }
-            if let Some(inputs) = product {
-                product_metrics.push(product_snapshot(
-                    fixture,
-                    inputs,
-                    rollout_id,
-                    month + 1,
-                    &ledger,
-                    &lots,
-                    &properties,
-                    &mortgages,
-                    Money(0),
-                    true,
-                )?);
-            }
-            continue;
+            break;
         }
         if let Some(policy) = allocation.as_deref_mut() {
             policy.review(fixture, rollout_id, month, &ledger, &lots)?;
@@ -808,21 +779,16 @@ fn simulate_rollout(
     debug_assert_eq!(ledger.trial_balance(), 0);
     Ok(RolloutComputation {
         rollout_id,
-        ending_balances: account_balances(&ledger, failed_month.is_some()),
+        ending_balances: account_balances(&ledger),
         ending_bonds: bond_states(
             fixture,
             rollout_id,
-            fixture.scenario.horizon_months,
-            failed_month.is_some(),
+            failed_month.unwrap_or(fixture.scenario.horizon_months),
         )?,
-        ending_properties: property_states(&properties, failed_month.is_some()),
-        ending_mortgages: mortgage_states(&mortgages, failed_month.is_some()),
-        ending_tax_liabilities: tax_liability_states(&tax_liabilities, failed_month.is_some()),
-        ending_tlh_cumulative_harvest: if failed_month.is_some() {
-            vec![Money(0); tlh_cumulative_harvest.len()]
-        } else {
-            tlh_cumulative_harvest
-        },
+        ending_properties: properties,
+        ending_mortgages: mortgages,
+        ending_tax_liabilities: tax_liabilities,
+        ending_tlh_cumulative_harvest: tlh_cumulative_harvest,
         recorder,
         failed_month,
         product_metrics,
@@ -833,8 +799,7 @@ fn simulate_rollout(
 
 /// Reduce the live rollout state to one snapshot's base product metrics.
 ///
-/// Dollar state is zeroed for a frozen rollout by the same `failed` flag the dense
-/// snapshot serializers use, so the two output channels never disagree about a failure.
+/// A stopped post-event book uses the failure month's observed marks, not future prices.
 #[allow(clippy::too_many_arguments)]
 fn product_snapshot(
     fixture: &ExecutionInput,
@@ -853,23 +818,25 @@ fn product_snapshot(
         .map(|lot| LotView {
             agent_id: &lot.spec.agent_id,
             asset_id: &lot.spec.asset_id,
-            units_remaining: if failed { 0 } else { lot.units_remaining.0 },
+            units_remaining: lot.units_remaining.0,
             quantity_scale: lot.spec.quantity_scale,
         })
         .collect();
-    let bonds = bond_states(fixture, rollout_id, snapshot, failed)?;
-    let mortgage_states = mortgage_states(mortgages, failed);
-    let empty_ledger = Ledger::default();
+    let valuation_month = if failed { snapshot - 1 } else { snapshot };
+    let bonds = bond_states(fixture, rollout_id, valuation_month)?;
     let state = SnapshotState {
-        ledger: if failed { &empty_ledger } else { ledger },
+        ledger,
         lots: &lot_views,
         properties,
-        mortgages: &mortgage_states,
+        mortgages,
         bonds: &bonds,
         shortfall,
-        failed,
     };
     Ok(snapshot_metrics(
-        fixture, inputs, &state, rollout_id, snapshot,
+        fixture,
+        inputs,
+        &state,
+        rollout_id,
+        valuation_month,
     )?)
 }

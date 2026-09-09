@@ -2,7 +2,7 @@
 
 The product API renders every projection from ten metric series. Seven are **base** series
 the simulator emits directly; three are sums of those. This document covers what the engine
-owes the product read model, and two behaviours it keeps deliberately rather than corrects.
+owes the product read model, including the observation boundary when execution stops.
 
 ## The split
 
@@ -23,21 +23,36 @@ journal, no event trace. The percentile fan is the 100,000-rollout workload, and
 
 ## Failed rollouts
 
-A frozen rollout zeroes its dollar-valued state, so cash, holdings, private equity and
-mortgage principal all go to zero from the failure month on. Bonds are zeroed explicitly,
-because a bond's face is a static input the freeze never touches.
+Failure stops execution, not ownership. Cash, lots, debts, tax balances and the other
+books retain their actual values. A failure in event month `f` produces a final post-event
+snapshot `f+1`, valued with the already-observed marks from month `f`. It has not reached
+the next scheduled market observation. Forensic output ends at that snapshot.
 
-**Property value is not zeroed.** A property's metric value is
-`purchase_price × home_value[now] / home_value[purchase_month]` — both terms are static or
-exogenous, and the property's active flag survives the freeze, so a failed rollout reports
-its property value while every other term reads zero. `net_worth_quanta` for a failed
-rollout is therefore that property value rather than zero.
+Compact integer blocks remain rectangular. `failed_month == -1` means completed;
+otherwise `ProductMetricArrays.observed` identifies snapshots through `f+1`, including the
+stopped book. Later integer slots are transport padding, not observed zero money.
+`scheduled_observed` includes snapshots only through `f`, so a wealth fan at scheduled
+month `f+1` does not mix live marks with a stopped book marked at `f`. Historical monthly
+quantiles use that month's observed population and report its count, not only eventual
+survivors. No observations means a null quantile.
 
-This looks like an oversight rather than an intended rule: the bond term carries a comment
-explaining that it is zeroed "so a failed rollout's net worth is zero like every other
-term", which is exactly what the property term then breaks. It is recorded rather than
-fixed because fixing it changes what the product reports for failed rollouts, which is a
-product decision and not a cleanup.
+Aggregate outcomes declare their `OutcomeBasis`:
+
+- `completed_horizon`: wealth is a horizon-terminal observation only for paths that
+  completed the horizon, even if a stop snapshot's index equals the horizon. Stopped
+  samples are null; the selected rollout instead exposes `ending_metrics` with its
+  snapshot and failed event-month indices.
+- `observed_through_stop`: shortfall sums recorded unpaid demands through stop or
+  completion for every path. Monthly shortfall includes the failure-event amount at
+  snapshot `f+1`. It is amount due minus actually paid, including tax and contract
+  demands—not additional cash required to make a funding group payable, and not a
+  projection of future shortfalls. An all-or-none group can leave 1,100 unpaid while
+  retaining 1,000 cash. Another source-account group can still pay its consumption.
+
+This basis governs the aggregate population; each monthly fan has its own observation
+count. Currency quantiles remain exact integers, with null absence at the product/API
+boundary. The selected chart places a stopped book at event month `f`, retaining snapshot
+`f+1` as book identity rather than pretending it observed another month of prices.
 
 ## Two base months for one property
 

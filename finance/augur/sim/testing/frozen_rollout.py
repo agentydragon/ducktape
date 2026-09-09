@@ -1,17 +1,7 @@
-"""A rollout that runs out of cash stops there, and reports nothing later.
+"""A stopped rollout retains its actual book and reports no later events or snapshots.
 
-An engine that cannot leave a vectorized scan early keeps stepping a frozen rollout under a
-mask. Those masked steps are not months that went wrong; they are months that did not happen,
-and the read model should not surface them — an assessment for a tax year the rollout did not
-survive, exogenous marks it was never around to see.
-
-Stated against a `SimulationResult` rather than one engine's output, because "a frozen rollout
-reports nothing later" is a claim about what a simulator is.
-
-**What is deliberately not here:** whether a mark published *during* the failure month itself
-is reported. The engine stops at the phase that could not pay, which is a defensible answer
-and not an established one -- the question is open (`TODO.md`). Every case below is about
-months strictly after the freeze, which is settled.
+A failure in event month f ends at post-event snapshot f+1, using marks observed at f.
+Later supplied exogenous marks are not observations of the stopped rollout.
 """
 
 from __future__ import annotations
@@ -19,6 +9,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import numpy as np
+import polars as pl
 import pytest
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
@@ -182,12 +173,22 @@ class FrozenRolloutAcceptance:
         These come off the compiled plan rather than the run, so nothing about the freeze
         reaches them on its own — they would be reported for months the rollout was no longer
         around to see unless the read model drops them. The rollout freezes at month 1, so
-        month 2 is the one this rules out; whether month 1 itself is reported is the open
-        question named in the module docstring, and is not asserted here.
+        month 2 is the one this rules out.
         """
 
         events = backend(private_equity_case(freeze=True)).events.private_equity_events
         assert [month for month in events.get_column("month_index").to_list() if month > 1] == []
+
+    def test_stopped_book_retains_cash_and_private_positions(self, backend: Backend) -> None:
+        result = backend(private_equity_case(freeze=True))
+        assert result.cash.get_column("month_index").unique().sort().to_list() == [0, 1, 2]
+        stopped_cash = result.cash.filter(
+            (pl.col("month_index") == 2) & (pl.col("agent_id") == "pe_owner") & (pl.col("account_id") == "checking")
+        )
+        assert stopped_cash.get_column("balance_quanta").to_list() == [10_000]
+        stopped_lots = result.lots.filter(pl.col("month_index") == 2)
+        assert stopped_lots.get_column("remaining_quantity_quanta").to_list() == [10_000_000]
+        assert stopped_lots.get_column("cost_basis_per_unit_quanta").to_list() == [1_000]
 
     def test_a_tax_year_the_rollout_did_not_survive_is_not_assessed(self, backend: Backend) -> None:
         """The year closes at month 11 and is assessed at month 12; this rollout froze at 11.

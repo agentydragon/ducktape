@@ -338,9 +338,7 @@ class ScanPhaseAcceptance:
 
     def test_obligation_failure_scan(self, backend: Backend) -> None:
         # No income: alice can pay rent in month 0 (1000 -> 400) but not month 1 (needs 600), so the
-        # rollout fails at month 1. Failure is per-rollout (a whole Monte-Carlo path), so
-        # `_zero_failed_state` zeros every account in that rollout's column from the failure month on —
-        # including the landlord's received rent. Exercises the scan's settlement failure path.
+        # rollout stops at month 1, preserving both parties' actual balances.
         scenario = Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
             initial_cash=[
@@ -367,8 +365,9 @@ class ScanPhaseAcceptance:
 
         assert _cash(run, "alice", 1) == 40_000  # after month 0: rent paid (1000 -> 400)
         assert _cash(run, "landlord", 1) == 60_000  # month 0's rent landed pre-failure
-        assert _cash(run, "alice", 12) == 0  # whole rollout zeroed after month-1 failure
-        assert _cash(run, "landlord", 12) == 0  # landlord's column zeroed too
+        assert _cash(run, "alice", 2) == 40_000
+        assert _cash(run, "landlord", 2) == 60_000
+        assert run.cash.get_column("month_index").max() == 2
 
     def test_scheduled_sale_scan(self, backend: Backend, constant_price_bundle) -> None:
         # A long-term capital-gain sale: 100 SP500 units bought 24 months pre-horizon at $80, sold at

@@ -101,6 +101,7 @@ py_library(
         "//finance/augur/model:series",
         "//finance/augur/sim:scenario",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest",
     ],
 )

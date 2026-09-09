@@ -389,30 +389,26 @@ pub(super) fn month_output(
 ) -> Result<MonthOutput, SimulationError> {
     Ok(MonthOutput {
         month,
-        balances: account_balances(ledger, failed),
-        income: income_states(&tax.income, failed),
-        lots: security_lot_states(lots, failed)?,
-        bonds: bond_states(fixture, rollout_id, month, failed)?,
-        properties: property_states(properties, failed),
-        mortgages: mortgage_states(mortgages, failed),
-        tax_liabilities: tax_liability_states(tax_liabilities, failed),
-        capital_gains: capital_gain_states(fixture, &tax.facts, failed),
-        tlh_cumulative_harvest: if failed {
-            vec![Money(0); tlh_cumulative_harvest.len()]
-        } else {
-            tlh_cumulative_harvest.to_vec()
-        },
+        balances: account_balances(ledger),
+        income: income_states(&tax.income),
+        lots: security_lot_states(lots)?,
+        bonds: bond_states(fixture, rollout_id, if failed { month - 1 } else { month })?,
+        properties: properties.to_vec(),
+        mortgages: mortgages.to_vec(),
+        tax_liabilities: tax_liabilities.to_vec(),
+        capital_gains: capital_gain_states(fixture, &tax.facts),
+        tlh_cumulative_harvest: tlh_cumulative_harvest.to_vec(),
         failed,
     })
 }
 
-fn income_states(income: &IncomeLedger, failed: bool) -> Vec<IncomeState> {
+fn income_states(income: &IncomeLedger) -> Vec<IncomeState> {
     income
         .rows()
         .map(|(agent_id, source, amount)| IncomeState {
             agent_id: agent_id.to_owned(),
             income_source: source.clone(),
-            income: if failed { Money(0) } else { amount },
+            income: amount,
         })
         .collect()
 }
@@ -420,7 +416,6 @@ fn income_states(income: &IncomeLedger, failed: bool) -> Vec<IncomeState> {
 fn capital_gain_states(
     fixture: &ExecutionInput,
     tax_facts: &BTreeMap<(String, String), TaxFacts>,
-    failed: bool,
 ) -> Vec<CapitalGainState> {
     fixture
         .scenario
@@ -435,25 +430,14 @@ fn capital_gain_states(
                 .expect("validated tax profile has representative facts");
             CapitalGainState {
                 agent_id: profile.agent_id.clone(),
-                short_term_gain: if failed {
-                    Money(0)
-                } else {
-                    facts.short_term_gain
-                },
-                long_term_gain: if failed {
-                    Money(0)
-                } else {
-                    facts.long_term_gain
-                },
+                short_term_gain: facts.short_term_gain,
+                long_term_gain: facts.long_term_gain,
             }
         })
         .collect()
 }
 
-fn security_lot_states(
-    lots: &[LotState],
-    failed: bool,
-) -> Result<Vec<SecurityLotState>, ArithmeticError> {
+fn security_lot_states(lots: &[LotState]) -> Result<Vec<SecurityLotState>, ArithmeticError> {
     lots.iter()
         .map(|lot| {
             Ok(SecurityLotState {
@@ -463,16 +447,8 @@ fn security_lot_states(
                 asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
                 purchase_month: lot.spec.purchase_month,
                 quantity_scale: lot.spec.quantity_scale,
-                units_remaining: if failed {
-                    Quantity(0)
-                } else {
-                    lot.units_remaining
-                },
-                basis_remaining: if failed {
-                    Money(0)
-                } else {
-                    lot.basis_remaining
-                },
+                units_remaining: lot.units_remaining,
+                basis_remaining: lot.basis_remaining,
                 // Derived for the reader, not carried as state: it is exactly what the
                 // apportionment above would charge for one unit of what is left.
                 cost_basis_per_unit: if lot.units_remaining.0 == 0 {
@@ -488,59 +464,13 @@ fn security_lot_states(
         .collect()
 }
 
-pub(super) fn tax_liability_states(
-    tax_liabilities: &[TaxLiabilityState],
-    failed: bool,
-) -> Vec<TaxLiabilityState> {
-    tax_liabilities
-        .iter()
-        .cloned()
-        .map(|mut liability| {
-            if failed {
-                liability.amount_owed = Money(0);
-            }
-            liability
-        })
-        .collect()
-}
-
-pub(super) fn property_states(properties: &[PropertyState], failed: bool) -> Vec<PropertyState> {
-    properties
-        .iter()
-        .cloned()
-        .map(|mut property| {
-            if failed {
-                property.adjusted_basis = Money(0);
-                property.contribution_used = Money(0);
-                property.equity_ledger = Money(0);
-            }
-            property
-        })
-        .collect()
-}
-
-pub(super) fn mortgage_states(mortgages: &[MortgageState], failed: bool) -> Vec<MortgageState> {
-    mortgages
-        .iter()
-        .cloned()
-        .map(|mut mortgage| {
-            if failed {
-                mortgage.monthly_payment = Money(0);
-                mortgage.principal = Money(0);
-                mortgage.interest_paid_ytd = Money(0);
-            }
-            mortgage
-        })
-        .collect()
-}
-
-pub(super) fn account_balances(ledger: &Ledger, failed: bool) -> Vec<AccountBalance> {
+pub(super) fn account_balances(ledger: &Ledger) -> Vec<AccountBalance> {
     ledger
         .balances()
         .iter()
         .map(|(account, balance)| AccountBalance {
             account: account.clone(),
-            balance: if failed { Money(0) } else { *balance },
+            balance: *balance,
         })
         .collect()
 }

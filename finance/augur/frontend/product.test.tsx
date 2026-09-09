@@ -15,7 +15,18 @@ vi.mock("./client", () => ({
 }));
 vi.mock("./lib/toast", () => ({ toastFetchError: client.toast }));
 // Keep product request/selection state real; these render-boundary probes avoid chart geometry.
-vi.mock("@mantine/core", () => ({ NativeSelect: () => null, SegmentedControl: () => null }));
+vi.mock("@mantine/core", () => ({
+  NativeSelect: ({ data, onChange, value, "aria-label": label }) => (
+    <select aria-label={label} value={value} onChange={onChange}>
+      {data.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
+  SegmentedControl: () => null,
+}));
 vi.mock("./header", () => ({
   AugurHeader: () => null,
   SharedControls: () => null,
@@ -49,6 +60,7 @@ vi.mock("./fan_chart", () => ({
     <div>
       <output data-testid="fans">{JSON.stringify(series.map(({ label, rows }) => [label, rows.length]))}</output>
       <output data-testid="detail">{selectedRows.map((row) => row.currencyQuanta).join(",")}</output>
+      <output data-testid="detail-years">{selectedRows.map((row) => row.year).join(",")}</output>
     </div>
   ),
 }));
@@ -73,13 +85,23 @@ function projection(request) {
     currencyQuantum: "0.01",
     metric: request.metric,
     failedCount: 0,
-    terminalMetricPercentiles: { percentile: [0, 50, 100], valueQuanta: ["100000", "150000", "200000"] },
+    completedCount: 2,
+    observationCount: 2,
+    basis: "completed_horizon",
+    terminalMetricPercentiles: {
+      percentile: [0, 50, 100],
+      valueQuanta: ["100000", "150000", "200000"] as Array<string | null>,
+    },
   };
   return {
     metricFan: { ...common, monthlyMetricFan: { monthIndex: [0], percentile: [50], valueQuanta: ["150000"] } },
     terminalDistribution: {
       ...common,
-      terminalMetricSamples: { seed: [seed, seed + 1], valueQuanta: ["100000", "200000"], failed: [false, false] },
+      terminalMetricSamples: {
+        seed: [seed, seed + 1],
+        valueQuanta: ["100000", "200000"] as Array<string | null>,
+        failed: [false, false],
+      },
     },
   };
 }
@@ -88,7 +110,13 @@ function detail(seed: number, value: string) {
   return {
     currencyCode: "USD",
     currencyQuantum: "0.01",
-    rollout: { seed, failed: false, monthlyMetrics: { monthIndex: [0], netWorthQuanta: [value] }, events: [] },
+    rollout: {
+      seed,
+      failed: false,
+      endingMetrics: { snapshotIndex: 0, failedMonthIndex: null as number | null, netWorthQuanta: value },
+      monthlyMetrics: { monthIndex: [0], netWorthQuanta: [value] },
+      events: [],
+    },
   };
 }
 
@@ -147,6 +175,45 @@ async function resolveDetail(index: number, value: string) {
 function displayedDetail() {
   return document.querySelector('[data-testid="detail"]')?.textContent;
 }
+
+it("inspects a stopped seed when no horizon-terminal wealth exists", async () => {
+  client.projection.mockImplementation((request) => {
+    const response = projection(request);
+    for (const result of [response.metricFan, response.terminalDistribution]) {
+      result.failedCount = 2;
+      result.completedCount = 0;
+      result.observationCount = 0;
+      result.terminalMetricPercentiles.valueQuanta = [null, null, null];
+    }
+    response.terminalDistribution.terminalMetricSamples.valueQuanta = [null, null];
+    response.terminalDistribution.terminalMetricSamples.failed = [true, true];
+    return Promise.resolve(response);
+  });
+  await mount();
+  const select = document.querySelector<HTMLSelectElement>('select[aria-label="Inspect stopped rollout"]');
+  expect(select).not.toBeNull();
+  await act(async () => {
+    select!.value = "10";
+    select!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(requests).toHaveLength(1);
+  expect(requests[0].seed).toBe(10);
+  const stopped = detail(10, "120000");
+  stopped.rollout.failed = true;
+  stopped.rollout.endingMetrics.snapshotIndex = 1;
+  stopped.rollout.endingMetrics.failedMonthIndex = 0;
+  stopped.rollout.monthlyMetrics = { monthIndex: [0, 1], netWorthQuanta: ["150000", "120000"] };
+  await act(async () => {
+    requests[0].resolve(stopped);
+    await requests[0].promise;
+  });
+  expect(displayedDetail()).toBe("150000,120000");
+  expect(document.querySelector('[data-testid="detail-years"]')?.textContent).toBe("0,0");
+  expect(document.querySelector("[data-product-stop-book]")?.textContent).toContain(
+    "At stop in event month 0 (snapshot 1)"
+  );
+  expect(document.body.textContent).toContain("Not horizon-terminal wealth");
+});
 
 beforeEach(() => {
   vi.useFakeTimers();

@@ -22,8 +22,8 @@ benchmark fixture helpers construct that same input; they are not a separate sch
   deterministic rollout index.
 - Obligations sharing one payer/source account settle all-or-none: a funding
   group is a hard demand, so a shortfall fails the whole group.
-- Failed rollouts stop executing future actions and expose zero value-bearing
-  snapshots while retaining the preceding causal trace.
+- Failed rollouts stop executing future actions and preserve the actual stopped
+  book and causal trace. No later forensic snapshots or events are emitted.
 - Full forensic output and compact population output use the same state-machine
   implementation. The compact path does not allocate every monthly snapshot or
   journal and is suitable for 100,000-rollout workloads.
@@ -31,7 +31,7 @@ benchmark fixture helpers construct that same input; they are not a separate sch
 `simulate_dense(...)` retains every monthly state snapshot and every event
 record behind the canonical frames, but omits the balanced journal.
 `simulate(...)` is the strictly larger forensic path with that journal, while
-`simulate_summaries(...)` retains only fixed-size terminal summaries. Dense
+`simulate_summaries(...)` retains only fixed-size ending-book summaries. Dense
 performance comparisons must use `simulate_dense(...)`, not the compact path.
 
 `engine::spending::simulate(...)` adds an experiment-authored spending function,
@@ -45,7 +45,8 @@ metric series and failure months, without retaining monthly snapshots, journals 
 event traces. Consumption arrays are `[rollout][event month]` in input currency
 quanta: live zero requests are zero, the failure month is included, and subsequent
 unobserved months are absent. Product metrics retain their separate snapshot-major
-layout, opening snapshot and zeroed-failure convention. Actual payment comes from
+layout and opening snapshot, with explicit validity for stopped paths as described
+in <docs/product_metrics.md>. Actual payment comes from
 that demand's receipt, even when another funding group's failure stops the path.
 Other consumption (including committed rent), taxes and asset purchases are not
 part of the policy component. `engine::spending::trace_rollout(...)` replays one

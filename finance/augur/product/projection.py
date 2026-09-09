@@ -82,11 +82,12 @@ def project_product_rollout(
     if rollout_index < 0:
         raise IndexError(f"rollout_index {rollout_index} is negative")
 
+    failed_month = int(metrics.failed_month[rollout_index])
+    observed = metrics.observed[:, rollout_index]
     monthly_metric_arrays = {
-        name: values.copy() if name == "month_index" else values[:, rollout_index].copy()
+        name: values[observed].copy() if name == "month_index" else values[observed, rollout_index].copy()
         for name, values in metrics.metric_arrays().items()
     }
-    failed_month = int(metrics.failed_month[rollout_index])
 
     def rows(frame: pl.DataFrame, **equals: str) -> list[dict[str, Any]]:
         selected = frame.filter(pl.col("rollout_index") == rollout_index)

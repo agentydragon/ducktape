@@ -186,7 +186,7 @@ MORTGAGE_PAYMENT_EVENT_SCHEMA = pl.Schema(
 # `RolloutFailure` flags a rollout where a required due-now
 # obligation could not be paid in full after liquidity policy sale
 # decisions. Once flagged, the rollout stays failed for the rest of the
-# sim and value-bearing state snapshots freeze at zero (L11.2).
+# simulation; the actual stopped book is retained and later months are unobserved.
 ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_index": pl.Int64(),

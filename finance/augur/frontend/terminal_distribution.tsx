@@ -8,6 +8,7 @@ import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricSamples } f
 function terminalPercentilePoints(result, metric) {
   if (result?.metric !== metric.value) return [];
   return rowsFrom(result?.terminalMetricPercentiles)
+    .filter((row) => row.valueQuanta != null)
     .map((row) => ({
       percentile: Number(row.percentile) / 100,
       rawPercentile: Number(row.percentile),
@@ -131,9 +132,14 @@ export function TerminalDistributionChart({
   const header = (
     <div className="mb-1 flex items-center justify-between gap-3">
       <div>
-        <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
+        <div className="augur-eyebrow">
+          {resultsById.get(activeId)?.basis === "observed_through_stop" ? "Recorded" : "Terminal"}{" "}
+          {metric.label.toLowerCase()} distribution
+        </div>
         <div className="mt-1 text-xs augur-muted">
-          One line per variant, drawn from aggregate terminal percentiles. Failed rollouts are marked.
+          {resultsById.get(activeId)?.basis === "observed_through_stop"
+            ? "Recorded amounts through stop/completion; no future shortfall is imputed."
+            : "Completed-horizon paths only. Stopped paths have no terminal value and are excluded."}
         </div>
       </div>
       {selectedPercentile != null && (

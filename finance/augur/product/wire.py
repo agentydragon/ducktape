@@ -27,6 +27,7 @@ from finance.augur.api.schemas import (
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.sim.fixed_point import validate_currency_quantum
+from finance.augur.sim.product_metrics import OutcomeBasis
 
 
 class SpendIndex(StrEnum):
@@ -354,7 +355,10 @@ class ProductProjectionRequest(ApiModel):
         return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
 
 
-class TerminalMetrics(ApiModel):
+class EndingMetrics(ApiModel):
+    """Last observed book, at completion or stopping; never a projected post-stop book."""
+
+    snapshot_index: NonNegativeInt = Field(description="Post-event snapshot index; stop marks use failed_month_index.")
     cash_quanta: CurrencyQuanta
     holding_value_quanta: CurrencyQuanta
     private_equity_value_quanta: CurrencyQuanta
@@ -609,11 +613,14 @@ class RolloutOutput(ApiModel):
     seed: NonNegativeInt
     failed: bool
     monthly_metrics: Frame
-    terminal_metrics: TerminalMetrics
+    ending_metrics: EndingMetrics
     events: tuple[RolloutEvent, ...] = ()
 
 
 class MetricFanResponse(ApiModel):
+    basis: OutcomeBasis = Field(
+        description="Aggregate outcome population; historical monthly rows have their own observed_count, not eventual-survivor conditioning."
+    )
     model_id: str
     currency_code: str
     currency_quantum: str
@@ -621,10 +628,15 @@ class MetricFanResponse(ApiModel):
     monthly_metric_fan: Frame
     terminal_metric_percentiles: Frame
     failed_count: NonNegativeInt
+    completed_count: NonNegativeInt
+    observation_count: NonNegativeInt = Field(description="Paths contributing to the aggregate outcome distribution.")
     diagnostics: tuple[str, ...] = ()
 
 
 class TerminalDistributionResponse(ApiModel):
+    basis: OutcomeBasis = Field(
+        description="Completed-horizon valuation or recorded event amounts through stop/completion; no post-stop outcomes are imputed."
+    )
     model_id: str
     currency_code: str
     currency_quantum: str
@@ -632,6 +644,8 @@ class TerminalDistributionResponse(ApiModel):
     terminal_metric_percentiles: Frame
     terminal_metric_samples: Frame
     failed_count: NonNegativeInt
+    completed_count: NonNegativeInt
+    observation_count: NonNegativeInt
     diagnostics: tuple[str, ...] = ()
 
 

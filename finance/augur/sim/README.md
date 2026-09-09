@@ -60,11 +60,12 @@ maintenance, outside rent, special assessment). A required obligation that
 cannot be settled — even after the actor's funding policies have tried —
 fires `FailureEvent` and flips the rollout to `RolloutStatusType.FAILED`.
 The matching `test_e2e.py` `FAILED`-on-shortfall tests cover each
-obligation type. After the failure boundary, state-backed balances,
-holdings, liabilities, and net-worth metrics for that rollout freeze at
-zero; the failure month remains on the rollout status so product/API
-callers can distinguish failed trajectories from solvent zero-value
-trajectories.
+obligation type. The actual stopped book is retained, including cash,
+positions and liabilities. A failure in event month `f` ends with post-event
+snapshot `f+1`, marked at the already-observed month `f`; no later books,
+events or financial decisions are emitted. A stopped book is not
+horizon-terminal wealth. Compact observation masks and aggregate population
+bases are described in <../rust/docs/product_metrics.md>.
 
 `cash_negative` remains a warning, not a terminal failure. It surfaces a
 cash trajectory dip that wasn't caught by any obligation accrual. The open

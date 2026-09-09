@@ -871,20 +871,19 @@ different agents different views of the same asset's price.
 
 If a required obligation cannot be funded even after walking the
 agent's full asset chain, the simulator records the rollout as
-having transitioned into a failure state at that month. State
-arrays for subsequent months continue to compute (the property
-keeps depreciating, the stock price keeps moving) but the rollout
-carries a failure flag. The transaction log records the unpaid
-obligation attempt and shortfall.
+having transitioned into a failure state at that month. The actual
+stopped book is retained using already-observed marks, and no later
+events or snapshots are reported. The transaction log records the
+unpaid obligation attempt and shortfall.
 
 #### S11.2 — Rollout failure is per-rollout, not scenario-wide.
 
 In a 100-rollout scenario where 12 rollouts fail at various months
-and 88 stay solvent, the simulator keeps all 100 rollouts materialized
-and labels the failed ones. State-backed value metrics for a failed
-rollout are zero after the failure boundary. Reported metrics
-distinguish "across all rollouts" from "across surviving rollouts"
-where the distinction matters.
+and 88 stay solvent, the simulator retains all 100 rollout identities
+and labels the failed ones. Horizon-terminal wealth uses the 88
+completed paths; stopped values are unobserved at the horizon, not zero.
+Monthly wealth uses each month's observed population. Recorded unpaid
+demands through stop or completion remain reportable for all 100 paths.
 
 #### S11.3 — Funding-chain coverage is not failure.
 
@@ -893,8 +892,8 @@ succeeds, the rollout does not enter failure — it continues
 normally. Failure is "obligation went unpaid"; sale-driven
 coverage is not failure. Once an obligation cannot be funded, the
 current scope treats that rollout as failed for the rest of the
-simulation, with state-backed value metrics frozen at zero after
-failure; partial payments, cure periods, and status recovery are future
+simulation, with its actual stopped book preserved; partial payments,
+cure periods, and status recovery are future
 scope.
 
 ### Layer 12: Housing — primary residence
@@ -1169,7 +1168,8 @@ sources)`. Failure-event rows do not retroactively delete; they
   failure-event log). Projection summaries also expose failure count,
   first failure month, and final liquid/book net worth. Current scope
   is sticky failure: a failed rollout is not recovered by later-month
-  inflows, and state-backed value metrics remain zero after failure.
+  inflows. Stopped books are distinct from completed-horizon wealth;
+  missing observations produce null summaries, not fabricated zero values.
 
 These outputs are projections of the state series and event log; they
 are not maintained alongside as separate state.

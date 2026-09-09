@@ -356,6 +356,7 @@ ts_library(
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
+        "//finance/augur/frontend/lib:frame",
         "//finance/augur/frontend/lib:toast",
     ],
 )

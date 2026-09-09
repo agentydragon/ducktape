@@ -252,6 +252,7 @@ class EngineAcceptance:
 
         assert fan.percentiles == percentiles
         assert fan.monthly_percentiles.shape == (HORIZON_MONTHS + 1, len(percentiles))
+        assert fan.terminal_percentiles is not None
         assert list(fan.terminal_percentiles) == sorted(fan.terminal_percentiles), "percentiles must not decrease"
         assert min(samples) <= min(fan.terminal_percentiles)
         assert max(fan.terminal_percentiles) <= max(samples)
@@ -296,11 +297,10 @@ class EngineAcceptance:
 
         percentiles = (5.0, 50.0, 95.0)
         both = engine.product_summaries(run, primary_agent_id=AGENT, metric="cash_quanta", percentiles=percentiles)
-        assert list(both.metric_fan.terminal_percentiles) == list(
-            engine.product_fan(
-                run, primary_agent_id=AGENT, metric="cash_quanta", percentiles=percentiles
-            ).terminal_percentiles
-        )
+        separate = engine.product_fan(run, primary_agent_id=AGENT, metric="cash_quanta", percentiles=percentiles)
+        assert both.metric_fan.terminal_percentiles is not None
+        assert separate.terminal_percentiles is not None
+        assert list(both.metric_fan.terminal_percentiles) == list(separate.terminal_percentiles)
         assert list(both.terminal_distribution.terminal_samples) == list(
             engine.product_terminal(run, primary_agent_id=AGENT, metric="cash_quanta").terminal_samples
         )

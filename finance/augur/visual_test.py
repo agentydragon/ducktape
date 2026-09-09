@@ -233,13 +233,19 @@ def _wait_for_property_panel(page: Page) -> None:
 
 
 def _wait_for_distribution_failures(page: Page) -> None:
-    """Wait for a scenario whose distribution includes failed rollouts, so the terminal-distribution
-    chart's red failure markers render."""
+    """Inspect a stopped book without placing it in the terminal-wealth distribution."""
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     _wait_for_terminal_distribution_density(page, min_series=1)
-    page.locator("[data-product-distribution-failed]").first.wait_for(state="visible", timeout=30_000)
+    stopped_selector = page.get_by_label("Inspect stopped rollout", exact=True)
+    stopped_selector.wait_for(state="visible", timeout=30_000)
+    seed = stopped_selector.locator("option").nth(1).get_attribute("value")
+    assert seed is not None
+    stopped_selector.select_option(seed)
+    page.locator("[data-product-stop-book]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    assert page.locator("[data-product-distribution-failed]").count() == 0
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
     _wait_for_product_chart_geometry(page)
@@ -319,9 +325,8 @@ _COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_S
 
 # A single Base scenario engineered to bust a chunk of its rollouts: a high monthly spend against the
 # fixture portfolio so weaker-market paths exhaust cash and holdings before the 10y horizon, while
-# stronger-market paths survive. This is the only fixture with a non-zero failure rate, so it
-# exercises the distribution chart's failed-rollout markers (red dots, pinned at the frozen-to-0
-# terminal value). `cashCeiling` is raised so each crossing of the floor refills a chunk large
+# stronger-market paths survive. It exercises direct stopped-book inspection while terminal
+# wealth contains completed paths only. `cashCeiling` is raised so each crossing of the floor refills a chunk large
 # enough to keep funding ahead of spend — a bust then means holdings genuinely ran out, which is
 # market-path-dependent (hence partial). The target allocation is left unset, so it seeds from the
 # fixture holdings and every sellable position can fund the band.

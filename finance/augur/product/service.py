@@ -34,6 +34,7 @@ from finance.augur.product.scenarios import (
     security_distributions_from_portfolio,
 )
 from finance.augur.product.wire import (
+    EndingMetrics,
     MetricFanResponse,
     ProductProjectionRequest,
     ProductProjectionResponse,
@@ -43,7 +44,6 @@ from finance.augur.product.wire import (
     RolloutResponse,
     ScenarioKey,
     TerminalDistributionResponse,
-    TerminalMetrics,
 )
 from finance.augur.rust.backend import RustEngine
 from finance.augur.sim.backend import CompiledRun, Engine, compile_run
@@ -51,6 +51,7 @@ from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.product_metrics import (
+    OutcomeBasis,
     ProductMetricFanSummary,
     ProductProjectionSummaries,
     ProductTerminalSummary,
@@ -160,7 +161,7 @@ class ProductService:
             asset_label_by_id=self._asset_label_by_id,
         )
         monthly_arrays = projection.monthly_metric_arrays
-        terminal = _terminal_metrics_from_arrays(monthly_arrays, failed_month_index=projection.failed_month_index)
+        terminal = _ending_metrics_from_arrays(monthly_arrays, failed_month_index=projection.failed_month_index)
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
         monthly_metrics_frame = {
@@ -175,7 +176,7 @@ class ProductService:
                 seed=seed,
                 failed=terminal.failed_month_index is not None,
                 monthly_metrics=monthly_metrics_frame,
-                terminal_metrics=terminal,
+                ending_metrics=terminal,
                 events=projection.events,
             ),
         )
@@ -291,12 +292,18 @@ def _monthly_fan_frame(summary: ProductMetricFanSummary) -> Frame:
     return {
         "month_index": np.repeat(month_indices, percentile_array.size).tolist(),
         "percentile": np.tile(percentile_array, month_indices.size).tolist(),
-        "value_quanta": [_quanta(value) for value in summary.monthly_percentiles.reshape(-1)],
+        "observed_count": np.repeat(summary.observed_count, percentile_array.size).tolist(),
+        "value_quanta": [
+            _quanta(value) if count else None
+            for row, count in zip(summary.monthly_percentiles, summary.observed_count, strict=True)
+            for value in row
+        ],
     }
 
 
 def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, metric: str) -> MetricFanResponse:
     return MetricFanResponse(
+        basis=summary.basis,
         model_id=model_id,
         currency_code=summary.currency_code,
         currency_quantum=summary.currency_quantum,
@@ -304,6 +311,9 @@ def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, met
         monthly_metric_fan=_monthly_fan_frame(summary),
         terminal_metric_percentiles=_quantile_frame(summary.percentiles, summary.terminal_percentiles),
         failed_count=summary.failed_count,
+        completed_count=int(summary.observed_count[0]) - summary.failed_count,
+        observation_count=int(summary.observed_count[0])
+        - (summary.failed_count if summary.basis == OutcomeBasis.COMPLETED_HORIZON else 0),
     )
 
 
@@ -316,28 +326,39 @@ def _terminal_distribution_response(
     seeds: tuple[int, ...],
 ) -> TerminalDistributionResponse:
     return TerminalDistributionResponse(
+        basis=summary.basis,
         model_id=model_id,
         currency_code=summary.currency_code,
         currency_quantum=summary.currency_quantum,
         metric=metric,
-        terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
+        terminal_metric_percentiles=_percentile_frame(summary.terminal_samples[summary.observed], percentiles),
         terminal_metric_samples=_terminal_samples_frame(seeds, summary),
         failed_count=_failed_count(summary.failed_month),
+        completed_count=int((summary.failed_month < 0).sum()),
+        observation_count=int(summary.observed.sum()),
     )
 
 
 def _percentile_frame(samples: np.ndarray, percentiles: tuple[float, ...]) -> Frame:
-    return _quantile_frame(percentiles, np.asarray(currency_quantiles(samples, percentiles), dtype=np.int64))
+    return _quantile_frame(
+        percentiles, np.asarray(currency_quantiles(samples, percentiles), dtype=np.int64) if samples.size else None
+    )
 
 
-def _quantile_frame(percentiles: tuple[float, ...], values: np.ndarray) -> Frame:
-    return {"percentile": list(percentiles), "value_quanta": [_quanta(value) for value in values]}
+def _quantile_frame(percentiles: tuple[float, ...], values: np.ndarray | None) -> Frame:
+    return {
+        "percentile": list(percentiles),
+        "value_quanta": [_quanta(value) for value in values] if values is not None else [None] * len(percentiles),
+    }
 
 
 def _terminal_samples_frame(seeds: tuple[int, ...], summary: ProductTerminalSummary) -> Frame:
     return {
         "seed": list(seeds),
-        "value_quanta": [_quanta(value) for value in summary.terminal_samples],
+        "value_quanta": [
+            _quanta(value) if observed else None
+            for value, observed in zip(summary.terminal_samples, summary.observed, strict=True)
+        ],
         "failed": (summary.failed_month >= 0).tolist(),
     }
 
@@ -352,10 +373,11 @@ def _quanta(value: int | np.integer[Any]) -> str:
     return str(value)
 
 
-def _terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_index: int | None) -> TerminalMetrics:
-    """Build the rollout wire's terminal snapshot from the engine's metric series."""
+def _ending_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_index: int | None) -> EndingMetrics:
+    """Report the final observed snapshot, not a stopped path's fictional horizon book."""
 
-    return TerminalMetrics(
+    return EndingMetrics(
+        snapshot_index=int(arrays["month_index"][-1]),
         cash_quanta=_quanta(arrays["cash_quanta"][-1]),
         holding_value_quanta=_quanta(arrays["holding_value_quanta"][-1]),
         private_equity_value_quanta=_quanta(arrays["private_equity_value_quanta"][-1]),

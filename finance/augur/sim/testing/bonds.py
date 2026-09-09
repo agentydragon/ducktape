@@ -288,7 +288,7 @@ class BondValueAcceptance:
 
         Asserted against the nominal control on the same CPI path, which stays at $1M.
         Untaxed, because the tax on $1M of accretion is more than this holding's cash: the
-        rollout would fail and report zeros, which is a different claim than this one.
+        rollout would stop before reaching a terminal bond valuation.
         """
 
         indexed = bond_case(indexed=True, cpi=CPI_DOUBLING, is_taxed=False).compiled_run

@@ -1055,6 +1055,239 @@ fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
     }
 }
 
+fn stopped_book_fixture(
+    horizon: u32,
+    future_multiplier: i64,
+) -> (ExecutionInput, spending::Spending) {
+    let (mut input, mut component) = policy_timing_fixture(horizon);
+    input.scenario.accounts[0].opening_balance = Money(2_100);
+    input.scenario.target_allocation_policies.clear();
+    component.from = AccountRef::new("alice", "budget");
+    input.scenario.accounts.push(AccountSpec {
+        account: component.from.clone(),
+        opening_balance: Money(500),
+    });
+    input.scenario.scheduled_sales.push(ScheduledSaleSpec {
+        month: 0,
+        cause_id: "gain-for-tax".into(),
+        agent_id: "alice".into(),
+        account_id: "checking".into(),
+        asset_id: "stock".into(),
+        units: Quantity(1_000_000),
+        proceeds_account_id: "checking".into(),
+    });
+    input.scenario.locations.push(LocationSpec {
+        location_id: "test-place".into(),
+        display_name: "Test place".into(),
+        jurisdiction_ids: vec![],
+        annual_property_tax_rate_ppb: 0,
+        annual_special_assessment: Money(0),
+    });
+    input
+        .scenario
+        .scheduled_property_purchases
+        .push(ScheduledPropertyPurchaseSpec {
+            month: 0,
+            cause_id: "buy-test-home".into(),
+            property_id: "test-home".into(),
+            location_id: "test-place".into(),
+            buyer_agent_id: "alice".into(),
+            buyer_account_id: "checking".into(),
+            seller_agent_id: "world".into(),
+            seller_account_id: "checking".into(),
+            purchase_price: Money(10_000),
+            down_payment: Money(1_000),
+            buyer_closing_cost: Money(0),
+            rented_fraction_ppb: 0,
+            land_value_fraction_ppb: 200_000_000,
+            mortgage: Some(MortgageFinancingSpec {
+                liability_id: "test-loan".into(),
+                lender_agent_id: "world".into(),
+                lender_account_id: "checking".into(),
+                principal: Money(9_000),
+                annual_interest_rate_ppb: 0,
+                term_months: 90,
+            }),
+        });
+    input.scenario.initial_lots.push(InitialLotSpec {
+        lot_id: "private-test-lot".into(),
+        agent_id: "alice".into(),
+        account_id: "checking".into(),
+        asset_id: "private_equity:test-issuer".into(),
+        purchase_month: -24,
+        quantity_scale: 1_000_000,
+        units: Quantity(1_000_000),
+        basis: Money(50),
+    });
+    input.scenario.initial_bonds.push(BondSpec {
+        bond_id: "test-indexed-bond".into(),
+        agent_id: "alice".into(),
+        account_id: "checking".into(),
+        issuer_jurisdiction_id: None,
+        face_value: Money(1_000),
+        purchase_price: Money(1_000),
+        annual_coupon_rate_ppb: 0,
+        coupon_period_months: 6,
+        inflation_indexed: true,
+        purchase_month_index: -1,
+        maturity_month_index: 13,
+    });
+    input
+        .scenario
+        .income_sources
+        .push(IncomeSource::interest(None));
+    input.scenario.tax_profiles.push(TaxProfileSpec {
+        agent_id: "alice".into(),
+        tax_authority_agent_id: "world".into(),
+        payment_account_id: "checking".into(),
+        tax_authority_account_id: "checking".into(),
+        prior_year_tax: Money(0),
+        section_121_exclusion: Money(0),
+        jurisdictions: vec![TaxRules {
+            jurisdiction_id: "test-stop-tax".into(),
+            exempt_interest_from_levels: vec![],
+            exempts_own_issue: false,
+            ordinary_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 200_000_000,
+            }],
+            long_term_capital_gain_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 100_000_000,
+            }],
+            standard_deduction: Money(0),
+            max_capital_loss_ordinary_offset: Money(0),
+            section_1250_rate_ppb: 0,
+        }],
+    });
+    input.scenario.obligations.push(ObligationSpec {
+        month: 12,
+        obligation_id: "unfunded-extra".into(),
+        obligation_type: "cash_spend".into(),
+        from: AccountRef::new("alice", "checking"),
+        to: component.to.clone(),
+        amount_due: Money(950).into(),
+        property_id: None,
+        deduction_category: None,
+        deductible_fraction_ppb: WIRE_RATE_SCALE,
+    });
+    for (series_id, value) in [
+        ("home_value:test-place", 10_000),
+        ("private_equity_mark:test-issuer", 100),
+    ] {
+        input.series.push(SeriesSpec {
+            series_id: series_id.into(),
+            snapshots: horizon + 1,
+            values: vec![value; horizon as usize + 1],
+        });
+    }
+    for series in &mut input.series {
+        for value in &mut series.values[13..] {
+            *value *= future_multiplier;
+        }
+    }
+    (input, component)
+}
+
+#[test]
+fn stopped_books_preserve_positions_debt_tax_and_other_group_consumption() {
+    // Synthetic integer-money control: sell 1,000 with 500 gain, accrue 50 tax;
+    // pay 1,000 down and eleven 100 principal payments. At m12, cash 1,000 cannot
+    // fund 950 + mortgage 100 + tax 50, while the separate budget can pay 300.
+    for horizon in [13, 15] {
+        let make_policy = |_| {
+            |observation: spending::Observation| {
+                assert!(observation.month <= 12);
+                Ok(Money(if observation.month == 12 { 300 } else { 0 }))
+            }
+        };
+        let (input, component) = stopped_book_fixture(horizon, 2);
+        let forensic = spending::simulate(&input, &component, make_policy).unwrap();
+        let summary = spending::simulate_summary(&input, &component, make_policy).unwrap();
+        let (different_future, _) = stopped_book_fixture(horizon, 9);
+        assert_eq!(
+            forensic,
+            spending::simulate(&different_future, &component, make_policy).unwrap()
+        );
+        let rollout = &forensic.rollouts[0];
+        assert_eq!(rollout.failed_month, Some(12));
+        assert_eq!(rollout.months.len(), 14);
+        let stopped = rollout.months.last().unwrap();
+        assert_eq!(stopped.month, 13);
+        let cash = |account: &str| {
+            stopped
+                .balances
+                .iter()
+                .find(|row| row.account == AccountRef::new("alice", account))
+                .unwrap()
+                .balance
+        };
+        assert_eq!(cash("checking"), Money(1_000));
+        assert_eq!(cash("budget"), Money(200));
+        assert_eq!(stopped.lots[0].units_remaining, Quantity(99_000_000));
+        assert_eq!(stopped.lots[0].basis_remaining, Money(49_500));
+        assert_eq!(stopped.properties[0].adjusted_basis, Money(10_000));
+        assert_eq!(stopped.mortgages[0].principal, Money(7_900));
+        assert_eq!(stopped.tax_liabilities[0].amount_owed, Money(50));
+        assert_eq!(stopped.bonds[0].principal, Money(1_000));
+        assert!(stopped.bonds[0].active); // Redemption at m13 has not happened.
+        assert_eq!(summary.consumption_requested[0][12], Money(300));
+        assert_eq!(summary.consumption_paid[0][12], Money(300));
+        let metrics = &summary.product_metrics.base_series;
+        for (name, expected) in [
+            ("cash_quanta", 1_200),
+            ("holding_value_quanta", 99_000),
+            ("private_equity_value_quanta", 100),
+            ("property_value_quanta", 10_000),
+            ("mortgage_balance_quanta", 7_900),
+            ("bond_value_quanta", 1_000),
+            ("shortfall_quanta", 1_100),
+        ] {
+            let slot = crate::product::BASE_METRIC_NAMES
+                .iter()
+                .position(|item| *item == name)
+                .unwrap();
+            assert_eq!(metrics[slot][13], expected, "{name}");
+        }
+        assert!(rollout.journal.iter().all(|entry| entry.month <= 12));
+        assert!(
+            rollout
+                .obligations
+                .iter()
+                .all(|receipt| receipt.month <= 12)
+        );
+        assert_eq!(
+            stopped
+                .balances
+                .iter()
+                .map(|row| i128::from(row.balance.0))
+                .sum::<i128>(),
+            0
+        );
+
+        let mut scheduled = input.clone();
+        scheduled.scenario.obligations.push(ObligationSpec {
+            month: 12,
+            obligation_id: "scheduled-budget-control".into(),
+            obligation_type: "cash_spend".into(),
+            from: component.from.clone(),
+            to: component.to.clone(),
+            amount_due: Money(300).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+        let endings = simulate_summaries(&scheduled).unwrap();
+        let ending = &endings.rollouts[0];
+        assert_eq!(ending.failed_month, rollout.failed_month);
+        assert_eq!(ending.ending_balances, stopped.balances);
+        assert_eq!(ending.ending_properties, stopped.properties);
+        assert_eq!(ending.ending_mortgages, stopped.mortgages);
+        assert_eq!(ending.ending_bonds, stopped.bonds);
+        assert_eq!(ending.ending_tax_liabilities, stopped.tax_liabilities);
+    }
+}
+
 #[test]
 fn rejects_invalid_fixture_metadata() {
     let mut fixture = minimal_fixture();
@@ -1932,7 +2165,7 @@ fn oversell_is_rejected_before_any_disposition() {
 }
 
 #[test]
-fn failure_stops_future_actions_and_zeroes_value_state() {
+fn failure_stops_future_actions_and_preserves_the_observed_book() {
     let alice_cash = AccountRef::new("alice", "checking");
     let bob_cash = AccountRef::new("bob", "checking");
     let fixture = ExecutionInput {
@@ -2003,13 +2236,8 @@ fn failure_stops_future_actions_and_zeroes_value_state() {
     assert_eq!(rollout.failed_month, Some(0));
     assert!(!rollout.months[0].failed);
     assert!(rollout.months[1].failed);
-    assert!(rollout.months[2].failed);
-    assert!(
-        rollout.months[1..]
-            .iter()
-            .flat_map(|month| &month.balances)
-            .all(|balance| balance.balance == Money(0))
-    );
+    assert_eq!(rollout.months.len(), 2);
+    assert_eq!(rollout.months[1].balances, rollout.months[0].balances);
     assert!(
         rollout
             .journal

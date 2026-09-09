@@ -7,7 +7,7 @@ import {
   SELECTED_COL_HEADER,
   SELECTED_COL_CELL,
   rolloutStatusText,
-  terminalMetricValue,
+  endingMetricValue,
   terminalPercentileValue,
 } from "./data_helpers";
 
@@ -21,7 +21,10 @@ export function TerminalMetricTable({ result, selectedSummary, selectedMetric })
   if (percentileRows.length === 0) return null;
   // Determine where the SELECTED column slots into the percentile order based on the
   // currently-selected metric's selected value vs. its percentile distribution.
-  const selectedValue = selectedSummary ? terminalMetricValue(selectedSummary.terminalMetrics, selectedMetric) : null;
+  const selectedValue =
+    selectedSummary && (!selectedSummary.failed || result.basis === "observed_through_stop")
+      ? endingMetricValue(selectedSummary.endingMetrics, selectedMetric)
+      : null;
   const anchorValue = selectedValue;
   const showSelectedColumn =
     selectedSummary != null && Number.isFinite(currencyQuantaChartNumber(anchorValue, currency.currencyQuantum));
@@ -34,9 +37,13 @@ export function TerminalMetricTable({ result, selectedSummary, selectedMetric })
     <div className="border-t border-slate-200 dark:border-slate-700">
       <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="augur-eyebrow">Terminal {selectedMetric.label.toLowerCase()}</div>
+          <div className="augur-eyebrow">
+            {result.basis === "observed_through_stop" ? "Recorded" : "Terminal"} {selectedMetric.label.toLowerCase()}
+          </div>
           <div className="mt-1 text-xs augur-muted">
-            Distribution percentiles with the selected rollout beside them.
+            {result.basis === "observed_through_stop"
+              ? "Recorded amounts through stop/completion, not future-horizon shortfall."
+              : "Completed-horizon percentiles. A stopped rollout's ending book is not a terminal value."}
           </div>
         </div>
         <div className="text-xs font-semibold augur-tabular augur-muted">
@@ -99,12 +106,15 @@ export function TerminalScenarioComparison({ scenarios, resultsById, metric, act
     result: resultsById.get(scenario.id)?.metric === metric.value ? resultsById.get(scenario.id) : null,
   }));
   if (columns.every((column) => !column.result?.terminalMetricPercentiles)) return null;
+  const recorded = columns.some((column) => column.result?.basis === "observed_through_stop");
   return (
     <div className="border-t border-slate-200 dark:border-slate-700" data-product-scenario-comparison="">
       <div className="px-4 py-3">
-        <div className="augur-eyebrow">Terminal scenario comparison</div>
+        <div className="augur-eyebrow">{recorded ? "Recorded" : "Terminal"} scenario comparison</div>
         <div className="mt-1 text-xs augur-muted">
-          Median terminal {metric.label.toLowerCase()} per scenario, with the P5-P95 range below.
+          Median {recorded ? "recorded" : "terminal"} {metric.label.toLowerCase()} per scenario, with the P5-P95 range
+          below.
+          {recorded ? " Recorded through stop or completion for every path." : " Completed-horizon paths only."}
         </div>
       </div>
       <div className="overflow-x-auto">

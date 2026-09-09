@@ -34,8 +34,10 @@ Each contains per-path requested/paid `annual_consumption`, plus existing wealth
 shortfall and failure metrics. The component is not total household consumption.
 Consumption arrays contain event months (no opening snapshot): live zero requests
 are explicit, the failure month is included, and post-stop months are absent.
-Product wealth metrics retain their separate snapshot layout and zeroed-failure convention;
-their `failed_month` is `-1` for a path that completes the horizon (null in a forensic trace).
+Product metrics use a separate snapshot layout: failure in event month `f` ends at
+snapshot `f+1`, valued at the observed month `f` marks. Later compact slots are unobserved
+padding, not zero wealth. `failed_month` is `-1` for a completed path (null in a forensic
+trace); see <../../rust/docs/product_metrics.md> for observation masks and outcome bases.
 
 `fixed_real.consumption.json` / `bounded.consumption.json` report monthly 5th/50th/95th
 percentiles in nominal currency quanta, with currency/quantum, observed path count

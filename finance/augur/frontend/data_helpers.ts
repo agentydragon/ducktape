@@ -75,6 +75,7 @@ export function metricFanRows(result) {
   const byMonth = new Map();
   const displayValuesByMonth = new Map();
   for (const row of rowsFrom(result.monthlyMetricFan)) {
+    if (row.valueQuanta == null) continue;
     const monthIndex = Number(row.monthIndex);
     const percentile = Number(row.percentile);
     const rawValue = row.valueQuanta;
@@ -130,6 +131,7 @@ export function terminalPercentileValue(result, percentile) {
 export function terminalMetricSamples(result, metric) {
   if (result?.metric !== metric.value || !result?.terminalMetricSamples) return [];
   return rowsFrom(result.terminalMetricSamples)
+    .filter((row) => row.valueQuanta != null)
     .map((row) => ({
       seed: Number(row.seed),
       value: currencyQuantaChartNumber(row.valueQuanta, result.currencyQuantum),
@@ -150,8 +152,8 @@ export function terminalSampleAtPercentile(result, metric, percentile) {
   return samples[Math.max(0, Math.min(samples.length - 1, rank))];
 }
 
-export function terminalMetricValue(terminalMetrics, metric) {
-  return terminalMetrics?.[metric.chartValue] ?? null;
+export function endingMetricValue(endingMetrics, metric) {
+  return endingMetrics?.[metric.chartValue] ?? null;
 }
 
 const PROPERTY_METRIC_VALUES = new Set(["property_value"]);
@@ -169,17 +171,22 @@ export function visibleMetricOptions(input) {
 
 export function rolloutStatusText(summary) {
   if (!summary) return "No rollout selected";
-  const failedMonth = summary.terminalMetrics?.failedMonthIndex;
+  const failedMonth = summary.endingMetrics?.failedMonthIndex;
   if (summary.failed) return Number.isFinite(failedMonth) ? `failed m${failedMonth}` : "failed";
   return "completed";
 }
 
 export function selectedRolloutMetricRows(detail, metric) {
   if (!detail?.rollout?.monthlyMetrics) return [];
+  const ending = detail.rollout.endingMetrics;
   return rowsFrom(detail.rollout.monthlyMetrics)
     .map((row) => ({
       monthIndex: Number(row.monthIndex),
-      year: Number(row.monthIndex) / 12,
+      // The stopped post-event book has not observed the next month's market mark.
+      year:
+        (detail.rollout.failed && Number(row.monthIndex) === ending.snapshotIndex
+          ? ending.failedMonthIndex
+          : Number(row.monthIndex)) / 12,
       value: currencyQuantaChartNumber(row[metric.chartValue], detail.currencyQuantum),
       currencyQuanta: row[metric.chartValue],
       currency: currency(detail),

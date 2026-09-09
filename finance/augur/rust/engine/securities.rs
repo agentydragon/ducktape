@@ -362,14 +362,13 @@ pub(super) fn bond_states(
     fixture: &ExecutionInput,
     rollout_id: u32,
     snapshot_month: u32,
-    failed: bool,
 ) -> Result<Vec<BondState>, SimulationError> {
     fixture
         .scenario
         .initial_bonds
         .iter()
         .map(|bond| {
-            let active = !failed && bond_is_active(bond, snapshot_month);
+            let active = bond_is_active(bond, snapshot_month);
             Ok(BondState {
                 bond_id: bond.bond_id.clone(),
                 agent_id: bond.agent_id.clone(),

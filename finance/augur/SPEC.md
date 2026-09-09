@@ -78,8 +78,8 @@ below a dollar trigger, sell a fixed dollar amount from that order. The
 product portfolio route returns the resolved initial cash and public-security
 positions, including tax lots, as a read-only product surface. The metric-fan
 route returns compact requested percentiles. Drill-down routes return one full
-per-seed table plus product-readable event rows for a selected rollout, either
-by explicit seed or by resolving a requested terminal percentile server-side.
+per-seed table plus product-readable event rows for a selected rollout by explicit seed.
+The browser can resolve that seed from a sampled terminal percentile or select a stopped path.
 Drill-down responses include details for only that selected rollout, such as
 public-security sales, monthly expense settlements, and rollout failures.
 Rollout detail is sampled and simulated on request, without a server result
@@ -175,13 +175,13 @@ removed until the simulator has a tested, explicit agreement model.
 
 ### Obligation Lifecycle
 
-Current required obligations are due immediately in the month they fire. The
-engine debits the configured cash account, uses the agent's configured
-liquidation policy to sell assets if the cash account goes negative, and marks
-the rollout failed if the account cannot be brought back to non-negative cash.
-After failure, state-backed value metrics for that rollout are frozen at zero
-for the rest of the simulation; the failed status and first failure month remain
-machine-readable. It does not model partial payments, grace periods,
+Current required obligations are due in the month they fire. Funding policies
+may sell assets before payment. Demands sharing a source account settle all-or-none;
+an unfunded group stops the rollout, while other funded groups can still pay.
+The stopped book retains actual assets, liabilities and tax balances, with a
+machine-readable failure month. No later financial decisions or observations are
+reported, and the stopped book is not horizon-terminal wealth. It does not model
+partial payments, grace periods,
 delinquency balances, recovery/cure, or underpayment penalties.
 
 ### Asset Acquisition
@@ -254,18 +254,22 @@ The product API exposes two response shapes against a `ScenarioKey`:
 
 - `MetricFanResponse` — one user-selected metric over the horizon as a
   percentile fan across the requested rollout seed window, plus terminal percentiles
-  for that same selected metric. It does not return per-rollout records; response
+  for that same selected metric, with explicit observation counts and outcome basis.
+  Wealth aggregates include completed-horizon paths only; shortfall aggregates
+  include recorded unpaid demand through stop or completion for every path.
+  It does not return per-rollout records; response
   size is bounded by horizon × requested percentile count, not rollout count.
   The request identifies the rollouts with a seed window, not a per-rollout seed
   list.
 - `RolloutResponse` — full per-month metric frame and typed event log for
-  one selected rollout. It may be requested by explicit seed or by asking the
-  server to select the rollout at a terminal metric percentile from a bounded
-  seed set.
+  one selected rollout, requested by explicit seed.
 
 Both carry a `model_id` so the caller can identify which
-trajectory bundle the response was sampled against. Failed rollouts zero
-their downstream metrics from the failure month onward.
+trajectory bundle the response was sampled against. Unobserved outcomes are null,
+not zero money. Selected rollouts expose the actual ending book and its snapshot
+index; stopped paths remain directly selectable even when no terminal wealth is
+observed. Monthly wealth fans use each month's observed population, without
+conditioning past values on eventual completion.
 
 ## What augur does not do (non-goals)
 

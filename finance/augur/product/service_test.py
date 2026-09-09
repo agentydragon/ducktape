@@ -600,7 +600,7 @@ def test_metric_fan_does_not_materialize_rollout_events(
     product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,)))
 
 
-def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.ProductService) -> None:
+def test_failed_rollout_preserves_stop_book_without_post_stop_values(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -616,26 +616,24 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     assert fan.failed_count == 1
     assert not hasattr(fan, "rollout_summaries")
     assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
-    # Month 0 = cash 250k + holdings 835.5k + PHA 25k + bonds 150k at face; failure zeros
-    # subsequent months.
-    assert fan.monthly_metric_fan["value_quanta"] == [_usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]]
-    assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value_quanta": [_usd_quanta(0.0)]}
+    assert fan.monthly_metric_fan["observed_count"] == [1, 0, 0, 0]
+    assert fan.monthly_metric_fan["value_quanta"] == [_usd_quanta(1_260_500.0), None, None, None]
+    assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value_quanta": [None]}
+    assert fan.completed_count == 0
 
     detail = product.rollout(_rollout_request(scenario))
 
     assert detail.rollout.failed is True
-    assert detail.rollout.terminal_metrics.failed_month_index == 0
-    assert detail.rollout.terminal_metrics.cash_quanta == _usd_quanta(0.0)
-    assert detail.rollout.terminal_metrics.holding_value_quanta == _usd_quanta(0.0)
-    assert detail.rollout.terminal_metrics.net_worth_quanta == _usd_quanta(0.0)
-    assert detail.rollout.terminal_metrics.shortfall_quanta == _usd_quanta(300_000.0)
-    assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 0.0, 0.0, 0.0]]
-    assert detail.rollout.monthly_metrics["holding_value_quanta"] == [
-        _usd_quanta(value) for value in [835_500.0, 0.0, 0.0, 0.0]
-    ]
-    assert detail.rollout.monthly_metrics["net_worth_quanta"] == [
-        _usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]
-    ]
+    assert detail.rollout.ending_metrics.failed_month_index == 0
+    assert detail.rollout.ending_metrics.snapshot_index == 1
+    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(250_000.0)
+    assert detail.rollout.ending_metrics.holding_value_quanta == _usd_quanta(835_500.0)
+    assert detail.rollout.ending_metrics.net_worth_quanta == _usd_quanta(1_260_500.0)
+    assert detail.rollout.ending_metrics.shortfall_quanta == _usd_quanta(300_000.0)
+    assert detail.rollout.monthly_metrics["month_index"] == [0, 1]
+    assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(250_000.0)] * 2
+    assert detail.rollout.monthly_metrics["holding_value_quanta"] == [_usd_quanta(835_500.0)] * 2
+    assert detail.rollout.monthly_metrics["net_worth_quanta"] == [_usd_quanta(1_260_500.0)] * 2
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
     assert isinstance(expense, MonthlyExpenseEvent)
@@ -700,9 +698,9 @@ def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.P
     holding_value_quanta = columns["holding_value_quanta"]
     assert holding_value_quanta[0] == _usd_quanta(835_500.0)
     assert _quanta_int(holding_value_quanta[1]) > 0
-    assert detail.rollout.terminal_metrics.cash_quanta == _usd_quanta(0.0)
-    assert detail.rollout.terminal_metrics.shortfall_quanta == _usd_quanta(0.0)
-    assert _quanta_int(detail.rollout.terminal_metrics.net_worth_quanta) == (
+    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(0.0)
+    assert detail.rollout.ending_metrics.shortfall_quanta == _usd_quanta(0.0)
+    assert _quanta_int(detail.rollout.ending_metrics.net_worth_quanta) == (
         _quanta_int(holding_value_quanta[1])
         + _quanta_int(columns["private_equity_value_quanta"][1])
         + _quanta_int(columns["bond_value_quanta"][1])
@@ -799,7 +797,7 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
 
     metrics = detail.rollout.monthly_metrics
     assert metrics["private_equity_value_quanta"] == [_usd_quanta(value) for value in [25_000.0, 500.0, 500.0]]
-    assert detail.rollout.terminal_metrics.private_equity_value_quanta == _usd_quanta(500.0)
+    assert detail.rollout.ending_metrics.private_equity_value_quanta == _usd_quanta(500.0)
     assert [
         event
         for event in detail.rollout.events
@@ -888,8 +886,8 @@ def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(pro
 
     assert detail.rollout.failed is False
     assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 280_000.0]]
-    assert detail.rollout.terminal_metrics.cash_quanta == _usd_quanta(280_000.0)
-    assert detail.rollout.terminal_metrics.shortfall_quanta == _usd_quanta(0.0)
+    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(280_000.0)
+    assert detail.rollout.ending_metrics.shortfall_quanta == _usd_quanta(0.0)
     assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
     assert isinstance(sale, HoldingSaleEvent)

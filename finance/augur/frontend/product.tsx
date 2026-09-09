@@ -3,6 +3,7 @@ import { NativeSelect, SegmentedControl } from "@mantine/core";
 
 import { fetchProductPortfolio, fetchProductProjectionSummary, fetchProductRollout } from "./client";
 import { fmtQuanta, fmtNumber } from "./lib/format";
+import { rowsFrom } from "./lib/frame";
 import { toastFetchError } from "./lib/toast";
 import { replaceSearchParams } from "./url_state";
 
@@ -258,7 +259,10 @@ export function ProductProjectionWorkspace({
   const [terminalErrorsById, setTerminalErrorsById] = useState(() => new Map());
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioError, setPortfolioError] = useState(null);
-  const [selectedPercentile, setSelectedPercentile] = useState(null);
+  const [selection, setSelection] = useState<
+    { kind: "percentile"; value: number } | { kind: "stopped"; seed: number; scenarioKey: string } | null
+  >(null);
+  const selectedPercentile = selection?.kind === "percentile" ? selection.value : null;
   const [selectedRollout, setSelectedRollout] = useState<{
     key: string;
     detail: Awaited<ReturnType<typeof fetchProductRollout>> | null;
@@ -296,7 +300,7 @@ export function ProductProjectionWorkspace({
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
   const selectMetricValue = (value) => {
     setSelectedMetricValue(value);
-    setSelectedPercentile(null);
+    setSelection(null);
     eventSelection.clear();
   };
 
@@ -383,7 +387,15 @@ export function ProductProjectionWorkspace({
         : terminalSampleAtPercentile(activeTerminalSelectionResult, selectedMetric, selectedPercentile),
     [activeTerminalSelectionResult, selectedMetric, selectedPercentile]
   );
-  const selectedRolloutSeed = selectedTerminalSample?.seed ?? null;
+  const stoppedSeeds = rowsFrom(activeTerminalSelectionResult?.terminalMetricSamples)
+    .filter((row) => row.failed)
+    .map((row) => Number(row.seed));
+  const selectedRolloutSeed =
+    selection?.kind === "stopped"
+      ? selection.scenarioKey === scenarioKey && stoppedSeeds.includes(selection.seed)
+        ? selection.seed
+        : null
+      : (selectedTerminalSample?.seed ?? null);
   const selectedDetailKey = selectedRolloutSeed == null ? null : `${scenarioKey}|seed:${selectedRolloutSeed}`;
   const selectedDetail = selectedRollout?.key === selectedDetailKey ? selectedRollout.detail : null;
   const rolloutError = selectedRollout?.key === selectedDetailKey ? selectedRollout.error : null;
@@ -394,7 +406,7 @@ export function ProductProjectionWorkspace({
         ? {
             seed: Number(selectedDetail.rollout.seed),
             failed: Boolean(selectedDetail.rollout.failed),
-            terminalMetrics: selectedDetail.rollout.terminalMetrics,
+            endingMetrics: selectedDetail.rollout.endingMetrics,
           }
         : null,
     [selectedDetail]
@@ -407,7 +419,7 @@ export function ProductProjectionWorkspace({
   const failedCount = activeResult?.failedCount ?? null;
   const terminalP50 = terminalPercentileValue(activeTerminalDisplayResult, 50);
   const selectedRolloutLoading =
-    selectedPercentile != null && activeTerminalDisplayResult != null && !selectedDetail && !rolloutError;
+    selectedRolloutSeed != null && activeTerminalDisplayResult != null && !selectedDetail && !rolloutError;
 
   // -- Base + variant operations. Base edits propagate to every variant that doesn't override the
   // touched knob (variants resolve as `{ ...base, ...overrides }`); variant edits write to that
@@ -426,10 +438,10 @@ export function ProductProjectionWorkspace({
   // maps that percentile to a seed; the full rollout detail is fetched by seed.
   const onSelectPercentile = (variantId, percentile) => {
     selectEntry(variantId);
-    setSelectedPercentile(percentile);
+    setSelection({ kind: "percentile", value: percentile });
   };
   const clearSelectedRollout = () => {
-    setSelectedPercentile(null);
+    setSelection(null);
     eventSelection.clear();
   };
   const renameEntry = (id, label) =>
@@ -558,7 +570,7 @@ export function ProductProjectionWorkspace({
 
   useEffect(() => {
     setSelectedRollout(null);
-    if (selectedPercentile == null || selectedRolloutSeed == null || selectedDetailKey == null) return;
+    if (selectedRolloutSeed == null || selectedDetailKey == null) return;
     const controller = new AbortController();
     fetchProductRollout(
       {
@@ -631,7 +643,14 @@ export function ProductProjectionWorkspace({
         {activeResult ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="augur-card p-4">
-              <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
+              <div className="augur-eyebrow">
+                Median {activeResult.basis === "observed_through_stop" ? "recorded" : "terminal"}{" "}
+                {selectedMetric.label.toLowerCase()}
+              </div>
+              <div className="text-xs augur-muted">
+                {activeResult.basis === "observed_through_stop" ? "Through stop/completion" : "Completed paths only"} (
+                {activeResult.observationCount} observations)
+              </div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
                 {fmtQuanta(terminalP50, {
                   currencyCode: activeTerminalDisplayResult?.currencyCode,
@@ -644,6 +663,37 @@ export function ProductProjectionWorkspace({
               <div className="mt-2 text-2xl font-semibold augur-tabular">
                 {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutCount)}
               </div>
+              {stoppedSeeds.length > 0 && (
+                <NativeSelect
+                  aria-label="Inspect stopped rollout"
+                  value={selection?.kind === "stopped" ? String(selectedRolloutSeed ?? "") : ""}
+                  data={[
+                    { value: "", label: "Inspect a stopped path" },
+                    ...stoppedSeeds.map((seed) => ({ value: String(seed), label: `Seed ${seed}` })),
+                  ]}
+                  onChange={(event) =>
+                    setSelection(
+                      event.target.value === ""
+                        ? null
+                        : { kind: "stopped", seed: Number(event.target.value), scenarioKey }
+                    )
+                  }
+                />
+              )}
+              {selectedSummary?.failed && (
+                <div className="mt-2 text-sm" data-product-stop-book="">
+                  At stop in event month {selectedSummary.endingMetrics.failedMonthIndex} (snapshot{" "}
+                  {selectedSummary.endingMetrics.snapshotIndex}):{" "}
+                  {fmtQuanta(selectedSummary.endingMetrics[selectedMetric.chartValue], {
+                    currencyCode: selectedDetail.currencyCode,
+                    currencyQuantum: selectedDetail.currencyQuantum,
+                  })}
+                  .{" "}
+                  {activeResult.basis === "observed_through_stop"
+                    ? "Recorded through stopping, not projected future shortfall."
+                    : "Not horizon-terminal wealth."}
+                </div>
+              )}
             </div>
           </div>
         ) : (
