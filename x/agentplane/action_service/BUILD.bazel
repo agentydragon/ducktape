@@ -751,6 +751,7 @@ py_test(
         "@pypi//cryptography",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//mcp",
         "@pypi//py_key_value_aio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -20,6 +20,8 @@ import pytest_bazel
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from key_value.aio.wrappers.base import BaseWrapper
+from mcp.shared.auth import OAuthClientInformationFull
+from mcp.types import CallToolResult
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
@@ -67,7 +69,9 @@ class OAuthFixture:
             },
         )
         assert response.status_code == 201, response.text
-        return response.json()["client_id"]
+        client_id = OAuthClientInformationFull.model_validate(response.json()).client_id
+        assert client_id is not None
+        return client_id
 
     async def authorize(self, client_id: str) -> tuple[str, str]:
         verifier = secrets.token_urlsafe(32)
@@ -245,6 +249,29 @@ async def test_bearer_storage_outage_is_retryable_not_a_false_invalid_token(
     assert await oauth.proxy.authenticate(token) is not None
 
 
+async def test_access_token_revocation_ends_the_canonical_grant(oauth: OAuthFixture) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    response = await oauth.exchange(client_id, code, verifier)
+    assert response.status_code == 200, response.text
+    access_token = response.json()["access_token"]
+    verified = await oauth.proxy.load_access_token(access_token)
+    assert verified is not None
+    assert verified.token == access_token
+    revoked = await oauth.browser.post(
+        oauth.metadata["revocation_endpoint"],
+        data={"client_id": client_id, "token": access_token, "token_type_hint": "access_token"},
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert await oauth.proxy.authenticate(access_token) is None
+    refresh = await oauth.browser.post(
+        oauth.metadata["token_endpoint"],
+        data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": response.json()["refresh_token"]},
+    )
+    assert refresh.status_code == 401
+
+
 async def test_one_registration_can_authorize_distinct_connections_to_same_identity(oauth: OAuthFixture) -> None:
     client_id = await oauth.register()
     grants = []
@@ -391,9 +418,10 @@ async def _call_mcp(http: httpx.AsyncClient, bearer: str, name: str, arguments: 
     )
     assert response.status_code == 200, response.text
     data = next(line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: "))
-    result = json.loads(data)["result"]
-    assert not result.get("isError"), result
-    return result["structuredContent"]
+    result = CallToolResult.model_validate(json.loads(data)["result"])
+    assert not result.isError, result
+    assert result.structuredContent is not None
+    return result.structuredContent
 
 
 if __name__ == "__main__":

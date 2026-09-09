@@ -26,6 +26,7 @@ from mcp.server.auth.provider import (
     RefreshToken,
     TokenError,
 )
+from mcp.server.auth.settings import RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.engine import make_url
@@ -77,7 +78,7 @@ class _ObservedStorage(BaseWrapper):
 
     async def delete(self, key: str, *, collection: str | None = None) -> bool:
         try:
-            return await super().delete(key, collection=collection)
+            return cast(bool, await super().delete(key, collection=collection))
         except Exception as error:
             _observe_failure(error)
             raise
@@ -149,6 +150,8 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             enable_cimd=False,
         )
         self._settings = settings
+        # Local grants are revocable even if the authentication IdP has no revoke endpoint.
+        self.revocation_options = RevocationOptions(enabled=True)
         self._enrollments = enrollments
         self._connections = connections
         self._principal_resolver = AuthentikOidcPrincipalResolver(
@@ -327,7 +330,9 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             ):
                 return None
             await self._resolve(reference)
-            return validated
+            # The SDK revocation handler passes this object back to revoke_token. Keep
+            # its credential local: this service does not expose upstream account tokens.
+            return validated.model_copy(update={"token": token})
         except GrantRejectedError:
             return None
         except SQLAlchemyError:
@@ -360,13 +365,13 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
                 token.token, token_use="refresh" if isinstance(token, RefreshToken) else "access"
             )
         except Exception:
-            await super().revoke_token(token)
             return
         try:
             await self._connections.revoke(reference[0])
         except SQLAlchemyError:
             raise _unavailable() from None
-        await super().revoke_token(token)
+        # Do not forward local reference credentials to the upstream IdP. Canonical
+        # revocation gates every access/refresh; encrypted SDK metadata expires by TTL.
 
 
 def _unavailable() -> HTTPException:

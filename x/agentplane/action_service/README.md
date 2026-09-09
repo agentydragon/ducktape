@@ -176,6 +176,9 @@ before FastMCP consumes its code. Only one token family may issue per enrollment
 the claim can be retried; an ambiguous failure after it requires fresh OAuth, not another issuance.
 Tokens contain an opaque grant reference. Every bearer admission and refresh resolves the current
 canonical grant; unbind/revocation cannot silently retarget an old token to a new Identity.
+The local revocation endpoint ends the canonical grant independently of upstream IdP revocation;
+it does not forward local credentials upstream or revoke an upstream account. Encrypted SDK
+metadata remains bounded by its existing TTL after the grant is ended.
 
 Configure dedicated upstream client credentials, discovery/issuer pins, public `base_url`,
 `integration_app_url`, and the exact `approving_operator` issuer/subject mapping. Provider-scoped
