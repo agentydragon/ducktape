@@ -18,6 +18,10 @@ from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.wrappers.base import BaseWrapper
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from mcp.server.auth.errors import stringify_pydantic_error
+from mcp.server.auth.handlers.revoke import RevocationErrorResponse, RevocationRequest
+from mcp.server.auth.json_response import PydanticJSONResponse
+from mcp.server.auth.middleware.client_auth import AuthenticationError, ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken as McpAccessToken,
     AuthorizationCode,
@@ -26,11 +30,15 @@ from mcp.server.auth.provider import (
     RefreshToken,
     TokenError,
 )
+from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Route
 
 from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy, RetryableJWTVerifier
 from mcp_infra.authentik_auth.oidc_principal import (
@@ -372,6 +380,54 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             raise _unavailable() from None
         # Do not forward local reference credentials to the upstream IdP. Canonical
         # revocation gates every access/refresh; encrypted SDK metadata expires by TTL.
+
+    def get_routes(self, mcp_path: str | None = None) -> list[Route]:
+        return [
+            Route(
+                "/revoke",
+                endpoint=cors_middleware(self._revoke_request, ["POST", "OPTIONS"]),
+                methods=["POST", "OPTIONS"],
+            )
+            if route.path == "/revoke"
+            else route
+            for route in super().get_routes(mcp_path)
+        ]
+
+    async def _revoke_request(self, request: Request) -> Response:
+        """Pinned SDK shim: optional client_secret must actually be optional for public clients.
+
+        Authentication, parsing/error models, token loading and RFC 7009 responses stay
+        equivalent to the SDK handler. Only absent client fields are filled from the
+        authenticated client before RevocationRequest parsing, including Basic-auth clients.
+        """
+        try:
+            client = await ClientAuthenticator(self).authenticate_request(request)
+        except AuthenticationError:
+            return PydanticJSONResponse(
+                RevocationErrorResponse(error="unauthorized_client", error_description="Client authentication failed"),
+                status_code=401,
+            )
+        try:
+            values = dict(await request.form())
+            values.setdefault("client_id", client.client_id or "")
+            parsed = RevocationRequest.model_validate({"client_secret": None, **values})
+        except ValidationError as error:
+            return PydanticJSONResponse(
+                RevocationErrorResponse(error="invalid_request", error_description=stringify_pydantic_error(error)),
+                status_code=400,
+            )
+        loaded: McpAccessToken | RefreshToken | None
+        if parsed.token_type_hint == "refresh_token":
+            loaded = await self.load_refresh_token(client, parsed.token)
+            if loaded is None:
+                loaded = await self.load_access_token(parsed.token)
+        else:
+            loaded = await self.load_access_token(parsed.token)
+            if loaded is None:
+                loaded = await self.load_refresh_token(client, parsed.token)
+        if loaded is not None and loaded.client_id == client.client_id:
+            await self.revoke_token(loaded)
+        return Response(status_code=200, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
 
 
 def _unavailable() -> HTTPException:

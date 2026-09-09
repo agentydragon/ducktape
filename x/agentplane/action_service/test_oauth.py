@@ -249,7 +249,8 @@ async def test_bearer_storage_outage_is_retryable_not_a_false_invalid_token(
     assert await oauth.proxy.authenticate(token) is not None
 
 
-async def test_access_token_revocation_ends_the_canonical_grant(oauth: OAuthFixture) -> None:
+@pytest.mark.parametrize("token_type", ["access_token", "refresh_token"])
+async def test_token_revocation_ends_the_canonical_grant(oauth: OAuthFixture, token_type: str) -> None:
     client_id = await oauth.register()
     handle, verifier = await oauth.authorize(client_id)
     code = await oauth.callback(await oauth.approve(handle))
@@ -259,9 +260,16 @@ async def test_access_token_revocation_ends_the_canonical_grant(oauth: OAuthFixt
     verified = await oauth.proxy.load_access_token(access_token)
     assert verified is not None
     assert verified.token == access_token
+    other_client_id = await oauth.register()
+    wrong_client = await oauth.browser.post(
+        oauth.metadata["revocation_endpoint"],
+        data={"client_id": other_client_id, "token": response.json()[token_type], "token_type_hint": token_type},
+    )
+    assert wrong_client.status_code == 200, wrong_client.text
+    assert await oauth.proxy.authenticate(access_token) is not None
     revoked = await oauth.browser.post(
         oauth.metadata["revocation_endpoint"],
-        data={"client_id": client_id, "token": access_token, "token_type_hint": "access_token"},
+        data={"client_id": client_id, "token": response.json()[token_type], "token_type_hint": token_type},
     )
     assert revoked.status_code == 200, revoked.text
     assert await oauth.proxy.authenticate(access_token) is None
@@ -270,6 +278,11 @@ async def test_access_token_revocation_ends_the_canonical_grant(oauth: OAuthFixt
         data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": response.json()["refresh_token"]},
     )
     assert refresh.status_code == 401
+    repeated = await oauth.browser.post(
+        oauth.metadata["revocation_endpoint"],
+        data={"client_id": client_id, "token": response.json()[token_type], "token_type_hint": token_type},
+    )
+    assert repeated.status_code == 200, repeated.text
 
 
 async def test_one_registration_can_authorize_distinct_connections_to_same_identity(oauth: OAuthFixture) -> None:

@@ -723,6 +723,7 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//sqlalchemy",
+        "@pypi//starlette",
     ],
 )
 
