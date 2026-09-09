@@ -19,6 +19,8 @@ spending rules, and <x/bond_policies/README.md> for dated-bond policies on share
 discount curves with tax-free household withdrawals. <x/allocation_glide/README.md>
 compares executable constant/glide allocation targets with actual funded consumption
 and holdings on stipulated paths.
+<x/monthly_actions/README.md> submits an explicit monthly sell → pay action list
+and reports actual receipts, tax payment and per-path stopping.
 
 ## Planning boundary
 
