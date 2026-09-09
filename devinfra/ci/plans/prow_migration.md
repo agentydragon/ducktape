@@ -192,6 +192,129 @@ evidence under `currently-healthy`. Also test a new B head, declaration edits,
 observer outage, and direct merge attempts. A successful pipeline demo alone
 does not settle which system meets this requirement.
 
+### Lighthouse follow-up: credible candidate, with concrete acceptance gaps
+
+Source inspection on 2026-09-09 materially strengthens Lighthouse's candidacy.
+It already has **Keeper**, a Tide-derived merge controller with a non-GitHub REST
+path and required-status evaluation. We would not be starting a multi-forge merge
+controller from scratch. Recommend a bounded trial if ChatOps and automatic merging
+are important, before considering a new Prow provider.
+
+Evidence scope: static inspection of Lighthouse
+[`729cd0891313`](https://github.com/jenkins-x/lighthouse/tree/729cd0891313eb03c36e768c221fc2caaf912d0e)
+and its pinned `go-scm` v1.16.0
+[`e912546987d8`](https://github.com/jenkins-x/go-scm/tree/e912546987d80e311da8c8b702c2cbeceb7527f0).
+No Lighthouse deployment, test suite, or real GitLab/Forgejo merge was exercised.
+
+#### Merge gating is implemented beyond GitHub
+
+- Keeper selects a REST search when GraphQL is unavailable. That path enumerates
+  explicit repositories and filters PRs/MRs by required/forbidden labels and target
+  branches. Configure `repos`, not organization-only queries, for this trial.
+- It fetches the head commit's combined statuses through `go-scm` and rejects
+  unsuccessful or missing required contexts. A `dependency-gate` context can
+  therefore be an explicit requirement alongside CI results. This is a concrete
+  source-level integration point for our observer, not proof of runtime correctness.
+- The GitLab and Gitea drivers implement combined-status reads and merge calls.
+  Keeper passes an expected head SHA through Lighthouse's SCM wrapper; the
+  GitLab encoder forwards it to the merge API.
+- The REST query path does **not** apply `reviewApprovedRequired`; that flag is
+  translated into a GitHub search term elsewhere. Do not assume approval parity
+  from shared configuration. Native forge approval enforcement or an independently
+  trusted approval status must be verified before giving Keeper merge authority.
+
+Sources: [Keeper selection and status checks](https://github.com/jenkins-x/lighthouse/blob/729cd0891313eb03c36e768c221fc2caaf912d0e/pkg/keeper/keeper.go),
+[query configuration](https://github.com/jenkins-x/lighthouse/blob/729cd0891313eb03c36e768c221fc2caaf912d0e/pkg/config/keeper/query.go),
+[merge wrapper](https://github.com/jenkins-x/lighthouse/blob/729cd0891313eb03c36e768c221fc2caaf912d0e/pkg/scmprovider/pull_requests.go),
+[GitLab merge encoding](https://github.com/jenkins-x/go-scm/blob/e912546987d80e311da8c8b702c2cbeceb7527f0/scm/driver/gitlab/util.go).
+
+#### Forgejo requires a targeted compatibility and race test
+
+There is still no distinct Forgejo driver or verified Forgejo integration in the
+reviewed tree. The initial trial would use Gitea mode against a disposable Forgejo
+repository and check authentication, signatures/events, PR discovery, statuses,
+permissions, and merge behavior on the actual version we intend to run.
+
+One concrete source gap: the pinned Gitea driver's `Merge` copies merge style and
+title but **does not forward `options.SHA`**. Thus the expected-head constraint
+supplied by Keeper is lost at this boundary. Assess the server's supported
+expected-head API and fix/test the mapping before automatic merging. This is not
+a demonstrated unauthorized merge: server-side protection may reject it, but we
+must test the new-commit race rather than rely on it accidentally doing so.
+[Gitea merge implementation](https://github.com/jenkins-x/go-scm/blob/e912546987d80e311da8c8b702c2cbeceb7527f0/scm/driver/gitea/pr.go).
+
+The open [GitLab approval-label report #1415](https://github.com/jenkins-x/lighthouse/issues/1415)
+describes manually added `approved`/`lgtm` labels bypassing ChatOps authorization.
+It is a 2022 report, not a reproduction on current GitLab. Nevertheless, mutable
+labels must not be our sole evidence of approval or rollout health. In contrast,
+the old [Gitea startup report #1394](https://github.com/jenkins-x/lighthouse/issues/1394)
+shows a newline in the supplied authorization value; its open status alone is not
+evidence that current Gitea support is broken.
+
+#### Standalone installation and BuildBuddy fit
+
+Full Jenkins X is not a documented prerequisite. Upstream has standalone Helm
+installation guides for [Lighthouse with Tekton](https://github.com/jenkins-x/lighthouse/blob/729cd0891313eb03c36e768c221fc2caaf912d0e/docs/install_lighthouse_with_tekton.md)
+and [Lighthouse with Jenkins](https://github.com/jenkins-x/lighthouse/blob/729cd0891313eb03c36e768c221fc2caaf912d0e/docs/install_lighthouse_with_jenkins.md).
+The chart exposes engine switches; `jx` is enabled by default, while `tekton` and
+`jenkins` default off. Explicitly select the intended engine. Controllers include
+webhooks, Keeper, Foghorn status reporting, and the selected execution controller;
+Lighthouse has its own job CRDs. Own configuration through Flux rather than also
+enabling its config-updater against the same ConfigMaps.
+
+For us, a Tekton job could launch the existing BuildBuddy workflow; it would not
+replace RBE workers. That adds Tekton as an operational dependency. A smaller first
+experiment is Keeper consuming existing CI and observer statuses without new
+presubmits; verify whether this can run with execution engines disabled and what
+CRDs/RBAC it still needs. This reduced deployment has not been demonstrated.
+
+Do not paste installation examples unchanged: the Tekton guide still contains
+PipelineResource examples, and Keeper's README/config guide retain old Tide/Prow
+names and links. Current source is more informative than those copied descriptions.
+Render the chosen released chart, check its CRDs/RBAC against our Kubernetes and
+Tekton versions, and trial the exact pinned artifacts.
+[Chart values](https://github.com/jenkins-x/lighthouse/blob/729cd0891313eb03c36e768c221fc2caaf912d0e/charts/lighthouse/values.yaml),
+[Keeper role](https://github.com/jenkins-x/lighthouse/blob/729cd0891313eb03c36e768c221fc2caaf912d0e/charts/lighthouse/templates/keeper-role.yaml).
+
+#### Maintenance and release evidence
+
+Latest published GitHub release observed:
+[v1.33.9, 2026-08-31](https://github.com/jenkins-x/lighthouse/releases/tag/v1.33.9).
+It pins `go-scm` v1.15.38, whereas the inspected main branch pins v1.16.0; main is
+four commits ahead, consisting of dependency updates and their merge commits.
+Repeat driver acceptance against the artifact actually deployed, not just main.
+
+There is recent substantive GitLab maintenance:
+[PR #1689](https://github.com/jenkins-x/lighthouse/pull/1689), merged 2026-05-12,
+resolves the target branch SHA when GitLab's MR listing omits it. The corresponding
+[SCM change](https://github.com/jenkins-x/go-scm/commit/31f208e089e1)
+avoids confusing the merge base with the target branch tip. These directly matter
+to our source-revision contract. The repository also contains GitLab/Gitea BDD
+scaffolding, but its presence does not establish recent end-to-end passes. Older
+open integration issues and stale docs mean active maintenance should not be
+equated with feature parity across every forge.
+
+#### Bounded trial before selection
+
+- [ ] Pin a released Lighthouse/chart/SCM combination and document differences
+      from the source reviewed here. Validate rendered resources and ownership.
+- [ ] Start in a disposable explicit repository with Keeper merge actions disabled
+      or credentials unable to merge; observe missing/pending/failing/passing
+      `dependency-gate` alongside existing CI.
+- [ ] Verify GitLab or Forgejo native review/protected-status enforcement, including
+      manually changed approval labels and who can publish the required context.
+- [ ] For Forgejo, resolve the missing expected-head mapping and test a push between
+      eligibility evaluation and merge. Test ordinary and fork PRs/MRs.
+- [ ] Exercise observer outage, stale success, rollback, declaration edits, new
+      heads, API failures, and restart. The custom observer owns health freshness;
+      Keeper does not turn a lasting success status into expiring evidence.
+- [ ] Then allow merges only in the disposable repository and demonstrate B blocked
+      until A's exact revision is healthy in the named deployments. Keep direct
+      merge protection effective too.
+- [ ] Only if this passes, compare Keeper-plus-existing-CI with Lighthouse/Tekton
+      launching BuildBuddy. Select Lighthouse based on verified benefit over the
+      native-CI/observer baseline, not its Prow ancestry alone.
+
 ### Cluster integration
 
 The rollout observer watches approved Flux/Kubernetes resources and periodically
