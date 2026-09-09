@@ -90,6 +90,20 @@ Run the two cases without network evidence downloads:
 bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
 ```
 
+## Monthly action contract
+
+One call per active actor per month returns an ordered action list. Submit the
+whole list at once and execute it in the policy's order, using each action's
+resulting books for the next action. No global sells-before-buys pass is implied.
+There is no within-month policy callback or retry.
+
+An unexecutable action is fatal for its rollout: it changes no books, earlier
+successful actions remain recorded, and later actions/months are not executed.
+Other rollouts continue. This is per-action atomicity, not an all-or-none month.
+Receipts inform next-month policy decisions or the terminal report. A sequence
+such as `[Sell(...), Buy(...), Transfer(...), Buy(...)]` is submitted by one call;
+its cash dependencies must be executable under the chosen settlement rules.
+
 ## Remaining actor-action choices
 
 - **Observation time/content.** Expose actor-known contracts, claims and tax facts
@@ -97,18 +111,18 @@ bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
   review before same-month distributions/transfers; moving funding logic into
   that opening callback alone would deprive it of facts the engine currently uses.
 - **Proposal versus execution.** Policies turn budgets and allocation targets into
-  trades/payments, optionally using sleeve helpers. Pin request/result identity,
-  execution versus cash availability and same-time action order. The engine
+  trades/payments, optionally using sleeve helpers. Pin request/result identity and
+  execution versus cash availability at the monthly decision point. The engine
   validates and settles; it does not choose extra trades. Funding/tax previews
   reuse canonical calculations with observable inputs and explicit assumptions.
 - **Commitments and priority.** Keep current grouping for P2/P6 parity controls,
   not as the destination contract. Contracts generate claims; actors choose their
-  funding/payment actions or explicit standing instructions. GP scopes rejection,
-  deadlines and stop behavior for the bill → sale → available funds → payment
-  example. Broader partial-payment/default/recovery behavior needs separate scope;
-  a collection of actions is not implicitly atomic.
+  funding/payment actions or explicit standing instructions. GP still pins unpaid
+  claims' deadlines/consequences and the monthly placement of claim observations.
+  Fatal action failure and caller-specified execution order are settled. No
+  default/recovery model or within-month decision loop is required.
 - **Decision memory and receipts.** State is local to a rollout. Decide which
-  changes commit on proposal versus on successful settlement. Record meaningful
+  changes are intentions versus facts learned from prior-month receipts. Record meaningful
   cuts/anchor transitions separately from payment receipts so equal-cost anchors
   remain distinguishable; do not serialize arbitrary closure internals.
 
