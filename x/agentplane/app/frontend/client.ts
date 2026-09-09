@@ -11,6 +11,7 @@ import {
   type Attached,
   type SessionSpec,
   type SessionSummary,
+  Provider,
 } from "./protocol_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
@@ -132,6 +133,20 @@ export async function openSession(sandbox: string, sessionId: string, spec: Sess
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(AttachedSchema, data as JsonValue);
+}
+
+export async function models(): Promise<Record<"claude" | "codex", string[]>> {
+  const { data, error } = await api.GET("/models");
+  if (error) throw new Error(displayableError(error));
+  return data as Record<"claude" | "codex", string[]>;
+}
+
+export async function switchModel(sandbox: string, sessionId: string, switchId: string, model: string): Promise<void> {
+  const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/model", {
+    params: { path: { name: sandbox, session_id: sessionId } },
+    body: { switch_id: switchId, model },
+  });
+  if (error) throw new Error(displayableError(error));
 }
 
 export async function sendInput(sandbox: string, sessionId: string, inputId: string, text: string): Promise<void> {

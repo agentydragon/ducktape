@@ -74,6 +74,7 @@ class Session:
         self.active_turn_id = ""
         self.unsettled_inputs: list[str] = []
         self.settled_inputs: dict[str, pb.Event] = {}
+        self.settled_model_switches: set[str] = set()
         for event in self.log.events:
             self._apply(event)
         self.process: HarnessProcess | None = None
@@ -103,6 +104,10 @@ class Session:
                 self._settle(event.input_rejected.input_id, event)
             case "input_uncertain":
                 self._settle(event.input_uncertain.input_id, event)
+            case "model_switch_succeeded":
+                self.settled_model_switches.add(event.model_switch_succeeded.switch_id)
+            case "model_switch_rejected":
+                self.settled_model_switches.add(event.model_switch_rejected.switch_id)
 
     def _settle(self, input_id: str, event: pb.Event) -> None:
         if input_id in self.unsettled_inputs:
@@ -189,6 +194,39 @@ class Session:
         async with self._lock:
             if self.adapter is not None and self.running and self.active_turn_id:
                 await self.adapter.interrupt()
+
+    async def switch_model(self, switch_id: str, model: str) -> None:
+        async with self._lock:
+            if switch_id in self.settled_model_switches:
+                return
+            if not switch_id or not model:
+                self.emit(
+                    pb.ModelSwitchRejected(switch_id=switch_id, reason="switch_id and model are required"), sources=[]
+                )
+                return
+            if self.active_turn_id:
+                self.emit(
+                    pb.ModelSwitchRejected(switch_id=switch_id, reason="a model can change only between turns"),
+                    sources=[],
+                )
+                return
+            if self.adapter is None or not self.running:
+                self.emit(pb.ModelSwitchRejected(switch_id=switch_id, reason="the harness is not running"), sources=[])
+                return
+            previous = self.record.model
+            if model == previous:
+                self.emit(
+                    pb.ModelSwitchSucceeded(switch_id=switch_id, previous_model=previous, model=model), sources=[]
+                )
+                return
+            try:
+                await self.adapter.switch_model(model)
+            except (HarnessGoneError, RuntimeError) as error:
+                self.emit(pb.ModelSwitchRejected(switch_id=switch_id, reason=str(error)), sources=[])
+                return
+            self.record.model = model
+            self.store.write(self.session_id, self.record)
+            self.emit(pb.ModelSwitchSucceeded(switch_id=switch_id, previous_model=previous, model=model), sources=[])
 
     async def shutdown(self) -> None:
         """Stop the harness; the session stays resumable. HarnessExited is in the log on return."""

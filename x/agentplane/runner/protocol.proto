@@ -117,6 +117,13 @@ message Input {
   string text = 2;
 }
 
+// Changes the model used for subsequent turns. It is accepted only while no turn is active.
+// switch_id is client-chosen and idempotent, like Input.input_id.
+message SwitchModel {
+  string switch_id = 1;
+  string model = 2;
+}
+
 // Ends the active turn; ignored when no turn is active.
 message Interrupt {}
 
@@ -133,6 +140,7 @@ message ClientMessage {
     Interrupt interrupt = 3;
     Shutdown shutdown = 4;
     Detach detach = 5;
+    SwitchModel switch_model = 6;
   }
 }
 
@@ -236,6 +244,19 @@ message InputUncertain {
 
 message TurnStarted {
   string turn_id = 1;
+  // The model selected for this turn. A transcript may therefore show a deliberate model change.
+  string model = 2;
+}
+
+message ModelSwitchSucceeded {
+  string switch_id = 1;
+  string previous_model = 2;
+  string model = 3;
+}
+
+message ModelSwitchRejected {
+  string switch_id = 1;
+  string reason = 2;
 }
 
 message TurnCompleted {
@@ -321,6 +342,8 @@ message Event {
     ToolOutputDelta tool_output_delta = 18;
     ItemCompleted item_completed = 19;
     Native native = 20;
+    ModelSwitchSucceeded model_switch_succeeded = 21;
+    ModelSwitchRejected model_switch_rejected = 22;
   }
 }
 

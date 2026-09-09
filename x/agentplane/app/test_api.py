@@ -561,6 +561,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/sandboxes/{name}/sessions/{session_id}/events",
         "/sandboxes/{name}/sessions/{session_id}/inputs",
         "/sandboxes/{name}/sessions/{session_id}/interrupt",
+        "/sandboxes/{name}/sessions/{session_id}/model",
         "/sandboxes/{name}/sessions/{session_id}/shutdown",
         "/threads",
         "/threads/{thread_id}",

@@ -29,5 +29,9 @@ class HarnessAdapter(abc.ABC):
     async def interrupt(self) -> None: ...
 
     @abc.abstractmethod
+    async def switch_model(self, model: str) -> None:
+        """Make model the native harness's selection for its next turn."""
+
+    @abc.abstractmethod
     async def on_frame(self, frame: dict[str, Any]) -> None:
         """Translate one parsed stdout frame into session events, answering the harness if it asked."""

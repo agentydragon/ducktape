@@ -48,3 +48,7 @@ def user_frame(text: str, *, message_uuid: str | None = None) -> wire.UserInput:
 
 def interrupt(*, cancel_queued: bool, reason: str = "capture") -> wire.InterruptRequest:
     return wire.InterruptRequest(request=wire.InterruptBody(reason=reason, cancel_queued=cancel_queued))
+
+
+def set_model(model: str) -> wire.SetModelRequest:
+    return wire.SetModelRequest(request=wire.SetModelBody(model=model))

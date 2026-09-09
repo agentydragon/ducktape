@@ -27,14 +27,14 @@ from typing import Annotated
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential
 
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
-from x.agentplane.app.presets import PresetCatalog, SandboxBinding
+from x.agentplane.app.presets import PresetCatalog, Provider, SandboxBinding
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
@@ -290,6 +290,9 @@ class RunnerBridge:
     async def interrupt(self, sandbox: str, session_id: str) -> None:
         await self._command(sandbox, session_id, lambda attachment: attachment.interrupt())
 
+    async def switch_model(self, sandbox: str, session_id: str, switch_id: str, model: str) -> None:
+        await self._command(sandbox, session_id, lambda attachment: attachment.switch_model(switch_id, model))
+
     async def shutdown(self, sandbox: str, session_id: str) -> None:
         await self._command(sandbox, session_id, lambda attachment: attachment.shutdown(), ends_stream=True)
 
@@ -449,6 +452,31 @@ async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str,
 @router.post("/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
 async def interrupt_session(bridge: Bridge, name: str, session_id: str) -> Response:
     await bridge.interrupt(name, session_id)
+    return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+class ModelSwitch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    switch_id: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+
+
+@router.post("/{session_id}/model", status_code=status.HTTP_202_ACCEPTED)
+async def switch_session_model(
+    bridge: Bridge, name: str, session_id: str, body: ModelSwitch, request: Request
+) -> Response:
+    summaries = await bridge.list_sessions(name)
+    summary = next((item for item in summaries if item.session_id == session_id), None)
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown session {session_id!r}")
+    provider = Provider.CLAUDE if summary.spec.provider == pb.PROVIDER_CLAUDE else Provider.CODEX
+    catalog = request.app.state.models
+    if not isinstance(catalog, dict) or body.model not in catalog[provider]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="model is incompatible with this harness"
+        )
+    await bridge.switch_model(name, session_id, body.switch_id, body.model)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 

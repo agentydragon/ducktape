@@ -80,7 +80,9 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def submit(self, input_id: str, text: str) -> None:
         if not self.session.active_turn_id:
-            self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}"), sources=[])
+            self.session.emit(
+                pb.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model), sources=[]
+            )
         frame = driver.user_frame(text)
         self._pending[frame.uuid] = input_id
         self.session.emit(pb.InputSubmitted(input_id=input_id, text=text), sources=[])
@@ -88,6 +90,16 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def interrupt(self) -> None:
         await self.session.write_native(driver.interrupt(cancel_queued=False, reason="agentplane"))
+
+    async def switch_model(self, model: str) -> None:
+        request = driver.set_model(model)
+        response = await self.session.request(
+            request, matches=lambda frame: _control_response_for(frame, request.request_id)
+        )
+        parsed = wire.parse_frame(response.frame)
+        if not isinstance(parsed, wire.ControlResponseFrame) or parsed.response.subtype != "success":
+            detail = parsed.response.error if isinstance(parsed, wire.ControlResponseFrame) else "invalid response"
+            raise RuntimeError(f"Claude Code refused model switch: {detail}")
 
     async def on_frame(self, frame: Frame) -> None:
         match wire.parse_frame(frame):
@@ -124,7 +136,7 @@ class ClaudeAdapter(HarnessAdapter):
         """The active turn, or a new one for output the harness produces on its own, such as a
         queued input it chose to run as a fresh turn after the previous result."""
         if not self.session.active_turn_id:
-            self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}"))
+            self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model))
         return self.session.active_turn_id
 
     def _on_stream_event(self, event: wire.StreamEvent) -> None:

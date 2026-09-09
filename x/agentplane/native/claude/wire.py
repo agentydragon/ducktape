@@ -331,6 +331,17 @@ class InterruptRequest(BaseModel):
     request: InterruptBody
 
 
+class SetModelBody(BaseModel):
+    subtype: Literal["set_model"] = "set_model"
+    model: str
+
+
+class SetModelRequest(BaseModel):
+    type: Literal["control_request"] = "control_request"
+    request_id: str = Field(default_factory=lambda: f"capture-{uuid4().hex}")
+    request: SetModelBody
+
+
 class UserInput(BaseModel):
     type: Literal["user"] = "user"
     message: UserMessage
@@ -343,4 +354,4 @@ class ControlResponse(BaseModel):
     response: ControlResponseBody
 
 
-Outbound = InitializeRequest | InterruptRequest | UserInput | ControlResponse
+Outbound = InitializeRequest | InterruptRequest | SetModelRequest | UserInput | ControlResponse
