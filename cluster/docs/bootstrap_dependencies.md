@@ -224,15 +224,6 @@ secret (consumed by the Flux `github` Receiver) and the GitHub repository webhoo
 `ducktape`. It reads `github-secrets-sync-pat` (provided by `github-secrets-sync-secrets`).
 The `flux-webhook` Kustomization depends on `flux-webhook-token`.
 
-### ollama-bearer-token
-
-The `ollama-bearer-token` Terraform runs in `ollama` with a local `tf-runner`
-ServiceAccount and a namespace-scoped binding to the controller's runner role.
-`tofu-state/db/credentials.sops.yaml` reflects the existing PG password into
-`ollama`; the backend remains the `ollama_bearer_token` schema in `tfstate`.
-Cross-namespace source references must be enabled on tofu-controller to consume
-`flux-system/flux-system`.
-
 ### forgejo-agentydragon
 
 The `forgejo-agentydragon` tofu-controller module attaches the public halves of
