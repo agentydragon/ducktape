@@ -31,9 +31,10 @@ Alloy every 60 seconds and remote-written to Mimir, whose block retention is
 The useful facts from the first live check are that both
 `powersupplyclass` and thermal/cpufreq collectors work, while the enabled
 `rapl` collector returns `node_scrape_collector_success{collector="rapl"} 0`.
-The exporter is mounted on the real host `/sys`, so this must be treated as a
-host kernel/firmware/powercap availability problem, not fixed by adding a
-second exporter container. It currently provides no package-energy series.
+Rugged does expose enabled Intel RAPL package and PSYS powercap domains, but
+their `energy_uj` files are `0400 root:root`; node-exporter runs as UID/GID
+65534 and cannot read them. This is a least-privilege access problem, not a
+missing kernel feature or a reason to run node-exporter as root.
 
 `powertop` is installed on Rugged and remains valuable for interactive,
 time-bounded wakeup diagnosis. It is not the continuous collector: a PowerTOP
@@ -47,36 +48,21 @@ battery trade-off, not a metric or configuration bug.
 
 ## Design
 
-### 1. Establish hardware truth and repair RAPL only when possible
+### 1. Repair RAPL with a dedicated reader group
 
-Before adding metrics, use the approved read-only Rugged execution path to
-capture the following in a short evidence note under `debug/rugged/`:
+Keep the existing collector and node-exporter non-root. A Rugged-only Nix
+module owns a dedicated numeric `node-exporter-rapl` group and reapplies
+`root:group`, mode `0440`, to only
+`/sys/class/powercap/intel-rapl*:*/energy_uj` after boot and RAPL powercap
+device add/rebind. The monitoring HelmRelease gives node-exporter that same
+supplementary process group while retaining UID 65534, `runAsNonRoot`, a
+read-only root filesystem, and no added capabilities.
 
-1. `/sys/class/powercap`, `/sys/devices/virtual/powercap`, loaded
-   `intel_rapl*` modules, and kernel messages referring to RAPL/powercap.
-2. `turbostat --debug` (or the least invasive read-only mode supplied by the
-   pinned Nix package) while on AC and while discharging, recording whether
-   package watts, energy counters, and C-state residency are actually exposed.
-3. Intel Lunar Lake kernel/firmware support status for this exact host. Do not
-   infer support from another Intel generation.
-
-Decision:
-
-- If the kernel exposes powercap energy counters, repair the smallest missing
-  prerequisite (normally a module/kernel configuration) and prove it by
-  `node_rapl_*` samples in Mimir. Keep the existing node-exporter collector;
-  it is the correct reusable path.
-- If powercap is absent or the platform does not expose RAPL, keep the exporter
-  health metric as an explicit known-unavailable signal. Do not synthesize
-  watts from battery percentage, and do not retain a failing collector merely
-  as though it were power data. Use battery-energy slope as the system-level
-  discharge measure instead; document its limitations while charging and near
-  charge thresholds.
-
-This investigation must also establish which of `energy_now`/`power_now`
-versus charge/current attributes the Dell battery driver exposes. Prefer the
-native energy/power fields if available; otherwise calculate neither watts nor
-remaining energy in the exporter.
+Prove the repair with `node_scrape_collector_success{collector="rapl"} == 1`
+and increasing `node_rapl_*_joules_total` counters in Mimir. Do not synthesize
+watts from battery percentage. A later hardware check should still establish
+whether the Dell driver exposes native `energy_now`/`power_now` rather than
+charge/current attributes for battery-level calculations.
 
 ### 2. Reuse node-exporter for static host state
 
@@ -214,9 +200,8 @@ normal battery-only baseline across several charge cycles.
 
 ## Delivery slices
 
-1. **Evidence and RAPL decision PR:** capture the sysfs/turbostat evidence;
-   fix node-exporter RAPL only if a real host prerequisite exists. Include an
-   explicit unavailable outcome if not.
+1. **RAPL access PR:** declare the dedicated RAPL reader group on Rugged and
+   node-exporter, then prove the native energy counters reach Mimir.
 2. **Static power-state PR:** textfile mount plus the Rugged-only hardened Nix
    sampler, unit tests for parser/output, and Mimir proof of the new series.
 3. **Software attribution PR:** shared bounded process-exporter deployment enabled

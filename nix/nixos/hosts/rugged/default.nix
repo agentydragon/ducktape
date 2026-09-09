@@ -42,6 +42,7 @@ in
     ./local_llm_npu.nix
     ./gpu-debug.nix
     ./iio-debug.nix
+    ../../modules/rapl-metrics.nix
     ../../modules/attic-substituter.nix
   ];
 
@@ -117,6 +118,10 @@ in
   # investigation. Leaving it enabled during normal use flooded journald and
   # caused periodic desktop stalls. See debug/rugged/stalls/report.md.
   ducktape.iioDebug.enable = false;
+
+  # The Intel RAPL counters exist but are root-only on this Lunar Lake host.
+  # Keep node-exporter non-root and grant it only read access to energy_uj.
+  ducktape.raplMetrics.enable = true;
 
   # Prefer compressed RAM over the disk swapfile for interactive use. The
   # existing disk swap remains available as a lower-priority fallback.
