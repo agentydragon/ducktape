@@ -265,7 +265,15 @@ async def review(
             )
         )
         yield Review(
-            browser, service, calls, second_browser, login_as, target_issuer, exchanged_subjects, enrollments, connections
+            browser,
+            service,
+            calls,
+            second_browser,
+            login_as,
+            target_issuer,
+            exchanged_subjects,
+            enrollments,
+            connections,
         )
 
 
