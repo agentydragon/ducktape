@@ -35,6 +35,7 @@ use crate::{
 };
 
 mod accounts;
+pub mod allocation;
 mod cashflows;
 mod errors;
 mod obligations;
@@ -193,7 +194,7 @@ fn simulate_with_capture(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.input, rollout_id, capture_mode, None, None)
+            simulate_rollout(fixture.input, rollout_id, capture_mode, None, None, None)
                 .map(RolloutComputation::into_output)
         })
         .collect();
@@ -218,8 +219,15 @@ pub fn simulate_summaries_validated(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.input, rollout_id, CaptureMode::Summary, None, None)
-                .map(RolloutComputation::into_summary)
+            simulate_rollout(
+                fixture.input,
+                rollout_id,
+                CaptureMode::Summary,
+                None,
+                None,
+                None,
+            )
+            .map(RolloutComputation::into_summary)
         })
         .collect();
     Ok(PopulationOutput {
@@ -254,6 +262,7 @@ pub fn simulate_product_metrics_validated(
                 CaptureMode::Summary,
                 Some(&inputs),
                 None,
+                None,
             )
             .map(|computation| (computation.product_metrics, computation.failed_month))
         })
@@ -270,6 +279,7 @@ fn simulate_rollout(
     capture_mode: CaptureMode,
     product: Option<&ProductInputs>,
     mut spending: Option<&mut spending::Policy<'_>>,
+    mut allocation: Option<&mut allocation::Policy<'_>>,
 ) -> Result<RolloutComputation, SimulationError> {
     let mut accounts: Vec<AccountRef> = fixture
         .scenario
@@ -526,6 +536,9 @@ fn simulate_rollout(
             }
             continue;
         }
+        if let Some(policy) = allocation.as_deref_mut() {
+            policy.review(fixture, rollout_id, month, &ledger, &lots)?;
+        }
         // Decide from opening-of-month holdings and current prices, before this month's
         // cashflows. The resulting demand is funded with the other monthly obligations.
         let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
@@ -692,6 +705,7 @@ fn simulate_rollout(
             &mut tlh_cumulative_harvest,
             month,
             &active_obligations,
+            allocation.as_deref(),
         )?;
         let settlement = settle_obligations(
             fixture,

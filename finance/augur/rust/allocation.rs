@@ -264,10 +264,21 @@ pub fn quantity_for_value(
 }
 
 fn validate(values: &[i64], weights: &[i64]) -> Result<(), AllocationError> {
-    if values.is_empty() || values.len() != weights.len() {
+    validate_weights(weights, values.len())?;
+    if values.iter().any(|value| *value < 0) {
+        return Err(AllocationError::InvalidWeight);
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_weights(
+    weights: &[i64],
+    sleeve_count: usize,
+) -> Result<(), AllocationError> {
+    if weights.is_empty() || weights.len() != sleeve_count {
         return Err(AllocationError::Shape);
     }
-    if values.iter().any(|value| *value < 0) || weights.iter().any(|weight| *weight <= 0) {
+    if weights.iter().any(|weight| *weight <= 0) {
         return Err(AllocationError::InvalidWeight);
     }
     Ok(())

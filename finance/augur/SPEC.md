@@ -46,6 +46,21 @@ reports identify the policy budget component and separate its requested and paid
 amounts from sales, taxes and other consumption such as committed rent. Live zero
 requests are observed zeros; months after a stopped path are unobserved, not zeros.
 
+Native experiments can separately choose monthly allocation targets through a
+rollout-local function for one declared cash-account component. It observes
+opening funding-account cash and sleeve values at current prices, before this
+month's cashflows. Account bindings, sleeve identities, cash band, purchase
+permission and rebalance rule remain fixed. Canonical funding, lot, tax and
+settlement mechanics execute the target; a function cannot mutate books.
+Selected input rows retain their identities and receive fresh decision state,
+including individual replay. Failed paths receive no further decisions.
+
+Current allocation arithmetic accepts positive relative weights, excluding
+zero-target/full-exit strategies. Cash-band activity suppresses simultaneous
+quiet-band drift rebalancing; changing targets does not guarantee immediate
+realization. This convention is explicit policy behavior, not a correctness
+requirement on future rebalancing strategies.
+
 Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire
 shapes.

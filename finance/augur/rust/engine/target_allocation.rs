@@ -2,6 +2,7 @@
 //! purchases that run after they do, and quiet-band drift rebalancing.
 
 use super::*;
+use crate::execution::TargetAllocationPolicySpec;
 
 #[derive(Clone, Debug)]
 pub(super) struct PendingAllocationBuy {
@@ -22,6 +23,7 @@ pub(super) fn execute_target_allocation_sales(
     tlh_cumulative_harvest: &mut [Money],
     month: u32,
     obligations: &[ActiveObligation],
+    decision: Option<&allocation::Policy<'_>>,
 ) -> Result<Vec<PendingAllocationBuy>, SimulationError> {
     let mut pending_buys = Vec::new();
     for (policy_index, policy) in fixture
@@ -52,70 +54,27 @@ pub(super) fn execute_target_allocation_sales(
             Money(0)
         };
 
-        let source_accounts: Vec<&str> = if policy.source_account_ids.is_empty() {
-            vec![policy.account_id.as_str()]
-        } else {
-            policy
-                .source_account_ids
-                .iter()
-                .map(String::as_str)
-                .collect()
-        };
-        let mut values = Vec::with_capacity(policy.sleeves.len());
-        let mut prices = Vec::with_capacity(policy.sleeves.len());
-        let mut scales = Vec::with_capacity(policy.sleeves.len());
-        let mut available_units = Vec::with_capacity(policy.sleeves.len());
-        for sleeve in &policy.sleeves {
-            let series_id = format!("security:{}", sleeve.asset_id);
-            let price = fixture
-                .series
-                .iter()
-                .find(|series| series.series_id == series_id)
-                .and_then(|series| series.value(rollout_id, month))
-                .unwrap_or(0);
-            let sleeve_lots: Vec<_> = lots
-                .iter()
-                .filter(|lot| {
-                    lot.spec.agent_id == policy.agent_id
-                        && lot.spec.asset_id == sleeve.asset_id
-                        && source_accounts.contains(&lot.spec.account_id.as_str())
-                })
-                .collect();
-            let scale = sleeve_lots.first().map_or(1, |lot| lot.spec.quantity_scale);
-            let units = sleeve_lots.iter().try_fold(0_i64, |sum, lot| {
-                sum.checked_add(lot.units_remaining.0)
-                    .ok_or(ArithmeticError::Overflow {
-                        operation: "target-allocation sleeve quantity",
-                    })
-            })?;
-            let value = if price > 0 {
-                sleeve_lots.iter().try_fold(0_i64, |sum, lot| {
-                    let lot_value = PerUnit(price)
-                        .times(
-                            Units::new(lot.units_remaining, lot.spec.quantity_scale),
-                            "target-allocation sleeve value",
-                        )?
-                        .0;
-                    sum.checked_add(lot_value)
-                        .ok_or(ArithmeticError::Overflow {
-                            operation: "target-allocation sleeve value total",
-                        })
-                        .map_err(SimulationError::from)
-                })?
-            } else {
-                0
-            };
-            prices.push(price);
-            scales.push(scale);
-            available_units.push(units);
-            values.push(value);
-        }
-        let weights: Vec<_> = policy.sleeves.iter().map(|sleeve| sleeve.weight).collect();
-        let sleeve_withdrawals = withdrawal_by_sleeve(&values, &weights, raise.0)?;
-        let sleeve_deposits = deposit_by_sleeve(&values, &weights, invest.0)?;
+        let source_accounts = source_accounts(policy);
+        let holdings = sleeve_holdings(fixture, rollout_id, month, lots, policy)?;
+        let values: Vec<_> = holdings.iter().map(|holding| holding.value).collect();
+        let prices: Vec<_> = holdings.iter().map(|holding| holding.price).collect();
+        let scales: Vec<_> = holdings
+            .iter()
+            .map(|holding| holding.quantity_scale)
+            .collect();
+        let available_units: Vec<_> = holdings.iter().map(|holding| holding.units).collect();
+        let configured_weights: Vec<_> =
+            policy.sleeves.iter().map(|sleeve| sleeve.weight).collect();
+        let weights = decision
+            .filter(|decision| decision.policy_index == policy_index)
+            .map_or(configured_weights.as_slice(), |decision| {
+                decision.weights.as_slice()
+            });
+        let sleeve_withdrawals = withdrawal_by_sleeve(&values, weights, raise.0)?;
+        let sleeve_deposits = deposit_by_sleeve(&values, weights, invest.0)?;
         let (rebalance_sales, rebalance_buys) = if raise == Money(0) && invest == Money(0) {
             if let Some(tolerance) = policy.rebalance_tolerance_ppb {
-                rebalance_by_sleeve(&values, &weights, tolerance)?
+                rebalance_by_sleeve(&values, weights, tolerance)?
             } else {
                 (vec![0; values.len()], vec![0; values.len()])
             }
@@ -416,4 +375,73 @@ pub(super) fn execute_target_allocation_pool_sale(
         })?;
     }
     Ok(())
+}
+
+fn source_accounts(policy: &TargetAllocationPolicySpec) -> Vec<&str> {
+    if policy.source_account_ids.is_empty() {
+        vec![policy.account_id.as_str()]
+    } else {
+        policy
+            .source_account_ids
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+}
+
+pub(super) struct SleeveHolding {
+    pub(super) value: i64,
+    price: i64,
+    quantity_scale: i64,
+    units: i64,
+}
+
+/// Value the declared source pools with the same per-lot rounding used by execution.
+pub(super) fn sleeve_holdings(
+    input: &ExecutionInput,
+    rollout: u32,
+    month: u32,
+    lots: &[LotState],
+    policy: &TargetAllocationPolicySpec,
+) -> Result<Vec<SleeveHolding>, SimulationError> {
+    let sources = source_accounts(policy);
+    policy
+        .sleeves
+        .iter()
+        .map(|sleeve| {
+            let price = series_value(
+                input,
+                &format!("security:{}", sleeve.asset_id),
+                rollout,
+                month,
+            )?;
+            let sleeve_lots: Vec<_> = lots
+                .iter()
+                .filter(|lot| {
+                    lot.spec.agent_id == policy.agent_id
+                        && lot.spec.asset_id == sleeve.asset_id
+                        && sources.contains(&lot.spec.account_id.as_str())
+                })
+                .collect();
+            let quantity_scale = sleeve_lots.first().map_or(1, |lot| lot.spec.quantity_scale);
+            let units = sleeve_lots.iter().try_fold(0_i64, |sum, lot| {
+                sum.checked_add(lot.units_remaining.0)
+                    .ok_or(ArithmeticError::Overflow {
+                        operation: "target-allocation sleeve quantity",
+                    })
+            })?;
+            let value = sleeve_lots.iter().try_fold(Money(0), |sum, lot| {
+                sum.checked_add(PerUnit(price).times(
+                    Units::new(lot.units_remaining, lot.spec.quantity_scale),
+                    "target-allocation sleeve value",
+                )?)
+            })?;
+            Ok(SleeveHolding {
+                value: value.0,
+                price,
+                quantity_scale,
+                units,
+            })
+        })
+        .collect()
 }

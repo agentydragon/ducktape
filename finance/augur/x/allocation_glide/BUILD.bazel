@@ -1,0 +1,45 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "runner",
+    srcs = ["policy.rs"],
+    edition = "2024",
+    deps = [
+        "//finance/augur/rust:simulator",
+        "@crates//:serde_json",
+    ],
+)
+
+py_binary(
+    name = "compare_bin",
+    main_module = "finance.augur.x.allocation_glide.compare",
+    deps = [":compare"],
+)
+
+py_library(
+    name = "compare",
+    srcs = ["compare.py"],
+    data = [":runner"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_compare",
+    srcs = ["test_compare.py"],
+    deps = [
+        ":compare",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)

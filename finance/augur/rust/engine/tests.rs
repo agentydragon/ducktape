@@ -495,6 +495,348 @@ fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, spending::Spen
     (input, spending)
 }
 
+/// $100 cash and two $500 sleeves, each with $250 basis, priced at $10/share.
+fn allocation_fixture(horizon_months: u32) -> ExecutionInput {
+    let (mut input, _) = policy_timing_fixture(horizon_months);
+    input.scenario.initial_lots[0].units = Quantity(50_000_000);
+    input.scenario.initial_lots[0].basis = Money(25_000);
+    let mut second = input.scenario.initial_lots[0].clone();
+    second.lot_id = "test-second-lot".into();
+    second.asset_id = "second".into();
+    input.scenario.initial_lots.push(second);
+    input.series.push(SeriesSpec {
+        series_id: "security:second".into(),
+        snapshots: horizon_months + 1,
+        values: vec![1_000; horizon_months as usize + 1],
+    });
+    input.scenario.target_allocation_policies[0]
+        .sleeves
+        .push(SleeveTargetSpec {
+            asset_id: "second".into(),
+            weight: 1,
+            quantity_scale: 1_000_000,
+        });
+    input
+}
+
+fn allocation_tax_and_consumption_fixture() -> ExecutionInput {
+    let mut input = allocation_fixture(13);
+    input
+        .scenario
+        .scheduled_transfers
+        .push(ScheduledTransferSpec {
+            month: 12,
+            cause_id: "test-contribution".into(),
+            from: AccountRef::new("world", "checking"),
+            to: AccountRef::new("alice", "checking"),
+            amount: Money(10_000).into(),
+            income_category: None,
+            deduction_category: None,
+        });
+    for (month, amount) in [(0, 50_000), (12, 5_000)] {
+        input.scenario.obligations.push(ObligationSpec {
+            month,
+            obligation_id: "test-consumption".into(),
+            obligation_type: "cash_spend".into(),
+            from: AccountRef::new("alice", "checking"),
+            to: AccountRef::new("world", "checking"),
+            amount_due: Money(amount).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+    }
+    input.scenario.tax_profiles.push(TaxProfileSpec {
+        agent_id: "alice".into(),
+        tax_authority_agent_id: "world".into(),
+        payment_account_id: "checking".into(),
+        tax_authority_account_id: "checking".into(),
+        prior_year_tax: Money(0),
+        section_121_exclusion: Money(0),
+        jurisdictions: vec![TaxRules {
+            jurisdiction_id: "test-allocation".into(),
+            exempt_interest_from_levels: vec![],
+            exempts_own_issue: false,
+            ordinary_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 200_000_000,
+            }],
+            long_term_capital_gain_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 100_000_000,
+            }],
+            standard_deduction: Money(0),
+            max_capital_loss_ordinary_offset: Money(0),
+            section_1250_rate_ppb: 0,
+        }],
+    });
+    input
+}
+
+#[test]
+fn constant_allocation_function_has_static_receipt_lot_and_tax_parity() {
+    for purchases in [false, true] {
+        let mut input = allocation_tax_and_consumption_fixture();
+        input.scenario.target_allocation_policies[0].allow_purchases = purchases;
+        let before = input.clone();
+        let output =
+            allocation::simulate(&input, &AccountRef::new("alice", "checking"), &[0], |_| {
+                |observation| {
+                    assert_eq!(
+                        observation.cash,
+                        Money(if observation.month == 0 { 10_000 } else { 0 })
+                    );
+                    assert_eq!(
+                        observation.sleeve_values,
+                        vec![
+                            Money(if observation.month == 0 {
+                                50_000
+                            } else {
+                                30_000
+                            });
+                            2
+                        ]
+                    );
+                    Ok(vec![1, 1])
+                }
+            })
+            .unwrap();
+        assert_eq!(input, before);
+        assert_eq!(output, simulate(&input).unwrap());
+        assert_eq!(output.rollouts[0].tax_payments[0].amount_paid, Money(2_000));
+        assert_eq!(
+            output.rollouts[0]
+                .obligations
+                .iter()
+                .filter(|row| row.obligation_type == "cash_spend")
+                .map(|row| row.amount_paid.0)
+                .sum::<i64>(),
+            55_000
+        );
+    }
+}
+
+#[test]
+fn allocation_review_changes_a_quiet_band_target_not_prior_months() {
+    let mut input = allocation_fixture(3);
+    let policy = &mut input.scenario.target_allocation_policies[0];
+    policy.allow_purchases = true;
+    policy.cash_ceiling = Money(10_000).into();
+    policy.rebalance_tolerance_ppb = Some(0);
+    let output = allocation::simulate(&input, &AccountRef::new("alice", "checking"), &[0], |_| {
+        |observation| {
+            Ok(if observation.month < 2 {
+                vec![1, 1]
+            } else {
+                vec![3, 2]
+            })
+        }
+    })
+    .unwrap();
+    let rollout = &output.rollouts[0];
+    assert_eq!(rollout.dispositions.len(), 1);
+    assert_eq!(rollout.dispositions[0].month, 2);
+    assert_eq!(rollout.dispositions[0].asset_id, "security:second");
+    assert_eq!(rollout.dispositions[0].proceeds, Money(10_000));
+    let final_lots = &rollout.months.last().unwrap().lots;
+    for (asset, units) in [
+        ("security:stock", 60_000_000),
+        ("security:second", 40_000_000),
+    ] {
+        assert_eq!(
+            final_lots
+                .iter()
+                .filter(|lot| lot.asset_id == asset)
+                .map(|lot| lot.units_remaining.0)
+                .sum::<i64>(),
+            units
+        );
+    }
+    assert!(
+        rollout.months[..=2]
+            .iter()
+            .all(|month| month.lots.len() == 2)
+    );
+}
+
+#[test]
+fn allocation_funding_and_tax_month_invests_only_surplus_toward_new_target() {
+    let mut input = allocation_tax_and_consumption_fixture();
+    input.scenario.target_allocation_policies[0].allow_purchases = true;
+    input.scenario.target_allocation_policies[0].rebalance_tolerance_ppb = Some(0);
+    let rollout = allocation::simulate(&input, &AccountRef::new("alice", "checking"), &[0], |_| {
+        |observation| {
+            if observation.month == 12 {
+                assert_eq!(observation.cash, Money(0)); // The contribution arrives after review.
+                assert_eq!(observation.sleeve_values, vec![Money(30_000); 2]);
+            }
+            Ok(if observation.month < 12 {
+                vec![1, 1]
+            } else {
+                vec![3, 2]
+            })
+        }
+    })
+    .unwrap()
+    .rollouts
+    .remove(0);
+    assert_eq!(rollout.failed_month, None);
+    assert!(rollout.dispositions.iter().all(|row| row.month == 0));
+    assert_eq!(rollout.tax_payments[0].amount_paid, Money(2_000));
+    let consumption = rollout
+        .obligations
+        .iter()
+        .find(|row| row.month == 12 && row.obligation_type == "cash_spend")
+        .unwrap();
+    assert_eq!(consumption.amount_paid, Money(5_000));
+    let lots = &rollout.months.last().unwrap().lots;
+    let purchased: Vec<_> = lots.iter().filter(|lot| lot.purchase_month == 12).collect();
+    assert_eq!(purchased.len(), 1);
+    assert_eq!(purchased[0].asset_id, "security:stock");
+    assert_eq!(purchased[0].basis_remaining, Money(3_000));
+    // Cash-band investment suppresses a simultaneous full drift rebalance: $330/$300,
+    // not the $378/$252 that an immediate 60/40 rebalance would produce.
+    assert_eq!(
+        lots.iter()
+            .filter(|lot| lot.asset_id == "security:stock")
+            .map(|lot| lot.units_remaining.0)
+            .sum::<i64>(),
+        33_000_000
+    );
+    assert_eq!(
+        lots.iter()
+            .filter(|lot| lot.asset_id == "security:second")
+            .map(|lot| lot.units_remaining.0)
+            .sum::<i64>(),
+        30_000_000
+    );
+}
+
+#[test]
+fn allocation_functions_are_isolated_under_selection_reordering_and_replay() {
+    let mut input = allocation_fixture(4);
+    input.rollout_count = 3;
+    for series in &mut input.series {
+        series.values = series.values.repeat(3);
+    }
+    input.series[1].values = [vec![1_000; 5], vec![2_000; 5], vec![500; 5]].concat();
+    input.scenario.accounts.push(AccountSpec {
+        account: AccountRef::new("alice", "outside-pool"),
+        opening_balance: Money(1_000_000),
+    });
+    let mut outside = input.scenario.initial_lots[0].clone();
+    outside.lot_id = "test-outside-pool".into();
+    outside.account_id = "outside-pool".into();
+    input.scenario.initial_lots.push(outside);
+    input.scenario.target_allocation_policies[0].allow_purchases = true;
+    input.scenario.target_allocation_policies[0].rebalance_tolerance_ppb = Some(0);
+    let make_policy = |rollout_id: u32| {
+        let mut calls = 0;
+        move |observation: allocation::Observation| {
+            assert_eq!(observation.month, calls);
+            if calls == 0 {
+                assert_eq!(observation.cash, Money(10_000));
+                assert_eq!(
+                    observation.sleeve_values[0],
+                    Money([50_000, 100_000, 25_000][rollout_id as usize])
+                );
+            }
+            calls += 1;
+            Ok(vec![i64::from(calls), 2])
+        }
+    };
+    let account = AccountRef::new("alice", "checking");
+    let population = allocation::simulate(&input, &account, &[0, 1, 2], make_policy).unwrap();
+    for ids in [&[2, 0][..], &[1][..], &[2][..]] {
+        let selected = allocation::simulate(&input, &account, ids, make_policy).unwrap();
+        for (&id, rollout) in ids.iter().zip(&selected.rollouts) {
+            assert_eq!(rollout, &population.rollouts[id as usize]);
+        }
+    }
+}
+
+#[test]
+fn allocation_functions_stop_after_failure_and_reject_invalid_decisions() {
+    let mut input = allocation_fixture(4);
+    input
+        .scenario
+        .recurring_obligations
+        .push(RecurringObligationSpec {
+            start_month: 0,
+            end_month: None,
+            obligation_id: "test-consumption".into(),
+            obligation_type: "cash_spend".into(),
+            from: AccountRef::new("alice", "checking"),
+            to: AccountRef::new("world", "checking"),
+            amount_due: Money(50_000).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+    let account = AccountRef::new("alice", "checking");
+    let output = allocation::simulate(&input, &account, &[0], |_| {
+        |observation| {
+            assert!(observation.month <= 2);
+            Ok(vec![1, 1])
+        }
+    })
+    .unwrap();
+    assert_eq!(output.rollouts[0].failed_month, Some(2));
+    for weights in [vec![], vec![1], vec![1, 0], vec![-1, 2]] {
+        assert!(matches!(
+            allocation::simulate(&input, &account, &[0], |_| |_| Ok(weights.clone())),
+            Err(SimulationError::Allocation(_))
+        ));
+    }
+    for ids in [&[][..], &[1][..], &[0, 0][..]] {
+        assert!(matches!(
+            allocation::simulate(
+                &input,
+                &account,
+                ids,
+                |_| -> fn(allocation::Observation) -> Result<Vec<i64>, SimulationError> {
+                    panic!("invalid selection")
+                }
+            ),
+            Err(SimulationError::InvalidRolloutSelection)
+        ));
+    }
+    assert!(matches!(
+        allocation::simulate(
+            &input,
+            &AccountRef::new("world", "checking"),
+            &[0],
+            |_| -> fn(allocation::Observation) -> Result<Vec<i64>, SimulationError> {
+                panic!("unbound account")
+            }
+        ),
+        Err(SimulationError::MissingTargetAllocationPolicy { .. })
+    ));
+}
+
+#[test]
+fn allocation_missing_prices_are_not_zero_valued_holdings() {
+    let mut input = allocation_fixture(1);
+    input
+        .series
+        .retain(|series| series.series_id != "security:second");
+    assert!(matches!(
+        simulate(&input),
+        Err(SimulationError::MissingSeries { .. })
+    ));
+    assert!(matches!(
+        allocation::simulate(
+            &input,
+            &AccountRef::new("alice", "checking"),
+            &[0],
+            |_| -> fn(allocation::Observation) -> Result<Vec<i64>, SimulationError> {
+                panic!("missing price")
+            }
+        ),
+        Err(SimulationError::MissingSeries { .. })
+    ));
+}
+
 #[test]
 fn policy_timing_guardrail_and_unpaid_consumption() {
     let (mut input, spending) = policy_timing_fixture(1);

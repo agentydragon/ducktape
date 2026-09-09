@@ -14,6 +14,7 @@ rust_library(
         "allocation.rs",
         "engine.rs",
         "engine/accounts.rs",
+        "engine/allocation.rs",
         "engine/cashflows.rs",
         "engine/errors.rs",
         "engine/obligations.rs",

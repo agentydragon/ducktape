@@ -52,6 +52,21 @@ part of the policy component. `engine::spending::trace_rollout(...)` replays one
 original path with fresh policy state and its original factory/series identity.
 These entry points are native-only; Python/batched callbacks are not exposed here.
 
+`engine::allocation::simulate(input, cash_account, rollout_ids, make_policy)`
+selects one existing account-bound allocation component. Each factory returns
+an ordinary function of opening month, funding-account cash and sleeve values;
+its result supplies relative weights in the declared sleeve order. Explicit
+row selection preserves caller order and original IDs for population/subset or
+individual forensic replay, with fresh policy state. No execution input is
+cloned or mutated to change a target. See <../x/allocation_glide/README.md> for
+the constant-versus-glide call site and funded-consumption/holdings example.
+
+This entrypoint does not yet compose callable spending with allocation or expose
+compact allocation capture. Weights must currently be positive; zero-target
+arithmetic and full exits remain unsupported. Missing sleeve prices reject, not
+zero-fill. A new target still follows the configured cash-band and quiet-band
+drift conventions below, rather than forcing an immediate full rebalance.
+
 ## Covered behavior
 
 The acceptance suites in `sim/testing/` assert exact integer answers for:
@@ -90,7 +105,7 @@ The acceptance suites in `sim/testing/` assert exact integer answers for:
   share of every payment from the payer's ordinary income;
 - target-allocation cash-band raises before obligation funding, including
   projected end-of-month demand, exact integer water-filling, source-account
-  order, FIFO lot dispositions, immutable sleeve weights, realized gains,
+  order, FIFO lot dispositions, declared sleeve identities, realized gains,
   attempted-funding attribution, and canonical obligation-failure metadata;
 - private-equity protocol execution after settlement, including typed issuer
   marks/regimes/events, tender capacity and eligibility, liquidity blocks,

@@ -62,7 +62,8 @@ from the same $100 cash and $1,000 stock, with $500 basis. No rent. The syntheti
 tax profile charges long-term gains at 10%, ordinary income at 20%, no deduction,
 and no prior-year tax target. Compare investing surplus versus leaving it in cash
 using today's `allow_purchases` choice. It is **not** a within-path target-allocation
-callback, which POL has yet to supply.
+callback. Native allocation's separate tax-and-consumption case exercises a
+changed target with the same demand-reservation semantics.
 
 | Event month | Observation/decision                                              | Execution                                                                                                                                       |
 | ----------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -88,13 +89,12 @@ Run the two cases without network evidence downloads:
 bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
 ```
 
-## GP decisions to settle before POL
+## Remaining joint-decision choices
 
-- **Observation time/content.** Keep the existing opening-of-month view for
-  native spending parity. The allocation decision needs its declared decision
-  point, current holdings/cash, and due commitments/taxes; do not pass the sampled
-  future. Known contract schedules are not future market observations. Decide
-  whether same-month distributions/transfers are visible before a joint review.
+- **Observation time/content.** For a joint budget/allocation review, decide which
+  known contract schedules and tax facts to expose alongside current holdings.
+  Known schedules are not future market observations. Current separate native
+  callbacks review at opening, before same-month distributions/transfers.
 - **Proposal versus execution.** A budget and an allocation target/order are
   requests. Shared mechanics determine funded consumption, realized lots/gains,
   tax facts and accepted actions. If a policy needs a funding/tax preview, it must
@@ -108,7 +108,6 @@ bbr test //finance/augur/rust:simulator_test --test_arg=policy_timing_
   cuts/anchor transitions separately from payment receipts so equal-cost anchors
   remain distinguishable; do not serialize arbitrary closure internals.
 
-Proposed first POL slice: reproduce today's static allocation on a callable seam,
-then add a constant-versus-glide-path consumer with those timing/state choices
-explicit. The two cases above constrain parity but do not prescribe all future
-study conventions. GP remains open until the choices are accepted.
+The initial separate callable boundaries do not settle these joint-policy and
+recovery choices. They also do not provide zero-target/full-exit arithmetic,
+compact allocation capture or explicit decision-transition receipts.

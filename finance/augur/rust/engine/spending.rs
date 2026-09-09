@@ -64,6 +64,7 @@ where
                 CaptureMode::Forensic,
                 None,
                 Some(&mut policy),
+                None,
             )
             .map(RolloutComputation::into_output)
         })
@@ -118,6 +119,7 @@ where
                 CaptureMode::Summary,
                 Some(&inputs),
                 Some(&mut policy),
+                None,
             )
             .map(|computation| {
                 (
@@ -180,6 +182,7 @@ where
         CaptureMode::Forensic,
         None,
         Some(&mut policy),
+        None,
     )
     .map(RolloutComputation::into_output)
 }

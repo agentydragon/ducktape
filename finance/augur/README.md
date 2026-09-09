@@ -16,7 +16,9 @@ See <SPEC.md> for the entity taxonomy + per-rollout evaluation loop.
 
 Runnable composition examples: <x/bounded_spending/README.md> for executable
 spending rules, and <x/bond_policies/README.md> for dated-bond policies on shared
-discount curves with tax-free household withdrawals.
+discount curves with tax-free household withdrawals. <x/allocation_glide/README.md>
+compares executable constant/glide allocation targets with actual funded consumption
+and holdings on stipulated paths.
 
 ## Planning boundary
 
