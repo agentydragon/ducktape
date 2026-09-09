@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: public-coder-devbox-ssh-host-key
+    namespace: public-coder-agent
+    annotations:
+        description: The devbox's persistent sshd host key. KubeVirt attaches it as the `pchostkey` guest disk; the guest installs it at /etc/ssh/ before sshd starts. Public half is committed at ssh_keys/public-coder-devbox-host.pub and pins this upstream in sshpiper's Pipe, so rotating this key means updating that file and the Pipe's known_hosts_data together.
+type: Opaque
+stringData:
+    ssh_host_ed25519_key: ENC[AES256_GCM,data:dLjb6TwUU78R0xEiuc/Q2y6oUzKd21FSix+Gmr/DwZ+ElAHK2w4uLgs3G04bZfA6RK0EDQyWkiSDMBgRmaJ36/XQq0tFDRWzU7FFraJYXbfprsOrLXr+TxO02kcmWdjLVVG9qdu2cFysj1HplN2OyiNFpHo1McnZawPAxpbFyi6SIQ4GADhEKtPam9IxT5pPK7r2mYB9+vn3rubvP4i+dmtmzHeuzaldit+fSabUCPzu3UpG6qs2Bi2fUbaLbAeeyhPyvgdx8/4xECn0FmBRI6kaH3TL1iHb32f2e79ZlOmTFxnSMpNQfXoawO2HPpBpe/n9Vj1ItqCe4citOjuhWltVR8lURKsUtHv50Tv9N4rz8RzAfFqKrM/P9uU0ieMqQ7WaeuFAhwo0YYF36k721uqqJWZ8tNl8QS3wqmjkP/o5MWGfc8DI3E6DIDjPWUAYnG/I/iwVESvdIh73M75pF2TJiBYYiKAUrj/IiwdgC9ih2DnfrxOKxsI/0QUdEbY/toqiKrkhKyTkLL8ZpHr4u2gaLhnfpal0szq0jViC5uMMBubqTpmwYyNYKPAPi47g,iv:gphDiQFDDbin2OUL5GzN0P+g2jo/IOMRaMR4108/Ipw=,tag:k0eJi0ZJTFHYu59eczxk2g==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2RjhPcWltNnNsRUFBVnpG
+            TVRWL3Y0ZjVZcUJWdVR4NTVPeGxlTEtmbEYwClVsOXM5bVdQK1BYTGRXR3Fvek1P
+            K3FtQlhrQ1EvQkdnNlFSTGlpREdyVGsKLS0tIENCY09aWVhqRzJaaUtjVkN6UXlF
+            RzdpbFZqM3hSZGhhdk9pYVB0U0pyZHMKx8QI5lsHA0sidsBJJpsm0qtGDkABGLVv
+            QtibC4TXaY0TsUTfOTZ6qWsQmQg+0iGsrns6z23SvZIRh6/W0s4Q3A==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQbXFXbTVjY0phV1A0ay95
+            UDAzUTFLZStiaWFJZVpMZTdvZTUzQzJqQVQ4CmpIL21EKzIxUUJVWTY2RUZZWkx4
+            UGNDT0VGUGxwVGJLUlg3NzFrSjlOKzgKLS0tIFlvOTdST0lWS0FpSGlZdHU2bllk
+            VE16TGVSd2JrYjRRNDBDcDB2T0xJSTgKu1j7sCNYqpjradAnNl2msrVBfqd0UH06
+            I1GCTHTbvcw2ZUV8wuRVYy5lcybsl1JPINYN2q8lhbPBIYTcsc8eqw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-09T04:02:08Z"
+    mac: ENC[AES256_GCM,data:Thsvx1SjvnWrQstpITU/hkBtB3Wra8jT/P6hSygJ2xDeQaO4inHwaajURo7XWlAVGrsZUC5VsllXyjLdrRlT2LZHPs+lqAPZOBkWPWXreYBd/0ageOXygx2ZcRYbBwYBq/ldwmKyjh3oMfGpX5uAfVuOS1WLX2z2aIyKRBVLuz0=,iv:wUU2NwtrKpT3uCKwOOHAU8TUyjG9Bf9vHqsW7cb+KEY=,tag:E0XmuNN3nD93QvIdVEbqBQ==,type:str]
+    version: 3.13.3

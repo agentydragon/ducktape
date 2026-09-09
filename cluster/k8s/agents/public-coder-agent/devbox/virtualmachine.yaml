@@ -65,6 +65,10 @@ spec:
               serial: pcbuildbuddy
               disk:
                 bus: virtio
+            - name: ssh-host-key
+              serial: pchostkey
+              disk:
+                bus: virtio
           interfaces:
             - name: default
               masquerade: {}
@@ -98,3 +102,6 @@ spec:
             # Reflected from claude-sandbox/buildbuddy-api-key by the existing
             # shared-secret reflector policy.
             secretName: buildbuddy-api-key
+        - name: ssh-host-key
+          secret:
+            secretName: public-coder-devbox-ssh-host-key

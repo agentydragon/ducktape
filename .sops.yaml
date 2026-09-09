@@ -260,6 +260,17 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # The devbox's sshd host key, delivered the same way as the daemon token above: decrypted by
+  # kustomize-controller and attached as a guest disk, with no on-guest decryption identity. Its
+  # public half is committed at ssh_keys/public-coder-devbox-host.pub, which is what pins the
+  # upstream in sshpiper's Pipe.
+  - path_regex: cluster/k8s/agents/public-coder-agent/devbox/ssh-host-key\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # AIQuota's read-only bearer is also consumed by the local CLI/GNOME clients.
   # Keep the same token as the cluster Secret, but let the configured user
   # identities decrypt it without granting them access to other cluster secrets.

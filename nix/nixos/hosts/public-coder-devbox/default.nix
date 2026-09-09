@@ -52,6 +52,8 @@ let
     PIP_CERT = proxyCaBundle;
     NODE_EXTRA_CA_CERTS = proxyCaBundle;
   };
+  sshHostKeyDevice = "/dev/disk/by-id/virtio-pchostkey";
+  sshHostKeyFile = "/etc/ssh/ssh_host_ed25519_key";
 in
 {
   imports = [
@@ -65,12 +67,71 @@ in
   # Keep the qcow2 sparse; KubeVirt allocates blocks only as the guest writes them.
   virtualisation.diskSize = 30 * 1024;
 
-  # hostexecd needs no SSH host key at all -- it never establishes an SSH session, only outbound
-  # HTTPS -- and this VM's root disk is already ephemeral (containerDisk), so a *persisted* SSH
-  # host key would only buy back a stable known_hosts fingerprint across restarts that now happen
-  # on every image update. sshd is left to generate its own ephemeral host key each boot, same as
-  # any other fresh install.
+  # The host key is persisted rather than regenerated per boot because sshpiper
+  # (cluster/k8s/agents/public-coder-agent/sshpiper) is the party that verifies this upstream, and
+  # its Pipe pins the key in `known_hosts_data`. A key that changes on every image update would
+  # leave that pin permanently stale, and sshpiper's only alternative -- an empty known_hosts_data
+  # -- means no upstream verification at all. Delivered as a guest disk, same as the two secrets
+  # below.
   #
+  # Exactly one host key type, deliberately: sshpiper picks one of the types the upstream offers
+  # and fails with a bare `Permission denied (publickey)` if that type is missing from
+  # known_hosts_data (tg123/sshpiper#554). One type means one thing to pin and no ambiguity about
+  # which key was checked.
+  services.openssh.hostKeys = lib.mkForce [
+    {
+      path = sshHostKeyFile;
+      type = "ed25519";
+    }
+  ];
+
+  systemd.services.public-coder-devbox-ssh-host-key = {
+    description = "Install the public-coder-devbox sshd host key";
+    wantedBy = [ "multi-user.target" ];
+    # sshd-keygen generates any host key that is still missing; landing the real key first is what
+    # stops it from minting a throwaway one. Ordering against a unit that does not exist on this
+    # nixpkgs is a no-op, so naming both generations of the NixOS unit costs nothing.
+    before = [
+      "sshd.service"
+      "sshd-keygen.service"
+    ];
+    after = [ "local-fs.target" ];
+    path = [
+      pkgs.coreutils
+      pkgs.openssh
+      pkgs.util-linux
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      set -eu
+      src="/run/public-coder-devbox-ssh-host-key/source"
+      mkdir -p "$src"
+      mounted=0
+      for _ in $(seq 1 60); do
+        if mountpoint -q "$src"; then
+          mounted=1
+          break
+        fi
+        if mount -o ro "${sshHostKeyDevice}" "$src" 2>/dev/null; then
+          mounted=1
+          break
+        fi
+        sleep 1
+      done
+      if [ "$mounted" -ne 1 ]; then
+        echo "KubeVirt ssh-host-key disk did not appear at ${sshHostKeyDevice}" >&2
+        exit 1
+      fi
+      install -Dm0600 "$src/ssh_host_ed25519_key" "${sshHostKeyFile}"
+      ssh-keygen -y -f "${sshHostKeyFile}" > "${sshHostKeyFile}.pub"
+      chmod 0644 "${sshHostKeyFile}.pub"
+      umount "$src"
+    '';
+  };
+
   # hostexecd's own daemon token (cluster/k8s/haku/console/node-daemon-public-coder-devbox.sops.yaml)
   # needs no on-guest sops/age decryption either, unlike wyrm2/rugged/atlas: those are physical
   # machines with no Kubernetes relationship to the cluster, so decrypting that committed ciphertext
