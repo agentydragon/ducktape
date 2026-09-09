@@ -312,7 +312,15 @@ in
   systemd.services.nix-daemon = {
     requires = [ "public-coder-devbox-proxy-ca.service" ];
     after = [ "public-coder-devbox-proxy-ca.service" ];
-    environment = proxyNetworkEnvironment // proxyCaClientEnvironment;
+    environment =
+      proxyNetworkEnvironment
+      // proxyCaClientEnvironment
+      // {
+        # nixpkgs' own nix-daemon module already defines this one, to nss-cacert's bundle. Two
+        # definitions of a single environment key conflict rather than merge, so overriding the
+        # shared set's value here is what lets both modules coexist.
+        CURL_CA_BUNDLE = lib.mkForce proxyCaBundle;
+      };
   };
 
   # Materialize the reflected BuildBuddy Secret only at runtime. bbr needs the
