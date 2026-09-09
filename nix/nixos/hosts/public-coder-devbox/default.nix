@@ -159,6 +159,7 @@ in
     before = [ "network-online.target" ];
     path = [
       pkgs.coreutils
+      pkgs.gawk
       pkgs.jdk
       pkgs.util-linux
     ];
