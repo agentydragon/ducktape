@@ -2,6 +2,7 @@ import { Button, Container, Group, Stack } from "@mantine/core";
 import { HashRouter, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions";
+import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
@@ -23,6 +24,11 @@ function required(value: string | undefined, name: string): string {
 function ListRoute(): JSX.Element {
   const navigate = useNavigate();
   return <SandboxList onOpen={(name) => void navigate(sandboxPath(name))} />;
+}
+
+function ConsentRoute(): JSX.Element {
+  const handle = required(useParams().handle, "handle");
+  return <ConnectionConsent key={handle} handle={handle} />;
 }
 
 function SandboxRoute(): JSX.Element {
@@ -70,6 +76,7 @@ function AppRoutes(): JSX.Element {
         <Routes>
           <Route path="/" element={<ListRoute />} />
           <Route path="/actions" element={<ActionRequests />} />
+          <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
           <Route path="/sandboxes/:name" element={<SandboxRoute />} />
           <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
           <Route path="*" element={<ListRoute />} />

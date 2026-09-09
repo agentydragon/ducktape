@@ -32,6 +32,7 @@ py_library(
         ":action_federation",
         ":auth_routes",
         ":bridge",
+        ":consent",
         ":decisions",
         ":egress",
         ":identity",
@@ -42,6 +43,7 @@ py_library(
         ":presets",
         ":trajectory",
         "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:enrollments",
         "//x/agentplane/action_service:models",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
@@ -146,8 +148,10 @@ py_test(
         "//util/testing:mock_oidc",
         "//x/agentplane/action_service:api",
         "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:connections",
         "//x/agentplane/action_service:database_migrate",
         "//x/agentplane/action_service:db",
+        "//x/agentplane/action_service:enrollments",
         "//x/agentplane/action_service:mcp_executor",
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:operator_oidc",
@@ -542,6 +546,35 @@ py_library(
     deps = [
         "@pypi//itsdangerous",
         "@pypi//sqlalchemy",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "consent",
+    srcs = ["consent.py"],
+    deps = [
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:connections",
+        "//x/agentplane/action_service:enrollments",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_consent",
+    srcs = ["test_consent.py"],
+    deps = [
+        ":conftest",
+        ":consent",
+        "//:conftest",
+        "//x/agentplane/action_service:client",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
 )

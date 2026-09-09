@@ -14,9 +14,17 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
+from x.agentplane.action_service.enrollments import EnrollmentDecisionResult
 from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.action_federation import FederatedOperatorActions, OperatorFederationError
+from x.agentplane.app.consent import (
+    ConsentDecision,
+    ConsentPreview,
+    EnrollmentHandle,
+    decide_enrollment,
+    preview_enrollment,
+)
 from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from x.agentplane.app.egress import (
     BindingNotFoundError,
@@ -261,6 +269,7 @@ Store = Annotated[TrajectoryStore, Depends(_store)]
 
 
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
+consent_router = APIRouter(prefix="/connection-enrollments", tags=["connections"])
 
 
 async def _operator_actions(
@@ -287,6 +296,18 @@ async def _operator_actions(
 
 
 OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actions)]
+
+
+@consent_router.post("/{handle}/preview")
+async def connection_preview(request: Request, handle: EnrollmentHandle, client: OperatorActions) -> ConsentPreview:
+    return await preview_enrollment(request, handle, client)
+
+
+@consent_router.post("/{handle}/decision")
+async def connection_decision(
+    request: Request, handle: EnrollmentHandle, body: ConsentDecision, client: OperatorActions
+) -> EnrollmentDecisionResult:
+    return await decide_enrollment(request, handle, body, client)
 
 
 @actions_router.get("")
@@ -410,6 +431,7 @@ def create_app(
         runner_bridge.router,
         threads,
         actions_router,
+        consent_router,
         egress_router,
         live_router,
     ):
