@@ -283,7 +283,7 @@ What remains is composing that target with the PE tender floor, and buying.
       it cannot price the "defer and buy later" strategy at all, only assume it works.
       Three pieces:
   - **A curve that reaches past 10 years — do this first, it is the smallest piece and it
-    unblocks the other two.** `_instrument_yield` clamps at `min(duration/10, 1)`, so a 30-year
+    unblocks the other two.** `model/bond_fund.py::government_curve_yield` clamps at `min(duration/10, 1)`, so a 30-year
     bond is priced at the 10-year yield and most of a real ladder is invisible to the model
     (SPEC gap 8 sizes the error). A Gaussian VAR admits an affine term structure whose loadings
     are compile-time constants, so the whole curve is a matmul against the `(R, H, 3)` state

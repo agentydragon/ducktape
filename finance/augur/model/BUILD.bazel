@@ -282,8 +282,9 @@ py_library(
         ":bond_fund",
         ":equity",
         ":exogenous",
+        ":market_paths",
+        ":product_paths",
         ":schemas",
-        ":series",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
@@ -319,6 +320,8 @@ py_library(
         ":equity",
         ":exogenous",
         ":float64",
+        ":market_paths",
+        ":product_paths",
         ":schemas",
         ":series",
         ":series_model",
@@ -647,5 +650,64 @@ py_library(
         ":schemas",
         ":series",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "market_paths",
+    srcs = ["market_paths.py"],
+    deps = [
+        ":bond_fund",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "product_paths",
+    srcs = ["product_paths.py"],
+    deps = [
+        ":bond_fund",
+        ":equity",
+        ":exogenous",
+        ":market_paths",
+        ":series",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "test_market_paths",
+    srcs = ["test_market_paths.py"],
+    deps = [
+        ":bond_fund",
+        ":conftest",
+        ":market_paths",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_product_paths",
+    srcs = ["test_product_paths.py"],
+    deps = [
+        ":bond_fund",
+        ":conftest",
+        ":equity",
+        ":exogenous",
+        ":historical_windows",
+        ":market_paths",
+        ":product_paths",
+        ":series",
+        ":structural_macro",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -39,24 +39,17 @@ from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
 from pathlib import Path
-from typing import Literal, assert_never
+from typing import Literal
 
 import numpy as np
 from pydantic import model_validator
 
-from finance.augur.model.bond_fund import (
-    MINIMUM_ANNUAL_YIELD,
-    MONTHS_PER_YEAR,
-    BondFundSpec,
-    YieldCurve,
-    constant_maturity_fund_paths,
-    fund_yield,
-    government_curve_yield,
-)
+from finance.augur.model.bond_fund import MONTHS_PER_YEAR, BondFundSpec, YieldCurve
 from finance.augur.model.equity import EquitySpec
-from finance.augur.model.exogenous import SampledExogenousBundle, assemble_level_frames
+from finance.augur.model.exogenous import SampledExogenousBundle
+from finance.augur.model.market_paths import MarketPaths
+from finance.augur.model.product_paths import construct_products
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
 
@@ -163,6 +156,14 @@ class HistoricalWindowsModel:
         return len(self.history.months) / horizon_months if horizon_months else 0.0
 
     def materialize(self, *, window_starts: Sequence[date], horizon_months: int) -> SampledExogenousBundle:
+        """Construct configured products on exactly the supplied historical dates."""
+        return construct_products(
+            self.market_paths(window_starts=window_starts, horizon_months=horizon_months),
+            equity=self.equity,
+            instruments=self.instruments,
+        )
+
+    def market_paths(self, *, window_starts: Sequence[date], horizon_months: int) -> MarketPaths:
         """Emit exactly the supplied dates in order, with batch-local rollout indices.
 
         A date's values do not change when other windows are selected, reordered or split
@@ -190,42 +191,15 @@ class HistoricalWindowsModel:
         starts = np.asarray([eligible[month] for month in dates])
         windows = starts[:, None] + np.arange(months)[None, :]
 
-        short_rate = np.maximum(self.history.short_rate[windows], MINIMUM_ANNUAL_YIELD)
-        term_spread = self.history.term_spread[windows]
-
-        def market_yield(spec: BondFundSpec) -> np.ndarray:
-            """The fund's own yield over each window — observed, not derived from a spread."""
-
-            match spec.yield_curve:
-                case YieldCurve.GOVERNMENT:
-                    curve = government_curve_yield(short_rate, term_spread, maturity_years=spec.maturity_years)
-                case YieldCurve.CORPORATE_AAA:
-                    curve = self.history.corporate_aaa_yield[windows]
-                case YieldCurve.CORPORATE_BAA:
-                    curve = self.history.corporate_baa_yield[windows]
-                case _ as unreachable:
-                    assert_never(unreachable)
-            return fund_yield(spec, curve)
-
-        blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [
-            (InflationKey(), _rebased(self.history.cpi_level[windows], 100.0))
-        ]
-        for spec in self.instruments:
-            price, distribution = constant_maturity_fund_paths(
-                market_yield(spec), maturity_years=spec.maturity_years, initial_price_usd=spec.initial_price_usd
-            )
-            blocks.append((SecurityKey(symbol=spec.symbol), price))
-            blocks.append((SecurityDistributionKey(symbol=spec.symbol), distribution))
-        if self.equity is not None:
-            blocks.append(
-                (
-                    SecurityKey(symbol=self.equity.symbol),
-                    _rebased(self.history.equity_level[windows], self.equity.initial_price_usd),
-                )
-            )
-
-        return SampledExogenousBundle(
-            levels=assemble_level_frames(blocks, rollout_count=rollouts, horizon_months=horizon_months),
+        return MarketPaths(
+            short_rate=self.history.short_rate[windows],
+            term_spread=self.history.term_spread[windows],
+            cpi_level=_rebased(self.history.cpi_level[windows], 100.0),
+            equity_total_return_index=_rebased(self.history.equity_level[windows], 1.0),
+            corporate_yields={
+                YieldCurve.CORPORATE_AAA: self.history.corporate_aaa_yield[windows],
+                YieldCurve.CORPORATE_BAA: self.history.corporate_baa_yield[windows],
+            },
             model_id=self.label,
             provenance={
                 "exogenous_provider_label": self.label,

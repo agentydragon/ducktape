@@ -9,7 +9,7 @@ forces it to a short window, and its coupling is structural rather than estimate
 
 ## What it promises
 
-**Emissions are dollar primitives, never ratios.** Per-unit price, per-unit monthly
+**Simulator emissions are dollar primitives, never ratios.** Per-unit price, per-unit monthly
 distribution, and a CPI level. Nothing downstream divides, and no rate exists anywhere in the
 simulator: a fund pays `units × distribution_per_unit`, exactly as a bond pays `face × rate`.
 
@@ -20,8 +20,8 @@ takes its hit in the month the yield moves, the payout converges over roughly th
 duration. That lag is the model's central claim and is what reproduces 2022–2025.
 
 **An instrument is a config row, not a factor.** A symbol, a duration, a static spread. Adding
-a fourth fund adds a row, not a fourth random walk. There is no "factor" concept in the public
-surface at all; what happens between the state and the emissions is the model's own business.
+a fourth fund adds a row, not a fourth random walk. Product construction does not draw
+additional market shocks.
 
 **Per-rollout seeding.** A rollout's path depends only on its own seed, never on the batch.
 
@@ -42,6 +42,20 @@ Scalar-yield bond valuation supports zero and negative annual-compounded yields
 greater than -1, without substituting a positive rate. Non-finite inputs and
 invalid compounding domains reject. The providers' positive-yield floor remains
 a separate modeling approximation, not a numerical requirement of valuation.
+
+Experiments can materialize market paths once, then construct different product
+choices without loading or sampling again. Market arrays retain the opening
+observation, aligned rollout/month axes, source dates or seeds, and provenance.
+Construction does not mutate them. Missing corporate/equity paths reject instead
+of being synthesized from unrelated inputs. CPI and equity indices must be finite
+and positive; equity indices start at one before a product's opening price is
+applied. Negative market rates are valid.
+
+The current construction remains an approximation: it applies the positive-yield
+guard and two-point government curve to constant-maturity funds, and treats an
+equity total-return index as a price with no dividend payout. Raw short-rate paths
+retain negative values; structural equity dynamics still use floored short-rate
+changes. This separation does not add dividend taxes or native tradable bonds.
 
 Historical replay materializes caller-selected starting dates in caller order. A
 date's path is unchanged by partitioning, reordering or extending the selection;
@@ -299,7 +313,7 @@ how much they move an allocation answer.
    reversion upward and pins the long-run mean weakly: the same fit gives a 4.93% short-rate
    mean over 1954–2026 and 1.71% over 1990–2026. Read the sigmas; sweep the means.
 8. **The curve is clamped flat past 10 years** (#5834, which also owns the design sketched
-   below — it belongs in a design doc rather than in this contract). `_instrument_yield` is
+   below — it belongs in a design doc rather than in this contract). Fund-yield construction is
    `curve_ratio * (short_rate + min(maturity/10, 1) * term_spread) + spread`, so it interpolates the front and
    then STOPS: a 30-year bond is priced at exactly the 10-year yield. It orders cash, a short
    fund and an intermediate fund correctly, and it cannot price a barbell against a bullet — but

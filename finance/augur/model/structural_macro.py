@@ -6,7 +6,7 @@ fund, a California municipal fund and broad equity, which is close to the smalle
 can express both a FIRE 60/40 and a floor-plus-surplus construction.
 
 **What makes it structural is where the coupling lives.** Its latent state is a handful of
-macro factors that are never emitted; its emissions are the per-instrument dollar primitives
+macro factors; its configured emissions are the per-instrument dollar primitives
 the simulator already consumes. One rate shock therefore moves a fund's price DOWN and its
 payout UP coherently, because both are derived from the same state and the same duration —
 and nothing downstream learns they are related. Fitting a per-symbol price series and a
@@ -17,7 +17,7 @@ Coherently, but not proportionally, and the difference is the point: the price r
 the rate move at once and the payout responds over years. They are two different functions of
 the same state, not one series and a multiple of it.
 
-The stochastic state is a JOINT VAR(1) on three quantities, only the last of them emitted:
+The stochastic state is a JOINT VAR(1) on three quantities:
 
 - `short_rate` — prices cash and anchors the front of the curve
 - `term_spread` — 10y minus short. A fund's price move is its duration times the change in
@@ -42,13 +42,13 @@ What the model is, what it is fitted on, and what it cannot answer — including
 independence, which is load-bearing — is declared in <SPEC.md>. Read that before trusting a
 number out of this.
 
-There is no factor concept in the public surface here, and nothing in `Sampler` asks for one:
-what this model does between its state and its emissions is its own business.
+`sample_market` exposes materialized rate/spread, CPI and equity-index paths so an
+experiment can construct multiple product choices without sampling again. The
+configured `Sampler.sample` composes this with `product_paths.construct_products`.
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date
 from typing import Literal
 
@@ -56,17 +56,12 @@ import numpy as np
 import yaml
 from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
-from finance.augur.model.bond_fund import (
-    MINIMUM_ANNUAL_YIELD,
-    BondFundSpec,
-    YieldCurve,
-    constant_maturity_fund_paths,
-    fund_yield,
-    government_curve_yield,
-)
+from finance.augur.model.bond_fund import MINIMUM_ANNUAL_YIELD, BondFundSpec
 from finance.augur.model.equity import EquitySpec
-from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
+from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.float64 import LEVEL_DTYPE
+from finance.augur.model.market_paths import MarketPaths
+from finance.augur.model.product_paths import construct_products, validate_product_symbols
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.model.series_model import derive_stream_rollout_seeds
@@ -233,15 +228,9 @@ class StructuralMacroModel:
 
     def __init__(self, config: StructuralMacroProviderConfig) -> None:
         self._config = config
-        symbols = [spec.symbol for spec in config.instruments]
-        if config.equity is not None:
-            symbols.append(config.equity.instrument.symbol)
-        # Two rows for one symbol would emit two `SecurityKey`s with the same sub-id, which
-        # `assemble_level_frames` concatenates into a frame with twice the rows per rollout —
-        # caught much later, by a shape check that names the symbol but not the cause.
-        duplicates = sorted(symbol for symbol, count in Counter(symbols).items() if count > 1)
-        if duplicates:
-            raise ValueError(f"structural_macro prices a symbol more than once: {duplicates}")
+        validate_product_symbols(
+            equity=config.equity.instrument if config.equity is not None else None, instruments=config.instruments
+        )
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         keys: set[LevelSeriesKey] = {InflationKey()}
@@ -262,35 +251,32 @@ class StructuralMacroModel:
         return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        return construct_products(
+            self.sample_market(request),
+            equity=self._config.equity.instrument if self._config.equity is not None else None,
+            instruments=self._config.instruments,
+        )
+
+    def sample_market(self, request: ExogenousSamplingRequest) -> MarketPaths:
+        """Sample once for multiple constructions; configured bond choices do not affect these paths."""
         config = self._config
         rollouts = request.rollout_count
         months = request.horizon_months + 1
 
         state = _macro_state_path(config.macro_state, request, rollouts=rollouts, months=months)
         short_rate = np.maximum(state[SHORT_RATE], MINIMUM_ANNUAL_YIELD)
-        term_spread = state[TERM_SPREAD]
-
-        blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [
-            (InflationKey(), _inflation_level(config, state[INFLATION_RATE]))
-        ]
-        for spec in config.instruments:
-            market_yield = _instrument_yield(spec, short_rate=short_rate, term_spread=term_spread)
-            price, distribution = constant_maturity_fund_paths(
-                market_yield, maturity_years=spec.maturity_years, initial_price_usd=spec.initial_price_usd
-            )
-            blocks.append((SecurityKey(symbol=spec.symbol), price))
-            blocks.append((SecurityDistributionKey(symbol=spec.symbol), distribution))
-        if config.equity is not None:
-            blocks.append(
-                (SecurityKey(symbol=config.equity.instrument.symbol), _equity_path(config.equity, request, short_rate))
-            )
-
-        return SampledExogenousBundle(
-            levels=assemble_level_frames(blocks, rollout_count=rollouts, horizon_months=request.horizon_months),
+        return MarketPaths(
+            short_rate=state[SHORT_RATE],
+            term_spread=state[TERM_SPREAD],
+            cpi_level=_inflation_level(config, state[INFLATION_RATE]),
+            equity_total_return_index=_equity_index(config.equity, request, short_rate)
+            if config.equity is not None
+            else None,
+            corporate_yields={},
             model_id=self.label,
             provenance={
                 "exogenous_provider_label": self.label,
-                "instruments": tuple(spec.symbol for spec in config.instruments),
+                "rollout_seeds": request.rollout_seeds,
                 "notes": ("joint VAR(1) macro state fitted on FRED FEDFUNDS/GS10/CPIAUCSL 1955-2026",),
             },
         )
@@ -332,30 +318,19 @@ def _shocks(request: ExogenousSamplingRequest, stream_id: str, *, months: int) -
     return np.stack([np.random.default_rng(seed).standard_normal(months) for seed in seeds])
 
 
-def _instrument_yield(spec: BondFundSpec, *, short_rate: np.ndarray, term_spread: np.ndarray) -> np.ndarray:
-    """Bind only reference curves represented by this model's state."""
+def _equity_index(spec: EquityProcess, request: ExogenousSamplingRequest, short_rate: np.ndarray) -> np.ndarray:
+    """Total-return index using the existing positive-floored short-rate changes.
 
-    if spec.yield_curve is not YieldCurve.GOVERNMENT:
-        raise ValueError(
-            f"{spec.symbol} prices off {spec.yield_curve}, which this model cannot produce: its state is "
-            "(short rate, term spread, inflation) with no credit factor, so a corporate yield here would be "
-            "a government yield plus a constant — which is what the instrument model was replaced for. "
-            "Use the historical-windows provider, whose record carries Moody's Aaa and Baa, or add a credit "
-            "factor to the VAR."
-        )
-    curve = government_curve_yield(short_rate, term_spread, maturity_years=spec.maturity_years)
-    return fund_yield(spec, curve)
-
-
-def _equity_path(spec: EquityProcess, request: ExogenousSamplingRequest, short_rate: np.ndarray) -> np.ndarray:
-    """Broad equity as a log process with a rates term, so it is not independent of the curve."""
+    The raw market short-rate path remains unclipped; this numerical convention
+    in the equity process is preserved independently of the product price scale.
+    """
 
     shocks = _shocks(request, "structural_macro:equity", months=short_rate.shape[1])
     rate_changes = np.diff(short_rate, axis=1, prepend=short_rate[:, :1])
     log_returns = spec.monthly_log_return_mu + spec.monthly_log_return_sigma * shocks + spec.rate_beta * rate_changes
     # Month 0 is the anchor, not a return: every emitted series starts at its configured level.
     log_returns[:, 0] = 0.0
-    return spec.instrument.initial_price_usd * np.exp(np.cumsum(log_returns, axis=1))
+    return np.exp(np.cumsum(log_returns, axis=1))
 
 
 def _inflation_level(config: StructuralMacroProviderConfig, inflation_rate: np.ndarray) -> np.ndarray:

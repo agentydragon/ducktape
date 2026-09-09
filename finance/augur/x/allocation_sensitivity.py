@@ -28,6 +28,10 @@ machinery adds is common to both arms, so leaving it out isolates what differs â
 each model believes in. That also makes every level here a lower bound on what the real plan
 faces; read the SHAPE of the surface, not the levels.
 
+Market paths are loaded/sampled once per horizon and reused across bond constructions.
+The recurrence, selected windows/seeds and statistical reporting are unchanged by that
+composition; their simplifying assumptions still apply.
+
     bbr run //finance/augur/x:allocation_sensitivity_bin
 """
 
@@ -45,6 +49,8 @@ from finance.augur.model.bond_fund import BondFundSpec
 from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.historical_windows import MACRO_HISTORY_SOURCES, HistoricalWindowsProviderConfig
+from finance.augur.model.market_paths import MarketPaths
+from finance.augur.model.product_paths import construct_products
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.model.structural_macro import EquityProcess, StructuralMacroProviderConfig
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
@@ -144,43 +150,22 @@ def standard_error_points(rate: float, independent_rollouts: float) -> float:
     return 100.0 * float(np.sqrt(max(rate * (1.0 - rate), 0.0) / independent_rollouts))
 
 
-def _sample(evidence_dir: Path, *, payout_years: int, bonds: BondFundSpec) -> dict[str, Paths]:
+def _sample(evidence_dir: Path, *, payout_years: int) -> tuple[dict[str, MarketPaths], float]:
     horizon_months = payout_years * MONTHS_PER_YEAR
-    replay = HistoricalWindowsProviderConfig(
-        evidence_dir=evidence_dir, equity=EQUITY, instruments=(bonds,)
-    ).realize_model()
+    replay = HistoricalWindowsProviderConfig(evidence_dir=evidence_dir).realize_model()
     window_starts = replay.window_starts(horizon_months)
     rollouts = len(window_starts)
     independent = replay.independent_window_estimate(horizon_months)
-    request = ExogenousSamplingRequest(
-        horizon_months=horizon_months,
-        rollout_seeds=tuple(range(rollouts)),
-        required_asset_prices=frozenset({SecurityKey(symbol=s) for s in (EQUITY.symbol, bonds.symbol)}),
-        required_security_distributions=frozenset({SecurityDistributionKey(symbol=bonds.symbol)}),
-        required_index_series=frozenset({InflationKey()}),
-    )
-    fitted = StructuralMacroProviderConfig(
-        equity=EquityProcess(instrument=EQUITY), instruments=(bonds,)
-    ).realize_model()
+    request = ExogenousSamplingRequest(horizon_months=horizon_months, rollout_seeds=tuple(range(rollouts)))
+    fitted = StructuralMacroProviderConfig(equity=EquityProcess(instrument=EQUITY)).realize_model()
     logger.info("%dy: %d overlapping windows, ~%.1f independent", payout_years, rollouts, independent)
-    return {
-        "replay": _paths(
-            replay.materialize(window_starts=window_starts, horizon_months=horizon_months),
-            bonds=bonds,
-            rollouts=rollouts,
-            horizon_months=horizon_months,
-            independent=independent,
-        ),
-        # Synthetic draws are independent by construction, so the same count carries far more
-        # information here â€” which is exactly the trade the two arms exist to show.
-        "fitted": _paths(
-            fitted.sample(request),
-            bonds=bonds,
-            rollouts=rollouts,
-            horizon_months=horizon_months,
-            independent=float(rollouts),
-        ),
-    }
+    return (
+        {
+            "replay": replay.market_paths(window_starts=window_starts, horizon_months=horizon_months),
+            "fitted": fitted.sample_market(request),
+        },
+        independent,
+    )
 
 
 def _report(payout_years: int, sleeve_name: str, replay: Paths, fitted: Paths) -> None:
@@ -225,8 +210,18 @@ def main() -> None:
         asyncio.run(snapshot_evidence(directory, MACRO_HISTORY_SOURCES))
 
         for payout_years in PAYOUT_YEARS:
+            markets, independent = _sample(directory, payout_years=payout_years)
             for sleeve_name, bonds in BOND_SLEEVES:
-                arms = _sample(directory, payout_years=payout_years, bonds=bonds)
+                arms = {
+                    name: _paths(
+                        construct_products(market, equity=EQUITY, instruments=(bonds,)),
+                        bonds=bonds,
+                        rollouts=market.rollout_count,
+                        horizon_months=market.horizon_months,
+                        independent=independent if name == "replay" else float(market.rollout_count),
+                    )
+                    for name, market in markets.items()
+                }
                 _report(payout_years, sleeve_name, arms["replay"], arms["fitted"])
 
 
