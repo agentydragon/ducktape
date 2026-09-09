@@ -34,7 +34,7 @@ Specifics on the two that were costed:
   move no number, which is also the reason it buys nothing.
 - **`rust_decimal`** is already a workspace dependency, but it is arbitrary-precision
   decimal, not a quantum count. Money would stop being an integer at the wire boundary
-  that `fixture.rs` exists to keep integral.
+  that `execution.rs` exists to keep integral.
 
 ## Why the multiplier is a rational and not fixed-point
 

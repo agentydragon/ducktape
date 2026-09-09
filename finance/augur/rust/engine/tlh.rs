@@ -11,7 +11,7 @@ pub(super) struct ScheduledTlhGiveBack {
 }
 
 pub(super) fn execute_tlh_harvest(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     lots: &[LotState],
     tax: &mut TaxState,
@@ -173,7 +173,7 @@ fn harvest_fraction_ppb(
 }
 
 pub(super) fn tlh_give_back_for_pool_sale(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     lots: &[LotState],
     planned: &[PlannedDisposition],
     cumulative_harvest: &mut [Money],
@@ -239,7 +239,7 @@ pub(super) fn tlh_give_back_for_pool_sale(
 }
 
 pub(super) fn scheduled_tlh_give_back_state(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     lots: &[LotState],
     cumulative_harvest: &[Money],
 ) -> Result<ScheduledTlhGiveBack, SimulationError> {
@@ -271,7 +271,7 @@ pub(super) fn scheduled_tlh_give_back_state(
 }
 
 pub(super) fn tlh_give_back_for_scheduled_sale(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     lots: &[LotState],
     planned: &[PlannedDisposition],
     state: &mut ScheduledTlhGiveBack,

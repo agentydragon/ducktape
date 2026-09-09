@@ -1,6 +1,6 @@
 """Writing the integer fixture the Rust simulator consumes.
 
-`fixture.rs` defines this format with `deny_unknown_fields`, so a fixture is authored as
+`execution.rs` defines this format with `deny_unknown_fields`, so a fixture is authored as
 plain JSON-shaped dicts and a misspelled key is rejected at the boundary rather than
 silently ignored. These helpers name the shapes that recur, so a fixture reads as the
 scenario it describes instead of as nested punctuation.
@@ -16,7 +16,7 @@ from typing import Any
 
 from more_itertools import one
 
-# The fixture schema `fixture.rs` accepts. Bumped there and here together.
+# The fixture schema `execution.rs` accepts. Bumped there and here together.
 SCHEMA_VERSION = 10
 
 

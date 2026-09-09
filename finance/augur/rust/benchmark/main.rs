@@ -7,7 +7,7 @@ use std::{
 };
 
 use augur_rust_simulator::{
-    Fixture, PopulationOutput, SimulationOutput, ValidatedFixture, simulate_dense_validated,
+    ExecutionInput, PopulationOutput, SimulationOutput, ValidatedInput, simulate_dense_validated,
     simulate_summaries_validated,
 };
 use serde::Serialize;
@@ -227,10 +227,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Parsing and fixture validation are intentionally outside the timed region. The dense mode
     // retains monthly state and compatibility-event records but omits Rust's additional forensic
     // journal, for which the Python output contract has no corresponding channel.
-    let fixture: Fixture = serde_json::from_reader(BufReader::new(File::open(input)?))?;
+    let fixture: ExecutionInput = serde_json::from_reader(BufReader::new(File::open(input)?))?;
     let rollout_count = fixture.rollout_count;
     let horizon_months = fixture.scenario.horizon_months;
-    let fixture = ValidatedFixture::new(&fixture)?;
+    let fixture = ValidatedInput::new(&fixture)?;
     let run_once = || -> Result<BenchmarkOutput, Box<dyn std::error::Error>> {
         Ok(match output_mode {
             OutputMode::Compact => BenchmarkOutput::Compact(simulate_summaries_validated(fixture)?),

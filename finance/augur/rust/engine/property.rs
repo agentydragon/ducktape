@@ -8,7 +8,7 @@ use super::*;
 const DEPRECIATION_MONTHS: i64 = 330;
 
 pub(super) fn execute_primary_residence_events(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     recorder: &mut Recorder,
     primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
     month: u32,
@@ -34,7 +34,7 @@ pub(super) fn execute_primary_residence_events(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_property_lifecycle_events(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
@@ -156,7 +156,7 @@ pub(super) fn execute_property_lifecycle_events(
 
 #[allow(clippy::too_many_arguments)]
 fn execute_property_sales(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
@@ -362,7 +362,7 @@ pub(super) fn accrue_primary_residence_occupancy(
 }
 
 pub(super) fn execute_property_purchases(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     properties: &mut Vec<PropertyState>,

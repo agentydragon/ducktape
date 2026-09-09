@@ -15,7 +15,7 @@ pub(super) fn private_equity_series_id(channel: &str, issuer_id: &str) -> String
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_private_equity(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
@@ -248,7 +248,7 @@ pub(super) fn execute_private_equity(
 }
 
 fn pe_channel_value(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     issuer_id: &str,
     channel: &str,
     rollout_id: u32,
@@ -314,7 +314,7 @@ fn ceil_quantity_for_money(value: i64, price: i64, scale: i64) -> Result<i64, Si
 }
 
 fn private_equity_liquid_net_worth(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &Ledger,
     lots: &[LotState],

@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::fixture::{BondState, Fixture, MortgageState, PropertyState};
+use crate::execution::{BondState, ExecutionInput, MortgageState, PropertyState};
 use crate::ledger::{AccountRef, Ledger};
 use crate::money::{Factor, Money, PerUnit, Quantity, Units};
 
@@ -67,7 +67,7 @@ impl ProductInputs {
         &self.primary_agent_id
     }
 
-    pub fn resolve(fixture: &Fixture, primary_agent_id: &str) -> Result<Self, ProductError> {
+    pub fn resolve(fixture: &ExecutionInput, primary_agent_id: &str) -> Result<Self, ProductError> {
         if !fixture
             .scenario
             .accounts
@@ -175,7 +175,7 @@ pub enum ProductError {
 }
 
 fn series_at(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     row: usize,
     rollout: u32,
     snapshot: u32,
@@ -220,7 +220,7 @@ pub struct SnapshotState<'a> {
 /// their face is a static input the freeze never touches. Property value is NOT zeroed —
 /// see `docs/product_metrics.md` § Failed rollouts.
 pub fn snapshot_metrics(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     inputs: &ProductInputs,
     state: &SnapshotState<'_>,
     rollout: u32,

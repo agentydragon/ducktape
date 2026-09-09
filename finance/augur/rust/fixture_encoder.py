@@ -66,9 +66,9 @@ from finance.augur.sim.scenario import (
     SetRentedFractionEvent,
 )
 
-# Mirrors `FIXTURE_SCHEMA_VERSION` in `fixture.rs`; the simulator rejects any other value, so a
+# Mirrors `INPUT_SCHEMA_VERSION` in `execution.rs`; the simulator rejects any other value, so a
 # schema bump fails loudly here rather than encoding a document the engine will not read.
-FIXTURE_SCHEMA_VERSION = 11
+INPUT_SCHEMA_VERSION = 11
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -509,7 +509,7 @@ def encode_fixture(
     quantum = scenario.currency.quantum
     lifecycle = scenario.property_lifecycle_events
     return {
-        "schema_version": FIXTURE_SCHEMA_VERSION,
+        "schema_version": INPUT_SCHEMA_VERSION,
         "currency_code": scenario.currency.code,
         "currency_quantum": format(quantum, "f"),
         "rollout_count": plan.rollout_count,

@@ -4,7 +4,7 @@
 use super::*;
 
 pub(super) fn execute_cashflows(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,

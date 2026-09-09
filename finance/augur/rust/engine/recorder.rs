@@ -375,7 +375,7 @@ impl Recorder {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn month_output(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     month: u32,
     ledger: &Ledger,
@@ -418,7 +418,7 @@ fn income_states(income: &IncomeLedger, failed: bool) -> Vec<IncomeState> {
 }
 
 fn capital_gain_states(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     tax_facts: &BTreeMap<(String, String), TaxFacts>,
     failed: bool,
 ) -> Vec<CapitalGainState> {

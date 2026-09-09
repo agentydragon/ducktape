@@ -4,7 +4,7 @@ use std::{
     io::{BufReader, BufWriter},
 };
 
-use augur_rust_simulator::{Fixture, simulate};
+use augur_rust_simulator::{ExecutionInput, simulate};
 
 fn main() {
     if let Err(error) = run() {
@@ -35,7 +35,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let fixture: Fixture = serde_json::from_reader(BufReader::new(File::open(input)?))?;
+    let fixture: ExecutionInput = serde_json::from_reader(BufReader::new(File::open(input)?))?;
     let result = simulate(&fixture)?;
     serde_json::to_writer(BufWriter::new(File::create(output)?), &result)?;
     Ok(())

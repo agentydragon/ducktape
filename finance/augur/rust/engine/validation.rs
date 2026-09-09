@@ -1,13 +1,13 @@
-//! Fixture validation: every structural and numeric precondition the engine relies on,
+//! ExecutionInput validation: every structural and numeric precondition the engine relies on,
 //! checked once before any rollout executes.
 
 use super::*;
 
-pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
-    if fixture.schema_version != FIXTURE_SCHEMA_VERSION {
+pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), SimulationError> {
+    if fixture.schema_version != INPUT_SCHEMA_VERSION {
         return Err(SimulationError::SchemaVersion {
             actual: fixture.schema_version,
-            expected: FIXTURE_SCHEMA_VERSION,
+            expected: INPUT_SCHEMA_VERSION,
         });
     }
     if fixture.rollout_count == 0 {
@@ -1108,7 +1108,7 @@ pub(super) fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError>
 }
 
 fn validate_property_reference(
-    properties: &BTreeMap<String, &crate::fixture::ScheduledPropertyPurchaseSpec>,
+    properties: &BTreeMap<String, &crate::execution::ScheduledPropertyPurchaseSpec>,
     kind: &'static str,
     cause_id: &str,
     property_id: &str,
@@ -1141,7 +1141,7 @@ fn validate_event_month(
 }
 
 fn validate_property_lifecycle_event(
-    properties: &BTreeMap<String, &crate::fixture::ScheduledPropertyPurchaseSpec>,
+    properties: &BTreeMap<String, &crate::execution::ScheduledPropertyPurchaseSpec>,
     sales: &[PropertySaleSpec],
     property_id: &str,
     month: u32,
@@ -1172,7 +1172,7 @@ fn validate_property_lifecycle_event(
 
 fn validate_primary_residence_assignment(
     agents: &BTreeSet<String>,
-    properties: &BTreeMap<String, &crate::fixture::ScheduledPropertyPurchaseSpec>,
+    properties: &BTreeMap<String, &crate::execution::ScheduledPropertyPurchaseSpec>,
     sale_month_by_property: &BTreeMap<&str, u32>,
     agent_id: &str,
     property_id: &str,
@@ -1204,7 +1204,7 @@ fn validate_identifier(kind: &'static str, value: &str) -> Result<(), Simulation
 }
 
 fn validate_private_equity_channels(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     issuer_id: &str,
 ) -> Result<(), SimulationError> {
     let channel = |name: &str| -> Result<&SeriesSpec, SimulationError> {
@@ -1308,7 +1308,7 @@ fn is_positive_decimal(value: &str) -> bool {
 }
 
 fn validate_amount_spec(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     kind: &'static str,
     cause_id: &str,
     amount: &AmountSpec,
@@ -1436,7 +1436,7 @@ fn validate_deduction_category(category: Option<&str>) -> Result<(), SimulationE
 /// The income ledger has a row per taxpayer per declared source and accrues to nothing
 /// else, so an undeclared source would silently drop the income rather than mis-tax it.
 /// Checking it here is what lets that accrual stay a lookup.
-fn validate_income_sources(fixture: &Fixture) -> Result<(), SimulationError> {
+fn validate_income_sources(fixture: &ExecutionInput) -> Result<(), SimulationError> {
     let declared: BTreeSet<&IncomeSource> = fixture.scenario.income_sources.iter().collect();
     let interest_from = |issuer: &Option<String>| IncomeSource::interest(issuer.as_deref());
     let scenario = &fixture.scenario;

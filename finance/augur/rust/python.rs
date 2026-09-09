@@ -10,14 +10,14 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use augur_rust_simulator::engine::{
-    ValidatedFixture, simulate_dense_validated, simulate_product_metrics_validated,
+    ValidatedInput, simulate_dense_validated, simulate_product_metrics_validated,
     simulate_summaries_validated, simulate_validated,
 };
 use augur_rust_simulator::event_frames::FramedOutput;
-use augur_rust_simulator::fixture::Fixture;
+use augur_rust_simulator::execution::ExecutionInput;
 use augur_rust_simulator::product::BASE_METRIC_NAMES;
 
-fn parse(fixture_json: &str) -> PyResult<Fixture> {
+fn parse(fixture_json: &str) -> PyResult<ExecutionInput> {
     serde_json::from_str(fixture_json)
         .map_err(|error| PyValueError::new_err(format!("invalid fixture JSON: {error}")))
 }
@@ -51,7 +51,7 @@ fn simulate_product_metrics(
     let fixture = parse(fixture_json)?;
     let series = Python::attach(|py| {
         py.detach(|| {
-            let validated = ValidatedFixture::new(&fixture)?;
+            let validated = ValidatedInput::new(&fixture)?;
             simulate_product_metrics_validated(validated, primary_agent_id)
         })
     })
@@ -74,7 +74,7 @@ fn simulate_dense_json(fixture_json: &str) -> PyResult<String> {
     let fixture = parse(fixture_json)?;
     let output = Python::attach(|py| {
         py.detach(|| {
-            let validated = ValidatedFixture::new(&fixture)?;
+            let validated = ValidatedInput::new(&fixture)?;
             simulate_dense_validated(validated)
         })
     })
@@ -92,7 +92,7 @@ fn simulate_forensic_json(fixture_json: &str) -> PyResult<String> {
     let fixture = parse(fixture_json)?;
     let output = Python::attach(|py| {
         py.detach(|| {
-            let validated = ValidatedFixture::new(&fixture)?;
+            let validated = ValidatedInput::new(&fixture)?;
             simulate_validated(validated)
         })
     })
@@ -106,7 +106,7 @@ fn simulate_summaries_json(fixture_json: &str) -> PyResult<String> {
     let fixture = parse(fixture_json)?;
     let output = Python::attach(|py| {
         py.detach(|| {
-            let validated = ValidatedFixture::new(&fixture)?;
+            let validated = ValidatedInput::new(&fixture)?;
             simulate_summaries_validated(validated)
         })
     })

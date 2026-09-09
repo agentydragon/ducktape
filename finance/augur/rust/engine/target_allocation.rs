@@ -13,7 +13,7 @@ pub(super) struct PendingAllocationBuy {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_target_allocation_sales(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
@@ -231,7 +231,7 @@ pub(super) fn execute_target_allocation_sales(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_target_allocation_buys(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &mut [LotState],
@@ -312,7 +312,7 @@ pub(super) fn execute_target_allocation_buys(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_target_allocation_pool_sale(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &mut [LotState],

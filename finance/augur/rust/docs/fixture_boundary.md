@@ -1,8 +1,8 @@
 # The fixture boundary
 
-Everything that reaches the engine crosses as one JSON document. `fixture.rs` declares its
+Everything that reaches the engine crosses as one JSON document. `execution.rs` declares its
 shape and `fixture_encoder.py` writes it, and neither is derived from the other: every key
-the encoder emits is a field name declared by hand on a Rust struct in `fixture.rs`,
+the encoder emits is a field name declared by hand on a Rust struct in `execution.rs`,
 `tax.rs`, `ledger.rs` or `money.rs`. The schema is written twice, in two languages.
 
 ## Why there is a third model at all
@@ -33,7 +33,7 @@ and `_span` writes the window; `_obligation` does the same for the two obligatio
 
 ## The Rust half, and why the sharing is on the Python side
 
-`fixture.rs` carries the mirror-image repetition: four transfer-shaped structs, two
+`execution.rs` carries the mirror-image repetition: four transfer-shaped structs, two
 obligation ones. `#[serde(flatten)]` would share the common half, and it composes with
 `deny_unknown_fields` — serde collects the leftover keys and rejects them
 (`serde_derive` 1.0.229, `de/struct_.rs`). What changes is the parsing rather than the

@@ -1,6 +1,6 @@
 //! Unit tests for the engine's internals.
 
-use crate::fixture::{
+use crate::execution::{
     AccountSpec, BondSpec, DistributionSpec, DistributionTaxSliceSpec, InitialLotSpec,
     JurisdictionIdentitySpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
     PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec, ScheduledPropertyPurchaseSpec,
@@ -10,9 +10,9 @@ use crate::fixture::{
 
 use super::*;
 
-fn minimal_fixture() -> Fixture {
-    Fixture {
-        schema_version: FIXTURE_SCHEMA_VERSION,
+fn minimal_fixture() -> ExecutionInput {
+    ExecutionInput {
+        schema_version: INPUT_SCHEMA_VERSION,
         currency_code: "USD".into(),
         currency_quantum: "0.01".into(),
         rollout_count: 1,
@@ -586,8 +586,8 @@ fn rejects_mixed_quantity_scales_and_invalid_security_prices() {
 fn transfer_and_fifo_sale_remain_balanced() {
     let alice_cash = AccountRef::new("alice", "checking");
     let bob_cash = AccountRef::new("bob", "checking");
-    let fixture = Fixture {
-        schema_version: FIXTURE_SCHEMA_VERSION,
+    let fixture = ExecutionInput {
+        schema_version: INPUT_SCHEMA_VERSION,
         currency_code: "USD".into(),
         currency_quantum: "0.01".into(),
         rollout_count: 2,
@@ -828,8 +828,8 @@ fn financed_property_purchase_and_first_monthly_carry_match_contract() {
 #[test]
 fn oversell_is_rejected_before_any_disposition() {
     let alice_cash = AccountRef::new("alice", "checking");
-    let fixture = Fixture {
-        schema_version: FIXTURE_SCHEMA_VERSION,
+    let fixture = ExecutionInput {
+        schema_version: INPUT_SCHEMA_VERSION,
         currency_code: "USD".into(),
         currency_quantum: "0.01".into(),
         rollout_count: 1,
@@ -903,8 +903,8 @@ fn oversell_is_rejected_before_any_disposition() {
 fn failure_stops_future_actions_and_zeroes_value_state() {
     let alice_cash = AccountRef::new("alice", "checking");
     let bob_cash = AccountRef::new("bob", "checking");
-    let fixture = Fixture {
-        schema_version: FIXTURE_SCHEMA_VERSION,
+    let fixture = ExecutionInput {
+        schema_version: INPUT_SCHEMA_VERSION,
         currency_code: "USD".into(),
         currency_quantum: "0.01".into(),
         rollout_count: 1,
@@ -991,8 +991,8 @@ fn same_source_recurring_obligations_settle_all_or_none() {
     let alice_cash = AccountRef::new("alice", "checking");
     let landlord_cash = AccountRef::new("landlord", "checking");
     let utility_cash = AccountRef::new("utility", "checking");
-    let fixture = Fixture {
-        schema_version: FIXTURE_SCHEMA_VERSION,
+    let fixture = ExecutionInput {
+        schema_version: INPUT_SCHEMA_VERSION,
         currency_code: "USD".into(),
         currency_quantum: "0.01".into(),
         rollout_count: 1,

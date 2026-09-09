@@ -5,7 +5,7 @@
 //! log names the same facts differently and carries rates and unit counts as floats. This
 //! module is where the two meet, so the knowledge that `sale_capacity_fraction_ppb` is
 //! parts per billion and that a `Quantity` divides by its lot's `quantity_scale` sits beside
-//! the engine that defines those units, and a field renamed in `fixture.rs` fails the build
+//! the engine that defines those units, and a field renamed in `execution.rs` fails the build
 //! here rather than surfacing later as a `KeyError` in a Python decoder.
 //!
 //! Each frame below is one table: the Augur column on the left, the engine field it reads on
@@ -19,7 +19,7 @@
 
 use serde::Serialize;
 
-use crate::fixture;
+use crate::execution;
 use crate::money::{Money, Quantity, WIRE_RATE_SCALE};
 
 /// A run beside the event frames derived from it.
@@ -33,12 +33,12 @@ use crate::money::{Money, Quantity, WIRE_RATE_SCALE};
 #[derive(Debug, Serialize)]
 pub struct FramedOutput<'a> {
     #[serde(flatten)]
-    pub output: &'a fixture::SimulationOutput,
+    pub output: &'a execution::SimulationOutput,
     pub event_frames: EventFrames,
 }
 
 impl<'a> FramedOutput<'a> {
-    pub fn new(output: &'a fixture::SimulationOutput) -> Self {
+    pub fn new(output: &'a execution::SimulationOutput) -> Self {
         Self {
             event_frames: EventFrames::from_output(output),
             output,
@@ -112,7 +112,7 @@ macro_rules! event_frames {
         }
 
         impl EventFrames {
-            pub fn from_output(output: &fixture::SimulationOutput) -> Self {
+            pub fn from_output(output: &execution::SimulationOutput) -> Self {
                 let mut frames = Self::default();
                 for rollout in &output.rollouts {
                     $(

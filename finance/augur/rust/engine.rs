@@ -8,10 +8,10 @@ use crate::{
         AllocationError, deposit_by_sleeve, quantity_for_value, rebalance_by_sleeve,
         withdrawal_by_sleeve,
     },
-    fixture::{
+    execution::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondSpec, BondState, CapitalGainState,
-        CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
-        HarvestPolicySpec, IncomeState, InitialLotSpec, LotDisposition, MonthOutput,
+        CapitalImprovementOutcome, DistributionOutcome, ExecutionInput, HarvestPolicySpec,
+        INPUT_SCHEMA_VERSION, IncomeState, InitialLotSpec, LotDisposition, MonthOutput,
         MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState, ObligationOutcome,
         PopulationOutput, PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome,
         PrivateEquityProtocolOutcome, PropertyPurchaseOutcome, PropertyRentedFractionOutcome,
@@ -147,23 +147,23 @@ impl RolloutComputation {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ValidatedFixture<'a> {
-    fixture: &'a Fixture,
+pub struct ValidatedInput<'a> {
+    input: &'a ExecutionInput,
 }
 
-impl<'a> ValidatedFixture<'a> {
-    pub fn new(fixture: &'a Fixture) -> Result<Self, SimulationError> {
+impl<'a> ValidatedInput<'a> {
+    pub fn new(fixture: &'a ExecutionInput) -> Result<Self, SimulationError> {
         validate_fixture(fixture)?;
-        Ok(Self { fixture })
+        Ok(Self { input: fixture })
     }
 }
 
-pub fn simulate(fixture: &Fixture) -> Result<SimulationOutput, SimulationError> {
-    simulate_validated(ValidatedFixture::new(fixture)?)
+pub fn simulate(fixture: &ExecutionInput) -> Result<SimulationOutput, SimulationError> {
+    simulate_validated(ValidatedInput::new(fixture)?)
 }
 
 pub fn simulate_validated(
-    fixture: ValidatedFixture<'_>,
+    fixture: ValidatedInput<'_>,
 ) -> Result<SimulationOutput, SimulationError> {
     simulate_with_capture(fixture, CaptureMode::Forensic)
 }
@@ -173,29 +173,29 @@ pub fn simulate_validated(
 /// Unlike [`simulate`], this omits the balanced journal because the Python
 /// compatibility output has no corresponding channel. This is the apples-to-apples dense
 /// benchmark and backend handoff path; all canonical event inputs remain present.
-pub fn simulate_dense(fixture: &Fixture) -> Result<SimulationOutput, SimulationError> {
-    simulate_dense_validated(ValidatedFixture::new(fixture)?)
+pub fn simulate_dense(fixture: &ExecutionInput) -> Result<SimulationOutput, SimulationError> {
+    simulate_dense_validated(ValidatedInput::new(fixture)?)
 }
 
 pub fn simulate_dense_validated(
-    fixture: ValidatedFixture<'_>,
+    fixture: ValidatedInput<'_>,
 ) -> Result<SimulationOutput, SimulationError> {
     simulate_with_capture(fixture, CaptureMode::Dense)
 }
 
 fn simulate_with_capture(
-    fixture: ValidatedFixture<'_>,
+    fixture: ValidatedInput<'_>,
     capture_mode: CaptureMode,
 ) -> Result<SimulationOutput, SimulationError> {
-    let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
+    let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.fixture, rollout_id, capture_mode, None)
+            simulate_rollout(fixture.input, rollout_id, capture_mode, None)
                 .map(RolloutComputation::into_output)
         })
         .collect();
     Ok(SimulationOutput {
-        schema_version: FIXTURE_SCHEMA_VERSION,
+        schema_version: INPUT_SCHEMA_VERSION,
         rollouts: rollouts?,
     })
 }
@@ -205,22 +205,22 @@ fn simulate_with_capture(
 /// This is the population/benchmark path. It executes the same state machine
 /// as [`simulate`] without allocating monthly snapshots, journals, or event
 /// traces for every rollout.
-pub fn simulate_summaries(fixture: &Fixture) -> Result<PopulationOutput, SimulationError> {
-    simulate_summaries_validated(ValidatedFixture::new(fixture)?)
+pub fn simulate_summaries(fixture: &ExecutionInput) -> Result<PopulationOutput, SimulationError> {
+    simulate_summaries_validated(ValidatedInput::new(fixture)?)
 }
 
 pub fn simulate_summaries_validated(
-    fixture: ValidatedFixture<'_>,
+    fixture: ValidatedInput<'_>,
 ) -> Result<PopulationOutput, SimulationError> {
-    let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
+    let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.fixture, rollout_id, CaptureMode::Summary, None)
+            simulate_rollout(fixture.input, rollout_id, CaptureMode::Summary, None)
                 .map(RolloutComputation::into_summary)
         })
         .collect();
     Ok(PopulationOutput {
-        schema_version: FIXTURE_SCHEMA_VERSION,
+        schema_version: INPUT_SCHEMA_VERSION,
         rollouts: rollouts?,
     })
 }
@@ -231,22 +231,22 @@ pub fn simulate_summaries_validated(
 /// event trace, so a 100,000-rollout population costs `snapshots × rollouts` integers per
 /// metric rather than a dense output tree.
 pub fn simulate_product_metrics(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     primary_agent_id: &str,
 ) -> Result<ProductMetricSeries, SimulationError> {
-    simulate_product_metrics_validated(ValidatedFixture::new(fixture)?, primary_agent_id)
+    simulate_product_metrics_validated(ValidatedInput::new(fixture)?, primary_agent_id)
 }
 
 pub fn simulate_product_metrics_validated(
-    fixture: ValidatedFixture<'_>,
+    fixture: ValidatedInput<'_>,
     primary_agent_id: &str,
 ) -> Result<ProductMetricSeries, SimulationError> {
-    let inputs = ProductInputs::resolve(fixture.fixture, primary_agent_id)?;
-    let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
+    let inputs = ProductInputs::resolve(fixture.input, primary_agent_id)?;
+    let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
             simulate_rollout(
-                fixture.fixture,
+                fixture.input,
                 rollout_id,
                 CaptureMode::Summary,
                 Some(&inputs),
@@ -255,13 +255,13 @@ pub fn simulate_product_metrics_validated(
         })
         .collect();
     Ok(ProductMetricSeries::from_rollouts(
-        fixture.fixture.scenario.horizon_months + 1,
+        fixture.input.scenario.horizon_months + 1,
         &rollouts?,
     )?)
 }
 
 fn simulate_rollout(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     capture_mode: CaptureMode,
     product: Option<&ProductInputs>,
@@ -856,7 +856,7 @@ fn simulate_rollout(
 /// snapshot serializers use, so the two output channels never disagree about a failure.
 #[allow(clippy::too_many_arguments)]
 fn product_snapshot(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     inputs: &ProductInputs,
     rollout_id: u32,
     snapshot: u32,

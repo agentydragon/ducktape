@@ -5,6 +5,10 @@ from `finance/augur/sim` (which holds the scenario model and the engine
 contract, and no engine) and answers in canonical event frames and state
 channels.
 
+`execution.rs` declares the production `ExecutionInput`, runtime state, and output
+records. `ValidatedInput` checks an input once before any rollout executes. Test and
+benchmark fixture helpers construct that same input; they are not a separate schema.
+
 ## Invariants
 
 - Money is always a checked `i64` count of the fixture's declared currency

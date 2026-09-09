@@ -29,7 +29,7 @@ pub(super) fn canonical_lot_asset_id(asset_id: &str) -> String {
 }
 
 pub(super) fn execute_distributions(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
@@ -109,14 +109,14 @@ pub(super) fn execute_distributions(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_sale(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &mut [LotState],
     tax: &mut TaxState,
     scheduled_tlh: &mut ScheduledTlhGiveBack,
-    sale: &crate::fixture::ScheduledSaleSpec,
+    sale: &crate::execution::ScheduledSaleSpec,
 ) -> Result<(), SimulationError> {
     let mut candidates: Vec<usize> = lots
         .iter()
@@ -241,7 +241,7 @@ pub(super) fn execute_sale(
 }
 
 pub(super) fn series_value(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     series_id: &str,
     rollout: u32,
     snapshot: u32,
@@ -263,7 +263,7 @@ pub(super) fn series_value(
 }
 
 pub(super) fn amount_value(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout: u32,
     month: u32,
     amount: &AmountSpec,
@@ -299,7 +299,7 @@ fn bond_pays(bond: &BondSpec, month: u32) -> bool {
 }
 
 fn bond_principal(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     bond: &BondSpec,
     snapshot_month: u32,
@@ -354,7 +354,7 @@ pub(super) fn bond_coupon(principal: Money, bond: &BondSpec) -> Result<Money, Si
 }
 
 pub(super) fn bond_states(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     snapshot_month: u32,
     failed: bool,
@@ -381,7 +381,7 @@ pub(super) fn bond_states(
 }
 
 pub(super) fn execute_bonds(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,

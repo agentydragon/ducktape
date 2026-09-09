@@ -111,7 +111,7 @@ pub(super) fn record_property_tax_paid(
 }
 
 fn mortgage_interest_deduction_for(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     mortgages: &[MortgageState],
     agent_id: &str,
     jurisdiction_id: &str,
@@ -181,7 +181,7 @@ fn mortgage_interest_deduction_for(
 }
 
 pub(super) fn accrue_year_end_taxes(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     tax: &mut TaxState,
@@ -368,7 +368,7 @@ pub(super) fn accrue_year_end_taxes(
 /// paid: the ledger keeps what was earned, and each jurisdiction reads the part of it that
 /// its own rules reach.
 fn taxable_ordinary_income(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     income: &IncomeLedger,
     agent_id: &str,
     rules: &TaxRules,
@@ -388,7 +388,7 @@ fn taxable_ordinary_income(
         .map_err(SimulationError::from)
 }
 
-fn salt_cap_for(policy: &crate::fixture::FederalSaltDeductionSpec, year_index: u32) -> Money {
+fn salt_cap_for(policy: &crate::execution::FederalSaltDeductionSpec, year_index: u32) -> Money {
     if policy.cap_schedule.is_empty() {
         return Money(i64::MAX);
     }
@@ -401,7 +401,7 @@ fn salt_cap_for(policy: &crate::fixture::FederalSaltDeductionSpec, year_index: u
 }
 
 pub(super) fn book_tax_payment(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     month: u32,
@@ -448,7 +448,7 @@ pub(super) fn settle_tax_liabilities(
     recorder: &mut Recorder,
     tax_liabilities: &mut [TaxLiabilityState],
     month: u32,
-    profile: &crate::fixture::TaxProfileSpec,
+    profile: &crate::execution::TaxProfileSpec,
     tax_year_end_month: u32,
 ) -> Result<Money, SimulationError> {
     let matching: Vec<usize> = tax_liabilities
@@ -512,7 +512,7 @@ pub(super) fn record_interest_income(
 }
 
 pub(super) fn jurisdiction_level(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     issuer_jurisdiction_id: Option<&str>,
 ) -> Option<JurisdictionLevel> {
     let issuer = issuer_jurisdiction_id?;

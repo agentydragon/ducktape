@@ -1,3 +1,5 @@
+//! Execution inputs, runtime state, and output records for the deterministic engine.
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -7,11 +9,11 @@ use crate::{
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 11;
+pub const INPUT_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct Fixture {
+pub struct ExecutionInput {
     pub schema_version: u32,
     pub currency_code: String,
     /// Exact decimal spelling of one money quantum, for example `"0.01"`.
@@ -1026,7 +1028,7 @@ mod tests {
     fn fixture_json(balance: &str) -> String {
         format!(
             r#"{{
-                "schema_version": {FIXTURE_SCHEMA_VERSION},
+                "schema_version": {INPUT_SCHEMA_VERSION},
                 "currency_code": "USD",
                 "currency_quantum": "0.01",
                 "rollout_count": 1,
@@ -1052,9 +1054,9 @@ mod tests {
         // `Deserialize`, or a staging pass through `serde_json::Value` would each change how
         // every number in the fixture is parsed, and a silently truncated cent is the kind of
         // difference the differential suites would report as an unexplained rounding drift.
-        assert!(serde_json::from_str::<Fixture>(&fixture_json("100")).is_ok());
+        assert!(serde_json::from_str::<ExecutionInput>(&fixture_json("100")).is_ok());
         for rejected in ["100.5", "100.0"] {
-            let error = serde_json::from_str::<Fixture>(&fixture_json(rejected))
+            let error = serde_json::from_str::<ExecutionInput>(&fixture_json(rejected))
                 .expect_err("a fractional opening balance is not money");
             assert!(
                 error.to_string().contains("invalid type: floating point"),

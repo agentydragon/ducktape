@@ -72,7 +72,7 @@ pub(super) fn configured_obligation_effect(
 }
 
 pub(super) fn property_obligations(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     properties: &[PropertyState],
     mortgages: &[MortgageState],
     month: u32,
@@ -179,7 +179,7 @@ pub(super) fn property_obligations(
 }
 
 pub(super) fn tax_obligations(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     tax_liabilities: &[TaxLiabilityState],
     month: u32,
 ) -> Result<Vec<ActiveObligation>, SimulationError> {
@@ -330,7 +330,7 @@ pub(super) fn mortgage_monthly_payment(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn settle_obligations(
-    fixture: &Fixture,
+    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     tax: &mut TaxState,
@@ -610,7 +610,7 @@ pub(super) fn settle_obligations(
     Ok((any_failure, product_shortfall))
 }
 
-fn target_allocation_attempted_sources(fixture: &Fixture, account: &AccountRef) -> String {
+fn target_allocation_attempted_sources(fixture: &ExecutionInput, account: &AccountRef) -> String {
     fixture
         .scenario
         .target_allocation_policies
