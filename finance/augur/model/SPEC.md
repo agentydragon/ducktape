@@ -38,6 +38,12 @@ each provider supplies only curves it represents. Historical replay can supply o
 yields; the structural model rejects them because it has no credit factor. Sharing instrument
 descriptions does not imply that every model supports every instrument.
 
+Historical replay materializes caller-selected starting dates in caller order. A
+date's path is unchanged by partitioning, reordering or extending the selection;
+duplicate or unavailable starts reject. Output rollout indices are batch-local,
+and provenance retains their ordered historical dates. Historical windows are
+not random seeds or independent Monte Carlo draws.
+
 ## What is fitted, and on what
 
 | Block       | Source                                | Window            | Months |

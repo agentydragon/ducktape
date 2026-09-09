@@ -17,11 +17,9 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import pytest_bazel
-from pydantic import TypeAdapter
 
 from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
 from finance.augur.model.equity import EquitySpec
-from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import (
     HistoricalWindowsModel,
     HistoricalWindowsProviderConfig,
@@ -30,8 +28,13 @@ from finance.augur.model.historical_windows import (
     macro_history_from_levels,
     splice_at_seam,
 )
-from finance.augur.model.provider_config import ProviderConfig
-from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import (
+    InflationKey,
+    LevelSeriesKey,
+    SecurityDistributionKey,
+    SecurityKey,
+    SecuritySymbol,
+)
 from finance.evidence import sources
 from finance.evidence.loading import MonthlyLevel
 
@@ -80,9 +83,9 @@ def _model(history: MacroHistory | None = None) -> HistoricalWindowsModel:
     )
 
 
-def _series(model: HistoricalWindowsModel, key: object, *, horizon: int, rollouts: int) -> np.ndarray:
-    bundle = model.sample(ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=tuple(range(rollouts))))
-    return bundle.level_matrix(key, rollout_count=rollouts, horizon_months=horizon)  # type: ignore[arg-type]
+def _series(model: HistoricalWindowsModel, key: LevelSeriesKey, *, horizon: int, rollouts: int) -> np.ndarray:
+    bundle = model.materialize(window_starts=model.window_starts(horizon)[:rollouts], horizon_months=horizon)
+    return bundle.level_matrix(key, rollout_count=rollouts, horizon_months=horizon)
 
 
 def test_each_rollout_replays_a_different_window() -> None:
@@ -115,38 +118,54 @@ def test_in_memory_replay_needs_no_fitted_artifact() -> None:
     np.testing.assert_array_equal(equity[0], 500.0 * (history.equity_level / history.equity_level[0]))
 
 
-def test_seeds_are_ignored_because_nothing_is_random() -> None:
-    """A rollout's identity is its start month. Two requests with different seeds and the same
-    count must replay the same windows, or the provider would be pretending to sample."""
-
+@pytest.mark.parametrize("selection", [(2, 0, 1), (1,), (0, 2), (0, 1, 2, 3)])
+def test_named_windows_preserve_every_series_under_reordering_partition_and_extension(
+    selection: tuple[int, ...],
+) -> None:
     model = _model()
-    horizon, rollouts = 120, 5
-    first = model.sample(ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=tuple(range(rollouts))))
-    second = model.sample(
-        ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=tuple(range(1000, 1000 + rollouts)))
-    )
-    key = SecurityKey(symbol=EQUITY)
+    horizon = 120
+    dates = (date(2000, 3, 1), date(1970, 1, 1), date(1985, 8, 1), date(1990, 4, 1))
+    baseline = model.materialize(window_starts=dates[:3], horizon_months=horizon)
+    selected = model.materialize(window_starts=tuple(dates[index] for index in selection), horizon_months=horizon)
 
-    assert np.array_equal(
-        first.level_matrix(key, rollout_count=rollouts, horizon_months=horizon),
-        second.level_matrix(key, rollout_count=rollouts, horizon_months=horizon),
-    )
+    for key in baseline.levels.series_keys():
+        before = baseline.level_matrix(key, rollout_count=3, horizon_months=horizon)
+        after = selected.level_matrix(key, rollout_count=len(selection), horizon_months=horizon)
+        for output_index, original_index in enumerate(selection):
+            if original_index < 3:
+                np.testing.assert_array_equal(after[output_index], before[original_index])
 
 
-def test_asking_for_more_rollouts_than_windows_is_rejected() -> None:
-    """The failure this guards against is silent and severe: cycling would duplicate paths and
-    double-count them in every percentile, producing a confident distribution over a handful of
-    windows repeated. Better to refuse and make the caller see how little data there is."""
-
-    model = _model(_history(months=200))
-    with pytest.raises(ValueError, match="supplies only"):
-        model.sample(ExogenousSamplingRequest(horizon_months=120, rollout_seeds=tuple(range(500))))
+@pytest.mark.parametrize(
+    ("starts", "message"),
+    [
+        ((), "at least one"),
+        ((date(1970, 1, 1), date(1970, 1, 1)), "must not repeat"),
+        ((date(1969, 12, 1),), "unavailable"),
+        ((date(1970, 1, 2),), "unavailable"),
+        ((date(2010, 1, 1),), "unavailable"),
+    ],
+)
+def test_invalid_window_selections_are_rejected(starts: tuple[date, ...], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _model().materialize(window_starts=starts, horizon_months=120)
 
 
 def test_a_horizon_longer_than_the_record_is_rejected() -> None:
     model = _model(_history(months=100))
     with pytest.raises(ValueError, match="too few for a"):
-        model.sample(ExogenousSamplingRequest(horizon_months=120, rollout_seeds=(0,)))
+        model.materialize(window_starts=(date(1970, 1, 1),), horizon_months=120)
+
+
+def test_negative_horizons_are_rejected() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        _model().materialize(window_starts=(date(1970, 1, 1),), horizon_months=-1)
+
+
+def test_zero_horizon_can_select_the_records_final_month() -> None:
+    model = _model()
+    bundle = model.materialize(window_starts=(model.history.months[-1],), horizon_months=0)
+    np.testing.assert_array_equal(bundle.level_matrix(InflationKey(), rollout_count=1, horizon_months=0), [[100.0]])
 
 
 def test_the_independent_window_estimate_is_reported_and_is_tiny() -> None:
@@ -160,17 +179,23 @@ def test_the_independent_window_estimate_is_reported_and_is_tiny() -> None:
     assert model.independent_window_estimate(360) == pytest.approx(1.55, abs=0.01)
 
 
-def test_windows_are_spread_across_the_record_rather_than_taken_from_its_start() -> None:
-    """A caller asking for fewer rollouts than windows wants the record thinned, not its first
-    decade. Taking a prefix would sample one era and call it history."""
+@pytest.mark.parametrize("rollouts", [1, 3, 480])
+def test_explicit_selection_preserves_the_previous_evenly_spaced_windows(rollouts: int) -> None:
+    """Preserve the old numerical convention when the author selects that same window set."""
+    model = _model()
+    horizon = 120
+    indices = np.linspace(0, MONTHS - horizon - 1, rollouts).round().astype(int)
+    dates = tuple(model.history.months[index] for index in indices)
+    bundle = model.materialize(window_starts=dates, horizon_months=horizon)
 
-    model = _model(_history(months=600))
-    sparse = _series(model, SecurityKey(symbol=CASH), horizon=120, rollouts=3)
-    dense = _series(model, SecurityKey(symbol=CASH), horizon=120, rollouts=480)
-
-    # Cash's payout tracks the short rate, which rises monotonically through this record, so
-    # the last thinned window must reach as high as the last dense one.
-    assert float(sparse[-1, 0]) == pytest.approx(float(dense[-1, 0]), rel=1e-6)
+    for key, record, opening in (
+        (SecurityKey(symbol=EQUITY), model.history.equity_level, 500.0),
+        (InflationKey(), model.history.cpi_level, 100.0),
+    ):
+        expected = np.stack([opening * (record[index : index + horizon + 1] / record[index]) for index in indices])
+        np.testing.assert_array_equal(
+            bundle.level_matrix(key, rollout_count=rollouts, horizon_months=horizon), expected
+        )
 
 
 def test_the_bond_instrument_layer_matches_the_structural_provider() -> None:
@@ -238,7 +263,7 @@ def test_the_provenance_says_the_rollouts_are_not_independent() -> None:
     Carried on the bundle so a consumer that logs provenance cannot lose the caveat."""
 
     model = _model()
-    bundle = model.sample(ExogenousSamplingRequest(horizon_months=120, rollout_seeds=tuple(range(4))))
+    bundle = model.materialize(window_starts=model.window_starts(120)[:4], horizon_months=120)
 
     assert bundle.provenance["distinct_windows_available"] == 480
     assert "not independent draws" in str(bundle.provenance["notes"]).lower()
@@ -352,13 +377,9 @@ def test_the_annual_factor_rows_do_not_reach_the_record(tmp_path: Path) -> None:
     assert float(np.max(growth)) == pytest.approx(1.013)
 
 
-def test_the_provider_is_reachable_through_the_config_union(tmp_path: Path) -> None:
-    """Being importable is not being configurable. A provider absent from the discriminated
-    union cannot be selected by any deployment, and nothing else would fail to say so."""
-
+def test_experiment_config_loads_history_and_materializes_the_chosen_products(tmp_path: Path) -> None:
     _write_evidence(tmp_path)
-    adapter: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
-    parsed = adapter.validate_python(
+    config = HistoricalWindowsProviderConfig.model_validate(
         {
             "type": "historical_windows",
             "evidence_dir": str(tmp_path),
@@ -367,10 +388,9 @@ def test_the_provider_is_reachable_through_the_config_union(tmp_path: Path) -> N
         }
     )
 
-    assert isinstance(parsed, HistoricalWindowsProviderConfig)
-    model = parsed.realize_model()
-    assert len(model.history.months) == 400
-    assert model.emittable_level_keys() == {
+    model = config.realize_model()
+    bundle = model.materialize(window_starts=(date(1975, 1, 1),), horizon_months=12)
+    assert bundle.levels.series_keys() == {
         InflationKey(),
         SecurityKey(symbol=SecuritySymbol("VOO")),
         SecurityKey(symbol=SecuritySymbol("CMF")),
@@ -432,13 +452,11 @@ def test_the_provenance_names_the_span_the_rollouts_came_from() -> None:
     """A replay result is about a period. Reporting the window count without it leaves the
     reader unable to tell a 1926-1995 answer from a 1926-2026 one."""
 
-    bundle = _model(_history(600)).sample(ExogenousSamplingRequest(horizon_months=360, rollout_seeds=tuple(range(10))))
+    bundle = _model().materialize(window_starts=(date(1989, 12, 1), date(1970, 1, 1)), horizon_months=360)
 
     assert bundle.provenance["record_start"] == "1970-01-01"
     assert bundle.provenance["record_end"] == "2019-12-01"
-    assert bundle.provenance["first_window_start"] == "1970-01-01"
-    # 600 months less a 360-month horizon leaves 240 starts; the last of them is month 239.
-    assert bundle.provenance["last_window_start"] == "1989-12-01"
+    assert bundle.provenance["window_starts"] == ("1989-12-01", "1970-01-01")
 
 
 def test_the_config_cuts_the_record_before_the_sampler_sees_it(tmp_path: Path) -> None:
@@ -465,7 +483,7 @@ def test_an_instrument_prices_off_the_curve_it_names() -> None:
             history=history,
             instruments=(BondFundSpec(symbol=BOND, maturity_years=6.0, initial_price_usd=100.0, yield_curve=curve),),
         )
-        bundle = model.sample(ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=(0,)))
+        bundle = model.materialize(window_starts=(history.months[0],), horizon_months=horizon)
         payout = bundle.level_matrix(SecurityDistributionKey(symbol=BOND), rollout_count=1, horizon_months=horizon)
         # Month 1's coupon is struck on month 0's yield against the initial 100 of mark, so it
         # reads back that curve's month-0 level directly.
@@ -494,7 +512,7 @@ def test_a_spread_still_adjusts_the_named_curve() -> None:
             ),
         ),
     )
-    bundle = model.sample(ExogenousSamplingRequest(horizon_months=horizon, rollout_seeds=(0,)))
+    bundle = model.materialize(window_starts=(model.history.months[0],), horizon_months=horizon)
     payout = bundle.level_matrix(SecurityDistributionKey(symbol=BOND), rollout_count=1, horizon_months=horizon)
 
     assert float(payout[0, 1]) * 12.0 / 100.0 == pytest.approx(0.02 - 0.004)

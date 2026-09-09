@@ -90,7 +90,7 @@ def main() -> None:
                 "sampler": "Trinity historical overlapping monthly windows",
                 "record_start": replay.record_start.isoformat(),
                 "record_end": replay.record_end.isoformat(),
-                "rollout_count": replay.window_count,
+                "window_starts": [month.isoformat() for month in replay.window_starts],
             },
             indent=2,
         )

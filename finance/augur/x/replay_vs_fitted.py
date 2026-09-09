@@ -88,7 +88,8 @@ def main() -> None:
         replay = HistoricalWindowsProviderConfig(
             evidence_dir=directory, equity=EQUITY, instruments=(BONDS,)
         ).realize_model()
-        rollouts = replay.window_count(HORIZON_MONTHS)
+        window_starts = replay.window_starts(HORIZON_MONTHS)
+        rollouts = len(window_starts)
         print(
             f"record: {len(replay.history.months)} months, {rollouts} overlapping {HORIZON_MONTHS // 12}y windows "
             f"(~{replay.independent_window_estimate(HORIZON_MONTHS):.1f} independent)"
@@ -106,7 +107,11 @@ def main() -> None:
             equity=EquityProcess(instrument=EQUITY), instruments=(BONDS,)
         ).realize_model()
         _report("fitted structural macro (VAR(1), synthetic draws)", fitted.sample(request), rollouts)
-        _report("historical replay (overlapping windows)", replay.sample(request), rollouts)
+        _report(
+            "historical replay (overlapping windows)",
+            replay.materialize(window_starts=window_starts, horizon_months=HORIZON_MONTHS),
+            rollouts,
+        )
 
 
 if __name__ == "__main__":

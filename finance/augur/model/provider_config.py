@@ -75,20 +75,11 @@ instruments:
   - {symbol: CMF, maturity_years: 5.5, initial_price_usd: 56.0, spread: -0.012} # CA munis
 ```
 
-```yaml
-# Historical replay: one rollout per starting month of the record, no parameters at all.
-# A second opinion on the fitted models rather than a replacement — it has the fat tails and
-# the equity/inflation coupling they lack, and ~3 independent 30-year windows where they have
-# unlimited synthetic ones. Disagreement between the two is the finding.
-type: historical_windows
-equity: { symbol: VOO, initial_price_usd: 520.0 }
-instruments:
-  - { symbol: CMF, maturity_years: 5.5, initial_price_usd: 56.0, spread: -0.012 }
-```
-
 Each per-type config lives next to the model/provider it instantiates and
 exposes its own `.realize_model()` method. This module is just the
 discriminated union that ties them together for Pydantic's type dispatcher.
+Historical replay uses date-selected materialization in experiments, not this
+seeded deployment interface.
 """
 
 from __future__ import annotations
@@ -98,7 +89,6 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from finance.augur.model.composite import CompositeModel
-from finance.augur.model.historical_windows import HistoricalWindowsProviderConfig
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.mirroring import MirroringSampler, MirrorLevelSeries
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
@@ -111,7 +101,6 @@ from finance.augur.model.vecm import VecmProviderConfig
 # The single-model providers, before the mirroring/composite wrappers that compose over them.
 _LeafProviderConfig = (
     IndependentProviderConfig
-    | HistoricalWindowsProviderConfig
     | VecmProviderConfig
     | StateSpaceProviderConfig
     | StructuralMacroProviderConfig

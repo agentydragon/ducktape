@@ -149,7 +149,8 @@ def _sample(evidence_dir: Path, *, payout_years: int, bonds: BondFundSpec) -> di
     replay = HistoricalWindowsProviderConfig(
         evidence_dir=evidence_dir, equity=EQUITY, instruments=(bonds,)
     ).realize_model()
-    rollouts = replay.window_count(horizon_months)
+    window_starts = replay.window_starts(horizon_months)
+    rollouts = len(window_starts)
     independent = replay.independent_window_estimate(horizon_months)
     request = ExogenousSamplingRequest(
         horizon_months=horizon_months,
@@ -164,7 +165,7 @@ def _sample(evidence_dir: Path, *, payout_years: int, bonds: BondFundSpec) -> di
     logger.info("%dy: %d overlapping windows, ~%.1f independent", payout_years, rollouts, independent)
     return {
         "replay": _paths(
-            replay.sample(request),
+            replay.materialize(window_starts=window_starts, horizon_months=horizon_months),
             bonds=bonds,
             rollouts=rollouts,
             horizon_months=horizon_months,

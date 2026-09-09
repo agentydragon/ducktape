@@ -12,7 +12,8 @@ not an engine enum. Each rollout gets fresh closure state.
 
 The shell reuses the Trinity experiment's historical windows and instruments:
 Ken French equity; a synthetic 20-year Moody's Aaa constant-maturity bond fund;
-1926–1995 record intent with actual coverage retained in `paths.json`.
+1926–1995 record intent with actual coverage and the ordered historical start
+date for every rollout retained in `paths.json`.
 See <../../study/trinity/README.md> and its `replay.py` for source/construction gaps.
 It also inherits **no taxes**, no fees beyond those in the input series,
 cashflow-only rebalancing, a zero cash band, and **purchases disabled** (surplus

@@ -18,7 +18,6 @@ py_library(
         ":evidence_snapshot",
         "//finance/augur/model:bond_fund",
         "//finance/augur/model:equity",
-        "//finance/augur/model:exogenous",
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
         "//finance/augur/rust:backend",
@@ -51,6 +50,25 @@ py_test(
         ":replay",
         "//:conftest",
         "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_path_identity",
+    srcs = ["test_path_identity.py"],
+    deps = [
+        ":replay",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/rust:backend",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

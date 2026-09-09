@@ -1,7 +1,8 @@
 """Replay the past: one rollout per historical starting month.
 
-Rollout `i` is "what if you had started in month `i` of the record and lived through exactly
-what followed". No parameters, no distributional assumptions, no fit — the paths ARE the data.
+The caller selects historical start dates; each output row follows that date through the
+requested horizon. Selection and ordering belong to the experiment, not the batch size.
+No parameters, no distributional assumptions, no fit — the paths ARE the data.
 
 **Why this exists next to `structural_macro`.** That model is a fitted Gaussian VAR, and a
 fitted Gaussian VAR gets specific things wrong in ways its own diagnostics cannot show: it has
@@ -53,9 +54,9 @@ from finance.augur.model.bond_fund import (
     government_curve_yield,
 )
 from finance.augur.model.equity import EquitySpec
-from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
+from finance.augur.model.exogenous import SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import InflationKey, IssuerId, LevelSeriesKey, SecurityDistributionKey, SecurityKey
+from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel, evidence_dir_from_env
 
@@ -132,11 +133,7 @@ class MacroHistory:
 
 @dataclass(frozen=True)
 class HistoricalWindowsModel:
-    """A `Sampler` whose rollouts are contiguous slices of the record.
-
-    Implements `Sampler` only. There is nothing to fit and nothing to score: the parameters
-    are the past.
-    """
+    """Materialize named historical windows without a seeded sampler interface."""
 
     history: MacroHistory
     instruments: tuple[BondFundSpec, ...] = ()
@@ -146,7 +143,14 @@ class HistoricalWindowsModel:
     def window_count(self, horizon_months: int) -> int:
         """How many distinct starting months admit a full `horizon_months` window."""
 
+        if horizon_months < 0:
+            raise ValueError("horizon_months must be non-negative")
         return max(0, len(self.history.months) - horizon_months)
+
+    def window_starts(self, horizon_months: int) -> tuple[date, ...]:
+        """All eligible starting months, in record order; callers may select any subset."""
+
+        return self.history.months[: self.window_count(horizon_months)]
 
     def independent_window_estimate(self, horizon_months: int) -> float:
         """Non-overlapping windows the record could supply — the honest sample size.
@@ -158,44 +162,32 @@ class HistoricalWindowsModel:
 
         return len(self.history.months) / horizon_months if horizon_months else 0.0
 
-    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        keys: set[LevelSeriesKey] = {InflationKey()}
-        for spec in self.instruments:
-            keys.add(SecurityKey(symbol=spec.symbol))
-            keys.add(SecurityDistributionKey(symbol=spec.symbol))
-        if self.equity is not None:
-            keys.add(SecurityKey(symbol=self.equity.symbol))
-        return frozenset(keys)
+    def materialize(self, *, window_starts: Sequence[date], horizon_months: int) -> SampledExogenousBundle:
+        """Emit exactly the supplied dates in order, with batch-local rollout indices.
 
-    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
-        return frozenset()
-
-    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        """Rollout `i` replays the window starting at month `i`.
-
-        `request.rollout_seeds` is IGNORED, and that is not an oversight — there is no
-        randomness here to seed. A rollout's identity is its start month, so asking for the
-        same rollout index always returns the same path, which is the property the seeds exist
-        to provide everywhere else.
+        A date's values do not change when other windows are selected, reordered or split
+        into another batch. Duplicate dates reject to prevent silently overweighting history.
+        `provenance.window_starts` records the date corresponding to every output row.
         """
 
-        rollouts = request.rollout_count
-        months = request.horizon_months + 1
-        available = self.window_count(request.horizon_months)
+        dates = tuple(window_starts)
+        rollouts = len(dates)
+        months = horizon_months + 1
+        available = self.window_count(horizon_months)
         if available <= 0:
             raise ValueError(
-                f"history has {len(self.history.months)} months, too few for a {request.horizon_months}-month window"
+                f"history has {len(self.history.months)} months, too few for a {horizon_months}-month window"
             )
-        if rollouts > available:
-            raise ValueError(
-                f"asked for {rollouts} rollouts but the record supplies only {available} distinct "
-                f"{request.horizon_months}-month windows. Cycling would duplicate paths and quietly "
-                f"double-count them in every percentile; request at most {available}."
-            )
+        if not dates:
+            raise ValueError("window_starts must select at least one historical window")
+        if len(set(dates)) != rollouts:
+            raise ValueError("window_starts must not repeat historical windows")
 
-        # Evenly spaced starts rather than the first `rollouts` of them: a caller asking for
-        # fewer windows than exist wants the whole record thinned, not its first decade.
-        starts = np.linspace(0, available - 1, rollouts).round().astype(int)
+        eligible = {month: index for index, month in enumerate(self.window_starts(horizon_months))}
+        invalid = [month for month in dates if month not in eligible]
+        if invalid:
+            raise ValueError(f"window starts {invalid} are unavailable for a {horizon_months}-month horizon")
+        starts = np.asarray([eligible[month] for month in dates])
         windows = starts[:, None] + np.arange(months)[None, :]
 
         short_rate = np.maximum(self.history.short_rate[windows], MINIMUM_ANNUAL_YIELD)
@@ -233,17 +225,16 @@ class HistoricalWindowsModel:
             )
 
         return SampledExogenousBundle(
-            levels=assemble_level_frames(blocks, rollout_count=rollouts, horizon_months=request.horizon_months),
+            levels=assemble_level_frames(blocks, rollout_count=rollouts, horizon_months=horizon_months),
             model_id=self.label,
             provenance={
                 "exogenous_provider_label": self.label,
-                "window_months": request.horizon_months,
+                "window_months": horizon_months,
                 "record_start": self.history.months[0].isoformat(),
                 "record_end": self.history.months[-1].isoformat(),
-                "first_window_start": self.history.months[starts[0]].isoformat(),
-                "last_window_start": self.history.months[starts[-1]].isoformat(),
+                "window_starts": tuple(month.isoformat() for month in dates),
                 "distinct_windows_available": available,
-                "independent_window_estimate": round(self.independent_window_estimate(request.horizon_months), 2),
+                "independent_window_estimate": round(self.independent_window_estimate(horizon_months), 2),
                 "notes": (
                     "Rollouts are OVERLAPPING historical windows, not independent draws. A "
                     "percentile over them is a count of historical starting months, not a probability.",
@@ -253,12 +244,12 @@ class HistoricalWindowsModel:
 
 
 class HistoricalWindowsProviderConfig(FrozenModel):
-    """YAML config for the replay provider. See the module docstring.
+    """Experiment configuration for loading history and choosing instruments.
 
     `evidence_dir` points at a checkout of augur-evidence, the same one the fit pipeline reads;
     `None` falls back to `AUGUR_EVIDENCE_DIR`, which is what the in-cluster deployment sets.
-    Unlike every other provider here the parameters are not in the config — they are the past —
-    so the only thing to configure is where to find it and what instruments to price.
+    After realization the experiment selects dates and calls `materialize`; this is not a
+    seeded deployment `ProviderConfig`.
     """
 
     type: Literal["historical_windows"] = "historical_windows"

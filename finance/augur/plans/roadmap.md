@@ -33,7 +33,7 @@ and responsibility docstrings beside the implementing modules.
   Existing contracts survive a policy change; experiments need not implement
   optimizing lenders, landlords, or a general-equilibrium economy.
 
-The library milestone is PATH/OUT/BIND/POL, exercised by STUDY and the
+The library milestone is OUT/BIND/POL, exercised by STUDY and the
 HOUSE preservation example. A new experiment must not require a new engine policy
 variant, app configuration, or copy of financial mechanics.
 
@@ -104,7 +104,6 @@ Paths are relative to `finance/augur/`. Each row names the change that removes i
 | General execution reports through product-named, fixed wealth metrics; native spending explicitly lacks consumption metrics (`sim/backend.py`, `rust/engine/spending.rs`).                    | Compact requested/paid consumption and explicit stop/default outcomes reconcile to events; UI projections are consumers.                                         | OUT                 |
 | Allocation decisions and lot/tax mutation share `rust/engine/target_allocation.rs`; `TargetAllocationPolicy` is static data.                                                                  | Replaceable executable decisions, canonical execution. Current static allocation becomes a built-in function on the same seam.                                   | POL                 |
 | Consumption is converted into `ActiveObligation`; chosen spend and existing promises share an all-or-none funding group.                                                                      | Preserve the shared payment machinery, distinguish claim/request/receipt. Do not infer legal commitment from a cash-demand implementation type.                  | OUT, HOUSE; gate GP |
-| `HistoricalWindowsModel.sample` selects starts using rollout-count-dependent `linspace`, ignoring seed values.                                                                                | Explicit historical window identities, invariant under partition/permutation; historical dates are not fake random seeds.                                        | PATH                |
 | Both historical and structural samplers assemble product prices/payouts; a total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest. | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                           | BIND, TAX           |
 | `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                                                            | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled. | BOND                |
 | Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`.                              | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.   | GT, TAX             |
@@ -126,7 +125,6 @@ of this plan in one PR. Several nodes explicitly split into smaller PRs.
 
 ```mermaid
 flowchart TB
-    PATH["PATH: explicit path identities"]
     OUT["OUT: consumption and failure outcomes"]
     BIND["BIND: explicit product bindings"]
     GP{"GP: decision / settlement semantics"}
@@ -140,13 +138,11 @@ flowchart TB
     GT --> BOND["BOND: native tradable dated bonds"]
     POL --> HOUSE["HOUSE: decisions create or change contracts"]
 
-    PATH --> STUDY["STUDY: public study consumers"]
-    OUT --> STUDY
+    OUT --> STUDY["STUDY: public study consumers"]
     POL --> STUDY
     GS --> STUDY
 
-    PATH -. historical arms .-> RUN["RUN: taxable spending x allocation"]
-    OUT --> RUN
+    OUT --> RUN["RUN: taxable spending x allocation"]
     POL -. changing allocation .-> RUN
     BIND --> RUN
     TAX --> RUN
@@ -180,7 +176,6 @@ those actions. These scope-specific edges do not require unrelated comparisons t
 
 | Unit   | Independently reviewable change(s)                                                                                                                                                                                                                                                                                                                                               | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                                                   |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PATH   | Let the caller select historical starts and materialize those exact paths. Preserve identities in artifacts and selected-trace execution.                                                                                                                                                                                                                                        | Same paths/results when reordered, split or extended; unchanged window set reproduces current Trinity output. Do not change historical methodology during the API migration.                                                                                                                                                                                                                   |
 | OUT    | First add compact requested/paid consumption with event parity. Separately distinguish spending shortfall, contract default and stopped paths in results; remove zero-filled post-failure wealth being interpreted as actual terminal books.                                                                                                                                     | Matching compact/forensic amounts and failure cause, including zero spend and failure with a remaining house/debt. Paid-through-stop, censored terminal outcomes and reporting CPI/base date are explicit. This does not add recovery or partial settlement.                                                                                                                                   |
 | BIND   | Separate slices: distinguish total-return proxies from distributing products and validate held/purchasable support; extract shared factor-to-product construction; supply equity price-return **and dividend-amount paths**, with explicit historical/fitted payout assumptions. Reconcile remaining `typed_series_config.md` work here; do not redo typed keys already present. | Missing payouts, incompatible tax character and double-counted total returns reject. Historical/generated consumers share construction where appropriate without loading each other's artifacts. Price plus payouts reconcile to total return before tax, with explicit payout timing and evidence/model provenance. No global registry or universal fitter.                                   |
 | POL    | After GP, expose an executable allocation decision using current settlement. First consumer: constant versus time-varying allocation; then coordinated budget/allocation and path-local decision memory where a study needs them.                                                                                                                                                | Static-policy parity, no lookahead, isolated state under path/batch reordering and fresh state for each cell. Pin review/mark/cashflow/sell/pay/buy ordering. Record meaningful decisions/transitions and link settlement receipts, using the consumer's vocabulary—not serialized closure internals. Policies cannot mutate books. Reconcile `docs/spending_model.md`'s closed-rule doctrine. |
@@ -229,8 +224,8 @@ all the others to be solved first.
 
 ## What to dispatch first
 
-1. **PATH** and OUT's consumption-capture slice are separate
-   ready PRs. They have concrete consumers and deletion/parity criteria.
+1. OUT's consumption-capture slice is ready for its own PR, with concrete
+   consumers and deletion/parity criteria.
 2. Run **GP**, **GT**, and **GS** as bounded decisions alongside those changes;
    draft POL's constant/glide consumer and TAX's acceptance cases from the answers.
    Prototype BIND against the existing historical/structural consumers, not a

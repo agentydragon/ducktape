@@ -120,7 +120,6 @@ import numpy as np
 
 from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
 from finance.augur.model.equity import EquitySpec
-from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.historical_windows import (
     MACRO_HISTORY_SOURCES,
     HistoricalWindowsModel,
@@ -343,12 +342,16 @@ class Replay:
     """
 
     external_series: ExternalSeriesContext
-    window_count: int
+    window_starts: tuple[date, ...]
     record_start: date
     record_end: date
     # Read against `PAPER_COMPOUND_RETURN_PERCENT`. Held as the numbers rather than as a
     # second copy of the paths, which the context already carries in the simulator's shape.
     compound_return_percent: dict[SecuritySymbol, float]
+
+    @property
+    def window_count(self) -> int:
+        return len(self.window_starts)
 
     def success_rate(self, *, equity_share: float, withdrawal_rate: float) -> float:
         """Fraction of historical windows in which every scheduled withdrawal was paid."""
@@ -402,15 +405,7 @@ def _whole_record_compound_returns(model: HistoricalWindowsModel) -> dict[Securi
     """
 
     horizon = len(model.history.months) - 1
-    bundle = model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=horizon,
-            rollout_seeds=(0,),
-            required_asset_prices=frozenset({SecurityKey(symbol=EQUITY), SecurityKey(symbol=BONDS)}),
-            required_security_distributions=frozenset({SecurityDistributionKey(symbol=BONDS)}),
-            required_index_series=frozenset({InflationKey()}),
-        )
-    )
+    bundle = model.materialize(window_starts=(model.history.months[0],), horizon_months=horizon)
 
     def matrix(key: LevelSeriesKey) -> np.ndarray:
         return bundle.level_matrix(key, rollout_count=1, horizon_months=horizon)
@@ -434,21 +429,12 @@ def sample_replay(evidence_dir: Path) -> Replay:
         equity=EQUITY_SPEC,
         instruments=(BOND_SPEC,),
     ).realize_model()
-    windows = model.window_count(HORIZON_MONTHS)
-    bundle = model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=HORIZON_MONTHS,
-            # Every window, not a thinned subset: the paper's success rate is a count over all
-            # of its payout periods, so dropping any of ours would answer a different question.
-            rollout_seeds=tuple(range(windows)),
-            required_asset_prices=frozenset({SecurityKey(symbol=EQUITY), SecurityKey(symbol=BONDS)}),
-            required_security_distributions=frozenset({SecurityDistributionKey(symbol=BONDS)}),
-            required_index_series=frozenset({InflationKey()}),
-        )
-    )
+    # Every window, not a thinned subset: dropping periods changes the study denominator.
+    window_starts = model.window_starts(HORIZON_MONTHS)
+    bundle = model.materialize(window_starts=window_starts, horizon_months=HORIZON_MONTHS)
     return Replay(
         external_series=materialize_sampled_exogenous(bundle),
-        window_count=windows,
+        window_starts=window_starts,
         record_start=model.history.months[0],
         record_end=model.history.months[-1],
         compound_return_percent=_whole_record_compound_returns(model),

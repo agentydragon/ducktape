@@ -148,7 +148,9 @@ def test_bond_outputs_match_replay_of_the_same_yield_path(maturity_years: float)
     )
     request = ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(11,))
     structural = _config(macro_state=macro, instruments=(fund,)).realize_model().sample(request)
-    replay = HistoricalWindowsModel(history=history, instruments=(fund,)).sample(request)
+    replay = HistoricalWindowsModel(history=history, instruments=(fund,)).materialize(
+        window_starts=(history.months[0],), horizon_months=2
+    )
     for key in (SecurityKey(symbol=BOND), SecurityDistributionKey(symbol=BOND)):
         np.testing.assert_array_equal(
             structural.level_matrix(key, rollout_count=1, horizon_months=2),
