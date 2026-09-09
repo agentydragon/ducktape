@@ -198,6 +198,15 @@ in
     isNormalUser = true;
     home = "/home/coder";
     shell = pkgs.zsh;
+    # base.nix builds the primary account -- which on this host is `coder`, via mkNixos's
+    # `username` -- with `wheel`, and that merges into the definition above rather than being
+    # replaced by it. Verified on the live VM: `groups` reported wheel, and only
+    # `security.sudo.wheelNeedsPassword` plus an account that never had `passwd` run on it stood
+    # between the agent and root. That is a guarantee resting on an omission: a future `passwd
+    # coder`, or anyone flipping wheelNeedsPassword, silently promotes both doors to this box.
+    # Nothing here needs sudo -- the multi-user Nix daemon does not, and hostexecd drops privilege
+    # into this account from root rather than escalating out of it.
+    extraGroups = lib.mkForce [ ];
     openssh.authorizedKeys.keys = [
       keys.publicCoderDevbox
       # sshpiper's mapping key (cluster/k8s/agents/public-coder-agent/sshpiper). Authorized here
