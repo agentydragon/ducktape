@@ -13,7 +13,7 @@ bazelisk run //props/frontend:dev      # Frontend + backend dev servers
 
 - `GET /health` — health check
 - `GET /api/stats/overview` — definitions leaderboard
-- Full endpoint list: see <../docs/SPEC.md> and <../docs/backend_api.md>
+- Full endpoint list: see <../docs/SPEC.rst> and <../docs/backend_api.md>
 
 ## Structure
 

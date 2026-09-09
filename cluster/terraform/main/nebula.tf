@@ -94,7 +94,7 @@ locals {
     punchy   = { punch = true, respond = true }
     # Raised from Nebula's default 1300. nebula1 + 60 (Nebula overhead) = 1480,
     # under the 1500 eno1 underlay; carries Cilium's VXLAN (pod 1370 + 50 = 1420).
-    # Full MTU model + layering: cluster/docs/network.md.
+    # Full MTU model + layering: cluster/docs/network.rst.
     tun     = { dev = "nebula1", mtu = 1420 }
     logging = { level = "info", format = "json" }
     timers = {

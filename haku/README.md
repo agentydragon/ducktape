@@ -22,7 +22,7 @@ Current work is iterating that method until what it surfaces is genuinely good.
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
 - The web runtime and its run procedure: `runtime/claude_web_env/` (+ its `run.md`).
-- The trusted console (capability tier + iframe shell): `console/README.md`;
+- The trusted console (capability tier + iframe shell): `console/README.rst`;
   containment contract: `console/docs/containment.md`. Alternative runtimes
   (Managed Agents): `runtime/managed_agent/` + `plans/`.
 - The current colocated HTTP egress and bridge-bearer contract: `egress/SPEC.md`;

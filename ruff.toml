@@ -12,7 +12,7 @@ target-version = "py313"
 # Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
 # .gitattributes is the source of truth; this list must stay in sync.
 # Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
-# See README.md "Lint/Format Exclusions" section for details.
+# See README.rst "Lint/Format Exclusions" section for details.
 exclude = [
     "tana/export/references",
     "props/testing/fixtures/testdata",

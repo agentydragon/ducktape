@@ -48,7 +48,7 @@ The Job has no Kubernetes API authority and is recreated only when its desired i
 changes (`kustomize.toolkit.fluxcd.io/force: enabled`). It intentionally has neither a TTL nor an
 automatic retry loop: a failed release remains inspectable and blocks its dependent workload until
 an operator deletes `haku-console-migration` and reconciles `haku-console-migration` in
-`ducktape-flux`. See `cluster/docs/troubleshooting.md` → “A Failed Job Wedges Its Flux
+`ducktape-flux`. See `cluster/docs/troubleshooting.rst` → “A Failed Job Wedges Its Flux
 Kustomization”. It temporarily uses the existing CNPG application-owner credential; splitting
 DDL ownership from runtime DML must first migrate the externally managed `mcp_oauth_kv` table and
 make a deliberate ownership/grant handoff for the live database.
@@ -75,7 +75,7 @@ unmapped tables, columns, and indexes waiting for their final drop so schema dri
 that release boundary.
 
 Stored values and cross-replica payloads have the analogous adjacent-release rule; the reader/writer
-vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularies across a roll.
+vocabulary policy remains in <../../../../haku/console/README.rst> § Vocabularies across a roll.
 
 ## haku-indexer — recall-index maintenance, separately deployed
 

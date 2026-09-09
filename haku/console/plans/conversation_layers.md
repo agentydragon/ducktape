@@ -341,7 +341,7 @@ not a join, and no handle to link to.
 delivery state on the attachment, rendering on the channel. That is the correct shape for naming a
 set whose membership changes over time — the same call this codebase made for `agents` against
 `credential_bindings`, where the Agent is identity, the binding holds the state, and rotation
-creates a successor binding rather than mutating the Agent (<../README.md> § Canonical Agent
+creates a successor binding rather than mutating the Agent (<../README.rst> § Canonical Agent
 authority).
 
 **What it buys is that the attachment stops moving.** Replacement becomes "a new session with the

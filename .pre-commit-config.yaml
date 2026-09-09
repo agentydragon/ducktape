@@ -113,6 +113,17 @@ repos:
         language: system
         files: ^(cluster|website)/.*\.md$
 
+  # reStructuredText validation — rstcheck provided by devShell / web-session via Nix.
+  - repo: local
+    hooks:
+      - id: rstcheck
+        name: rstcheck
+        entry: rstcheck --report-level=warning
+        language: system
+        files: \.(rst|rest)$
+        # This parser fixture intentionally uses a short overline and a Sphinx-only role.
+        exclude: ^x/markup_formats/example\.rst$
+
   # NOTE: ESLint and svelte-check are handled by Bazel:
   # - ESLint: bazel build //... (lint aspects run by default)
   # - svelte-check: bazel test //props/frontend:svelte_check_test

@@ -134,7 +134,7 @@ cross-origin boundary prevents the shell from reading the iframe document direct
 
 haku-ui renders its own launch dialog and posts `{type: "requestLaunch", id, prompt}`; the
 shell pops its top-layer confirm showing the prompt **verbatim**, and only then fires with
-the server-side bearer (see <../README.md> → _The capability tier_).
+the server-side bearer (see <../README.rst> → _The capability tier_).
 
 ### Tool calls — routed through haku-ui backend, approved in trusted chrome
 

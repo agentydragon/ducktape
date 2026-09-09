@@ -91,7 +91,7 @@ HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
 
 # Rows per page. Small on purpose: a frame carries a whole tool result, and the console's
 # past-tool-calls page already learned that asking for hundreds of such rows means a
-# multi-megabyte response (<../README.md> § Past tool calls).
+# multi-megabyte response (<../README.rst> § Past tool calls).
 MAX_PAGE = 100
 DEFAULT_PAGE = 25
 

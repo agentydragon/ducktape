@@ -47,7 +47,7 @@ spec:
       # (iguana, rugged) stay excluded on their own via their existing
       # `node-role.kubernetes.io/roaming=true:NoSchedule` taint — no explicit exclusion
       # needed here.
-      # TODO(operator, 2026-07-25): roaming nodes are often offline (see cluster/README.md
+      # TODO(operator, 2026-07-25): roaming nodes are often offline (see cluster/README.rst
       # Node Types), so scheduling a sandbox there needs more thought (claim durability
       # across a node going away mid-session, re-provisioning UX) before adding the
       # toleration that would let a claim land on one. Not done as part of this change.

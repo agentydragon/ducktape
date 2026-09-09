@@ -1,4 +1,4 @@
-@README.md
+@README.rst
 
 ## Adding a migration while other branches hold one
 

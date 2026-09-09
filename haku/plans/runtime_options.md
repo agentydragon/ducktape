@@ -74,7 +74,7 @@ Claude Code`, and Anthropic's [legal-and-compliance
 Two things to weigh before adopting it:
 
 - **It inverts a deliberate credential boundary.** Today the launch credential lives
-  in `haku-console`, a namespace Haku has no RBAC into — see <../console/README.md>
+  in `haku-console`, a namespace Haku has no RBAC into — see <../console/README.rst>
   ("the confidentiality boundary that lets the console hold secrets Haku may not
   read"). Running the loop in `haku-sandbox` puts the subscription OAuth token where
   Haku has full CRUD. Blast radius is worse than a LiteLLM virtual key: misuse is

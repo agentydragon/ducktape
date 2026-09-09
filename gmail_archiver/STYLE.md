@@ -1,6 +1,6 @@
 # gmail_archiver Style
 
-Elaborations on the root <../../STYLE.md>. Do not duplicate rules already covered there.
+Elaborations on the root <../../STYLE.rst>. Do not duplicate rules already covered there.
 
 ## Module Organization
 

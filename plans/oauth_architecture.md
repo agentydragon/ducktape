@@ -6,7 +6,7 @@
 - **Completed baseline:** PR [#3197](https://github.com/agentydragon/ducktape/pull/3197), with
   follow-up PR [#3200](https://github.com/agentydragon/ducktape/pull/3200)
 - **Implemented contract:**
-  <../haku/console/README.md#canonical-agent-authority-and-enrollment>
+  <../haku/console/README.rst#canonical-agent-authority-and-enrollment>
 - **Tactical Haku backlog:** <../haku/console/TODO.md>
 
 Git and the closed prototype PRs are the archive for P0-P5. The former execution diary, spike

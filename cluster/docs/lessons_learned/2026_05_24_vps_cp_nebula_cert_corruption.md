@@ -248,7 +248,7 @@ node`'d).
 - `cluster/terraform/main/nebula-certs/`: all 6 active node cert files (vps-cp-0,
   vps-cp-1, pve-cp-0, kimsufi-cp-0, kimsufi-worker-0, kimsufi-worker-1) verified
   proper PEM. Orphan `talos-vps-worker-{0,1}.{crt,key}` files deleted.
-- Documentation: `cluster/README.md` node table updated, decommission plan
+- Documentation: `cluster/README.rst` node table updated, decommission plan
   `plans/decommission-vps-workers.md` deleted, TF removed `vps_worker0` from
   `local.vps_nodes` / `nebula_node_names` / `nebula_static_host_map` /
   `nebula_configs` / `talos_nebula_nodes`.

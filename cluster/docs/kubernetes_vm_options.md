@@ -48,7 +48,7 @@ eviction or when the source node is still healthy enough to participate.
 
 ## Current Cluster Fit
 
-The current storage table in `cluster/README.md` says all storage is
+The current storage table in `cluster/README.rst` says all storage is
 region-local, with:
 
 - `local-path-proxmox`, `local-path-ovh-{hdd,ssd}`, `local-path-home-ssd`:

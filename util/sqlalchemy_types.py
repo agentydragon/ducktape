@@ -85,7 +85,7 @@ class TolerantTextBackedStrEnumUnionColumn(TypeDecorator[StrEnum | UnknownValue]
 
     Opt-in, and the strict class remains the default: tolerance is only correct where ignoring a
     value is a defensible answer. Which columns those are, and why a value a reader must *act* on is
-    not one of them, is <../haku/console/README.md> § Vocabularies across a roll.
+    not one of them, is <../haku/console/README.rst> § Vocabularies across a roll.
 
     **Writing an `UnknownValue` back is refused.** A reader that cannot name a value has no business
     storing one, so laundering one through this column is a bug and fails where it happens.

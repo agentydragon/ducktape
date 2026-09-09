@@ -12,7 +12,7 @@ resources:
   - networkpolicy-egress.yaml
   - networkpolicy-ingress.yaml
 
-# STYLE.md: config blobs live in their native file, not embedded in YAML.
+# STYLE.rst: config blobs live in their native file, not embedded in YAML.
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

@@ -233,7 +233,7 @@
           # Kubernetes VLAN 4 bridge
           # Static IP for Proxmox API access from Kubernetes VMs.
           # Used by Proxmox CSI driver to manage VM disks.
-          # Network allocation (see cluster/README.md):
+          # Network allocation (see cluster/README.rst):
           #   10.2.0.1    - Home router (gateway)
           #   10.2.0.2    - Atlas (Proxmox host) <- this interface
           #   10.2.1.x    - Control plane nodes

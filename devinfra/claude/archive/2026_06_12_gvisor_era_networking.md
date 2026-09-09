@@ -2,7 +2,7 @@
 
 Historical context for Claude Code web sessions before the Firecracker migration
 (pre-2026-06) and before Anthropic dropped the explicit egress proxy. Nothing here
-is current behavior; see <../README.md> § Networking for the current state.
+is current behavior; see <../README.rst> § Networking for the current state.
 
 ## Explicit Egress Proxy
 

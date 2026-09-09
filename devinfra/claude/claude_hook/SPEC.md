@@ -1,6 +1,6 @@
 # Rust Claude Hook Specification
 
-See <../README.md> for architectural and implementation details.
+See <../README.rst> for architectural and implementation details.
 
 ## Overview
 

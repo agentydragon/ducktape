@@ -96,7 +96,7 @@ let
       dev = "nebula1";
       # Must match Cilium's underlay MTU: Cilium VXLAN frames are pod(1370)+VXLAN(50)=1420 bytes.
       # Nebula default is 1300, which silently drops all large cross-node pod packets (>1300B).
-      # See cluster/docs/network.md for the full MTU stack.
+      # See cluster/docs/network.rst for the full MTU stack.
       mtu = 1420;
     };
     firewall = {

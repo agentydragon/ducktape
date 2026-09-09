@@ -43,7 +43,7 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
 
 - Local/NixOS hosts: <../../../nix/home/claude_code/default.nix>
 - Web environments (incl. Haku): the env block in
-  <../../../devinfra/claude/README.md> § Web Setup — these are set in the Claude
+  <../../../devinfra/claude/README.rst> § Web Setup — these are set in the Claude
   Code web UI, so a code change does **not** propagate; each environment must be
   edited by hand.
 

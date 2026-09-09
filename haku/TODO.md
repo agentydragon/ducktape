@@ -177,7 +177,7 @@ doctrine change, not just a config line.
 
 ## Console — operator-facing dashboard
 
-The console design + action model live in `console/README.md`; the free-form-UI
+The console design + action model live in `console/README.rst`; the free-form-UI
 contract in `console/docs/containment.md`. (The launch-routine button itself
 has shipped on the capability tier — see the README.)
 

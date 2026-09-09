@@ -9,7 +9,7 @@ at that origin by inert config-registry handle (#4885); credential values live i
 references (`decide_config`), never in this domain or in Postgres.
 
 The grant's envelope — owner, principal, provenance, validity window — is the shared
-`haku.console.grants.envelope`. Lifecycle status is derived, never stored (root STYLE.md
+`haku.console.grants.envelope`. Lifecycle status is derived, never stored (root STYLE.rst
 § SQLAlchemy): the row records the end fact — ``ended_at`` — and the
 envelope's :func:`~haku.console.grants.envelope.derive_status` computes the vocabulary from
 them and the clock, so expiry needs no sweeper.

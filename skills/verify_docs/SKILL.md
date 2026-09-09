@@ -25,7 +25,7 @@ Cut everything a strong LLM could derive from reading the code or from general k
 
 ## Audit procedure
 
-1. **Discover conventions**: read root AGENTS.md, STYLE.md, README.md to learn this repo's doc structure, file hierarchy, and naming conventions. Don't assume — each repo may differ.
+1. **Discover conventions**: read root AGENTS.md, STYLE.rst, and the root README (`README.rst` or `README.md`) to learn this repo's doc structure, file hierarchy, and naming conventions. Don't assume — each repo may differ.
 2. **Inventory**: find all documentation files (markdown, plaintext, in-code docs).
 3. **Structural check**: verify the repo's own doc conventions are followed consistently.
 4. **Staleness check**: for each claim in docs (file paths, function signatures, env vars, CLI flags, build targets), grep the codebase to verify it still exists and is accurate. Flag stale references.

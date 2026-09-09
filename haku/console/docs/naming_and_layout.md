@@ -7,7 +7,7 @@ neutral-operation protocol). It is the reference every burn-down PR cites: the t
 layout (§2), the canonical terminology (§3), the reviewer checklist (§4), the binary-to-package
 dependency contract (§5), and the burn-down sequencing (§6).
 
-A plan cannot be cited (<../../../README.md> § plans/); a doc under `docs/` can. This is that
+A plan cannot be cited (<../../../README.rst> § plans/); a doc under `docs/` can. This is that
 citable home. When a burn-down PR renames or moves something, it names the row here it satisfies;
 when a name lands or a chunk completes, this doc is updated to match.
 
@@ -141,7 +141,7 @@ haku/indexer/          # NEW tree (#4887, forthcoming) — the maintenance worke
     recall_index_sync.py  (+ the #4872 chunk/embed split)  chat_corpus/  model_key contract test
 ```
 
-House rules that bound the shape (#4924, <../../../STYLE.md> § General): no grab-bag modules
+House rules that bound the shape (#4924, <../../../STYLE.rst> § General): no grab-bag modules
 (`core.py`/`utils.py` banned), flat-over-nested (a `<3`-file domain gets no subdir — `hostexecd/`
 is the landed example: a flat service.py/models.py pair, no nesting), one `py_library` per file with
 gazelle-managed BUILDs (every move is mechanical), import-from-defining-module.
@@ -344,7 +344,7 @@ result. Their identity-lane treatment remains separate from the token rename.
 
 ## 4. Naming conventions — the reviewer checklist
 
-Every burn-down PR is checkable against these. They are already <../../../STYLE.md> rules, made
+Every burn-down PR is checkable against these. They are already <../../../STYLE.rst> rules, made
 concrete for this batch.
 
 ### 4.1 Directory-as-namespace / no redundant prefix
@@ -429,7 +429,7 @@ That drop lands with the final packaging chunks (§6, C14/C15), not the per-pack
    (<../AGENTS.md> § Refactoring); no transitional shims in-monorepo.
 10. **Cross-roll safety survives the rename** — a decision vocabulary stays strict, narration stays
     tolerant, and a table/enum rename a live replica reads rides expand/contract or the
-    conversation-drop allowance (<../README.md> § Vocabularies across a roll).
+    conversation-drop allowance (<../README.rst> § Vocabularies across a roll).
 
 ## 5. Binary → package dependency matrix
 

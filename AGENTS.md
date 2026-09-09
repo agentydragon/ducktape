@@ -1,4 +1,4 @@
-@README.md
+@README.rst
 
 ## Target Platform
 
@@ -232,7 +232,7 @@ PR from it; if genuinely ambiguous, ask.
 
 - **`debug/`**: write investigation notes here, not in code comments or PR descriptions.
 - **`SPEC.md`**: update when the component's high-level contract changes. No
-  implementation details — those go in README.md or code. Example:
+  implementation details — those go in the README or code. Example:
   <devinfra/claude/claude_hook/SPEC.md>.
 
 ## Testing
@@ -314,4 +314,4 @@ rg -n '"//:node_modules"' --glob 'BUILD*' --glob '*.bzl' .
 
 See <props/frontend/AGENTS.md> for frontend conventions.
 
-@STYLE.md
+@STYLE.rst

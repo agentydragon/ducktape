@@ -125,7 +125,7 @@ session, unlike restarting the agent (F14).
 How often that fires is the part that matters, and for Gmail it is weekly. Google keeps
 an app requesting restricted scopes in **Testing** publishing status unless it goes
 through the verification and security-assessment path, and a Testing-status app's
-refresh token expires every 7 days — documented in `cluster/k8s/haku/console/README.md`
+refresh token expires every 7 days — documented in `cluster/k8s/haku/console/README.rst`
 from the console's own experience with project `rai-personal`. So a Gmail grant needs
 reauthorization roughly weekly **regardless of which option above you choose**. That is
 a human-in-the-loop event, not an automation gap, and it is the single best argument for

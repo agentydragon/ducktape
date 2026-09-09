@@ -127,7 +127,7 @@ cluster-admin identity — never a standing Haku credential. A DB-revalidated Op
 browser session may call the same `/mcp` tool directly with exact-Origin enforcement;
 that path treats trusted console code as the Operator and creates no approval/audit row.
 There is no narrower RBAC backstop underneath either path.
-Source of truth: <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, <../console/README.md>.
+Source of truth: <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, <../console/README.rst>.
 
 ### `tana-rw` server entry
 
@@ -182,9 +182,9 @@ with. Withdrawal is an audit fact, not a delete: a prompt-injected Agent can pul
 attempt out of the operator's approval queue before it is scrutinised, but cannot erase
 the record of it, and approval and withdrawal serialise under the row lock, so a
 withdrawal cannot cancel a call the operator already approved. Detail:
-<../console/README.md> § _MCP approval queue_.
+<../console/README.rst> § _MCP approval queue_.
 Source of truth: <../console/mcp/server.py>, <../console/mcp/tool_call_service.py>,
-<../console/README.md>.
+<../console/README.rst>.
 
 ### Operator-owned base vs. canonical autonomous-write inventory
 
@@ -225,7 +225,7 @@ secrets/API token + **top-layer `<dialog>` confirm**, audited and result-owned i
 `haku-console` (a namespace Haku cannot read). Agent UI/backend can only _request_.
 Trusted console code may also issue direct, no-ledger MCP calls under the DB-revalidated
 Operator session; exact Origin keeps that authority out of the framed agent UI.
-Source of truth: <../console/README.md>.
+Source of truth: <../console/README.rst>.
 
 ### CiliumNetworkPolicy `haku-sandbox-ingress`
 
@@ -243,7 +243,7 @@ Source of truth: <../../cluster/k8s/haku/namespace/networkpolicy.yaml>.
 Every Haku proposal/decision is a git commit; LLM calls route through LiteLLM
 (attribution, budget, kill-switch) with Langfuse traces; capability invocations log in
 `haku-console`.
-Source of truth: <../runtime/agent/config.py> (LiteLLM routing) + <../console/README.md>
+Source of truth: <../runtime/agent/config.py> (LiteLLM routing) + <../console/README.rst>
 (capability audit).
 
 ### Mailbox perimeter
