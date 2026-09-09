@@ -29,7 +29,9 @@ once; execution owns runtime state and settlement.
 Native experiments can supply a rollout-local spending function over current
 cash, public holdings and inflation. Its requests use the same funding, tax and
 all-or-none settlement mechanics as scheduled consumption; a policy cannot
-directly mutate financial state through its observation.
+directly mutate financial state through its observation. The same functions can
+produce forensic timelines or compact wealth, shortfall and failure metrics for
+the payer, without retaining full traces for population runs.
 
 Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire

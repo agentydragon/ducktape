@@ -46,28 +46,7 @@ where
     Make: Fn(u32) -> Decide + Sync,
     Decide: FnMut(Observation) -> Result<Money, SimulationError>,
 {
-    ValidatedInput::new(input)?;
-    let accounts = input
-        .scenario
-        .accounts
-        .iter()
-        .map(|a| a.account.clone())
-        .collect();
-    validate_account(&accounts, &spending.from, "spending payer")?;
-    validate_account(&accounts, &spending.to, "spending payee")?;
-    validate_identifier("spending", &spending.cause_id)?;
-    for rollout in 0..input.rollout_count {
-        for month in 0..input.scenario.horizon_months {
-            validate_amount_index_level(
-                &spending.cause_id,
-                "inflation",
-                rollout,
-                month,
-                series_value(input, "inflation", rollout, month)?,
-            )?;
-        }
-    }
-    let inputs = ProductInputs::resolve(input, &spending.from.agent_id)?;
+    let inputs = validate(input, spending)?;
     let rollouts: Result<Vec<_>, _> = (0..input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
@@ -91,6 +70,73 @@ where
         schema_version: INPUT_SCHEMA_VERSION,
         rollouts: rollouts?,
     })
+}
+
+/// Run the same spending functions as [`simulate`], retaining only product metrics.
+///
+/// Returns the existing seven base metric series and failure month for the payer agent
+/// (`spending.from.agent_id`), in [`ProductMetricSeries`]'s snapshot-major layout.
+/// No monthly state snapshots, journal or event traces are retained. These are wealth
+/// and shortfall metrics, not requested/realized consumption or spending-quality metrics.
+/// Factory isolation, validation and failure behavior are the same as [`simulate`].
+pub fn simulate_product_metrics<Make, Decide>(
+    input: &ExecutionInput,
+    spending: &Spending,
+    make_policy: Make,
+) -> Result<ProductMetricSeries, SimulationError>
+where
+    Make: Fn(u32) -> Decide + Sync,
+    Decide: FnMut(Observation) -> Result<Money, SimulationError>,
+{
+    let inputs = validate(input, spending)?;
+    let rollouts: Result<Vec<_>, _> = (0..input.rollout_count)
+        .into_par_iter()
+        .map(|rollout_id| {
+            let mut decide = make_policy(rollout_id);
+            let mut policy = Policy {
+                spending,
+                inputs: &inputs,
+                decide: &mut decide,
+            };
+            simulate_rollout(
+                input,
+                rollout_id,
+                CaptureMode::Summary,
+                Some(&inputs),
+                Some(&mut policy),
+            )
+            .map(|computation| (computation.product_metrics, computation.failed_month))
+        })
+        .collect();
+    Ok(ProductMetricSeries::from_rollouts(
+        input.scenario.horizon_months + 1,
+        &rollouts?,
+    )?)
+}
+
+fn validate(input: &ExecutionInput, spending: &Spending) -> Result<ProductInputs, SimulationError> {
+    ValidatedInput::new(input)?;
+    let accounts = input
+        .scenario
+        .accounts
+        .iter()
+        .map(|a| a.account.clone())
+        .collect();
+    validate_account(&accounts, &spending.from, "spending payer")?;
+    validate_account(&accounts, &spending.to, "spending payee")?;
+    validate_identifier("spending", &spending.cause_id)?;
+    for rollout in 0..input.rollout_count {
+        for month in 0..input.scenario.horizon_months {
+            validate_amount_index_level(
+                &spending.cause_id,
+                "inflation",
+                rollout,
+                month,
+                series_value(input, "inflation", rollout, month)?,
+            )?;
+        }
+    }
+    Ok(ProductInputs::resolve(input, &spending.from.agent_id)?)
 }
 
 pub(super) struct Policy<'a> {

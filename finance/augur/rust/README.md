@@ -38,8 +38,12 @@ performance comparisons must use `simulate_dense(...)`, not the compact path.
 constructed separately for each rollout. It sees opening holdings at current
 prices and origin-relative CPI before monthly cashflows; it returns nominal
 consumption, funded alongside the execution input's other obligations. The function owns
-its review cadence and memory. This native-only entry point retains forensic
-output; Python/batched callbacks and compact capture are not exposed here.
+its review cadence and memory. This entry point retains forensic output;
+`engine::spending::simulate_product_metrics(...)` executes the same functions with
+compact capture, returning the payer agent's existing seven base metric series
+and failure months without retaining monthly snapshots, journal or event traces.
+These metrics do not yet include requested/realized consumption or spending quality.
+Both entry points are native-only; Python/batched callbacks are not exposed here.
 
 ## Covered behavior
 

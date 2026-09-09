@@ -167,6 +167,7 @@ fn executable_spending_matches_scheduled_funding_and_tax_events() {
             deductible_fraction_ppb: WIRE_RATE_SCALE,
         });
     let scheduled = simulate(&fixture).unwrap();
+    let scheduled_metrics = simulate_product_metrics(&fixture, &spending.from.agent_id).unwrap();
     fixture.scenario.recurring_obligations.clear();
     let executable = spending::simulate(&fixture, &spending, |_| {
         |observation| Ok(Money(1_000).scaled_by(observation.price_level, "fixed real spending")?)
@@ -176,6 +177,11 @@ fn executable_spending_matches_scheduled_funding_and_tax_events() {
         serde_json::to_value(&executable).unwrap(),
         serde_json::to_value(&scheduled).unwrap()
     );
+    let compact = spending::simulate_product_metrics(&fixture, &spending, |_| {
+        |observation| Ok(Money(1_000).scaled_by(observation.price_level, "fixed real spending")?)
+    })
+    .unwrap();
+    assert_eq!(compact, scheduled_metrics);
     for rollout in &executable.rollouts {
         assert_eq!(rollout.failed_month, None);
         assert!(!rollout.dispositions.is_empty());
@@ -213,6 +219,67 @@ fn spending_functions_have_rollout_local_memory_and_stop_at_failure() {
 }
 
 #[test]
+fn compact_spending_matches_forensic_cash_and_shortfall_on_live_and_failed_paths() {
+    let (mut fixture, spending) = spending_fixture();
+    fixture.scenario.accounts[0].opening_balance = Money(5);
+    let make_policy = |rollout| {
+        let mut decisions = 0;
+        move |observation: spending::Observation| {
+            decisions += 1;
+            assert_eq!(decisions, observation.month + 1);
+            if rollout == 0 {
+                assert!(observation.month <= 2, "no decisions after failure");
+                Ok(Money(i64::from(decisions)))
+            } else {
+                Ok(Money(0))
+            }
+        }
+    };
+    let forensic = spending::simulate(&fixture, &spending, make_policy).unwrap();
+    let compact = spending::simulate_product_metrics(&fixture, &spending, make_policy).unwrap();
+    assert_eq!(compact.failed_month, vec![2, -1]);
+    assert_eq!(compact.rollout_count, fixture.rollout_count);
+    assert_eq!(compact.snapshot_count, fixture.scenario.horizon_months + 1);
+    for rollout in &forensic.rollouts {
+        assert_eq!(
+            compact.failed_month[rollout.rollout_id as usize],
+            rollout.failed_month.map_or(-1, i64::from)
+        );
+        for snapshot in &rollout.months {
+            let index = (snapshot.month * compact.rollout_count + rollout.rollout_id) as usize;
+            for (metric, values) in crate::product::BASE_METRIC_NAMES
+                .iter()
+                .zip(&compact.base_series)
+            {
+                let expected = match *metric {
+                    "cash_quanta" => {
+                        snapshot
+                            .balances
+                            .iter()
+                            .find(|balance| balance.account == spending.from)
+                            .unwrap()
+                            .balance
+                            .0
+                    }
+                    "shortfall_quanta" => rollout
+                        .obligations
+                        .iter()
+                        .filter(|obligation| obligation.month + 1 == snapshot.month)
+                        .map(|obligation| obligation.shortfall.0)
+                        .sum(),
+                    _ => 0,
+                };
+                assert_eq!(
+                    values[index], expected,
+                    "{metric} at snapshot {} rollout {}",
+                    snapshot.month, rollout.rollout_id
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
     let (mut fixture, mut spending) = spending_fixture();
     let unchanged = spending::simulate(&fixture, &spending, |_| |_| Ok(Money(0))).unwrap();
@@ -222,6 +289,14 @@ fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
     );
     assert!(matches!(
         spending::simulate(&fixture, &spending, |_| |_| Ok(Money(-1))),
+        Err(SimulationError::InvalidAmount { .. })
+    ));
+    assert_eq!(
+        spending::simulate_product_metrics(&fixture, &spending, |_| |_| Ok(Money(0))).unwrap(),
+        simulate_product_metrics(&fixture, &spending.from.agent_id).unwrap()
+    );
+    assert!(matches!(
+        spending::simulate_product_metrics(&fixture, &spending, |_| |_| Ok(Money(-1))),
         Err(SimulationError::InvalidAmount { .. })
     ));
     spending.cause_id = " ".into();
@@ -235,6 +310,16 @@ fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
         spending::simulate(&fixture, &spending, |_| |_| panic!(
             "invalid paths must be rejected before execution"
         )),
+        Err(SimulationError::NonPositiveSeriesAmountLevel { .. })
+    ));
+    assert!(matches!(
+        spending::simulate_product_metrics(
+            &fixture,
+            &spending,
+            |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
+                panic!("invalid paths must be rejected before constructing a policy")
+            }
+        ),
         Err(SimulationError::NonPositiveSeriesAmountLevel { .. })
     ));
     spending.to = AccountRef::new("absent", "checking");
