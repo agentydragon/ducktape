@@ -458,9 +458,9 @@ routes.push(
     /^\/connection-enrollments\/[^/]+\/preview$/,
     () => ({
       enrollment: {
-        client_id: "claude-ai-registration-5d46c4f2",
-        client_name: "Claude.ai",
-        redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+        client_id: "test-client-registration-5d46c4f2",
+        client_name: "Test external client",
+        redirect_uri: "https://test-client.example/oauth/callback",
         expires_at: new Date(NOW + 10 * 60_000).toISOString(),
         version: 1,
       },
