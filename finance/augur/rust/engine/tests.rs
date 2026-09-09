@@ -1186,6 +1186,23 @@ fn stopped_book_fixture(
             *value *= future_multiplier;
         }
     }
+    for (channel, value) in [
+        ("regime", 1),
+        ("event_kind", 0),
+        ("sale_opportunity", 0),
+        ("sale_capacity", 0),
+        ("eligible", 0),
+        ("forced_sale", 0),
+        ("liquidity_blocked", 0),
+        ("forced_recovery", 0),
+        ("company_valuation", 0),
+    ] {
+        input.series.push(SeriesSpec {
+            series_id: private_equity_series_id(channel, "test-issuer"),
+            snapshots: horizon + 1,
+            values: vec![value; horizon as usize + 1],
+        });
+    }
     (input, component)
 }
 
