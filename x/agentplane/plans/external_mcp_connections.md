@@ -205,7 +205,7 @@ Its reusable policy sets let an external Identity and a Sandbox type share Actio
 duplicating policy or conflating Identity with type. Enrollment selects the Identity; it does not
 copy the referenced policy configuration into the new Connection.
 
-## Existing pieces and reuse probe
+## Existing pieces and implementation baseline
 
 - [`MCPFRONT` and `MCPAGG`](task_dag.md) already describe external Action presentation and Haku
   replacement. This track supplies their concrete initial clients and identity/policy requirements.
@@ -217,12 +217,14 @@ copy the referenced policy configuration into the new Connection.
 - Haku's [Agent authority](../../../haku/console/docs/agent_authority.md) already separates OAuth
   client registration, operator consent, identity, and credential binding. Inspect its enrollment
   tests and the [`FastMCP adapter`](../../../haku/console/identity/fastmcp_adapter.py), plus shared
-  `mcp_infra` auth/persistence, before choosing reusable pieces. The first probe should map which
-  existing protocol machinery can support selection of a configured identity without importing
-  Haku's conversation lifecycle, multi-operator ownership graph, or version-sensitive private adapter hooks.
-  Prefer pinned FastMCP/Authlib and existing `mcp_infra` registration, PKCE, callback, token and
-  persistence support. Reproduce the external-consent/app-BFF handoff with a hermetic probe; report
-  actual public extension points and any unavoidable version-sensitive seam before implementation.
+  `mcp_infra` auth/persistence, for reusable pieces. Build on the operator-approved assumption that
+  Haku Console's DCR works; additional compatibility probes and live Claude.ai proof are not
+  prerequisites for implementation. Reuse pinned FastMCP/Authlib registration, PKCE, callback, token,
+  and persistence machinery, including narrowly isolated and regression-tested private hooks where
+  existing Haku behavior requires them. Do not import its conversation lifecycle or multi-operator
+  graph. Test new authority/consent boundaries during implementation; perform real browser/client
+  acceptance afterward and fix compatibility gaps found there. This assumption is permission to
+  proceed, not a claim that Agentplane's new integration is already verified.
 
 ## Initial MCP tools: generic Actions
 

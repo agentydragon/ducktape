@@ -194,9 +194,11 @@ reconnect, rename, unbind, and rebind. Settle binding history, pending Actions/o
 whether rebind changes existing tokens' effective authority or requires reauthorization. Registration
 mechanism and mutable names must not determine durable identity. See the
 [external connection plan](external_mcp_connections.md), including DCR/CIMD compatibility.
-Prefer pinned FastMCP/Authlib and existing `mcp_infra` protocol/persistence machinery; probe the
-integration-app consent handoff and narrow product bookkeeping instead of reimplementing registration,
-PKCE, token issuance, or refresh. No configurable policy or SandboxPreset representation is required.
+Build on the operator-approved assumption that Haku Console's DCR works, reusing pinned
+FastMCP/Authlib and existing `mcp_infra` protocol/persistence machinery. Do not require more
+compatibility probes or live Claude.ai proof before implementation; test the new consent/authority
+boundaries and fix client compatibility during subsequent acceptance. No configurable policy or
+SandboxPreset representation is required.
 
 ### `POLICYBIND` — policy-binding model and storage
 
