@@ -231,7 +231,7 @@ class EngineAcceptance:
         for name in METRIC_NAMES:
             assert arrays[name].shape == (HORIZON_MONTHS + 1, 1), f"{name} is not snapshots by rollouts"
         assert metrics.failed_month.shape == (1,)
-        assert metrics.currency_code == run.scenario.currency.code
+        assert metrics.currency_code == run.execution_input["currency_code"]
 
     def test_a_funded_rollout_does_not_report_a_failure(self, engine: Engine, run: CompiledRun) -> None:
         """Anti-vacuity for the assertions above: they describe a rollout that ran to the end."""

@@ -249,7 +249,7 @@ py_library(
         ":locations",
         ":product_metrics",
         ":scenario",
-        "//finance/augur/sim/compiler:plan",
+        "//finance/augur/sim/compiler:execution",
     ],
 )
 

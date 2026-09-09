@@ -9,6 +9,8 @@ A comparison is blind to a rule both implementations get the same way and both g
 these assertions say what the answer must be, so they still bind with one engine left.
 """
 
+from decimal import Decimal
+
 import pytest
 import pytest_bazel
 
@@ -25,10 +27,12 @@ from finance.augur.sim.testing.behaviour import (
     YearEndTaxAcceptance,
 )
 from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
+from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.deductions import DeductionAcceptance
 from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.engine_edges import HarvestAcceptance, ScanPhaseAcceptance, ValidationEdgeAcceptance
+from finance.augur.sim.testing.fixtures import SF, checking, home_purchase
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.private_equity import PrivateEquityAcceptance
@@ -220,6 +224,31 @@ class TestRustHarvest(HarvestAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust
+
+
+def test_derived_building_basis_uses_engine_rounding() -> None:
+    # The retired dense compiler incorrectly required this derived amount to be exact
+    # cents. Authored money is exact; multiplication by the land share rounds in the engine.
+    case = Case(
+        scenario=scenario(
+            checking(("alice", Decimal(200)), ("seller", Decimal(0))),
+            scheduled_property_purchases=[
+                home_purchase(
+                    mortgage=None,
+                    purchase_price=Decimal("100.01"),
+                    down_payment=Decimal("100.01"),
+                    buyer_closing_cost=Decimal(0),
+                    land_value_fraction=0.2,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=1,
+        ),
+        rollout_count=1,
+        locations={"sf": SF},
+    )
+    result = run_rust(case)
+    assert result.property_details["building_basis_quanta"].to_list() == [8001]
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ clean-room proposal. The financial capability surface lives in
 `sim/` is the scenario model, the compiler that turns one into a plan, and the contract an
 engine answers against. It does not contain an engine. The engine is
 <../rust/README.md>, and `sim/` cannot import it — the dependency runs one way, which is what
-keeps the compiled plan a description of the work rather than one engine's input format.
+keeps preparation independent of execution.
 
 ## Design goals
 
@@ -30,9 +30,9 @@ The production handoff is:
 product/API wire models
     -> product scenario translation
     -> Scenario
-    -> compile_simulation(...)
-    -> CompiledSimulation
-    -> Engine.product_metrics(...) / run(...)
+    -> compile_run(..., materialized paths, rules, locations)
+    -> CompiledRun (one prepared execution input)
+    -> Engine.product_metrics(...) / events(...)
     -> canonical event frames and state channels
 ```
 
@@ -56,24 +56,24 @@ validators reject invalid authored topology before compilation — a scenario th
 built cannot be simulated, whichever engine would have run it. `scenario_test.py` states
 that layer on its own, without executing anything.
 
-### Compiler plan
+### Execution preparation
 
-`finance/augur/sim/compiler/` resolves the authored scenario into `CompiledSimulation`:
-string tables, account and lot slots, per-asset quantity scales, the dense exogenous cubes in
-integer quanta, and the deployment's tax law flattened into brackets, deductions and
-exemptions. It imports only `jaxtyping` — annotations — and produces numpy.
+`finance/augur/sim/compiler/execution.py` prepares the engine's input directly:
+per-asset quantity scales, exact-money exogenous paths, and the supplied tax law
+resolved into brackets, deductions and exemptions. It does not build a second
+financial representation of dense slots and masks that an adapter then bypasses.
 
 Resolving tax law here rather than in an engine is deliberate. An engine that looked up its
 own jurisdiction records could assess a different schedule than the one a case states, which
 is how three divergences reached production before the plan became the single source.
 
-`compile_simulation` also rejects a population of no rollouts: every engine reads the plan,
-so the precondition belongs to the plan rather than to whichever entry point a caller used.
+Preparation rejects an empty population and preserves checks that must precede
+quantization. Rust validates the prepared input before executing it.
 
 ## The engine contract
 
 `finance/augur/sim/backend.py` declares what an engine is. `CompiledRun` carries one
-compiled plan and everything needed to execute it; `Engine` is the interface
+prepared execution document, with no original scenario or rules to reread; `Engine` is the interface
 `ProductService` holds — product metrics, the percentile fan, terminal summaries, and the
 event log for one selected rollout.
 
@@ -118,7 +118,7 @@ worth and under-fund a cash band.
 
 Authored topology is rejected by `scenario.py` validators. Everything derived from it —
 missing series, unknown accounts, a sale exceeding its lots — is rejected during compilation
-or by the engine reading the fixture, where the failure can name the row that caused it.
+or by the engine validating the prepared input, where the failure can name the offending row.
 
 ## Change discipline
 

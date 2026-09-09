@@ -167,7 +167,7 @@ expose the source and proceeds accounts on every lot disposition and the ordered
 sleeve identities attempted for every matching obligation. Optional quiet-band
 drift rebalancing is all-or-nothing, returns every sleeve to its floored target,
 and suppresses itself whenever the cash band is already raising or investing.
-Sleeve quantity scales are explicit fixture integers, taken by `fixture_encoder`
+Sleeve quantity scales are explicit input integers, taken during input preparation
 from the sleeve's own asset, so the fixture cannot state a scale the Python side
 does not use.
 
@@ -181,10 +181,9 @@ the percentile fan with `product/metric_composition.py` and `product/quantiles.p
 Design, and two behaviours the engine keeps deliberately rather than corrects:
 [docs/product_metrics.md](docs/product_metrics.md).
 
-`fixture_encoder.py` is what connects that to a live request: a `Scenario` and its
-`CompiledSimulation` become the strict integer fixture, taking money straight out of
-`external_money_values` and quantizing index levels to parts per billion before any
-multiplication.
+`sim/compiler/execution.py` connects this to a live request: the authored scenario,
+supplied rules and materialized paths become the prepared integer execution input
+once. The backend transports it without further financial compilation.
 
 This engine serves all four projection endpoints, the selected rollout included.
 `ProductService` holds an `Engine` (<../sim/backend.py>) rather than reaching for this
@@ -219,13 +218,8 @@ on where it sits in that order, while a vectorized scan reports the whole failur
 none of it. No month-level rule reproduces an ordering within one month. Product metrics and
 the failure vector were never part of that divergence.
 
-A scenario the fixture cannot express is refused rather than encoded without it. The live
-case is a purchased property: its recurring HOA, insurance and maintenance obligations carry
-a Schedule E deduction category and a property gate, and `ObligationSpec` has neither field.
-
-Why the fixture is a third model beside `Scenario` and `CompiledSimulation`, what the schema
-being written on both sides does and does not expose, and the intended end state:
-[docs/fixture_boundary.md](docs/fixture_boundary.md).
+Preparation, precision and the remaining language-binding boundary:
+[docs/execution_boundary.md](docs/execution_boundary.md).
 
 ## Python extension
 
@@ -236,7 +230,7 @@ integers, so the fan workload never pays for a dense JSON round trip. `simulator
 remains for out-of-process forensic runs.
 
 Scenario features the fixture cannot express are refused rather than encoded without them:
-[docs/fixture_boundary.md](docs/fixture_boundary.md) § What the fixture cannot express.
+[docs/execution_boundary.md](docs/execution_boundary.md).
 
 ## Layout
 

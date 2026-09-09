@@ -13,7 +13,8 @@ The library input is a `Scenario` evaluated over supplied exogenous paths;
 rules and locations, and returns the `CompiledRun` consumed by `RustEngine`.
 It neither samples paths nor loads rules. Experiment callers can reuse one path
 population across scenarios; the product service uses the same compilation entry
-point. Direct compiler callers inspecting plan arrays can use `compile_simulation`.
+point. The result contains the execution input itself, not a dense plan plus the
+original objects for a backend to reinterpret.
 
 A selected one-rollout path is useful for UI inspection,
 but it is one sampled trajectory from a distribution, not a separate

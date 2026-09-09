@@ -52,18 +52,14 @@ each reads correct on its own.
 
 ## What the encoder has to preserve
 
-`rust/backend.py` takes an integer fixture, and `rust/fixture_encoder.py` builds one from a
-`Scenario` and its `CompiledSimulation`. The fixture's series are exact integers while the
-sampled series are float64, so the encoder's whole job is where those floats are read:
+`sim/compiler/execution.py` prepares the integer execution input directly from the
+scenario and supplied paths. The backend only transports it:
 
-- money series (security prices, distributions, home values, PE marks) are already integer
-  quanta in `CompiledSimulation.external_money_values`, so they transfer exactly;
+- security prices, home values and PE marks cross as integer currency quanta;
+- distribution rates retain sub-quantum precision until multiplied by holdings;
 - index series (inflation, rent) arrive as float64 and are quantized to parts per billion
   before they ever multiply money, so the engine divides an exact rational rather than
   rounding a product of floats.
 
-No engine arithmetic reads an index level raw. Rates follow the same rule, with two that
-reach the fixture by a different route and are checked rather than assumed: a bond's
-coupon, which the compiler reads as the exact rational `Fraction(str(rate))`, and a
-property sale's closing cost, which the fixture spells in basis points. Both refuse a value
-whose two routes disagree.
+No engine arithmetic reads an index level raw. Coupon and closing-cost rates likewise
+cross as integer parts per billion before multiplying money.

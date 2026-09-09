@@ -39,19 +39,22 @@ def test_compile_run_keeps_the_supplied_paths_and_rules() -> None:
         scenario, rollout_count=2, external_series=paths, jurisdictions=jurisdictions, locations=locations
     )
 
-    assert run.scenario is scenario
-    assert run.external_series is paths
-    assert run.jurisdictions is jurisdictions
-    assert run.locations is locations
-    assert run.plan.horizon_months == 1
-    assert run.plan.rollout_count == 2
-    assert run.plan.currency_quantum == Decimal("0.01")
-    np.testing.assert_array_equal(run.plan.external_values[0], levels)
-    np.testing.assert_array_equal(run.plan.cash_initial_balance, [125, 0, 0])
-    np.testing.assert_array_equal(run.plan.tax.link_standard_deduction, [12345])
+    prepared = run.execution_input
+    assert prepared["scenario"]["horizon_months"] == 1
+    assert prepared["rollout_count"] == 2
+    assert prepared["currency_quantum"] == "0.01"
+    assert prepared["series"][0]["values"] == [1_000_000_000, 1_020_000_000, 1_000_000_000, 990_000_000]
+    assert [a["opening_balance"] for a in prepared["scenario"]["accounts"]] == [125, 0]
+    assert prepared["scenario"]["tax_profiles"][0]["jurisdictions"][0]["standard_deduction"] == 12345
+
+    # The engine receives this prepared value, not mutable authoring objects to reread.
+    scenario.initial_cash.clear()
+    jurisdictions.clear()
+    assert len(prepared["scenario"]["accounts"]) == 2
+    assert prepared["scenario"]["tax_profiles"][0]["jurisdictions"][0]["standard_deduction"] == 12345
 
 
-def test_case_plan_and_run_share_one_compilation() -> None:
+def test_case_reuses_one_prepared_run() -> None:
     case = Case(
         scenario=Scenario(
             agents=[Agent(agent_id="alice")],
@@ -62,10 +65,8 @@ def test_case_plan_and_run_share_one_compilation() -> None:
         rollout_count=2,
     )
 
-    plan = case.plan
-    assert case.compiled_run.plan is plan
-    assert case.plan is plan
-    assert case.compiled_run.external_series is case.external_series
+    run = case.compiled_run
+    assert case.compiled_run is run
 
 
 if __name__ == "__main__":

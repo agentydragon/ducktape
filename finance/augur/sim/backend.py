@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
-from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
+from finance.augur.sim.compiler.execution import compile_execution_input
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction
@@ -34,22 +35,13 @@ from finance.augur.sim.scenario import Scenario
 
 @dataclass(frozen=True)
 class CompiledRun:
-    """One compiled simulation, and everything an engine needs to run it.
+    """The prepared execution document, consumed directly by the engine.
 
-    `plan` is the compiled scenario. The engine reads a strict integer fixture derived from
-    it by `rust/fixture_encoder.py`, so what runs is one compilation of one scenario rather
-    than a second derivation of it.
-
-    `external_series` is carried beside the plan because the compiler drops the
-    private-equity company-valuation channel that no engine phase reads and the Rust
-    validator still requires.
+    This is the sole execution representation. Authored scenario objects, rule sources
+    and sampled frames are not retained or reinterpreted during execution.
     """
 
-    scenario: Scenario
-    plan: CompiledSimulation
-    external_series: ExternalSeriesContext
-    jurisdictions: dict[str, Jurisdiction]
-    locations: dict[str, Location]
+    execution_input: dict[str, Any]
 
 
 def compile_run(
@@ -60,24 +52,20 @@ def compile_run(
     jurisdictions: dict[str, Jurisdiction],
     locations: dict[str, Location],
 ) -> CompiledRun:
-    """Compile a scenario over supplied paths and retain those same inputs for execution.
+    """Prepare a self-contained execution input from a scenario and supplied paths.
 
     Sampling and rule/location loading belong to the caller. An experiment can reuse
     one path population across policy cells and explicitly supply its financial rules.
     """
 
     return CompiledRun(
-        scenario=scenario,
-        plan=compile_simulation(
+        execution_input=compile_execution_input(
             scenario,
             rollout_count=rollout_count,
             external_series=external_series,
             jurisdictions=jurisdictions,
             locations=locations,
-        ),
-        external_series=external_series,
-        jurisdictions=jurisdictions,
-        locations=locations,
+        )
     )
 
 

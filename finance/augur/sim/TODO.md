@@ -324,21 +324,6 @@ tree at merge time.
   recomputes grouped due per slot. Precompute per-month group ids and compute
   group due once (`engine/phases.py`).
 
-### P3
-
-- **Lifecycle and obligation discriminators are still raw SoA fields.**
-  `LifecycleEventCompileOutput` reuses one `amount` field by `kind`;
-  `ObligationCompileOutput` carries `source_kind` / `source_index` with
-  kind-dependent payload. Add typed per-kind views over the dense rows
-  (`compiler/lifecycle.py`, `compiler/obligations.py`, `engine/phases.py`).
-- **Some compile-plan fields still sit outside their natural arenas.**
-  `capital_gain_agent_codes`, `tax_profile_capital_gain_index`,
-  `property_rented_fraction`, `property_building_basis`,
-  `property_owner_profile_index`, `liability_owner_profile_index` remain
-  top-level arrays on `CompiledSimulation`. Move when touching nearby compiler
-  code; likely homes `TaxCompileOutput` / `PropertyCompileOutput` /
-  `LiabilityCompileOutput` (`compiler/plan.py`).
-
 ## Future / nice-to-have
 
 - **Stochastic tenant model.** Landlord rental income today uses a

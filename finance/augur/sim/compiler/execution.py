@@ -1,19 +1,8 @@
-"""Encode a `Scenario` and its compiled sampled paths as the Rust simulator's integer fixture.
+"""Prepare the execution input directly from an authored scenario and materialized paths.
 
-This is the only direction, and what `product/service.py` dispatches a live request through.
-
-Money crosses exactly. `CompiledSimulation.external_money_values` is already an integer
-quantum count, and configured amounts go through the same `currency_amount_to_quanta`
-boundary the compiler uses, so no amount is rounded twice on the way in.
-
-Index levels (inflation, rent) are float64 in the plan and parts per billion in the fixture.
-Quantizing here rather than in the engine is the point: the engine multiplies integer money
-by these levels, so the float has to become an exact integer somewhere, and doing it once at
-the boundary means one rounding rule to state instead of one per multiplication site.
-
-A scenario feature the fixture cannot express raises instead of being dropped. The fixture
-is a deliberate subset, and a silently discarded feature is how a fan that looks right is
-wrong.
+Resolve tax rules and quantize money, quantities and index levels once. The resulting
+document is what the engine executes, not an adapter over a second compiled world model.
+Unsupported inputs are rejected rather than silently omitted.
 """
 
 from __future__ import annotations
@@ -36,8 +25,15 @@ from finance.augur.model.series import (
     SecurityKey,
 )
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
-from finance.augur.sim.compiler.plan import CompiledSimulation
-from finance.augur.sim.compiler.tax import OPEN_ENDED_BRACKET_UPPER_QUANTA
+from finance.augur.sim.compiler.helpers import StringTable
+from finance.augur.sim.compiler.private_equity import PEChannels, compile_pe_channels
+from finance.augur.sim.compiler.series import (
+    collect_level_series_keys,
+    external_series_cubes,
+    materialize_level_rows,
+    validate_series_indexed_amounts,
+)
+from finance.augur.sim.compiler.tax import OPEN_ENDED_BRACKET_UPPER_QUANTA, TaxCompileOutput, compile_tax
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import (
     MONEY_FACTOR_SCALE,
@@ -78,7 +74,7 @@ _INDEX_SERIES_KINDS = (InflationKey, RentKey)
 class UnsupportedScenarioError(ValueError):
     """A scenario the Rust engine has no representation for.
 
-    Raised rather than encoded: the fixture schema is `deny_unknown_fields`, so a feature with
+    Raised rather than encoded: the execution input schema is `deny_unknown_fields`, so a feature with
     no field would have to be dropped, and dropping one changes the answer without changing the
     shape of it.
     """
@@ -104,13 +100,13 @@ def _account(agent_id: str, account_id: str) -> dict[str, str]:
 
 
 def _asset_id(asset: AssetKey) -> str:
-    """The fixture's flat asset identifier: a bare symbol, or the private-equity wire id."""
+    """The execution input's flat asset identifier: a bare symbol, or the private-equity wire id."""
 
     return asset.wire_id if isinstance(asset, PrivateEquityAssetKey) else str(asset.symbol)
 
 
 def _amount(amount: object, *, quantum: Decimal, context: str) -> int | dict[str, Any]:
-    """One `AmountSpec` as the fixture's untagged amount: an integer, or a tagged schedule."""
+    """One `AmountSpec` as the execution input's untagged amount: an integer, or a tagged schedule."""
 
     match amount:
         case Decimal():
@@ -120,7 +116,7 @@ def _amount(amount: object, *, quantum: Decimal, context: str) -> int | dict[str
         case SeriesIndexedAmount():
             if not isinstance(amount.series, _INDEX_SERIES_KINDS):
                 raise UnsupportedScenarioError(
-                    f"{context} is indexed by {amount.series.wire_id!r}, which the fixture's amount "
+                    f"{context} is indexed by {amount.series.wire_id!r}, which the execution input's amount "
                     "schedule does not carry; only inflation and rent levels are index series"
                 )
             return {
@@ -159,7 +155,7 @@ def _flow(
 ) -> dict[str, Any]:
     """What a transfer-shaped spec carries besides its dates and, for a cashflow, its property.
 
-    Four scenario families cross as four fixture structs — transfers and property cashflows,
+    Four scenario families cross as four execution input structs — transfers and property cashflows,
     each one-shot or recurring — and they differ only in those two things.
     """
 
@@ -191,60 +187,70 @@ def _obligation(obligation: ScheduledObligation | RecurringObligation, *, quantu
     }
 
 
-def _series_values(key: LevelSeriesKey, plan: CompiledSimulation, row: int) -> Int64[np.ndarray, " rollout snapshot"]:
+def _series_values(
+    key: LevelSeriesKey, levels: Float64[np.ndarray, " rollout snapshot"], money: Int64[np.ndarray, " rollout snapshot"]
+) -> Int64[np.ndarray, " rollout snapshot"]:
     if isinstance(key, _MONEY_SERIES_KINDS):
-        return np.asarray(plan.external_money_values[row], dtype=np.int64)
+        return money
     if isinstance(key, _INDEX_SERIES_KINDS):
-        levels = plan.external_values[row]
         if not np.isfinite(levels).all():
             rollout, month = np.argwhere(~np.isfinite(levels))[0]
             raise ValueError(
                 f"index series {key.wire_id!r} has no level at rollout {rollout}, month {month}; "
-                "the fixture's series are dense over every rollout and snapshot"
+                "the execution input's series are dense over every rollout and snapshot"
             )
         return _round_ppb(levels)
-    raise UnsupportedScenarioError(f"level series {key.wire_id!r} has no fixture representation")
+    raise UnsupportedScenarioError(f"level series {key.wire_id!r} has no execution input representation")
 
 
-def _level_series(plan: CompiledSimulation) -> list[dict[str, Any]]:
-    snapshots = plan.horizon_months + 1
+def _level_series(
+    keys: tuple[LevelSeriesKey, ...],
+    levels: Float64[np.ndarray, " series rollout snapshot"],
+    money: Int64[np.ndarray, " series rollout snapshot"],
+) -> list[dict[str, Any]]:
     return [
         {
             "series_id": key.wire_id,
-            "snapshots": snapshots,
-            "values": _series_values(key, plan, row).reshape(-1).tolist(),
+            "snapshots": levels.shape[2],
+            "values": _series_values(key, levels[row], money[row]).reshape(-1).tolist(),
         }
-        for row, key in enumerate(plan.series_keys)
+        for row, key in enumerate(keys)
     ]
 
 
-def _private_equity_series(plan: CompiledSimulation, bundle: PrivateEquityBundle) -> list[dict[str, Any]]:
-    """The ten per-issuer private-equity channels, in the fixture's typed integer units.
+def _private_equity_series(
+    issuer_ids: tuple[str, ...],
+    pe_channels: PEChannels,
+    bundle: PrivateEquityBundle,
+    *,
+    rollout_count: int,
+    horizon_months: int,
+    quantum: Decimal,
+) -> list[dict[str, Any]]:
+    """The ten per-issuer private-equity channels, in the execution input's typed integer units.
 
-    Nine come off the compiled channels, so the fixture carries one materialization of the
-    sampled bundle rather than a second one. `company_valuation` is the exception: the
-    compiler drops it because no engine phase reads it, while the validator still requires
-    the channel, so it comes off the bundle at the same money boundary as the marks.
+    Execution channels have already passed raw-value validation and money quantization.
+    Company valuation uses the same money boundary; it is required by input validation.
     """
 
-    channels = plan.pe_channels.execution
-    snapshots = plan.horizon_months + 1
+    channels = pe_channels.execution
+    snapshots = horizon_months + 1
     series: list[dict[str, Any]] = []
-    for index, issuer_id in enumerate(plan.pe_issuers.issuer_ids):
+    for index, issuer_id in enumerate(issuer_ids):
         valuation = bundle.issuer_float_matrix(
-            issuer_id, "company_valuation_usd", rollout_count=plan.rollout_count, horizon_months=plan.horizon_months
+            issuer_id, "company_valuation_usd", rollout_count=rollout_count, horizon_months=horizon_months
         )
         for channel, values in (
             ("mark", channels.mark_quanta[index]),
             ("regime", channels.regime_codes[index]),
-            ("event_kind", plan.pe_channels.event_kind_codes[index]),
+            ("event_kind", pe_channels.event_kind_codes[index]),
             ("sale_opportunity", channels.sale_opportunity_active[index].astype(np.int64)),
             ("sale_capacity", _round_ppb(channels.sale_capacity_fractions[index])),
             ("eligible", _round_ppb(channels.eligible_fractions[index])),
             ("forced_sale", _round_ppb(channels.forced_sale_fractions[index])),
             ("liquidity_blocked", channels.liquidity_blocked[index].astype(np.int64)),
             ("forced_recovery", channels.forced_recovery_cashout_quanta[index]),
-            ("company_valuation", sampled_array_to_quanta(valuation, quantum=plan.currency_quantum)),
+            ("company_valuation", sampled_array_to_quanta(valuation, quantum=quantum)),
         ):
             series.append(
                 {
@@ -293,19 +299,18 @@ def _brackets(
 
 
 def _tax_profiles(
-    scenario: Scenario, plan: CompiledSimulation, jurisdictions: Mapping[str, Jurisdiction]
+    scenario: Scenario, tax: TaxCompileOutput, strings: StringTable, jurisdictions: Mapping[str, Jurisdiction]
 ) -> list[dict[str, Any]]:
     """Tax profiles built from the compiled tables rather than re-read from the jurisdiction YAML.
 
-    `plan.tax` already holds the bracket edges, rates, standard deductions, prior-year tax and
+    `tax` already holds the bracket edges, rates, standard deductions, prior-year tax and
     §121 cap, each resolved for its profile's filing status. Taking them from there is what
     makes a case assessed under one schedule instead of two lookups that have to agree.
     """
 
-    tax = plan.tax
     rules_by_profile: list[list[dict[str, Any]]] = [[] for _ in scenario.tax_profiles]
     for link, profile_index in enumerate(tax.link_profile.tolist()):
-        jurisdiction_id = plan.strings[int(tax.link_jurisdiction[link])]
+        jurisdiction_id = strings.values[int(tax.link_jurisdiction[link])]
         jurisdiction = jurisdictions[jurisdiction_id]
         rules_by_profile[profile_index].append(
             {
@@ -350,7 +355,7 @@ def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any
         scale = quantity_scale_for_asset(lot.asset)
         units = int(quantity_to_quanta(lot.quantity, scale=scale))
         basis_per_unit = int(currency_amount_to_quanta(lot.cost_basis_per_unit, quantum=quantum))
-        # The fixture stores the lot's total basis, and a fractional quantity at a per-unit
+        # The execution input stores the lot's total basis, and a fractional quantity at a per-unit
         # price need not land on a whole quantum -- half a share at $33.33 does not. Round the
         # remainder rather than refusing the lot; a total that was already whole is unchanged.
         total = basis_per_unit * units
@@ -455,7 +460,7 @@ def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> list[dict[st
 
 
 def _closing_cost_ppb(event: PropertySaleEvent) -> int:
-    """Seller closing costs, on the same grid as every other rate the fixture carries.
+    """Seller closing costs, on the same grid as every other rate the execution input carries.
 
     The scenario authors a percent, so the fraction is `pct / 100`. This used to cross in
     basis points, which refused any percent that was not a whole number of them -- 6.375%
@@ -468,7 +473,7 @@ def _closing_cost_ppb(event: PropertySaleEvent) -> int:
 def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum: Decimal) -> list[dict[str, Any]]:
     """The locations this scenario actually buys a property in.
 
-    The rest of the deployment's catalog is places no property is ever bought, and the fixture's
+    The rest of the deployment's catalog is places no property is ever bought, and the execution input's
     location list exists for the property-tax policy to read.
     """
 
@@ -487,32 +492,51 @@ def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum
     ]
 
 
-def encode_fixture(
+def compile_execution_input(
     scenario: Scenario,
-    plan: CompiledSimulation,
     *,
+    rollout_count: int,
     external_series: ExternalSeriesContext,
     jurisdictions: Mapping[str, Jurisdiction],
     locations: Mapping[str, Location],
 ) -> dict[str, Any]:
-    """The strict integer fixture for one compiled simulation.
-
-    `plan` must be `compile_simulation(scenario, ..., external_series, jurisdictions, locations)`:
-    the sampled cubes and the compiled tax tables come from it, so the fixture carries the
-    plan's own integers rather than a second derivation of them. `external_series` supplies
-    only the private-equity company-valuation channel, which the compiler drops because no
-    engine phase reads it and the validator still requires.
-    """
-
-    if plan.horizon_months != int(scenario.horizon_months):
-        raise ValueError(f"plan horizon {plan.horizon_months} does not match scenario {scenario.horizon_months}")
+    """Resolve one self-contained execution input; retain no source objects to reread."""
+    if rollout_count <= 0:
+        raise ValueError(f"rollout_count must be positive; got {rollout_count}")
     quantum = scenario.currency.quantum
+    horizon = int(scenario.horizon_months)
+    rows = materialize_level_rows(
+        tuple(external_series.levels.value_rows()), rollout_count=rollout_count, horizon_months=horizon
+    )
+    keys = collect_level_series_keys(scenario, rows)
+    levels, money = external_series_cubes(
+        rows,
+        series_index_by_id={key: index for index, key in enumerate(keys)},
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+        currency_quantum=quantum,
+    )
+    validate_series_indexed_amounts(scenario, rollout_count=rollout_count, rows_by_key={row.key: row for row in rows})
+    strings = StringTable()
+    tax = compile_tax(scenario, strings, dict(jurisdictions))
+    issuer_ids = tuple(
+        sorted(
+            {str(lot.asset.issuer_id) for lot in scenario.initial_lots if isinstance(lot.asset, PrivateEquityAssetKey)}
+        )
+    )
+    pe_channels = compile_pe_channels(
+        issuer_ids,
+        private_equity=external_series.private_equity,
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+        currency_quantum=quantum,
+    )
     lifecycle = scenario.property_lifecycle_events
     return {
         "schema_version": INPUT_SCHEMA_VERSION,
         "currency_code": scenario.currency.code,
         "currency_quantum": format(quantum, "f"),
-        "rollout_count": plan.rollout_count,
+        "rollout_count": rollout_count,
         "scenario": {
             "horizon_months": int(scenario.horizon_months),
             "jurisdictions": _jurisdiction_identities(scenario, jurisdictions),
@@ -567,10 +591,10 @@ def encode_fixture(
                 }
                 for sale in scenario.scheduled_asset_sales
             ],
-            "tax_profiles": _tax_profiles(scenario, plan, jurisdictions),
+            "tax_profiles": _tax_profiles(scenario, tax, strings, jurisdictions),
             # The income buckets the compiler derived for this scenario, so the ledger reports
-            # the set the plan declared instead of rediscovering it.
-            "income_sources": list(plan.tax.buckets.source_wire_ids()),
+            # the prepared source set instead of rediscovering it.
+            "income_sources": list(tax.buckets.source_wire_ids()),
             "distributions": [
                 {
                     "agent_id": distribution.agent_id,
@@ -690,5 +714,15 @@ def encode_fixture(
                 for policy in scenario.federal_salt_deduction_policies
             ],
         },
-        "series": [*_level_series(plan), *_private_equity_series(plan, external_series.private_equity)],
+        "series": [
+            *_level_series(keys, levels, money),
+            *_private_equity_series(
+                issuer_ids,
+                pe_channels,
+                external_series.private_equity,
+                rollout_count=rollout_count,
+                horizon_months=horizon,
+                quantum=quantum,
+            ),
+        ],
     }
