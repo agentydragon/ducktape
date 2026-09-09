@@ -127,10 +127,10 @@ py_test(
     name = "batch_test",
     srcs = ["batch_test.py"],
     deps = [
-        ":simulator_ext",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
