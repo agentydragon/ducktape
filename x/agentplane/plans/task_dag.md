@@ -106,7 +106,7 @@ flowchart TB
     MCPOAUTH["Planned support<br/>OAuth/DCR + integration-app enrollment<br/>named Connections, rename/unbind/rebind"]:::future
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     WID["Observed evidence<br/>SandboxPrincipal<br/>workload authentication"]:::milestone
-    SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>from trusted Sandbox types"]:::future
+    SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
     MCPFRONT["Planned support<br/>generic Action MCP tools<br/>discover, request, read receipts/events"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
@@ -140,7 +140,6 @@ flowchart TB
     AS --> MCPFRONT
     WID --> MCPFRONT
     EID --> MCPOAUTH
-    POLICYBIND --> EID
     POLICYBIND --> CALLERPOLICY
     DEL --> CALLERPOLICY
     AS --> CALLERPOLICY
@@ -148,7 +147,6 @@ flowchart TB
     WID --> SBPOLICY
     MCPFRONT --> CLAUDEAI
     MCPOAUTH --> CLAUDEAI
-    CALLERPOLICY --> CLAUDEAI
     EW --> CLAUDEAI
     APPROVALUI --> CLAUDEAI
     CLAUDEAI --> EXTERNALMCP
@@ -184,21 +182,22 @@ work item or a production-readiness prerequisite.
 The external-client track is single-operator and independent of `MCP0` and the broader `AG` model.
 Its product terms are Identity (configured authority), Connection (runtime named client enrollment), and Thread
 (execution/conversation state); it adds no multi-operator management or per-operator ownership model.
-`POLICYBIND` first settles policy-binding storage and the Identity/workload model, including whether
-Sandbox types bind policies directly or resolve a configured Identity. The [Action policy plan](action_policies.md)
-records app-configuration, Kubernetes, PostgreSQL, and mixed alternatives; no storage/schema choice is selected.
 Its first Identity is configured and static (`EID`); OAuth/DCR enrollment (`MCPOAUTH`) binds a Connection to
-it, and `CALLERPOLICY` supplies bounded per-Identity auto-approval. These join the canonical MCP frontend
+it. The first external slice uses human approval, not configurable per-Identity auto-approval. These join the canonical MCP frontend
 (`MCPFRONT`), landed Executor support, and deployed operator review first at `CLAUDEAI`: a real
 Claude.ai connection running governed Actions. `EXTERNALMCP` additionally proves independently
 running Claude Code. The [external connection plan](external_mcp_connections.md)
 owns the workflow and remaining design choices. Static identity does not select static credentials
 or wait for `CRED`/`PROFILES`; outbound backend-account OAuth remains the separate `MCPAUTH` track.
 `EXTERNALMCP` is the initial client proof for `MCPAGG`, not proof of full Haku tool parity.
+`POLICYBIND` separately settles policy definition/assignment storage before `CALLERPOLICY`; neither
+gates `EID`, `MCPOAUTH`, or the human-approved `CLAUDEAI`/`EXTERNALMCP` proof. Stable caller identity,
+runtime Connection/grant bookkeeping, and revocation still need real contracts before OAuth implementation.
 Hosted harnesses continue to call Actions from their Sandbox Threads: `WID + CALLERPOLICY -> SBPOLICY`
-adds configurable auto-approval by trusted Sandbox type. The [Action policy plan](action_policies.md)
-owns the shared bounds and deciders. Its Sandbox slice is independent of `EID` and `MCPOAUTH`; a type
-is a policy selector, not a shared caller identity or authenticated Thread.
+adds configurable auto-approval through concrete Actions-owned Sandbox bindings. SandboxPreset stays
+an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
+subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
+[Action policy plan](action_policies.md) owns shared bounds and deciders; policy representation remains open.
 Hostexec is another Executor adapter behind `EW`; its final ordering relative to the credentialed
 MCP path is deferred.
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
@@ -274,10 +273,11 @@ enrollment and its current binding, and Thread for execution/conversation state.
 Connections. Multiple-operator management and per-operator ownership are out of scope, as are the
 full `AG` lifecycle and static-bearer schemes. Username and caller-supplied provenance are not authority.
 
-**Design gate:** resolve `POLICYBIND` for Identity references and policy associations, then
-single-operator consent, Connection granularity, caller read/idempotency scope, and
-revocation/dispatch consistency in the
-[external connection plan](external_mcp_connections.md) before implementing the schema.
+**Design gate:** settle stable configured Identity references, single-operator consent, Connection
+granularity, caller read/idempotency scope, runtime auth bookkeeping, and revocation/dispatch consistency
+in the [external connection plan](external_mcp_connections.md). Policy representation is not a
+prerequisite: the first external callers use human approval; add policy associations through
+`CALLERPOLICY` later without replacing identity or rewriting original client provenance.
 
 **Acceptance evidence:** a trusted connection resolves to identity A throughout an Action's
 lifecycle; B cannot impersonate A or read its receipts. Refresh preserves identity, reconnect
@@ -309,13 +309,17 @@ reconnect, rename, unbind, and rebind. Settle binding history, pending Actions/o
 whether rebind changes existing tokens' effective authority or requires reauthorization. Registration
 mechanism and mutable names must not determine durable identity. See the
 [external connection plan](external_mcp_connections.md), including DCR/CIMD compatibility.
+Prefer pinned FastMCP/Authlib and existing `mcp_infra` protocol/persistence machinery; probe the
+integration-app consent handoff and narrow product bookkeeping instead of reimplementing registration,
+PKCE, token issuance, or refresh. No configurable policy or SandboxPreset representation is required.
 
 ### `POLICYBIND` — policy-binding model and storage
 
 **Open design decision:** identify where policy definitions, Identity-to-policy bindings, and
-Sandbox-type/instance associations live and how they are modeled. Distinguish configured policy
+concrete Sandbox-to-policy bindings live and how they are modeled. Distinguish configured policy
 bindings from runtime named Connection-to-Identity bindings created/edited during enrollment and
-management. Choose direct workload policy selection versus workload-to-Identity mapping,
+management. Keep SandboxPreset resolution and per-Sandbox additions in the integration app;
+downstream services only consume their own policy bindings. Choose
 cardinality/precedence, stable IDs, mutation ownership, and rollout/revocation semantics. This is
 single-operator; multiple-operator management is out of scope.
 
@@ -331,14 +335,15 @@ PostgreSQL, and mixed ownership. No option is selected. For Kubernetes, define r
 RBAC, references, and informer freshness. Runtime Connections need a writable authority, whether
 PostgreSQL or service-owned Kubernetes resources, even with Git-managed policy definitions.
 Walk one external and one hosted request through enrollment/rebind, resolution, policy edit, and dispatch
-before implementing `EID` or `CALLERPOLICY` persistence. Existing Sandbox authentication and Action
+before implementing `CALLERPOLICY` persistence, not before `EID` or OAuth bookkeeping. Existing Sandbox authentication and Action
 execution remain usable while this design is open.
 
 ### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
 
 **Planned support:** configure exact Actions/argument conditions and auto-approval deciders selected
-through reusable policy-set references from an external Identity or an authenticated Sandbox's
-configured type. Reuse `DEL` aggregation and
+through reusable policy-set bindings for an external Identity or an authenticated Sandbox.
+The integration app may derive concrete Sandbox bindings from its presets and instance additions;
+the Action Service does not interpret presets. Reuse `DEL` aggregation and
 the canonical Decision/Execution lifecycle. Mandatory authorization bounds must fail closed even
 when another provider allows; permitted requests without auto-approval may take the human path.
 
@@ -348,25 +353,27 @@ Prove matching auto-allow, changed-argument review/deny, caller-class isolation,
 failed mandatory bounds. External selector integration needs `EID`; the shared machinery and Sandbox
 slice do not wait for it. Broad `PROFILES` and a policy DSL remain deferred.
 
-### `SBPOLICY` — configured auto-approval for Sandbox types
+### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
 
 **Planned behavior:** an agent harness running in a Thread in a Sandbox calls the Action Service
-through its existing workload authentication. Configured Actions can auto-approve for configured
-Sandbox types under bounded conditions, without introducing an OAuth Connection for that harness.
-`WID` records the landed `SandboxPrincipal` authentication; trusted type classification is new work.
+through its existing workload authentication. The integration app resolves SandboxPreset defaults
+and per-Sandbox additions into concrete Actions-owned policy bindings, independently of the egress
+bindings it also manages. Neither enforcement service knows preset names or depends on the other.
+`WID` records landed `SandboxPrincipal` authentication; configurable bindings are new work.
 
-**Design gate / acceptance:** choose the authority for type (preset, template association, or another
-configured category), who may assign/change it, and classification lifetime. Verify real workload
-submissions with matching/different types and arguments, forged or stale classifications, and policy
-changes before dispatch. Same-type Sandboxes retain separate caller reads/idempotency; Threads within
-one Sandbox retain the current shared workload scope. See [Action policies](action_policies.md).
+**Design gate / acceptance:** choose policy reference/addition semantics, binding writer authority,
+ownership/reconciliation and update/revocation rules. Verify matching/different Sandbox bindings and
+arguments, forged references, app outage, instance additions surviving preset updates, and policy
+changes before dispatch. Same-preset Sandboxes retain separate caller reads/idempotency; Threads
+within one Sandbox retain current shared workload scope. See [Action policies](action_policies.md).
 
 ### `CLAUDEAI` — working Claude.ai MCP facade before transcript search
 
 **Operator-priority milestone:** the operator can connect Claude.ai to the deployed Action Service
 MCP facade, name/bind the Connection through integration-app enrollment, discover Actions, and use
-them under the configured Identity/policy with real results. Prove the bounded fixture auto-approval
-and human-review/result paths against canonical Action records through the actual Claude.ai client.
+them under the configured Identity with real human-approved results. Preserve service safety constraints
+and exact authenticated client provenance. Configurable per-Identity auto-approval is subsequent
+`CALLERPOLICY` work, not an acceptance requirement for this milestone.
 Registration alone, mocks, and CI composition tests do not establish this user-visible outcome.
 
 The broader `EXTERNALMCP` milestone also covers local Claude Code. The operator priority above names
@@ -380,10 +387,10 @@ unrelated lifecycle reliability work are not reclassified as search implementati
 
 ### `EXTERNALMCP` — hosted clients and external harnesses using governed Actions
 
-**Planned milestone:** `EID`/`MCPOAUTH`, `CALLERPOLICY`, and `MCPFRONT` compose with the existing Executor
+**Planned milestone:** `EID`/`MCPOAUTH` and `MCPFRONT` compose with the existing Executor
 and operator-review paths. Real Claude.ai and local Claude Code connections (for example on wyrm2)
-use selected static Identities to discover and run one credentialless Action under bounded
-auto-approval, or receive a durable pending receipt
+use selected static Identities to discover and submit one credentialless Action for human approval,
+receive a durable pending receipt
 and read the result after human review. Independently verify Action ownership, binding, Decisions,
 Execution, replay, isolation, and revocation as specified in the
 [external connection plan](external_mcp_connections.md). This milestone precedes Haku migration and
@@ -449,8 +456,9 @@ and observed `WID` for the Sandbox bearer path. The shared frontend accepts both
 bearers and external OAuth access tokens; `EID`/`MCPOAUTH` add the external path and are required for
 `CLAUDEAI`, not for implementing the common tools or Sandbox-authenticated MCP. Caller-supplied Agent/Thread names and
 origin/correlation are not identity authority. `MCPFRONT` is not a prerequisite for `MCP0`.
-The initial clients are Claude.ai and external Claude Code through `MCPOAUTH`; `CALLERPOLICY` adds
-bounded per-Identity deciders. Their combined acceptance is `EXTERNALMCP`. The [connection plan](external_mcp_connections.md)
+The initial external clients are Claude.ai and Claude Code through `MCPOAUTH`, initially using human
+approval. Their combined acceptance is `EXTERNALMCP`; `CALLERPOLICY` adds bounded per-Identity deciders
+later. The [connection plan](external_mcp_connections.md)
 keeps the remaining generic-tool schema and authorization design choices explicit.
 
 **Needed support / contract:**
@@ -534,11 +542,22 @@ claim or unknown-outcome semantics while doing so.
 
 **Observed evidence:** PostgreSQL sessions, request-bound federation, Authentik configuration,
 dedicated acceptance-operator bootstrap, and canonical BFF review/events are implemented.
+The app's Actions page lists pending/recent requests, exact arguments and caller principal, shows
+Decision/result/error state, and offers Allow/Deny for pending requests. `/actions` BFF routes and
+frontend/integration tests cover those controls; this is not a missing UI implementation.
 
 **Needed support:** verify actual deployment and provider claims, distinct authorized identities
 and rejected identities, then execute the existing BFF approval acceptance. Signed mock integration
 is CI evidence, not deployed Authentik proof. Do not add another approval coordinator or require
 push notifications for the polling UI.
+
+**User-visible acceptance:** a Claude.ai-submitted Action appears in the deployed integration app;
+the operator inspects its exact arguments and authenticated submitting Identity/client/Connection,
+allows or denies it there, and Claude.ai receives the resulting durable receipt and safe result
+(one Execution on allow, none on deny). The basic review UI is present; displaying the new external
+client/Connection provenance is additional integration when `EID` lands. Verify the browser controls
+as well as BFF requests. This flow is part of `CLAUDEAI`, enabling a useful partial Haku replacement
+without claiming complete tool parity or permission to retire Haku.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 

@@ -58,11 +58,14 @@ conflict rather than overriding the winner. No real policy provider or Thread no
 staging now configures the bounded Everything echo fixture policy; broader policies remain deferred.
 
 The planned `CALLERPOLICY` slice in [configured Action policies](action_policies.md) adds bounded
-deciders selected by a trusted configured Identity or authenticated Sandbox type. Hosted harnesses
+deciders selected by a trusted configured Identity or concrete authenticated Sandbox policy binding. Hosted harnesses
 in Sandbox Threads keep their workload-authenticated Action path. Mandatory Action authorization
 bounds are distinct from permission to skip human review: an error in a mandatory bound cannot
-become `no_opinion` and let another provider's allow win. Configuration, type classification, and
+become `no_opinion` and let another provider's allow win. Configuration, concrete Sandbox bindings, and
 policy-change semantics remain design work; this document owns existing Decision aggregation.
+SandboxPreset stays exclusively in the integration app, which resolves its defaults and instance
+additions into subsystem-owned bindings. The first external DCR slice uses human approval and does
+not wait for this configurable policy representation.
 
 ## Open delivery contract
 
