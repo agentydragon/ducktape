@@ -1,4 +1,4 @@
-# Gradual migration to Prow
+# Forge choice, portable rollout gates, and conditional Prow migration
 
 Planning baseline: 2026-09-09. This is proposed work, not a deployed system.
 Tracks the rollout-dependency requirement in
@@ -8,9 +8,14 @@ contracts into component SPEC/README documentation.
 
 ## Intended outcome
 
-Host CI orchestration and PR coordination in the cluster, retaining BuildBuddy RBE
-and remote caching. Migrate incrementally with functioning CI and publishing at
-each step. Keep independently reviewable PRs independently creatable: dependencies
+Hold Prow adoption while evaluating a move toward GitLab, Forgejo, or another
+forge. Choose the forge before committing to new CI orchestration. Prow remains
+a conditional option if GitHub stays central and its benefits justify the coupling;
+building a Prow provider for another forge is not the default direction.
+
+Deliver deployment dependency gates independently of that choice, retaining
+BuildBuddy RBE and remote caching. Keep functioning CI and publishing at each step.
+Keep independently reviewable PRs independently creatable: dependencies
 constrain merging, not when agents may start work or open PRs.
 
 A first-class use case is: **PR B may merge only after PR A's changes have reached
@@ -41,12 +46,12 @@ No live cluster capacity or ruleset audit has been performed for this plan.
 
 Upstream source checked on 2026-09-09 at
 [`104d452f4fce`](https://github.com/kubernetes-sigs/prow/tree/104d452f4fced027c5a357b6fd6fe860a1b6064f).
-This migration assumes GitHub remains the PR host; hosting Prow ourselves does
-not by itself make PR automation portable to another forge.
+The conditional Prow route assumes GitHub remains the PR host. Hosting Prow
+ourselves does not by itself make PR automation portable to another forge.
 
 | Forge                      | Upstream integration and consequence                                                                                             |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub / GitHub Enterprise | Native integration; the path used by this plan.                                                                                  |
+| GitHub / GitHub Enterprise | Native integration; prerequisite for the conditional Prow route below.                                                           |
 | Gerrit                     | Has a dedicated adapter; current Tide source also supports Gerrit. This does not imply compatibility with other forges.          |
 | Forgejo / Gitea            | No native integration found in the reviewed upstream source/docs. Plan on custom integration rather than a configuration switch. |
 | GitLab                     | No native integration found in the reviewed upstream source/docs. Plan on custom integration rather than a configuration switch. |
@@ -64,9 +69,10 @@ declaration authorization, status publication, and merge enforcement behind expl
 forge adapters. For cross-forge prerequisites, include host and repository identity
 instead of interpreting a bare PR number globally.
 
-Before expanding this migration to Forgejo or GitLab, compare the adapter burden
-with retaining that forge's native CI and adding only the shared rollout gate.
-Existing Forgejo CI is outside this migration's scope. Supporting another forge
+Prefer the chosen forge's native CI and merge controls plus the shared rollout
+gate as the comparison baseline. Do not assume their exact enforcement features
+or edition availability: validate those during forge selection. Existing Forgejo
+CI remains unchanged until a separately scoped migration is chosen. Supporting another forge
 requires its own acceptance path from event through status to enforced merge;
 cloning a repository or mirroring it to GitHub is not proof of that support.
 
@@ -76,27 +82,26 @@ and [Gerrit adapter documentation](https://docs.prow.k8s.io/docs/components/opti
 
 ### Cluster integration
 
-GitHub sends webhooks to Prow `hook`. The controller manager launches CI pods;
-`crier` reports results; `deck` displays jobs; `sinker` cleans up. Add `horologium`
-for periodic jobs and Tide when merge automation is ready. CI pods initially
-launch BuildBuddy jobs rather than running the build locally.
+The rollout observer watches approved Flux/Kubernetes resources and periodically
+reconciles, producing immutable-revision evidence without depending on Prow or a
+forge API. A thin forge adapter resolves PR/MR declarations and provenance, requests
+evaluation, and publishes a blocking status for the current head. The forge's
+merge controls enforce it. Start with GitHub while Actions still runs CI; add
+the selected forge's adapter without rewriting health evaluation.
 
-A separate dependency controller consumes GitHub events, watches approved
-Flux/Kubernetes resources, and periodically reconciles. It publishes a
-`dependency-gate` status on the waiting PR's current head. It can integrate as a
-Prow external plugin, but must continue observing cluster changes without a new
-GitHub event. Tide consumes the status; understanding Flux is custom work.
+Use Flux to own the observer and adapter manifests, pinned images, RBAC,
+configuration, and secret references. Keep forge write credentials in adapters,
+outside the read-only observer and PR test pods. Give branch protection one owner.
+Keep an independent bootstrap/recovery path if the cluster hosting gates is broken.
 
-Use Flux to own Prow manifests, pinned images, RBAC, configuration, and secret
-references. Choose one writer for Prow configuration and GitHub branch protection;
-do not let config-updater or branchprotector compete with existing GitOps owners.
-Keep GitHub write credentials in controllers, outside PR test pods. Separate
-controller, test, and publisher permissions and restrict job network access.
-
-Use a dedicated SeaweedFS bucket if Prow's S3 uploads and Deck reads pass an
-integration trial. Scope credentials, retention, and visibility deliberately.
-Public webhook delivery must work independently of any dashboard login policy.
-Keep an independent bootstrap/recovery path if the cluster hosting CI is broken.
+Only if Prow is selected: GitHub sends webhooks to `hook`; the controller manager
+launches BuildBuddy launcher pods; `crier` reports results; `deck` displays jobs;
+`sinker` cleans up. Add `horologium` for periodics and Tide for merge automation.
+The adapter may become an external plugin, but observation must remain independent
+of GitHub events. Do not let config-updater or branchprotector compete with GitOps.
+Trial a dedicated SeaweedFS bucket for S3 uploads/Deck reads, with scoped
+credentials, retention, and visibility. Public webhooks must work independently
+of dashboard login policy.
 
 ## Deployment dependency contract to implement
 
@@ -155,9 +160,10 @@ The status details should identify the first unmet condition and link to evidenc
 - Define who may add, weaken, or remove a dependency; invalidate prior approval
   where needed. PR-body edits do not change the head SHA, so a previously green
   status cannot be treated as valid for an unseen declaration edit.
-- Require the gate through GitHub rulesets and explicitly in Tide's context policy;
-  bind its publisher identity where supported. Existing test/review requirements
-  remain required. Test enforcement through both Tide and direct GitHub merges.
+- Require the gate through the selected forge's verified merge controls; initially
+  GitHub rulesets. If Tide is adopted, also require it in Tide's context policy.
+  Bind publisher identity where supported. Existing test/review requirements remain
+  required. Test direct merges and each enabled automated merge path.
 - GitHub success statuses do not expire by themselves. Before enforcing
   `currently-healthy`, implement and test stale-success handling during observer
   outages, including an independent watchdog or a merge path that checks freshness.
@@ -172,7 +178,72 @@ The status details should identify the first unmet condition and link to evidenc
 Each slice is independently reviewable. Parallelize independent implementation;
 only enforce a gate after its prerequisites have passed acceptance.
 
-### 1. Deploy Prow alongside existing CI
+### 1. Choose the forge before CI orchestration
+
+- [ ] Compare GitLab, Forgejo, and remaining on GitHub for the actual repository
+      workflow: reviews, fork trust, required external statuses, merge automation,
+      private repos, artifacts/registry, API support, backup/recovery, and operation.
+- [ ] Verify candidate edition/version capabilities and self-hosting requirements,
+      including whether a rollout gate actually prevents direct and automated merges.
+- [ ] Inventory current Actions/Forgejo jobs, credentials, artifact consumers, and
+      repository dependencies. Identify what can retain BuildBuddy with a new launcher.
+- [ ] Record the forge decision and CI direction. Prefer native CI/merge controls
+      plus the shared gate where they meet requirements. Select Prow only with an
+      explicit justification for keeping GitHub central or owning another provider.
+
+Exit: a forge and supported merge-enforcement path are chosen before replacing CI.
+Existing CI remains active. Phase 2's observer and initial GitHub adapter can proceed
+while this decision is open; they do not require Prow deployment.
+
+### 2. Deliver portable dependency gates while existing CI runs
+
+- [ ] Define the observer evidence interface independently of forge APIs, and keep
+      declaration parsing, PR/MR lookup, authorization, and reporting in adapters.
+- [ ] Implement the deployment dependency contract above through an initial GitHub
+      adapter, preserving current Actions tests and reviews.
+- [ ] After forge selection, prove the same gate through the selected forge's
+      adapter and merge controls. Verify changed heads, body edits, observer outages,
+      rollback, and direct/automated merge rejection on that forge.
+
+The following gate acceptance work applies before either CI migration route:
+
+- [ ] Define declaration authorization, parser, target registry, evidence schema,
+      policy semantics, controller persistence/recovery, and narrow read-only RBAC.
+- [ ] Implement PR-merged predicates and one real deployment target; support
+      arbitrary immutable commit/image prerequisites through the same evidence model.
+- [ ] Publish an optional gate first. Exercise pending, healthy, unhealthy,
+      rollback, changed-head/body, changed policy, ambiguous provenance, inaccessible
+      target, closed prerequisite, cycles, missed webhook, restart, and stale success.
+- [ ] Demonstrate B blocked before A merges, after A merges but before rollout,
+      and while the expected deployment fails health checks; unblock automatically
+      only after every named target passes the configured policy.
+- [ ] Resolve the freshness/merge race policy above, then make the gate required.
+      Verify actual merge rejection and recovery, including direct merges.
+
+Exit: the rollout dependency works independently of Prow and the CI executor.
+Rollback: restore the prior merge policy through its owner and explicitly hold PRs
+with unmet dependencies; never fabricate success for an unavailable gate.
+
+### 3. Migrate CI incrementally after forge selection
+
+- [ ] For the chosen forge, trial one optional BuildBuddy-backed presubmit and
+      compare exact tested trees, target selection, fork trust, statuses, retries,
+      cancellation, logs, and artifacts with existing CI.
+- [ ] Move required checks one at a time after equivalent behavior is demonstrated.
+      Adapt invocation identities, PR visuals, and artifact consumers explicitly.
+- [ ] Transfer each publisher separately, preserving provenance and concurrency;
+      keep one active writer per artifact stream. Then move scheduled automation.
+- [ ] Prove merge → publication → pin update → Flux → workload → health probe →
+      dependent-PR gate on the chosen platform before retiring its old workflows.
+- [ ] Preserve rollback and exercise independent recovery. Elaborate the chosen
+      forge's implementation plan once phase 1 resolves its platform contracts.
+
+## Conditional route: Prow if GitHub remains central
+
+The following work is deferred unless phase 1 explicitly selects Prow. It refines
+phase 3 for that choice; none of it is a prerequisite for the portable rollout gate.
+
+### P1. Deploy Prow alongside existing CI
 
 - [ ] Inventory workflows, status contexts, tokens, artifacts, cancellation rules,
       publishing triggers, and integrations that discover GitHub Actions runs.
@@ -187,26 +258,7 @@ only enforce a gate after its prerequisites have passed acceptance.
 Exit: operators can diagnose a real canary failure from GitHub through Deck.
 Rollback: disable canary triggers; Actions remains authoritative.
 
-### 2. Deliver dependency gates while Actions still runs CI
-
-- [ ] Define declaration authorization, parser, target registry, evidence schema,
-      policy semantics, controller persistence/recovery, and narrow read-only RBAC.
-- [ ] Implement PR-merged predicates and one real deployment target; support
-      arbitrary immutable commit/image prerequisites through the same evidence model.
-- [ ] Publish an optional gate first. Exercise pending, healthy, unhealthy,
-      rollback, changed-head/body, changed policy, ambiguous provenance, inaccessible
-      target, closed prerequisite, cycles, missed webhook, restart, and stale success.
-- [ ] Demonstrate B blocked before A merges, after A merges but before rollout,
-      and while the expected deployment fails health checks; unblock automatically
-      only after every named target passes the configured policy.
-- [ ] Resolve the freshness/merge race policy above, then make the gate required.
-      Verify actual merge rejection and recovery, including direct GitHub merges.
-
-Exit: the user's rollout dependency works with current Actions checks.
-Rollback: restore the prior ruleset through its owner and explicitly hold PRs with
-unmet dependencies; never replace an unavailable gate with fabricated success.
-
-### 3. Enable Tide for an opt-in merge pool
+### P2. Enable Tide for an opt-in merge pool
 
 - [ ] Configure explicit opt-in, review/hold rules, required Actions contexts, and
       the dependency gate. Resolve ownership against existing merge automation.
@@ -216,9 +268,9 @@ unmet dependencies; never replace an unavailable gate with fabricated success.
 
 Exit: Tide merges only eligible opted-in PRs while Actions supplies build checks.
 Rollback: disable Tide merging; retain required checks and manual review/merge.
-Batch merging remains deferred until phase 4 supports its exact source trees.
+Batch merging remains deferred until P3 supports its exact source trees.
 
-### 4. Move presubmit execution to Prow
+### P3. Move presubmit execution to Prow
 
 - [ ] Extract a shared launcher from the Actions wrapper, using a pinned image
       with Nix-provided tooling. Retain BuildBuddy RBE and cache configuration.
@@ -239,7 +291,7 @@ Batch merging remains deferred until phase 4 supports its exact source trees.
 Exit: required presubmits run under Prow with equivalent evidence and diagnostics.
 Rollback: restore Actions triggers/required contexts before disabling Prow checks.
 
-### 5. Move publishing and scheduled automation
+### P4. Move publishing and scheduled automation
 
 - [ ] Define the postsubmit build-to-publish handoff explicitly; Prow job types
       do not directly translate the Actions `needs` graph and dynamic matrices.
@@ -255,7 +307,7 @@ Rollback: restore Actions triggers/required contexts before disabling Prow check
 Exit: migrated artifact streams reach working deployments through Prow-managed jobs.
 Rollback: stop the new publisher before restoring its Actions counterpart.
 
-### 6. Retire migrated Actions workflows
+### P5. Retire migrated Actions workflows
 
 - [ ] Remove replaced workflows only after their checks, artifacts, visual reports,
       release consumers, and operational tooling use the new path.
