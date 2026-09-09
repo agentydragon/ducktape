@@ -42,6 +42,7 @@ mod private_equity;
 mod property;
 mod recorder;
 mod securities;
+pub mod spending;
 mod target_allocation;
 mod taxes;
 #[cfg(test)]
@@ -190,7 +191,7 @@ fn simulate_with_capture(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.input, rollout_id, capture_mode, None)
+            simulate_rollout(fixture.input, rollout_id, capture_mode, None, None)
                 .map(RolloutComputation::into_output)
         })
         .collect();
@@ -215,8 +216,14 @@ pub fn simulate_summaries_validated(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.input, rollout_id, CaptureMode::Summary, None)
-                .map(RolloutComputation::into_summary)
+            simulate_rollout(
+                fixture.input,
+                rollout_id,
+                CaptureMode::Summary,
+                None,
+                None,
+            )
+            .map(RolloutComputation::into_summary)
         })
         .collect();
     Ok(PopulationOutput {
@@ -250,6 +257,7 @@ pub fn simulate_product_metrics_validated(
                 rollout_id,
                 CaptureMode::Summary,
                 Some(&inputs),
+                None,
             )
             .map(|computation| (computation.product_metrics, computation.failed_month))
         })
@@ -265,6 +273,7 @@ fn simulate_rollout(
     rollout_id: u32,
     capture_mode: CaptureMode,
     product: Option<&ProductInputs>,
+    mut spending: Option<&mut spending::Policy<'_>>,
 ) -> Result<RolloutComputation, SimulationError> {
     let mut accounts: Vec<AccountRef> = fixture
         .scenario
@@ -594,6 +603,25 @@ fn simulate_rollout(
             }
             continue;
         }
+        // Decide from opening-of-month holdings and current prices, before this month's
+        // cashflows. The resulting demand is funded with the other monthly obligations.
+        let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
+            let metrics = product_snapshot(
+                fixture,
+                policy.inputs,
+                rollout_id,
+                month,
+                &ledger,
+                &lots,
+                &properties,
+                &mortgages,
+                Money(0),
+                false,
+            )?;
+            policy.obligation(fixture, rollout_id, month, metrics)?
+        } else {
+            None
+        };
         execute_primary_residence_events(
             fixture,
             &mut recorder,
@@ -666,6 +694,7 @@ fn simulate_rollout(
         }
         apply_scheduled_tlh_give_back(&scheduled_tlh, &mut tlh_cumulative_harvest)?;
         let mut active_obligations = Vec::new();
+        active_obligations.extend(spending_obligation);
         for obligation in fixture
             .scenario
             .obligations

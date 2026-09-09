@@ -34,6 +34,13 @@ record behind the canonical frames, but omits the balanced journal.
 `simulate_summaries(...)` retains only fixed-size terminal summaries. Dense
 performance comparisons must use `simulate_dense(...)`, not the compact path.
 
+`engine::spending::simulate(...)` adds an experiment-authored spending function,
+constructed separately for each rollout. It sees opening holdings at current
+prices and origin-relative CPI before monthly cashflows; it returns nominal
+consumption, funded alongside the execution input's other obligations. The function owns
+its review cadence and memory. This native-only entry point retains forensic
+output; Python/batched callbacks and compact capture are not exposed here.
+
 ## Covered behavior
 
 The acceptance suites in `sim/testing/` assert exact integer answers for:

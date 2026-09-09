@@ -53,6 +53,191 @@ fn minimal_fixture() -> ExecutionInput {
     }
 }
 
+fn spending_fixture() -> (ExecutionInput, spending::Spending) {
+    let mut fixture = minimal_fixture();
+    fixture.rollout_count = 2;
+    fixture.scenario.horizon_months = 13;
+    fixture.scenario.accounts[0].opening_balance = Money(100_000);
+    let spending = spending::Spending {
+        from: fixture.scenario.accounts[0].account.clone(),
+        to: AccountRef::new("world", "checking"),
+        cause_id: "consumption".into(),
+    };
+    fixture.scenario.accounts.push(AccountSpec {
+        account: spending.to.clone(),
+        opening_balance: Money(0),
+    });
+    fixture.series.push(SeriesSpec {
+        series_id: "inflation".into(),
+        snapshots: 14,
+        values: [
+            vec![1_000_000_000; 14],
+            vec![1_000_000_000; 12],
+            vec![1_250_000_000; 2],
+        ]
+        .concat(),
+    });
+    (fixture, spending)
+}
+
+#[test]
+fn executable_spending_matches_scheduled_funding_and_tax_events() {
+    use crate::execution::{SleeveTargetSpec, TargetAllocationPolicySpec, TaxProfileSpec};
+    use crate::tax::TaxBracket;
+
+    let (mut fixture, spending) = spending_fixture();
+    fixture.scenario.accounts[0].opening_balance = Money(0);
+    fixture.scenario.initial_lots.push(InitialLotSpec {
+        lot_id: "stock".into(),
+        agent_id: "alice".into(),
+        account_id: "checking".into(),
+        asset_id: "stock".into(),
+        purchase_month: -24,
+        quantity_scale: 1_000_000,
+        units: Quantity(100_000_000),
+        basis: Money(50_000),
+    });
+    fixture.series.push(SeriesSpec {
+        series_id: "security:stock".into(),
+        snapshots: 14,
+        values: vec![1_000; 28],
+    });
+    fixture
+        .scenario
+        .target_allocation_policies
+        .push(TargetAllocationPolicySpec {
+            agent_id: "alice".into(),
+            account_id: "checking".into(),
+            source_account_ids: vec!["checking".into()],
+            sleeves: vec![SleeveTargetSpec {
+                asset_id: "stock".into(),
+                weight: 1,
+                quantity_scale: 1_000_000,
+            }],
+            cash_floor: Money(0).into(),
+            cash_ceiling: Money(0).into(),
+            cause_id_prefix: "fund".into(),
+            purchase_slots_per_sleeve: 0,
+            rebalance_tolerance_ppb: None,
+        });
+    // Deliberately synthetic flat tax: checks engine integration, not a jurisdiction's statute.
+    fixture.scenario.tax_profiles.push(TaxProfileSpec {
+        agent_id: "alice".into(),
+        tax_authority_agent_id: "world".into(),
+        payment_account_id: "checking".into(),
+        tax_authority_account_id: "checking".into(),
+        prior_year_tax: Money(0),
+        section_121_exclusion: Money(0),
+        jurisdictions: vec![TaxRules {
+            jurisdiction_id: "test".into(),
+            exempt_interest_from_levels: vec![],
+            exempts_own_issue: false,
+            ordinary_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 200_000_000,
+            }],
+            long_term_capital_gain_brackets: vec![TaxBracket {
+                upper: None,
+                rate_ppb: 100_000_000,
+            }],
+            standard_deduction: Money(0),
+            max_capital_loss_ordinary_offset: Money(0),
+            section_1250_rate_ppb: 0,
+        }],
+    });
+    fixture
+        .scenario
+        .recurring_obligations
+        .push(RecurringObligationSpec {
+            start_month: 0,
+            end_month: None,
+            obligation_id: spending.cause_id.clone(),
+            obligation_type: "cash_spend".into(),
+            from: spending.from.clone(),
+            to: spending.to.clone(),
+            amount_due: AmountSpec::SeriesIndexed(SeriesIndexedAmountSpec {
+                kind: SeriesIndexedAmountKind::SeriesIndexed,
+                base_amount: Money(1_000),
+                series_id: "inflation".into(),
+                base_month_index: 0,
+                adjustment_period_months: 1,
+            }),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+    let scheduled = simulate(&fixture).unwrap();
+    fixture.scenario.recurring_obligations.clear();
+    let executable = spending::simulate(&fixture, &spending, |_| {
+        |observation| Ok(Money(1_000).scaled_by(observation.price_level, "fixed real spending")?)
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&executable).unwrap(),
+        serde_json::to_value(&scheduled).unwrap()
+    );
+    for rollout in &executable.rollouts {
+        assert_eq!(rollout.failed_month, None);
+        assert!(!rollout.dispositions.is_empty());
+        assert!(!rollout.tax_accruals.is_empty());
+        assert!(!rollout.tax_payments.is_empty());
+    }
+}
+
+#[test]
+fn spending_functions_have_rollout_local_memory_and_stop_at_failure() {
+    let (mut fixture, spending) = spending_fixture();
+    fixture.scenario.accounts[0].opening_balance = Money(5);
+    let output = spending::simulate(&fixture, &spending, |_| {
+        let mut requested = 0;
+        move |observation| {
+            assert!(observation.month <= 2, "no decisions after failure");
+            assert_eq!(observation.public_holdings, Money(0));
+            assert_eq!(observation.cash, Money(5 - requested * (requested + 1) / 2));
+            requested += 1;
+            Ok(Money(requested))
+        }
+    })
+    .unwrap();
+    for rollout in output.rollouts {
+        assert_eq!(rollout.failed_month, Some(2));
+        assert_eq!(
+            rollout
+                .obligations
+                .iter()
+                .map(|o| o.amount_due)
+                .collect::<Vec<_>>(),
+            vec![Money(1), Money(2), Money(3)]
+        );
+    }
+}
+
+#[test]
+fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
+    let (mut fixture, mut spending) = spending_fixture();
+    let unchanged = spending::simulate(&fixture, &spending, |_| |_| Ok(Money(0))).unwrap();
+    assert_eq!(
+        serde_json::to_value(unchanged).unwrap(),
+        serde_json::to_value(simulate(&fixture).unwrap()).unwrap()
+    );
+    assert!(matches!(
+        spending::simulate(&fixture, &spending, |_| |_| Ok(Money(-1))),
+        Err(SimulationError::InvalidAmount { .. })
+    ));
+    fixture.series[0].values[12] = 0;
+    assert!(matches!(
+        spending::simulate(&fixture, &spending, |_| |_| panic!(
+            "invalid paths must be rejected before execution"
+        )),
+        Err(SimulationError::NonPositiveSeriesAmountLevel { .. })
+    ));
+    spending.to = AccountRef::new("absent", "checking");
+    assert!(matches!(
+        spending::simulate(&fixture, &spending, |_| |_| Ok(Money(1))),
+        Err(SimulationError::UnknownAccountReference { .. })
+    ));
+}
+
 #[test]
 fn rejects_invalid_fixture_metadata() {
     let mut fixture = minimal_fixture();

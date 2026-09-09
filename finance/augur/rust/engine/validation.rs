@@ -1376,7 +1376,7 @@ fn validate_amount_spec(
     Ok(())
 }
 
-fn validate_amount_index_level(
+pub(super) fn validate_amount_index_level(
     cause_id: &str,
     series_id: &str,
     rollout: u32,
@@ -1486,7 +1486,7 @@ fn validate_income_sources(fixture: &ExecutionInput) -> Result<(), SimulationErr
     Ok(())
 }
 
-fn validate_account(
+pub(super) fn validate_account(
     accounts: &BTreeSet<AccountRef>,
     account: &AccountRef,
     context: &str,

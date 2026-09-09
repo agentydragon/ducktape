@@ -21,6 +21,7 @@ rust_library(
         "engine/property.rs",
         "engine/recorder.rs",
         "engine/securities.rs",
+        "engine/spending.rs",
         "engine/target_allocation.rs",
         "engine/taxes.rs",
         "engine/tests.rs",

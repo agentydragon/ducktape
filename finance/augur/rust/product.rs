@@ -29,8 +29,8 @@ pub const BASE_METRIC_COUNT: usize = BASE_METRIC_NAMES.len();
 /// One snapshot's base metrics, indexed by `BASE_METRIC_NAMES` position.
 pub type BaseMetrics = [i64; BASE_METRIC_COUNT];
 
-const CASH: usize = 0;
-const HOLDING: usize = 1;
+pub(crate) const CASH: usize = 0;
+pub(crate) const HOLDING: usize = 1;
 const PRIVATE_EQUITY: usize = 2;
 const PROPERTY: usize = 3;
 const MORTGAGE: usize = 4;

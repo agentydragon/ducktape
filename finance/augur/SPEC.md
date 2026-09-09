@@ -26,6 +26,11 @@ that prepared value without rereading the original scenario, sampled frames or
 jurisdiction configuration. Monetary conversion and tax-rule resolution happen
 once; execution owns runtime state and settlement.
 
+Native experiments can supply a rollout-local spending function over current
+cash, public holdings and inflation. Its requests use the same funding, tax and
+all-or-none settlement mechanics as scheduled consumption; a policy cannot
+directly mutate financial state through its observation.
+
 Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire
 shapes.
