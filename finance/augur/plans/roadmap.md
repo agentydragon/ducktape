@@ -33,7 +33,7 @@ and responsibility docstrings beside the implementing modules.
   Existing contracts survive a policy change; experiments need not implement
   optimizing lenders, landlords, or a general-equilibrium economy.
 
-The policy-interface milestone is P2–P12: Python-authored decisions, a caller-owned
+The remaining policy-interface milestone is: Python-authored decisions, a caller-owned
 decision loop, measured high-N execution and removal of the superseded
 public-portfolio decision machinery. RUNTIME/GE reassess the executor's language,
 separately from P6/GL's policy-call boundary. The current P9 bridge path requires
@@ -43,7 +43,7 @@ P11 exercises the joint experiment and P12 cuts over configured consumers.
 
 The broader library milestone also includes truthful products (BIND), remaining
 outcome/capture work (OUT/CAP), full exits (EXIT), new STUDY consumers and the HOUSE
-action example. P2–P12 preserve existing housing and other supported mechanics;
+action example. The migration preserves existing housing and other supported mechanics;
 they do not complete adaptive housing purchases, native tradable bonds, expanded
 tax coverage, relocation or market-model improvements.
 A new experiment must not require a new engine policy variant, app configuration,
@@ -78,8 +78,10 @@ product construction. Reuse scoped cash/public holdings in `rust/holdings.rs`,
 borrowed actor books/claims in `rust/engine/observations.rs`, purchase-anchored
 property marks in `rust/property.rs`, and shared native invocation
 in `rust/invocation.{py,rs}`. Private `RolloutState` already owns initialized books,
-contracts, tax state, capture and the month/stop cursor; its driver still runs the
-whole horizon. Actor books expose originated mortgages and known tax facts;
+contracts, tax state, capture and the month/stop cursor. Native full-run and
+single-month advancement share one evaluator, with immutable input/product context
+borrowed only for execution rather than retained in financial state. Actor books
+expose originated mortgages and known tax facts;
 opening review still precedes claim assembly. `rust/engine/claims.rs` separately
 assembles configured, recurring, property/mortgage and tax demands without
 funding or payment. Grouped settlement still consumes those claims; explicit
@@ -121,8 +123,9 @@ plugin protocol. Presampled markets assume these actors do not move market price
 The [actor-facing interface plan](policy_interfaces.md) specifies the proposed
 observation/action loop and module docstrings. Its economic boundary is agreed;
 exact batch layout and whether policy authors implement scalar or batch functions
-remain decisions for P6/GL. GP resolves remaining monthly observation/settlement choices,
-not whether the engine should own the actor's strategy.
+remain decisions for P6/GL. The first household example's monthly timing is
+settled in [the timing contract](policy_timing.md). GP gates expanded product/housing
+and cross-actor timing, not the initial ordered-action integration.
 
 ## Antipatterns to remove
 
@@ -138,7 +141,7 @@ Paths are relative to `finance/augur/`. Each row names the change that removes i
 | A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                                                                 | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                                                                           | BIND, TAX                      |
 | `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                                                                   | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled.                                                 | BOND                           |
 | Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`.                                     | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.                                                   | GT, TAX                        |
-| Policy functions remain compiled into native binaries; the full-run driver owns the decision loop (`rust/engine.rs`, `rust/engine/{spending,allocation}.rs`).                                        | Retained state and shared stepping support a caller-owned batched decision loop. Compare authoring representations, migrate consumers and remove superseded interfaces; keep one executor.                       | P2, P6, P9, P11–P12; GL        |
+| Policy functions remain compiled into native binaries; the full-run driver owns the decision loop (`rust/engine.rs`, `rust/engine/{spending,allocation}.rs`).                                        | Retained state and shared stepping support a caller-owned batched decision loop. Compare authoring representations, migrate consumers and remove superseded interfaces; keep one executor.                       | P6, P9, P11–P12; GL            |
 | `x/allocation_sensitivity.py::standard_error_points` uses heuristic historical effective counts and reports "separable" winners.                                                                     | Justified uncertainty or explicit refusal to rank; preserve dependence and model limitations.                                                                                                                    | SCORE                          |
 
 `x/allocation_sensitivity.py` is a deliberately tax-free independent recurrence.
@@ -162,7 +165,7 @@ flowchart TB
     OUT["OUT: consumption and failure outcomes"]
     EXIT["EXIT: zero targets and full exits"]
     BIND["BIND: explicit product bindings"]
-    GP{"GP: scoped decision timing and settlement"}
+    GP{"GP: expanded product and actor timing"}
     GT{"GT: tax and product scope"}
     GS{"GS: study conventions and evidence"}
     GX{"GX: backstop jurisdiction and realism"}
@@ -170,14 +173,12 @@ flowchart TB
     RUNTIME["RUNTIME: language vs execution/output layout"] --> GE{"GE: executor language and placement"}
 
     subgraph policy_migration["Actor-facing policy migration: PR-sized nodes"]
-        P2["P2: native stepping"]
         P5["P5: payment and consumption requests"]
         P4T["P4T: exact lot trades"]
         P4X["P4X: explicit transfers"]
-        P2 --> P6O["P6O: owned session context"]
-        P6O --> P6["P6: Python batch prototype"]
+        P6["P6: Python batch prototype"]
 
-        P2 --> P7["P7: monthly ordered action execution"]
+        P7["P7: monthly ordered action execution"]
         P4T --> P7
         P4X --> P7
         P5 --> P7
@@ -191,7 +192,6 @@ flowchart TB
         P10 --> P12
     end
 
-    GP --> P7
     P6 --> GL
     GL -- adopt batch boundary --> P9
     GE -- retain hybrid executor --> P9
@@ -231,10 +231,11 @@ flowchart TB
     MOVE -. relocation comparisons .-> ROBUST
 ```
 
-**Deliberate non-edges:** P2, P4T, P4X and P5 are independent migration
-roots. P6 consumes P2's existing-spending control through P6O, not GP, P4T/P4X/P5, P7–P8, OUT,
-CAP or new tax coverage. Native P7–P8 and compact P10 do not wait for Python P9.
-RUNTIME is independent of P2–P8 and P10; it can compare a matched bounded slice
+**Deliberate non-edges:** P4T, P4X, P5 and P6 are independent migration roots.
+P6 consumes existing retained-state stepping and the existing-spending control,
+not GP, P4T/P4X/P5, P7–P8, OUT, CAP or new tax coverage. P7's first scoped timing
+is settled; GP's expanded cases do not block it. Native P7–P8 and compact P10 do
+not wait for Python P9. RUNTIME is independent of these foundations and P10; it can compare a matched bounded slice
 without waiting for the new bridge. GE resolves executor placement before P9's
 supported hybrid adoption. P6/GL can contribute bridge-cost evidence, but do not
 answer whether the executor should be Rust at all. The first batch continues:
@@ -275,10 +276,10 @@ selected observations, responses and results; prepared paths and
 books stay in Rust. P6/GL compares scalar-policy adaptation with batch-native
 functions; the public callable shape and batch representation remain open.
 
-P2 adds internal stepping to retained `RolloutState` execution;
-the native full-horizon driver uses the same machinery. P6O separates owned books
-from borrowed immutable execution context so an extension session can safely own
-its lifetime without duplicating books or the monthly evaluator. P6 ports the existing
+Retained `RolloutState` stepping already shares the native full-horizon machinery.
+Owned books are separate from borrowed immutable execution context, so an extension
+session can own its lifetime without duplicating books or the evaluator.
+P6 ports the existing
 bounded-spending rule, retaining opening-month review and all-or-none settlement
 **as parity controls**, not freezing the actor API at that phase. Moving today's
 allocator to an opening callback would miss later cashflows and claims; P7's one
@@ -341,27 +342,25 @@ mechanics survive whichever language is chosen.
 
 ### Policy-interface PRs and acceptance
 
-P2–P12 are task IDs, not GitHub PR numbers or a demand to serialize the work.
+Policy-prefixed names are task IDs, not GitHub PR numbers or a demand to serialize the work.
 Each row is one independently reviewable change. Split again if a row proves too
 large, preserving the named completion condition and atomic caller updates.
 The **Needs** column names immediate prerequisites; inherited prerequisites still
 apply. P9 consumes P6 through GL and RUNTIME through GE; P11/P12 inherit P8 through
 P9. Their current hybrid implementation is conditional on GE's placement choice.
 
-| Unit                                   | Independently reviewable change                                                                                                                                                                                                                                          | Needs                          | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P2 — native stepping                   | Add initialization/advancement boundaries; route the native full-run driver through them. Keep internal phases out of the public actor contract.                                                                                                                         | —                              | Stepped and full-run decisions, receipts and snapshots agree across tax years, payments and stopped trajectories. No Python executor.                                                                                                                                                                                                                          |
-| P4T — exact lot trades                 | Separate lot selection from buy/sell execution. Configured scheduled, allocation and private-equity callers use the same exact-lot accounting operations.                                                                                                                | —                              | Units, basis and proceeds reconcile; rejected requests leave no partial ledger, lot, tax, TLH or recorder changes. Validate lot/account ownership and reuse canonical gain calculations.                                                                                                                                                                       |
-| P4X — explicit transfers               | Share cash/tax/receipt posting between concrete transfer requests and scheduled cashflows. Keep actor admission separate from configured external-counterparty semantics.                                                                                                | —                              | Check source authority, declared cash accounts, positive amount and available actor funds. Rejection is atomic across cash, tax and receipts. Actor requests cannot assign their own income/deduction character; scheduled external balances retain existing semantics.                                                                                        |
-| P5 — payment and consumption requests  | Add identified claim-payment and consumption requests/results using the shared claim, mortgage, tax and payment mechanics.                                                                                                                                               | —                              | Claims, requested amounts and actual receipts reconcile. Preserve grouped settlement as an explicit control; action collections are not implicitly atomic. No broader recovery model or actor scheduling.                                                                                                                                                      |
-| P6O — owned session context            | Separate retained financial books from borrowed immutable input/product context so a Python extension session can own their lifetime safely. Migrate the native driver atomically.                                                                                       | P2                             | Existing native controls agree; independent sessions do not alias mutable books. No unsafe self-reference, state clone per step, new input schema or second monthly evaluator.                                                                                                                                                                                 |
-| P6 — Python batch prototype            | Expose retained execution through the existing extension and reproduce bounded spending. Compare scalar-policy adaptation with batch-native functions on agreed workloads.                                                                                               | P6O                            | Native/Python requests, paid consumption, trades, taxes, balances and failures agree. Actor/path-local memory/randomness, reordered/chunked and selected replay, no future/cross-path leakage or post-stop calls. Profile authoring, transfer/capture, throughput and peak memory for GL. Invalid inputs and policy exceptions fail explicitly.                |
-| P7 — monthly ordered action execution  | Call each active actor once per month and execute its supplied action list in order, using GP's observation/settlement timing. Stop a rollout at its first unexecutable action.                                                                                          | P2, P4T, P4X, P5, GP           | One call submits a sale/payment chain and a non-sells-first chain. A failing middle action changes no books, preserves earlier receipts, skips later actions/calls, and leaves independent rollouts running. Results identify the action and reason; next-month decisions can consume prior results. No retry loop or hidden rescue trades, cuts or borrowing. |
-| P8 — policy-callable portfolio helpers | Move cash-band, withdrawal, rebalance and lot-selection strategy into ordinary optional helpers. Prefer Python for notebook-editable strategy/calculators; retain native kernels where measured cost warrants them. Migrate callers with each extracted/moved operation. | P7                             | Policies compose or omit helpers without extra engine trades. Reuse one implementation of each calculation; move a native helper into Python with its actual consumer, not as an unused duplicate. Financial settlement stays canonical. EXIT separately owns zero-target arithmetic.                                                                          |
-| P9 — supported Python actor API        | If GE retains the hybrid executor, connect the chosen batch representation to the actor loop/helpers; support caller-owned orchestration and optional `run(...)`. Replace the prototype-only surface. Replan placement-specific work for another GE outcome.             | P7, P8, GL adoption, GE hybrid | A real Python action policy passes parity/error/replay and agreed cost checks, including notebook authoring/debugging. The executor owns financial time evolution; Rust placement is conditional, not the domain contract. Remove superseded prototype interfaces and migrate callers/docs atomically.                                                         |
-| P10 — compact session outcomes         | Provide population-scale consumption, taxes, holdings and failure results without every trace; retain selected detailed replay. This is the bounded session slice, not all of CAP.                                                                                       | P7                             | Request/result identity, actor/account/component scope, explicit validity and compact/trace agreement. Stop books remain intact; post-stop padding is not observed data. Profile selected capture and transfer.                                                                                                                                                |
-| P11 — migrate executable experiments   | Move bounded-spending/allocation-glide consumers onto the supported API and demonstrate a joint spending-flex × allocation sweep on shared paths. Remove superseded callback entrypoints and dedicated policy binaries after updating all their callers.                 | P9, P10                        | Runnable/testable synthetic experiment reports distributions and selected traces; declared controls agree and authors vary both rules without engine edits. No orphaned callback callers or compatibility shims.                                                                                                                                               |
-| P12 — cut over configured consumers    | Make Trinity, the bond example, benchmarks and product shell explicitly supply policies/helpers. Remove implicit public-portfolio strategy from execution input and old allocator orchestration.                                                                         | P9, P10                        | All affected callers, compiler/schema declarations and tests migrate atomically. Preserve existing housing/other supported mechanics and study conventions. No hidden allocator remains; no new market/tax capabilities are claimed.                                                                                                                           |
+| Unit                                   | Independently reviewable change                                                                                                                                                                                                                                          | Needs                          | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P4T — exact lot trades                 | Separate lot selection from buy/sell execution. Configured scheduled, allocation and private-equity callers use the same exact-lot accounting operations.                                                                                                                | —                              | Units, basis and proceeds reconcile; rejected requests leave no partial ledger, lot, tax, TLH or recorder changes. Validate lot/account ownership and reuse canonical gain calculations.                                                                                                                                                        |
+| P4X — explicit transfers               | Share cash/tax/receipt posting between concrete transfer requests and scheduled cashflows. Keep actor admission separate from configured external-counterparty semantics.                                                                                                | —                              | Check source authority, declared cash accounts, positive amount and available actor funds. Rejection is atomic across cash, tax and receipts. Actor requests cannot assign their own income/deduction character; scheduled external balances retain existing semantics.                                                                         |
+| P5 — payment and consumption requests  | Add identified claim-payment and consumption requests/results using the shared claim, mortgage, tax and payment mechanics.                                                                                                                                               | —                              | Claims, requested amounts and actual receipts reconcile. Preserve grouped settlement as an explicit control; action collections are not implicitly atomic. No broader recovery model or actor scheduling.                                                                                                                                       |
+| P6 — Python batch prototype            | Expose retained execution through the existing extension and reproduce bounded spending. Compare scalar-policy adaptation with batch-native functions on agreed workloads.                                                                                               | —                              | Native/Python requests, paid consumption, trades, taxes, balances and failures agree. Actor/path-local memory/randomness, reordered/chunked and selected replay, no future/cross-path leakage or post-stop calls. Profile authoring, transfer/capture, throughput and peak memory for GL. Invalid inputs and policy exceptions fail explicitly. |
+| P7 — monthly ordered action execution  | After current cashflows and claim assembly, call the household once and execute its actions in order. Rule-driven counterparties and explicit immediate-cash supported trade control bound this first example.                                                           | P4T, P4X, P5                   | One response funds/pays a claim and handles a non-sells-first chain. A failing middle action changes no books, preserves prefix receipts, skips later actions/calls and leaves other rollouts running. Unpaid due claims stop after the list with a distinct cause. No hidden allocator, retry, cuts or borrowing.                              |
+| P8 — policy-callable portfolio helpers | Move cash-band, withdrawal, rebalance and lot-selection strategy into ordinary optional helpers. Prefer Python for notebook-editable strategy/calculators; retain native kernels where measured cost warrants them. Migrate callers with each extracted/moved operation. | P7                             | Policies compose or omit helpers without extra engine trades. Reuse one implementation of each calculation; move a native helper into Python with its actual consumer, not as an unused duplicate. Financial settlement stays canonical. EXIT separately owns zero-target arithmetic.                                                           |
+| P9 — supported Python actor API        | If GE retains the hybrid executor, connect the chosen batch representation to the actor loop/helpers; support caller-owned orchestration and optional `run(...)`. Replace the prototype-only surface. Replan placement-specific work for another GE outcome.             | P7, P8, GL adoption, GE hybrid | A real Python action policy passes parity/error/replay and agreed cost checks, including notebook authoring/debugging. The executor owns financial time evolution; Rust placement is conditional, not the domain contract. Remove superseded prototype interfaces and migrate callers/docs atomically.                                          |
+| P10 — compact session outcomes         | Provide population-scale consumption, taxes, holdings and failure results without every trace; retain selected detailed replay. This is the bounded session slice, not all of CAP.                                                                                       | P7                             | Request/result identity, actor/account/component scope, explicit validity and compact/trace agreement. Stop books remain intact; post-stop padding is not observed data. Profile selected capture and transfer.                                                                                                                                 |
+| P11 — migrate executable experiments   | Move bounded-spending/allocation-glide consumers onto the supported API and demonstrate a joint spending-flex × allocation sweep on shared paths. Remove superseded callback entrypoints and dedicated policy binaries after updating all their callers.                 | P9, P10                        | Runnable/testable synthetic experiment reports distributions and selected traces; declared controls agree and authors vary both rules without engine edits. No orphaned callback callers or compatibility shims.                                                                                                                                |
+| P12 — cut over configured consumers    | Make Trinity, the bond example, benchmarks and product shell explicitly supply policies/helpers. Remove implicit public-portfolio strategy from execution input and old allocator orchestration.                                                                         | P9, P10                        | All affected callers, compiler/schema declarations and tests migrate atomically. Preserve existing housing/other supported mechanics and study conventions. No hidden allocator remains; no new market/tax capabilities are claimed.                                                                                                            |
 
 The migration is complete only when P11's joint experiment uses the supported
 surface and P12 removes the old public-portfolio decision machinery. Adding a
@@ -406,7 +405,7 @@ is a GT/TAX slice for affected housing arms, independent of the policy-language 
 
 | Gate                                               | Bounded next step and decision                                                                                                                                                                                                                                                                                                                                                                                                               | What proceeds regardless                                                                                                                                                                                                                                                                                 |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GP — monthly information and settlement semantics  | One monthly policy call, caller-specified action order and fatal per-rollout action failure are settled. Before P7, pin the observation relative to known cashflows/claims, execution versus available funds, cross-actor ordering and unpaid-claim deadlines/consequences. Opening review/all-or-none settlement remain P2/P6 controls.                                                                                                     | Native foundations, P6, OUT and EXIT proceed. No retry protocol, intra-month policy loop or recovery model. Non-mutating previews require a consumer and canonical calculations; they do not execute a second decision loop.                                                                             |
+| GP — expanded information and settlement semantics | The first household example observes after cashflows/claim assembly, executes one ordered list, and stops on an invalid action or a still-unpaid due claim. Pin additional product/housing settlement and deadlines, and ordering between multiple decision-making actors before enabling those cases.                                                                                                                                       | P7's scoped example, native foundations, P6, OUT and EXIT proceed. Funding helpers return proposals under declared product terms; no implicit allocator, retry protocol or recovery model.                                                                                                               |
 | GT — what must be financially faithful first?      | Inventory downstream-required account/product kinds, tax years, filing status, residency and opening YTD facts without publishing values. Commit a public supported-case matrix with source/independent-oracle cases. For BOND, also resolve clean/dirty price, coupon/accrual dates, sale/redemption ordering, premium/discount tax treatment and unsupported TIPS/credit cases. The owner selects scope; implementation must not guess it. | Tax-free studies, supplied-curve valuation and interface cleanup. NIIT/qualified dividends cannot stay silently absent from a personal comparison that needs them. Future tax law must be an explicit assumption, not a prediction.                                                                      |
 | GS — reproduction or adaptation?                   | For each study, pin the source/table, accessible data, within-period ordering, rebalancing/withdrawal rules and denominators. If exact inputs or rules are unavailable, resolve the adaptation before labeling the result.                                                                                                                                                                                                                   | Other studies and synthetic rule tests. No need to reproduce proprietary Vanguard paths.                                                                                                                                                                                                                 |
 | GM — which extra market complexity earns its cost? | Use SCORE to compare simple controls and existing fits before adopting new dynamics. Separate joint equity/rates/inflation, curve shape, regimes, window selection and parameter uncertainty. Set comparison criteria before examining the final holdout; preserve disagreements when evidence cannot select.                                                                                                                                | RUN and ROBUST use explicitly limited current models. A new model need not beat every score, but its adoption must name the improved behavior and trade-off. “Institutional-grade” is not a test.                                                                                                        |
@@ -433,13 +432,11 @@ all the others to be solved first.
 
 ## What to dispatch first
 
-1. Dispatch **P2, P4T, P4X and P5** in parallel. Specify GP's timing contract and P6's
-   representative workloads/cost budgets alongside them. No implementation waits
-   merely for another PR to merge; stack on available content.
-2. Dispatch **P6O**
-   after P2, then **P6** for the Python batch prototype; that branch is independent
-   of the claims/trade/transfer work. **P7** consumes the native action foundations
-   and the scoped GP answer.
+1. Dispatch **P4T, P4X, P5 and P6** in parallel; P6 uses already-landed stepping
+   and safe context ownership. Agree its representative workloads/cost budgets
+   alongside it. No implementation waits merely for another PR to merge.
+2. Stack **P7** on the native trade/transfer/payment foundations using the approved
+   first-example timing. Expanded GP cases remain separate work.
 3. **P8** and **P10** follow P7 independently. Run **RUNTIME** alongside the
    migration and resolve **GE** before supported hybrid adoption. Resolve GL from
    P6; the current **P9** path consumes both gates plus P7/P8. **P11** and **P12**
@@ -452,7 +449,7 @@ all the others to be solved first.
    existing DAG branches for new capabilities rather than waiting for every API
    or market-model improvement.
 
-P2/P6 provide in-memory continuation, not complete checkpoints or nested
+Existing stepping and P6 provide in-memory continuation, not complete checkpoints or nested
 forecast feedback. Those later capabilities must additionally preserve pending
 contracts, tax state, reporting basis and policy memory across save/restore or
 forks. They are not prerequisites for this migration or cross-model studies.

@@ -1,6 +1,6 @@
 # Actor-facing policy interfaces
 
-Target design for P2–P12 and gates GP/GL/GE in [the roadmap](roadmap.md),
+Target design for the remaining migration and gates GP/GL/GE in [the roadmap](roadmap.md),
 not implemented API declarations. Module names and types below are sketches;
 reuse existing domain types and introduce fields only for a supported consumer.
 
@@ -118,12 +118,14 @@ is unnecessary. The executor's `advance` owns financial time evolution between
 decisions: calendar/event ordering, accruals, settlement and taxes. The caller does not
 reimplement those rules or advance past unanswered decision opportunities.
 
-GP places the monthly observation relative to known cashflows and due claims,
-and states execution/settlement availability and unpaid-claim consequences.
-Those financial timing assumptions do not add intra-month policy calls.
-Ordering between actors in one world is an environment rule, not an accident of
-batch row order. Books and paths stay in the existing executor; native and Python
-drivers share its mechanics.
+The first actor-action example has one decision-making household and rule-driven
+counterparties: apply scheduled cashflows/events and assemble due claims, observe
+and decide once, execute the ordered actions, then stop if any due claim remains
+unpaid. Its supported trades retain their explicitly declared immediate-cash
+control; this is not a promise about real products' settlement delays.
+Ordering between additional decision-making actors and expanded product/housing
+timing remain GP choices, not an accident of batch row order. Books and paths
+stay in the existing executor; native and Python drivers share its mechanics.
 
 The initial stepping/bridge work uses Rust execution. RUNTIME/GE separately
 reevaluate that language choice, including execution strategy, ragged output
@@ -169,7 +171,10 @@ Withdrawal allocation, cash bands, lot selection and guardrails are optional
 ordinary helpers a policy can compose or ignore. Prefer Python for notebook-editable
 strategy and calculators; retain native kernels where measured cost warrants them.
 Move implementations with their consumers instead of maintaining Python/Rust copies.
-The executor must not run another funding or rebalancing strategy afterward.
+A policy can ask a helper how to satisfy its needs under the products' settlement
+rules, inspect or compose the returned operations, and submit them in its one
+response. The helper proposes; the executor validates and settles. It must not
+run another funding or rebalancing strategy afterward.
 Autopay or delegated liquidation requires an
 explicit standing instruction with modeled terms. Non-mutating tax/trade previews
 reuse canonical calculations with observable inputs and explicit assumptions,
@@ -189,11 +194,12 @@ no hidden engine trades, cuts or borrowing. Results distinguish fatal invalid
 actions from unmet claims; unsupported input schemas and simulator bugs are not
 silently converted into modeled financial failure.
 
-The monthly call limit, caller-specified action order and fatal-action contract
-are settled. GP still pins observation placement, execution versus settlement
-availability and unpaid-claim deadlines/consequences. No retry/default/recovery
-mechanism is part of this interface.
-The existing opening-month/all-or-none cases remain controls for P2/P6, not
+The monthly call limit, caller-specified action order, fatal-action contract and
+first example's cashflows/claims-before-policy ordering are settled. An unpaid due
+claim stops that example after the action list, distinctly from an invalid action.
+GP gates expanded product/housing and multi-policy-actor timing, not this first
+integration. No retry/default/recovery mechanism is part of this interface.
+The existing opening-month/all-or-none cases remain P6 parity controls, not
 the destination contract. P6/GL decides policy-call representation; RUNTIME/GE
 decides executor placement. If GE retains hybrid execution, P9 promotes the
 measured bridge with P7's actor loop and P8's helpers; otherwise replan the
