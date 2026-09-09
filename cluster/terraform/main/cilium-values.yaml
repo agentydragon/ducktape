@@ -52,6 +52,11 @@ gatewayAPI:
 # NET_BIND_SERVICE required for binding privileged ports (80, 443) in hostNetwork mode.
 envoy:
   enabled: true
+  # TLS SNI policy enforcement still carries the source identity in Cilium's
+  # socket mark.  Do not also bind the policy proxy's upstream socket to the
+  # original Pod IP:port: a Pod reaching a Gateway on its own node otherwise
+  # creates an identical proxied tuple and the upstream connection resets.
+  useOriginalSourceAddress: false
   dnsPolicy: ClusterFirstWithHostNet
   securityContext:
     capabilities:
