@@ -11,6 +11,11 @@ test -x "$JAVA_HOME/bin/java"
 java -version
 test -x "$BB_USE_BAZEL_VERSION"
 file "$BB_USE_BAZEL_VERSION" | grep -q 'ELF .* executable'
+# rules_js may execute its downloaded pnpm/Node toolchain during local `bb run`
+# repository setup. The minimal dockerTools image must provide the FHS loader
+# and library layout for that hermetic binary; this is not a reason to install
+# pnpm mutably in the agent container.
+test -x /lib64/ld-linux-x86-64.so.2
 test "$(bazel --version)" = "$("$BB_USE_BAZEL_VERSION" --version)"
 # `bb remote` embeds Bazelisk and invokes Bazel locally to canonicalize flags.
 # Exercise Bazel with the same arguments first so a failure preserves Bazel's
