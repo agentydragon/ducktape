@@ -8,6 +8,10 @@ identity whose bounded DecisionProviders determine which Actions can run automat
 first external-client slice toward replacing Haku Console's MCP server. Scheduling and dependencies
 live in [the task DAG](task_dag.md): `POLICYBIND`, `EID`, `MCPOAUTH`, `CALLERPOLICY`, `MCPFRONT`, and `EXTERNALMCP`.
 
+**Operator priority:** working deployed Claude.ai MCP access (`CLAUDEAI`) first, transcript
+search/lookup (`T3`) next. This orders work without a technical dependency between those features.
+The broader `EXTERNALMCP` milestone additionally proves local Claude Code.
+
 Use **Identity** (provisionally, static identity) for the configured authority and **Connection** for
 the runtime, operator-named client enrollment and its current Identity binding.
 A **Thread** is execution/conversation state and is not an identity. These are product terms;
@@ -204,7 +208,10 @@ copy the referenced policy configuration into the new Connection.
 First prove a credentialless fixture through both a real Claude.ai custom connection and Claude Code
 running independently on an operator machine such as wyrm2. Exercise each client's discovery,
 registration, redirect/callback, token refresh, and reconnect behavior; a hosted-browser callback
-does not prove a native-client flow. Independently check canonical Action records rather than prose:
+does not prove a native-client flow. Independently check canonical Action records rather than prose.
+
+Record Claude.ai's deployed result separately as `CLAUDEAI`, the operator's higher-priority outcome.
+The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenarios:
 
 - discovery → DCR → operator consent/identity selection → token exchange → authenticated tool use;
 - the real integration-app enrollment/login round trip for each client: bind the decision to the

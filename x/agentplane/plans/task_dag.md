@@ -2,7 +2,8 @@
 
 This is the authoritative project overview for Agentplane. It records landed behavior as evidence and
 keeps only work with a current user-visible outcome or a named design gate in the active path. Edges
-are real dependencies; packages without an edge may proceed independently. Labels mean:
+are technical dependencies; packages without an edge can proceed independently. Operator priority
+is recorded separately below and does not add dependency edges. Labels mean:
 
 - **P0 behavior**: the next user-visible behavior;
 - **needed support**: implementation needed to prove that behavior;
@@ -75,6 +76,13 @@ validation through `SandboxPrincipalAuthenticator`. Service port 80 targets a se
 in the same process/Pod; port 8888 remains the forward proxy. `RulesProjection` shares the enforcement
 index and the redacted response contract. No local-dispatch branch or new credential mode is needed.
 
+## Operator priority
+
+Prioritize working deployed Claude.ai access to the Action Service MCP facade (`CLAUDEAI`), then
+transcript search/lookup (`T3`). Search is technically independent; this is the desired order of
+work, not a claim that its implementation depends on MCP. Additional local Claude Code acceptance
+in `EXTERNALMCP` and full Haku migration are not part of that priority condition.
+
 ## DAG
 
 ```mermaid
@@ -102,6 +110,7 @@ flowchart TB
     WID["Observed evidence<br/>SandboxPrincipal<br/>workload authentication"]:::milestone
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>from trusted Sandbox types"]:::future
     MCPFRONT["Planned support<br/>Action Service MCP frontend<br/>external presentation over canonical Action API"]:::future
+    CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>external harness/client compatibility"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
@@ -109,7 +118,7 @@ flowchart TB
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
-    T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
+    T3["Lower priority<br/>trajectory search and lookup"]:::future
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
@@ -139,11 +148,12 @@ flowchart TB
     AS --> CALLERPOLICY
     CALLERPOLICY --> SBPOLICY
     WID --> SBPOLICY
-    MCPFRONT --> EXTERNALMCP
-    MCPOAUTH --> EXTERNALMCP
-    CALLERPOLICY --> EXTERNALMCP
-    EW --> EXTERNALMCP
-    APPROVALUI --> EXTERNALMCP
+    MCPFRONT --> CLAUDEAI
+    MCPOAUTH --> CLAUDEAI
+    CALLERPOLICY --> CLAUDEAI
+    EW --> CLAUDEAI
+    APPROVALUI --> CLAUDEAI
+    CLAUDEAI --> EXTERNALMCP
     EXTERNALMCP --> MCPAGG
     MCPFRONT -. replacement surface .-> MCPAGG
     MCPFRONT -. replacement surface .-> RETIRE_TOOLS
@@ -154,7 +164,7 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    T3 -. independent product work .-> PROD
+    T3 -. product work .-> PROD
     PR -. independent reliability .-> PROD
 
     AS --> DT
@@ -166,7 +176,8 @@ flowchart TB
 The first executable Action/MCP path is `AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
 credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
 acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
-PROD`. Input-delivery research, trajectory search, and proxy survivability can proceed independently.
+PROD`. Input-delivery research, trajectory search, and proxy survivability are technically independent;
+the operator priority above orders the work on search.
 The AS/EW/DEL nodes record landed contracts, not implementation prerequisites still waiting to be built.
 These independent tracks do not prove deployed Action execution. Shared app/auth/client/test setup
 has no outstanding extraction justified by the current consumers; deduplication is not a scheduled
@@ -180,8 +191,9 @@ Sandbox types bind policies directly or resolve a configured Identity. The [Acti
 records app-configuration, Kubernetes, PostgreSQL, and mixed alternatives; no storage/schema choice is selected.
 Its first Identity is configured and static (`EID`); OAuth/DCR enrollment (`MCPOAUTH`) binds a Connection to
 it, and `CALLERPOLICY` supplies bounded per-Identity auto-approval. These join the canonical MCP frontend
-(`MCPFRONT`), landed Executor support, and deployed operator review at `EXTERNALMCP`: real Claude.ai
-and external Claude Code connections running governed Actions. The [external connection plan](external_mcp_connections.md)
+(`MCPFRONT`), landed Executor support, and deployed operator review first at `CLAUDEAI`: a real
+Claude.ai connection running governed Actions. `EXTERNALMCP` additionally proves independently
+running Claude Code. The [external connection plan](external_mcp_connections.md)
 owns the workflow and remaining design choices. Static identity does not select static credentials
 or wait for `CRED`/`PROFILES`; outbound backend-account OAuth remains the separate `MCPAUTH` track.
 `EXTERNALMCP` is the initial client proof for `MCPAGG`, not proof of full Haku tool parity.
@@ -347,6 +359,23 @@ configured category), who may assign/change it, and classification lifetime. Ver
 submissions with matching/different types and arguments, forged or stale classifications, and policy
 changes before dispatch. Same-type Sandboxes retain separate caller reads/idempotency; Threads within
 one Sandbox retain the current shared workload scope. See [Action policies](action_policies.md).
+
+### `CLAUDEAI` — working Claude.ai MCP facade before transcript search
+
+**Operator-priority milestone:** the operator can connect Claude.ai to the deployed Action Service
+MCP facade, name/bind the Connection through integration-app enrollment, discover Actions, and use
+them under the configured Identity/policy with real results. Prove the bounded fixture auto-approval
+and human-review/result paths against canonical Action records through the actual Claude.ai client.
+Registration alone, mocks, and CI composition tests do not establish this user-visible outcome.
+
+The broader `EXTERNALMCP` milestone also covers local Claude Code. The operator priority above names
+this Claude.ai outcome specifically; it does not require the additional client or full Haku migration.
+
+### `T3` — trajectory search and lookup
+
+**Lower-priority product work:** search and look up stored trajectories. This is technically
+independent of `CLAUDEAI`; prioritize the working facade first. Existing transcript persistence and
+unrelated lifecycle reliability work are not reclassified as search implementation by this ordering.
 
 ### `EXTERNALMCP` — hosted clients and external harnesses using governed Actions
 

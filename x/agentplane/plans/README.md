@@ -5,6 +5,9 @@ Action Service, LLM ingress, acceptance suite, and durable evidence under [`../d
 This directory contains current design gates, genuinely deferred decisions, and north-star context;
 the [task DAG](task_dag.md) is authoritative for status and dependencies.
 
+Current priority: working Claude.ai access to the Action Service MCP facade (`CLAUDEAI`) first,
+transcript search/lookup (`T3`) next. This is work ordering, not a technical dependency.
+
 ## Open plans and gates
 
 - [Task DAG](task_dag.md) — authoritative landed/open dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
