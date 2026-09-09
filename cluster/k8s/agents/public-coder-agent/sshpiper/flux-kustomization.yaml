@@ -25,9 +25,11 @@ spec:
     # Pipes are unschedulable until the CRD exists, and the plugin's watch fails without it.
     - name: sshpiper-crds
       namespace: ducktape-flux
-    # The upstream. Nothing here works before the devbox has a stable host key to pin.
-    - name: public-coder-agent-devbox
-      namespace: ducktape-flux
+    # Deliberately NOT public-coder-agent-devbox. The piper is an ordinary Deployment that does
+    # not need the VM to exist; only a connection through it does. That Kustomization gates on a
+    # KubeVirt VirtualMachine health check that regularly spends its full 30m timeout, and gating
+    # on it meant the bastion did not deploy at all while the VM was unhealthy. A piper that runs
+    # and fails a connection is both a better failure mode and a diagnosable one.
   wait: true
   healthChecks:
     - apiVersion: apps/v1
