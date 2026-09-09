@@ -1,6 +1,6 @@
 # Actor-facing policy interfaces
 
-Target design for GP/POL and STEP/BATCH/GL/LANG in [the roadmap](roadmap.md),
+Target design for P1–P12 and gates GP/GL in [the roadmap](roadmap.md),
 not implemented API declarations. Module names and types below are sketches;
 reuse existing domain types and introduce fields only for a supported consumer.
 
@@ -128,7 +128,7 @@ def decide_batch(
 ```
 
 Whether batch functions are the primary authoring API or an optional fast path
-alongside scalar functions remains open for BATCH/GL. The scalar sketch describes
+alongside scalar functions remains open for P6/GL. The scalar sketch describes
 one decision's meaning, not a requirement for per-path Python callbacks from Rust
 workers or two permanent APIs. Compare a scalar-policy adapter with a batch-native
 policy on the same workload before choosing layout and authoring surface.
@@ -161,17 +161,19 @@ never the future realized path.
 
 ## Acceptance and remaining choices
 
-The first scoped POL example follows **bill arrives → actor requests sale → funds
+P7's first scoped example follows **bill arrives → actor requests sale → funds
 become available → actor pays bill**. Verify request/result identity, lot/basis/tax
 reconciliation, and that ignoring a sleeve helper causes no hidden engine trades.
 On a rejected request the actor can choose another action at a modeled decision
 opportunity; missed deadlines still have consequences. The environment does not
 silently sell something else, cut spending or borrow.
 
-GP resolves the first consumer's information/review times, same-time action order,
+GP resolves P7's information/review times, same-time action order,
 execution versus settlement availability, and rejection/deadline/stop behavior.
 Broader partial-payment, default and recovery models are separate scoped changes.
-The existing opening-month/all-or-none cases remain controls for STEP/BATCH, not
-the destination contract. BATCH/GL decides the language/representation trade-off;
-LANG promotes the measured bridge with POL's actor-action consumer. These are
-existing roadmap tasks, not a new prerequisite chain.
+The existing opening-month/all-or-none cases remain controls for P1/P2/P6, not
+the destination contract. P6/GL decides the language/representation trade-off;
+P9 promotes the measured bridge with P7's actor loop and P8's helpers. P11 migrates
+executable experiments; P12 cuts over configured consumers and removes implicit
+public-portfolio strategy. The roadmap owns these dependencies and their
+acceptance criteria; this sketch does not introduce another prerequisite chain.
