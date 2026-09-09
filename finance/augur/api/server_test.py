@@ -242,6 +242,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "shortfall_quanta",
     }
     terminal = detail["rollout"]["ending_metrics"]
+    assert terminal["snapshot_index"] == 3
     assert terminal["cash_quanta"] == "24887500"
     assert int(terminal["holding_value_quanta"]) > 0
     assert int(terminal["private_equity_value_quanta"]) > 0
@@ -256,6 +257,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         + int(terminal["bond_value_quanta"])
     )
     assert set(terminal) == {
+        "snapshot_index",
         "cash_quanta",
         "holding_value_quanta",
         "private_equity_value_quanta",
