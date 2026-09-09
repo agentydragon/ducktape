@@ -104,6 +104,7 @@ py_library(
     srcs = ["sandbox_claims.py"],
     deps = [
         "//haku/runner:backend",
+        "//haku/sandbox:claims",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
@@ -280,6 +281,7 @@ py_test(
         ":sandbox_claims",
         "//:conftest",
         "//haku/console:conftest",
+        "//haku/sandbox:claims",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

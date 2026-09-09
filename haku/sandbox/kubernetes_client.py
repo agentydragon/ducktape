@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shlex
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
@@ -19,6 +19,13 @@ from kubernetes_asyncio.config.config_exception import ConfigException
 from kubernetes_asyncio.stream import WsApiClient
 from kubernetes_asyncio.stream.ws_client import ERROR_CHANNEL, STDERR_CHANNEL, STDOUT_CHANNEL
 
+from haku.sandbox.claims import (
+    MANAGED_BY_LABEL,
+    MANAGED_BY_VALUE,
+    SANDBOX_API_VERSION,
+    SandboxAllocationSpec,
+    SandboxClaimClient,
+)
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.models import (
     BootstrapState,
@@ -35,18 +42,8 @@ from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 
-CLAIM_GROUP = "extensions.agents.x-k8s.io"
-SANDBOX_GROUP = "agents.x-k8s.io"
-API_VERSION = "v1beta1"
-CLAIMS_PLURAL = "sandboxclaims"
-SANDBOXES_PLURAL = "sandboxes"
-POD_NAME_ANNOTATION = "agents.x-k8s.io/pod-name"
+API_VERSION = SANDBOX_API_VERSION
 
-MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
-# Ownership marker written on every claim and required by every mutation, so it is a stored
-# value rather than a name: changing it orphans live claims, which then match nothing and can
-# be neither adopted nor disposed. It still reads "-mcp" from when this ran as its own service.
-MANAGED_BY_VALUE = "haku-sandbox-mcp"
 WARM_POOL_ANNOTATION = "haku.allegedly.works/sandbox-warm-pool"
 CONTAINER_ANNOTATION = "haku.allegedly.works/sandbox-container"
 DEFAULT_CWD_ANNOTATION = "haku.allegedly.works/sandbox-default-cwd"
@@ -260,23 +257,21 @@ class KubernetesSandboxClient:
         environment: SandboxEnvironmentConfig,
         *,
         api_client: ApiClient,
-        custom_objects: CustomObjectsClient,
-        core_v1: CoreV1Api,
+        claims: SandboxClaimClient,
         exec_runner: ExecRunner,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._environment = environment
         self._api_client = api_client
-        self._custom_objects = custom_objects
-        self._core_v1 = core_v1
+        self._claims = claims
         self._exec_runner = exec_runner
         self._now = now or (lambda: datetime.now(UTC))
 
     async def aclose(self) -> None:
         await self._api_client.close()
 
-    async def provision(self, name: str) -> SandboxInfo:
-        await self._create_or_adopt_claim(name)
+    async def provision(self, name: str, *, env: Mapping[str, str] | None = None) -> SandboxInfo:
+        await self._create_or_adopt_claim(name, env=env)
         deadline = asyncio.get_running_loop().time() + self._environment.sandbox.provisioning_timeout_seconds
         while True:
             info = await self.info(name)
@@ -328,7 +323,11 @@ class KubernetesSandboxClient:
         )
 
     async def info(self, name: str) -> SandboxInfo:
-        claim = await self._get_claim(name)
+        try:
+            graph = await self._claims.graph(name)
+        except ApiException as error:
+            raise ToolError(_api_error("inspect SandboxClaim", error)) from error
+        claim = graph.claim
         if claim is None:
             raise ToolError(f"sandbox {name!r} was not found; call list_sandboxes or provision_sandbox")
         self._require_owned(claim, name)
@@ -352,7 +351,7 @@ class KubernetesSandboxClient:
         claim_ready = _condition(claim, "Ready")
         reason = _condition_text(claim_ready, "reason")
         message = _condition_text(claim_ready, "message")
-        sandbox_name = _nested_string(claim, "status", "sandbox", "name")
+        sandbox_name = graph.sandbox_name
         if sandbox_name is None:
             state: SandboxState = "unhealthy" if reason in _FATAL_ALLOCATION_REASONS else "provisioning"
             return _info(
@@ -366,7 +365,7 @@ class KubernetesSandboxClient:
                 message=message,
             )
 
-        sandbox = await self._get_custom(SANDBOX_GROUP, SANDBOXES_PLURAL, sandbox_name, "inspect Sandbox")
+        sandbox = graph.sandbox
         if sandbox is None:
             return _info(
                 name,
@@ -379,25 +378,21 @@ class KubernetesSandboxClient:
                 reason="SandboxMissing",
                 message="The SandboxClaim references a Sandbox that does not exist.",
             )
-        annotations = sandbox.get("metadata", {}).get("annotations", {}) or {}
-        pod_name = str(annotations.get(POD_NAME_ANNOTATION) or sandbox_name)
-        try:
-            pod = await self._core_v1.read_namespaced_pod(pod_name, self._environment.sandbox.namespace)
-        except ApiException as error:
-            if error.status == 404:
-                return _info(
-                    name,
-                    "provisioning",
-                    expires_at,
-                    bootstrap_state,
-                    warnings,
-                    created_at=created_at,
-                    sandbox_name=sandbox_name,
-                    pod_name=pod_name,
-                    reason="PodMissing",
-                    message="The Sandbox pod has not been created yet.",
-                )
-            raise ToolError(_api_error("inspect the Sandbox pod", error)) from error
+        pod_name = graph.pod_name
+        pod = graph.pod
+        if pod is None:
+            return _info(
+                name,
+                "provisioning",
+                expires_at,
+                bootstrap_state,
+                warnings,
+                created_at=created_at,
+                sandbox_name=sandbox_name,
+                pod_name=pod_name,
+                reason="PodMissing",
+                message="The Sandbox pod has not been created yet.",
+            )
 
         claim_is_ready = claim_ready is not None and claim_ready.get("status") == "True"
         sandbox_ready = _condition(sandbox, "Ready")
@@ -435,11 +430,8 @@ class KubernetesSandboxClient:
         if not 1 <= limit <= 100:
             raise ToolError("limit must be between 1 and 100")
         try:
-            list_kwargs: dict[str, Any] = {"label_selector": f"{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}", "limit": limit}
-            if continue_token is not None:
-                list_kwargs["_continue"] = continue_token
-            page = await self._custom_objects.list_namespaced_custom_object(
-                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, **list_kwargs
+            page = await self._claims.list(
+                limit=limit, continue_token=continue_token, label_selector=f"{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}"
             )
         except ApiException as error:
             raise ToolError(_api_error("list sandbox claims", error)) from error
@@ -457,43 +449,30 @@ class KubernetesSandboxClient:
             return DisposeSandboxResult(name=name, deleted=False)
         self._require_owned(claim, name)
         try:
-            await self._custom_objects.delete_namespaced_custom_object(
-                CLAIM_GROUP,
-                API_VERSION,
-                self._environment.sandbox.namespace,
-                CLAIMS_PLURAL,
-                name,
-                body=k8s_client.V1DeleteOptions(propagation_policy="Foreground"),
-            )
+            deleted = await self._claims.delete(name)
         except ApiException as error:
-            if error.status == 404:
-                return DisposeSandboxResult(name=name, deleted=False)
             raise ToolError(_api_error("dispose the sandbox claim", error)) from error
-        return DisposeSandboxResult(name=name, deleted=True)
+        return DisposeSandboxResult(name=name, deleted=deleted)
 
-    async def _create_or_adopt_claim(self, name: str) -> dict[str, Any]:
+    async def _create_or_adopt_claim(self, name: str, *, env: Mapping[str, str] | None = None) -> dict[str, Any]:
         expires_at = self._now() + timedelta(seconds=self._environment.sandbox.initial_ttl_seconds)
-        body = {
-            "apiVersion": f"{CLAIM_GROUP}/{API_VERSION}",
-            "kind": "SandboxClaim",
-            "metadata": {
-                "name": name,
-                "labels": {MANAGED_BY_LABEL: MANAGED_BY_VALUE},
-                "annotations": {
-                    WARM_POOL_ANNOTATION: self._environment.sandbox.warm_pool,
-                    CONTAINER_ANNOTATION: self._environment.sandbox.container,
-                    DEFAULT_CWD_ANNOTATION: self._environment.sandbox.default_cwd,
-                    BOOTSTRAP_STATE_ANNOTATION: "pending",
-                },
-            },
-            "spec": {
-                "warmPoolRef": {"name": self._environment.sandbox.warm_pool},
-                "lifecycle": {"shutdownPolicy": "Delete", "shutdownTime": _format_timestamp(expires_at)},
-            },
-        }
         try:
-            return await self._custom_objects.create_namespaced_custom_object(
-                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, body
+            return await self._claims.create(
+                SandboxAllocationSpec(
+                    namespace=self._environment.sandbox.namespace,
+                    name=name,
+                    warm_pool=self._environment.sandbox.warm_pool,
+                    labels={MANAGED_BY_LABEL: MANAGED_BY_VALUE},
+                    annotations={
+                        WARM_POOL_ANNOTATION: self._environment.sandbox.warm_pool,
+                        CONTAINER_ANNOTATION: self._environment.sandbox.container,
+                        DEFAULT_CWD_ANNOTATION: self._environment.sandbox.default_cwd,
+                        BOOTSTRAP_STATE_ANNOTATION: "pending",
+                    },
+                    shutdown_policy="Delete",
+                    shutdown_time=expires_at,
+                    env=env,
+                )
             )
         except ApiException as error:
             if error.status != 409:
@@ -543,75 +522,41 @@ class KubernetesSandboxClient:
         return await self.info(name)
 
     async def _renew(self, name: str) -> datetime:
-        for attempt in range(_RENEW_ATTEMPTS):
-            claim = await self._get_claim(name)
-            if claim is None:
-                raise ToolError(f"sandbox {name!r} was not found; provision it first")
-            self._require_owned(claim, name)
-            current = _claim_expiry(claim)
-            now = self._now()
-            if current <= now:
-                raise ToolError(f"sandbox {name!r} has expired; dispose and provision it again")
-            target = max(current, now + timedelta(seconds=self._environment.sandbox.exec_ttl_extension_seconds))
-            if target == current:
-                return current
-            resource_version = _nested_string(claim, "metadata", "resourceVersion")
-            if resource_version is None:
-                raise ToolError(f"sandbox {name!r} claim has no Kubernetes resourceVersion")
-            patch = [
-                {"op": "test", "path": "/metadata/resourceVersion", "value": resource_version},
-                {"op": "replace", "path": "/spec/lifecycle/shutdownTime", "value": _format_timestamp(target)},
-            ]
-            try:
-                await self._custom_objects.patch_namespaced_custom_object(
-                    CLAIM_GROUP,
-                    API_VERSION,
-                    self._environment.sandbox.namespace,
-                    CLAIMS_PLURAL,
-                    name,
-                    patch,
-                    _content_type="application/json-patch+json",
-                )
-                return target
-            except ApiException as error:
-                if error.status == 409 and attempt + 1 < _RENEW_ATTEMPTS:
-                    continue
-                raise ToolError(
-                    f"{_api_error('refresh the sandbox deadline', error)}; command was not executed"
-                ) from error
-        raise AssertionError("unreachable")
+        claim = await self._get_claim(name)
+        if claim is None:
+            raise ToolError(f"sandbox {name!r} was not found; provision it first")
+        self._require_owned(claim, name)
+        current = _claim_expiry(claim)
+        now = self._now()
+        if current <= now:
+            raise ToolError(f"sandbox {name!r} has expired; dispose and provision it again")
+        target = max(current, now + timedelta(seconds=self._environment.sandbox.exec_ttl_extension_seconds))
+        if target == current:
+            return current
+        try:
+            renewed = await self._claims.renew(name, target, attempts=_RENEW_ATTEMPTS)
+        except (ApiException, ValueError) as error:
+            raise ToolError(f"{_api_error('refresh the sandbox deadline', error)}; command was not executed") from error
+        if not renewed:
+            raise ToolError(f"sandbox {name!r} was not found; command was not executed")
+        return target
 
     async def _patch_annotations(self, name: str, annotations: dict[str, str]) -> None:
         try:
-            await self._custom_objects.patch_namespaced_custom_object(
-                CLAIM_GROUP,
-                API_VERSION,
-                self._environment.sandbox.namespace,
-                CLAIMS_PLURAL,
-                name,
-                {"metadata": {"annotations": annotations}},
-                _content_type="application/merge-patch+json",
-            )
+            await self._claims.patch_annotations(name, annotations)
         except ApiException as error:
             raise ToolError(_api_error("record sandbox bootstrap state", error)) from error
 
     async def _get_claim(self, name: str) -> dict[str, Any] | None:
-        return await self._get_custom(CLAIM_GROUP, CLAIMS_PLURAL, name, "inspect SandboxClaim")
-
-    async def _get_custom(self, group: str, plural: str, name: str, action: str) -> dict[str, Any] | None:
         try:
-            return await self._custom_objects.get_namespaced_custom_object(
-                group, API_VERSION, self._environment.sandbox.namespace, plural, name
-            )
+            return await self._claims.get(name)
         except ApiException as error:
-            if error.status == 404:
-                return None
-            raise ToolError(_api_error(action, error)) from error
+            raise ToolError(_api_error("inspect SandboxClaim", error)) from error
 
     def _require_owned(self, claim: dict[str, Any], name: str) -> None:
         labels = claim.get("metadata", {}).get("labels", {}) or {}
         if labels.get(MANAGED_BY_LABEL) != MANAGED_BY_VALUE:
-            raise ToolError(f"SandboxClaim {name!r} exists but is not owned by this MCP server")
+            raise ToolError(f"SandboxClaim {name!r} exists but is not owned by haku-console")
 
     # Annotated as tuples because `list` resolves to this class's `list` method in a signature.
     def _provenance_fields(self, bootstrap_state: BootstrapState) -> tuple[_ProvenanceField, ...]:
@@ -706,17 +651,19 @@ class InClusterSandboxClient:
                 except ConfigException as error:
                     raise ToolError("Kubernetes in-cluster configuration is unavailable") from error
                 api_client = ApiClient(configuration=configuration)
+                custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api_client))
+                core_v1 = CoreV1Api(api_client)
+                claims = SandboxClaimClient(custom_objects, core_v1, self._environment.sandbox.namespace)
                 self._client = KubernetesSandboxClient(
                     self._environment,
                     api_client=api_client,
-                    custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api_client)),
-                    core_v1=CoreV1Api(api_client),
+                    claims=claims,
                     exec_runner=KubernetesWebSocketExecRunner(configuration),
                 )
         return self._client
 
-    async def provision(self, name: str) -> SandboxInfo:
-        return await (await self._get_client()).provision(name)
+    async def provision(self, name: str, *, env: Mapping[str, str] | None = None) -> SandboxInfo:
+        return await (await self._get_client()).provision(name, env=env)
 
     async def execute(
         self, *, name: str, script: str, cwd: str | None, timeout_seconds: int, max_output_bytes: int
