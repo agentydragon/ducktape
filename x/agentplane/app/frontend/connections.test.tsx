@@ -71,7 +71,8 @@ it("requires confirmation, permits cancelling, and preserves the row after unbin
   expect(api.unbind).not.toHaveBeenCalled();
   await act(async () => button(container, "Unbind").click());
   await act(async () => button(container, "Confirm unbind").click());
-  expect(api.unbind).toHaveBeenCalledExactlyOnceWith(row);
+  expect(api.unbind).toHaveBeenCalledOnce();
+  expect(api.unbind).toHaveBeenCalledWith(row);
   expect(container.textContent).toContain("Grant revoked");
   expect(container.textContent).toContain(row.id);
   expect(button(container, "Unbind").disabled).toBe(true);
@@ -89,7 +90,8 @@ it("sends a trimmed rename with the displayed version", async () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => button(container, "Save name").click());
-  expect(api.rename).toHaveBeenCalledExactlyOnceWith(row, "Renamed");
+  expect(api.rename).toHaveBeenCalledOnce();
+  expect(api.rename).toHaveBeenCalledWith(row, "Renamed");
   expect(container.textContent).toContain("Renamed");
 });
 it("refreshes stale unbind state without destructive automatic retry", async () => {

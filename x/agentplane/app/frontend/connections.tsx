@@ -97,7 +97,7 @@ export function Connections({ service = connectionService }: { service?: Connect
       {!loaded && !error && <Text>Loading Connections…</Text>}
       {loaded && rows.length === 0 && <Text c="dimmed">No Connections yet. Authorize a client to create one.</Text>}
       {rows.map((row) => (
-        <Paper key={row.id} withBorder p="md">
+        <Paper key={row.id} withBorder p="md" data-connection-id={row.id}>
           <Stack gap="sm">
             <Group justify="space-between" align="flex-start">
               <div>
