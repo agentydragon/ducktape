@@ -111,7 +111,8 @@ its cause label; paid claims no longer appear in the due-claim view.
 canonical transfer, deduction, mortgage and tax effects. A claim payment names
 the occurrence, exact full amount and an owned, declared funding account; the
 claim fixes its recipient and effect. Consumption names a separate component,
-recipient and positive amount, without becoming a contract claim. Receipts retain
+another actor's recipient account and positive amount, without becoming a contract
+claim. Transfers between one's own accounts are not consumption. Receipts retain
 the caller's request ID, target, requested amount and paid/rejected outcome.
 Invalid ownership, account, handle, amount, duplicate payment or insufficient
 cash rejects before changing books or capture. Unexpected arithmetic/accounting

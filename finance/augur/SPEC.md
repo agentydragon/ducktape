@@ -58,6 +58,7 @@ Chosen consumption is distinct from paying a configured claim. Claim payment
 uses the canonical recipient, financial effect and full due amount, with an
 actor-selected declared funding account. Receipts identify the request and its
 claim occurrence or consumption component; duplicate labels do not alias claims.
+Consumption must leave the actor's accounts; own-account transfers are not paid consumption.
 Expected action rejection leaves books unchanged. The current runner retains
 its explicit all-or-none funding-group control; individual payment execution
 does not select an alternative funding strategy or retry a policy.

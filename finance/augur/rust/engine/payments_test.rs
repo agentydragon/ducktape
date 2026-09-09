@@ -315,3 +315,56 @@ fn tax_and_mortgage_claims_use_selected_funding_account() {
     assert_eq!(state.recorder.tax_settlements[0].amount, Money(50));
     assert_eq!(state.ledger.trial_balance(), 0);
 }
+
+#[test]
+fn moving_cash_within_the_actor_is_not_paid_consumption() {
+    let (mut input, component) = tests::spending_fixture();
+    let reserve = AccountRef::new("alice", "reserve");
+    input.scenario.accounts.push(crate::execution::AccountSpec {
+        account: reserve.clone(),
+        opening_balance: Money(0),
+    });
+    for to in [component.from.clone(), reserve] {
+        let mut state = RolloutState::new(&input, 0, CaptureMode::Forensic, None).unwrap();
+        let before = state.ledger.clone();
+        let count = state.recorder.journal_entry_count;
+        let mut claims = claims::assemble(&input, 0, 0, &[], &[], &[]).unwrap();
+        let receipt = execute(
+            &mut state,
+            &mut claims,
+            "alice",
+            &Request::Consume(Consume {
+                request_id: 1,
+                cause_id: "own-account".into(),
+                component_id: "budget".into(),
+                from: component.from.clone(),
+                to: to.clone(),
+                amount: Money(10),
+            }),
+        );
+        assert_eq!(
+            receipt.outcome,
+            Outcome::Rejected(Rejection::SameActorRecipient)
+        );
+        assert_eq!(receipt.amount_paid(), Money(0));
+        assert_eq!(state.ledger, before);
+        assert_eq!(state.recorder.journal_entry_count, count);
+        assert!(state.recorder.transfers.is_empty());
+
+        let summary = spending::simulate_summary(
+            &input,
+            &spending::Spending {
+                from: component.from.clone(),
+                to,
+                cause_id: "own-account".into(),
+            },
+            |_| |_| Ok(Money(10)),
+        )
+        .unwrap();
+        assert_eq!(
+            summary.consumption_requested,
+            [vec![Money(10)], vec![Money(10)]]
+        );
+        assert_eq!(summary.consumption_paid, [vec![Money(0)], vec![Money(0)]]);
+    }
+}

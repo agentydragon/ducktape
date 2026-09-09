@@ -7,7 +7,7 @@
 use super::*;
 use serde::Serialize;
 
-/// Where consumption is paid, with an experiment-chosen prefix for its event IDs.
+/// Where consumption is paid to another actor, with an experiment-chosen event prefix.
 /// Requests add to (never replace) the input's obligations.
 #[derive(Clone, Debug, Serialize)]
 pub struct Spending {
@@ -36,7 +36,7 @@ pub struct Observation<'a> {
 ///
 /// `make_policy(rollout_id)` returns a stateful function of [`Observation`], whose result
 /// is this month's requested nominal spending in input currency quanta. Zero requests
-/// create no obligation. Negative requests and decision errors abort the simulation;
+/// create no action. Negative requests and decision errors abort the simulation;
 /// insufficient funds instead follow the existing per-rollout failure semantics.
 ///
 /// Spending shares the all-or-none funding group of other obligations from its source
