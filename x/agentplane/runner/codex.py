@@ -91,7 +91,9 @@ class CodexAdapter(HarnessAdapter):
     async def submit(self, input_id: str, text: str) -> None:
         self.session.emit(pb.InputSubmitted(input_id=input_id, text=text), sources=[])
         response, sequence = await self._request(
-            driver.turn_start(next(self._request_ids), thread_id=self._thread_id, text=text)
+            driver.turn_start(
+                next(self._request_ids), thread_id=self._thread_id, text=text, model=self.session.record.model
+            )
         )
         if response.error is not None or response.result is None:
             reason = response.error.message if response.error is not None else "turn/start returned no result"

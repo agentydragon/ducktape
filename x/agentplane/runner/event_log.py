@@ -31,6 +31,8 @@ Observation = (
     | pb.InputAccepted
     | pb.InputRejected
     | pb.InputUncertain
+    | pb.ModelSwitchSucceeded
+    | pb.ModelSwitchRejected
     | pb.TurnStarted
     | pb.TurnCompleted
     | pb.ItemStarted
@@ -51,6 +53,8 @@ _FIELDS: dict[type[Message], str] = {
     pb.InputAccepted: "input_accepted",
     pb.InputRejected: "input_rejected",
     pb.InputUncertain: "input_uncertain",
+    pb.ModelSwitchSucceeded: "model_switch_succeeded",
+    pb.ModelSwitchRejected: "model_switch_rejected",
     pb.TurnStarted: "turn_started",
     pb.TurnCompleted: "turn_completed",
     pb.ItemStarted: "item_started",
@@ -72,6 +76,8 @@ _SYNCED = (
     pb.InputAccepted,
     pb.InputRejected,
     pb.InputUncertain,
+    pb.ModelSwitchSucceeded,
+    pb.ModelSwitchRejected,
     pb.TurnStarted,
     pb.TurnCompleted,
 )

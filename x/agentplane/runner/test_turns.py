@@ -156,6 +156,28 @@ async def test_input_during_a_turn_joins_it(client: RunnerClient, model: Scripte
     model.assert_quiescent()
 
 
+async def test_idle_model_switch_reaches_the_next_upstream_request(
+    client: RunnerClient, model: ScriptedModel, provider: str, spec: pb.SessionSpec
+) -> None:
+    """Drive the pinned harnesses through the loopback server, rather than trusting runner state."""
+    attached = await client.attach("switch-model-1", spec=spec)
+    selected = "agentplane-switched/claude-haiku-4-5-20251001" if provider == "claude" else "agentplane-switched-model"
+    await attached.switch_model("switch-1", selected)
+    changed = await attached.until(events.is_kind("model_switch_succeeded"))
+    assert changed.model_switch_succeeded.model == selected
+
+    await attached.send("input-1", "Reply with exactly: SWITCHED_MODEL_OK")
+    request = await model.request()
+    assert request.model == selected
+    model.reply(request, Text("SWITCHED_MODEL_OK"))
+    started = await attached.until(events.is_kind("turn_started"))
+    assert started.turn_started.model == selected
+    await attached.until(events.turn_completed)
+    await attached.detach()
+    await attached.drain_until_end()
+    model.assert_quiescent()
+
+
 async def test_interrupt_ends_the_turn_as_interrupted(
     client: RunnerClient, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:

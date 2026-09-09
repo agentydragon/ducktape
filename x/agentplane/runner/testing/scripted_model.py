@@ -44,6 +44,8 @@ class ModelRequest:
     """What the harness sent upstream, as provider-neutral markers."""
 
     raw: UpstreamRequest
+    # The exact provider-model route the harness sent to the loopback server.
+    model: str
     # The instruction text the model sees outside the conversation: the harness's system prompt,
     # and any developer preamble it sends alongside.
     system_text: str
