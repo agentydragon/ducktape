@@ -24,6 +24,17 @@ from x.agentplane.action_service.connections import (
     Identity,
 )
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
+from x.agentplane.action_service.enrollments import (
+    EnrollmentAuthority,
+    EnrollmentConflictError,
+    EnrollmentDecisionInput,
+    EnrollmentDecisionResult,
+    EnrollmentExpiredError,
+    EnrollmentNotFoundError,
+    EnrollmentPreview,
+    EnrollmentPreviewInput,
+    EnrollmentRejectedError,
+)
 from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -98,6 +109,7 @@ def create_app(
     *,
     updates: ActionUpdates,
     connections: ConnectionAuthority | None = None,
+    enrollments: EnrollmentAuthority | None = None,
 ) -> FastAPI:
     mcp_app = create_server(service, catalog, updates, workload_authenticator).http_app(
         path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
@@ -120,6 +132,8 @@ def create_app(
 
     if connections is not None:
         _connection_routes(app, connections)
+    if enrollments is not None:
+        _enrollment_routes(app, enrollments)
 
     @app.exception_handler(ActionNotFoundError)
     async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
@@ -290,6 +304,34 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
     @app.post("/v1/operator/connections/{connection_id}/unbind", dependencies=[Depends(_operator)])
     async def unbind_connection(connection_id: UUID, body: ConnectionVersion) -> Connection:
         return await authority.unbind(connection_id, expected_version=body.expected_version)
+
+
+def _enrollment_routes(app: FastAPI, authority: EnrollmentAuthority) -> None:
+    @app.exception_handler(EnrollmentRejectedError)
+    async def enrollment_rejected(request: Request, error: EnrollmentRejectedError) -> JSONResponse:
+        del request
+        match error:
+            case EnrollmentNotFoundError():
+                code = status.HTTP_404_NOT_FOUND
+            case EnrollmentExpiredError():
+                code = status.HTTP_410_GONE
+            case EnrollmentConflictError():
+                code = status.HTTP_409_CONFLICT
+            case _:
+                code = status.HTTP_403_FORBIDDEN
+        return _error(code, str(error))
+
+    @app.post("/v1/operator/connection-enrollments/{handle}/preview")
+    async def enrollment_preview(
+        handle: str, body: EnrollmentPreviewInput, principal: Annotated[Principal, Depends(_operator)]
+    ) -> EnrollmentPreview:
+        return await authority.preview(handle, body, principal)
+
+    @app.post("/v1/operator/connection-enrollments/{handle}/decision")
+    async def enrollment_decision(
+        handle: str, body: EnrollmentDecisionInput, principal: Annotated[Principal, Depends(_operator)]
+    ) -> EnrollmentDecisionResult:
+        return await authority.decide(handle, body, principal)
 
 
 def _error(status_code: int, detail: str) -> JSONResponse:

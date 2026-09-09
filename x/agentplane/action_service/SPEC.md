@@ -36,6 +36,19 @@ grant and configured Identity still to authorize the Action, not a later replace
 Loss of authority before the dispatch claim fails the unstarted Execution without changing its
 historical Decision or invoking an executor. Revocation does not stop already claimed work.
 
+## External OAuth consent
+
+An enrollment names one validated OAuth authorization and expires within fifteen minutes. The
+operator previews and decides it through an authenticated, browser-bound interface. Only that
+browser and operator can decide or recover its result. Approval selects a configured enabled
+Identity and a Connection name; denial grants no authority. A changed or stale decision cannot
+overwrite the original, and an exact retry recovers it.
+
+Before token issuance, the authenticated upstream operator must match the consent operator.
+Consent does not itself activate a grant. Each approved enrollment permits only one token-family
+exchange claim; an ambiguous failure after that claim requires fresh authorization. An old
+authorization cannot be matched to replacement consent by reusing its client/redirect/PKCE tuple.
+
 ## Cancellation
 
 Only the authenticated owning caller can cancel a request. Cancellation takes no expected version;

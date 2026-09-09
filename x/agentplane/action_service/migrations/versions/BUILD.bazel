@@ -11,6 +11,7 @@ exports_files(
         "0007_cancellation_actor.py",
         "0008_external_connections.py",
         "0009_action_external_grant.py",
+        "0010_connection_enrollments.py",
     ],
     visibility = ["//x/agentplane/action_service/migrations:__pkg__"],
 )
@@ -87,6 +88,15 @@ py_library(
 py_library(
     name = "0009_action_external_grant",
     srcs = ["0009_action_external_grant.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0010_connection_enrollments",
+    srcs = ["0010_connection_enrollments.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",
