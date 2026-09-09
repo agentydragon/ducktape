@@ -63,6 +63,25 @@ Expected action rejection leaves books unchanged. The current runner retains
 its explicit all-or-none funding-group control; individual payment execution
 does not select an alternative funding strategy or retry a policy.
 
+The scoped household action control accepts one policy function shape: a batch of
+active actor/path observations returns a keyed batch of ordered action lists.
+Original path identities survive selection, reordering and replay; policy memory
+belongs to the caller. A scalar-authored policy can be adapted over this same
+batch interface, not a second engine interface.
+
+Its monthly decision occurs after scheduled cashflows and due-claim assembly.
+Each active path receives exactly one decision per month. Exact sales, purchases,
+transfers, claim payments and chosen consumption execute in the supplied order,
+without automatic funding, allocation, spending cuts or another policy call.
+A rejected action changes none of that action's financial state; successful
+earlier actions remain. Its rollout stops, skipping the remaining actions and
+future decisions. Any still-unpaid due claim is a distinct stop cause after
+execution. Independent paths continue. Invalid batch routing or scenario input
+and unexpected arithmetic/accounting defects are simulator errors, not modeled
+financial rejections. This control is limited to a single decision-making
+household with scripted counterparties and explicitly immediate cash execution;
+it does not establish a general multi-agent scheduler or settlement-delay model.
+
 Native experiments can separately choose monthly allocation targets through a
 rollout-local function for one declared cash-account component. It observes
 opening funding-account cash and sleeve values at current prices, before this

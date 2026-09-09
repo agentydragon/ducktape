@@ -13,7 +13,8 @@ Internally, `RolloutState` initializes opening books once and advances one month
 a time. The full-horizon drivers loop over that same advancement. Completed or
 failed states do not advance or invoke policies; an execution error consumes the
 state, preventing continuation from a partly applied month. This is not a public
-actor-session API: native callbacks still review opening-month holdings.
+actor-session API. Existing spending/allocation controls review opening-month
+holdings; the separate scoped action control below reviews assembled monthly claims.
 
 The existing extension also exposes `PrototypeSpendingSession`: an experimental
 Python-controlled `observe()` → decision → `advance(requests)` monthly handoff.
@@ -185,10 +186,43 @@ errors remain explicit simulator errors, not financial-failure receipts.
 `engine/obligations.rs` retains the configured all-or-none funding-group control
 and its existing demand/failure event projection, over that same executor.
 Allocation reserves both configured claims and the separate consumption request.
-The planned actor loop will instead execute one monthly policy call's ordered
-actions and stop that rollout at its first rejection, retaining earlier successes
-and skipping later actions/months, with no retry or engine rescue. That loop and
-Python action entry points are not introduced here.
+The scoped action control instead follows the ordered execution described below.
+
+## Scoped household action batches
+
+`engine::actors::simulate(input, actor, rollout_ids, decide)` calls one ordinary
+batch function after the shared monthly preparation phase. `Decision` rows carry
+original rollout IDs plus actor-scoped books, current due claims and the previous
+decision's receipts. The caller keeps policy memory. `DecisionActions` returns
+one ordered list for each active `(rollout_id, month)`; response order is immaterial.
+Missing, duplicate, stale or unknown keys are simulator errors. A caller may adapt
+scalar authoring over these rows; there is no scalar actor-engine entry point.
+
+Each list uses exact `Sell`, `Buy`, `Transfer`, `PayClaim` and `Consume` requests.
+Canonical trade/payment/transfer operations own admission, atomic effects, lot
+basis and taxes. Receipts retain executed or rejected requests, but not an
+unattempted suffix. `Rollout::stop` distinguishes a rejected action (identified by
+its month/index receipt) from unpaid due claims. Both preserve the stopped book
+and exclude that path from later batches while other paths continue. Unexpected
+accounting/arithmetic failures return a simulator error, not an action rejection.
+Preparation and closing share the configured runner's financial implementations;
+actor execution has no implicit pre/post allocation, harvesting, sale or payment.
+
+This native forensic control supports one decision-making household and scripted
+counterparties. It rejects configured allocation/harvesting/tender policies and
+scheduled sales rather than silently bypassing them. Housing and private-equity
+lifecycle inputs are not supported. Public trades require asset/pool declarations
+from initial lots: an all-cash start cannot yet buy a previously unheld asset.
+Policy-independent market/pool declarations and the Python action session are
+later work, not dummy allocation configurations or a second evaluator here.
+
+The `engine/actors_test.rs` stories run with
+`bbr test //finance/augur/rust:simulator_test`. They include contribution → bill →
+chosen sale → explicit payment, canonical synthetic-tax assessment/payment, mixed
+buy/transfer/buy ordering, prefix preservation, distinct unpaid-claim stops,
+batch-native versus scalar-adapted selected replay and invalid response routing.
+Their supplied paths and flat tax brackets are deterministic controls, not market
+forecasts or claims of statutory tax coverage.
 
 ## Covered behavior
 
