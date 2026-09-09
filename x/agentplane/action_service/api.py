@@ -23,7 +23,7 @@ from x.agentplane.action_service.connections import (
     ConnectionNotFoundError,
     Identity,
 )
-from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
+from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
 from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -135,6 +135,11 @@ def create_app(
     async def conflict(request: Request, error: ActionConflictError) -> JSONResponse:
         del request
         return _error(status.HTTP_409_CONFLICT, str(error))
+
+    @app.exception_handler(ExternalGrantNotAuthorizedError)
+    async def external_grant_rejected(request: Request, error: ExternalGrantNotAuthorizedError) -> JSONResponse:
+        del request, error
+        return _error(status.HTTP_403_FORBIDDEN, "external grant is not authorized")
 
     @app.exception_handler(UnsupportedActionError)
     async def unsupported(request: Request, error: UnsupportedActionError) -> JSONResponse:

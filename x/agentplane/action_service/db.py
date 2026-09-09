@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
@@ -16,6 +16,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
+    CONFIGURED_IDENTITY_ISSUER,
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
@@ -29,6 +30,7 @@ from x.agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     ExecutionView,
+    ExternalGrantProvenance,
     Principal,
     PrincipalRole,
     ReconciliationSource,
@@ -86,6 +88,7 @@ class ActionRequestRow(Base):
     origin: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     correlation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     caller_principal: Mapped[str] = mapped_column(Text)
+    external_grant: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     state: Mapped[str] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -170,6 +173,16 @@ class ActionConflictError(Exception):
     pass
 
 
+class ExternalGrantNotAuthorizedError(Exception):
+    pass
+
+
+class ExternalGrantAuthority(Protocol):
+    async def authorize_action(self, session: AsyncSession, grant: ExternalGrantProvenance) -> bool:
+        """Check the original grant, holding its revocation lock until this transaction ends."""
+        ...
+
+
 _TERMINAL_ACTION_STATE = {
     ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
     ExecutionState.FAILED: ActionState.FAILED,
@@ -213,12 +226,20 @@ async def verify_schema(engine: AsyncEngine) -> None:
 
 
 class ActionStore:
-    def __init__(self, sessions: SessionMaker) -> None:
+    def __init__(self, sessions: SessionMaker, *, external_grants: ExternalGrantAuthority | None = None) -> None:
         self._sessions = sessions
+        self._external_grants = external_grants
 
-    async def submit(self, body: ActionRequestInput, principal: Principal) -> tuple[ActionRequestView, bool]:
+    async def submit(
+        self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
+    ) -> tuple[ActionRequestView, bool]:
         """Persist an admitted request; ActionService resolves its group/action before calling here."""
         async with self._sessions.begin() as session:
+            if external_grant is not None:
+                if principal != external_grant.principal() or not await self._grant_authorized(session, external_grant):
+                    raise ExternalGrantNotAuthorizedError("external grant is not authorized")
+            elif principal.issuer == CONFIGURED_IDENTITY_ISSUER:
+                raise ExternalGrantNotAuthorizedError("configured Identity requires an authenticated external grant")
             now = datetime.now(UTC)
             request_id = uuid4()
             inserted_id = await session.scalar(
@@ -231,6 +252,7 @@ class ActionStore:
                     origin=body.origin,
                     correlation=body.correlation,
                     caller_principal=principal.key,
+                    external_grant=external_grant.model_dump(mode="json") if external_grant is not None else None,
                     state=ActionState.DECISION_PENDING.value,
                     version=1,
                     created_at=now,
@@ -467,6 +489,18 @@ class ActionStore:
             if row.state != ActionState.ALLOWED.value:
                 raise ActionConflictError(f"cannot dispatch request in {row.state}")
             now = datetime.now(UTC)
+            if row.external_grant is not None and not await self._grant_authorized(
+                session, ExternalGrantProvenance.model_validate(row.external_grant)
+            ):
+                # Preserve the historical Decision; the original grant no longer permits dispatch.
+                execution.state = ExecutionState.FAILED.value
+                execution.error = {"code": "external_grant_not_authorized"}
+                execution.completed_at = now
+                row.state = ActionState.FAILED.value
+                row.version += 1
+                row.updated_at = now
+                _record_event(session, row, now)
+                return None
             lease_token = uuid4()
             lease_expires_at = now + lease_duration
             execution.state = ExecutionState.DISPATCHING.value
@@ -529,6 +563,9 @@ class ActionStore:
                 origin=row.origin,
                 correlation=row.correlation,
                 caller_principal=row.caller_principal,
+                external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
+                if row.external_grant is not None
+                else None,
             )
 
     async def finish_execution(
@@ -653,6 +690,9 @@ class ActionStore:
                 .on_conflict_do_update(index_elements=["executor_id"], set_={"heartbeat_at": now})
             )
 
+    async def _grant_authorized(self, session: AsyncSession, grant: ExternalGrantProvenance) -> bool:
+        return self._external_grants is not None and await self._external_grants.authorize_action(session, grant)
+
     async def _view(self, session: AsyncSession, row: ActionRequestRow, principal: Principal) -> ActionRequestView:
         decision = await session.scalar(select(DecisionRow).where(DecisionRow.request_id == row.id))
         execution = await session.scalar(select(ExecutionRow).where(ExecutionRow.request_id == row.id))
@@ -665,6 +705,9 @@ class ActionStore:
             origin=_redact(row.origin),
             correlation=_redact(row.correlation),
             caller_principal=row.caller_principal if operator else None,
+            external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
+            if row.external_grant is not None
+            else None,
             state=ActionState(row.state),
             version=row.version,
             created_at=row.created_at,

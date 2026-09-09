@@ -31,6 +31,25 @@ class Principal(BaseModel):
         return f"{self.issuer}:{self.subject}"
 
 
+CONFIGURED_IDENTITY_ISSUER = "configured-identity"
+
+
+class ExternalGrantProvenance(BaseModel):
+    """Immutable authenticated submission evidence, never part of the caller envelope."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    identity_id: str
+    issuer: str
+    client_id: str
+    connection_id: UUID
+    grant_id: UUID
+    revision: int = Field(ge=1)
+
+    def principal(self) -> Principal:
+        return Principal(issuer=CONFIGURED_IDENTITY_ISSUER, subject=self.identity_id, role=PrincipalRole.CALLER)
+
+
 class ActionState(StrEnum):
     DECISION_PENDING = "decision_pending"
     ALLOWED = "allowed"
@@ -144,6 +163,7 @@ class ActionRequestView(BaseModel):
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
     caller_principal: str | None
+    external_grant: ExternalGrantProvenance | None = None
     state: ActionState
     version: int
     created_at: datetime
@@ -186,6 +206,7 @@ class ExecutionRequest(BaseModel):
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
     caller_principal: str
+    external_grant: ExternalGrantProvenance | None = None
 
 
 class ExecutionResult(BaseModel):

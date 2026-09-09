@@ -99,12 +99,12 @@ async def test_same_identity_shares_receipts_while_distinct_identities_are_isola
     assert len({grant.connection_id for grant in submitted_grants}) == 3
     assert [grant.client_id for grant in submitted_grants] == ["client-1", "client-2", "client-3"]
 
-    store = ActionStore(make_sessionmaker(engine))
+    store = ActionStore(make_sessionmaker(engine), external_grants=service)
     body = ActionRequestInput(
         idempotency_key="same-key", action=ActionIdentity(group="test", name="echo"), arguments={}
     )
-    original, _ = await store.submit(body, first)
-    duplicate, created = await store.submit(body, sibling)
+    original, _ = await store.submit(body, first, external_grant=submitted_grants[0].provenance())
+    duplicate, created = await store.submit(body, sibling, external_grant=submitted_grants[1].provenance())
     assert duplicate.id == original.id
     assert not created
     assert (await store.get(original.id, sibling)).id == original.id
@@ -115,7 +115,7 @@ async def test_same_identity_shares_receipts_while_distinct_identities_are_isola
         await store.get(original.id, different)
     with pytest.raises(ActionNotFoundError):
         await store.events(original.id, different)
-    separate, created = await store.submit(body, different)
+    separate, created = await store.submit(body, different, external_grant=submitted_grants[2].provenance())
     assert created
     assert separate.id != original.id
     operator = Principal(issuer="operator", subject="only-operator", role=PrincipalRole.OPERATOR)

@@ -126,7 +126,10 @@ async def async_main(settings: Settings) -> None:
         providers = settings.decision_providers(catalog)
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
         executors = await stack.enter_async_context(running_executor(catalog))
-        service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors, providers=providers)
+        connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
+        service = ActionService(
+            ActionStore(make_sessionmaker(engine), external_grants=connections), catalog, executors, providers=providers
+        )
         # Stop dispatch/lease tasks before closing the adapters, including failed service startup.
         stack.push_async_callback(service.close)
         await service.start()
@@ -152,7 +155,7 @@ async def async_main(settings: Settings) -> None:
             ),
             operator_authenticator,
             catalog,
-            connections=ConnectionAuthority(make_sessionmaker(engine), settings.identities),
+            connections=connections,
             updates=ActionUpdates(settings.database_url),
         )
         await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()

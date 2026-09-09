@@ -602,6 +602,25 @@ py_test(
 )
 
 py_test(
+    name = "test_external_grants",
+    srcs = ["test_external_grants.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":connections",
+        ":db",
+        ":models",
+        ":service",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_mcp_frontend",
     srcs = ["test_mcp_frontend.py"],
     requires_docker = True,

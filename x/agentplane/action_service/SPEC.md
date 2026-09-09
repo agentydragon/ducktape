@@ -27,6 +27,15 @@ bound to the same Identity share reads, while different Identities remain isolat
 grant is separate provenance. The Connection authority is implemented independently of the OAuth
 adapter; no external bearer admission is enabled by these management endpoints.
 
+Each externally admitted Action retains an immutable snapshot of its submitting grant independently
+of caller-supplied metadata. Shared-Identity duplicate submissions return the first Action and its
+original provenance; rename, reconnect, refresh and revocation cannot rewrite that evidence.
+External Actions initially require human approval, independent of existing workload auto-decisions.
+Admission and dispatch authorization are atomic with revocation. Dispatch requires the original
+grant and configured Identity still to authorize the Action, not a later replacement binding.
+Loss of authority before the dispatch claim fails the unstarted Execution without changing its
+historical Decision or invoking an executor. Revocation does not stop already claimed work.
+
 ## Cancellation
 
 Only the authenticated owning caller can cancel a request. Cancellation takes no expected version;

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.db import ConnectionGrantRow, ConnectionRow, SessionMaker
-from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.action_service.models import ExternalGrantProvenance, Principal
 
 ConnectionName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
@@ -86,7 +86,17 @@ class Grant(BaseModel):
         """Configured Identity owns receipts; submitting grant remains separate evidence."""
         if self.status is not GrantStatus.ACTIVE:
             raise GrantRejectedError("grant is not active")
-        return Principal(issuer="configured-identity", subject=self.identity_id, role=PrincipalRole.CALLER)
+        return self.provenance().principal()
+
+    def provenance(self) -> ExternalGrantProvenance:
+        return ExternalGrantProvenance(
+            identity_id=self.identity_id,
+            issuer=self.issuer,
+            client_id=self.client_id,
+            connection_id=self.connection_id,
+            grant_id=self.id,
+            revision=self.revision,
+        )
 
 
 class Connection(BaseModel):
@@ -232,6 +242,19 @@ class ConnectionAuthority:
                 connection = await _locked_connection(db, grant.connection_id)
                 connection.version += 1
                 connection.updated_at = now
+
+    async def authorize_action(self, session: AsyncSession, grant: ExternalGrantProvenance) -> bool:
+        """Validate admission/dispatch inside the ActionStore transaction, not before it.
+
+        Connection row locking makes revocation atomic with admission and the dispatch claim.
+        The caller owns the transaction and must keep it open until its Action write commits.
+        """
+        try:
+            row = await self._locked_grant(session, grant.grant_id)
+            self._require_identity(row.identity_id)
+        except (GrantRejectedError, ConnectionNotFoundError):
+            return False
+        return row.status == GrantStatus.ACTIVE and Grant.model_validate(row).provenance() == grant
 
     async def _locked_grant(self, db: AsyncSession, grant_id: UUID) -> ConnectionGrantRow:
         grant = await db.get(ConnectionGrantRow, grant_id)

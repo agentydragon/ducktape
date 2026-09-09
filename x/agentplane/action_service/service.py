@@ -37,6 +37,7 @@ from x.agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     Executor,
+    ExternalGrantProvenance,
     Principal,
     ProviderOutcome,
     ProviderVerdict,
@@ -146,15 +147,17 @@ class ActionService:
         self._heartbeat_task = None
         self._sweep_task = None
 
-    async def submit(self, body: ActionRequestInput, principal: Principal) -> ActionRequestView:
+    async def submit(
+        self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
+    ) -> ActionRequestView:
         self._resolve_executor(body.action)
         _, action = self._catalog.resolve(body.action.group, body.action.name)
         try:
             jsonschema.validate(body.arguments, action.input_schema)
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
-        view, created = await self._store.submit(body, principal)
-        if not created:
+        view, created = await self._store.submit(body, principal, external_grant=external_grant)
+        if not created or external_grant is not None:
             return view
         return await self._auto_decide(view, body, principal)
 

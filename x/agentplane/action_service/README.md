@@ -16,8 +16,23 @@ Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant
 there is no HTTP endpoint accepting client-provided Identity/issuer/client/grant bindings. Bind is
 idempotent by its consent grant UUID, reconnect locks the Connection and ends the old grant, and
 activation is bounded by its deadline. The app BFF/consent UI and FastMCP protocol adapter are
-separate implementation slices. External bearer admission and per-Action grant snapshots are not
-enabled here; the resolved principal contract already uses shared configured-Identity ownership.
+separate implementation slices. An authenticated external adapter submits a resolved
+`Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
+never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
+snapshot atomically with the first request. Shared-Identity idempotent retries preserve the original
+snapshot, including after rename or reconnect. Existing workload requests retain a null snapshot.
+External submissions initially require human approval; existing synchronous automatic providers
+are not consulted for them.
+
+`ActionStore` validates that snapshot against the original active grant and current configured
+Identity under the Connection row lock, both during admission and before the dispatch claim. A
+revoked, missing or disabled original authority prevents dispatch even if another grant now binds
+the same Identity: the unstarted Execution fails with `external_grant_not_authorized`, retaining
+the historical Decision. Already claimed work is not stopped. Receipt and executor projections carry
+the original snapshot; no credentials are stored in it. Migration `0009_action_external_grant`
+adds its nullable column without inventing provenance for pre-existing requests.
+
+The external OAuth bearer adapter itself remains a separate implementation slice.
 This slice assumes Action Service/PostgreSQL owns Connection authority, with the integration app
 owning its operator UI. It adds no policy language, Thread lifecycle or deployment configuration.
 
