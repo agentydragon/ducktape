@@ -121,6 +121,10 @@ not isolated native compute. cProfile overhead is part of these measurements;
 callback tail latency, hardware-normalized speedups and acceptable budgets are not
 inferred. No market probability estimates come from these repeated stress paths.
 
+The [matched-workload investigation](../../../../debug/augur_python_policy_batches_20260909.md)
+records 1,000/100,000-path compact profiles and a separate forensic capture run,
+including exact input/output agreement and remaining measurement limits.
+
 `compare_test` uses three stipulated price/CPI paths, without network access, to
 check cut/raise limits, an interior target, subsequent resets and the fixed-real control
 through the full compiler/function/funding composition and reconcile compact
