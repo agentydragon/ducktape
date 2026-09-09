@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.channels.matrix.revisions import RevisionLog
-from haku.console.chat_models import ChannelSurface
+from haku.console.channels.surface import ChannelSurface
 from haku.console.database_schema import ChannelAttachmentRow, Conversation
 from haku.console.harnesses.kind import HarnessKind
 

@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChannelSurface
+from haku.console.channels.surface import ChannelSurface
 from haku.console.conversation_read_access import ConversationReadScope
 from haku.console.database_schema import ChannelAttachmentRow, Session
 from haku.console.tools.recall_index import (

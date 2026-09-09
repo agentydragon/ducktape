@@ -322,8 +322,7 @@ canonical terms above.
   `harness` fields, `HarnessLaunchAuthorizer`, `HarnessesConfig`, the `default_agent_id` config
   contract, the harness labels without `-chat`, the `conversation_layers.md`/
   `conversation_runtime_facts.md`/`conversation_prompt_fragment.md.j2` renames, and the
-  `haku-conversation-*` CSS names. Tracked residue: `chat_models.py`
-  (deleted once `ChannelSurface` moves with the C4 channels packaging); the derived audit id
+  `haku-conversation-*` CSS names. The derived audit id
   `haku-chat-session:` (session-token family, C16a); and remaining “chat runtime”/“chat surface”/
   “chat session”/“chat records” prose, swept by the C16f gate. Rename current concepts to their
   actual session, conversation, channel, Agent, harness, or frontend names; keep `chat` only where
@@ -409,8 +408,7 @@ That drop lands with the final packaging chunks (§6, C14/C15), not the per-pack
    ORM row, that row is `Apple`/`AppleRow`, never `Carrot` in a `lol_inconsistency` table.
 2. **Representation-role suffix only to disambiguate coexistence** (`…Row`, `…Body`, `…View`,
    `…Record`), the **concept half identical**, and the suffix **on the definition** — no `X as XRow`
-   re-minted per import. Put `class ConversationEventRow` in `database_schema.py`, and the five
-   `ConversationEvent as ConversationEventRow` import aliases (and their copied comments) delete.
+   re-minted per import. Put `class ConversationEventRow` in `database_schema.py`; import it from there.
 3. **No third name for a concept that already has one** — "entry", "chat", a re-declared
    `Outcome`/`TurnEnd` are the smell.
 4. **Verb vocabulary = the neutral-operation protocol**: items are **opened / segment / completed**;
@@ -495,7 +493,7 @@ will conflict" / "touches the same file" is not a wait — whoever lands second 
   `IndexerConfigFile` slice of the shared YAML; remaining, in order:
   1. a shared home for `ConversationItem` and the item enums (**operator decision, pending** — the
      gating semantic piece): `haku/recall_index/chat_source.py` imports
-     `haku.console.{chat_models,database_schema}` today, the §5 violation this step removes;
+     `haku.console.database_schema` today, the §5 violation this step removes;
   2. the mechanical move, retargeting `devinfra/ci/image_targets.json` and BUILD — the GHCR name
      `haku-indexer` keys off the JSON key, not the Bazel path, so Flux image automation is untouched.
 
@@ -522,8 +520,7 @@ quiet gap.
   in `conversation/item_vocabulary.py` — a pure leaf rather than `item_reads.py` as C6 nominally
   planned: `item_reads.py` imports the ORM rows from `database_schema.py`, which reads these enums for
   its columns, so hosting them there would close a `database_schema` ↔ `item_reads` cycle; the leaf
-  both layers import avoids it. Remaining:
-  - `ChannelSurface` → `channels/` with the channel packaging
+  both layers import avoids it. The `ChannelSurface` vocabulary now lives in `channels/surface.py`.
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
   harness-kind discriminator (§3.1). Complete across the wire, enum/OpenAPI, application API, and
   stored schema. The stored contract was released as three independently deployed steps after the
@@ -572,8 +569,7 @@ quiet gap.
     (`conversation_layers.md`, `conversation_runtime_facts.md`, `conversation_prompt_fragment.md.j2`,
     `haku-conversation-*` CSS); and the deployed-config **contract** — the ConfigMap's
     `harness_label` (values `claude`/`codex`) and `default_agent_id` are the only spellings, and the
-    expand aliases are gone. Remaining: `chat_models.py` deletion stays gated on `ChannelSurface`
-    moving out with the C4 channels packaging; the `runtime_kind` attribute spellings ride C4d's
+    expand aliases are gone. The `runtime_kind` attribute spellings ride C4d's
     stored-column contract. Keep `runtime` for live session/conversation lifecycle only.
   - **C16e · HTTP decision endpoint token:** **Landed in stages 1–3**: readers accepted both token
     spellings, manifest writers flipped to `HAKU_DECISION_ENDPOINT_TOKEN` / `decision-endpoint-token`,
