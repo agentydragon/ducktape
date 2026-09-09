@@ -258,8 +258,8 @@ export function SessionView({
     });
     source.addEventListener("event", (message: MessageEvent<string>) => {
       const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
-      if (event.modelSwitchSucceeded) setModel(event.modelSwitchSucceeded.model);
-      if (event.modelSwitchRejected) setError(event.modelSwitchRejected.reason);
+      if (event.observation.case === "modelSwitchSucceeded") setModel(event.observation.value.model);
+      if (event.observation.case === "modelSwitchRejected") setError(event.observation.value.reason);
       setState((current) => reduce(current, event));
     });
     // The runner ending the stream is final: a reconnect would Open the session again, which
