@@ -176,6 +176,23 @@ class ConnectionAuthority:
             await db.flush()
             return Grant.model_validate(grant)
 
+    async def validate_pending(self, grant_id: UUID, *, issuer: str, client_id: str) -> Grant:
+        """Check authority before the OAuth SDK consumes an authorization code.
+
+        The OAuth transaction authority separately claims code exchange; this check does not
+        consume a pending grant or permit another exchange after it has become active.
+        """
+        async with self._sessions.begin() as db:
+            grant = await self._locked_grant(db, grant_id)
+            self._require_identity(grant.identity_id)
+            if (
+                grant.status != GrantStatus.PENDING
+                or (grant.issuer, grant.client_id) != (issuer, client_id)
+                or grant.activation_deadline <= datetime.now(UTC)
+            ):
+                raise GrantRejectedError("grant is not pending authorization")
+            return Grant.model_validate(grant)
+
     async def activate(self, grant_id: UUID) -> Grant:
         """OAuth adapter calls after verified issuance; pending/revoked tokens never resolve."""
         async with self._sessions.begin() as db:

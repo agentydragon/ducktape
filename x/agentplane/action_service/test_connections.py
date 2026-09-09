@@ -61,10 +61,16 @@ async def test_binding_retries_are_atomic_and_survive_authority_replacement(engi
     assert all(grant == grants[0] for grant in grants)
     (connection,) = await service.list()
     assert connection.grants == [grants[0]]
+    assert await service.validate_pending(request.grant_id, issuer=ISSUER, client_id=request.client_id) == grants[0]
+    for issuer, client_id in [("https://different.example", request.client_id), (ISSUER, "another-client")]:
+        with pytest.raises(GrantRejectedError):
+            await service.validate_pending(request.grant_id, issuer=issuer, client_id=client_id)
     with pytest.raises(GrantRejectedError):
         await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)
     activated = await service.activate(request.grant_id)
     assert activated.status is GrantStatus.ACTIVE
+    with pytest.raises(GrantRejectedError):
+        await service.validate_pending(request.grant_id, issuer=ISSUER, client_id=request.client_id)
     replacement = authority(engine)
     assert await replacement.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id) == activated
     assert await replacement.bind(request) == activated
