@@ -33,6 +33,7 @@ trilium
 # Nested Bazel modules - build through their module labels.
 # (its own MODULE.bazel + Bazel/pnpm build); it is not part of ducktape's build.
 third_party/activitywatch
+third_party/cli_proxy_api
 haku/shared
 third_party/manifold_mcp_server
 devinfra/claude/web_env/re/environment_manager/src
