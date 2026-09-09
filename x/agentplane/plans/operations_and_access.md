@@ -267,7 +267,8 @@ callbacks across the human and auto-provider Decision routes — PR
 
 **Observed evidence:** caller pending/result/error redaction, shared human decision notes, bounded
 provider reason evidence, and the `execution_unknown` API/reconciliation contract are implemented.
-**Needed support:** settle withdrawal through `CANCEL_GATE` and prove any new adapter-specific
+**Needed support:** implement owning-caller pre-claim cancellation through the resolved `CANCEL`
+contract in [the DAG](task_dag.md), and prove any new adapter-specific
 status lookup; do not recreate the landed Decision/query path.
 
 **Landed:** durable Action event append/query with restart recovery and cursor-based

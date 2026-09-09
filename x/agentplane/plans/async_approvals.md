@@ -84,9 +84,11 @@ asynchronous human provider.
    then let its authenticated UI/notification client call the Action Service's canonical decision
    endpoint. The endpoint returns a stale/already-decided result when another provider won; it never
    creates a parallel human lifecycle.
-3. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
-   the final event. Do not add post-dispatch cancellation unless the first adapter can prove its
-   semantics.
+3. **Cancellation.** Implement the resolved `CANCEL` contract in [the DAG](task_dag.md): only the
+   owning caller, no expected-version requirement, and the atomic dispatch claim as cutoff. A
+   successful cancellation prevents execution; claimed/running/unknown execution cannot be cancelled.
+   Preserve prior Decisions, cancellation audit, idempotent replay, and canonical state events.
+   No executor cancellation propagation or process killing is in scope.
 4. **Unknown outcome.** The Agent/API-visible `execution_unknown` state and authenticated
    reconciliation are implemented; a concrete adapter must establish any authoritative status lookup. Status reconciliation may update the
    existing Execution; it never starts another one.

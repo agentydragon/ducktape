@@ -204,6 +204,11 @@ copy the referenced policy configuration into the new Connection.
 
 ## Initial MCP tools: generic Actions
 
+**Placement selected:** the MCP server lives in the Action Service process, sharing canonical
+authentication, catalog, request/Decision/Execution services, and lifecycle-owned resources. A
+separate pod or sidecar is not required for the initial frontend. This selects the resource-server
+placement, not the still-open OAuth authorization-server owner or integration-app enrollment handoff.
+
 **Selected first-slice direction:** expose a small fixed set of tools which treat Actions as data.
 Do not mirror each Action or mounted upstream MCP tool into a separate exposed MCP tool. Changing
 the canonical Action catalog changes discovery results, not the frontend's tool roster. Per-Action

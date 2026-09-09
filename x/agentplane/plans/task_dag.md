@@ -95,10 +95,8 @@ flowchart TB
     AS["Observed evidence<br/>Action schema/catalog and projections"]:::milestone
     EW["Observed evidence<br/>MCP runtime/config, claim and liveness<br/>CI proof; live verification in MCP0"]:::milestone
     DEL["Observed evidence<br/>Decision aggregation, shared note,<br/>canonical event/query API"]:::milestone
-    CANCEL_GATE["Decision gate<br/>pre/post-dispatch cancellation semantics<br/>and caller authorization"]:::decision
-    CANCEL["Pending behavior<br/>agent-requested Action withdrawal/cancellation<br/>blocked on CANCEL_GATE"]:::future
-    CANCEL_GATE --> CANCEL
-    DEL --> CANCEL_GATE
+    CANCEL["Ready behavior<br/>owning caller cancels before dispatch claim<br/>no expected-version requirement"]:::active
+    DEL --> CANCEL
     MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
@@ -431,6 +429,10 @@ Actions, submits one ActionRequest with an optional bounded wait, and reads its 
 eventual safe result. This is external MCP presentation over the canonical Action API, not another
 executor, remote MCP runtime, or lifecycle store.
 
+**Placement selected:** host the MCP server in the Action Service process, sharing its catalog,
+authentication, service/store, and lifecycle. No separate pod or sidecar is required for the first
+slice. OAuth authorization-server placement remains a separate `MCPOAUTH` design question.
+
 **Initial surface chosen:** fixed generic tools such as `list_actions`, `get_action`, and
 `request_action`, plus request-status/event reads. An Action definition and a submitted ActionRequest
 are distinct. Do not mirror Actions into individually exposed MCP tools in this first slice; the
@@ -566,7 +568,7 @@ configured synchronous non-human providers ahead of the existing human path, wit
 provider-authored reason evidence and a shared optimistic-version/idempotency commit path for both
 human and auto-provider Decisions. See [`async_approvals.md`](async_approvals.md).
 
-**Needed support:** human-provider notifications, withdrawal/cancellation through `CANCEL_GATE` below,
+**Needed support:** human-provider notifications, pre-claim cancellation through `CANCEL` below,
 and bounded progress for a concrete consumer. Human callbacks, safe projections, and the
 `execution_unknown` API state are implemented. Durable Action event
 append/query with cursor-based (`after_sequence`) polling is landed; see `action_service/README.md`.
@@ -580,18 +582,39 @@ credential-shaped arguments/results/errors and unsafe exceptions while surfacing
 human `decision_note`, bounded non-human provider reason evidence, and safe terminal result.
 Open: human-provider notification and withdrawal evidence.
 
-### `CANCEL_GATE` → `CANCEL` — agent-requested withdrawal/cancellation
+### `CANCEL` — owning-caller cancellation before dispatch claim
 
-**Pending P0 behavior, explicitly blocked:** let the requesting agent ask the canonical Action
-Service to withdraw/cancel its own Action. Do not implement an endpoint until pre-dispatch versus
-post-dispatch semantics and authorization are defined. Decide ownership, permissible states,
-expected-version/idempotency behavior, races with allow/claim/start, and whether a running executor
-supports cancellation versus only a stop request with unknown outcome. A pre-dispatch withdrawal
-must prove no Execution can subsequently start; a post-dispatch response must not falsely promise
-that external side effects were undone. This gate owns the Action/API/event/schema implications.
+**Ready for implementation; semantic gate resolved:** cancellation guarantees the request will not
+execute. Only its authenticated owning caller may cancel; use the existing caller ownership scope
+(Sandbox namespace/UID for workloads, not Thread or shared policy). Require no expected version.
+The atomic dispatch claim is the cutoff, even before the executor physically begins its work.
 
-**Acceptance evidence after the gate:** replay caller-own versus other-agent/forged requests and
-withdraw-versus-dispatch races, including restart and duplicate delivery. No implementation in #5820.
+| Current state                                 | Cancellation result                             |
+| --------------------------------------------- | ----------------------------------------------- |
+| `decision_pending`                            | Transition to `cancelled`.                      |
+| `allowed`, Execution still `pending_dispatch` | Cancel the request and its unclaimed Execution. |
+| `dispatching` or `running`                    | Refuse as too late; leave execution untouched.  |
+| `cancelled`                                   | Idempotent success.                             |
+| `succeeded`, `failed`, or `denied`            | Report already finished; leave unchanged.       |
+| `execution_unknown`                           | Refuse; execution may have happened.            |
+
+Cancellation, Decision commit, and dispatch claim must serialize atomically. If cancellation wins,
+no queued task, late approval, duplicate submission, or restart can subsequently start execution.
+An intervening approval alone does not prevent cancellation while the Execution remains unclaimed.
+Retain any earlier Decision and record cancellation actor/time plus the canonical state event.
+Submission with the original idempotency key returns the same cancelled request; a deliberate new
+attempt requires a new submission key. Repeated cancellation is safe without a version precondition.
+
+There is no in-progress cancellation propagation, executor stop request, process killing, or promise
+to undo side effects. Disconnecting/cancelling an MCP wait is not Action cancellation. Publish the
+canonical cancellation transition through the same update-notification path as other state changes
+when notification-driven waits are present; this does not make the cancellation API depend on the
+MCP frontend. Conversely, the initial MCP frontend can land without a cancellation tool.
+
+**Acceptance:** own-caller authorization and other-caller rejection; the full state table; competing
+allow/deny/cancel/claim operations; already-scheduled dispatch; restart and duplicate delivery;
+original-submission-key replay; preserved Decision/audit and state-event visibility. Prove that a
+successful cancellation prevents executor invocation, not merely that the API returned `cancelled`.
 
 ### Decision note — existing query/BFF projection
 
