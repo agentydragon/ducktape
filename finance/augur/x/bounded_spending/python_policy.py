@@ -8,7 +8,7 @@ Neither implementation performs financial settlement or computes tax.
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -210,6 +210,6 @@ def run(
                 chunk = observations.select(slice(start, start + size))
                 amounts = policy(chunk)
                 session.advance(list(zip(chunk.rollout_ids.tolist(), chunk.months.tolist(), amounts, strict=True)))
-        return json.loads(session.finish_json())
+        return cast(dict[str, Any], json.loads(session.finish_json()))
     finally:
         session.close()
