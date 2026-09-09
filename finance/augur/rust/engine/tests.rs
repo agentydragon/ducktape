@@ -744,6 +744,65 @@ fn allocation_tax_and_consumption_fixture() -> ExecutionInput {
 }
 
 #[test]
+fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
+    // Same opening books, two stipulated price paths: raising 40,000 realizes
+    // gains of 20,000 or 30,000. The synthetic 10% tax is paid the next year.
+    let mut input = allocation_tax_and_consumption_fixture();
+    input.rollout_count = 2;
+    for series in &mut input.series {
+        let multiplier = if series.series_id.starts_with("security:") {
+            2
+        } else {
+            1
+        };
+        series.values.extend(
+            series
+                .values
+                .clone()
+                .into_iter()
+                .map(|value| value * multiplier),
+        );
+    }
+    let validated = ValidatedInput::new(&input).unwrap();
+    // Both states exist before either runs, and execution need not follow path order.
+    let [second, first] = [1, 0]
+        .map(|id| RolloutState::new(validated.input, id, CaptureMode::Forensic, None).unwrap());
+    for (state, tax_paid, remaining_basis) in [(second, 3_000, 40_000), (first, 2_000, 30_000)] {
+        let output = state.run(None, None).unwrap().into_output();
+        assert_eq!(output.failed_month, None);
+        assert_eq!(output.tax_payments[0].month, 12);
+        assert_eq!(output.tax_payments[0].amount_paid, Money(tax_paid));
+        assert_eq!(
+            output
+                .journal
+                .iter()
+                .filter(|entry| entry.cause_id == "opening:alice:checking")
+                .count(),
+            1
+        );
+        let ending = output.months.last().unwrap();
+        assert_eq!(ending.month, 13);
+        assert_eq!(
+            ending
+                .balances
+                .iter()
+                .find(|row| row.account == AccountRef::new("alice", "checking"))
+                .unwrap()
+                .balance,
+            Money(5_000 - tax_paid)
+        );
+        assert_eq!(
+            ending
+                .lots
+                .iter()
+                .map(|lot| lot.basis_remaining.0)
+                .sum::<i64>(),
+            remaining_basis
+        );
+    }
+}
+
+#[test]
 fn constant_allocation_function_has_static_receipt_lot_and_tax_parity() {
     for purchases in [false, true] {
         let mut input = allocation_tax_and_consumption_fixture();
