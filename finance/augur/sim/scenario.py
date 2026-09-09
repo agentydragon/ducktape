@@ -551,7 +551,9 @@ class SleeveTarget(BaseModel):
     """
 
     asset: AssetKey
-    weight: PositiveInt
+    weight: NonNegativeInt = Field(
+        description="Relative target weight; zero keeps the sleeve sellable but receives no deposits."
+    )
 
 
 class CashflowOnly(BaseModel):
@@ -654,6 +656,8 @@ class TargetAllocationPolicy(BaseModel):
                 "a policy with an empty target can never raise cash and would fail every obligation "
                 "the account cannot already cover"
             )
+        if not any(sleeve.weight > 0 for sleeve in self.sleeves):
+            raise ValueError("target-allocation policy requires at least one positive sleeve weight")
         assets = [sleeve.asset for sleeve in self.sleeves]
         if len(set(assets)) != len(assets):
             duplicated = sorted({str(asset) for asset in assets if assets.count(asset) > 1})

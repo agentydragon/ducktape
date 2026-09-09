@@ -75,7 +75,8 @@ pub(super) fn execute_target_allocation_sales(
             });
         let sleeve_withdrawals = withdrawal_by_sleeve(&values, weights, raise.0)?;
         let sleeve_deposits = deposit_by_sleeve(&values, weights, invest.0)?;
-        let (rebalance_sales, rebalance_buys) = if raise == Money(0) && invest == Money(0) {
+        let quiet_band = raise == Money(0) && invest == Money(0);
+        let (rebalance_sales, rebalance_buys) = if quiet_band {
             if let Some(tolerance) = policy.rebalance_tolerance_ppb {
                 rebalance_by_sleeve(&values, weights, tolerance)?
             } else {
@@ -125,12 +126,22 @@ pub(super) fn execute_target_allocation_sales(
                 scales[sleeve_index],
                 false,
             )?;
-            let requested = band_units
-                .checked_add(rebalance_units)
-                .ok_or(ArithmeticError::Overflow {
-                    operation: "target-allocation sale quantity",
-                })?
-                .min(available_units[sleeve_index]);
+            // A full exit is a unit instruction. Inverting an integer-rounded value
+            // can leave dust, including lots whose entire mark rounds to zero.
+            let full_exit = weights[sleeve_index] == 0
+                && ((quiet_band && policy.rebalance_tolerance_ppb.is_some())
+                    || (sleeve_withdrawals[sleeve_index] > 0
+                        && sleeve_withdrawals[sleeve_index] == values[sleeve_index]));
+            let requested = if full_exit {
+                available_units[sleeve_index]
+            } else {
+                band_units
+                    .checked_add(rebalance_units)
+                    .ok_or(ArithmeticError::Overflow {
+                        operation: "target-allocation sale quantity",
+                    })?
+                    .min(available_units[sleeve_index])
+            };
             if requested <= 0 {
                 continue;
             }

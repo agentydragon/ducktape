@@ -1162,6 +1162,180 @@ fn allocation_funding_and_tax_month_invests_only_surplus_toward_new_target() {
 }
 
 #[test]
+fn zero_target_full_exit_consumes_all_units_and_basis_then_can_reenter() {
+    // Prices are 3 quanta per unit; quantity scale 10. Seven tenths marks at 2
+    // quanta, whose inverse is only six tenths. One tenth marks at zero.
+    for (first_units, sale_proceeds, reentry_units, reentry_basis) in [(7, 2, 16, 5), (1, 0, 10, 3)]
+    {
+        let mut input = allocation_fixture(2);
+        input.scenario.accounts[0].opening_balance = Money(0);
+        input.scenario.initial_lots[0].quantity_scale = 10;
+        input.scenario.initial_lots[0].units = Quantity(first_units);
+        input.scenario.initial_lots[0].basis = Money(1);
+        input.scenario.initial_lots[1].quantity_scale = 10;
+        input.scenario.initial_lots[1].units = Quantity(10);
+        input.scenario.initial_lots[1].basis = Money(2);
+        input.scenario.accounts.push(AccountSpec {
+            account: AccountRef::new("alice", "outside-pool"),
+            opening_balance: Money(0),
+        });
+        let mut outside = input.scenario.initial_lots[0].clone();
+        outside.lot_id = "test-outside-exit".into();
+        outside.account_id = "outside-pool".into();
+        input.scenario.initial_lots.push(outside);
+        for series in input
+            .series
+            .iter_mut()
+            .filter(|series| series.series_id.starts_with("security:"))
+        {
+            series.values.fill(3);
+        }
+        let policy = &mut input.scenario.target_allocation_policies[0];
+        policy.allow_purchases = true;
+        policy.rebalance_tolerance_ppb = Some(WIRE_RATE_SCALE);
+        for sleeve in &mut policy.sleeves {
+            sleeve.quantity_scale = 10;
+        }
+        let output =
+            allocation::simulate(&input, &AccountRef::new("alice", "checking"), &[0], |_| {
+                |observation| {
+                    Ok(if observation.month == 0 {
+                        vec![0, 1]
+                    } else {
+                        vec![1, 0]
+                    })
+                }
+            })
+            .unwrap();
+        let rollout = &output.rollouts[0];
+        assert_eq!(rollout.failed_month, None);
+        let sale = &rollout.dispositions[0];
+        assert_eq!(
+            (sale.month, sale.units, sale.basis, sale.proceeds),
+            (0, Quantity(first_units), Money(1), Money(sale_proceeds))
+        );
+        assert_eq!(sale.realized_gain, Money(sale_proceeds - 1));
+        let ending = &rollout.months.last().unwrap().lots;
+        assert!(
+            ending
+                .iter()
+                .filter(|lot| lot.asset_id == "security:second")
+                .all(|lot| lot.units_remaining == Quantity(0) && lot.basis_remaining == Money(0))
+        );
+        let reentry = ending.iter().find(|lot| lot.purchase_month == 1).unwrap();
+        assert_eq!(reentry.asset_id, "security:stock");
+        assert_eq!(reentry.units_remaining, Quantity(reentry_units));
+        assert_eq!(reentry.basis_remaining, Money(reentry_basis));
+        let original = ending
+            .iter()
+            .find(|lot| lot.lot_id == "timing-stock")
+            .unwrap();
+        assert_eq!(
+            (original.units_remaining, original.basis_remaining),
+            (Quantity(0), Money(0))
+        );
+        let outside = ending
+            .iter()
+            .find(|lot| lot.lot_id == "test-outside-exit")
+            .unwrap();
+        assert_eq!(
+            (outside.units_remaining, outside.basis_remaining),
+            (Quantity(first_units), Money(1))
+        );
+        assert!(
+            rollout
+                .dispositions
+                .iter()
+                .all(|sale| sale.source_account_id == "checking")
+        );
+        assert!(rollout.months.iter().all(|month| {
+            month
+                .balances
+                .iter()
+                .map(|row| i128::from(row.balance.0))
+                .sum::<i128>()
+                == 0
+        }));
+    }
+}
+
+#[test]
+fn zero_targets_keep_cashflow_only_and_deposit_controls() {
+    let mut input = allocation_fixture(1);
+    input.scenario.target_allocation_policies[0].sleeves[0].weight = 0;
+    input.scenario.accounts[0].opening_balance = Money(0);
+    let quiet = simulate(&input).unwrap();
+    assert!(quiet.rollouts[0].dispositions.is_empty());
+    assert_eq!(quiet.rollouts[0].months.last().unwrap().lots.len(), 2);
+
+    input.scenario.accounts[0].opening_balance = Money(10_000);
+    input.scenario.target_allocation_policies[0].allow_purchases = true;
+    input.scenario.target_allocation_policies[0].rebalance_tolerance_ppb = Some(0);
+    let deposit = simulate(&input).unwrap();
+    let rollout = &deposit.rollouts[0];
+    assert!(rollout.dispositions.is_empty()); // Active cash band suppresses drift exits.
+    let purchased: Vec<_> = rollout
+        .months
+        .last()
+        .unwrap()
+        .lots
+        .iter()
+        .filter(|lot| lot.purchase_month == 0)
+        .collect();
+    assert_eq!(purchased.len(), 1);
+    assert_eq!(purchased[0].asset_id, "security:second");
+    assert_eq!(purchased[0].basis_remaining, Money(10_000));
+    input.scenario.target_allocation_policies[0].sleeves[1].weight = 0;
+    assert!(matches!(
+        simulate(&input),
+        Err(SimulationError::InvalidTargetAllocationPolicy { .. })
+    ));
+}
+
+#[test]
+fn zero_target_exit_and_later_sale_fund_canonical_tax_and_consumption() {
+    let mut input = allocation_tax_and_consumption_fixture();
+    input.scenario.scheduled_transfers.clear();
+    let policy = &mut input.scenario.target_allocation_policies[0];
+    policy.sleeves[0].weight = 0;
+    policy.allow_purchases = true;
+    policy.rebalance_tolerance_ppb = Some(0);
+    let output = simulate(&input).unwrap();
+    let rollout = &output.rollouts[0];
+    assert_eq!(rollout.failed_month, None);
+    assert_eq!(
+        rollout
+            .dispositions
+            .iter()
+            .map(|sale| (sale.month, sale.asset_id.as_str(), sale.proceeds))
+            .collect::<Vec<_>>(),
+        [
+            (0, "security:stock", Money(40_000)),
+            (1, "security:stock", Money(10_000)),
+            (12, "security:second", Money(7_500))
+        ]
+    );
+    // Month 0's funding raise stops short of the zero target. The quiet month exits
+    // the remaining stock; the next tax year raises from the retained sleeve.
+    assert_eq!(
+        rollout.months[1].lots[0].units_remaining,
+        Quantity(10_000_000)
+    );
+    assert_eq!(rollout.months[2].lots[0].units_remaining, Quantity(0));
+    assert_eq!(rollout.tax_payments[0].amount_paid, Money(2_500));
+    assert_eq!(rollout.tax_payments[0].month, 12);
+    assert_eq!(
+        rollout
+            .obligations
+            .iter()
+            .filter(|claim| claim.obligation_type == "cash_spend")
+            .map(|claim| claim.amount_paid.0)
+            .sum::<i64>(),
+        55_000
+    );
+}
+
+#[test]
 fn allocation_functions_are_isolated_under_selection_reordering_and_replay() {
     let mut input = allocation_fixture(4);
     input.rollout_count = 3;
@@ -1231,7 +1405,7 @@ fn allocation_functions_stop_after_failure_and_reject_invalid_decisions() {
     })
     .unwrap();
     assert_eq!(output.rollouts[0].failed_month, Some(2));
-    for weights in [vec![], vec![1], vec![1, 0], vec![-1, 2]] {
+    for weights in [vec![], vec![1], vec![0, 0], vec![-1, 2]] {
         assert!(matches!(
             allocation::simulate(&input, &account, &[0], |_| |_| Ok(weights.clone())),
             Err(SimulationError::Allocation(_))

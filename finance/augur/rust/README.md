@@ -87,9 +87,11 @@ cloned or mutated to change a target. See <../x/allocation_glide/README.md> for
 the constant-versus-glide call site and funded-consumption/holdings example.
 
 This entrypoint does not yet compose callable spending with allocation or expose
-compact allocation capture. Weights must currently be positive; zero-target
-arithmetic and full exits remain unsupported. Missing sleeve prices reject, not
-zero-fill. A new target still follows the configured cash-band and quiet-band
+compact allocation capture. Weights may be zero, but not all zero. A zero-target
+sleeve remains in the sellable scope, is drained first for cash raises and receives
+no deposits. In a quiet drift-rebalancing month it exits completely, including
+fractional units whose marks round to zero; a later positive target permits re-entry.
+Missing sleeve prices reject, not zero-fill. A new target follows the cash-band and quiet-band
 drift conventions below, rather than forcing an immediate full rebalance.
 
 ## Exact trades

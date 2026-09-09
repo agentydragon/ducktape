@@ -206,6 +206,24 @@ class TargetAllocationAcceptance:
     def backend(self) -> Backend:
         raise NotImplementedError("an acceptance module names the engine it runs")
 
+    def test_zero_target_full_exit_crosses_the_compiled_scenario_boundary(self, backend: Backend) -> None:
+        result = backend(
+            cash_band_case(
+                opening_cash=0,
+                floor=0,
+                ceiling=0,
+                weights=(0, 1),
+                allow_purchases=True,
+                rebalancing=DriftBand(tolerance=0.25),
+            )
+        )
+        assert _units(result, month=1) == {"stock": 0.0, "bond": BOND_UNITS, "allocation_sale_buy_p0_s1_0": STOCK_UNITS}
+        assert _alice_cash(result)[-1] == 0
+        sales = result.events.lot_dispositions.to_dicts()
+        assert len(sales) == 1
+        assert sales[0]["units_sold"] == STOCK_UNITS
+        assert sales[0]["cost_basis_consumed_quanta"] == 9_000_000
+
     def test_a_month_inside_the_band_sells_nothing(self, backend: Backend) -> None:
         """Drift alone never triggers a trade. The portfolio is 9:1 against a 1:1 target — as
         far from target as this scenario gets — and the policy still does nothing while cash

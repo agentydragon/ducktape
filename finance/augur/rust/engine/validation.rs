@@ -594,6 +594,7 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
             }
         }
         if policy.sleeves.is_empty()
+            || !policy.sleeves.iter().any(|sleeve| sleeve.weight > 0)
             || policy.cash_floor.base_amount().0 < 0
             || policy.cash_floor.base_amount().0 > policy.cash_ceiling.base_amount().0
         {
@@ -634,7 +635,7 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
         let mut assets = BTreeSet::new();
         for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
             validate_identifier("target-allocation asset", &sleeve.asset_id)?;
-            if sleeve.weight <= 0 || !is_quantity_scale(sleeve.quantity_scale) {
+            if sleeve.weight < 0 || !is_quantity_scale(sleeve.quantity_scale) {
                 return Err(SimulationError::InvalidTargetAllocationPolicy {
                     agent_id: policy.agent_id.clone(),
                     account_id: policy.account_id.clone(),

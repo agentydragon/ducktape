@@ -1,7 +1,8 @@
 //! Rollout-local target decisions for one account-bound public-security allocation.
 //!
 //! The input owns the sleeve universe, source accounts, cash band, purchase permission
-//! and rebalance tolerance. Functions choose only positive relative sleeve weights;
+//! and rebalance tolerance. Functions choose nonnegative relative sleeve weights,
+//! with at least one positive target;
 //! canonical execution still determines sales, funded demands, taxes and purchases.
 
 use super::*;
@@ -19,8 +20,8 @@ pub struct Observation {
 
 /// Run selected input rows in caller order, constructing fresh state for each row.
 ///
-/// `make_policy(rollout_id)` returns a function producing one positive relative weight
-/// per declared sleeve. Weights apply to this month's execution, not directly to books.
+/// `make_policy(rollout_id)` returns one nonnegative relative weight per declared sleeve,
+/// with at least one positive weight. Weights apply to execution, not directly to books.
 /// Cash-band activity suppresses quiet-band drift rebalancing: changing weights does
 /// not promise immediate full reallocation. Purchases remain permission- and cash-limited.
 /// Invalid decisions abort; failed funding stops that path's later callbacks.

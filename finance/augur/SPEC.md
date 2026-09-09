@@ -72,11 +72,16 @@ settlement mechanics execute the target; a function cannot mutate books.
 Selected input rows retain their identities and receive fresh decision state,
 including individual replay. Failed paths receive no further decisions.
 
-Current allocation arithmetic accepts positive relative weights, excluding
-zero-target/full-exit strategies. Cash-band activity suppresses simultaneous
+Allocation accepts nonnegative relative weights with at least one positive target.
+A zero target keeps the sleeve in the sale universe, receives no deposits and
+exits fully on quiet-band rebalancing; omitted sleeves and untargeted accounts
+remain untouched. Cash-band activity suppresses simultaneous
 quiet-band drift rebalancing; changing targets does not guarantee immediate
 realization. This convention is explicit policy behavior, not a correctness
 requirement on future rebalancing strategies.
+
+The house-app funding wire retains its distinct zero-weight exclusion: those
+holdings are omitted from the simulator's selected portfolio, never liquidated.
 
 Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire

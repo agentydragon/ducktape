@@ -864,10 +864,9 @@ def _target_allocation_policies_from_funding_policy(
 ) -> list[TargetAllocationPolicy]:
     """Lower the wire's cash band + weights to the sim's target-allocation policy.
 
-    Zero-weight sleeves are DROPPED rather than passed down: zero is the UI's way of saying
-    "outside the target", and the sim's `SleeveTarget` requires a positive weight because a zero
-    there would be a divisor in the water level. A weight naming nothing held is dropped too, so
-    a saved target can outlive the position it mentions.
+    Zero-weight entries are the product UI's explicit "never sell" exclusion, not the sim's
+    sellable zero-target sleeve. Drop them before constructing the sim portfolio. A weight
+    naming nothing held is dropped too, so a saved target can outlive the position it mentions.
 
     No sleeves left means no policy at all: the owner never auto-sells, and an unaffordable
     obligation is ruin. That is the honest reading of an empty target — there is no holding it

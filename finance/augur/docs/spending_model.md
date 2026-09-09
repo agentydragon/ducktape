@@ -20,8 +20,9 @@ cash-account allocation component. Its opening observation contains only that
 funding account's cash and the declared source pools' sleeve values in fixed
 order. The function returns relative target weights. Source accounts, sleeve
 identities, cash band, purchase permission and drift tolerance remain explicit
-scenario inputs. Positive-only weights are a current arithmetic limitation;
-zero-target/full-exit strategies are not yet supported.
+scenario inputs. Zero weights keep a sleeve in scope for sales but receive no
+deposits; quiet-band rebalancing can exit it fully. At least one weight must be
+positive; an all-zero vector does not mean an implicit cash allocation.
 
 Neither observation supplies future market paths or mutable books. Row selection
 for native allocation preserves input IDs and caller order; each selected replay

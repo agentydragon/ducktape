@@ -666,6 +666,31 @@ def test_a_scenario_with_no_target_allocation_never_sells_and_fails_the_month(pr
     assert expense.shortfall_quanta == _usd_quanta(300_000.0)
 
 
+@pytest.mark.parametrize("btc_weight", [0, 1])
+def test_product_zero_weight_excludes_a_holding_instead_of_requesting_its_exit(
+    product: service.ProductService, btc_weight: int
+) -> None:
+    scenario = ScenarioKey(
+        model_id="current_model",
+        horizon_months=1,
+        monthly_spend=300_000,
+        spend_index="none",
+        funding_policy=FundingPolicy(
+            sleeve_weights=(SleeveWeight(symbol="VOO", weight=0), SleeveWeight(symbol="btc", weight=btc_weight))
+        ),
+    )
+    detail = product.rollout(_rollout_request(scenario))
+    sales = [event for event in detail.rollout.events if isinstance(event, HoldingSaleEvent)]
+    if btc_weight:
+        sale = one(sales)
+        assert sale.asset == SecurityKey(symbol=SecuritySymbol("btc"))
+        assert sale.proceeds_quanta == _usd_quanta(48_125)
+        assert not detail.rollout.failed
+    else:
+        assert not sales
+        assert detail.rollout.failed
+
+
 def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.ProductService) -> None:
     """Floor = ceiling = 0 is hand-to-mouth funding: raise exactly the shortfall, no buffer.
 

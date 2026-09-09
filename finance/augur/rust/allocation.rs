@@ -9,7 +9,7 @@ use crate::money::WIRE_RATE_SCALE;
 pub enum AllocationError {
     #[error("allocation weights and values must be non-empty and have the same length")]
     Shape,
-    #[error("allocation weights must all be positive")]
+    #[error("allocation weights must be nonnegative, with at least one positive weight")]
     InvalidWeight,
     #[error("allocation rebalance tolerance must not be negative")]
     InvalidTolerance,
@@ -30,12 +30,28 @@ pub fn withdrawal_by_sleeve(
             operation: "allocation available value",
         })
     })?;
-    let wanted = raise.max(0).min(available);
+    let mut wanted = raise.max(0).min(available);
     if wanted == 0 {
         return Ok(vec![0; values.len()]);
     }
 
-    let mut order: Vec<usize> = (0..values.len()).collect();
+    // A zero-target holding is fully overweight. Exhaust these in input order before
+    // water-filling the positively targeted sleeves; never divide by a zero weight.
+    let mut taken_from_zero_targets = vec![0; values.len()];
+    for (index, _) in weights
+        .iter()
+        .enumerate()
+        .filter(|(_, weight)| **weight == 0)
+    {
+        taken_from_zero_targets[index] = values[index].min(wanted);
+        wanted -= taken_from_zero_targets[index];
+        if wanted == 0 {
+            return Ok(taken_from_zero_targets);
+        }
+    }
+    let mut order: Vec<usize> = (0..values.len())
+        .filter(|index| weights[*index] > 0)
+        .collect();
     order.sort_by(|left, right| {
         ratio_cmp(
             values[*right],
@@ -48,7 +64,7 @@ pub fn withdrawal_by_sleeve(
 
     let mut value_prefix = 0_i128;
     let mut weight_prefix = 0_i128;
-    let mut chosen = values.len() - 1;
+    let mut chosen = order.len() - 1;
     for (rank, index) in order.iter().copied().enumerate() {
         value_prefix = value_prefix.checked_add(i128::from(values[index])).ok_or(
             ArithmeticError::Overflow {
@@ -85,6 +101,9 @@ pub fn withdrawal_by_sleeve(
         .iter()
         .zip(weights)
         .map(|(value, weight)| {
+            if *weight == 0 {
+                return Ok(0);
+            }
             let remaining = round_half_up_nonnegative(
                 level_numerator * i128::from(*weight),
                 weight_prefix,
@@ -93,7 +112,15 @@ pub fn withdrawal_by_sleeve(
             Ok((*value - remaining).clamp(0, *value))
         })
         .collect::<Result<Vec<_>, AllocationError>>()?;
-    settle_residual(&mut taken, values, wanted)?;
+    let caps: Vec<_> = values
+        .iter()
+        .zip(weights)
+        .map(|(value, weight)| if *weight == 0 { 0 } else { *value })
+        .collect();
+    settle_residual(&mut taken, &caps, wanted)?;
+    for (amount, zero_target) in taken.iter_mut().zip(taken_from_zero_targets) {
+        *amount += zero_target;
+    }
     Ok(taken)
 }
 
@@ -108,7 +135,9 @@ pub fn deposit_by_sleeve(
         return Ok(vec![0; values.len()]);
     }
 
-    let mut order: Vec<usize> = (0..values.len()).collect();
+    let mut order: Vec<usize> = (0..values.len())
+        .filter(|index| weights[*index] > 0)
+        .collect();
     order.sort_by(|left, right| {
         ratio_cmp(
             values[*left],
@@ -121,7 +150,7 @@ pub fn deposit_by_sleeve(
 
     let mut value_prefix = 0_i128;
     let mut weight_prefix = 0_i128;
-    let mut chosen = values.len() - 1;
+    let mut chosen = order.len() - 1;
     for (rank, index) in order.iter().copied().enumerate() {
         value_prefix = value_prefix.checked_add(i128::from(values[index])).ok_or(
             ArithmeticError::Overflow {
@@ -158,6 +187,9 @@ pub fn deposit_by_sleeve(
         .iter()
         .zip(weights)
         .map(|(value, weight)| {
+            if *weight == 0 {
+                return Ok(0);
+            }
             let target = round_half_up_nonnegative(
                 level_numerator * i128::from(*weight),
                 weight_prefix,
@@ -168,7 +200,11 @@ pub fn deposit_by_sleeve(
         .collect::<Result<Vec<_>, AllocationError>>()?;
     let caps = given
         .iter()
-        .map(|value| {
+        .zip(weights)
+        .map(|(value, weight)| {
+            if *weight == 0 {
+                return Ok(0);
+            }
             value.checked_add(wanted).ok_or(ArithmeticError::Overflow {
                 operation: "allocation deposit residual cap",
             })
@@ -219,11 +255,16 @@ pub fn rebalance_by_sleeve(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let fires = drifts.iter().zip(&targets).any(|(drift, target)| {
-        *target > 0
-            && i128::from(*drift).abs() * i128::from(WIRE_RATE_SCALE)
-                >= i128::from(tolerance_ppb) * i128::from(*target)
-    });
+    let fires = drifts
+        .iter()
+        .zip(&targets)
+        .zip(weights)
+        .any(|((drift, target), weight)| {
+            (*weight == 0 && *drift > 0)
+                || (*target > 0
+                    && i128::from(*drift).abs() * i128::from(WIRE_RATE_SCALE)
+                        >= i128::from(tolerance_ppb) * i128::from(*target))
+        });
     if !fires {
         return Ok((vec![0; values.len()], vec![0; values.len()]));
     }
@@ -280,7 +321,7 @@ pub(crate) fn validate_weights(
     if weights.is_empty() || weights.len() != sleeve_count {
         return Err(AllocationError::Shape);
     }
-    if weights.iter().any(|weight| *weight <= 0) {
+    if weights.iter().any(|weight| *weight < 0) || !weights.iter().any(|weight| *weight > 0) {
         return Err(AllocationError::InvalidWeight);
     }
     Ok(())
@@ -428,16 +469,51 @@ mod tests {
     proptest! {
         #[test]
         fn allocation_rounding_preserves_requested_totals_and_sleeve_bounds(
-            sleeves in prop::collection::vec((0_i64..1_000, 1_i64..100), 1..20),
+            sleeves in prop::collection::vec((0_i64..1_000, 0_i64..100), 1..20),
             requested in 0_i64..30_000,
         ) {
             let (values, weights): (Vec<_>, Vec<_>) = sleeves.into_iter().unzip();
+            prop_assume!(weights.iter().any(|weight| *weight > 0));
             let withdrawn = withdrawal_by_sleeve(&values, &weights, requested).unwrap();
             prop_assert_eq!(withdrawn.iter().sum::<i64>(), requested.min(values.iter().sum()));
             prop_assert!(withdrawn.iter().zip(&values).all(|(amount, value)| *amount >= 0 && amount <= value));
             let deposited = deposit_by_sleeve(&values, &weights, requested).unwrap();
             prop_assert_eq!(deposited.iter().sum::<i64>(), requested);
             prop_assert!(deposited.iter().all(|amount| *amount >= 0));
+            prop_assert!(deposited.iter().zip(&weights).all(|(amount, weight)| *weight > 0 || *amount == 0));
+        }
+    }
+
+    #[test]
+    fn zero_targets_are_drained_first_and_receive_no_deposits() {
+        for (wanted, expected) in [(60, [60, 0, 0]), (95, [90, 5, 0]), (150, [90, 10, 50])] {
+            assert_eq!(
+                withdrawal_by_sleeve(&[90, 10, 100], &[0, 0, 1], wanted).unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            withdrawal_by_sleeve(&[0, 100], &[0, 1], 50).unwrap(),
+            [0, 50]
+        );
+        assert_eq!(
+            deposit_by_sleeve(&[900, 0, 100], &[0, 0, 1], 3).unwrap(),
+            [0, 0, 3]
+        );
+        assert_eq!(
+            deposit_by_sleeve(&[0; 5], &[0, 1, 1, 1, 1], 2).unwrap(),
+            [0, 0, 0, 1, 1]
+        );
+        // Any positive value at a zero target breaches relative drift, even if every
+        // positive-target sleeve is within its tolerance.
+        assert_eq!(
+            rebalance_by_sleeve(&[1, 999], &[0, 1], 1_000_000_000).unwrap(),
+            (vec![1, 0], vec![0, 1])
+        );
+        for weights in [[0, 0], [-1, 1]] {
+            assert!(withdrawal_by_sleeve(&[1, 1], &weights, 0).is_err());
+            assert!(deposit_by_sleeve(&[1, 1], &weights, 0).is_err());
+            assert!(rebalance_by_sleeve(&[1, 1], &weights, 0).is_err());
         }
     }
 
