@@ -280,7 +280,6 @@ pub(super) fn execute_lot_sale(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_purchase(
     input: &ExecutionInput,
     ledger: &mut Ledger,
