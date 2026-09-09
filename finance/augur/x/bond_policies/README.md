@@ -4,7 +4,8 @@ A runnable mechanics experiment: identical stipulated discount-curve paths drive
 dated-bond investment constructions and the existing constant-maturity proxy.
 Each construction is crossed with annual household spending, funded by Augur's
 canonical Rust engine. These are named stress paths, not forecasts or a sample
-from which to estimate probabilities.
+from which to estimate probabilities. One stress drops the curve to exactly zero
+at month 6, exercising zero-yield pricing without a positive-rate floor.
 
 ```bash
 bb run //finance/augur/x/bond_policies:run_bin -- \
@@ -77,8 +78,9 @@ bbr test //finance/augur/model:test_nominal_bond //finance/augur/x/bond_policies
 ```
 
 The shared valuation functions accept supplied discount factors, including ones
-corresponding to zero or negative rates. The old proxy's positive-yield requirement
-is checked explicitly; this experiment does not silently floor its input yields.
+corresponding to zero or negative rates. The proxy can price through zero, but
+negative par yields would imply negative-coupon issuance under its construction;
+that remains explicitly unsupported. This experiment does not floor input yields.
 It neither fits a yield-curve model nor resolves issues
 [#5834](https://github.com/agentydragon/ducktape/issues/5834) and
 [#5835](https://github.com/agentydragon/ducktape/issues/5835).

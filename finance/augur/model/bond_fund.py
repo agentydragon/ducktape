@@ -33,10 +33,10 @@ from finance.augur.model.series import SecuritySymbol
 MONTHS_PER_YEAR = 12
 
 MINIMUM_ANNUAL_YIELD = 0.0001
-"""One-basis-point guard against the zero-yield singularity in `par_bond_price`.
+"""Existing one-basis-point floor applied by yield-construction helpers.
 
-Applied by the yield-construction helpers, not the valuation formula. The positive
-floor is an existing approximation, not a constraint on possible economic rates.
+This is a modeling approximation, not a requirement of the valuation formula,
+which supports zero yields and negative yields greater than -1.
 """
 
 
@@ -91,10 +91,26 @@ def par_bond_price(coupon_rate: np.ndarray, market_yield: np.ndarray, *, maturit
     The textbook annuity-plus-redemption present value. Exactly 1.0 when the two rates agree,
     which is what makes "issued at par" a definition here rather than an approximation — and
     what a duration step `exp(-D·Δy)` only gets right to first order.
+
+    Finite yields must exceed -1 under this annual-compounding convention.
+    Zero yield values the coupons without discounting; it is not an error or a
+    reason to invent a positive yield. Fractional maturity retains the proxy's
+    annuity interpolation, not a dated stub-coupon schedule.
     """
 
-    discount = (1.0 + market_yield) ** -maturity_years
-    return np.asarray(coupon_rate * (1.0 - discount) / market_yield + discount)
+    coupon = np.asarray(coupon_rate, dtype=np.float64)
+    yields = np.asarray(market_yield, dtype=np.float64)
+    if not np.isfinite(maturity_years) or maturity_years < 0:
+        raise ValueError("maturity_years must be finite and nonnegative")
+    if not np.all(np.isfinite(coupon)):
+        raise ValueError("coupon rates must be finite")
+    if not np.all(np.isfinite(yields)) or np.any(yields <= -1):
+        raise ValueError("market yields must be finite and greater than -1")
+
+    log_discount = -maturity_years * np.log1p(yields)
+    # expm1 avoids cancellation near zero; the annuity's exact limit there is T.
+    annuity = np.divide(-np.expm1(log_discount), yields, out=np.full_like(yields, maturity_years), where=yields != 0)
+    return np.asarray(coupon * annuity + np.exp(log_discount))
 
 
 def constant_maturity_fund_paths(
@@ -113,6 +129,7 @@ def constant_maturity_fund_paths(
     the direction that flatters it. See <../debug/bond_sleeve_overdistribution.md>.
     """
 
+    market_yield = np.asarray(market_yield, dtype=np.float64)
     price = np.empty_like(market_yield)
     distribution = np.empty_like(market_yield)
     price[:, 0] = initial_price_usd
