@@ -35,6 +35,7 @@ rust_library(
         "engine/cashflows.rs",
         "engine/errors.rs",
         "engine/obligations.rs",
+        "engine/observations.rs",
         "engine/private_equity.rs",
         "engine/property.rs",
         "engine/recorder.rs",

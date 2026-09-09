@@ -579,6 +579,40 @@ fn scoped_observations_match_output_at_same_marks_and_round_each_lot() {
             let month = observation.month as usize;
             assert_eq!(observation.cash.0, metrics.base_series[0][month]);
             assert_eq!(observation.public_holdings.0, metrics.base_series[1][month]);
+            assert_eq!(observation.books.agent_id(), "alice");
+            assert_eq!(observation.books.month(), observation.month);
+            let accounts = observation
+                .books
+                .accounts()
+                .map(|account| {
+                    let account = account.unwrap();
+                    (account.account.account_id.as_str(), account.available)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                accounts,
+                [("checking", Money(100)), ("reserve", Money(900))]
+            );
+            let positions = observation
+                .books
+                .public_positions()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            assert_eq!(positions.len(), 4);
+            assert_eq!(positions[0].lot_id(), "half-a");
+            assert_eq!(positions[0].account_id(), "checking");
+            assert_eq!(positions[0].asset_id(), "stock");
+            assert_eq!(positions[0].purchase_month(), -24);
+            assert_eq!(positions[0].units(), Units::new(Quantity(5), 10));
+            assert_eq!(positions[0].book_basis(), Money(0));
+            assert_eq!(positions[0].price, PerUnit([1, 3, 5][month]));
+            assert_eq!(
+                positions
+                    .iter()
+                    .map(|position| position.value().unwrap().0)
+                    .sum::<i64>(),
+                observation.public_holdings.0
+            );
             assert_eq!(
                 Money(2)
                     .scaled_by(observation.price_level, "test CPI")
@@ -666,6 +700,59 @@ fn spending_observations_do_not_read_future_prices_or_cpi() {
             output.rollouts[0]
         );
     }
+}
+
+#[test]
+fn actor_books_follow_partial_sales_and_hide_exhausted_lots() {
+    let (mut input, spending) = scoped_observation_fixture();
+    input.scenario.initial_lots[0].basis = Money(7);
+    input.scenario.scheduled_sales.push(ScheduledSaleSpec {
+        month: 0,
+        cause_id: "test-partial-sale".into(),
+        agent_id: "alice".into(),
+        account_id: "checking".into(),
+        asset_id: "stock".into(),
+        units: Quantity(2),
+        proceeds_account_id: "checking".into(),
+    });
+    input.scenario.scheduled_sales.push(ScheduledSaleSpec {
+        month: 1,
+        cause_id: "test-exhaust-two-lots".into(),
+        agent_id: "alice".into(),
+        account_id: "checking".into(),
+        asset_id: "stock".into(),
+        units: Quantity(8),
+        proceeds_account_id: "checking".into(),
+    });
+    spending::simulate(&input, &spending, |_| {
+        |observation| {
+            let positions = observation
+                .books
+                .public_positions()
+                .collect::<Result<Vec<_>, _>>()?;
+            if observation.month == 2 {
+                assert_eq!(
+                    positions.iter().map(|lot| lot.lot_id()).collect::<Vec<_>>(),
+                    ["second", "reserve"]
+                );
+                return Ok(Money(0));
+            }
+            assert_eq!(positions.len(), 4);
+            let first = &positions[0];
+            assert_eq!(first.lot_id(), "half-a");
+            assert_eq!(
+                first.units().quantity(),
+                Quantity(if observation.month == 0 { 5 } else { 3 })
+            );
+            // A two-fifths sale consumes 3 of the 7 basis quanta; never show original basis.
+            assert_eq!(
+                first.book_basis(),
+                Money(if observation.month == 0 { 7 } else { 4 })
+            );
+            Ok(Money(0))
+        }
+    })
+    .unwrap();
 }
 
 #[test]
@@ -1541,6 +1628,187 @@ fn stopped_books_preserve_positions_debt_tax_and_other_group_consumption() {
         assert_eq!(ending.ending_bonds, stopped.bonds);
         assert_eq!(ending.ending_tax_liabilities, stopped.tax_liabilities);
     }
+}
+
+#[test]
+fn actor_books_expose_only_originated_contracts_and_recorded_tax() {
+    for future_multiplier in [2, 9] {
+        let (mut input, component) = stopped_book_fixture(15, future_multiplier);
+        input.scenario.accounts.push(AccountSpec {
+            account: AccountRef::new("bob", "checking"),
+            opening_balance: Money(50_000),
+        });
+        let mut other_taxpayer = input.scenario.tax_profiles[0].clone();
+        other_taxpayer.agent_id = "bob".into();
+        input.scenario.tax_profiles.push(other_taxpayer);
+        let mut other_purchase = input.scenario.scheduled_property_purchases[0].clone();
+        other_purchase.cause_id = "test-other-purchase".into();
+        other_purchase.property_id = "test-other-home".into();
+        other_purchase.buyer_agent_id = "bob".into();
+        other_purchase.mortgage.as_mut().unwrap().liability_id = "test-other-loan".into();
+        input
+            .scenario
+            .scheduled_property_purchases
+            .push(other_purchase);
+        input
+            .scenario
+            .scheduled_transfers
+            .push(ScheduledTransferSpec {
+                month: 0,
+                cause_id: "test-other-taxpayer-income".into(),
+                from: component.to.clone(),
+                to: AccountRef::new("bob", "checking"),
+                amount: Money(1_000).into(),
+                income_category: Some(IncomeSource::Ordinary),
+                deduction_category: None,
+            });
+        spending::simulate(&input, &component, |_| {
+            |observation| {
+                assert!(observation.month <= 12, "no observations after failure");
+                let books = &observation.books;
+                assert_eq!(
+                    books.public_positions().count(),
+                    1,
+                    "private lots are not public"
+                );
+                let mortgages = books.mortgages().collect::<Vec<_>>();
+                if observation.month == 0 {
+                    assert!(mortgages.is_empty(), "a planned loan has not originated");
+                } else {
+                    assert_eq!(mortgages.len(), 1);
+                    let mortgage = mortgages[0];
+                    assert_eq!(mortgage.liability_id, "test-loan");
+                    assert_eq!(
+                        mortgage.principal,
+                        Money(9_000 - 100 * i64::from(observation.month - 1))
+                    );
+                    assert_eq!(mortgage.monthly_payment, Money(100));
+                }
+                assert!(
+                    books.income().all(|(_, amount)| amount == Money(0)),
+                    "Bob's income is private"
+                );
+                let facts = books.tax_facts().collect::<Vec<_>>();
+                assert_eq!(facts.len(), 1, "only Alice's jurisdiction facts");
+                assert_eq!(facts[0].0, "test-stop-tax");
+                assert_eq!(
+                    facts[0].1.long_term_gain,
+                    Money(if (1..12).contains(&observation.month) {
+                        500
+                    } else {
+                        0
+                    })
+                );
+                let liabilities = books.tax_liabilities().collect::<Vec<_>>();
+                if observation.month < 12 {
+                    assert!(
+                        liabilities.is_empty(),
+                        "future assessment is not a known liability"
+                    );
+                } else {
+                    assert_eq!(liabilities.len(), 1);
+                    assert_eq!(liabilities[0].agent_id, "alice");
+                    assert_eq!(liabilities[0].tax_year_end_month, 11);
+                    assert_eq!(liabilities[0].amount_owed, Money(50));
+                }
+                Ok(Money(if observation.month == 12 { 300 } else { 0 }))
+            }
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn actor_books_keep_pool_harvest_adjustments_separate_from_lot_basis() {
+    let (mut input, component) = stopped_book_fixture(15, 2);
+    input.scenario.harvest_policies.push(HarvestPolicySpec {
+        owner_agent_id: "alice".into(),
+        account_id: "checking".into(),
+        asset_id: "stock".into(),
+        peak_annual_yield_ppb: 120_000_000,
+        floor_annual_yield_ppb: 120_000_000,
+        maturity_decay_exponent_ppb: WIRE_RATE_SCALE,
+        drawdown_sensitivity_ppb: 0,
+        short_term_fraction_ppb: WIRE_RATE_SCALE,
+    });
+    spending::simulate(&input, &component, |_| {
+        |observation| {
+            let adjustments = observation.books.harvest_adjustments().collect::<Vec<_>>();
+            assert_eq!(adjustments.len(), 1);
+            assert_eq!(adjustments[0].account_id, "checking");
+            assert_eq!(adjustments[0].asset_id, "stock");
+            assert_eq!(
+                adjustments[0].cumulative_harvest,
+                Money(if observation.month == 0 { 0 } else { 990 })
+            );
+            let lot = observation.books.public_positions().next().unwrap()?;
+            assert_eq!(
+                lot.book_basis(),
+                Money(if observation.month == 0 {
+                    50_000
+                } else {
+                    49_500
+                })
+            );
+            // Stop in m1, after observing one month's harvest of 1% of 99,000.
+            Ok(Money(if observation.month == 0 { 0 } else { 1_000_000 }))
+        }
+    })
+    .unwrap();
+}
+
+#[test]
+fn claim_views_keep_assembled_amount_identity_and_payer_scope() {
+    let mut obligations = vec![
+        ActiveObligation {
+            cause_id: "test-rent-m3".into(),
+            obligation_type: "rent".into(),
+            from: AccountRef::new("alice", "checking"),
+            to: AccountRef::new("landlord", "checking"),
+            amount_due: Money(700),
+            effect: ObligationEffect::None,
+        },
+        ActiveObligation {
+            cause_id: "test-tax-m3".into(),
+            obligation_type: "estimated_tax".into(),
+            from: AccountRef::new("alice", "reserve"),
+            to: AccountRef::new("authority", "checking"),
+            amount_due: Money(300),
+            effect: ObligationEffect::TaxPayment { profile_index: 0 },
+        },
+        ActiveObligation {
+            cause_id: "test-other-actor-m3".into(),
+            obligation_type: "rent".into(),
+            from: AccountRef::new("bob", "checking"),
+            to: AccountRef::new("landlord", "checking"),
+            amount_due: Money(9_000),
+            effect: ObligationEffect::None,
+        },
+    ];
+    let claims = observations::due_claims(&obligations, "alice", 3).collect::<Vec<_>>();
+    assert_eq!(claims.len(), 2);
+    assert_eq!(claims[0].cause_id, "test-rent-m3");
+    assert_eq!(claims[0].obligation_type, "rent");
+    assert_eq!(claims[0].from, &AccountRef::new("alice", "checking"));
+    assert_eq!(claims[0].to, &AccountRef::new("landlord", "checking"));
+    assert_eq!(claims[0].amount_due, Money(700));
+    assert_eq!(claims[0].due_month, 3);
+    assert_eq!(claims[1].from, &AccountRef::new("alice", "reserve"));
+    assert_eq!(claims[1].amount_due, Money(300));
+    assert!(
+        observations::due_claims(&obligations, "landlord", 3)
+            .next()
+            .is_none()
+    );
+    // A new view reads the canonical amount; there is no synchronized claim copy.
+    obligations[0].amount_due = Money(725);
+    assert_eq!(
+        observations::due_claims(&obligations, "alice", 3)
+            .next()
+            .unwrap()
+            .amount_due,
+        Money(725)
+    );
 }
 
 #[test]

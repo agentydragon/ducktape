@@ -79,6 +79,22 @@ Neither scope implies after-tax liquidation proceeds. Callers supply the observe
 mark month; a stopped book uses its failure-event marks, never future prices.
 CPI in the spending observation is current inflation relative to path origin.
 
+`engine::observations::ActorBooks` gives spending functions borrowed account,
+remaining public-lot/basis, active borrower-mortgage and recorded tax views at
+their opening review. The view fixes the actor and mark month; it cannot read
+another actor's books or request future path values. Tax views expose recorded
+income, jurisdiction facts and assessed outstanding liabilities, not hypothetical
+future assessments. Scheduled purchases are not originated contracts.
+Reduced-form harvesting's cumulative basis reductions remain separate scoped
+account/asset-pool facts; a public lot's `book_basis()` alone is not its complete
+adjusted tax basis when harvesting is enabled.
+
+Assembled claims have a separate payer-scoped `Claim` projection, shared by
+allocation's demand read. Claim amounts come from canonical assembly, not a
+second evaluation of scheduled terms. The opening spending review occurs before
+that assembly, so it does not expose this month's claims. No observation changes
+the current review order or grouped settlement behavior.
+
 ## Covered behavior
 
 The acceptance suites in `sim/testing/` assert exact integer answers for:

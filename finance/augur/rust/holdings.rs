@@ -108,6 +108,33 @@ impl AgentHoldings {
         cash_balance(ledger, &self.cash_accounts)
     }
 
+    pub fn accounts(&self) -> impl Iterator<Item = &AccountRef> {
+        self.cash_accounts.iter()
+    }
+
+    pub(crate) fn public_price(
+        &self,
+        input: &ExecutionInput,
+        asset_id: &str,
+        rollout: u32,
+        month: u32,
+    ) -> Result<PerUnit, HoldingsError> {
+        let row = self.public_series_by_asset.get(asset_id).ok_or_else(|| {
+            HoldingsError::MissingSeries {
+                series_id: format!("security:{asset_id}"),
+            }
+        })?;
+        let series = &input.series[*row];
+        series
+            .value(rollout, month)
+            .map(PerUnit)
+            .ok_or_else(|| HoldingsError::MissingSeriesValue {
+                series_id: series.series_id.clone(),
+                rollout,
+                month,
+            })
+    }
+
     /// Read current remaining lots at exactly the caller's observed market month.
     pub fn public_value<'a>(
         &self,
@@ -126,21 +153,8 @@ impl AgentHoldings {
                         .is_none_or(|issuer| issuer.is_empty())
             })
             .try_fold(Money(0), |sum, lot| {
-                let row = self
-                    .public_series_by_asset
-                    .get(lot.asset_id)
-                    .ok_or_else(|| HoldingsError::MissingSeries {
-                        series_id: format!("security:{}", lot.asset_id),
-                    })?;
-                let series = &input.series[*row];
-                let price = series.value(rollout, month).ok_or_else(|| {
-                    HoldingsError::MissingSeriesValue {
-                        series_id: series.series_id.clone(),
-                        rollout,
-                        month,
-                    }
-                })?;
-                Ok(sum.checked_add(lot.value(PerUnit(price))?)?)
+                let price = self.public_price(input, lot.asset_id, rollout, month)?;
+                Ok(sum.checked_add(lot.value(price)?)?)
             })
     }
 }

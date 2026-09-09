@@ -40,6 +40,7 @@ pub mod allocation;
 mod cashflows;
 mod errors;
 mod obligations;
+pub mod observations;
 mod private_equity;
 mod property;
 mod recorder;
@@ -572,7 +573,19 @@ impl<'a> RolloutState<'a> {
             // Decide from opening-of-month holdings and current prices, before this month's
             // cashflows. The resulting demand is funded with the other monthly obligations.
             let spending_obligation = if let Some(policy) = spending.as_deref_mut() {
-                policy.obligation(fixture, rollout_id, month, &self.ledger, &self.lots)?
+                policy.obligation(
+                    fixture,
+                    rollout_id,
+                    month,
+                    observations::Books {
+                        ledger: &self.ledger,
+                        lots: &self.lots,
+                        mortgages: &self.mortgages,
+                        tax: &self.tax,
+                        tax_liabilities: &self.tax_liabilities,
+                        tlh_cumulative_harvest: &self.tlh_cumulative_harvest,
+                    },
+                )?
             } else {
                 None
             };
