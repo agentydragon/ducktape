@@ -21,6 +21,7 @@ from x.agentplane.action_service.auth import (
     OperatorAuthenticator,
 )
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
+from x.agentplane.action_service.connections import ConnectionAuthority, Identity
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
@@ -60,6 +61,10 @@ class Settings(BaseSettings):
     operator_subject: str = "configured-bff"
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
+    )
+    identities: dict[Key, Identity] = Field(
+        default_factory=dict,
+        description="Configured external caller Identities; runtime Connections bind to these keys.",
     )
 
     fixture_auto_allow: FixtureAutoAllow | None = Field(
@@ -146,6 +151,7 @@ async def async_main(settings: Settings) -> None:
             ),
             operator_authenticator,
             catalog,
+            connections=ConnectionAuthority(make_sessionmaker(engine), settings.identities),
         )
         await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
 

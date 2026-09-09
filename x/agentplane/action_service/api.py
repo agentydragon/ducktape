@@ -8,9 +8,18 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, Field
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
+from x.agentplane.action_service.connections import (
+    Connection,
+    ConnectionAuthority,
+    ConnectionConflictError,
+    ConnectionName,
+    ConnectionNotFoundError,
+    Identity,
+)
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -26,6 +35,16 @@ from x.agentplane.action_service.service import ActionService, InvalidActionArgu
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 _operator_bearer = HTTPBearer(auto_error=False)
+
+
+class ConnectionVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
+class ConnectionRename(ConnectionVersion):
+    display_name: ConnectionName
 
 
 def _service(request: Request) -> ActionService:
@@ -71,12 +90,16 @@ def create_app(
     workload_authenticator: SandboxPrincipalAuthenticator,
     operator_authenticator: OperatorAuthenticator,
     catalog: ActionCatalog,
+    connections: ConnectionAuthority | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentplane Action Service", version="v1")
     app.state.action_service = service
     app.state.workload_authenticator = workload_authenticator
     app.state.operator_authenticator = operator_authenticator
     app.state.action_catalog = catalog
+
+    if connections is not None:
+        _connection_routes(app, connections)
 
     @app.exception_handler(ActionNotFoundError)
     async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
@@ -206,6 +229,40 @@ def create_app(
         return await action_service.decide(request_id, body, principal)
 
     return app
+
+
+def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
+    @app.exception_handler(ConnectionNotFoundError)
+    async def connection_not_found(request: Request, error: ConnectionNotFoundError) -> JSONResponse:
+        del request, error
+        return _error(status.HTTP_404_NOT_FOUND, "Connection not found")
+
+    @app.exception_handler(ConnectionConflictError)
+    async def connection_conflict(request: Request, error: ConnectionConflictError) -> JSONResponse:
+        del request
+        return _error(status.HTTP_409_CONFLICT, str(error))
+
+    @app.get("/v1/operator/identities", dependencies=[Depends(_operator)])
+    async def identities() -> dict[str, Identity]:
+        return authority.identities()
+
+    @app.get("/v1/operator/connections", dependencies=[Depends(_operator)])
+    async def connections() -> list[Connection]:
+        return await authority.list()
+
+    @app.get("/v1/operator/connections/{connection_id}", dependencies=[Depends(_operator)])
+    async def connection(connection_id: UUID) -> Connection:
+        return await authority.get(connection_id)
+
+    @app.patch("/v1/operator/connections/{connection_id}", dependencies=[Depends(_operator)])
+    async def rename_connection(connection_id: UUID, body: ConnectionRename) -> Connection:
+        return await authority.rename(
+            connection_id, expected_version=body.expected_version, display_name=body.display_name
+        )
+
+    @app.post("/v1/operator/connections/{connection_id}/unbind", dependencies=[Depends(_operator)])
+    async def unbind_connection(connection_id: UUID, body: ConnectionVersion) -> Connection:
+        return await authority.unbind(connection_id, expected_version=body.expected_version)
 
 
 def _error(status_code: int, detail: str) -> JSONResponse:

@@ -4,6 +4,23 @@ This package is the standalone canonical coordinator for ActionRequests. It owns
 schema and `/v1/action-requests` lifecycle; the Agentplane integration app, Haku Console, BFFs, and
 external harnesses remain clients rather than state owners.
 
+## External Connections
+
+`identities: {personal: {enabled: true}}` configures static external authority names in the service
+settings YAML. `connections.ConnectionAuthority` persists runtime named Connections and immutable
+grant revisions in the existing database (migration `0008_external_connections`). The operator API
+exposes `GET /v1/operator/identities`, list/detail at `/v1/operator/connections`, `PATCH` of a name
+with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
+
+Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant-specific `revoke`;
+there is no HTTP endpoint accepting client-provided Identity/issuer/client/grant bindings. Bind is
+idempotent by its consent grant UUID, reconnect locks the Connection and ends the old grant, and
+activation is bounded by its deadline. The app BFF/consent UI and FastMCP protocol adapter are
+separate implementation slices. External bearer admission and per-Action grant snapshots are not
+enabled here; the resolved principal contract already uses shared configured-Identity ownership.
+This slice assumes Action Service/PostgreSQL owns Connection authority, with the integration app
+owning its operator UI. It adds no policy language, Thread lifecycle or deployment configuration.
+
 The v0 executable seam is deliberately small:
 
 - one invariant request envelope, with optional `origin` and `correlation` stored only as untrusted

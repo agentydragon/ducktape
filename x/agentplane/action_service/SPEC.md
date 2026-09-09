@@ -5,6 +5,28 @@ callers see only their own requests; the separate operator interface can review 
 Caller-provided provenance never assigns authority. Retry with the same caller-scoped idempotency
 key recovers the same request, not another execution.
 
+## External Connection authority
+
+Configured Identities are reusable authority names, independent of runtime Connections and Threads.
+The single operator can inspect Connections, rename them, and unbind them. A Connection's UUID
+does not change on rename; names are presentation and need not be unique.
+
+The trusted OAuth adapter reserves a pending grant only after consent, then activates it after
+verified issuance. A pending grant has an activation deadline and cannot authorize calls. Exact
+binding retries recover the same grant and Connection; conflicting retries are refused.
+Each grant retains its configured Identity, exact verified downstream issuer/client pair,
+Connection UUID and binding revision. Those fields do not change on rename or reconnect.
+
+Reconnect revokes the previous grant and creates a new pending revision. Existing credentials never
+acquire the replacement Identity's authority. Unbind and grant revocation take effect on the next
+authority resolution; a missing or disabled configured Identity also refuses resolution. Revoking
+an old grant cannot revoke its replacement. No grant or Connection history is deleted.
+
+Resolved external principals use configured Identity as their receipt/idempotency scope: Connections
+bound to the same Identity share reads, while different Identities remain isolated. The submitting
+grant is separate provenance. The Connection authority is implemented independently of the OAuth
+adapter; no external bearer admission is enabled by these management endpoints.
+
 ## Cancellation
 
 Only the authenticated owning caller can cancel a request. Cancellation takes no expected version;

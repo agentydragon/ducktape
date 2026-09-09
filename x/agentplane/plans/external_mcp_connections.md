@@ -127,9 +127,9 @@ authorization interaction, presented by the integration app:
    state, and PKCE challenge. The authorization server validates these and persists a bounded
    pending transaction before handing the browser to an integration-app enrollment page.
 3. The app uses its existing operator login, returning to that enrollment after login if needed.
-   It shows the validated client/redirect information, Connection name/reconnect choice, configured
-   Identity, and referenced ActionPolicySet. Consent or denial is an authenticated, CSRF-protected
-   app action tied to this exact transaction.
+   It shows the validated client/redirect information, Connection name/reconnect choice, a configured
+   Identity picker, and Authorize/Deny controls. The initial UI does not display or edit policy.
+   Consent or denial is an authenticated, CSRF-protected app action tied to this exact transaction.
 4. The app's BFF records that choice through the canonical enrollment/Connection authority under
    authenticated operator authorization. The authorization server consumes the decision once and
    binds code issuance to the selected Identity and exact Connection/binding revision. The browser
@@ -351,6 +351,8 @@ The combined evidence for both clients satisfies `EXTERNALMCP`. Required scenari
   rename/unbind/rebind from app management. Reject forged/expired/replayed enrollment, CSRF, and
   wrong-audience or unauthenticated BFF completion; exercise concurrent tabs and restart between
   login, consent, and token exchange without duplicate grants or lost Identity selection;
+- submit the Identity selected in the consent picker, reject missing or disabled configured
+  Identities at completion, and prove Deny creates no grant; policy display/edit is deferred;
 - identity A auto-allows one precisely bounded Action, while changed arguments fall back to review
   or are denied according to configuration; identity B does not inherit A's auto-allow;
 - missing policy, forged identity metadata, unbound registration, wrong-resource tokens, and a

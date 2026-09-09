@@ -47,6 +47,34 @@ class Base(DeclarativeBase):
     pass
 
 
+class ConnectionRow(Base):
+    __tablename__ = "external_connection"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    display_name: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ConnectionGrantRow(Base):
+    __tablename__ = "external_connection_grant"
+    __table_args__ = (UniqueConstraint("connection_id", "revision"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
+    revision: Mapped[int] = mapped_column(Integer)
+    identity_id: Mapped[str] = mapped_column(Text)
+    issuer: Mapped[str] = mapped_column(Text)
+    client_id: Mapped[str] = mapped_column(Text)
+    request_digest: Mapped[str] = mapped_column(Text)
+    activation_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ActionRequestRow(Base):
     __tablename__ = "action_request"
     __table_args__ = (UniqueConstraint("caller_principal", "idempotency_key"),)

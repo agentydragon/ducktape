@@ -74,11 +74,13 @@ py_library(
     deps = [
         ":auth",
         ":catalog",
+        ":connections",
         ":db",
         ":models",
         ":service",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//fastapi",
+        "@pypi//pydantic",
     ],
 )
 
@@ -111,6 +113,7 @@ py_library(
         ":api",
         ":auth",
         ":catalog",
+        ":connections",
         ":db",
         ":fixture_policy",
         ":operator_oidc",
@@ -529,6 +532,42 @@ py_test(
         ":models",
         ":service",
         "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "connections",
+    srcs = ["connections.py"],
+    deps = [
+        ":catalog",
+        ":db",
+        ":models",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_connections",
+    srcs = ["test_connections.py"],
+    requires_docker = True,
+    deps = [
+        ":api",
+        ":auth",
+        ":catalog",
+        ":conftest",
+        ":connections",
+        ":db",
+        ":models",
+        ":service",
+        "//:conftest",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//alembic",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
