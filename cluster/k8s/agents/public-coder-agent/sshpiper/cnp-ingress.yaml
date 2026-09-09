@@ -1,0 +1,25 @@
+# The piper holds the key that opens `coder@public-coder-devbox`, so possession of a route to this
+# listener is most of the authority. Only the OpenClaw Agent Pod gets one -- namespace co-tenancy
+# is not authority to use it, the same rule ../proxy/cnp-ingress.yaml states for the proxy. The
+# devbox itself is deliberately absent: it is the upstream, it has no reason to dial the piper.
+#
+# This is a fence, not the credential boundary. Reaching the listener is worth nothing without a
+# key the Pipe's authorized_keys_data accepts.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-public-coder-agent-sshpiper-ingress
+  namespace: public-coder-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-sshpiper
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            k8s:app.kubernetes.io/name: public-coder-agent
+      toPorts:
+        - ports:
+            - port: "2222"
+              protocol: TCP

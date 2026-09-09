@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - host-key.sops.yaml
+  - devbox-key.sops.yaml
+  - serviceaccount.yaml
+  - rbac.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - cnp-ingress.yaml
+  - cnp-egress.yaml
+  - pipe-devbox.yaml

@@ -1,0 +1,4 @@
+# sshpiper's host key (../sshpiper/host-key.sops.yaml). The devbox's own host key is not here and
+# must not be: the Agent's session terminates at the piper, which verifies the VM separately
+# through the Pipe's known_hosts_data.
+[public-coder-agent-sshpiper.public-coder-agent.svc.cluster.local]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII5wxBobDu+2GhUR03xrLFLmbSy4434KXXLUS6eyYtJe

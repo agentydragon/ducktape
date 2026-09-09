@@ -1,0 +1,14 @@
+# The Agent's only SSH destination. `ssh devbox` reaches the piper, not the VM: the piper's host
+# key is what this pins, and `devbox` is the downstream username that selects the Pipe
+# (../sshpiper/pipe-devbox.yaml), not the account the command runs as. That account is `coder`,
+# chosen upstream where the Agent cannot influence it.
+Host devbox
+  HostName public-coder-agent-sshpiper.public-coder-agent.svc.cluster.local
+  Port 2222
+  User devbox
+  IdentityFile /home/openclaw/.ssh/id_ed25519
+  # Without this, ssh also offers any other key it can find and can exhaust MaxAuthTries first.
+  IdentitiesOnly yes
+  UserKnownHostsFile /home/openclaw/.ssh/known_hosts
+  # The pin is committed, so there is never a first-use question to answer.
+  StrictHostKeyChecking yes

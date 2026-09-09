@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: public-coder-agent-devbox-ssh-key
+    namespace: public-coder-agent
+    annotations:
+        description: The Agent's downstream key for sshpiper's listener. It authenticates to the piper and nothing else -- the credential that opens the devbox stays in the piper Pod. Public half is the Pipe's authorized_keys_data in ../sshpiper/pipe-devbox.yaml.
+type: Opaque
+stringData:
+    id_ed25519: ENC[AES256_GCM,data:eRjxgNgrKLcaCkHYh6QMFdv1DWh5dmNos03o0cd7qfWipyq+CP0Z8GG26DxkLPJn5wXZFrYohMM8ZNhcKY4cwhVl/LRgffwZ7IT/YCSBaXLNvypseKowQ/eoFIv6IbBpkzgGccZeZmsMBCu/Dv0weUQavQkmQtDpq3z4QW8fxkyc3yLjqsw7VDp9oTSMwABqGZS+CWKNdpAvNLLZh4jf7id1yTCdUdJ0xHfI0LZdParjPhYci6gpJu4hbqJHUv1Jnv0uiTjutrxVHROhu/+0n2F40OU3zDlF/Wk3HRve+hLJ0IXg3K///lMCzbOGVdJbEtJZrgp8V5kWxgcCJaEq9FfkmdoikdhVMoOPaHpFLSAJuzmA9/OYF3ns6TLHFSuW/k8sdINOb7Ig/us4runxmrBVLkLo/ojWc03U5HQ72yJ/+Zqp/NH3e/fLqNIeCeF9fwg6/rlp2m3cXq3JaPHoJRjOW1q7MSTp+ifyeyaMoyIjfXJ/qd21X5mbVggPIUVpUyk2+z69xaIJxqAJilrWwgKtMv8B7PkwKFWmkq7YAZbYjX4nC6Jbm0DxUn1H31ze,iv:n5WkFPGBSH8knwsyzmNQfPg9mG2cRcI6Jjgu7TazQCo=,tag:qaaox63dINo2/8SXVk2YTg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWb1YvRW05d0UxVHpoZUpq
+            d2d3Z2xHRitvZnM1emZIRVY5K3NDUytaNUNRCnlUUWt4VC95WlFxa0YzaG1jV0VV
+            NjNGNnorRVZzU2tlSVBpY2dZdS9ENnMKLS0tIHpxRVhSdFFLY0dINUpydjZvSlZv
+            MERGZXdmdmhNRlhnckpvMWRxazdoLzgKqS3Q55NywSeetVJpmcXcEmA04cV/MgHv
+            VBON/YtxZTeD1SC53A0QCmB165GEZM0k8GFJHYgfdcz733vwZY9H7Q==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAvdFh4b3FzVVNxaWRvWVJL
+            RGlBQXUxMG9td3lYZ2poNTlwZ1l5YzdZOENzCmhKeXNIemIzMERWRG52c3l1TnNO
+            bXRBM2pVSG9VTlkxalFOZGRoT1Z0VmMKLS0tIFZBUHh1QTIrdXhOeVlXQWI4cmFX
+            M2JzVEhJdW5ialNOVXBNeXZoVHByK2sKXspTeXVnJcM5HlK5QwjaBUzUmlRTuV32
+            y3cqh1j0jJE47AQlZjJ19E4ciN/d4A80x8mao2LxCl28/tyJJ9UjmQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-09T04:11:19Z"
+    mac: ENC[AES256_GCM,data:XHaR/TN7X48AdZ2wAOlhpNK6J/Qj0uey9x7uGe7GYfE7VhYoCJgJGsfPjuLU0NpCsdQ2bDaPrGYaF4rLv8m5jAMrnH4SJlJ/G6vhAFZmf64z7e01KImaAS5MoMQqQLVF3IDa4Lr7eFZPdqz38/5uVHnpIcpbJanCFvLcANL8eSA=,iv:41bgdLLPdl1yz/LnvMl5Ktt3BHl0opo+mOz4jcAhdgU=,tag:yBYL3ltfZLjk6UK8xKfneA==,type:str]
+    version: 3.13.3

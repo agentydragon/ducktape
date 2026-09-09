@@ -1,0 +1,29 @@
+# The Agent's one route. `ssh devbox` in the Agent Pod lands here as downstream user `devbox`,
+# authenticates against authorized_keys_data below, and is re-originated as `coder` on the VM
+# using the mapping key in devbox-key.sops.yaml -- which the Agent never sees.
+#
+# Both `_data` fields are base64. known_hosts_data is what makes the upstream verified: leave it
+# empty and sshpiper connects to whatever answers, which is the failure mode this whole
+# arrangement exists to prevent. It carries ssh_keys/public-coder-devbox-host.pub in both the
+# plain and `[host]:22` spellings, because which one sshpiper matches depends on how it normalizes
+# the dialed address.
+#
+# `coder`, never `root`. The devbox authorizes this key for that account only, so the confinement
+# does not depend on this file being right -- the same split hostexec relies on
+# (haku/docs/security.md invariant #9).
+apiVersion: sshpiper.com/v1beta1
+kind: Pipe
+metadata:
+  name: devbox
+  namespace: public-coder-agent
+spec:
+  from:
+    # Exact match, no username_regex_match: one downstream name, one route.
+    - username: devbox
+      authorized_keys_data: c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUxka2JOcmZYUkhQNUJ0L0V6amQyc2I0YmNaYjNpeEUrNExoTWVWSmk5anggcHVibGljLWNvZGVyLWFnZW50Cg==
+  to:
+    host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local:22
+    username: coder
+    private_key_secret:
+      name: public-coder-agent-sshpiper-devbox-key
+    known_hosts_data: cHVibGljLWNvZGVyLWRldmJveC1zc2gucHVibGljLWNvZGVyLWFnZW50LnN2Yy5jbHVzdGVyLmxvY2FsIHNzaC1lZDI1NTE5IEFBQUFDM056YUMxbFpESTFOVEU1QUFBQUlBUmd2bDB6d3BsdmV3U3BRTFg2djhheWZyd280YnN1TEJJT3dOc3RCelFCCltwdWJsaWMtY29kZXItZGV2Ym94LXNzaC5wdWJsaWMtY29kZXItYWdlbnQuc3ZjLmNsdXN0ZXIubG9jYWxdOjIyIHNzaC1lZDI1NTE5IEFBQUFDM056YUMxbFpESTFOVEU1QUFBQUlBUmd2bDB6d3BsdmV3U3BRTFg2djhheWZyd280YnN1TEJJT3dOc3RCelFCCg==

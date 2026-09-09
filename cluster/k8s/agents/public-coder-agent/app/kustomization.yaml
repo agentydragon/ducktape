@@ -4,6 +4,7 @@ resources:
   - external-creds-reader.yaml
   - github-token-eso.yaml
   - gateway-password-eso.yaml
+  - devbox-ssh-key.sops.yaml
   - pvc.yaml
   - pvc-v2.yaml
   - deployment.yaml
@@ -32,3 +33,8 @@ configMapGenerator:
     namespace: public-coder-agent
     files:
       - bazelrc
+  - name: public-coder-agent-ssh
+    namespace: public-coder-agent
+    files:
+      - config=ssh_config
+      - known_hosts=ssh_known_hosts

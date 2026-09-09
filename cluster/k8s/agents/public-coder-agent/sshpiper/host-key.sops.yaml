@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: public-coder-agent-sshpiper-host-key
+    namespace: public-coder-agent
+    annotations:
+        description: sshpiper's own SSH host key -- the identity the Agent pins in known_hosts. Rotating it means updating the Agent's known_hosts in the same change, exactly as rotating the iron-proxy CA means redistributing the trust bundle.
+type: Opaque
+stringData:
+    ssh_host_ed25519_key: ENC[AES256_GCM,data:u//tq2IOiTmypiTuz2LFsKiyNpPgoR10sd4w4TsBoPaQDTnaVRentA7NzzoT68rK4cVlXsn8QQk0p+m1KEolO3SVwdDuYiaxbEQ98+kApcAVLN7Y5yhkh2VgEV85orP29UeOTI+84vhTIoliJfWnPHY25qfAl8Y9yQZQJ9jjGvkMWzDKgH5NNy/WFsSIerbOtt0oT8KrkDmodyYIyCrIoeGbryt2Jxg2mfTRvaHIXBxXV1A4oKkHDFgM/P+V5Zl7L8xnGVkGtrUxg5kklW0iFvuXAU5EhhSgeQKA31ohxgTsZsRjzTFDfqKqyN4jIfh1NqF2FxTD5mgL/NveR60zE1B5+ssrLw7tGqFycCeUDMHKwV52FqvrYJgmZPabe9mUvrJjZwyH7AYPpLn8CIuD6Q0klKvtjxExCH81WtrFL0zQ3ee5eGUCIPxWaP9KGh/U2CAQc5J75776h/MlIf1YI8EvZK3WCUypTfLY2lptzvAGyW068kXzF5kiOH+dDyX8yNrCACBeOoh8WYZOS2uFVD6GUkeS4FI1yjHF2aiJM7RvEmz1pBFnSShFB+KoqGX9,iv:zeSDdc0dFn321dIHEgvFDcBiK2BkuNLNp1f9KJzIQgQ=,tag:gKovtz/2V+LUcnPePjbmwA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5QmtZVGl5dlZHWEwzVm5B
+            a2cxUGV6UnZ5Mzcxd2MzRDJRbWtyVS9FRFVjCkFjVGllYXZyUjYrS1lhRnVOenB1
+            RHdlTWtwY0wxaUo4ajN0Y1lXNDAzOGcKLS0tIHpIZWtuQ2J0SkNidjhHbmE5Z0pS
+            anJjRStZbEEvSXozR2xlcXBIYk5LWGsKHmfPYVh9o8gjixABOJMJcBJxIBYieXsV
+            tm0iUoh7VzGuHRj8hsXyJPh4DUo6tuPOl16rfTIKfhXVYxR9YzV1Pg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5bGJ1MXdvdGo3R2xIWEVL
+            bkhkbmtlU3lHZkJ6cURvMU45UU03Q0liajFVCnVQMVpIakNxOTZwY1kwbzlEYnV3
+            Slg5eGQ3Z1FLeEZjdGVRRTJWSXZVTzAKLS0tIEQ4NUxnK1l4LzljUTJPSVppVFRp
+            R3dCWmpUNnFkbWZPU0xaY1dBTnNKbVkKY3wUIKgEYg3xOUUBPfzo2W8tY7FetcJT
+            Y19u8ihA6hThBW5l9d8zhMbJYhcjVP9IxESMVT/s7vrvGI7Rg/T2ZA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-09T04:05:54Z"
+    mac: ENC[AES256_GCM,data:44guwpUjIh1gAcqpx5vcvQP6rqe2jVSqLgPtUK4g/51WsFuaGrR0o81qf8C09Ijguzyk+403wNmKMCaRuXnEuqa2F6OAIyGV563m7DnavSN8HzPCpFmFRg/pliE7Pz/U36ttVL7DfJ1quXK4SJ4InlYhSviLGkRx33MXzzy5SDQ=,iv:OrnwyZOGk1gwVr4Dxj0hYZqVjeNFcGCZTRTIsb9n/Qk=,tag:t/mrSvHdqoeA6aTCRts7gA==,type:str]
+    version: 3.13.3

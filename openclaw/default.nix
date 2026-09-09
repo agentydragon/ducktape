@@ -103,6 +103,10 @@ let
       markdownlint-cli2
       nixfmt
       nodejs_22
+      # `ssh`/`scp` for the devbox route through sshpiper
+      # (cluster/k8s/agents/public-coder-agent/sshpiper). git pulls openssh into its own closure
+      # but does not put a client on PATH.
+      openssh
       pre-commit
       python3
       ruff

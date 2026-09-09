@@ -285,6 +285,11 @@ spec:
             - name: haku-egress-proxy-ca-cert
               mountPath: /egress-proxy-ca
               readOnly: true
+            # `ssh devbox` -- config, host-key pin, and the Agent's own downstream key, projected
+            # into one directory because ~/.ssh has to be a single path. See ./ssh_config.
+            - name: ssh
+              mountPath: /home/openclaw/.ssh
+              readOnly: true
             - name: tmp
               mountPath: /tmp
           resources:
@@ -321,5 +326,16 @@ spec:
         - name: haku-egress-proxy-ca-cert
           configMap:
             name: haku-egress-proxy-ca-cert
+        # 0440 rather than 0400: fsGroup makes these root:1000, so owner-only would be unreadable
+        # by the container's own uid. OpenSSH's "unprotected private key" check only fires on a
+        # key the caller owns, and this one is root-owned, so group-readable is accepted.
+        - name: ssh
+          projected:
+            defaultMode: 0440
+            sources:
+              - configMap:
+                  name: public-coder-agent-ssh
+              - secret:
+                  name: public-coder-agent-devbox-ssh-key
         - name: tmp
           emptyDir: {}

@@ -31,6 +31,15 @@ spec:
               app.kubernetes.io/name: public-coder-agent-proxy
       ports:
         - { port: 8080, protocol: TCP }
+    # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route to port 22
+    # on the VM, terminating at the piper is the only way through, which is what makes the
+    # credential split enforced rather than advisory -- the same argument as the proxy above.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: public-coder-agent-sshpiper
+      ports:
+        - { port: 2222, protocol: TCP }
     # The colocated Console egress fence's workload listener (#4942/#4943). Reachable, not the
     # default route: HTTP_PROXY in the Deployment still names the iron proxy above. GitHub egress
     # validation passed in PR #5223, merged August 30, 2026. The sidecar shares the Console pod's

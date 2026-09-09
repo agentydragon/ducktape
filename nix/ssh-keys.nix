@@ -12,4 +12,5 @@ in
   atlas = readKey "atlas-default.pub";
   gecko = readKey "gecko-default.pub";
   publicCoderDevbox = readKey "public-coder-devbox.pub";
+  publicCoderAgentSshpiper = readKey "public-coder-agent-sshpiper.pub";
 }

@@ -275,6 +275,21 @@ Otherwise hostexec is the intended route. Preserve the full command exactly for 
 the physical host and `run_as` user, cap output and runtime, avoid unnecessary secret values, and
 state which host-local fact or elevated permission makes the direct Pod surfaces insufficient.
 
+### SSH to the devbox
+
+`ssh devbox` reaches the same VM as the same unprivileged `coder`, through a terminating bastion
+rather than the approval queue (`cluster/k8s/agents/public-coder-agent/sshpiper`). No Haku tool
+call, no `tool_call_id`, no approval lifecycle — and no `node_daemon_executions` row either.
+
+Prefer it for what `hostexec/bash` cannot do: watching a long build as it runs instead of waiting
+for one truncated result, an interactive session, and `scp` (`rsync` is in neither image). Prefer `hostexec/bash` for a
+single bounded command whose result you want on the record.
+
+Two things it deliberately cannot do, both rejected at the piper rather than by convention:
+port forwarding (`ssh -L`/`-D`/`-R`), and reaching any account but `coder` — the destination user
+is fixed upstream and no `ssh root@…` spelling changes it. `root` on this host remains
+manual-approval `hostexec` only.
+
 ## Current auto-approval summary
 
 As of 2026-09-06, `public-coder-agent` uses the `public-coder` access profile. Its standing Haku

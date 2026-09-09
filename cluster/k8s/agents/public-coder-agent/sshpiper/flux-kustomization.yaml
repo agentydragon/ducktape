@@ -1,0 +1,36 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: public-coder-agent-sshpiper
+  namespace: ducktape-flux
+  annotations:
+    description: Terminating SSH bastion for the Agent's route to its devbox. The Agent authenticates with a key valid only here; this Pod holds the key that opens coder@public-coder-devbox.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./cluster/k8s/agents/public-coder-agent/sshpiper
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: public-coder-agent-namespace
+      namespace: ducktape-flux
+    # Pipes are unschedulable until the CRD exists, and the plugin's watch fails without it.
+    - name: sshpiper-crds
+      namespace: ducktape-flux
+    # The upstream. Nothing here works before the devbox has a stable host key to pin.
+    - name: public-coder-agent-devbox
+      namespace: ducktape-flux
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: public-coder-agent-sshpiper
+      namespace: public-coder-agent

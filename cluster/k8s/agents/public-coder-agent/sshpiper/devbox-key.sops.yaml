@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: public-coder-agent-sshpiper-devbox-key
+    namespace: public-coder-agent
+    annotations:
+        description: The mapping key sshpiper signs with to open coder@public-coder-devbox. Public half is committed at ssh_keys/public-coder-agent-sshpiper.pub and authorized for `coder` alone in nix/nixos/hosts/public-coder-devbox; rotating means updating that file and rebuilding the VM image.
+type: kubernetes.io/ssh-auth
+stringData:
+    ssh-privatekey: ENC[AES256_GCM,data:MbK35fv2e3gEJmjn1x25VxE4pb1PyFrKMvqxwBtHWqaObVR2a7tcqMFeWJOgCZHaqIEy0WXlgwLbk5MDxCe1OriaOPoga2+QwQg1bE4qReHMdourMc2FCAIXt0llO2dRMhPdfARcqaoEEIEZmGA1ytbf5r51di3JwoCspoe+1yiHDpmoaKfQSXas+KtGz4J2vij8H6g5BbNgkuDDj9t+UWKsOPC3BbeuMAhBj74sybszHMTRBjjEIFmZf97+8r+ndKYpv8rlBIMAVaspFT83KULH319xphhJDPr1Hvjq8bTsstYpKWK4ipjrlKDZIF34mdO7Z0h4R3duiUJK6Ly6jNlTQD5As4DC57381FOGHm+Cl42UGFGaBQA/JY9bJCTv9jkDModq7xcz0adjr7sGPcWIfu82dHnp6jPDWZqLgkWMQNUasLpGm/Roipgb3Q/zCdeFDeJTlCb70Oi8tqbeA17wH8EIdY+SZqdPiDuBcBvPc1jI5teXVUhMIh9ctg38xuJgMBsuZmkfZTUk3gTEYIqUjenZIMu5glH1cdz0T9Fo7zkWhedkV3J8J0uflHtw8gr5w2Fl04Ituuh5ygOpcMpgLxE=,iv:O5sJCDfKyk0OOmwrt8LI5JcPFzZulxZene68/28aqiI=,tag:2k0Wz7OGsm3zFJwab05EUw==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0WXRwdDZmM09hN08rdkEx
+            WkowSFFHUTJhNU4vMzg0dXZPaDdiYmZKT0QwCmI1VXJvZE1qdWtEcWhzOGJpZ0k4
+            cUFRMnhsajVOZDFTMVl5cFpRWHNWVUUKLS0tIDFaVVp6WGVtcWJzbkNEbnhuNUlO
+            cmNlM1F5K2tRaExROXE3ckE4Uit4L0EKjo9ymaZJOrkZTk3A3povG5RgeOG0pGTR
+            KnrSIIfe086JJztB6Ke/DMl9m5NkV/2mb51RWX3A1piKJs6SoqJ70Q==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyTWdBRS8rQVIvUzJ6SS9F
+            VVZGdFo0NEtMdWVnMERzdTF6RXRsR2lwZkgwCmp2TExrZHNTcmdZSWgxYk1GdFlB
+            Mk84NlFhRk5qMFhkQzRyNEFGOGt0Wm8KLS0tIFViT3lXVGhTdWV0OFZaeGFwV1VD
+            dGRnWUk2Q0Nnd3I1TEhpcFR3amJUaTQKZeLPCnCb16pA1VSaZ3Pw5wrNt87YgPfG
+            a8DYFzdBHdreDb7rWyMfsaOes5GIKAuZGRXY8a3lzmqWdte5zECyvQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-09T04:11:19Z"
+    mac: ENC[AES256_GCM,data:vPkQixFBoo4UVXkz4kLM2VygN5gQudtOiT3WLPieu6JOsnk6ah3EAhHiHmReiKUDBmYLiQzfxMpVncUHedKAryrCs1Vah1KGQMudjT3kTFYYr01n3mJcst5Yf8aEc/VMUy25ELrGvlC6gAg/bLJpH8RVXQoDhngIjwOisG/Nif4=,iv:l0ZzGKyttKJoiIruJ5gCt1R3HRlRJfehlKPVUm/AtEs=,tag:UDQ83680uN2Yw6kdWoajYA==,type:str]
+    version: 3.13.3

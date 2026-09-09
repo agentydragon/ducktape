@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: public-coder-agent-sshpiper-recordings
+  namespace: public-coder-agent
+  annotations:
+    description: >-
+      Session recordings. This is the audit trail for the SSH route: hostexec writes a
+      node_daemon_executions row per command, and nothing equivalent exists for a shell, so the
+      recordings are what remains. Local-path is RWO and binds to one node, which is why the
+      Deployment stays at one replica.
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-ovh
+  resources:
+    requests:
+      # Asciicast is text; a long build's output is megabytes, not gigabytes. Nothing prunes this
+      # yet -- see README.md § Recordings.
+      storage: 5Gi

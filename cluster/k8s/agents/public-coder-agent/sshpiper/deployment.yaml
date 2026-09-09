@@ -1,0 +1,125 @@
+# sshpiperd for the Agent's SSH route to its devbox.
+#
+# The same split as proxy/deployment.yaml, applied to SSH instead of HTTP: the Agent authenticates
+# to this Pod with a key that is worthless anywhere else, and this Pod holds the key that actually
+# opens `coder@public-coder-devbox`. The Agent never possesses the upstream credential. Unlike
+# HTTP, the substitution cannot happen in flight -- an SSH publickey signature covers the session
+# id, so a proxy has to terminate and re-originate. That is what sshpiper's "mapping key" model
+# does, and it is why the Agent pins *this* Pod's host key rather than the devbox's.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+  labels:
+    app.kubernetes.io/name: public-coder-agent-sshpiper
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  # One replica, and not only because the recordings PVC is RWO: two pipers would each need the
+  # host key, and a client reconnecting to the other one is indistinguishable from a MITM.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-sshpiper
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-agent-sshpiper
+    spec:
+      serviceAccountName: public-coder-agent-sshpiper
+      # Unlike the proxy, this Pod does need its API token: the kubernetes plugin reads Pipes and
+      # resolves the upstream key Secret through the API server. See rbac.yaml.
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        # The image's own `sshpiperd` account. Stated rather than inherited so the key Secret's
+        # mode below is meaningful, and so this Pod does not depend on the image's USER directive.
+        runAsUser: 1000
+        runAsGroup: 1000
+        # Makes the host key readable at 0440 and gives the recordings volume a writable group.
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sshpiperd
+          image: farmer1992/sshpiperd:v1.6.1@sha256:9ddc25422cc2d7236d7704230b7a706d4c39518edfd211275186b725bf9d3da1
+          env:
+            - name: PLUGIN
+              value: kubernetes
+            - name: SSHPIPERD_SERVER_KEY
+              value: /host-key/ssh_host_ed25519_key
+            # Already upstream's default, pinned because a flip to `notexist` would silently mint
+            # a fresh host key whenever the Secret failed to mount -- which the Agent cannot
+            # distinguish from a MITM. Failing to start is the better outcome.
+            - name: SSHPIPERD_SERVER_KEY_GENERATE_MODE
+              value: disable
+            - name: SSHPIPERD_LOG_LEVEL
+              value: info
+            # The route exists for shells and file copies, not for tunnels. `ssh -L`/`-D` would
+            # let the Agent reach anything the devbox can reach, and `ssh -R` would let it open
+            # listeners there; neither is what this door is for. Both are one env var away if a
+            # real need turns up.
+            - name: SSHPIPERD_DISABLE_LOCAL_FORWARDING
+              value: "true"
+            - name: SSHPIPERD_DISABLE_REMOTE_FORWARDING
+              value: "true"
+            # The upstream advertises its own host keys over hostkeys-00@openssh.com. Forwarding
+            # that to the Agent would offer it the devbox's keys as if they were this piper's,
+            # which is at best a client-side warning and at worst a poisoned known_hosts.
+            - name: SSHPIPERD_DROP_HOSTKEYS_MESSAGE
+              value: "true"
+            # asciicast captures PTY sessions (`ssh devbox`, and the streaming build output this
+            # route exists for). A non-PTY `ssh devbox <cmd>` is not screen output and is not
+            # captured -- see README.md § Recordings.
+            - name: SSHPIPERD_SCREEN_RECORDING_FORMAT
+              value: asciicast
+            - name: SSHPIPERD_SCREEN_RECORDING_DIR
+              value: /recordings
+          ports:
+            - name: ssh
+              containerPort: 2222
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          livenessProbe:
+            tcpSocket:
+              port: ssh
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: ssh
+            periodSeconds: 10
+          volumeMounts:
+            - name: host-key
+              mountPath: /host-key
+              readOnly: true
+            - name: recordings
+              mountPath: /recordings
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: host-key
+          secret:
+            secretName: public-coder-agent-sshpiper-host-key
+            # 0440, not 0400: with fsGroup the projected file is root:1000, so owner-only would be
+            # unreadable by the container's own user.
+            defaultMode: 0440
+        - name: recordings
+          persistentVolumeClaim:
+            claimName: public-coder-agent-sshpiper-recordings
+        # readOnlyRootFilesystem leaves nothing writable otherwise.
+        - name: tmp
+          emptyDir: {}

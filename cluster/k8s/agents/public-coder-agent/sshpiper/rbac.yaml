@@ -1,0 +1,40 @@
+# The kubernetes plugin reads its routing table from the API server, so the piper Pod needs an
+# API identity -- the one thing in this namespace that does (the proxy sets
+# automountServiceAccountToken: false). Namespaced Role, and the plugin is started without
+# --all-namespaces, so the piper can only ever route what this namespace declares.
+#
+# `secrets` is read-only and unavoidable: Pipe.spec.to.private_key_secret names the upstream
+# mapping key by reference, and the plugin resolves it at connection time. That makes this
+# ServiceAccount able to read *every* Secret in public-coder-agent, including the proxy's GitHub
+# PAT and Console bearer -- a real widening, and the reason the piper runs as its own workload
+# with its own network policy rather than as a container in the proxy Pod.
+#
+# Deliberately absent: pods/exec. Upstream's sample grants it for the kubectl-exec bridge mode,
+# which pipes into a Pod without sshd. Our upstream is a KubeVirt VM running real sshd, so that
+# mode is unused and granting exec would hand this ServiceAccount a shell in every Pod here.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+rules:
+  - apiGroups: ["sshpiper.com"]
+    resources: ["pipes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: public-coder-agent-sshpiper
+  namespace: public-coder-agent
+subjects:
+  - kind: ServiceAccount
+    name: public-coder-agent-sshpiper
+    namespace: public-coder-agent
+roleRef:
+  kind: Role
+  name: public-coder-agent-sshpiper
+  apiGroup: rbac.authorization.k8s.io

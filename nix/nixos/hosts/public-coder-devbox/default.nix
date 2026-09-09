@@ -198,7 +198,14 @@ in
     isNormalUser = true;
     home = "/home/coder";
     shell = pkgs.zsh;
-    openssh.authorizedKeys.keys = [ keys.publicCoderDevbox ];
+    openssh.authorizedKeys.keys = [
+      keys.publicCoderDevbox
+      # sshpiper's mapping key (cluster/k8s/agents/public-coder-agent/sshpiper). Authorized here
+      # and not for root: the piper re-originates the Agent's session as this account, so the same
+      # unprivileged confinement that bounds the hostexec door bounds the SSH one. Nothing about
+      # the Pipe's own configuration is load-bearing for that.
+      keys.publicCoderAgentSshpiper
+    ];
   };
 
   environment.systemPackages = with pkgs; [

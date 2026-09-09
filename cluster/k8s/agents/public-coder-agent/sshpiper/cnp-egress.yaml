@@ -1,0 +1,38 @@
+# Confined, unlike ../proxy/cnp-egress.yaml. The proxy's waiver exists because that Agent reads
+# arbitrary public repositories; the piper has exactly one upstream and no reason to reach
+# anything else, so this stays an allowlist and every widening is a diff in this file.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-public-coder-agent-sshpiper-egress
+  namespace: public-coder-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-sshpiper
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # The kubernetes plugin watches Pipes and resolves the upstream key Secret through the API
+    # server; without this the piper starts and then refuses every connection.
+    - toEntities:
+        - kube-apiserver
+    # The one upstream. KubeVirt gives the VM an ordinary Pod identity, so the guest's sshd is
+    # selectable by the VM's domain label.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            k8s:kubevirt.io/domain: public-coder-devbox
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
