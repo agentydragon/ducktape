@@ -13,7 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from x.agentplane.action_service.catalog import Key
-from x.agentplane.action_service.connections import ConnectionAuthority, ConnectionName, GrantBinding, NewConnection
+from x.agentplane.action_service.connections import (
+    ConnectionAuthority,
+    ConnectionConflictError,
+    GrantBinding,
+    NewConnection,
+    ReconnectConnection,
+)
 from x.agentplane.action_service.db import EnrollmentRow, SessionMaker
 from x.agentplane.action_service.models import Principal, PrincipalRole, Verdict
 
@@ -55,9 +61,16 @@ class EnrollmentDecisionBase(EnrollmentPreviewInput):
     idempotency_key: str = Field(min_length=1, max_length=200)
 
 
+class ConfirmedReconnectConnection(ReconnectConnection):
+    authority_change_confirmed: Literal[True]
+
+
+type EnrollmentConnection = Annotated[NewConnection | ConfirmedReconnectConnection, Field(discriminator="kind")]
+
+
 class EnrollmentAllow(EnrollmentDecisionBase):
     verdict: Literal["allow"] = "allow"
-    display_name: ConnectionName
+    connection: EnrollmentConnection
     identity_id: Key
 
 
@@ -164,7 +177,17 @@ class EnrollmentAuthority:
             if isinstance(request, EnrollmentAllow):
                 self._require_identity(request.identity_id)
                 row.identity_id = request.identity_id
-                row.display_name = request.display_name
+                match request.connection:
+                    case NewConnection(display_name=name):
+                        row.display_name = name
+                    case ConfirmedReconnectConnection(connection_id=connection_id, expected_version=version):
+                        connection = await self._connections.get(connection_id)
+                        if connection.version != version:
+                            raise ConnectionConflictError(
+                                "Connection changed; restart authorization and review it again"
+                            )
+                        row.connection_id = connection_id
+                        row.connection_version = version
             row.verdict = request.verdict
             row.decision_digest = digest
             row.version += 1
@@ -186,18 +209,27 @@ class EnrollmentAuthority:
             row = _require_live(row)
             if (row.operator_issuer, row.operator_subject) != (operator.issuer, operator.subject):
                 raise EnrollmentRejectedError("issuing operator does not match consent")
-            if row.verdict != Verdict.ALLOW or row.identity_id is None or row.display_name is None:
+            if row.verdict != Verdict.ALLOW or row.identity_id is None:
                 raise EnrollmentRejectedError("enrollment was not approved")
             if row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("token exchange already claimed; restart authorization")
             self._require_identity(row.identity_id)
+            connection: NewConnection | ReconnectConnection
+            if row.connection_id is not None and row.connection_version is not None:
+                connection = ReconnectConnection(
+                    connection_id=row.connection_id, expected_version=row.connection_version
+                )
+            elif row.display_name is not None:
+                connection = NewConnection(display_name=row.display_name)
+            else:
+                raise EnrollmentRejectedError("enrollment has no Connection selection")
             return GrantBinding(
                 grant_id=row.id,
                 identity_id=row.identity_id,
                 issuer=row.issuer,
                 client_id=row.client_id,
                 activation_deadline=row.expires_at,
-                connection=NewConnection(display_name=row.display_name),
+                connection=connection,
             )
 
     async def claim_exchange(self, grant_id: UUID) -> None:

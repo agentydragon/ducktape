@@ -71,9 +71,16 @@ the independently verified operator principal. The app enforces browser Origin/C
 the service compares the browser-binding hash and operator on every decision.
 
 Preview returns client presentation and expiry, not the held upstream URL or PKCE challenge.
-Allow stores the configured Identity and Connection name, then releases only the stored framework
+Allow stores the configured Identity and either a new name or an explicitly confirmed
+`ReconnectConnection` target/version, then releases only the stored framework
 URL. Deny returns no redirect. Exact decision retries recover the original response; conflicting
 or stale decisions cannot overwrite it. The configured Identity catalog supplies the UI picker.
+The service validates the existing Connection version at decision and the binding authority checks
+it again when reserving the replacement at code exchange. A concurrent rename, unbind, activation,
+or competing reconnect requires fresh authorization rather than updating the reviewed version.
+Migration `0011_enrollment_reconnect` retains the selected UUID/version alongside the consent.
+Grant reservation revokes all prior active/pending grants atomically, even if later issuance fails;
+the replacement stays pending until activation and neither old tokens nor Actions retarget.
 
 The OAuth adapter calls `approved` with the framework code's client/redirect/PKCE tuple and the
 verified, explicitly mapped upstream operator. It binds and validates the resulting pending grant,
@@ -167,7 +174,7 @@ that the current cluster policy already permits the new route.
 The optional `oauth` settings enable FastMCP 3.4.4's DCR, discovery, authorization, callback,
 token and revocation routes in this process. `ActionsOAuthProxy` holds the validated upstream
 redirect in the durable enrollment authority and sends the browser to the integration app's
-consent page. The page chooses a Connection display name and configured Identity; raw client
+consent page. The page chooses a new name or existing Connection and configured Identity; raw client
 registration and upstream login alone create no caller authority.
 
 After consent, the adapter verifies the upstream issuer/subject against the explicitly configured

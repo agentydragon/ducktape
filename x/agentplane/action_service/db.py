@@ -70,6 +70,8 @@ class EnrollmentRow(Base):
     decision_digest: Mapped[str | None] = mapped_column(Text)
     identity_id: Mapped[str | None] = mapped_column(Text)
     display_name: Mapped[str | None] = mapped_column(Text)
+    connection_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
+    connection_version: Mapped[int | None] = mapped_column(Integer)
     exchange_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

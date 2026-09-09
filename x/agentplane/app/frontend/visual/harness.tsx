@@ -495,6 +495,7 @@ routes.push(
         version: 1,
       },
       identities: { public_coder: { enabled: true }, operator_assistant: { enabled: true } },
+      connections: [sampleConnection()],
       csrf_token: "test-only-csrf",
       attempted_decision: null,
     }),
@@ -591,6 +592,8 @@ const PAGES: Record<string, string> = {
   actions_phone: "/actions",
   consent: "/connection-enrollments/test-only-opaque-handle",
   consent_phone: "/connection-enrollments/test-only-opaque-handle",
+  consent_reconnect: "/connection-enrollments/test-only-opaque-handle",
+  consent_reconnect_phone: "/connection-enrollments/test-only-opaque-handle",
   connections: "/connections",
   connections_phone: "/connections",
   sandbox: "/sandboxes/demo-a1b2",
@@ -609,6 +612,19 @@ const PAGES: Record<string, string> = {
 const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
 const path = PAGES[page];
 if (path === undefined) throw new Error(`unknown harness page ${page}`);
+if (page.startsWith("consent_reconnect")) {
+  const selectExisting = new MutationObserver(() => {
+    const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');
+    const identity = document.querySelector<HTMLSelectElement>('select[name="identity"]');
+    if (!connection || !identity) return;
+    selectExisting.disconnect();
+    connection.value = sampleConnection().id;
+    connection.dispatchEvent(new Event("change", { bubbles: true }));
+    identity.value = "operator_assistant";
+    identity.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  selectExisting.observe(document, { childList: true, subtree: true });
+}
 window.location.hash = path;
 
 const container = document.getElementById("app");

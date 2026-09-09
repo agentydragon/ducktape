@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from x.agentplane.action_service.conftest import RecordingExecutor
-from x.agentplane.action_service.connections import ConnectionAuthority, Grant, GrantBinding, Identity, NewConnection
+from x.agentplane.action_service.connections import (
+    ConnectionAuthority,
+    Grant,
+    GrantBinding,
+    Identity,
+    NewConnection,
+    ReconnectConnection,
+)
 from x.agentplane.action_service.db import (
     ActionStore,
     ConnectionRow,
@@ -43,7 +50,7 @@ LEASE_DURATION = timedelta(seconds=30)
 
 @pytest.fixture
 def authority(engine: AsyncEngine) -> ConnectionAuthority:
-    return ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity()})
+    return ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(), "test-other": Identity()})
 
 
 @pytest.fixture
@@ -142,7 +149,9 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
         ActionRequestInput.model_validate({**envelope.model_dump(), "external_grant": grant.provenance().model_dump()})
 
 
-@pytest.mark.parametrize("invalidate", ["revoke", "disable", "remove", "missing_authority"])
+@pytest.mark.parametrize(
+    "invalidate", ["revoke", "disable", "remove", "missing_authority", "reconnect_same", "reconnect_other"]
+)
 async def test_original_authority_is_rechecked_before_dispatch_without_rewriting_decision(
     engine: AsyncEngine,
     authority: ConnectionAuthority,
@@ -160,6 +169,19 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
         authority = ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(enabled=False)})
     elif invalidate == "remove":
         authority = ConnectionAuthority(make_sessionmaker(engine), {})
+    elif invalidate in {"reconnect_same", "reconnect_other"}:
+        connection = await authority.get(grant.connection_id)
+        replacement = await authority.bind(
+            GrantBinding(
+                grant_id=uuid4(),
+                identity_id="personal" if invalidate == "reconnect_same" else "test-other",
+                issuer=ISSUER,
+                client_id="test-reconnected-client",
+                activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
+                connection=ReconnectConnection(connection_id=connection.id, expected_version=connection.version),
+            )
+        )
+        await authority.activate(replacement.id)
     restarted = ActionStore(
         make_sessionmaker(engine), external_grants=None if invalidate == "missing_authority" else authority
     )

@@ -7,6 +7,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -20,9 +21,19 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import ConfiguredOperatorBearerAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog
-from x.agentplane.action_service.connections import ConnectionAuthority, Identity
+from x.agentplane.action_service.connections import (
+    ConnectionAuthority,
+    ConnectionConflictError,
+    GrantBinding,
+    GrantRejectedError,
+    GrantStatus,
+    Identity,
+    NewConnection,
+    ReconnectConnection,
+)
 from x.agentplane.action_service.db import ActionStore, Base, EnrollmentRow, make_sessionmaker
 from x.agentplane.action_service.enrollments import (
+    ConfirmedReconnectConnection,
     EnrollmentAllow,
     EnrollmentAuthority,
     EnrollmentConflictError,
@@ -54,7 +65,8 @@ class Consent:
 @pytest.fixture
 async def consent(engine: AsyncEngine) -> Consent:
     connections = ConnectionAuthority(
-        make_sessionmaker(engine), {"test-personal": Identity(), "test-off": Identity(enabled=False)}
+        make_sessionmaker(engine),
+        {"test-personal": Identity(), "test-other": Identity(), "test-off": Identity(enabled=False)},
     )
     authority = EnrollmentAuthority(make_sessionmaker(engine), connections)
     request = EnrollmentInput(
@@ -74,7 +86,7 @@ async def consent(engine: AsyncEngine) -> Consent:
         browser_binding=browser.browser_binding,
         expected_version=preview.version,
         idempotency_key="test-decision",
-        display_name="My test connection",
+        connection=NewConnection(display_name="My test connection"),
         identity_id="test-personal",
     )
     return Consent(authority, connections, request, created.handle, browser, operator, allow)
@@ -277,6 +289,104 @@ def _schema_matches(connection: SqlConnection) -> None:
 async def test_enrollment_migration_matches_metadata(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
         await connection.run_sync(_schema_matches)
+
+
+@pytest.mark.parametrize("identity", ["test-personal", "test-other"])
+async def test_reconnect_consent_preserves_selection_and_revokes_before_activation(
+    consent: Consent, engine: AsyncEngine, identity: str
+) -> None:
+    old = await consent.connections.bind(
+        GrantBinding(
+            grant_id=uuid4(),
+            identity_id="test-personal",
+            issuer=consent.request.issuer,
+            client_id="test-old-registration",
+            activation_deadline=consent.request.expires_at,
+            connection=NewConnection(display_name="Existing test Connection"),
+        )
+    )
+    old = await consent.connections.activate(old.id)
+    connection = await consent.connections.get(old.connection_id)
+    selection = ConfirmedReconnectConnection(
+        connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
+    )
+    allow = consent.allow.model_copy(update={"identity_id": identity, "connection": selection})
+    result = await consent.authority.decide(consent.handle, allow, consent.operator)
+    assert await consent.connections.resolve(old.id, issuer=old.issuer, client_id=old.client_id) == old
+    replacement = EnrollmentAuthority(make_sessionmaker(engine), consent.connections)
+    assert await replacement.decide(consent.handle, allow, consent.operator) == result
+    binding = await replacement.approved(
+        client_id=consent.request.client_id,
+        redirect_uri=consent.request.redirect_uri,
+        code_challenge=consent.request.code_challenge,
+        operator=consent.operator,
+    )
+    assert binding.connection == ReconnectConnection(connection_id=connection.id, expected_version=connection.version)
+    new = await consent.connections.bind(binding)
+    assert new.status == GrantStatus.PENDING
+    assert new.identity_id == identity
+    assert new.connection_id == old.connection_id
+    assert new.revision == old.revision + 1
+    assert await consent.connections.bind(binding) == new
+    with pytest.raises(GrantRejectedError):
+        await consent.connections.resolve(old.id, issuer=old.issuer, client_id=old.client_id)
+    # A failed issuance never restores the old authorization, even after restart/retry.
+    await consent.connections.revoke(new.id)
+    with pytest.raises(GrantRejectedError):
+        await consent.connections.activate(new.id)
+    assert await replacement.decide(consent.handle, allow, consent.operator) == result
+    final = await consent.connections.get(connection.id)
+    assert final.display_name == connection.display_name
+    assert all(grant.status == GrantStatus.REVOKED for grant in final.grants)
+    assert final.grants[0].provenance() == old.provenance()
+
+
+async def test_reconnect_rechecks_version_after_consent_and_serializes_competing_grants(consent: Consent) -> None:
+    old = await consent.connections.bind(
+        GrantBinding(
+            grant_id=uuid4(),
+            identity_id="test-personal",
+            issuer=consent.request.issuer,
+            client_id="test-old-registration",
+            activation_deadline=consent.request.expires_at,
+            connection=NewConnection(display_name="Existing test Connection"),
+        )
+    )
+    old = await consent.connections.activate(old.id)
+    connection = await consent.connections.get(old.connection_id)
+    allow = consent.allow.model_copy(
+        update={
+            "connection": ConfirmedReconnectConnection(
+                connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
+            )
+        }
+    )
+    stale = allow.model_copy(update={"connection": allow.connection.model_copy(update={"expected_version": 999})})
+    with pytest.raises(ConnectionConflictError):
+        await consent.authority.decide(consent.handle, stale, consent.operator)
+    await consent.authority.decide(consent.handle, allow, consent.operator)
+    binding = await consent.authority.approved(
+        client_id=consent.request.client_id,
+        redirect_uri=consent.request.redirect_uri,
+        code_challenge=consent.request.code_challenge,
+        operator=consent.operator,
+    )
+    renamed = await consent.connections.rename(
+        connection.id, expected_version=connection.version, display_name="Reviewed again"
+    )
+    with pytest.raises(ConnectionConflictError):
+        await consent.connections.bind(binding)
+    assert await consent.connections.resolve(old.id, issuer=old.issuer, client_id=old.client_id) == old
+    # Independent, freshly reviewed consents may race; the Connection version admits only one.
+    fresh = binding.model_copy(
+        update={"connection": ReconnectConnection(connection_id=connection.id, expected_version=renamed.version)}
+    )
+    competing = fresh.model_copy(update={"grant_id": uuid4()})
+    results = await asyncio.gather(
+        consent.connections.bind(fresh), consent.connections.bind(competing), return_exceptions=True
+    )
+    assert sum(isinstance(result, ConnectionConflictError) for result in results) == 1
+    assert len((await consent.connections.get(connection.id)).grants) == 2
 
 
 if __name__ == "__main__":

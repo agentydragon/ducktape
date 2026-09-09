@@ -1,4 +1,16 @@
-import { Button, Code, Group, NativeSelect, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Code,
+  Group,
+  NativeSelect,
+  Paper,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { displayableError } from "./client";
@@ -21,6 +33,8 @@ export function ConnectionConsent({
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
   const [name, setName] = useState("");
   const [identity, setIdentity] = useState("");
+  const [connectionId, setConnectionId] = useState("new");
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState<"allow" | "deny" | null>(null);
@@ -35,11 +49,15 @@ export function ConnectionConsent({
         setPreview(value);
         setAttempt(value.attempted_decision);
         setName(
-          value.attempted_decision?.verdict === "allow"
-            ? value.attempted_decision.display_name
+          value.attempted_decision?.verdict === "allow" && value.attempted_decision.connection.kind === "new"
+            ? value.attempted_decision.connection.display_name
             : (value.enrollment.client_name ?? "")
         );
         setIdentity(value.attempted_decision?.verdict === "allow" ? value.attempted_decision.identity_id : "");
+        if (value.attempted_decision?.verdict === "allow" && value.attempted_decision.connection.kind === "reconnect") {
+          setConnectionId(value.attempted_decision.connection.connection_id);
+          setConfirmed(true);
+        }
       },
       (failure: unknown) => {
         if (active) setError(displayableError(failure));
@@ -79,6 +97,11 @@ export function ConnectionConsent({
   }
 
   const identities = Object.entries(preview?.identities ?? {}).filter(([, value]) => value.enabled);
+  const existing = preview?.connections.find((connection) => connection.id === connectionId);
+  const reviewedVersion =
+    attempt?.verdict === "allow" && attempt.connection.kind === "reconnect"
+      ? attempt.connection.expected_version
+      : existing?.version;
   return (
     <Paper withBorder p="lg" maw={760} w="100%" mx="auto">
       <Stack>
@@ -108,24 +131,77 @@ export function ConnectionConsent({
                 Expires {new Date(preview.enrollment.expires_at).toLocaleString()}
               </Text>
             </Stack>
-            <TextInput
-              label="Connection name"
-              description="A name for this particular client connection, such as Claude on wyrm2."
-              value={name}
-              maxLength={200}
-              onChange={(event) => setName(event.currentTarget.value)}
+            <NativeSelect
+              label="Connection"
+              name="connection"
+              data={[
+                { value: "new", label: "Create a new Connection" },
+                ...preview.connections.map((connection) => ({
+                  value: connection.id,
+                  label: `${connection.display_name} · ${connection.id}`,
+                })),
+              ]}
+              value={connectionId}
+              onChange={(event) => {
+                setConnectionId(event.currentTarget.value);
+                setConfirmed(false);
+              }}
               disabled={attempt !== null}
-              required
             />
+            {connectionId === "new" ? (
+              <TextInput
+                label="Connection name"
+                description="A name for this particular client connection, such as Claude on wyrm2."
+                value={name}
+                maxLength={200}
+                onChange={(event) => setName(event.currentTarget.value)}
+                disabled={attempt !== null}
+                required
+              />
+            ) : (
+              existing && (
+                <Alert
+                  color="orange"
+                  title={`Replace authorization for ${existing.display_name}?`}
+                  data-reconnect-review
+                >
+                  <Stack gap="xs">
+                    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+                      Connection {existing.id} · reviewed version {reviewedVersion}
+                    </Text>
+                    {existing.grants.map((grant) => (
+                      <Text key={grant.id} size="sm" style={{ overflowWrap: "anywhere" }}>
+                        Identity {grant.identity_id} · {grant.status} · client {grant.client_id} · issuer {grant.issuer}
+                      </Text>
+                    ))}
+                    <Text size="sm">
+                      Fresh OAuth replaces this Connection’s authority with Identity {identity || "(choose below)"}. Old
+                      grants are revoked when token exchange reserves the replacement, even if issuance then fails. Old
+                      tokens never switch Identity. History is preserved; already claimed work is not stopped.
+                    </Text>
+                    <Checkbox
+                      label="I confirm replacing this Connection’s authority"
+                      checked={confirmed}
+                      onChange={(event) => setConfirmed(event.currentTarget.checked)}
+                      disabled={attempt !== null}
+                    />
+                  </Stack>
+                </Alert>
+              )
+            )}
             <NativeSelect
               label="Identity"
+              name="identity"
               description="The configured identity this connection will act as."
               data={[
                 { value: "", label: "Choose an identity" },
                 ...identities.map(([key]) => ({ value: key, label: key })),
               ]}
               value={identity}
-              onChange={(event) => setIdentity(event.currentTarget.value)}
+              onChange={(event) => {
+                setIdentity(event.currentTarget.value);
+                setConfirmed(false);
+              }}
               disabled={attempt !== null}
               required
             />
@@ -151,12 +227,19 @@ export function ConnectionConsent({
                     Deny
                   </Button>
                   <Button
-                    disabled={!name.trim() || !identity}
+                    disabled={!identity || (connectionId === "new" ? !name.trim() : !existing || !confirmed)}
                     onClick={() =>
                       void decide({
                         verdict: "allow",
                         csrf_token: preview.csrf_token,
-                        display_name: name.trim(),
+                        connection: existing
+                          ? {
+                              kind: "reconnect",
+                              connection_id: existing.id,
+                              expected_version: existing.version,
+                              authority_change_confirmed: true,
+                            }
+                          : { kind: "new", display_name: name.trim() },
                         identity_id: identity,
                       })
                     }

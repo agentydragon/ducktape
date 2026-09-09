@@ -35,7 +35,7 @@ from x.agentplane.action_service.connections import (
 )
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
-from x.agentplane.action_service.enrollments import EnrollmentAuthority, EnrollmentInput
+from x.agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -51,6 +51,7 @@ from x.agentplane.app.action_federation import ActionFederationSettings, Federat
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
+from x.agentplane.app.consent import ConsentAllow
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
@@ -582,7 +583,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
     body = {
         "verdict": "allow",
         "csrf_token": preview["csrf_token"],
-        "display_name": "My Claude on wyrm2",
+        "connection": {"kind": "new", "display_name": "My Claude on wyrm2"},
         "identity_id": "public_coder",
     }
     result = await browser.post(f"{path}/decision", json=body)
@@ -598,7 +599,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
     assert reloaded.json()["attempted_decision"] == body
     assert reloaded.json()["csrf_token"] == preview["csrf_token"]
     assert (await replica.post(f"{path}/decision", json=body)).json() == result.json()
-    changed = {**body, "display_name": "different name"}
+    changed = {**body, "connection": {"kind": "new", "display_name": "different name"}}
     assert (await replica.post(f"{path}/decision", json=changed)).status_code == 409
     assert (
         await replica.post(f"{path}/decision", json={"verdict": "deny", "csrf_token": body["csrf_token"]})
@@ -628,6 +629,54 @@ async def test_consent_browser_binding_survives_replica_but_not_another_login(re
     await a.post("/auth/logout")
     await a.get("/auth/login")
     assert (await a.post(f"{path}/preview")).status_code == 403
+
+
+async def test_existing_connection_consent_requires_confirmation_and_preserves_reviewed_version(review: Review) -> None:
+    old = await review.connections.bind(
+        GrantBinding(
+            grant_id=uuid4(),
+            identity_id="public_coder",
+            issuer="https://actions.test",
+            client_id="test-old-client",
+            activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
+            connection=NewConnection(display_name="Existing test client"),
+        )
+    )
+    old = await review.connections.activate(old.id)
+    connection = await review.connections.get(old.connection_id)
+    path = await enrollment_path(review)
+    browser = review.browser
+    await browser.get("/auth/login")
+    preview = (await browser.post(f"{path}/preview")).json()
+    assert preview["connections"] == [connection.model_dump(mode="json")]
+    body = ConsentAllow(
+        verdict="allow",
+        csrf_token=preview["csrf_token"],
+        identity_id="public_coder",
+        connection=ConfirmedReconnectConnection(
+            connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
+        ),
+    ).model_dump(mode="json")
+    body["connection"].pop("authority_change_confirmed")
+    assert (await browser.post(f"{path}/decision", json=body)).status_code == 422
+    body["connection"]["authority_change_confirmed"] = True
+    assert (
+        await browser.post(f"{path}/decision", json=body, headers={"Origin": "https://evil.test"})
+    ).status_code == 403
+    result = await browser.post(f"{path}/decision", json=body)
+    assert result.status_code == 200, result.text
+    assert await review.connections.resolve(old.id, issuer=old.issuer, client_id=old.client_id) == old
+    renamed = await review.connections.rename(
+        connection.id, expected_version=connection.version, display_name="Changed after review"
+    )
+    replica = review.second_browser
+    replica.cookies.update(browser.cookies)
+    reloaded = (await replica.post(f"{path}/preview")).json()
+    assert reloaded["attempted_decision"] == body
+    assert reloaded["connections"][0]["version"] == renamed.version
+    assert (await replica.post(f"{path}/decision", json=body)).json() == result.json()
+    changed = {**body, "connection": {**body["connection"], "expected_version": renamed.version}}
+    assert (await replica.post(f"{path}/decision", json=changed)).status_code == 409
 
 
 async def test_consent_interactions_have_distinct_csrf_and_reject_extra_authority(review: Review) -> None:

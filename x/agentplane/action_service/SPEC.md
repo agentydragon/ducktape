@@ -41,8 +41,14 @@ historical Decision or invoking an executor. Revocation does not stop already cl
 An enrollment names one validated OAuth authorization and expires within fifteen minutes. The
 operator previews and decides it through an authenticated, browser-bound interface. Only that
 browser and operator can decide or recover its result. Approval selects a configured enabled
-Identity and a Connection name; denial grants no authority. A changed or stale decision cannot
+Identity and either a new Connection name or an explicitly confirmed existing Connection and its
+reviewed version; denial grants no authority. A changed or stale decision cannot
 overwrite the original, and an exact retry recovers it.
+
+Existing-Connection selection supports reconnecting to the same Identity or changing Identity
+only through fresh OAuth. Version changes after consent refuse replacement. Reserving the new
+grant at token exchange revokes prior grants before activation; failed issuance never restores
+them. Consent alone does not revoke the existing grant, and old credentials never retarget.
 
 Before token issuance, the authenticated upstream operator must match the consent operator.
 Consent does not itself activate a grant. Each approved enrollment permits only one token-family

@@ -75,9 +75,11 @@ ts_library(
 
 ts_library(
     name = "consent_test",
+    testonly = True,
     srcs = ["consent.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":connections_fixture",
         ":consent",
         ":consent_client",
         "//:node_modules/@mantine/core",
@@ -497,6 +499,8 @@ VISUAL_DATA = [
         "connections_phone",
         "consent",
         "consent_phone",
+        "consent_reconnect",
+        "consent_reconnect_phone",
         "sandboxes",
         "sandboxes_stale",
         "sandbox",

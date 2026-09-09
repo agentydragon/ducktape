@@ -119,8 +119,10 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 The Action Service's OAuth adapter sends a validated authorization request to
 `/#/connection-enrollments/{handle}`. The hash route survives the app's existing operator
 login. The page shows the client-supplied name, client ID, and validated redirect as text,
-asks for a Connection name and enabled configured Identity, and offers Authorize/Deny.
-This first slice does not edit policies or manage existing Connections.
+asks for a new Connection name or existing Connection and enabled configured Identity, and offers
+Authorize/Deny. Existing selection shows its UUID, reviewed version and grant history, and requires
+explicit authority-replacement confirmation. Changing Identity clears that confirmation. A fresh
+authorization can reconnect to the same Identity or choose another; no policy editing is offered.
 
 Both `/connection-enrollments/{handle}/preview` and `/decision` are operator-only POSTs
 with the existing exact-Origin check and per-request federation. The BFF stores a random
@@ -131,6 +133,12 @@ At most 32 unexpired interactions are retained per session. The Actions authorit
 the first preview to that browser and authenticated operator, owns expiry, and consumes
 one decision. The BFF preserves the exact attempted decision for retry after a lost
 response, including page reload; changing it requires a fresh OAuth authorization.
+The existing Connection's reviewed version is part of that exact decision; a 409 never silently
+refreshes it or retries replacement. Consent does not revoke old authority: token exchange's
+version-checked reservation does, before replacement activation. Failed issuance does not restore
+old grants, and old credentials and Action provenance never change Identity.
+The v2 session interaction namespace requires in-flight pre-upgrade consent pages to restart OAuth;
+ordinary operator login sessions remain valid.
 
 Authorize resumes only the server-held continuation returned by the authenticated Actions
 authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
@@ -183,8 +191,9 @@ The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
 operator federation as Action review. Unsafe browser requests require exact Origin. Canonical
 `ConnectionRename` and `ConnectionVersion` models carry the version the operator reviewed; a 409
 refreshes the inventory and asks for review, never automatically retrying a destructive operation.
-The app owns no Connection state. Rebind/reconnect, enrollment, policy editing and deployment are
-outside this management slice.
+The app owns no Connection state. Reconnect/rebind begins with fresh authorization from the external
+client and selecting this Connection on the consent page; management has no direct retarget action.
+Policy editing and deployment are outside this surface.
 
 ## Launch presets
 

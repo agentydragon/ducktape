@@ -102,3 +102,12 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "0011_enrollment_reconnect",
+    srcs = ["0011_enrollment_reconnect.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

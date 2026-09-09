@@ -32,9 +32,21 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import DisabledOperatorAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog
-from x.agentplane.action_service.connections import ConnectionAuthority, Identity
+from x.agentplane.action_service.connections import (
+    ConnectionAuthority,
+    GrantRejectedError,
+    GrantStatus,
+    Identity,
+    NewConnection,
+)
 from x.agentplane.action_service.db import ActionStore, EnrollmentRow, make_sessionmaker
-from x.agentplane.action_service.enrollments import EnrollmentAllow, EnrollmentAuthority, EnrollmentPreviewInput
+from x.agentplane.action_service.enrollments import (
+    ConfirmedReconnectConnection,
+    EnrollmentAllow,
+    EnrollmentAuthority,
+    EnrollmentConnection,
+    EnrollmentPreviewInput,
+)
 from x.agentplane.action_service.models import ActionRequestView, CancellationResult, Executor, Principal, PrincipalRole
 from x.agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
 from x.agentplane.action_service.service import ActionService
@@ -93,7 +105,9 @@ class OAuthFixture:
         assert response.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
         return response.headers["location"].rsplit("/", 1)[1], verifier
 
-    async def approve(self, handle: str) -> str:
+    async def approve(
+        self, handle: str, *, connection: EnrollmentConnection | None = None, identity_id: str = "public-coder"
+    ) -> str:
         binding = secrets.token_urlsafe(32)
         preview = await self.enrollments.preview(handle, EnrollmentPreviewInput(browser_binding=binding), OPERATOR)
         decision = await self.enrollments.decide(
@@ -102,8 +116,8 @@ class OAuthFixture:
                 browser_binding=binding,
                 expected_version=preview.version,
                 idempotency_key=secrets.token_urlsafe(16),
-                display_name="Claude on wyrm2",
-                identity_id="public-coder",
+                connection=connection if connection is not None else NewConnection(display_name="Test external client"),
+                identity_id=identity_id,
             ),
             OPERATOR,
         )
@@ -157,7 +171,7 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
         upstream_subject="test-user",
         approving_operator=OPERATOR,
     )
-    connections = ConnectionAuthority(make_sessionmaker(engine), {"public-coder": Identity()})
+    connections = ConnectionAuthority(make_sessionmaker(engine), {"public-coder": Identity(), "test-other": Identity()})
     enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
@@ -227,6 +241,85 @@ async def test_concurrent_code_exchange_issues_at_most_one_family(oauth: OAuthFi
     responses = await asyncio.gather(*(oauth.exchange(client_id, code, verifier) for _ in range(2)))
     assert sorted(response.status_code for response in responses) == [200, 401]
     assert len(await oauth.connections.list()) == 1
+
+
+@pytest.mark.parametrize("identity_id", ["public-coder", "test-other"])
+@pytest.mark.parametrize("fail_activation", [False, True])
+async def test_fresh_oauth_reconnect_never_retargets_old_tokens(
+    oauth: OAuthFixture, identity_id: str, fail_activation: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_client = await oauth.register()
+    handle, verifier = await oauth.authorize(old_client)
+    code = await oauth.callback(await oauth.approve(handle))
+    old_tokens = (await oauth.exchange(old_client, code, verifier)).json()
+    old_grant = await oauth.proxy.authenticate(old_tokens["access_token"])
+    assert old_grant is not None
+    connection = await oauth.connections.get(old_grant.connection_id)
+    new_client = await oauth.register()
+    handle, verifier = await oauth.authorize(new_client)
+    code = await oauth.callback(
+        await oauth.approve(
+            handle,
+            identity_id=identity_id,
+            connection=ConfirmedReconnectConnection(
+                connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
+            ),
+        )
+    )
+    assert await oauth.proxy.authenticate(old_tokens["access_token"]) == old_grant
+    with monkeypatch.context() as patch:
+        if fail_activation:
+            patch.setattr(
+                oauth.connections, "activate", AsyncMock(side_effect=GrantRejectedError("test activation refused"))
+            )
+        result = await oauth.exchange(new_client, code, verifier)
+    if fail_activation:
+        assert result.status_code == 401, result.text
+        new_grant = (await oauth.connections.get(connection.id)).grants[-1]
+        assert new_grant.status == GrantStatus.PENDING
+    else:
+        assert result.status_code == 200, result.text
+        verified = await oauth.proxy.authenticate(result.json()["access_token"])
+        assert verified is not None
+        new_grant = verified
+    assert new_grant.identity_id == identity_id
+    assert new_grant.client_id == new_client
+    assert new_grant.connection_id == old_grant.connection_id
+    assert new_grant.revision == old_grant.revision + 1
+    assert await oauth.proxy.authenticate(old_tokens["access_token"]) is None
+    refresh = await oauth.browser.post(
+        oauth.metadata["token_endpoint"],
+        data={"grant_type": "refresh_token", "client_id": old_client, "refresh_token": old_tokens["refresh_token"]},
+    )
+    assert refresh.status_code == 401
+    assert (await oauth.exchange(new_client, code, verifier)).status_code == 401
+    assert (await oauth.connections.get(connection.id)).grants[0].provenance() == old_grant.provenance()
+
+
+async def test_stale_reconnect_code_is_invalid_grant_without_revoking_current_authority(oauth: OAuthFixture) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    tokens = (await oauth.exchange(client_id, code, verifier)).json()
+    grant = await oauth.proxy.authenticate(tokens["access_token"])
+    assert grant is not None
+    connection = await oauth.connections.get(grant.connection_id)
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(
+        await oauth.approve(
+            handle,
+            connection=ConfirmedReconnectConnection(
+                connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
+            ),
+        )
+    )
+    await oauth.connections.rename(
+        connection.id, expected_version=connection.version, display_name="Changed concurrently"
+    )
+    refused = await oauth.exchange(client_id, code, verifier)
+    assert refused.status_code == 401, refused.text
+    assert refused.json()["error"] == "invalid_grant"
+    assert await oauth.proxy.authenticate(tokens["access_token"]) == grant
 
 
 async def test_bearer_storage_outage_is_retryable_not_a_false_invalid_token(
@@ -330,7 +423,7 @@ async def test_consent_approver_must_match_verified_upstream_mapping(oauth: OAut
             browser_binding=browser_binding,
             expected_version=preview.version,
             idempotency_key="different-operator",
-            display_name="Wrong operator",
+            connection=NewConnection(display_name="Wrong operator"),
             identity_id="public-coder",
         ),
         different_operator,

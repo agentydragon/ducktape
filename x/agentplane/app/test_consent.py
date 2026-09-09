@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from x.agentplane.action_service.client import CredentialPlaceholder, OperatorActionServiceClient
+from x.agentplane.action_service.connections import NewConnection
 from x.agentplane.app.consent import ConsentAllow, ConsentDeny, decide_enrollment, preview_enrollment
 
 
@@ -23,6 +24,8 @@ async def test_lost_response_preserves_binding_and_exact_decision() -> None:
         assert request.headers["Authorization"] == "Bearer test-only-token"
         if request.url.path.endswith("/identities"):
             return httpx.Response(200, json={"public_coder": {"enabled": True}})
+        if request.url.path.endswith("/connections"):
+            return httpx.Response(200, json=[])
         body = json.loads(request.content)
         if request.url.path.endswith("/preview"):
             previews.append(body)
@@ -51,7 +54,10 @@ async def test_lost_response_preserves_binding_and_exact_decision() -> None:
         preview = await preview_enrollment(browser, "handle", client)
         assert previews[0] == previews[1]
         decision = ConsentAllow(
-            verdict="allow", csrf_token=preview.csrf_token, display_name="My client", identity_id="public_coder"
+            verdict="allow",
+            csrf_token=preview.csrf_token,
+            connection=NewConnection(display_name="My client"),
+            identity_id="public_coder",
         )
         with pytest.raises(httpx.ReadError):
             await decide_enrollment(browser, "handle", decision, client)
@@ -73,6 +79,8 @@ async def test_session_storage_is_bounded_and_expired_interactions_are_pruned() 
     def downstream(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/identities"):
             return httpx.Response(200, json={})
+        if request.url.path.endswith("/connections"):
+            return httpx.Response(200, json=[])
         return httpx.Response(
             200,
             json={
@@ -92,13 +100,13 @@ async def test_session_storage_is_bounded_and_expired_interactions_are_pruned() 
         with pytest.raises(HTTPException) as full:
             await preview_enrollment(browser, "overflow", client)
         assert full.value.status_code == 429
-        browser.session["connection_enrollments"]["0"]["expires_at"] = 0
+        browser.session["connection_enrollments_v2"]["0"]["expires_at"] = 0
         with pytest.raises(HTTPException) as expired:
             await decide_enrollment(browser, "0", ConsentDeny(verdict="deny", csrf_token="expired"), client)
         assert expired.value.status_code == 403
         await preview_enrollment(browser, "replacement", client)
-        assert "0" not in browser.session["connection_enrollments"]
-        assert len(browser.session["connection_enrollments"]) == 32
+        assert "0" not in browser.session["connection_enrollments_v2"]
+        assert len(browser.session["connection_enrollments_v2"]) == 32
 
 
 if __name__ == "__main__":

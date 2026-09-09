@@ -12,9 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.client import OperatorActionServiceClient
-from x.agentplane.action_service.connections import ConnectionName, Identity
+from x.agentplane.action_service.connections import Connection, Identity
 from x.agentplane.action_service.enrollments import (
     EnrollmentAllow,
+    EnrollmentConnection,
     EnrollmentDecisionResult,
     EnrollmentDeny,
     EnrollmentPreview,
@@ -22,7 +23,7 @@ from x.agentplane.action_service.enrollments import (
 )
 
 EnrollmentHandle = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{43}$")]
-_SESSION_KEY = "connection_enrollments"
+_SESSION_KEY = "connection_enrollments_v2"
 _MAX_INTERACTIONS = 32
 
 
@@ -31,7 +32,7 @@ class ConsentAllow(BaseModel):
 
     verdict: Literal["allow"]
     csrf_token: str = Field(min_length=1, max_length=100)
-    display_name: ConnectionName
+    connection: EnrollmentConnection
     identity_id: Key
 
 
@@ -48,6 +49,7 @@ ConsentDecision = Annotated[ConsentAllow | ConsentDeny, Field(discriminator="ver
 class ConsentPreview(BaseModel):
     enrollment: EnrollmentPreview
     identities: dict[str, Identity]
+    connections: list[Connection]
     csrf_token: str
     attempted_decision: ConsentDecision | None
 
@@ -97,6 +99,7 @@ async def preview_enrollment(request: Request, handle: str, client: OperatorActi
     return ConsentPreview(
         enrollment=preview,
         identities=await client.list_identities(),
+        connections=await client.connections(),
         csrf_token=interaction.csrf_token,
         attempted_decision=interaction.attempted_decision,
     )
@@ -123,7 +126,7 @@ async def decide_enrollment(
         "idempotency_key": interaction.idempotency_key,
     }
     decision = (
-        EnrollmentAllow.model_validate({**common, "display_name": body.display_name, "identity_id": body.identity_id})
+        EnrollmentAllow.model_validate({**common, "connection": body.connection, "identity_id": body.identity_id})
         if isinstance(body, ConsentAllow)
         else EnrollmentDeny.model_validate(common)
     )

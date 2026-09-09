@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ConnectionConsent } from "./consent";
 import type { ConsentPreview, ConsentService } from "./consent_client";
+import { sampleConnection } from "./connections_fixture";
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -21,6 +22,7 @@ function preview(): ConsentPreview {
       version: 1,
     },
     identities: { public_coder: { enabled: true }, disabled: { enabled: false } },
+    connections: [],
     csrf_token: "test-only-csrf",
     attempted_decision: null,
   };
@@ -48,7 +50,7 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
 }
 
 async function chooseIdentity(container: HTMLElement): Promise<void> {
-  const select = container.querySelector("select");
+  const select = container.querySelector<HTMLSelectElement>('select[name="identity"]');
   if (!select) throw new Error("missing Identity select");
   await act(async () => {
     select.value = "public_coder";
@@ -64,6 +66,49 @@ afterEach(async () => {
 });
 
 describe("ConnectionConsent", () => {
+  it("requires a fresh explicit confirmation for reconnect and pins the reviewed version on retry", async () => {
+    const connection = sampleConnection();
+    const decide = vi
+      .fn<ConsentService["decide"]>()
+      .mockRejectedValue(new Error("Connection changed; restart authorization"));
+    const container = await render({ preview: async () => ({ ...preview(), connections: [connection] }), decide });
+    const selection = container.querySelector<HTMLSelectElement>('select[name="connection"]');
+    if (!selection) throw new Error("missing Connection select");
+    await act(async () => {
+      selection.value = connection.id;
+      selection.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await chooseIdentity(container);
+    expect(container.textContent).toContain("Old tokens never switch Identity");
+    expect(container.textContent).toContain("registered-client-123");
+    expect(button(container, "Authorize").disabled).toBe(true);
+    const confirmation = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (!confirmation) throw new Error("missing authority confirmation");
+    await act(async () => confirmation.click());
+    expect(button(container, "Authorize").disabled).toBe(false);
+    // Changing the selected Identity requires reviewing the warning again.
+    await chooseIdentity(container);
+    expect(button(container, "Authorize").disabled).toBe(true);
+    await act(async () => confirmation.click());
+    await act(async () => button(container, "Authorize").click());
+    expect(decide).toHaveBeenCalledOnce();
+    expect(decide).toHaveBeenCalledWith("opaque-handle", {
+      verdict: "allow",
+      csrf_token: "test-only-csrf",
+      identity_id: "public_coder",
+      connection: {
+        kind: "reconnect",
+        connection_id: connection.id,
+        expected_version: connection.version,
+        authority_change_confirmed: true,
+      },
+    });
+    expect(container.textContent).toContain("restart authorization");
+    expect(selection.disabled).toBe(true);
+    await act(async () => button(container, "Retry authorization").click());
+    expect(decide.mock.calls[1]).toEqual(decide.mock.calls[0]);
+  });
+
   it("requires an explicit enabled Identity and continues only after authorization", async () => {
     const navigate = vi.fn();
     const service: ConsentService = {
@@ -84,7 +129,7 @@ describe("ConnectionConsent", () => {
     expect(service.decide).toHaveBeenCalledWith("opaque-handle", {
       verdict: "allow",
       csrf_token: "test-only-csrf",
-      display_name: "Claude on wyrm2",
+      connection: { kind: "new", display_name: "Claude on wyrm2" },
       identity_id: "public_coder",
     });
     expect(navigate).toHaveBeenCalledOnce();
@@ -138,7 +183,7 @@ describe("ConnectionConsent", () => {
     const selected = {
       verdict: "allow" as const,
       csrf_token: "test-only-csrf",
-      display_name: "Saved connection",
+      connection: { kind: "new" as const, display_name: "Saved connection" },
       identity_id: "public_coder",
     };
     const decide = vi

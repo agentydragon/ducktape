@@ -47,7 +47,13 @@ from mcp_infra.authentik_auth.oidc_principal import (
     OidcPrincipalVerificationUnavailableError,
 )
 from mcp_infra.persistence import PostgresPersistence, build_shared_client_storage
-from x.agentplane.action_service.connections import ConnectionAuthority, Grant, GrantRejectedError
+from x.agentplane.action_service.connections import (
+    ConnectionAuthority,
+    ConnectionConflictError,
+    ConnectionNotFoundError,
+    Grant,
+    GrantRejectedError,
+)
 from x.agentplane.action_service.enrollments import EnrollmentAuthority, EnrollmentInput, EnrollmentRejectedError
 from x.agentplane.action_service.models import Principal, PrincipalRole
 
@@ -232,7 +238,13 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             grant = await self._connections.bind(binding)
             await self._connections.validate_pending(grant.id, issuer=binding.issuer, client_id=code.client_id)
             await self._enrollments.claim_exchange(grant.id)
-        except (InvalidOidcPrincipalError, EnrollmentRejectedError, GrantRejectedError):
+        except (
+            InvalidOidcPrincipalError,
+            EnrollmentRejectedError,
+            GrantRejectedError,
+            ConnectionConflictError,
+            ConnectionNotFoundError,
+        ):
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
         except (OidcPrincipalVerificationUnavailableError, SQLAlchemyError):
             raise _unavailable() from None
