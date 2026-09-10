@@ -369,6 +369,11 @@ reject projection rather than fabricate a zero. Do not add permanent
 capability-based routing between two executors to make a partial APP cutover look
 complete. Preparatory policies/projections have real session consumers in tests.
 
+HOUSING and PE are deferred priorities. Their preservation remains necessary for
+complete APP/P12 retirement, but does not gate public-portfolio experiments,
+funding, reporting or managed-TLH work. Do not start their implementation merely
+to finish deleting the legacy app runner.
+
 Scheduled public sales are a separate generic scenario/benchmark migration, not
 an input currently constructed by `ProductService`. Move their author-specified
 decisions to explicit actions and remove the legacy scheduled FIFO reader with
@@ -465,17 +470,29 @@ migrations, without reopening the settled ordered-action/no-retry contract:
   It currently runs after successful grouped payments (`rust/engine.rs`);
   removing the action-session guard alone would omit it. Pin what occurs on a
   stopped path and which current facts the policy needs.
-- **GHOUSE — committed purchases:** define the phase and insufficient-funds
-  behavior of the existing scheduled purchase. It currently debits cash during
-  preparation, before policy observation. Exposing an affordable atomic purchase
-  action is a semantic change, not just a binding. Preserve scripted counterparties
-  and lifecycle mechanics; no general multi-agent scheduler is needed.
-- **GPE — compulsory events and voluntary tenders:** decide when forced proceeds
-  become spendable and what compulsory events occur on a failed path. Currently
+- **GHOUSE — committed purchases (deferred):** the intended boundary is a policy
+  action that acquires the house and signs the mortgage/contracts together.
+  Insufficient funding stops the trajectory, like an unpaid bill; no partial
+  purchase/origination is created, while preceding successful actions remain.
+  The current scheduled purchase debits cash during preparation, before policy
+  observation. Still resolve within-month closing/servicing order and expose the
+  existing mechanics through the action boundary. No general multi-agent scheduler
+  is needed.
+- **GPE — compulsory events and voluntary tenders (deferred):** forced recovery
+  and other compulsory issuer events cannot be skipped by policy. Actions represent
+  choices the holder could actually make, not permission for external events to
+  happen. Every presented sale opportunity requires an explicit policy response:
+  sell with specified terms/quantity, or decline. Omission is an invalid response,
+  never an implicit decline; validate complete opportunity coverage in the existing
+  monthly batch without another policy callback or within-month retry. Future
+  controls must distinguish decline, omitted response and compulsory execution.
+  Still decide when forced proceeds become spendable and where compulsory events
+  fall relative to a rollout-stopping failure. Currently
   PE processing follows successful payments, and absence of a tender policy also
   skips forced recovery (`rust/engine/private_equity.rs`). Compulsory issuer events
   must not depend on opting into a tender strategy. Pin independent failure/timing
-  controls before changing that behavior.
+  controls before changing that behavior; these are future requirements, not current
+  action-session guarantees.
 
 | Gate                                                  | Bounded next step and decision                                                                                                                                                                                                                                                                                                                                                                                                               | What proceeds regardless                                                                                                                                                                                                                                     |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -510,8 +527,8 @@ all the others to be solved first.
    action-session financial controls in each PR; stack integrations when useful.
    The bond-example migration is separately in review in
    [PR #6032](https://github.com/agentydragon/ducktape/pull/6032).
-2. Resolve **GH, GHOUSE and GPE** with concrete timing/failure examples before
-   their respective migration slices. Scope benchmarks independently. APP waits
+2. Resolve **GH** with concrete timing/failure examples; **GHOUSE and GPE are
+   deferred**, with the intended action boundaries recorded above. Scope benchmarks independently. APP waits
    for the existing capabilities its inputs require, not new adaptive housing,
    bond trading or a general multi-agent scheduler.
 3. Agree GL's representative cost budgets and measure along these migrations.
