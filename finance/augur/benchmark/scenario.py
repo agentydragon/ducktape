@@ -258,7 +258,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 asset=VTI,
                 purchase_month_index=-24,
                 quantity=2_000.0,
-                cost_basis_per_unit=Decimal(80),
+                cost_basis=160000,
             ),
             InitialLot(
                 lot_id="allocator-bnd-old",
@@ -267,7 +267,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 asset=BND,
                 purchase_month_index=-18,
                 quantity=1_000.0,
-                cost_basis_per_unit=Decimal(80),
+                cost_basis=80000,
             ),
             InitialLot(
                 lot_id="bondholder-bnd-fund",
@@ -276,7 +276,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 asset=BND,
                 purchase_month_index=-24,
                 quantity=1_000.0,
-                cost_basis_per_unit=Decimal(80),
+                cost_basis=80000,
             ),
             InitialLot(
                 lot_id="pe-acme-old",
@@ -285,7 +285,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 asset=PrivateEquityAssetKey(issuer_id=ACME),
                 purchase_month_index=-36,
                 quantity=40.0,
-                cost_basis_per_unit=Decimal(10),
+                cost_basis=400,
             ),
             InitialLot(
                 lot_id="pe-acme-new",
@@ -294,7 +294,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 asset=PrivateEquityAssetKey(issuer_id=ACME),
                 purchase_month_index=-12,
                 quantity=60.0,
-                cost_basis_per_unit=Decimal(20),
+                cost_basis=1200,
             ),
             InitialLot(
                 lot_id="tlh-sp500",
@@ -303,7 +303,7 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 asset=SP500,
                 purchase_month_index=0,
                 quantity=1_000.0,
-                cost_basis_per_unit=Decimal(1),
+                cost_basis=1000,
             ),
         ],
         initial_bonds=[

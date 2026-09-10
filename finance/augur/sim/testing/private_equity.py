@@ -155,7 +155,7 @@ def holder(
                 asset=ACME,
                 purchase_month_index=-pe_holding_period_months,
                 quantity=pe_units,
-                cost_basis_per_unit=pe_cost_basis_per_unit,
+                cost_basis=Decimal(str(pe_units)) * pe_cost_basis_per_unit,
             )
         ],
         recurring_obligations=[

@@ -57,7 +57,7 @@ def test_product_portfolio_response_includes_holding_positions_and_lots() -> Non
     assert position.quantity == 300.0
     assert position.current_value_quanta == "15000000"
     assert [lot.lot_id for lot in position.lots] == ["sp500_2020_01", "sp500_2024_06"]
-    assert [lot.cost_basis_per_unit_quanta for lot in position.lots] == ["40000", "33333"]
+    assert [lot.cost_basis_quanta for lot in position.lots] == ["6000000", "4999950"]
 
 
 if __name__ == "__main__":

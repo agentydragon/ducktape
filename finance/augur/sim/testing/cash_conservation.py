@@ -98,7 +98,7 @@ def scheduled_sale_case() -> Case:
                     agent_id="alice",
                     asset=VTI,
                     quantity=SALE_UNITS,
-                    cost_basis_per_unit=Decimal(100),
+                    cost_basis=Decimal(str(SALE_UNITS)) * 100,
                     purchase_month_index=0,
                 )
             ],
@@ -133,7 +133,7 @@ def target_allocation_sale_case() -> Case:
                     asset=VTI,
                     purchase_month_index=-1,
                     quantity=200.0,
-                    cost_basis_per_unit=Decimal(50),
+                    cost_basis=10000,
                 )
             ],
             recurring_obligations=[
@@ -183,7 +183,7 @@ def private_equity_tender_case() -> Case:
                     asset=ACME,
                     purchase_month_index=-36,
                     quantity=TENDER_UNITS,
-                    cost_basis_per_unit=Decimal(10),
+                    cost_basis=Decimal(str(TENDER_UNITS)) * 10,
                 )
             ],
             private_equity_tender_policies=[

@@ -91,7 +91,7 @@ def _private_equity_case(*, freeze: bool) -> tuple[Scenario, PrivateEquityBundle
                 asset=PrivateEquityAssetKey(issuer_id=_ACME),
                 purchase_month_index=-12,
                 quantity=10.0,
-                cost_basis_per_unit=Decimal(10),
+                cost_basis=100,
             )
         ],
         scheduled_obligations=(
@@ -188,7 +188,7 @@ class FrozenRolloutAcceptance:
         assert stopped_cash.get_column("balance_quanta").to_list() == [10_000]
         stopped_lots = result.lots.filter(pl.col("month_index") == 2)
         assert stopped_lots.get_column("remaining_quantity_quanta").to_list() == [10_000_000]
-        assert stopped_lots.get_column("cost_basis_per_unit_quanta").to_list() == [1_000]
+        assert stopped_lots.get_column("basis_remaining_quanta").to_list() == [10_000]
 
     def test_a_tax_year_the_rollout_did_not_survive_is_not_assessed(self, backend: Backend) -> None:
         """The year closes at month 11 and is assessed at month 12; this rollout froze at 11.

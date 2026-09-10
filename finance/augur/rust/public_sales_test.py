@@ -99,7 +99,7 @@ def _gain_case(*, wages: Decimal) -> Case:
                     asset=VTI,
                     purchase_month_index=-24,
                     quantity=1.0,
-                    cost_basis_per_unit=Decimal(10_000),
+                    cost_basis=10000,
                 )
             ],
             tax_profiles=[taxed("alice", "federal_us")],
@@ -155,7 +155,7 @@ def test_capital_loss_offsets_ordinary_income_only_up_to_1211_cap(loss: Decimal,
                     asset=VTI,
                     purchase_month_index=-24,
                     quantity=1.0,
-                    cost_basis_per_unit=Decimal(1_000) + loss,
+                    cost_basis=Decimal(1_000) + loss,
                 )
             ],
             tax_profiles=[taxed("alice", "federal_us")],
@@ -199,7 +199,7 @@ def independent_paths() -> Case:
                     asset=VTI,
                     purchase_month_index=-24,
                     quantity=10.0,
-                    cost_basis_per_unit=Decimal(100),
+                    cost_basis=1000,
                 )
             ],
             tax_profiles=[taxed("alice", "federal_us")],

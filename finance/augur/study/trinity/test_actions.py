@@ -92,7 +92,7 @@ def test_coupons_precede_claims_surplus_stays_cash_and_final_snapshot_does_not_p
 def test_nondivisible_sale_uses_quantity_ceiling_and_canonical_basis() -> None:
     scenario = control(equity_share=1, quantity=1, annual=Decimal(1), horizon=1)
     scenario = scenario.model_copy(
-        update={"initial_lots": [scenario.initial_lots[0].model_copy(update={"cost_basis_per_unit": Decimal(1)})]}
+        update={"initial_lots": [scenario.initial_lots[0].model_copy(update={"cost_basis": Decimal(1)})]}
     )
     run = compile_run(
         scenario,

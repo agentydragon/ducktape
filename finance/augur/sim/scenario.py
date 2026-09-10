@@ -510,15 +510,12 @@ class HoldingPool(BaseModel):
 
 
 class InitialLot(BaseModel):
-    """A tax lot that exists at scenario start. Models pre-existing
-    holdings: Alice already owns 100 units of VTI bought 24 months
-    before the sim starts at $80/unit. The sim creates this lot at
-    month 0 as an `AssetPurchase` event with the supplied
-    `purchase_month_index` (which may be negative — purchases
-    pre-dating the horizon are fine and feed into LTCG/STCG
-    classification of later sales). `account_id` identifies the
-    holding account used for FIFO pools; lots in different accounts
-    are not fungible.
+    """A pre-existing tax lot, with its exact remaining total cost basis.
+
+    The opening book records this holding without a simulated purchase or cash
+    outflow. `purchase_month_index` may be negative and determines the holding
+    period of later sales. `account_id` identifies the holding account; lots in
+    different accounts are not fungible. Basis is a total, not a rounded unit cost.
 
     `asset` is the typed `AssetKey` discriminated union identifying what
     is held (sp500 / a crypto symbol / a PE issuer). Dispatch sites match
@@ -532,7 +529,9 @@ class InitialLot(BaseModel):
     asset: AssetKey
     purchase_month_index: int
     quantity: float
-    cost_basis_per_unit: CurrencyAmount
+    cost_basis: CurrencyAmount = Field(
+        description="Exact remaining total basis of the opening lot, not a per-unit quote."
+    )
 
 
 class ScheduledAssetSale(BaseModel):

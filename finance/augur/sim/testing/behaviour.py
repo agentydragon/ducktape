@@ -107,7 +107,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=8000,
                 )
             ],
             scheduled_asset_sales=[
@@ -173,7 +173,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=100.0,
-                    cost_basis_per_unit=90,
+                    cost_basis=9000,
                 )
             ],
             scheduled_asset_sales=[
@@ -216,7 +216,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=0,
                     quantity=50.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=5000,
                 )
             ],
             scheduled_asset_sales=[
@@ -259,7 +259,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-6,
                     quantity=100.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=8000,
                 ),
                 InitialLot(
                     lot_id="lot_b_younger",
@@ -267,7 +267,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=2,
                     quantity=50.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=5000,
                 ),
             ],
             scheduled_asset_sales=[
@@ -335,7 +335,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=8000,
                 ),
                 InitialLot(
                     lot_id="new",
@@ -343,7 +343,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-6,
                     quantity=100.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=10000,
                 ),
             ],
             scheduled_asset_sales=[
@@ -407,7 +407,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("btc")),
                     purchase_month_index=-12,
                     quantity=2.0,
-                    cost_basis_per_unit=20000,
+                    cost_basis=40000,
                 ),
                 InitialLot(
                     lot_id="short_held",
@@ -415,7 +415,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("btc")),
                     purchase_month_index=2,
                     quantity=1.0,
-                    cost_basis_per_unit=40000,
+                    cost_basis=40000,
                 ),
             ],
             scheduled_asset_sales=[
@@ -463,7 +463,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=0,
                     quantity=10.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=1000,
                 ),
                 InitialLot(
                     lot_id="qqq_lot",
@@ -471,7 +471,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("qqq")),
                     purchase_month_index=0,
                     quantity=10.0,
-                    cost_basis_per_unit=200,
+                    cost_basis=2000,
                 ),
             ],
             scheduled_asset_sales=[
@@ -527,7 +527,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=10.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=800,
                 ),
                 InitialLot(
                     lot_id="ira_vti",
@@ -536,7 +536,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=10.0,
-                    cost_basis_per_unit=70,
+                    cost_basis=700,
                 ),
             ],
             scheduled_asset_sales=[
@@ -582,7 +582,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=5.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=400,
                 )
             ],
             scheduled_asset_sales=[
@@ -622,7 +622,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-3,
                     quantity=10.0,
-                    cost_basis_per_unit=90,
+                    cost_basis=900,
                 )
             ],
             scheduled_asset_sales=[
@@ -671,7 +671,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=0,
                     quantity=5.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=500,
                 )
             ],
             scheduled_asset_sales=[
@@ -731,7 +731,7 @@ class AssetSaleAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=2.5,
-                    cost_basis_per_unit=Decimal("33.33"),
+                    cost_basis=Decimal("83.33"),
                 )
             ],
             scheduled_asset_sales=[
@@ -764,8 +764,7 @@ class AssetSaleAcceptance:
             .iter_rows(named=True)
         )
         assert final["remaining_quantity_quanta"] == 0
-        # Nothing is left to charge against, so nothing is quoted per unit.
-        assert final["cost_basis_per_unit_quanta"] == 0
+        assert final["basis_remaining_quanta"] == 0
 
 
 class YearEndTaxAcceptance:
@@ -890,7 +889,7 @@ class YearEndTaxAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=8000,
                 )
             ],
             recurring_transfers=[
@@ -973,7 +972,7 @@ class YearEndTaxAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=8000,
                 )
             ],
             recurring_transfers=[
@@ -1088,7 +1087,7 @@ class YearEndTaxAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=10000,
                 ),
                 InitialLot(
                     lot_id="alice_short_ixus",
@@ -1096,7 +1095,7 @@ class YearEndTaxAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("ixus")),
                     purchase_month_index=0,
                     quantity=10.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=500,
                 ),
             ],
             recurring_transfers=[
@@ -1192,7 +1191,7 @@ class YearEndTaxAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=10000,
                 )
             ],
             recurring_transfers=[
@@ -1482,7 +1481,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=10.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=500,
                 )
             ],
             scheduled_obligations=[
@@ -1590,7 +1589,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=10.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=500,
                 )
             ],
             scheduled_obligations=[
@@ -1649,7 +1648,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=5.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=250,
                 ),
                 InitialLot(
                     lot_id="alice_ira_vti",
@@ -1658,7 +1657,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=5000,
                 ),
             ],
             scheduled_obligations=[
@@ -1719,7 +1718,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=5.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=250,
                 )
             ],
             scheduled_obligations=[
@@ -1778,7 +1777,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-1,
                     quantity=200.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=10000,
                 )
             ],
             recurring_obligations=[
@@ -1844,7 +1843,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=10.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=500,
                 )
             ],
             scheduled_obligations=[
@@ -1895,7 +1894,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=5000,
                 )
             ],
             scheduled_obligations=[
@@ -1959,7 +1958,7 @@ class ObligationAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=100.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=5000,
                 )
             ],
             scheduled_obligations=[
@@ -2326,7 +2325,7 @@ class RolloutFailureAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-1,
                     quantity=5.0,  # only $500 of VTI at $100/unit
-                    cost_basis_per_unit=80,
+                    cost_basis=400,
                 )
             ],
             recurring_obligations=[
@@ -2398,7 +2397,7 @@ class RolloutFailureAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-1,
                     quantity=1.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=80,
                 )
             ],
             recurring_obligations=[

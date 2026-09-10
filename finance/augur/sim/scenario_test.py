@@ -263,7 +263,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=10.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=800,
                 ),
                 InitialLot(
                     lot_id="old_b",
@@ -271,7 +271,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=5.0,
-                    cost_basis_per_unit=90,
+                    cost_basis=450,
                 ),
             ],
             tax_profiles=[],
@@ -291,7 +291,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=10.0,
-                cost_basis_per_unit=80,
+                cost_basis=800,
             ),
             InitialLot(
                 lot_id="ira_old",
@@ -300,7 +300,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=5.0,
-                cost_basis_per_unit=70,
+                cost_basis=350,
             ),
         ],
         tax_profiles=[],
@@ -350,7 +350,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=0,
                     quantity=1.0,
-                    cost_basis_per_unit=100,
+                    cost_basis=100,
                 )
             ],
             scheduled_asset_sales=[

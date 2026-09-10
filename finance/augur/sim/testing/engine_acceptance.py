@@ -87,7 +87,7 @@ def sale_and_tax_year() -> CompiledRun:
                 asset=VTI,
                 purchase_month_index=-24,  # comfortably long-term
                 quantity=UNITS,
-                cost_basis_per_unit=LOT_BASIS,
+                cost_basis=Decimal(str(UNITS)) * LOT_BASIS,
             )
         ],
         scheduled_asset_sales=[

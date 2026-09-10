@@ -286,7 +286,7 @@ def test_product_metrics_fail_when_holding_price_series_is_missing() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("missing")),
                 purchase_month_index=-1,
                 quantity=2.0,
-                cost_basis_per_unit=1,
+                cost_basis=2,
             )
         ],
         tax_profiles=[],

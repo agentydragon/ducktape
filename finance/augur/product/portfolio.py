@@ -25,7 +25,6 @@ class ProductPublicSecurityLot(ApiModel):
     holding_period_months_at_start: NonNegativeInt
     quantity: NonNegativeFloat
     cost_basis_quanta: CurrencyQuanta
-    cost_basis_per_unit_quanta: CurrencyQuanta
 
 
 class ProductPublicSecurityPosition(ApiModel):
@@ -149,7 +148,6 @@ def _holding_position(
                 holding_period_months_at_start=int(lot.holding_period_months_at_start),
                 quantity=float(lot.quantity),
                 cost_basis_quanta=_quanta(lot.cost_basis, quantum=currency_quantum),
-                cost_basis_per_unit_quanta=_quanta(lot.cost_basis_per_unit, quantum=currency_quantum),
             )
             for lot in position.lots
         ),

@@ -307,11 +307,6 @@ def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any
     for lot in scenario.initial_lots:
         scale = quantity_scale_for_asset(lot.asset)
         units = int(quantity_to_quanta(lot.quantity, scale=scale))
-        basis_per_unit = int(currency_amount_to_quanta(lot.cost_basis_per_unit, quantum=quantum))
-        # The execution input stores the lot's total basis, and a fractional quantity at a per-unit
-        # price need not land on a whole quantum -- half a share at $33.33 does not. Round the
-        # remainder rather than refusing the lot; a total that was already whole is unchanged.
-        total = basis_per_unit * units
         lots.append(
             {
                 "lot_id": lot.lot_id,
@@ -321,7 +316,7 @@ def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any
                 "purchase_month": int(lot.purchase_month_index),
                 "quantity_scale": scale,
                 "units": units,
-                "basis": (2 * total + scale) // (2 * scale),
+                "basis": int(currency_amount_to_quanta(lot.cost_basis, quantum=quantum)),
             }
         )
     return lots

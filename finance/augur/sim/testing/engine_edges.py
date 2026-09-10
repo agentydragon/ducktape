@@ -110,7 +110,7 @@ def _pe_validation_scenario(*, horizon_months: int) -> Scenario:
                 asset=PrivateEquityAssetKey(issuer_id=IssuerId("acme")),
                 purchase_month_index=-36,
                 quantity=100.0,
-                cost_basis_per_unit=10,
+                cost_basis=1000,
             )
         ],
         tax_profiles=[],
@@ -181,7 +181,7 @@ def _harvest_scenario(
             asset=SecurityKey(symbol=SP500_SYMBOL),
             purchase_month_index=purchase_month_index,
             quantity=quantity,
-            cost_basis_per_unit=cost_basis_per_unit,
+            cost_basis=Decimal(str(quantity)) * cost_basis_per_unit,
         )
     ]
     if extra_lots:
@@ -389,7 +389,7 @@ class ScanPhaseAcceptance:
                     asset=SecurityKey(symbol=SP500_SYMBOL),
                     purchase_month_index=-24,  # long-term when sold at month 3
                     quantity=100.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=8000,
                 )
             ],
             scheduled_asset_sales=[
@@ -677,7 +677,7 @@ class ValidationEdgeAcceptance:
                     asset=SecurityKey(symbol=SP500_SYMBOL),
                     purchase_month_index=0,
                     quantity=100.0,
-                    cost_basis_per_unit=1,
+                    cost_basis=100,
                 )
             ],
             harvest_policies=[
@@ -720,7 +720,7 @@ class ValidationEdgeAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=5.0,
-                    cost_basis_per_unit=80,
+                    cost_basis=400,
                 )
             ],
             scheduled_asset_sales=[
@@ -765,7 +765,7 @@ class ValidationEdgeAcceptance:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-24,
                     quantity=10.0,
-                    cost_basis_per_unit=50,
+                    cost_basis=500,
                 )
             ],
             scheduled_obligations=[
@@ -854,7 +854,7 @@ class HarvestAcceptance:
             asset=SecurityKey(symbol=SecuritySymbol("gainco")),
             purchase_month_index=-3,  # short-term when sold at month 6
             quantity=100.0,
-            cost_basis_per_unit=100,
+            cost_basis=10000,
         )
         gain_sale = ScheduledAssetSale(
             month=6,

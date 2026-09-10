@@ -100,6 +100,12 @@ lots' actual basis, including residual basis on full disposal. Acquisition basis
 comes from the actual settled purchase. FIFO is a caller's selection rule, not
 the only possible exact-lot request.
 
+An opening lot supplies its exact remaining total cost basis in the scenario's
+currency quantum. That total need not divide into currency-quantized per-unit
+amounts. Imports, execution and recorded lot state retain the total without
+deriving and re-quantizing a per-unit basis; sales apportion it and full
+liquidation consumes the remainder.
+
 The configured runner retains all-or-none funding groups and automatic allocation
 controls. Those are not common-session settlement requirements. It also retains
 reduced-form harvesting: give-back plus remaining deferral is conserved on sale,

@@ -68,7 +68,7 @@ def input_document() -> dict[str, Any]:
                     asset=asset,
                     purchase_month_index=month,
                     quantity=quantity,
-                    cost_basis_per_unit=Decimal("0.03"),
+                    cost_basis=(quantity * Decimal("0.03")).quantize(Decimal("0.01")),
                 )
                 for account, asset, lot, month, quantity in (
                     ("portfolio", first, "test-newer", -12, Decimal("0.4")),

@@ -412,7 +412,7 @@ pub(super) fn month_output(
         month,
         balances: account_balances(ledger),
         income: income_states(&tax.income),
-        lots: security_lot_states(lots)?,
+        lots: security_lot_states(lots),
         bonds: bond_states(
             fixture,
             rollout_id,
@@ -463,29 +463,17 @@ fn capital_gain_states(
         .collect()
 }
 
-fn security_lot_states(lots: &[LotState]) -> Result<Vec<SecurityLotState>, ArithmeticError> {
+fn security_lot_states(lots: &[LotState]) -> Vec<SecurityLotState> {
     lots.iter()
-        .map(|lot| {
-            Ok(SecurityLotState {
-                lot_id: lot.spec.lot_id.clone(),
-                agent_id: lot.spec.agent_id.clone(),
-                account_id: lot.spec.account_id.clone(),
-                asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
-                purchase_month: lot.spec.purchase_month,
-                quantity_scale: lot.spec.quantity_scale,
-                units_remaining: lot.units_remaining,
-                basis_remaining: lot.basis_remaining,
-                // Derived for the reader, not carried as state: it is exactly what the
-                // apportionment above would charge for one unit of what is left.
-                cost_basis_per_unit: if lot.units_remaining.0 == 0 {
-                    PerUnit(0)
-                } else {
-                    lot.basis_remaining.per_unit(
-                        Units::new(lot.units_remaining, lot.spec.quantity_scale),
-                        "reported per-unit basis",
-                    )?
-                },
-            })
+        .map(|lot| SecurityLotState {
+            lot_id: lot.spec.lot_id.clone(),
+            agent_id: lot.spec.agent_id.clone(),
+            account_id: lot.spec.account_id.clone(),
+            asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
+            purchase_month: lot.spec.purchase_month,
+            quantity_scale: lot.spec.quantity_scale,
+            units_remaining: lot.units_remaining,
+            basis_remaining: lot.basis_remaining,
         })
         .collect()
 }

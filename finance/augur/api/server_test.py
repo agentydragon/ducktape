@@ -303,7 +303,6 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert [lot["holding_period_months_at_start"] for lot in sp500["lots"]] == [76, 23]
     assert [lot["quantity"] for lot in sp500["lots"]] == [750.0, 750.0]
     assert [lot["cost_basis_quanta"] for lot in sp500["lots"]] == ["30000000", "24999750"]
-    assert [lot["cost_basis_per_unit_quanta"] for lot in sp500["lots"]] == ["40000", "33333"]
     btc = positions_by_id["btc_holding"]
     assert btc["symbol"] == "btc"
     assert btc["security_kind"] == "cryptocurrency"

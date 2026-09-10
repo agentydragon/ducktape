@@ -38,7 +38,6 @@ class SecurityLotState(Record):
     quantity_scale: int
     units_remaining: int
     basis_remaining: int
-    cost_basis_per_unit: int
 
 
 class BondState(Record):

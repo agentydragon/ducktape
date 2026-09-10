@@ -72,10 +72,6 @@ class HoldingTaxLotConfig(PortfolioConfigModel):
     quantity: PositiveFloat
     cost_basis: NonNegativeCurrencyAmount
 
-    @property
-    def cost_basis_per_unit(self) -> Decimal:
-        return self.cost_basis / Decimal(str(self.quantity))
-
 
 class HoldingAssetKind(StrEnum):
     """Discriminator for `HoldingPositionConfig` — what KIND OF THING the position is.
@@ -297,7 +293,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 asset=position.asset,
                 purchase_month_index=-int(lot.holding_period_months_at_start),
                 quantity=float(lot.quantity),
-                cost_basis_per_unit=lot.cost_basis_per_unit,
+                cost_basis=lot.cost_basis,
             )
             for position in self.holdings
             for lot in position.lots

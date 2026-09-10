@@ -37,7 +37,7 @@ def early_claim_failure() -> Finished:
                     asset=stock,
                     purchase_month_index=-24,
                     quantity=1,
-                    cost_basis_per_unit=Decimal(100),
+                    cost_basis=100,
                 )
             ],
             scheduled_obligations=[

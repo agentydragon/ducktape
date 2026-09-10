@@ -48,8 +48,8 @@ def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
         ("voo_2026_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SecuritySymbol("VOO")), 0),
     ]
     assert lots[0].quantity == 100.0
-    assert lots[0].cost_basis_per_unit == Decimal(300)
-    assert lots[1].cost_basis_per_unit == Decimal(450)
+    assert lots[0].cost_basis == Decimal(30_000)
+    assert lots[1].cost_basis == Decimal(9_000)
 
 
 def test_one_account_can_hold_multiple_holding_positions() -> None:

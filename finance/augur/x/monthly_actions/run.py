@@ -61,7 +61,7 @@ def prepare(rollout_count: int = 2, horizon_months: int = 13, *, cash_only_start
                 asset=stock,
                 purchase_month_index=-24,
                 quantity=2,
-                cost_basis_per_unit=Decimal(40),
+                cost_basis=80,
             )
         ],
         scheduled_obligations=[

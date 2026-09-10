@@ -165,7 +165,7 @@ def shared_case(*, alice_opening: Decimal = Decimal(10)) -> Case:
                     asset=VTI,
                     purchase_month_index=-12,
                     quantity=2.0,
-                    cost_basis_per_unit=Decimal(100),
+                    cost_basis=200,
                 )
             ],
             scheduled_asset_sales=[
@@ -271,7 +271,7 @@ def allocation_lots(
             asset=VTI,
             purchase_month_index=0,
             quantity=800.0,
-            cost_basis_per_unit=Decimal(80),
+            cost_basis=64000,
         ),
         InitialLot(
             lot_id="z-source-first",
@@ -280,7 +280,7 @@ def allocation_lots(
             asset=VTI,
             purchase_month_index=-24,
             quantity=100.0,
-            cost_basis_per_unit=Decimal(50),
+            cost_basis=5000,
         ),
         InitialLot(
             lot_id="bond",
@@ -289,7 +289,7 @@ def allocation_lots(
             asset=BND,
             purchase_month_index=-24,
             quantity=100.0,
-            cost_basis_per_unit=Decimal(100),
+            cost_basis=10000,
         ),
     ]
 

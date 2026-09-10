@@ -65,7 +65,7 @@ def prepare(
                 asset=SecurityKey(symbol=symbol),
                 purchase_month_index=-24,
                 quantity=500,
-                cost_basis_per_unit=Decimal(80),
+                cost_basis=40000,
             )
             for symbol in ("test-growth", "test-steady")
         ],

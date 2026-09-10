@@ -219,7 +219,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
                     asset=stock,
                     purchase_month_index=-24,
                     quantity=10,
-                    cost_basis_per_unit=Decimal(40),
+                    cost_basis=400,
                 )
             ],
             tax_profiles=[

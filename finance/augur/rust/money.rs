@@ -13,7 +13,7 @@ pub struct Money(pub i64);
 #[serde(transparent)]
 pub struct Quantity(pub i64);
 
-/// A per-unit price or cost basis, counted in the same quanta as `Money`.
+/// A per-unit price, counted in the same quanta as `Money`.
 ///
 /// Distinct from `Money` because it is not an amount: it becomes one only when
 /// multiplied by a `Units`, which carries the scale that per-unit figure is quoted
@@ -216,19 +216,6 @@ impl Money {
         operation: &'static str,
     ) -> Result<Self, ArithmeticError> {
         mul_div_round_half_up(self.0, factor.numerator(), factor.denominator(), operation).map(Self)
-    }
-
-    /// What one unit of `units` costs, if this amount is what all of them cost.
-    ///
-    /// The inverse of `PerUnit::times`, and the operation that has to be spelled rather than
-    /// stored: a per-unit figure derived once and multiplied back does not re-total, which is
-    /// why a lot keeps its basis and reports this only when asked.
-    pub fn per_unit(
-        self,
-        units: Units,
-        operation: &'static str,
-    ) -> Result<PerUnit, ArithmeticError> {
-        mul_div_round_half_up(self.0, units.scale, units.raw, operation).map(PerUnit)
     }
 
     pub fn checked_neg(self) -> Result<Self, ArithmeticError> {

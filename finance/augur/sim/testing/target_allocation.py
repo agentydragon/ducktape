@@ -124,7 +124,7 @@ def cash_band_scenario(
                 account_id="checking",
                 asset=VTI,
                 quantity=stock_units,
-                cost_basis_per_unit=PRICE,
+                cost_basis=Decimal(str(stock_units)) * PRICE,
                 purchase_month_index=0,
             ),
             InitialLot(
@@ -133,7 +133,7 @@ def cash_band_scenario(
                 account_id="checking",
                 asset=BND,
                 quantity=bond_units,
-                cost_basis_per_unit=PRICE,
+                cost_basis=Decimal(str(bond_units)) * PRICE,
                 purchase_month_index=0,
             ),
         ],
@@ -366,7 +366,7 @@ class TargetAllocationAcceptance:
             (pl.col("lot_id") == "allocation_sale_buy_p0_s1_0") & (pl.col("month_index") == 1)
         ).to_dicts()[0]
 
-        assert bought["cost_basis_per_unit_quanta"] == int(PRICE) * QUANTA_PER_UNIT
+        assert bought["basis_remaining_quanta"] == 85_000 * QUANTA_PER_UNIT
 
     def test_successive_purchases_create_separate_lots(self, backend: Backend) -> None:
         """Repeated purchases need separate acquisition dates and bases, without a configured count.

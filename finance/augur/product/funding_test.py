@@ -42,7 +42,7 @@ def lot(id_: str, account: str, asset: SecurityKey, quantity: Decimal, month: in
         asset=asset,
         purchase_month_index=month,
         quantity=quantity,
-        cost_basis_per_unit=Decimal(50),
+        cost_basis=quantity * Decimal(50),
     )
 
 

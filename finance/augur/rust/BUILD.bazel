@@ -328,3 +328,22 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "lot_basis_test",
+    srcs = ["lot_basis_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/api:finance",
+        "//finance/augur/api:portfolio",
+        "//finance/augur/model:series",
+        "//finance/augur/product:portfolio",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

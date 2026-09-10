@@ -120,7 +120,7 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -290,7 +290,7 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
                 asset=SecurityKey(symbol=symbol),
                 purchase_month_index=-1,
                 quantity=float(INITIAL_PORTFOLIO * Decimal(str(share)) / UNIT_PRICE),
-                cost_basis_per_unit=UNIT_PRICE,
+                cost_basis=(INITIAL_PORTFOLIO * Decimal(str(share))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
             )
             for symbol, share in sleeve_shares
             if share > 0.0

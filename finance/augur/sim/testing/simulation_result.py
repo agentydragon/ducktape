@@ -68,7 +68,7 @@ STATE_CHANNELS = (
                 "account_id": pl.String,
                 "asset_id": pl.String,
                 "purchase_month_index": pl.Int64,
-                "cost_basis_per_unit_quanta": pl.Int64,
+                "basis_remaining_quanta": pl.Int64,
                 "remaining_quantity_quanta": pl.Int64,
                 "quantity_scale": pl.Int64,
             }
@@ -205,12 +205,9 @@ def realized_gains(frame: pl.DataFrame, taxed: set[str]) -> pl.DataFrame:
     )
 
 
-# What a lot holding no units says about its own acquisition. A preallocated
-# target-allocation slot not yet bought into carries a placeholder price and month, which is
-# not a claim about anything while no units sit behind it.
-# What a lot actually cost and when it was bought is compared through `lot_dispositions`,
-# which carries both.
-UNHELD_LOT_PLACEHOLDERS = ("cost_basis_per_unit_quanta", "purchase_month_index")
+# An unheld lot's acquisition month is immaterial. Its remaining total basis is
+# still compared: an exhausted lot must not retain a basis residual.
+UNHELD_LOT_PLACEHOLDERS = ("purchase_month_index",)
 
 
 def held_lots(frame: pl.DataFrame) -> pl.DataFrame:

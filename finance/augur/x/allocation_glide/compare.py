@@ -49,7 +49,7 @@ def prepare() -> CompiledRun:
                 asset=asset,
                 purchase_month_index=-24,
                 quantity=500,
-                cost_basis_per_unit=Decimal(100),
+                cost_basis=50000,
             )
             for asset in (GROWTH, STEADY)
         ],

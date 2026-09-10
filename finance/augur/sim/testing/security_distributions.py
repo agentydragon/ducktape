@@ -69,7 +69,7 @@ def distribution_case(
                     asset=FUND,
                     purchase_month_index=-24,
                     quantity=UNITS,
-                    cost_basis_per_unit=PRICE,
+                    cost_basis=Decimal(str(UNITS)) * PRICE,
                 )
             ],
             security_distributions=[

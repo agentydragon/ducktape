@@ -106,7 +106,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "account_id": record["account_id"],
                 "asset_id": record["asset_id"],
                 "purchase_month_index": record["purchase_month"],
-                "cost_basis_per_unit_quanta": record["cost_basis_per_unit"],
+                "basis_remaining_quanta": record["basis_remaining"],
                 "remaining_quantity_quanta": record["units_remaining"],
                 "quantity_scale": record["quantity_scale"],
             }

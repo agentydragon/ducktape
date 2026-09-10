@@ -78,7 +78,7 @@ def compile_construction(
                 asset=asset,
                 purchase_month_index=-1,
                 quantity=float(INITIAL_WEALTH / INITIAL_UNIT_PRICE),
-                cost_basis_per_unit=INITIAL_UNIT_PRICE,
+                cost_basis=INITIAL_WEALTH,
             )
         ],
         security_distributions=[
