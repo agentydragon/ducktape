@@ -26,6 +26,7 @@ from finance.augur.api.schemas import (
 )
 from finance.augur.model.asset_key import AssetKey
 from finance.augur.model.series import SecuritySymbol
+from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.fixed_point import validate_currency_quantum
 from finance.augur.sim.product_metrics import OutcomeBasis
 
@@ -388,6 +389,21 @@ class HoldingSaleEvent(_RolloutEventBase):
     cost_basis_quanta: CurrencyQuanta
 
 
+class TlhFinancialEffectEvent(_RolloutEventBase):
+    """Aggregate settled effects of an opaque modeled TLH portfolio."""
+
+    kind: Literal["tlh_financial_effect"] = "tlh_financial_effect"
+    cause_id: str
+    portfolio_id: str
+    account_id: str
+    cash_account_id: str | None = None
+    operation: TlhOperation
+    short_term_gain_quanta: CurrencyQuanta
+    long_term_gain_quanta: CurrencyQuanta
+    basis_change_quanta: CurrencyQuanta
+    interest_income_quanta: CurrencyQuanta
+
+
 class PrivateEquityMarkerEvent(_RolloutEventBase):
     kind: Literal["private_equity_event"] = "private_equity_event"
     issuer_id: str
@@ -563,6 +579,7 @@ class PropertySaleMarkerEvent(_RolloutEventBase):
 
 type RolloutEvent = Annotated[
     HoldingSaleEvent
+    | TlhFinancialEffectEvent
     | PrivateEquityMarkerEvent
     | PrivateEquityOpportunityEvent
     | MonthlyExpenseEvent
@@ -596,6 +613,7 @@ ROLLOUT_EVENT_KIND_ORDER = (
     "private_equity_event",
     "private_equity_opportunity",
     "holding_sale",
+    "tlh_financial_effect",
     "tax_accrual",
     "tax_payment",
     "property_tax_payment",

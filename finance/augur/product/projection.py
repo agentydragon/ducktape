@@ -34,8 +34,9 @@ from finance.augur.product.wire import (
     SetRentedFractionMarkerEvent,
     TaxAccrualEvent,
     TaxPaymentEvent,
+    TlhFinancialEffectEvent,
 )
-from finance.augur.sim.events import EventLog
+from finance.augur.sim.events import EventLog, TlhOperation
 from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.scenario import ObligationType
 
@@ -140,6 +141,22 @@ def project_product_rollout(
                 cost_basis_quanta=_quanta(total["basis"]),
             )
             for (month, asset_id), total in sorted(holding_sales.items())
+        ),
+        *(
+            TlhFinancialEffectEvent(
+                month_index=row["month_index"],
+                amount_quanta=_quanta(row["cash_amount_quanta"]),
+                cause_id=row["cause_id"],
+                portfolio_id=row["portfolio_id"],
+                account_id=row["account_id"],
+                cash_account_id=row["cash_account_id"],
+                operation=TlhOperation(row["operation"]),
+                short_term_gain_quanta=_quanta(row["short_term_gain_quanta"]),
+                long_term_gain_quanta=_quanta(row["long_term_gain_quanta"]),
+                basis_change_quanta=_quanta(row["basis_change_quanta"]),
+                interest_income_quanta=_quanta(row["interest_income_quanta"]),
+            )
+            for row in rows(events.tlh_financial_effects, agent_id=primary_agent_id)
         ),
         *(
             PropertyPurchaseEvent(

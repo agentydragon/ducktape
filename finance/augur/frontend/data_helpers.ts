@@ -35,6 +35,7 @@ const ROLLOUT_EVENT_METADATA_BY_KIND: Record<RolloutEventKind, RolloutEventMetad
   private_equity_event: { label: "PE event", color: "#9333ea" },
   private_equity_opportunity: { label: "PE opportunity", color: "#6d28d9" },
   holding_sale: { label: "Holding sale", color: "#0f766e" },
+  tlh_financial_effect: { label: "TLH portfolio", color: "#047857" },
   tax_accrual: { label: "Tax accrual", color: "#b45309" },
   tax_payment: { label: "Tax payment", color: "#7c3aed" },
   property_tax_payment: { label: "Property tax", color: "#a16207", hidden: true },
@@ -305,6 +306,19 @@ export const EVENT_FORMATTERS = {
   holding_sale: {
     label: (event) => `Sold ${event.assetLabel ?? assetDisplayName(event.asset) ?? "asset"}`,
     detail: (event) => `${fmtNumber(event.units)} units; basis ${cu(event.costBasisQuanta, event._currency)}`,
+  },
+  tlh_financial_effect: {
+    label: (event) => {
+      const operation = {
+        contribution: "contribution",
+        redemption: "redemption",
+        modeled_realization: "modeled realization",
+        distribution: "distribution",
+      }[event.operation];
+      return `TLH ${operation}: ${event.portfolioId}`;
+    },
+    detail: (event) =>
+      `cash ${cu(event.amountQuanta, event._currency)}; ST gain ${cu(event.shortTermGainQuanta, event._currency)}; LT gain ${cu(event.longTermGainQuanta, event._currency)}; basis change ${cu(event.basisChangeQuanta, event._currency)}; interest ${cu(event.interestIncomeQuanta, event._currency)}`,
   },
   monthly_expense: {
     label: (event) => shortfallLabel(event, { ok: "Paid monthly expenses", shortfall: "Monthly expenses shortfall" }),

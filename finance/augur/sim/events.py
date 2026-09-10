@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from types import MappingProxyType
 from typing import Any
 
@@ -226,6 +227,33 @@ LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
 )
 
 
+class TlhOperation(StrEnum):
+    CONTRIBUTION = "contribution"
+    REDEMPTION = "redemption"
+    MODELED_REALIZATION = "modeled_realization"
+    DISTRIBUTION = "distribution"
+
+
+# Signed settled amounts, with no public-security units or constituent lot identity.
+TLH_FINANCIAL_EFFECT_SCHEMA = pl.Schema(
+    {
+        "rollout_id": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "portfolio_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "account_id": pl.Utf8(),
+        "cash_account_id": pl.Utf8(),
+        "operation": pl.Enum(TlhOperation),
+        "cash_amount_quanta": pl.Int64(),
+        "short_term_gain_quanta": pl.Int64(),
+        "long_term_gain_quanta": pl.Int64(),
+        "basis_change_quanta": pl.Int64(),
+        "interest_income_quanta": pl.Int64(),
+    }
+)
+
+
 SET_RENTED_FRACTION_EVENT_SCHEMA = pl.Schema(
     {"rollout_id": pl.Int64(), "month_index": pl.Int64(), "property_id": pl.Utf8(), "rented_fraction": pl.Float64()}
 )
@@ -313,6 +341,7 @@ class EventFrameCatalog:
 
     transfers: FrameSpec
     lot_dispositions: FrameSpec
+    tlh_financial_effects: FrameSpec
     tax_accruals: FrameSpec
     tax_breakdowns: FrameSpec
     tax_settlements: FrameSpec
@@ -333,6 +362,7 @@ class EventFrameCatalog:
         return (
             self.transfers,
             self.lot_dispositions,
+            self.tlh_financial_effects,
             self.tax_accruals,
             self.tax_breakdowns,
             self.tax_settlements,
@@ -354,6 +384,7 @@ class EventFrameCatalog:
 EVENT_FRAMES = EventFrameCatalog(
     transfers=FrameSpec("transfers", TRANSFER_EVENT_SCHEMA),
     lot_dispositions=FrameSpec("lot_dispositions", LOT_DISPOSITION_EVENT_SCHEMA),
+    tlh_financial_effects=FrameSpec("tlh_financial_effects", TLH_FINANCIAL_EFFECT_SCHEMA),
     tax_accruals=FrameSpec("tax_accruals", TAX_ACCRUAL_EVENT_SCHEMA),
     tax_breakdowns=FrameSpec("tax_breakdowns", TAX_BREAKDOWN_EVENT_SCHEMA),
     tax_settlements=FrameSpec("tax_settlements", TAX_SETTLEMENT_EVENT_SCHEMA),
@@ -453,6 +484,10 @@ class EventLog:
     @property
     def lot_dispositions(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.lot_dispositions)
+
+    @property
+    def tlh_financial_effects(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.tlh_financial_effects)
 
     @property
     def tax_accruals(self) -> pl.DataFrame:

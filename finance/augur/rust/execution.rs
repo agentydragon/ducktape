@@ -758,6 +758,33 @@ pub struct LotDisposition {
     pub realized_gain: Money,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TlhOperation {
+    Contribution,
+    Redemption,
+    ModeledRealization,
+    Distribution,
+}
+
+/// Settled aggregate component effects; not constituent security dispositions.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TlhFinancialEffect {
+    pub month: u32,
+    pub cause_id: String,
+    pub portfolio_id: String,
+    pub agent_id: String,
+    pub account_id: String,
+    pub cash_account_id: Option<String>,
+    pub operation: TlhOperation,
+    /// Positive into household cash, negative for a contribution.
+    pub cash_amount: Money,
+    pub short_term_gain: Money,
+    pub long_term_gain: Money,
+    pub basis_change: Money,
+    pub interest_income: Money,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PrivateEquityProtocolOutcome {
     pub month: u32,
@@ -986,6 +1013,7 @@ pub struct RolloutOutput {
     pub journal: Vec<JournalEntry>,
     pub transfers: Vec<TransferOutcome>,
     pub dispositions: Vec<LotDisposition>,
+    pub tlh_financial_effects: Vec<TlhFinancialEffect>,
     pub private_equity_events: Vec<PrivateEquityProtocolOutcome>,
     pub private_equity_opportunities: Vec<PrivateEquityOpportunityOutcome>,
     pub obligations: Vec<ObligationOutcome>,

@@ -69,6 +69,7 @@ macro_rules! frame_type {
     (month) => { i32 };
     (rate) => { f64 };
     (units) => { f64 };
+    (tlh_operation) => { execution::TlhOperation };
 }
 
 /// How each carry-word reads its engine field. The only two that do arithmetic are the two
@@ -82,6 +83,7 @@ macro_rules! frame_value {
     (month $row:ident, $($path:ident).+) => { $row.$($path).+ };
     (rate $row:ident, $($path:ident).+) => { rate($row.$($path).+) };
     (units $row:ident, $($path:ident).+) => { units($row.$($path).+, $row.quantity_scale) };
+    (tlh_operation $row:ident, $($path:ident).+) => { $row.$($path).+ };
 }
 
 /// Declare the canonical frames: `<frame name>: <row type> from <engine field> { columns }`.
@@ -152,6 +154,20 @@ event_frames! {
         money proceeds_quanta = proceeds,
         money realized_gain_quanta = realized_gain,
         text proceeds_account_id = proceeds_account_id,
+    }
+
+    tlh_financial_effects: TlhFinancialEffect from tlh_financial_effects {
+        text cause_id = cause_id,
+        text portfolio_id = portfolio_id,
+        text agent_id = agent_id,
+        text account_id = account_id,
+        maybe cash_account_id = cash_account_id,
+        tlh_operation operation = operation,
+        money cash_amount_quanta = cash_amount,
+        money short_term_gain_quanta = short_term_gain,
+        money long_term_gain_quanta = long_term_gain,
+        money basis_change_quanta = basis_change,
+        money interest_income_quanta = interest_income,
     }
 
     private_equity_events: PrivateEquityEvent from private_equity_events {

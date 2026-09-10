@@ -9,6 +9,7 @@ py_library(
         "//finance/augur/api:schemas",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
+        "//finance/augur/sim:events",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:product_metrics",
         "@pypi//pydantic",
