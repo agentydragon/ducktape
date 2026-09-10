@@ -6,8 +6,8 @@ py_library(
     name = "python_policy",
     srcs = ["python_policy.py"],
     deps = [
+        "//finance/augur/policy:sleeves",
         "//finance/augur/rust:simulator_ext",
-        "//finance/augur/sim:sleeves",
         "@pypi//numpy",
     ],
 )

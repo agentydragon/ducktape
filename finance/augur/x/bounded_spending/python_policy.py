@@ -14,8 +14,8 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from finance.augur.policy.sleeves import withdraw
 from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions, Finished
-from finance.augur.sim.sleeves import withdraw
 
 
 @dataclass(frozen=True)
