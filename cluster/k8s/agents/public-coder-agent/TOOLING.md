@@ -48,8 +48,9 @@ even when a Haku tool exposes a superficially similar file, shell, Git, or sandb
 
 ### GitHub identity
 
-`GH_PAT` is a non-secret placeholder that iron-proxy replaces only in authentication headers sent to
-scoped GitHub hosts. Use it exactly like a real token without printing it.
+`GH_PAT` and `GITHUB_TOKEN` are the same non-secret placeholder. iron-proxy replaces either value
+only in authentication headers sent to scoped GitHub hosts. Use them exactly like a real token
+without printing them.
 
 The expected identity and permissions are:
 

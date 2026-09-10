@@ -119,9 +119,14 @@ spec:
             # $GH_PAT as if it were a real token. A request without it is not a
             # failure, just an unauthenticated request.
             #
-            # Still not named `GITHUB_TOKEN`/`GH_TOKEN`: OpenClaw strips both from
-            # the exec tool's environment via a hardcoded denylist, so the agent
-            # would never see it. See docs/personal_agents/findings/ F7, F10, F16.
+            # Also expose the same inert placeholder under GitHub's standard
+            # `GITHUB_TOKEN` name. OpenClaw's generic exec environment filter
+            # treats it as a credential, although its current local-Gateway
+            # path can restore ambient values for native GitHub tooling. The
+            # proxy still sees only the placeholder and replaces it in scoped
+            # outbound Authorization headers. See F7, F10, F16.
+            - name: GITHUB_TOKEN
+              value: "proxy-github-placeholder"
             - name: GH_PAT
               value: "proxy-github-placeholder"
             # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists

@@ -1,9 +1,10 @@
 # iron-proxy configuration. The proxy holds the real credentials; the agent
 # holds only placeholders and never possesses them.
 #
-# `replace` mode rather than `inject`: the agent presents `$GH_PAT` on requests it
-# wants authenticated, exactly as it would a real token, and the proxy swaps the
-# value on the way out. That keeps the agent's model of its own situation
+# `replace` mode rather than `inject`: the agent presents `$GH_PAT` or
+# `$GITHUB_TOKEN` on requests it wants authenticated, exactly as it would a real
+# token, and the proxy swaps the value on the way out. That keeps the agent's
+# model of its own situation
 # accurate — there is a credential, it is mediated, it cannot be read — where
 # `inject` would attach it invisibly and leave an agent that looks for a
 # credential finding none. Rationale and measurements:

@@ -183,8 +183,9 @@ proxy environment handling.
   the obvious tightening; it is left as a follow-up so the first deployment
   matches what was validated in the lab.
 - With `sandbox.mode: "off"` there is no isolation _inside_ the boundary: the
-  agent runs as the harness, with the GitHub token in its environment. That is
-  the accepted cost of not using OpenShell — see
+  agent runs as the harness and can inspect its process environment. For
+  GitHub, that environment contains only the proxy placeholder; the real token
+  remains in iron-proxy. That is the accepted cost of not using OpenShell — see
   <../../../../docs/personal_agents/findings/openshell.md> F1 for why OpenShell was not
   used.
 - **PVC capacity enforcement.** `local-path-ovh-hdd` does not enforce requested

@@ -169,9 +169,11 @@ spec:
               value: haku
             - name: HAKU_GIT_PASSWORD
               value: proxy-haku-forgejo-placeholder
-            # Deliberately not GITHUB_TOKEN or GH_TOKEN: OpenClaw strips those
-            # exact names from tool environments. Use this like a real token;
-            # iron-proxy replaces it only in GitHub Authorization headers.
+            # Deliberately not GITHUB_TOKEN or GH_TOKEN: OpenClaw's generic exec
+            # environment filter treats those exact names as credentials, with
+            # a current local-Gateway exception for native GitHub identity.
+            # Use this explicit placeholder contract; iron-proxy replaces it
+            # only in GitHub Authorization headers.
             - name: GH_PAT
               value: proxy-github-placeholder
             # Read-only kubeconfig mounted at ~/.kube/config where kubectl

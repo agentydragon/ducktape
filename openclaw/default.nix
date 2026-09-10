@@ -73,10 +73,11 @@ let
   # heavyweight, infrequently-used tooling such as checkov stays available via
   # the repository's development shell.
   #
-  # `gh` normally reads GH_TOKEN/GITHUB_TOKEN, but OpenClaw deliberately strips
-  # those names from executed commands. GH_PAT is the proxy-substituted,
-  # non-secret credential contract for this agent, so expose a compatible `gh`
-  # wrapper rather than requiring every call site to re-export it.
+  # `gh` normally reads GH_TOKEN/GITHUB_TOKEN. OpenClaw's generic exec
+  # environment filter treats those names as credentials, with a current
+  # local-Gateway exception for a native GitHub identity. GH_PAT is the
+  # proxy-substituted, non-secret credential contract for this agent, so expose
+  # a compatible `gh` wrapper rather than relying on that exception.
   ghWithProxyToken = pkgs.writeShellScriptBin "gh" ''
     export GH_TOKEN="''${GH_PAT:?GH_PAT is required for GitHub CLI authentication}"
     exec ${pkgs.gh}/bin/gh "$@"
