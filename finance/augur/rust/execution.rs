@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     ledger::{AccountRef, JournalEntry},
-    money::{Money, PerUnit, Quantity, WIRE_RATE_SCALE},
+    money::{Money, Quantity, WIRE_RATE_SCALE},
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
