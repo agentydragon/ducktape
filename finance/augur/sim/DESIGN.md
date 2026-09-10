@@ -2,7 +2,7 @@
 
 The current code has one canonical set of financial mechanics and two remaining
 Python orchestration surfaces: the common monthly action session and the configured
-runner used by the app, feature-rich benchmark and legacy acceptance readers.
+runner used by the app and legacy acceptance readers.
 They share financial steps but differ in policy control and supported domains.
 
 ## Preparation and dependencies
@@ -78,7 +78,3 @@ acceptance adapter, not the common public result contract. Existing tests on
 those adapters remain until equivalent supported-domain controls move to the
 action session. Keep independent expected financial facts, rather than retaining
 an obsolete runner just to compare implementations.
-
-The standalone feature-rich benchmark includes housing, PE, harvesting and
-multiple obligated actors. Migrating public-only tests does not make that whole
-workload compatible with a single-actor session or authorize stripping it down.

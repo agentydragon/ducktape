@@ -264,13 +264,12 @@ use this same session, not a second policy interface.
 
 P12 migrates the remaining configured Python consumers to common actions/results
 and removes implicit public-portfolio strategy, preserving required existing
-housing/PE capabilities. The feature-rich benchmark, app and legacy acceptance
+housing/PE capabilities. The app and legacy acceptance
 readers remain. Their configured allocation proposer is Python-owned and reuses
 shared sleeve helpers; retiring its implicit schema/orchestration is distinct from
 moving the strategy's implementation. The remaining `engine.rs::simulate*`
 configured helpers are test-only, not a second public driver.
-ACCEPT moves supported consumers to the common session; BENCH retains its
-housing/PE/harvest/multiple-actor dependencies. Existing Python funding, common
+ACCEPT moves supported consumers to the common session. Existing Python funding, common
 reporting and held-bond capture are reused, not reimplemented. New `product/`
 features are deferred; its remaining adapter work must simplify existing behavior
 or retire legacy execution. The roadmap names the narrow harvesting,

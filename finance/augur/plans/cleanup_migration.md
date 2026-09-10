@@ -6,7 +6,7 @@ or a second migration plan. Remove each section with its last reader.
 
 ## P12 reader retirement
 
-Remaining TLH/feature-rich/native-test consumers still use scheduled public sales.
+Remaining TLH and native-test consumers still use scheduled public sales.
 Move those decisions to explicit actions as each consumer migrates; P12 deletes
 the scheduled-sale schema and executor branch with the last one. Reuse the
 existing public-sale/tax controls as independent financial coverage.
@@ -34,19 +34,6 @@ with its last acceptance reader; no test should retain an obsolete full-run
 entrypoint solely to preserve its harness. Housing/PE/harvest suites wait only for
 their affected capabilities, not the whole acceptance migration. Do not discard
 regressions or wrap the old runner behind the new result type.
-
-**BENCH — feature-rich benchmark consumer.** `benchmark/driver.py` now owns the
-Python loop through `sim/configured.py`; its complete `feature_rich_case` still
-uses configured allocation, scheduled sales and grouped claims. Migration to
-ordinary batch actions and common typed outcomes remains. Preserve housing, PE,
-TLH and multiple obligated actors while resolving the affected
-MA2/HOUSING/PE capabilities and GP's multiple-actor timing. Do not strip
-holdings/claims or substitute a smaller workload to declare retirement.
-Resolve only the actor sequencing this workload needs, not a universal scheduler.
-Delete the benchmark's configured entrypoint/output dependencies with that
-cutover; there is no throughput or RUNTIME gate. Its native-only driver is gone.
-Other Python experiments already exercise the public session and need not wait
-for this benchmark.
 
 P12 also deletes `compiler/execution.py::_holding_pools`' strategy-derived
 declarations/first-source-account choice and

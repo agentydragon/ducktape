@@ -74,8 +74,8 @@ and PE can still await their named P12 migrations. Their deferral does not permi
 native TLH state/formulas to remain.
 
 The draft removes `rust/engine/tlh.rs`, native harvest/give-back state and lowering,
-and `sim/tlh_harvest.py`. Scenario/compiler, portfolio-source configuration,
-benchmark construction and acceptance readers now use the component contract.
+and `sim/tlh_harvest.py`. Scenario/compiler, portfolio-source configuration and
+acceptance readers now use the component contract.
 Verify actual configured sales, funding, distributions and failure paths under the
 revised Python-owned session, request types and allocation proposer before closing
 MA2; source deletion alone is not financial acceptance. Keep independent

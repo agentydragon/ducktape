@@ -352,8 +352,7 @@ The remaining legacy acceptance suites in `sim/testing/` assert integer answers 
 - federal long-term-capital-gain stacking and tax accrual;
 - quarterly estimated-tax payments, aggregate safe-harbor Q4 computation,
   January true-up, tax-liability settlement, and funded/unfunded tax-payment
-  events;
-- generated benchmark fixtures at 17 rollouts.
+  events.
 
 The Rust ledger also records tax expense/liability accrual entries, tax
 prepayments and settlement, and nets capital gains/losses once per taxpayer so
@@ -483,8 +482,7 @@ primitives, not action/observation classes or a session lifecycle. Public caller
 use `sim/session.py` or the remaining `sim/configured.py` control. Python codecs
 lower prepared facts and requests privately and decode observed facts and financial
 results once; Python adds its receipts and stop state. File serialization belongs
-to explicit I/O callers. The standalone native CLI
-and native benchmark month loop have been removed.
+to explicit I/O callers.
 
 Scenario features the prepared input cannot express are refused rather than encoded without them:
 [docs/execution_boundary.md](docs/execution_boundary.md).
@@ -500,18 +498,9 @@ Actor tests exercise these calls directly. Remaining test-only configured
 `engine.rs::simulate*` helpers still drive existing acceptance readers; they are
 not exported production runtimes.
 
-The Python-controlled feature-rich benchmark lives in <../benchmark/README.md>.
-It measures the configured runner, including native financial steps and the
-Python-owned TLH model.
-
 ## Targets
 
 ```text
 //finance/augur/rust:simulator_ext
 //finance/augur/rust:simulator_test
-//finance/augur/benchmark:driver_bin
 ```
-
-The benchmark requires an explicit population size and capture mode. Dense and
-compact exercise the same feature-rich financial workload; historical native-only
-timings are not comparable to the Python driver without matching measurement scope.

@@ -188,8 +188,7 @@ pub fn simulate_validated(
 /// Run every rollout while retaining dense monthly state and compatibility events.
 ///
 /// Unlike [`simulate`], this omits the balanced journal because the Python
-/// compatibility output has no corresponding channel. This is the apples-to-apples dense
-/// benchmark and backend handoff path; all canonical event inputs remain present.
+/// compatibility output has no corresponding channel. All canonical event inputs remain present.
 #[cfg(test)]
 pub fn simulate_dense(fixture: &ExecutionInput) -> Result<SimulationOutput, SimulationError> {
     simulate_dense_validated(ValidatedInput::new(fixture)?)
@@ -222,7 +221,7 @@ fn simulate_with_capture(
 
 /// Run every rollout while retaining only fixed-size per-rollout summaries.
 ///
-/// This is the population/benchmark path. It executes the same state machine
+/// This executes the same state machine
 /// as [`simulate`] without allocating monthly snapshots, journals, or event
 /// traces for every rollout.
 #[cfg(test)]

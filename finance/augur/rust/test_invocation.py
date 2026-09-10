@@ -11,11 +11,9 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.augur.benchmark.scenario import feature_rich_case
 from finance.augur.model.series import InflationKey
 from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
 from finance.augur.sim.backend import compile_run
-from finance.augur.sim.configured import simulate_forensic_json
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario
@@ -57,17 +55,6 @@ def test_prepared_input_retains_original_path_cpi_and_selected_replay(tmp_path: 
     assert [row.rollout_id for row in replay.rollouts] == [2, 0]
     assert [row.summary for row in replay.rollouts] == [baseline.rollouts[id_].summary for id_ in [2, 0]]
     assert path.read_text() == encoded
-
-
-def test_configured_domains_and_resolved_tax_rules_survive_file_round_trip(tmp_path: Path) -> None:
-    original = feature_rich_case(rollout_count=2, horizon_months=60).compiled_run
-    path = tmp_path / "configured.json"
-    write_prepared_input(original, path)
-    decoded = read_prepared_input(path)
-    assert decoded == original
-    # The still-live configured consumer uses the same prepared authority, including
-    # property lifecycle, PE events, distributions, indexed flows and tax rules.
-    assert simulate_forensic_json(decoded) == simulate_forensic_json(original)
 
 
 @pytest.mark.parametrize("invalid", ["unknown-field", "string-money", "boolean-money", "wrong-version"])

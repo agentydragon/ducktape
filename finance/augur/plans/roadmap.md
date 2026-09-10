@@ -41,7 +41,7 @@ and responsibility docstrings beside the implementing modules.
   optimizing lenders, landlords, or a general-equilibrium economy.
 
 The near-term policy milestone is **one batch action interface and Python-controlled
-outer loops everywhere**, including examples, benchmarks and the app. A Python
+outer loops everywhere**, including examples and the app. A Python
 `run(...)` convenience function uses the same session as an experiment-owned loop.
 The Python session owns phase ordering and rollout lifecycle; native worlds retain
 financial books, settlement and taxes. The caller advances between decision
@@ -182,7 +182,6 @@ Paths are relative to `finance/augur/`. Each row names the change that removes i
 | Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`. | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.      | GT, TAX        |
 | `sim/configured.py` still drives implicit allocation/grouped claims and legacy output methods over the shared Python session.                                    | Move callers to ordinary batch actions/common results and delete those configured branches. Retire test-only configured native full-run helpers with their readers. | P12            |
 | Configured forensic output has a separate acceptance-test result model and adapter.                                                                              | Move real suites to common typed results; delete old test contracts with last readers.                                                                              | ACCEPT         |
-| The Python benchmark still consumes the configured runner and its legacy serialized outputs.                                                                     | Move the complete workload to common actions/results before deleting its configured dependencies.                                                                   | BENCH          |
 
 The user-facing experiment **RUN** must use canonical execution.
 
@@ -220,12 +219,7 @@ flowchart TB
     HOUSING --> APP
     PE --> APP
     APP --> P12
-    MA2 --> BENCH["BENCH: feature-rich workload on common actions/results"]
-    HOUSING --> BENCH
-    PE --> BENCH
-    GP -- required multiple-actor sequencing --> BENCH
     GP -. multiple-taxpayer acceptance cases only .-> ACCEPT
-    BENCH --> P12
     MA2 -. affected harvest suites only .-> ACCEPT
     HOUSING -. affected housing suites only .-> ACCEPT
     PE -. affected PE suites only .-> ACCEPT
@@ -267,9 +261,7 @@ their implementations are not backlog. APP still removes configured funding
 lowering and preserves existing scope. The current app has one decision-making
 owner; scripted counterparties do not require a general multi-policy scheduler.
 New adaptive HOUSE/BOND features are not prerequisites for preserving current
-behavior. BENCH names the actual feature-rich workload's prerequisites; its
-housing/PE/harvest/multiple-actor requirements are not waived by calling it a
-benchmark. Supported ACCEPT slices remain independently landable. The
+behavior. Supported ACCEPT slices remain independently landable. The
 [TLH migration plan](managed_portfolio.md) specifies MA1–MA3: one opaque Python
 component owns private positions/basis and monthly modeled losses. The native
 engine settles financial effects and captures read-only statements, not a mirrored
@@ -361,9 +353,9 @@ large, preserving the named completion condition and atomic caller updates.
 The **Needs** column names immediate prerequisites; inherited prerequisites still
 apply only to the consuming slice. No convergence node waits for RUNTIME/GE.
 
-| Unit                                          | Independently reviewable change                                                                                                                                                                                                                                                                                                                                     | Needs              | Evidence required before calling it complete                                                                                                                                                                                                                                                                              |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P12 — retire configured controls and adapters | Move benchmark and app consumers from the configured Python loop to ordinary batch actions/common results. Land supported slices independently; extend the common action path only for capabilities existing callers require. Remove configured entrypoints, allocator orchestration, policy schemas and test-only native full-run helpers with their last readers. | ACCEPT, BENCH, APP | Every production caller uses the common Python action session; native tests exercise canonical steps. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
+| Unit                                          | Independently reviewable change                                                                                                                                                                                                                                                                                                                       | Needs       | Evidence required before calling it complete                                                                                                                                                                                                                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P12 — retire configured controls and adapters | Move app consumers from the configured Python loop to ordinary batch actions/common results. Land supported slices independently; extend the common action path only for capabilities existing callers require. Remove configured entrypoints, allocator orchestration, policy schemas and test-only native full-run helpers with their last readers. | ACCEPT, APP | Every production caller uses the common Python action session; native tests exercise canonical steps. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
 
 ### Domain composition and existing-app retirement
 
@@ -388,7 +380,7 @@ complete APP/P12 retirement, but does not gate public-portfolio experiments,
 funding, reporting or TLH-component work. Do not start their implementation merely
 to finish deleting the legacy app runner.
 
-Scheduled public sales are a separate generic scenario/benchmark migration, not
+Scheduled public sales are a separate generic scenario migration, not
 an input currently constructed by `ProductService`. Move their author-specified
 decisions to explicit actions and remove the legacy scheduled FIFO reader with
 its last consumer; public funding does not depend on that work.
@@ -402,7 +394,6 @@ atomic caller updates and deletion criteria.
 | ------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
 | IDTYPES | Distinct entity IDs, not prefix renaming; deferred until a concrete need. | None; not a gate to product composition        |
 | ACCEPT  | Move remaining acceptance suites to common typed traces/receipts.         | Expanded capabilities only for affected suites |
-| BENCH   | Move the full feature-rich benchmark to common actions and typed results. | MA2, HOUSING, PE, relevant GP sequencing       |
 
 Reuse the typed `CompiledRun` and exact total opening basis from
 `InitialLot.cost_basis`. MA1's representation and phase are agreed, not an open
@@ -575,7 +566,7 @@ all the others to be solved first.
    APP/P12. **MA3** remains a future runnable paired comparison. Continue
    **STUDY** consumers alongside cleanup. Scope GT/GS and continue independent
    BIND/SCORE work. The `product/` shell gets no new feature agenda.
-3. **GHOUSE and GPE remain deferred.** BENCH and full APP/P12 retirement retain
+3. **GHOUSE and GPE remain deferred.** Full APP/P12 retirement retains
    the capabilities they actually need; do not remove those regressions or add
    a compatibility driver to claim convergence. Public reader deletions proceed.
    **GL and RUNTIME/GE remain parked** without outgoing gates to this work.
