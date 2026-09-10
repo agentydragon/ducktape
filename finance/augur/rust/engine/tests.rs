@@ -3,9 +3,9 @@
 use crate::execution::{
     AccountSpec, BondSpec, DistributionSpec, DistributionTaxSliceSpec, HoldingPoolSpec,
     InitialLotSpec, JurisdictionIdentitySpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
-    PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec, ScheduledPropertyPurchaseSpec,
-    ScheduledSaleSpec, ScheduledTransferSpec, SeriesIndexedAmountKind, SeriesIndexedAmountSpec,
-    SeriesSpec, TaxProfileSpec,
+    RecurringObligationSpec, ScenarioSpec, ScheduledPropertyPurchaseSpec, ScheduledSaleSpec,
+    ScheduledTransferSpec, SeriesIndexedAmountKind, SeriesIndexedAmountSpec, SeriesSpec,
+    TaxProfileSpec,
 };
 use crate::tax::TaxBracket;
 
@@ -569,10 +569,18 @@ fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
             proceeds_account_id: "checking".into(),
         })
         .collect();
-    for (input, year_end_tax) in [
-        (scheduled, Money(2_000)),
-        (stopped_book_fixture(15, 9).0, Money(50)),
-    ] {
+    let mut stopped = scheduled.clone();
+    stopped.scenario.horizon_months = 15;
+    for series in &mut stopped.series {
+        series.values.extend([*series.values.last().unwrap(); 2]);
+        series.snapshots += 2;
+    }
+    stopped.scenario.scheduled_sales.truncate(1);
+    stopped.scenario.scheduled_sales[0].units = Quantity(1_000_000);
+    stopped.scenario.obligations[0].amount_due = Money(1_000).into();
+    stopped.scenario.obligations[1].amount_due = Money(999_999).into();
+    // One explicit 1,000 sale with 500 basis accrues 50 tax; m12 cannot fund its claim group.
+    for (input, year_end_tax) in [(scheduled, Money(2_000)), (stopped, Money(50))] {
         ValidatedInput::new(&input).unwrap();
         let product = ProductInputs::resolve(&input, "alice").unwrap();
         for capture in [
@@ -1477,66 +1485,65 @@ pub(super) fn mid_horizon_property_fixture(
 
 #[test]
 fn mid_horizon_property_mark_and_sale_share_the_purchase_anchor() {
-    for financed in [false] {
-        for closing_cost_ppb in [0, 100_000_000] {
-            let input = mid_horizon_property_fixture(financed, closing_cost_ppb);
-            let output = simulate(&input).unwrap();
-            let metrics = simulate_product_metrics(&input, "alice").unwrap();
-            let property_slot = crate::product::BASE_METRIC_NAMES
-                .iter()
-                .position(|name| *name == "property_value_quanta")
-                .unwrap();
-            for rollout in &output.rollouts {
-                assert_eq!(rollout.failed_month, None);
-                assert_eq!(rollout.property_purchases[0].purchase_price, Money(100_000));
+    let financed = false;
+
+    for closing_cost_ppb in [0, 100_000_000] {
+        let input = mid_horizon_property_fixture(financed, closing_cost_ppb);
+        let output = simulate(&input).unwrap();
+        let metrics = simulate_product_metrics(&input, "alice").unwrap();
+        let property_slot = crate::product::BASE_METRIC_NAMES
+            .iter()
+            .position(|name| *name == "property_value_quanta")
+            .unwrap();
+        for rollout in &output.rollouts {
+            assert_eq!(rollout.failed_month, None);
+            assert_eq!(rollout.property_purchases[0].purchase_price, Money(100_000));
+            assert_eq!(
+                rollout.months[3].properties[0].adjusted_basis,
+                Money(100_000)
+            );
+            // Buy at index 200; the held property follows 240, 300 and 360.
+            // Snapshot 5 is the opening sale-month book, before disposal.
+            for (snapshot, expected) in [0, 0, 0, 120_000, 150_000, 180_000, 0]
+                .into_iter()
+                .enumerate()
+            {
                 assert_eq!(
-                    rollout.months[3].properties[0].adjusted_basis,
-                    Money(100_000)
+                    metrics.base_series[property_slot][snapshot * 2 + rollout.rollout_id as usize],
+                    expected
                 );
-                // Buy at index 200; the held property follows 240, 300 and 360.
-                // Snapshot 5 is the opening sale-month book, before disposal.
-                for (snapshot, expected) in [0, 0, 0, 120_000, 150_000, 180_000, 0]
-                    .into_iter()
-                    .enumerate()
-                {
-                    assert_eq!(
-                        metrics.base_series[property_slot]
-                            [snapshot * 2 + rollout.rollout_id as usize],
-                        expected
-                    );
-                }
-                let sale = &rollout.property_sales[0];
-                let seller_cost = if closing_cost_ppb == 0 { 0 } else { 18_000 };
-                let payoff = if financed { 58_000 } else { 0 };
-                // The outcome's gross_proceeds is AFTER seller costs, before debt payoff.
-                assert_eq!(sale.gross_proceeds, Money(180_000 - seller_cost));
-                assert_eq!(sale.mortgage_payoff, Money(payoff));
-                assert_eq!(
-                    sale.net_cash_to_owner,
-                    Money(180_000 - seller_cost - payoff)
-                );
-                assert_eq!(sale.realized_gain, Money(80_000 - seller_cost));
-                assert_eq!(sale.depreciation_recapture, Money(0));
-                assert_eq!(sale.section_121_exclusion, Money(0));
-                let reported_mark =
-                    metrics.base_series[property_slot][5 * 2 + rollout.rollout_id as usize];
-                assert_eq!(sale.gross_proceeds.0 + seller_cost, reported_mark);
-                let cash = rollout.months[6]
-                    .balances
-                    .iter()
-                    .find(|balance| balance.account == AccountRef::new("alice", "checking"))
-                    .unwrap()
-                    .balance;
-                assert_eq!(cash, Money(280_000 - seller_cost));
-                assert!(rollout.journal.iter().all(|entry| {
-                    entry
-                        .postings
-                        .iter()
-                        .map(|posting| i128::from(posting.amount.0))
-                        .sum::<i128>()
-                        == 0
-                }));
             }
+            let sale = &rollout.property_sales[0];
+            let seller_cost = if closing_cost_ppb == 0 { 0 } else { 18_000 };
+            let payoff = if financed { 58_000 } else { 0 };
+            // The outcome's gross_proceeds is AFTER seller costs, before debt payoff.
+            assert_eq!(sale.gross_proceeds, Money(180_000 - seller_cost));
+            assert_eq!(sale.mortgage_payoff, Money(payoff));
+            assert_eq!(
+                sale.net_cash_to_owner,
+                Money(180_000 - seller_cost - payoff)
+            );
+            assert_eq!(sale.realized_gain, Money(80_000 - seller_cost));
+            assert_eq!(sale.depreciation_recapture, Money(0));
+            assert_eq!(sale.section_121_exclusion, Money(0));
+            let reported_mark =
+                metrics.base_series[property_slot][5 * 2 + rollout.rollout_id as usize];
+            assert_eq!(sale.gross_proceeds.0 + seller_cost, reported_mark);
+            let cash = rollout.months[6]
+                .balances
+                .iter()
+                .find(|balance| balance.account == AccountRef::new("alice", "checking"))
+                .unwrap()
+                .balance;
+            assert_eq!(cash, Money(280_000 - seller_cost));
+            assert!(rollout.journal.iter().all(|entry| {
+                entry
+                    .postings
+                    .iter()
+                    .map(|posting| i128::from(posting.amount.0))
+                    .sum::<i128>()
+                    == 0
+            }));
         }
     }
 }

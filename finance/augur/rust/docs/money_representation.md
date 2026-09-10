@@ -48,19 +48,18 @@ Rational arithmetic was costed as a dependency and declined. `num-rational` redu
 `round()` is the half-away-from-zero rule we already implement -- so it would move no number
 while charging the rollout loop. Worse, the one place a rational looks like the answer is
 where it fails: mortgage amortization compounds over 360 months, and a rational's terms grow
-exponentially in the exponent. That path stays fixed-point at `CONTRACT_SCALE`, deliberately,
+exponentially in the exponent. The Python mortgage component uses a fixed-point contract scale,
 because wide fixed-point is the right representation for iterated multiplication.
 
 ## What stays a bare integer, and why
 
-Thirteen call sites still hand `mul_div_round_half_up` three integers, and they are meant to.
+Some operations use `mul_div_round_half_up` directly.
 They are not money times a multiplier; they are arithmetic _within_ the fixed-point rate
 domain, where the operands are rates and the result is a rate:
 
 - the TLH harvest curve -- an embedded-gain and a drawdown derived as rates, fed through
   `pow_half_ppb` and `mul_ppb`. Exponentiation is where a rational's terms explode, and the
   curve's inputs are clamped to the grid, so they belong on it.
-- mortgage amortization at `CONTRACT_SCALE`, for the same reason over 360 periods.
 - `pe_sellable_units`, which composes two rates: as a rational the numerator would be 10^18 at
   the entirely ordinary "100% of 100%", and overflow an `i64`.
 - the mortgage-interest deduction, which accumulates across mortgages in `i128` and rounds

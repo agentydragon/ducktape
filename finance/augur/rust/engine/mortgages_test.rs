@@ -28,6 +28,33 @@ fn mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff() {
         account: AccountRef::new("alice", "reserve"),
         opening_balance: Money(3_000),
     });
+    input
+        .scenario
+        .obligations
+        .push(crate::execution::ObligationSpec {
+            month: 3,
+            obligation_id: "ordinary".into(),
+            obligation_type: "rent".into(),
+            from: AccountRef::new("alice", "checking"),
+            to: AccountRef::new("world", "checking"),
+            amount_due: Money(2).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: 0,
+        });
+    input
+        .scenario
+        .property_tax_policies
+        .push(crate::execution::PropertyTaxPolicySpec {
+            property_id: "test-home".into(),
+            owner_agent_id: "alice".into(),
+            from_account_id: "checking".into(),
+            tax_authority_agent_id: "world".into(),
+            tax_authority_account_id: "checking".into(),
+            annual_tax_rate_ppb: Some(12_000_000),
+            start_month: 3,
+            end_month: None,
+        });
     let prepared = world::Prepared::new(input).unwrap();
     let mut world = prepared
         .world(0, vec![], CaptureMode::Forensic, None, None)
@@ -81,7 +108,24 @@ fn mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff() {
         world.assemble_claims(&installments).unwrap();
         if matches!(month, 3 | 4) {
             let scope = world.scope("alice").unwrap();
-            let claim = world.observe(&scope).claims().next().unwrap().id;
+            let observation = world.observe(&scope);
+            let kinds = observation
+                .claims()
+                .map(|claim| claim.obligation_type)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                kinds,
+                if month == 3 {
+                    vec!["rent", "mortgage_payment", "property_tax"]
+                } else {
+                    vec!["mortgage_payment", "property_tax"]
+                }
+            );
+            let claim = observation
+                .claims()
+                .find(|claim| claim.obligation_type == "mortgage_payment")
+                .unwrap()
+                .id;
             let checking = world.account_balance("alice", "checking").unwrap();
             assert!(world.paid_mortgages().is_empty());
             let action = actors::Action::PayClaim(payments::PayClaim {
@@ -100,6 +144,7 @@ fn mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff() {
                 world.account_balance("alice", "checking").unwrap(),
                 checking
             );
+            assert!(!world.settle_claims().unwrap().failed);
         }
         assert_eq!(
             world.mortgage_principal("test-mortgage").unwrap(),
