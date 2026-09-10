@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # Measurement, not production: the benchmark exists to time an engine, and it reads the
 # scenario scaffolding in `sim/testing/` to do it.
@@ -26,5 +26,27 @@ py_library(
         "//finance/augur/sim/testing:case",
         "@pypi//jaxtyping",
         "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "driver",
+    srcs = ["driver.py"],
+    deps = [
+        ":scenario",
+        "//finance/augur/sim:configured",
+        "//finance/augur/sim:prepared",
+    ],
+)
+
+py_test(
+    name = "driver_test",
+    srcs = ["driver_test.py"],
+    deps = [
+        ":driver",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

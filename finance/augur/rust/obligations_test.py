@@ -12,7 +12,6 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band import Raise, cash_band
 from finance.augur.policy.funding import fund_claims
 from finance.augur.policy.sleeves import withdraw
-from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
 from finance.augur.sim.books import Book
 from finance.augur.sim.results import (
     ClaimId,
@@ -36,6 +35,7 @@ from finance.augur.sim.scenario import (
     Scenario,
     ScheduledObligation,
 )
+from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
 from finance.augur.sim.testing.case import Case
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))

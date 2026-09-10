@@ -490,7 +490,6 @@ impl NativeSession {
     #[new]
     #[pyo3(signature = (run, actor, rollout_ids, component_observations, *, capture = "forensic", configured = false, product_actor = None))]
     fn new(
-        py: Python<'_>,
         run: &Bound<'_, PyAny>,
         actor: Option<&str>,
         rollout_ids: Vec<u32>,
@@ -514,7 +513,8 @@ impl NativeSession {
             .into_iter()
             .map(|(id, values)| (id, values.into_iter().map(Into::into).collect()))
             .collect();
-        let session = py
+        let session = run
+            .py()
             .detach(|| {
                 actors::Session::with_options(
                     input,

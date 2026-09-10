@@ -96,16 +96,6 @@ py_test(
 )
 
 py_library(
-    name = "tlh_harvest",
-    srcs = ["tlh_harvest.py"],
-    deps = [
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "fixed_point",
     srcs = ["fixed_point.py"],
     deps = [
@@ -124,19 +114,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "tlh_harvest_test",
-    srcs = ["tlh_harvest_test.py"],
-    deps = [
-        ":tlh_harvest",
-        "//:conftest",
-        "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
