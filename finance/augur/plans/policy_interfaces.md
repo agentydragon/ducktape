@@ -6,9 +6,10 @@ reuse existing domain types and introduce fields only for a supported consumer.
 
 The boundary is economic agency: a policy sees information available to its actor
 and requests actions that actor could take. The environment owns contracts,
-execution and consequences. Python versus Rust is an implementation choice below
-that boundary. Rule-driven brokers, lenders and tax authorities suffice; this
-does not require a strategic many-agent economy.
+execution and consequences. **Python owns the outer loop for every consumer**, including
+the app; only the implementation inside each financial step is a Python/Rust choice.
+Rule-driven brokers, lenders and tax authorities suffice; this does not require a
+strategic many-agent economy.
 
 ## `observations.py`
 
@@ -112,10 +113,11 @@ their ordered lists and financial month, returning next-month observations for
 continuing paths or final results. It never requests another decision for the same
 actor/month. Terminal results retain the action and reason that stopped a path.
 
-The calling experiment can own the outer monthly loop: start the session,
+The calling experiment owns the outer monthly loop in Python: start the session,
 dispatch observations to policies, submit their responses, repeat until
-finished. A library `run(...)` helper can own that loop when custom orchestration
-is unnecessary. The executor's `advance` owns financial time evolution between
+finished. An optional Python `run(...)` helper uses the same session when custom
+orchestration is unnecessary; the app also uses this interface, not a Rust full-run
+entrypoint. The executor's `advance` owns financial time evolution between
 decisions: calendar/event ordering, accruals, settlement and taxes. The caller does not
 reimplement those rules or advance past unanswered decision opportunities.
 
@@ -126,12 +128,14 @@ unpaid. Its supported trades retain their explicitly declared immediate-cash
 control; this is not a promise about real products' settlement delays.
 Ordering between additional decision-making actors and expanded product/housing
 timing remain GP choices, not an accident of batch row order. Books and paths
-stay in the existing executor; native and Python drivers share its mechanics.
+stay in the existing executor. Native unit tests may drive the step primitives;
+production consumers converge on the Python loop, not two supported drivers.
 
-The initial stepping/bridge work uses Rust execution. RUNTIME/GE separately
-reevaluate that language choice, including execution strategy, ragged output
-layout and notebook usability. A Python executor would own the same financial
-time evolution; the economic boundary is not a permanent Python/Rust boundary.
+The initial action session uses Rust financial-step execution. RUNTIME/GE separately
+reevaluate those internals, including execution strategy, ragged output layout and
+notebook usability. They do not gate interface consolidation or decide who owns
+the loop. A Python implementation of a step would own the same financial time
+evolution; it replaces the internals, not the session's economic contract.
 
 ### One batch-shaped policy API
 
@@ -142,8 +146,10 @@ row while routing its per-path memory; it returns the same keyed response batch.
 Neither the engine nor runner dispatches through a separate scalar policy hook.
 
 GL compares that adapter with a directly batch-authored function on the same
-workload. It chooses data representation and evaluates costs/usability, not
-whether to maintain scalar and batch engine APIs.
+workload. Start with one concrete typed representation and use measured costs/usability
+to revise it atomically, not to postpone convergence or maintain scalar and batch
+engine APIs. A failed cost check blocks the affected workload's cutover, not all
+consumer migration.
 
 `Batch` leaves row/column layout, ragged actions/lots and chunk size undecided.
 Only active rollouts participate in a monthly decision batch.
@@ -181,8 +187,9 @@ never the future realized path.
 The landed native actor loop in `rust/engine/actors.rs` observes a bill and accepts
 `[Sell(...), PayClaim(...)]` in one batch response. Its native tests cover immediate
 sale cash, request/result identity, lot/basis/tax reconciliation and a
-non-sells-first action chain. P7E adds a separately runnable consumer with CI
-coverage of its real CLI and generated financial inputs.
+non-sells-first action chain. The landed `x/monthly_actions` consumer has CI
+coverage of its real CLI and generated financial inputs; P9 migrates it to the
+Python session and removes its native callback driver.
 
 A failing middle action must leave the successful prefix intact, apply none of
 the failed action, and execute neither later actions nor later policy calls for
@@ -197,11 +204,14 @@ are settled. An unpaid due
 claim stops that example after the action list, distinctly from an invalid action.
 GP gates expanded product/housing and multi-policy-actor timing, not this first
 integration. No retry/default/recovery mechanism is part of this interface.
-The existing opening-month/all-or-none cases remain spending-probe parity controls, not
-the destination contract. GL decides batch data representation; RUNTIME/GE
-decides executor placement. If GE retains hybrid execution, P9 promotes the
-measured bridge with the native actor loop and P8's helpers; otherwise replan the
-language-specific steps. P11 migrates executable experiments; P12 cuts over
-configured consumers and removes implicit
-public-portfolio strategy. The roadmap owns these dependencies and their
-acceptance criteria; this sketch does not introduce another prerequisite chain.
+The existing opening-month/all-or-none cases are spending-probe controls, not
+the destination contract. Migrated consumers must explicitly test and explain
+timing/funding differences rather than hide them in a compatibility runner.
+P9 consumes P8's declaration slice and replaces the native actor driver with the
+general Python session. P11 uses helpers and compact capture to migrate experiments
+and retire the scalar amount/weight callbacks plus spending-only Python prototype.
+P12 migrates configured consumers and removes old full-run loops and implicit
+public-portfolio strategy, preserving required existing housing/PE capabilities.
+RUNTIME/GE can later change step internals without delaying this sequence.
+The roadmap owns dependencies, per-consumer deletion checkpoints and acceptance;
+this sketch does not introduce another prerequisite chain.
