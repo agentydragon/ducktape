@@ -15,7 +15,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: forgejo-agentydragon-state-transfer-v4
+  name: forgejo-agentydragon-state-transfer-v5
   namespace: tofu-state
 spec:
   backoffLimit: 0
@@ -82,7 +82,9 @@ spec:
               # OpenTofu may serialize equivalent state differently across
               # versions. Compare its resource-instance addresses instead of
               # serialized bytes; no state values are written to the log.
+              cd /work/source
               timeout 90s env PGPASSWORD="$OLD_PGPASSWORD" tofu state list | LC_ALL=C sort > /work/source.resources
+              cd /work/destination
               timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state list | LC_ALL=C sort > /work/destination.resources
               cmp -s /work/source.resources /work/destination.resources
               resource_count="$(wc -l < /work/destination.resources)"
