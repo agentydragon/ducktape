@@ -5,14 +5,14 @@ Probabilistic simulator of a multi-agent economic system. Given a
 policies — augur produces a distribution over trajectories of state by
 sampling many rollouts.
 
-This package contains the generic framework: typed entity model, vectorized
-engine, real-estate / ownership / private-equity / tax math, exogenous models,
+This package contains typed financial declarations, stateful execution,
+real-estate / ownership / private-equity / tax math, market models,
 FastAPI scaffolding, and React shell. User-side configuration (specific
 properties, holdings, agent identities, fitted models, deployment) is
 composed in downstream user repos via the `Config` schema in
 <api/config.py>.
 
-See <SPEC.md> for the entity taxonomy + per-rollout evaluation loop.
+See <SPEC.md> for current financial, policy, failure and reporting contracts.
 
 Runnable composition examples: <x/bounded_spending/README.md> for executable
 spending rules, and <x/bond_policies/README.md> for dated-bond policies on shared

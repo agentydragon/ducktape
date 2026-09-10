@@ -6,15 +6,6 @@ or a second migration plan. Remove each section with its last reader.
 
 ## Input objects
 
-**TAXINPUT — prepared tax records.** `sim/compiler/tax.py::TaxCompileOutput`
-builds padded profile/jurisdiction/bracket arrays and counts; its production
-consumer, `sim/compiler/execution.py::_tax_profiles`, reconstructs records.
-Produce typed, variable-length prepared tax records directly and consume those
-same records at lowering. Delete the padded intermediate arrays/counts and the
-reconstruction. Preserve exact thresholds, ordering, exemptions and existing
-tax controls. This is preparation cleanup, not new tax law or a port of annual
-assessment; neither GT nor a performance comparison gates it.
-
 **INPUT — private lowering, typed prepared inputs.** `CompiledRun.execution_input`
 is a public mutable nested wire dictionary. Common-session callers serialize it;
 product projections inspect it for domain metadata, and a joint-example test
@@ -22,8 +13,8 @@ mutates it. Keep typed declarations/prepared facts authoritative; expose needed
 metadata through the existing prepared-run object and keep serialization at the
 native boundary. Migrate all callers, tests and file-entrypoint readers atomically.
 Do not retain a public raw tree beside the typed tree, merely add casts, or add a
-new executor abstraction. Consume TAXINPUT's typed records; that contract can be
-stacked on before merge. Typed common outputs already exist.
+new executor abstraction. Consume the existing typed prepared tax records and
+common outputs rather than introducing another representation.
 INPUT need not wait for P12: still-live configured strategies can lower privately
 until their last consumers move, but must not dictate the public domain objects.
 
@@ -68,7 +59,7 @@ readers. Reuse the common-session distribution, public-sale/tax and dated-bond
 controls rather than restoring their configured-runner suites.
 The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped
 multiple-actor sequencing; separate runs are not a replacement for those joint
-controls. The existing product bond-value regression remains until BONDREPORT replaces that actual adapter
+controls. Keep the common-session product bond-value regression as actual adapter
 coverage, rather than a weaker principal-only assertion. Native step tests remain
 useful, but no test should retain an obsolete
 full-run entrypoint solely to preserve its test harness. Housing/PE/harvest suites wait only for
@@ -107,11 +98,19 @@ interpolator and exogenous-rollout notes: separate implemented calibration contr
 operations. Remove code-to-plan citations as those contracts graduate. These notes
 must not introduce an alternative model-adoption gate beside SCORE/GM/READY.
 
-Audit the still-open planning/sketch PRs #5859, #4440, #4624, #4427, #4251 and #3748
-for remaining requirements and overlap; propose closure/supersession rather than
-reviving their implementations automatically. Map genuinely unsupported capabilities
-to the roadmap; do not copy completed entries into a new backlog. Ask the owner
-about unresolved intent after inspecting code and history.
+### Older PR disposition
+
+These are proposed dispositions, not claims that the PRs have been closed. Remove
+each row when the disposition is resolved; do not preserve another history ledger.
+
+| PR                                                          | Disposition and surviving requirement                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#4624](https://github.com/agentydragon/ducktape/pull/4624) | Supersede with the current SPEC/requirements reconciliation. Preserve accountable financial histories and independent controls; drop its mandatory 100,000-path latency/memory gate.                                                                                         |
+| [#5859](https://github.com/agentydragon/ducktape/pull/5859) | Keep as review-only study input, not another supported interface package. Consume its studies through STUDY/RUN/HOUSE/SCORE/ROBUST; inner-forecast continuation remains future scope. Replace sketches with runnable consumers rather than implementing every proposed stub. |
+
+The reviewed heads retain useful questions but do not establish financial fidelity
+or current interfaces. Ask the owner about unresolved intent after inspecting code
+and history. Closure is a separate explicit action, not a reason to delay DOCS.
 
 DOCS has no implementation prerequisite and does not gate other work. Each code
 migration still updates its own affected README/SPEC and removes its completed

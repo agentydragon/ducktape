@@ -11,8 +11,8 @@ They share financial steps but differ in policy control and supported domains.
 `compile_run` in <backend.py> resolves those inputs into `CompiledRun`.
 It does not fetch market evidence, fit a model or load tax law independently.
 The lowered document includes exact monetary terms, quantized market paths and
-resolved tax rules. Preparation currently still has padded tax intermediates and
-raw wire dictionaries; they are not a domain requirement.
+resolved typed tax records. The public raw execution dictionary remains an input
+boundary limitation, not a domain requirement.
 
 `sim/` owns declarations and common books/results; `rust/` imports those Python
 types at its result boundary. Preparation does not depend on the executor.

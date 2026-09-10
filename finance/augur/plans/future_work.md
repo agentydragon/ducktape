@@ -103,6 +103,9 @@ bound on the outcomes of a dated-bond ladder.
   the same batch action interface and Python helpers. A forward-reserve rule may
   use known contractual schedules and explicitly modeled expectations, never
   inspect the realized future market path.
+- Stateful lifestyle tiers may use separate cut/recovery thresholds and explicit
+  transition timing. Implement them as experiment-owned policy memory, not a
+  `TieredAmount` scenario variant or a native/JAX policy-state subsystem.
 - Keep PE tender choices distinct from compulsory recovery mechanics. A combined
   allocation policy can consider sellable holdings and tender constraints after
   the GPE/PE boundary is supported; do not force PE into the old allocator schema.
