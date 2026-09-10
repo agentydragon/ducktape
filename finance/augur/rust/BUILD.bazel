@@ -28,6 +28,7 @@ rust_library(
         "engine.rs",
         "engine/accounts.rs",
         "engine/actors.rs",
+        "engine/actors/outcomes.rs",
         "engine/actors_test.rs",
         "engine/allocation.rs",
         "engine/cashflows.rs",

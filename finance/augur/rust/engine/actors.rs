@@ -1,8 +1,10 @@
 //! One monthly household decision: scheduled facts, ordered actions, then closing.
-//! This native scoped example retains forensic output, not a supported Python API.
+//! Compact outcomes and selected traces share this native scoped execution path.
 
 use super::*;
 use serde::Serialize;
+
+pub mod outcomes;
 
 /// Exact immediate-cash requests in declared public pools/assets, including empty pools.
 /// Sequence order is execution order, not priority by type.
@@ -27,13 +29,13 @@ impl Action {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub enum Rejection {
     InvalidRequest(String),
     Payment(payments::Rejection),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub enum Outcome {
     /// Full execution of the exact request; canonical financial records carry its effects.
     Executed,
@@ -42,7 +44,7 @@ pub enum Outcome {
 
 /// Retain intent and result, including the failed request but never unattempted suffixes.
 /// Month plus action index identify an occurrence even when cause labels are reused.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Receipt {
     pub month: u32,
     pub action_index: usize,
@@ -62,9 +64,17 @@ pub enum Stop {
 
 #[derive(Debug, Serialize)]
 pub struct Rollout {
+    pub rollout_id: u32,
+    pub summary: outcomes::Summary,
+    /// Absent when detailed capture was not requested, not an empty observed history.
+    pub trace: Option<Trace>,
+    pub stop: Option<Stop>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Trace {
     pub financial: RolloutOutput,
     pub receipts: Vec<Receipt>,
-    pub stop: Option<Stop>,
 }
 
 /// Current actor books after scheduled cashflows and claim assembly. No future paths,
@@ -96,8 +106,9 @@ pub struct DecisionActions {
 
 struct Path {
     state: RolloutState,
-    receipts: Vec<Receipt>,
-    previous: usize,
+    previous_receipts: Vec<Receipt>,
+    trace_receipts: Option<Vec<Receipt>>,
+    capture: outcomes::Capture,
     stop: Option<Stop>,
 }
 
@@ -107,11 +118,13 @@ struct Path {
 ///
 /// Every active path appears once. A rejected action or unpaid due claim stops only
 /// that path. Invalid routing/input and arithmetic/accounting defects remain simulator
-/// errors, not modeled action failures. This control retains forensic output.
+/// errors, not modeled action failures. Capture changes retained results only, never
+/// financial execution, policy observations or the set/order of policy calls.
 pub fn simulate(
     input: &ExecutionInput,
     actor: &str,
     rollout_ids: &[u32],
+    capture_mode: CaptureMode,
     mut decide: impl FnMut(Vec<Decision<'_>>) -> Result<Vec<DecisionActions>, SimulationError>,
 ) -> Result<Vec<Rollout>, SimulationError> {
     validate(input, actor)?;
@@ -126,10 +139,15 @@ pub fn simulate(
     let mut paths = rollout_ids
         .par_iter()
         .map(|&rollout_id| {
+            let mut state = RolloutState::new(input, rollout_id, capture_mode, None)?;
+            state.recorder.capture_taxes = true;
+            let mut capture = outcomes::Capture::new(&holdings);
+            capture.snapshot(input, &holdings, &state)?;
             Ok(Path {
-                state: RolloutState::new(input, rollout_id, CaptureMode::Forensic, None)?,
-                receipts: Vec::new(),
-                previous: 0,
+                state,
+                previous_receipts: Vec::new(),
+                trace_receipts: capture_mode.captures_output().then(Vec::new),
+                capture,
                 stop: None,
             })
         })
@@ -166,7 +184,7 @@ pub fn simulate(
                             rollout: path.state.rollout_id,
                             month: path.state.month,
                         },
-                        previous_receipts: &path.receipts[path.previous..],
+                        previous_receipts: &path.previous_receipts,
                         claims,
                     },
                 })
@@ -204,10 +222,18 @@ pub fn simulate(
     }
     paths
         .into_iter()
-        .map(|path| {
+        .map(|mut path| {
+            let summary =
+                path.capture
+                    .finish(input, actor, &mut path.state, path.previous_receipts)?;
+            let computation = path.state.finish(input)?;
             Ok(Rollout {
-                financial: path.state.finish(input)?.into_output(),
-                receipts: path.receipts,
+                rollout_id: computation.rollout_id,
+                summary,
+                trace: path.trace_receipts.map(|receipts| Trace {
+                    financial: computation.into_output(),
+                    receipts,
+                }),
                 stop: path.stop,
             })
         })
@@ -222,11 +248,20 @@ fn advance(
     actions: Vec<Action>,
 ) -> Result<(), SimulationError> {
     let month = path.state.month;
-    path.previous = path.receipts.len();
+    path.previous_receipts.clear();
     for (action_index, action) in actions.into_iter().enumerate() {
-        let outcome = execute(&mut path.state, input, holdings, &mut claims, &action)?;
+        let (outcome, payment) = execute(&mut path.state, input, holdings, &mut claims, &action)?;
+        if let Some((request, receipt)) = payment {
+            path.capture.payments.push(outcomes::Payment::new(
+                month,
+                action_index,
+                &request,
+                &claims,
+                receipt,
+            ));
+        }
         let failed = matches!(outcome, Outcome::Rejected(_));
-        path.receipts.push(Receipt {
+        path.previous_receipts.push(Receipt {
             month,
             action_index,
             action,
@@ -240,8 +275,24 @@ fn advance(
             break;
         }
     }
-    let unpaid: Vec<_> = observations::due_claims(&claims, holdings.agent_id())
+    if let Some(receipts) = &mut path.trace_receipts {
+        receipts.extend(path.previous_receipts.iter().cloned());
+    }
+    path.capture.unpaid_claims = observations::due_claims(&claims, holdings.agent_id())
         .filter(|claim| claim.amount_due.0 > 0)
+        .map(|claim| outcomes::UnpaidClaim {
+            id: claim.id,
+            cause_id: claim.cause_id.into(),
+            obligation_type: claim.obligation_type.into(),
+            from: claim.from.clone(),
+            to: claim.to.clone(),
+            amount_due: claim.amount_due,
+        })
+        .collect();
+    let unpaid: Vec<_> = path
+        .capture
+        .unpaid_claims
+        .iter()
         .map(|claim| claim.id)
         .collect();
     if path.stop.is_none() && !unpaid.is_empty() {
@@ -254,7 +305,8 @@ fn advance(
         path.state.failed_month = Some(month);
     }
     record_claims(&mut path.state.recorder, &claims);
-    path.state.close_month(input, None, Money(0))
+    path.state.close_month(input, None, Money(0))?;
+    path.capture.snapshot(input, holdings, &path.state)
 }
 
 fn validate(input: &ExecutionInput, actor: &str) -> Result<(), SimulationError> {
@@ -315,11 +367,12 @@ fn execute(
     holdings: &AgentHoldings,
     claims: &mut claims::Claims,
     action: &Action,
-) -> Result<Outcome, SimulationError> {
+) -> Result<(Outcome, Option<(payments::Request, payments::Receipt)>), SimulationError> {
     if action.cause_id().is_empty() {
-        return Ok(Outcome::Rejected(Rejection::InvalidRequest(
-            "empty cause ID".into(),
-        )));
+        return Ok((
+            Outcome::Rejected(Rejection::InvalidRequest("empty cause ID".into())),
+            None,
+        ));
     }
     let actor = holdings.agent_id();
     let payment = match action {
@@ -340,37 +393,22 @@ fn execute(
         }
         .execute(actor, claims, &request)?;
         if receipt.outcome == payments::Outcome::Paid {
-            let (to, kind, claim_id) = match &request {
-                payments::Request::PayClaim(request) => {
-                    let claim = &claims.entries[request.claim.index];
-                    (
-                        &claim.to,
-                        claim.obligation_type.as_str(),
-                        claim.cause_id.as_str(),
-                    )
-                }
-                payments::Request::Consume(request) => {
-                    (&request.to, "cash_spend", request.component_id.as_str())
-                }
-            };
-            state.recorder.record_obligation(ObligationOutcome {
-                month: state.month,
-                cause_id: request.cause_id().into(),
-                obligation_id: claim_id.into(),
-                obligation_type: kind.into(),
-                from: request.from().clone(),
-                to: to.clone(),
-                amount_due: receipt.amount_requested,
-                amount_paid: receipt.amount_paid(),
-                shortfall: Money(0),
-                attempted_funding_sources: String::new(),
-                failure_active: false,
-            });
+            let target = request.describe(claims).expect("executed payment target");
+            state.recorder.record_obligation(receipt.obligation(
+                &request,
+                &target,
+                state.month,
+                target.label,
+                String::new(),
+            )?);
         }
-        return Ok(match receipt.outcome {
+        let outcome = match &receipt.outcome {
             payments::Outcome::Paid => Outcome::Executed,
-            payments::Outcome::Rejected(reason) => Outcome::Rejected(Rejection::Payment(reason)),
-        });
+            payments::Outcome::Rejected(reason) => {
+                Outcome::Rejected(Rejection::Payment(reason.clone()))
+            }
+        };
+        return Ok((outcome, Some((request, receipt))));
     }
     let result = match action {
         Action::Sell(request) => price(
@@ -429,14 +467,15 @@ fn execute(
         Action::PayClaim(_) | Action::Consume(_) => unreachable!("payments handled above"),
     };
     match result {
-        Ok(()) => Ok(Outcome::Executed),
+        Ok(()) => Ok((Outcome::Executed, None)),
         Err(
             error @ (SimulationError::InvalidTrade { .. }
             | SimulationError::InvalidTransfer { .. }
             | SimulationError::UnknownAccountReference { .. }),
-        ) => Ok(Outcome::Rejected(Rejection::InvalidRequest(
-            error.to_string(),
-        ))),
+        ) => Ok((
+            Outcome::Rejected(Rejection::InvalidRequest(error.to_string())),
+            None,
+        )),
         Err(error) => Err(error),
     }
 }

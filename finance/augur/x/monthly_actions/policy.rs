@@ -5,7 +5,7 @@ use augur_native_invocation::{run, write_output};
 use augur_rust_simulator::{
     allocation::quantity_for_value,
     engine::{
-        SimulationError,
+        CaptureMode, SimulationError,
         actors::{self, Action, Decision, DecisionActions},
         payments::PayClaim,
         trades::{LotSale, PurchaseRequest, SaleRequest},
@@ -98,11 +98,20 @@ struct Output {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     run(|input, output, parameters| {
+        let (mode, parameters) = parameters
+            .split_first()
+            .ok_or("expected capture mode and rollout IDs")?;
+        let capture = match mode.as_str() {
+            "summary" => CaptureMode::Summary,
+            "dense" => CaptureMode::Dense,
+            "forensic" => CaptureMode::Forensic,
+            _ => return Err("capture must be summary, dense or forensic".into()),
+        };
         let ids = parameters
             .iter()
             .map(|value| value.parse())
             .collect::<Result<Vec<u32>, _>>()?;
-        let rollouts = actors::simulate(input, "example-household", &ids, decide)?;
+        let rollouts = actors::simulate(input, "example-household", &ids, capture, decide)?;
         write_output(output, &Output { rollouts })
     })
 }

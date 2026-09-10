@@ -8,7 +8,7 @@ import argparse
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -32,7 +32,11 @@ from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 def run_example(
-    output_dir: Path, rollout_ids: Sequence[int] = (0, 1), *, cash_only_start: bool = False
+    output_dir: Path,
+    rollout_ids: Sequence[int] = (0, 1),
+    capture: Literal["summary", "dense", "forensic"] = "forensic",
+    *,
+    cash_only_start: bool = False,
 ) -> dict[str, Any]:
     stock = SecurityKey(symbol="example-stock")
     scenario = Scenario(
@@ -108,14 +112,14 @@ def run_example(
         binary=get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/runner")),
         input_path=input_path,
         output_path=output_dir / "outcomes.json",
-        arguments=[str(rollout_id) for rollout_id in rollout_ids],
+        arguments=[capture, *(str(rollout_id) for rollout_id in rollout_ids)],
     )
     for rollout in output["rollouts"]:
-        financial = rollout["financial"]
-        paid = sum(row["amount_paid"] for row in financial["obligations"])
+        payments = rollout["summary"]["payments"]
+        paid = sum(row["receipt"]["amount_requested"] for row in payments if row["receipt"]["outcome"] == "Paid")
         print(
-            f"path={financial['rollout_id']}: paid=${paid / 100:.2f}; "
-            f"receipts={len(rollout['receipts'])}; stop={rollout['stop']}"
+            f"path={rollout['rollout_id']}: paid=${paid / 100:.2f}; "
+            f"payment_requests={len(payments)}; stop={rollout['stop']}"
         )
     return output
 
@@ -127,8 +131,14 @@ def main() -> None:
     parser.add_argument(
         "--cash-only-start", action="store_true", help="Buy an unheld declared asset before the bill arrives."
     )
+    parser.add_argument("--capture", choices=("summary", "dense", "forensic"), default="forensic")
     args = parser.parse_args()
-    run_example(args.output_dir, (0, 1) if args.rollout is None else args.rollout, cash_only_start=args.cash_only_start)
+    run_example(
+        args.output_dir,
+        (0, 1) if args.rollout is None else args.rollout,
+        args.capture,
+        cash_only_start=args.cash_only_start,
+    )
 
 
 if __name__ == "__main__":

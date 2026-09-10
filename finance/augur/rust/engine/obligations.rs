@@ -117,26 +117,14 @@ pub(super) fn settle_grouped(
         let amount_due = receipt.amount_requested;
         let shortfall = amount_due.checked_sub(amount_paid)?;
         any_failure |= !funded;
-        let (to, obligation_type, is_tax_payment) = match request {
-            payments::Request::PayClaim(request) => {
-                let claim = &claims.entries[request.claim.index];
-                (
-                    &claim.to,
-                    claim.obligation_type.as_str(),
-                    matches!(
-                        claim.effect,
-                        ObligationEffect::TaxPayment { .. } | ObligationEffect::TaxTrueUp { .. }
-                    ),
-                )
-            }
-            payments::Request::Consume(request) => (&request.to, "cash_spend", false),
-        };
+        let target = request.describe(claims).expect("assembled payment target");
+        let obligation_type = target.obligation_type;
         let firing_id = request.cause_id().to_owned();
         let attempted_funding_sources =
             target_allocation_attempted_sources(context.fixture, request.from());
         let month = context.month;
         if !funded {
-            if is_tax_payment {
+            if target.is_tax_payment {
                 context.recorder.record_tax_payment(TaxPaymentOutcome {
                     month,
                     cause_id: firing_id.clone(),
@@ -165,19 +153,13 @@ pub(super) fn settle_grouped(
         if spending_request && index == 0 {
             spending_paid = Some(amount_paid);
         }
-        context.recorder.record_obligation(ObligationOutcome {
+        context.recorder.record_obligation(receipt.obligation(
+            request,
+            &target,
             month,
-            cause_id: firing_id.clone(),
-            obligation_id: firing_id,
-            obligation_type: obligation_type.into(),
-            from: request.from().clone(),
-            to: to.clone(),
-            amount_due,
-            amount_paid,
-            shortfall,
+            &firing_id,
             attempted_funding_sources,
-            failure_active: !funded,
-        });
+        )?);
         if product_agent_id.is_some_and(|agent| agent == request.from().agent_id) {
             product_shortfall = product_shortfall.checked_add(shortfall)?;
         }

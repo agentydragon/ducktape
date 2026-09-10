@@ -61,6 +61,7 @@ pub mod transfers;
 mod validation;
 
 pub use errors::SimulationError;
+pub use recorder::CaptureMode;
 
 use accounts::*;
 use cashflows::*;

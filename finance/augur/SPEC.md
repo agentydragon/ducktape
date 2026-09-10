@@ -86,6 +86,12 @@ financial rejections. This control is limited to a single decision-making
 household with scripted counterparties and explicitly immediate cash execution;
 it does not establish a general multi-agent scheduler or settlement-delay model.
 
+Actor result capture does not change decisions or financial execution. Compact
+results preserve original path, request, claim, component and account identities,
+observed cash/public-holding histories, canonical tax results and the exact stop
+book with its attempted action prefix. No post-stop value is an observation.
+Selected detailed replay agrees with these results on the same supplied paths.
+
 Native experiments can separately choose monthly allocation targets through a
 rollout-local function for one declared cash-account component. It observes
 opening funding-account cash and sleeve values at current prices, before this

@@ -33,7 +33,7 @@ pub enum Request {
     Consume(Consume),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub enum Target {
     Claim(claims::ClaimId),
     Consumption { component_id: String },
@@ -52,7 +52,7 @@ pub enum Rejection {
     UnfundedGroup { available: Money, due: Money },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub enum Outcome {
     Paid,
     Rejected(Rejection),
@@ -61,7 +61,7 @@ pub enum Outcome {
 /// Request IDs are caller-owned within the routed actor/decision batch. Claims have
 /// separate engine-owned occurrence IDs. Full payment or rejection are the supported
 /// outcomes; a rejected request is not a partly funded payment.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct Receipt {
     pub request_id: u64,
     pub target: Target,
@@ -77,9 +77,67 @@ impl Receipt {
             Money(0)
         }
     }
+
+    /// Shared projection for a resolved payment target. Callers choose their reporting
+    /// label; it is not the request ID or the engine's claim-occurrence identity.
+    pub(super) fn obligation(
+        &self,
+        request: &Request,
+        target: &Description<'_>,
+        month: u32,
+        obligation_id: &str,
+        attempted_funding_sources: String,
+    ) -> Result<ObligationOutcome, ArithmeticError> {
+        let amount_paid = self.amount_paid();
+        Ok(ObligationOutcome {
+            month,
+            cause_id: request.cause_id().into(),
+            obligation_id: obligation_id.into(),
+            obligation_type: target.obligation_type.into(),
+            from: request.from().clone(),
+            to: target.to.clone(),
+            amount_due: self.amount_requested,
+            amount_paid,
+            shortfall: self.amount_requested.checked_sub(amount_paid)?,
+            attempted_funding_sources,
+            failure_active: self.outcome != Outcome::Paid,
+        })
+    }
+}
+
+pub(super) struct Description<'a> {
+    pub to: &'a AccountRef,
+    pub obligation_type: &'a str,
+    pub label: &'a str,
+    pub is_tax_payment: bool,
 }
 
 impl Request {
+    pub(super) fn describe<'a>(&'a self, claims: &'a Claims) -> Option<Description<'a>> {
+        Some(match self {
+            Self::PayClaim(request) => {
+                if request.claim.month != claims.month {
+                    return None;
+                }
+                let claim = claims.entries.get(request.claim.index)?;
+                Description {
+                    to: &claim.to,
+                    obligation_type: &claim.obligation_type,
+                    label: &claim.cause_id,
+                    is_tax_payment: matches!(
+                        claim.effect,
+                        ObligationEffect::TaxPayment { .. } | ObligationEffect::TaxTrueUp { .. }
+                    ),
+                }
+            }
+            Self::Consume(request) => Description {
+                to: &request.to,
+                obligation_type: "cash_spend",
+                label: &request.component_id,
+                is_tax_payment: false,
+            },
+        })
+    }
     pub(super) fn from(&self) -> &AccountRef {
         match self {
             Self::PayClaim(request) => &request.from,

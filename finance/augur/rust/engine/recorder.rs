@@ -4,7 +4,7 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CaptureMode {
+pub enum CaptureMode {
     Summary,
     Dense,
     Forensic,
@@ -23,6 +23,8 @@ impl CaptureMode {
 #[derive(Debug)]
 pub(super) struct Recorder {
     pub(super) capture_mode: CaptureMode,
+    /// Actor outcomes select canonical tax records even without general event capture.
+    pub(super) capture_taxes: bool,
     pub(super) months: Vec<MonthOutput>,
     pub(super) journal: Vec<JournalEntry>,
     pub(super) transfers: Vec<TransferOutcome>,
@@ -64,6 +66,7 @@ impl Recorder {
     pub(super) fn new(capture_mode: CaptureMode) -> Self {
         Self {
             capture_mode,
+            capture_taxes: false,
             months: Vec::new(),
             journal: Vec::new(),
             transfers: Vec::new(),
@@ -206,7 +209,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "tax accrual count",
                 })?;
-        if self.capture_mode.captures_output() {
+        if self.capture_mode.captures_output() || self.capture_taxes {
             self.tax_accruals.push(accrual);
         }
         Ok(())
@@ -222,7 +225,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "tax payment count",
                 })?;
-        if self.capture_mode.captures_output() {
+        if self.capture_mode.captures_output() || self.capture_taxes {
             self.tax_payments.push(payment);
         }
         Ok(())
@@ -238,7 +241,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "tax settlement count",
                 })?;
-        if self.capture_mode.captures_output() {
+        if self.capture_mode.captures_output() || self.capture_taxes {
             self.tax_settlements.push(settlement);
         }
         Ok(())

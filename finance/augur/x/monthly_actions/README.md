@@ -30,8 +30,12 @@ $100 cash remain. The other path continues; no callback runs again for the stopp
 path. No action sorting or automatic funding occurs in execution.
 
 The new output directory retains `execution-input.json` with all assumptions and
-`outcomes.json` with each original path's ordered action receipts, stop reason and
-canonical forensic financial output. Amounts are USD cents. Add `--rollout 1`
+`outcomes.json` with each original path's compact summary, stop reason and optional
+detailed `trace`. The default `--capture forensic` retains ordered action receipts
+and canonical financial output. `--capture summary` retains account/pool observed
+numeric series, payment request/results, canonical tax records, exact ending book
+and final attempted action prefix without historical trade/journal/monthly books.
+`--capture dense` retains detailed output without the journal. Amounts are USD cents. Add `--rollout 1`
 for selected replay, or `--rollout 1 --rollout 0` to reorder the same paths.
 The tests invoke the documented CLI and check its emitted financial outcomes,
 then compare reordered and selected replay through the same authoring function.

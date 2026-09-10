@@ -201,7 +201,7 @@ The scoped action control instead follows the ordered execution described below.
 
 ## Scoped household action batches
 
-`engine::actors::simulate(input, actor, rollout_ids, decide)` calls one ordinary
+`engine::actors::simulate(input, actor, rollout_ids, capture, decide)` calls one ordinary
 batch function after the shared monthly preparation phase. `Decision` rows carry
 original rollout IDs plus actor-scoped books, current due claims and the previous
 decision's receipts. The caller keeps policy memory. `DecisionActions` returns
@@ -219,7 +219,22 @@ accounting/arithmetic failures return a simulator error, not an action rejection
 Preparation and closing share the configured runner's financial implementations;
 actor execution has no implicit pre/post allocation, harvesting, sale or payment.
 
-This native forensic control supports one decision-making household and scripted
+`CaptureMode::Summary` omits detailed trace retention; `Dense` adds financial event
+tables and monthly books, and `Forensic` adds the journal. Every mode returns the
+same summary: account cash and public-pool gross marks over observed snapshots,
+keyed payment outcomes, canonical tax records, unpaid claims, the exact ending
+book and the last month's attempted action prefix. There is no post-stop padding.
+Snapshot 0 is opening; snapshot `m + 1` is after event month `m`. The stopped final
+book uses `ending_mark_month`, not future prices. Summary payment amounts follow
+`payments::Receipt::amount_paid()`; an unfunded request is never partly paid.
+Tax records remain selected canonical events, not preaggregated universal metrics.
+Consumers choose their own account/component reductions and tax treatment.
+
+Capture does not change policy observations: only the previous month's receipts
+reach the next decision, even when all historical receipts are retained for replay.
+Detailed output is `Rollout::trace`; its absence is not a zero-valued financial history.
+
+This native control supports one decision-making household and scripted
 counterparties. It rejects configured allocation/harvesting/tender policies and
 scheduled sales rather than silently bypassing them. Housing and private-equity
 lifecycle inputs are not supported. Public trades use the explicit holding pools,
