@@ -16,7 +16,7 @@ from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, TlhFinancialEffectEvent
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import InitialLot, TlhPortfolioSpec
+from finance.augur.sim.scenario import Currency, InitialLot, TaxProfile, TlhPortfolioSpec
 from finance.augur.sim.session import Action, ActionSession, DecisionActions
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -28,9 +28,10 @@ def case() -> Case:
     asset = SecurityKey(symbol=SecuritySymbol("test-managed-index"))
     return Case(
         scenario=scenario(
-            checking(("owner", Decimal(10))),
+            checking(("owner", Decimal(10)), ("irs", Decimal(0))),
+            tax_profiles=[TaxProfile(agent_id="owner", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")],
             horizon_months=1,
-            currency_quantum="1",
+            currency=Currency(quantum=Decimal(1)),
             tlh_portfolios=[
                 TlhPortfolioSpec(
                     portfolio_id="managed",
