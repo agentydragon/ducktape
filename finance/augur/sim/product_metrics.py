@@ -1,10 +1,4 @@
-"""The product read model's metric types, shared by every simulation backend.
-
-These carry no backend detail: a backend supplies the seven base series and the failure
-vector, and everything above that — the derived metrics, the percentile fan, the terminal
-distribution — is composed here, once, from `sim.metric_composition`. An engine
-therefore owes the product API these objects and not a read model of its own.
-"""
+"""Product metric arrays and pure reductions, independent of trajectory execution."""
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
@@ -13,7 +7,13 @@ from enum import StrEnum
 import numpy as np
 from jaxtyping import Bool, Int64
 
-from finance.augur.sim.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
+from finance.augur.sim.metric_composition import (
+    BASE_METRIC_NAMES,
+    DERIVED_METRIC_NAMES,
+    compose_metric,
+    terminal_series,
+)
+from finance.augur.sim.quantiles import currency_quantiles
 
 
 class OutcomeBasis(StrEnum):
@@ -93,3 +93,56 @@ class ProductMetricArrays:
             **base,
             **{name: compose_metric(name, base.__getitem__) for name in DERIVED_METRIC_NAMES},
         }
+
+
+def _metric_series(
+    arrays: ProductMetricArrays, metric: str
+) -> tuple[Int64[np.ndarray, " snapshot rollout"], Int64[np.ndarray, " rollout"], OutcomeBasis]:
+    base = dict(zip(BASE_METRIC_NAMES, arrays.base_series, strict=True))
+    series = compose_metric(metric, base.__getitem__)
+    basis = OutcomeBasis.OBSERVED_THROUGH_STOP if metric == "shortfall_quanta" else OutcomeBasis.COMPLETED_HORIZON
+    return series, terminal_series(metric, series), basis
+
+
+def metric_fan(arrays: ProductMetricArrays, *, metric: str, percentiles: tuple[float, ...]) -> ProductMetricFanSummary:
+    series, terminal, basis = _metric_series(arrays, metric)
+    observed = arrays.observed if basis == OutcomeBasis.OBSERVED_THROUGH_STOP else arrays.scheduled_observed
+    observed_count = observed.sum(axis=1)
+    monthly = np.zeros((series.shape[0], len(percentiles)), dtype=np.int64)
+    for month, mask in enumerate(observed):
+        if observed_count[month]:
+            monthly[month] = currency_quantiles(series[month, mask], percentiles)
+    samples = terminal if basis == OutcomeBasis.OBSERVED_THROUGH_STOP else terminal[arrays.failed_month < 0]
+    return ProductMetricFanSummary(
+        basis=basis,
+        month_index=arrays.month_index,
+        failed_count=int((arrays.failed_month >= 0).sum()),
+        currency_code=arrays.currency_code,
+        currency_quantum=arrays.currency_quantum,
+        percentiles=percentiles,
+        terminal_percentiles=np.asarray(currency_quantiles(samples, percentiles), dtype=np.int64)
+        if samples.size
+        else None,
+        monthly_percentiles=monthly,
+        observed_count=observed_count,
+    )
+
+
+def terminal_summary(arrays: ProductMetricArrays, *, metric: str) -> ProductTerminalSummary:
+    _, terminal, basis = _metric_series(arrays, metric)
+    return ProductTerminalSummary(
+        basis=basis,
+        failed_month=arrays.failed_month,
+        currency_code=arrays.currency_code,
+        currency_quantum=arrays.currency_quantum,
+        terminal_samples=np.asarray(terminal, dtype=np.int64),
+    )
+
+
+def projection_summaries(
+    arrays: ProductMetricArrays, *, metric: str, percentiles: tuple[float, ...]
+) -> ProductProjectionSummaries:
+    return ProductProjectionSummaries(
+        metric_fan=metric_fan(arrays, metric=metric, percentiles=percentiles),
+        terminal_distribution=terminal_summary(arrays, metric=metric),
+    )

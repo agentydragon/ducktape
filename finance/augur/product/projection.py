@@ -1,8 +1,6 @@
 """Product rollout read model, projected from the canonical event frames.
 
-One selected trajectory, rendered from the canonical frames plus the engine's product
-metric arrays. Nothing here names an engine's own output layout — the seam is what would
-make a second engine possible, not evidence that one exists.
+One selected trajectory, rendered from canonical frames and observed metric arrays.
 """
 
 from __future__ import annotations
@@ -65,19 +63,11 @@ def project_product_rollout(
     metrics: ProductMetricArrays,
     *,
     rollout_index: int,
+    rollout_id: int,
     primary_agent_id: str,
     asset_label_by_id: dict[str, str],
 ) -> ProductRolloutProjection:
-    """One rollout, projected from the canonical event frames rather than an engine's arrays.
-
-    Reads the canonical event frames rather than any engine's own output layout, so what a
-    trace says is decided once here rather than per engine.
-
-    The frames already did most of the joining this file used to do by hand: seven payment
-    shapes are `obligation_settlements` filtered by `obligation_type`, the three disposition
-    sources are one `lot_dispositions`, and `tax_breakdowns` carries every column the accrual
-    event needs instead of dense tax-channel indices.
-    """
+    """Select an array column and its original frame ID, which need not be equal."""
 
     if rollout_index < 0:
         raise IndexError(f"rollout_index {rollout_index} is negative")
@@ -90,7 +80,7 @@ def project_product_rollout(
     }
 
     def rows(frame: pl.DataFrame, **equals: str) -> list[dict[str, Any]]:
-        selected = frame.filter(pl.col("rollout_index") == rollout_index)
+        selected = frame.filter(pl.col("rollout_index") == rollout_id)
         for column, value in equals.items():
             selected = selected.filter(pl.col(column) == value)
         return selected.to_dicts()

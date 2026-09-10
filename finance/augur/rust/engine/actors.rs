@@ -74,6 +74,8 @@ pub struct Rollout {
 #[derive(Debug, Serialize)]
 pub struct Trace {
     pub financial: RolloutOutput,
+    /// The same financial records in the shared product/event vocabulary.
+    pub event_frames: crate::event_frames::EventFrames,
     pub receipts: Vec<Receipt>,
 }
 
@@ -293,9 +295,15 @@ impl Session {
                 Ok(Rollout {
                     rollout_id: computation.rollout_id,
                     summary,
-                    trace: path.trace_receipts.map(|receipts| Trace {
-                        financial: computation.into_output(),
-                        receipts,
+                    trace: path.trace_receipts.map(|receipts| {
+                        let financial = computation.into_output();
+                        Trace {
+                            event_frames: crate::event_frames::EventFrames::from_rollouts([
+                                &financial,
+                            ]),
+                            financial,
+                            receipts,
+                        }
                     }),
                     stop: path.stop,
                 })
@@ -456,8 +464,16 @@ fn execute(
             month: state.month,
         }
         .execute(actor, claims, &request)?;
-        if receipt.outcome == payments::Outcome::Paid {
-            let target = request.describe(claims).expect("executed payment target");
+        // An otherwise valid consumption request can fail for lack of cash. Its
+        // requested/paid gap is reportable, not a newly incurred debt. Unpaid claims
+        // are recorded once below, including those whose payment was never attempted.
+        let unfunded_consumption = matches!(request, payments::Request::Consume(_))
+            && matches!(
+                receipt.outcome,
+                payments::Outcome::Rejected(payments::Rejection::InsufficientCash { .. })
+            );
+        if receipt.outcome == payments::Outcome::Paid || unfunded_consumption {
+            let target = request.describe(claims).expect("resolved payment target");
             state.recorder.record_obligation(receipt.obligation(
                 &request,
                 &target,

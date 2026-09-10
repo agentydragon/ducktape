@@ -228,6 +228,7 @@ py_library(
     srcs = ["product_metrics.py"],
     deps = [
         ":metric_composition",
+        ":quantiles",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],

@@ -119,7 +119,6 @@ py_library(
         "//finance/augur/sim:events",
         "//finance/augur/sim:metric_composition",
         "//finance/augur/sim:product_metrics",
-        "//finance/augur/sim:quantiles",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],

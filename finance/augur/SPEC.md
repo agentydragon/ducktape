@@ -100,6 +100,11 @@ results preserve original path, request, claim, component and account identities
 observed cash/public-holding histories, canonical tax results and the exact stop
 book with its attempted action prefix. No post-stop value is an observation.
 Selected detailed replay agrees with these results on the same supplied paths.
+For public cash/securities portfolios, the same finished session supplies product
+wealth/shortfall arrays and canonical detailed events without re-execution.
+Shortfall reports unpaid due claims and valid attempted consumption's requested/paid
+gap; the latter is not incurred debt. An invalid action still stops its path but
+does not invent a monetary deficit. Uncaptured asset histories are rejected, not zeroed.
 
 Native experiments can separately choose monthly allocation targets through a
 rollout-local function for one declared cash-account component. It observes

@@ -189,13 +189,21 @@ impl Recorder {
 
     pub(super) fn record_obligation(&mut self, obligation: ObligationOutcome) {
         if self.capture_mode.captures_output() {
+            if obligation.failure_active {
+                self.rollout_failures.push(RolloutFailureOutcome {
+                    month: obligation.month,
+                    cause_id: format!("{}_failure", obligation.cause_id),
+                    agent_id: obligation.from.agent_id.clone(),
+                    deficit: obligation.shortfall,
+                    obligation_id: obligation.obligation_id.clone(),
+                    obligation_type: obligation.obligation_type.clone(),
+                    amount_due: obligation.amount_due,
+                    amount_paid: obligation.amount_paid,
+                    shortfall: obligation.shortfall,
+                    attempted_funding_sources: obligation.attempted_funding_sources.clone(),
+                });
+            }
             self.obligations.push(obligation);
-        }
-    }
-
-    pub(super) fn record_rollout_failure(&mut self, failure: RolloutFailureOutcome) {
-        if self.capture_mode.captures_output() {
-            self.rollout_failures.push(failure);
         }
     }
 

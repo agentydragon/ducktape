@@ -40,7 +40,7 @@ pub struct FramedOutput<'a> {
 impl<'a> FramedOutput<'a> {
     pub fn new(output: &'a execution::SimulationOutput) -> Self {
         Self {
-            event_frames: EventFrames::from_output(output),
+            event_frames: EventFrames::from_rollouts(&output.rollouts),
             output,
         }
     }
@@ -112,9 +112,9 @@ macro_rules! event_frames {
         }
 
         impl EventFrames {
-            pub fn from_output(output: &execution::SimulationOutput) -> Self {
+            pub fn from_rollouts<'a>(rollouts: impl IntoIterator<Item = &'a execution::RolloutOutput>) -> Self {
                 let mut frames = Self::default();
-                for rollout in &output.rollouts {
+                for rollout in rollouts {
                     $(
                         frames.$target.extend(rollout.$source.iter().map(|row| $name {
                             rollout_index: rollout.rollout_id,

@@ -292,3 +292,39 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "action_projection",
+    srcs = ["action_projection.py"],
+    deps = [
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:metric_composition",
+        "//finance/augur/sim:product_metrics",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "test_action_projection",
+    srcs = ["test_action_projection.py"],
+    deps = [
+        ":action_projection",
+        ":conftest",
+        ":projection",
+        ":wire",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:event_log",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:product_metrics",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "//finance/augur/x/monthly_actions:policy",
+        "//finance/augur/x/monthly_actions:run",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

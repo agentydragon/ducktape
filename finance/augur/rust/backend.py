@@ -22,15 +22,16 @@ from finance.augur.rust import simulator
 from finance.augur.rust.event_log import decode_event_log
 from finance.augur.sim.backend import CompiledRun, Engine
 from finance.augur.sim.events import EventLog
-from finance.augur.sim.metric_composition import BASE_METRIC_NAMES, compose_metric, terminal_series
+from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.product_metrics import (
-    OutcomeBasis,
     ProductMetricArrays,
     ProductMetricFanSummary,
     ProductProjectionSummaries,
     ProductTerminalSummary,
+    metric_fan,
+    projection_summaries,
+    terminal_summary,
 )
-from finance.augur.sim.quantiles import currency_quantiles
 
 
 def _base_series(metrics: simulator.ProductMetrics) -> tuple[Int64[np.ndarray, " snapshot rollout"], ...]:
@@ -56,60 +57,6 @@ def run_rust_product_metric_arrays(fixture: Mapping[str, Any], *, primary_agent_
     )
 
 
-def _metric_series(
-    fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str
-) -> tuple[ProductMetricArrays, Int64[np.ndarray, " snapshot rollout"], Int64[np.ndarray, " rollout"], OutcomeBasis]:
-    """One Rust execution, composed into the requested metric and its terminal reduction."""
-
-    arrays = run_rust_product_metric_arrays(fixture, primary_agent_id=primary_agent_id)
-    base = dict(zip(BASE_METRIC_NAMES, arrays.base_series, strict=True))
-    series = compose_metric(metric, base.__getitem__)
-    basis = OutcomeBasis.OBSERVED_THROUGH_STOP if metric == "shortfall_quanta" else OutcomeBasis.COMPLETED_HORIZON
-    return arrays, series, terminal_series(metric, series), basis
-
-
-def _metric_fan(
-    arrays: ProductMetricArrays,
-    *,
-    basis: OutcomeBasis,
-    percentiles: tuple[float, ...],
-    series: Int64[np.ndarray, " snapshot rollout"],
-    terminal: Int64[np.ndarray, " rollout"],
-) -> ProductMetricFanSummary:
-    observed = arrays.observed if basis == OutcomeBasis.OBSERVED_THROUGH_STOP else arrays.scheduled_observed
-    observed_count = observed.sum(axis=1)
-    monthly = np.zeros((series.shape[0], len(percentiles)), dtype=np.int64)
-    for month, mask in enumerate(observed):
-        if observed_count[month]:
-            monthly[month] = currency_quantiles(series[month, mask], percentiles)
-    samples = terminal if basis == OutcomeBasis.OBSERVED_THROUGH_STOP else terminal[arrays.failed_month < 0]
-    return ProductMetricFanSummary(
-        basis=basis,
-        month_index=arrays.month_index,
-        failed_count=int((arrays.failed_month >= 0).sum()),
-        currency_code=arrays.currency_code,
-        currency_quantum=arrays.currency_quantum,
-        percentiles=percentiles,
-        terminal_percentiles=np.asarray(currency_quantiles(samples, percentiles), dtype=np.int64)
-        if samples.size
-        else None,
-        monthly_percentiles=monthly,
-        observed_count=observed_count,
-    )
-
-
-def _terminal_summary(
-    arrays: ProductMetricArrays, terminal: Int64[np.ndarray, " rollout"], basis: OutcomeBasis
-) -> ProductTerminalSummary:
-    return ProductTerminalSummary(
-        basis=basis,
-        failed_month=arrays.failed_month,
-        currency_code=arrays.currency_code,
-        currency_quantum=arrays.currency_quantum,
-        terminal_samples=np.asarray(terminal, dtype=np.int64),
-    )
-
-
 @overload
 def run_rust_product_summary(
     fixture: Mapping[str, Any], *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
@@ -131,10 +78,10 @@ def run_rust_product_summary(
     backend answers both projections without a second call shape to keep aligned.
     """
 
-    arrays, series, terminal, basis = _metric_series(fixture, primary_agent_id=primary_agent_id, metric=metric)
+    arrays = run_rust_product_metric_arrays(fixture, primary_agent_id=primary_agent_id)
     if percentiles is None:
-        return _terminal_summary(arrays, terminal, basis)
-    return _metric_fan(arrays, basis=basis, percentiles=percentiles, series=series, terminal=terminal)
+        return terminal_summary(arrays, metric=metric)
+    return metric_fan(arrays, metric=metric, percentiles=percentiles)
 
 
 def run_rust_product_summaries(
@@ -142,11 +89,8 @@ def run_rust_product_summaries(
 ) -> ProductProjectionSummaries:
     """Fan and terminal summaries for one metric, from one Rust execution."""
 
-    arrays, series, terminal, basis = _metric_series(fixture, primary_agent_id=primary_agent_id, metric=metric)
-    return ProductProjectionSummaries(
-        metric_fan=_metric_fan(arrays, basis=basis, percentiles=percentiles, series=series, terminal=terminal),
-        terminal_distribution=_terminal_summary(arrays, terminal, basis),
-    )
+    arrays = run_rust_product_metric_arrays(fixture, primary_agent_id=primary_agent_id)
+    return projection_summaries(arrays, metric=metric, percentiles=percentiles)
 
 
 class RustEngine(Engine):

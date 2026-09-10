@@ -127,20 +127,6 @@ pub(super) fn settle_grouped(
                     shortfall,
                 })?;
             }
-            context
-                .recorder
-                .record_rollout_failure(RolloutFailureOutcome {
-                    month,
-                    cause_id: format!("{firing_id}_failure"),
-                    agent_id: request.from().agent_id.clone(),
-                    deficit: shortfall,
-                    obligation_id: firing_id.clone(),
-                    obligation_type: obligation_type.into(),
-                    amount_due,
-                    amount_paid,
-                    shortfall,
-                    attempted_funding_sources: attempted_funding_sources.clone(),
-                });
         }
         context.recorder.record_obligation(receipt.obligation(
             request,
