@@ -82,7 +82,6 @@ pub(super) fn minimal_fixture() -> ExecutionInput {
 pub(super) struct CashRoute {
     pub(super) from: AccountRef,
     pub(super) to: AccountRef,
-    pub(super) cause_id: String,
 }
 
 /// Inspect already-retained configured books without supplying actions or budgets.
@@ -129,7 +128,6 @@ pub(super) fn spending_fixture() -> (ExecutionInput, CashRoute) {
     let spending = CashRoute {
         from: fixture.scenario.accounts[0].account.clone(),
         to: AccountRef::new("world", "checking"),
-        cause_id: "consumption".into(),
     };
     fixture.scenario.accounts.push(AccountSpec {
         account: spending.to.clone(),
