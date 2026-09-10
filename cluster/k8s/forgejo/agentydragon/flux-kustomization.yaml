@@ -19,10 +19,8 @@ spec:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
       name: forgejo-agentydragon
-      namespace: forgejo
+      namespace: flux-system
   dependsOn:
-    - name: forgejo
-      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db

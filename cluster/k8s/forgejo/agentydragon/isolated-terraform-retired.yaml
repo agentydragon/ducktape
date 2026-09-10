@@ -2,9 +2,12 @@ apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
   name: forgejo-agentydragon
-  namespace: flux-system
+  namespace: forgejo
 spec:
-  suspend: false
+  # Keep the failed replacement inert and prevent finalizer-driven resource
+  # destruction while the controller's least-privilege runner gap is resolved.
+  suspend: true
+  destroyResourcesOnDeletion: false
   interval: 15m
   refreshBeforeApply: true
   path: ./tf/gitops/forgejo-agentydragon
@@ -12,14 +15,12 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
-
-  serviceAccountName: tf-runner
+  serviceAccountName: tf-runner-forgejo-agentydragon
   approvePlan: "auto"
-
   backendConfig:
     customConfiguration: |
       backend "pg" {
-        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        conn_str    = "postgres://tfstate_forgejo_agentydragon@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate_forgejo_agentydragon?sslmode=require"
         schema_name = "forgejo_agentydragon"
       }
   runnerPodTemplate:
@@ -28,5 +29,5 @@ spec:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-db-credentials
+              name: tofu-state-forgejo-agentydragon-v2-credentials
               key: password
