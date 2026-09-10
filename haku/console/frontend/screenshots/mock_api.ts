@@ -6,7 +6,6 @@
 import {
   SAMPLE_DAEMONS,
   SAMPLE_DEPLOYMENT,
-  SAMPLE_INDEX_STATUS,
   SAMPLE_GRANTS,
   SAMPLE_MCP_PROBES,
   SAMPLE_MCP_SERVERS,
@@ -166,7 +165,6 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
       return SAMPLE_MCP_PROBES[serverId];
     },
     list_node_daemons: () => ({ daemons: SAMPLE_DAEMONS }),
-    haku_index__index_status: () => SAMPLE_INDEX_STATUS,
   });
   if (mcpResponse !== null) return mcpResponse;
   if (url.includes("/api/tool-calls")) {

@@ -1,9 +1,9 @@
 # Information trust tiers — which provider may see what, and who enforces it
 
-**Status: partially built.** Named logical recall indexes, per-index Git configuration, multi-index
-search, and the public `ducktape-public` index are live. Trust-tier labels, per-agent index grants,
-room membership enforcement, and classifier backstops remain design work tracked below and in
-<../console/TODO.md>.
+**Status: partially built.** Named logical recall indexes, per-index Git configuration, and
+multi-index search are implemented, but the deployed integration is currently disabled. Trust-tier
+labels, per-agent index grants, room membership enforcement, and classifier backstops remain design
+work tracked below and in <../console/TODO.md>.
 
 Operator, 2026-08-15: several agent kinds, each cloning a different workspace repo, talking to
 each other in Matrix rooms the operator is also in, with the high-trust agent delegating
@@ -120,26 +120,25 @@ through the transport. Three things it needs:
 - **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
   and must read as top-tier — unreadable by anything lower — rather than as "unclassified,
   therefore fine".
-- **Semantic search is where this bites first, and it is already live.** `haku_index`'s `search`
-  and `index_status` are exposed to Haku **unscoped**, decided 2026-08-15 and auto-approved through
-  `haku_recall_reads` — an easy call at the time because it granted no new reachability over
-  `haku_conversations`, which was itself unscoped. <../recall_index/README.md> § Read scoping names
-  the exact condition for revisiting: "the moment a second operator or a room Haku should not see
-  exists, ranked retrieval is where that leaks first". Several agents at several tiers is that
-  moment. A drilldown makes reading another conversation deliberate — you have to name the
-  session; ranked retrieval surfaces it by accident, at the top of the results, in answer to an
-  innocent question.
+- **Semantic search was where this bit first, and is currently disabled.** The deployed console no
+  longer registers `haku_index`, grants Recall indexes, or runs index-maintenance workers. The
+  retained implementation and database data can be re-enabled only after the profile and tier
+  boundaries are reviewed together. <../recall_index/README.md> § Read scoping still names the
+  condition for revisiting: "the moment a second operator or a room Haku should not see exists,
+  ranked retrieval is where that leaks first". A drilldown makes reading another conversation
+  deliberate — you have to name the session; ranked retrieval surfaces it by accident, at the top
+  of the results, in answer to an innocent question.
 
 ### Named indexes are the landed foundation
 
-The structural index split is built. `recall_indexes` configures named `git` and `chat` indexes;
-`search(index_ids=...)` ranks across the selected names; `index_status` reports each configured
-index; production carries `haku-state`, `haku-conversations`, and public `ducktape-public`. The
-implementation and operational contract live in <../recall_index/README.md>; this plan no longer
-repeats them.
+The structural index split remains implemented but is not currently wired into production.
+`recall_indexes` configures named `git` and `chat` indexes; `search(index_ids=...)` ranks across the
+selected names; and `index_status` reports each configured index. The implementation and eventual
+operational contract live in <../recall_index/README.md>; this plan no longer repeats them.
 
 The conversation-read boundary is also built, in profile terms rather than tier terms (#4431
-stage 5): per-profile `recall_index_ids` grants are enforced once in the console, chat
+stage 5): if Recall is re-enabled, per-profile `recall_index_ids` grants will be enforced once in
+the console, chat
 occurrences link to their `conversation_id`, and one profile-DAG authorizer
 (`haku/console/conversation_read_access.py` over `can_read_profiles`) fences `haku_conversations`
 drilldowns and `haku_index` chat search identically against the conversation's pinned

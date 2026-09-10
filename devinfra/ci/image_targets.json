@@ -121,11 +121,6 @@
       "test": "//haku/console/...",
       "registry": "forgejo"
     },
-    "haku-indexer": {
-      "target": "//haku/console:indexer_image",
-      "test": "//haku/console/...",
-      "registry": "forgejo"
-    },
     "plaid-mcp-server": {
       "target": "//finance/plaid/link:server_image",
       "test": "//finance/plaid/...",

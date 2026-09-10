@@ -4,8 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { useAsyncResource, type AsyncResource } from "./async_resource";
 import type { DeploymentInfo } from "./client";
-import type { IndexState } from "./mcp_status_client";
-import { deploymentVersions, indexStatusDisplay, settingsTabFromSearch } from "./settings_panel";
+import { deploymentVersions, settingsTabFromSearch } from "./settings_panel";
 
 function deployment(server: string | null, frontend: string | null): DeploymentInfo {
   const image = (commit: string | null) => ({
@@ -71,28 +70,5 @@ describe("deploymentVersions", () => {
 
   it("omits unavailable metadata", () => {
     expect(deploymentVersions(deployment(null, null))).toEqual([]);
-  });
-});
-
-describe("indexStatusDisplay", () => {
-  const git = (indexed_commit: string | null, remote_commit: string | null): IndexState => ({
-    index_type: "git",
-    index_id: "ducktape",
-    indexed_commit,
-    remote_commit,
-    remote_seen_at: null,
-    branch: "devel",
-    indexed_at: null,
-    files: 1,
-    chunks: 2,
-    embedded_chunks: 2,
-    pending_chunks: 0,
-    superseded_chunks: 0,
-  });
-
-  it("distinguishes current, behind, and not-yet-built Git indexes", () => {
-    expect(indexStatusDisplay(git("abc", "abc")).label).toBe("Current");
-    expect(indexStatusDisplay(git("abc", "def")).label).toBe("Behind");
-    expect(indexStatusDisplay(git(null, "def")).label).toBe("Not indexed");
   });
 });

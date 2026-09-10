@@ -3,12 +3,9 @@
 import pytest
 import pytest_bazel
 import yaml
-from more_itertools import one
 from pydantic import SecretStr
 
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
-from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
-from haku.console.indexer_config import IndexerConfigFile
 from haku.console.mcp_config import PreregisteredOAuthClient, RemoteMcpBackend, RemoteServerOAuthAuth
 from haku.console.settings import Settings
 from util.bazel.runfiles import get_required_path
@@ -151,69 +148,6 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
 
     assert settings.config_file == config_path
     assert settings.max_wait_for_result_ms == int(max_wait_for_result_ms)
-
-
-def _indexer_deployment_env(filename: str, role: IndexerRole) -> dict[str, str]:
-    """The literal env of the role's Deployment, checking the manifest names a role this binary has."""
-    deployment = yaml.safe_load(get_required_path(f"ducktape/cluster/k8s/haku/console/{filename}").read_text())
-    container = one(deployment["spec"]["template"]["spec"]["containers"])
-    assert IndexerRole(one(container["args"]).removeprefix("--role=")) is role
-    return {item["name"]: item["value"] for item in container["env"] if "value" in item}
-
-
-def test_deployed_chunk_role_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each registry index has a chunk pod that starts from exactly its manifest env.
-
-    Derived from the deploy-owned registry rather than a fixed roster: a new `recall_indexes` entry
-    with no `indexer-chunk-<id>-deployment.yaml` fails here. The contract is exactly
-    {config_file, database_url} — no embedder configuration, and no index selector: the mounted
-    config slice is the selection.
-    """
-    config = _console_settings(monkeypatch)
-    for index in config.recall_indexes.values():
-        env = _indexer_deployment_env(f"indexer-chunk-{index.index_id}-deployment.yaml", IndexerRole.CHUNK)
-        with monkeypatch.context() as patched:
-            for name, value in env.items():
-                patched.setenv(name, value)
-            # Point the deployment's mount path at the equivalent runfile so the settings source
-            # exercises the whole projected YAML in this hermetic test.
-            patched.setenv(
-                "HAKU_INDEXER_CONFIG_FILE",
-                str(get_required_path(f"ducktape/cluster/k8s/haku/console/indexer-chunk-{index.index_id}-config.yaml")),
-            )
-            # The one secret env the manifest binds by reference rather than value.
-            patched.setenv("HAKU_INDEXER__DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
-            if index.index_id == "haku-state":
-                patched.setenv("HAKU_INDEXER__RECALL_INDEXES__HAKU_STATE__CREDENTIALS__USERNAME", "haku")
-                patched.setenv("HAKU_INDEXER__RECALL_INDEXES__HAKU_STATE__CREDENTIALS__PASSWORD", "secret")
-            assert ChunkSettings().config_file.name == f"indexer-chunk-{index.index_id}-config.yaml"
-
-
-def test_deployed_chunk_config_slices_project_the_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """One instance, one config slice: each pod's mounted file equals its registry projection.
-
-    The console still reads the whole `recall_indexes` registry in config.yaml; each chunk pod
-    mounts only `indexer-chunk-<id>-config.yaml`, which must parse — through the worker's own
-    reader — to exactly that one registry entry plus the console's Git CA bundle. The slices are
-    generated output pinned to the registry (the LiteLLM config pattern), so a registry edit that
-    misses its slice, a drifted slice, or a slice grown past one entry fails here.
-    """
-    console = _console_settings(monkeypatch)
-    for slot, index in console.recall_indexes.items():
-        slice_path = get_required_path(f"ducktape/cluster/k8s/haku/console/indexer-chunk-{index.index_id}-config.yaml")
-        assert IndexerConfigFile.model_validate(yaml.safe_load(slice_path.read_text())) == IndexerConfigFile(
-            git_ca_bundle=console.git_ca_bundle, recall_indexes={slot: index}
-        )
-
-
-def test_deployed_embed_role_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The embed pod starts from exactly its manifest env — no registry or Git configuration required."""
-    for name, value in _indexer_deployment_env("indexer-embed-deployment.yaml", IndexerRole.EMBED).items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.setenv("HAKU_INDEXER__DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
-    settings = EmbedSettings()
-    assert settings.embedder.base_url.startswith("http")
-
 
 if __name__ == "__main__":
     pytest_bazel.main()

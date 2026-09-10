@@ -208,14 +208,12 @@ The Google Discovery-generated schemas currently carry Google's copied descripti
 not hand-edit them as part of unrelated MCP guidance work; audit and curate their live-schema
 verbosity in a dedicated follow-up, with client-facing token budgets and semantic tests.
 
-## Recall/server access should ride on access tier, not be hand-declared per agent
+## Recall indexing is disabled
 
-`recall_index_ids` and `in_process_server_ids` are each spelled out independently per
-`access_profiles` entry in `config.yaml`. That let `public-coder` carry
-`recall_index_ids: [ducktape-public]` with no `haku_index` in its `in_process_server_ids` —
-the grant was structurally unreachable and nobody noticed until an approval-ledger audit
-(fixed in #4696). Two lists that are supposed to move together but can silently drift apart
-because nothing ties them to one tier concept.
+The deployed console intentionally leaves Recall index configuration, the `haku_index` MCP server,
+and index-maintenance workers unwired. The `recall_index` database schema and data remain for a
+future re-enable; restore source/embedding workers and review catalog/access-profile exposure
+together when that work resumes.
 
 ## Small cleanups
 

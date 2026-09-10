@@ -1,27 +1,4 @@
 # Non-secret haku-console config. Secret values stay in env/Kubernetes Secrets.
-git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
-recall_indexes:
-  # `index_id` is the durable search/grant boundary. Source and remote configuration belong in
-  # Git rather than being inferred from an environment-variable name; only the Git credential is
-  # secret and therefore remains an env reference.
-  # Sync contract: each entry is mirrored verbatim into its chunk pod's own config slice
-  # (indexer-chunk-<index>-config.yaml) — the derivation tests fail this file against the slices
-  # on any drift.
-  haku_state:
-    index_id: haku-state
-    index_type: git
-    repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
-    branch: main
-    mirror_path: /tmp/haku-recall-index/haku-state.git
-  # Public upstream source for code and deployment-context recall. It intentionally has no
-  # credential references: the console clones the canonical public repository over HTTPS.
-  # The Git reducer skips binary blobs and blobs larger than 1 MiB.
-  ducktape_public:
-    index_id: ducktape-public
-    index_type: git
-    repo_url: https://github.com/agentydragon/ducktape.git
-    branch: devel
-    mirror_path: /tmp/haku-recall-index/ducktape.git
 
 # Auto-approval is an explicit per-Agent policy graph. Exact-tool atoms grant standing authority
 # only to the named tools; newly reflected tools remain manual-approval by default. Conditional
@@ -245,16 +222,6 @@ auto_approval_policies:
     tools:
       grants:
         - revoke_grants
-  # public-coder's profile already declares recall_index_ids: [ducktape-public] below, but that
-  # grant was dead without server access — haku_index wasn't in its in_process_server_ids. This is
-  # narrower than haku_recall_reads: haku_index enforces per-call index scoping against the caller's
-  # granted recall_index_ids server-side, so this can never reach haku-state.
-  - id: public_coder_recall_reads
-    type: exact_tools
-    tools:
-      haku_index:
-        - search
-        - index_status
   # Disabled: direct-SAR coverage must not auto-deny the operator-linked passthrough route.
   # The current public-coder kubeconfig cannot execute its required POST/SPDY transport through
   # haku-kubeapi, while the passthrough service carries the working WebSocket path. Keep the
@@ -270,7 +237,6 @@ auto_approval_policies:
       - kubernetes_reads
       - grants_self_introspection
       - grants_own_revoke
-      - public_coder_recall_reads
       # Disabled alongside the policy definition above: do not auto-deny kubectl passthrough
       # solely because the direct Kubernetes SAR says the request is theoretically allowed.
       # - kubectl_passthrough_redundancy_check
@@ -358,17 +324,9 @@ auto_approval_policies:
     type: gmail_label_namespace
     server: gmail
     label_prefix: haku/
-  # Semantic search over haku-state and Ducktape (#5193).
-  - id: haku_recall_reads
-    type: exact_tools
-    tools:
-      haku_index:
-        - search
-        - index_status
   - id: haku_v1
     type: any_of
     policies:
-      - haku_recall_reads
       - gmail_reads
       - google_calendar_reads
       - grocy_reads
@@ -390,21 +348,14 @@ auto_approval_policies:
 access_profiles:
   - id: haku
     auto_approval_policy: haku_v1
-    recall_index_ids:
-      - haku-state
-      - ducktape-public
-    # This is server authorization, not a Recall-index grant and not an auto-approval rule.
     # The configured Claude runtime's static Haku Agent is assigned this profile.
     in_process_server_ids:
       - grants
       - sandbox
   - id: public-coder
     auto_approval_policy: public_coder_v1
-    recall_index_ids:
-      - ducktape-public
     in_process_server_ids:
       - grants
-      - haku_index
   - id: manual-review
     auto_approval_policy: manual_review
     # Even the fallback profile may ASK for a grant: every `grants` call queues for the operator,
@@ -702,22 +653,6 @@ mcp:
         credential:
           kind: operator_connection
           connection: google_calendar
-    # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state and
-    # public Ducktape source. Listing it here is what builds the searcher, and the console refuses
-    # to start unless an embedder is configured too (`HAKU_CONSOLE__EMBEDDER__*`, Ollama) — search
-    # embeds its query. Keeping the corpora current is the role-flagged haku-indexer Deployments
-    # (haku/console/indexer.py): one chunk Deployment per index below, plus the shared embed drain.
-    # Each chunk pod mounts only its own index's slice of the recall_indexes registry above
-    # (indexer-chunk-<index>-config.yaml, derivation-tested against these entries) — haku-state
-    # through a read-only mirror whose typed Git credentials are supplied to its dedicated chunk
-    # worker, and Ducktape from GitHub without a credential. The embed role fills the shared vector
-    # queue those chunks land in.
-    haku_index:
-      id: haku_index
-      backend:
-        kind: in_process
-        credential:
-          kind: none
     # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
     # operator machine (wyrm2/rugged/atlas) under the operator's OWN
     # Authentik identity. There is no standing credential: `operator_login_identity` makes each

@@ -22,12 +22,10 @@ import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import { formatTimestamp, shortDate } from "./time";
 import {
-  getIndexStatus,
   getMcpServerStatus,
   listNodeDaemons,
   listMcpServers,
   type DaemonStatus,
-  type IndexState,
   type McpOperatorAuthDegraded,
   type McpOperatorAuthStatus,
   type McpServerConnection,
@@ -599,62 +597,6 @@ function SystemStatusTable({ deployment }: { deployment: DeploymentInfo }) {
   );
 }
 
-type IndexDisplay = { label: string; color: string; description: string };
-
-export function indexStatusDisplay(index: IndexState): IndexDisplay {
-  if (index.remote_commit && index.indexed_commit === index.remote_commit) {
-    return { label: "Current", color: "teal", description: "Indexed at the latest remote commit." };
-  }
-  if (!index.indexed_commit && index.remote_commit) {
-    return { label: "Not indexed", color: "orange", description: "The first index build is still pending." };
-  }
-  if (index.indexed_commit && index.remote_commit) {
-    return { label: "Behind", color: "orange", description: "A newer remote commit is waiting to be indexed." };
-  }
-  return { label: "Unknown", color: "gray", description: "The remote revision has not been observed yet." };
-}
-
-function commitLabel(commit: string | null | undefined): string {
-  return commit?.slice(0, 12) ?? "none";
-}
-
-function IndexStatusRow({ index }: { index: IndexState }) {
-  const status = indexStatusDisplay(index);
-  const indexedAt = shortDate(index.indexed_at ?? null);
-  return (
-    <Table.Tr>
-      <Table.Td data-slot="primary" className="haku-dense-primary">
-        <Text fw={600} size="sm">
-          {index.index_id}
-        </Text>
-        <Text size="xs" c="dimmed">
-          {index.index_type}
-        </Text>
-      </Table.Td>
-      <Table.Td data-slot="status" className="haku-dense-status">
-        <Badge color={status.color} variant="light" title={status.description}>
-          {status.label}
-        </Badge>
-      </Table.Td>
-      <Table.Td data-slot="secondary" className="haku-dense-secondary">
-        <Text size="sm">
-          {index.branch ?? "Git"} · {index.files ?? 0} files · {index.chunks ?? 0} chunks · {index.embedded_chunks ?? 0}{" "}
-          embedded
-          {(index.pending_chunks ?? 0) > 0 ? ` · ${index.pending_chunks} pending` : ""}
-        </Text>
-        <Text size="xs" ff="monospace">
-          indexed {commitLabel(index.indexed_commit)}
-          {index.remote_commit !== index.indexed_commit ? ` · remote ${commitLabel(index.remote_commit)}` : ""}
-        </Text>
-        <Text size="xs">
-          {indexedAt ? `last indexed ${indexedAt}` : "Not indexed yet"}
-          {(index.superseded_chunks ?? 0) > 0 ? ` · ${index.superseded_chunks} superseded chunks` : ""}
-        </Text>
-      </Table.Td>
-    </Table.Tr>
-  );
-}
-
 export function SettingsPanel(): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
@@ -696,23 +638,18 @@ export function SettingsPanel(): JSX.Element {
   const mcpResource = useAsyncResource(loadMcpServers, resourceOptions("mcp"));
   const agentsResource = useAsyncResource(listAgents, resourceOptions("agents"));
   const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system"));
-  const indexStatusResource = useAsyncResource(getIndexStatus, resourceOptions("system"));
   const daemonsResource = useAsyncResource(listNodeDaemons, resourceOptions("nodes", 10_000));
   const refreshMcp = mcpResource.refresh;
   const refreshAgents = agentsResource.refresh;
   const refreshDeployment = deploymentResource.refresh;
-  const refreshIndexStatus = indexStatusResource.refresh;
   const refreshDaemons = daemonsResource.refresh;
   const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshActiveTab = useCallback(() => {
     if (activeTab === "mcp") return refreshMcp();
     if (activeTab === "agents") return refreshAgents();
     if (activeTab === "nodes") return refreshDaemons();
-    if (activeTab === "system") {
-      refreshDeployment();
-      refreshIndexStatus();
-    }
-  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshIndexStatus, refreshMcp]);
+    if (activeTab === "system") return refreshDeployment();
+  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshMcp]);
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
@@ -812,7 +749,7 @@ export function SettingsPanel(): JSX.Element {
         : activeTab === "nodes"
           ? daemonsResource.loading
           : activeTab === "system"
-            ? deploymentResource.loading || indexStatusResource.loading
+            ? deploymentResource.loading
             : false;
 
   return (
@@ -958,30 +895,6 @@ export function SettingsPanel(): JSX.Element {
             <SectionHeading title="System" />
             <ResourcePanel resource={deploymentResource} label="system status">
               {(value) => <SystemStatusTable deployment={value} />}
-            </ResourcePanel>
-            <SectionHeading title="Indexes" />
-            <ResourcePanel
-              resource={indexStatusResource}
-              label="index status"
-              emptyMessage="No semantic recall indexes are configured."
-              isEmpty={(value) => value.indexes.length === 0}
-            >
-              {(value) => (
-                <DenseTable label="Semantic recall indexes">
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Index</Table.Th>
-                      <Table.Th>Status</Table.Th>
-                      <Table.Th>Contents / freshness</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {value.indexes.map((index) => (
-                      <IndexStatusRow key={index.index_id} index={index} />
-                    ))}
-                  </Table.Tbody>
-                </DenseTable>
-              )}
             </ResourcePanel>
           </Stack>
         </Tabs.Panel>

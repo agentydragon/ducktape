@@ -13,9 +13,6 @@ resources:
   - node-daemon-rugged.sops.yaml
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml
-  - indexer-chunk-ducktape-public-deployment.yaml
-  - indexer-chunk-haku-state-deployment.yaml
-  - indexer-embed-deployment.yaml
   - indexer-role-provisioner-job.yaml
   - kube-api-proxy.yaml
   - kubernetes-authorization-rbac.yaml
@@ -31,15 +28,6 @@ configMapGenerator:
   - name: haku-console-config
     files:
       - config.yaml
-  # One instance, one config slice (#4886): each per-index chunk Deployment mounts only its own
-  # index's definition, so one index's config change (or parse breakage) never touches another
-  # index's pod. The slices are derivation-tested projections of config.yaml's recall_indexes.
-  - name: haku-indexer-chunk-haku-state-config
-    files:
-      - config.yaml=indexer-chunk-haku-state-config.yaml
-  - name: haku-indexer-chunk-ducktape-public-config
-    files:
-      - config.yaml=indexer-chunk-ducktape-public-config.yaml
   - name: haku-console-db-indexer-sql
     files:
       - indexer-role.sql

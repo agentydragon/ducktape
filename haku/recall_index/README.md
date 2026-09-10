@@ -12,8 +12,8 @@ than a permission or query scope:
 | ---------- | ------------------------------------------------ | ----------------------- |
 | `git`      | files at a branch tip of a configured Git remote | a path and a byte range |
 
-The deployment registry in `cluster/k8s/haku/console/config.yaml` currently declares two Git
-indexes — `haku-state` over Haku's Forgejo remote and `ducktape-public` over the public
+When enabled, the deployment registry in `cluster/k8s/haku/console/config.yaml` declares Git
+indexes such as `haku-state` over Haku's Forgejo remote and `ducktape-public` over the public
 Ducktape `devel` branch. Adding another index is a reviewed configuration change; it is not an
 unscoped runtime default.
 
@@ -51,7 +51,7 @@ The index has globally-addressed semantic content plus index-type-specific occur
 
 `contents` and `content_embeddings` are global deduplication layers, but they are not a recall
 authority. Every Git occurrence belongs to one durable `index_id`; `indexes` names that
-boundary and carries its `index_type`. The deployed registrations are `haku-state` and
+boundary and carries its `index_type`. An enabled deployment can register `haku-state` and
 `ducktape-public`. A second Git index may reuse an identical content vector, but its tip, revision
 state, and matches remain a separate set of occurrences.
 
@@ -176,10 +176,16 @@ behind corpus attaches its status to the result.
 The wording is deliberately close to OpenClaw's `memory-core` prompt section, which is the one
 comparable thing in reach and has had far more exposure to real sessions than this has.
 
-## Deployed, in the console
+## Dormant console integration
+
+The implementation below remains available for a future deployment, but the current haku-console
+catalog intentionally does not register `haku_index`, and no index-maintenance workers run. The
+database schema and retained data stay in place until a separate data-retirement decision.
+
+## When enabled in the console
 
 - **Schema ownership.** `store.ensure_schema` creates the extension, schema, and tables for the
-  tests, which own their whole database. The deployed index gets them from the console's Alembic
+  tests, which own their whole database. An enabled deployment gets them from the console's Alembic
   baseline — the console's CNPG cluster is the home.
 - **The MCP tool surface.** `haku_index` (<../console/tools/recall_index.py>) is an in-process
   FastMCP server in haku-console: one `search` with optional `index_ids` (omitted means every
@@ -216,8 +222,8 @@ comparable thing in reach and has had far more exposure to real sessions than th
   Listing the server in `cluster/k8s/haku/console/config.yaml` is what builds it — a configured
   server with no builder fails `validate_in_process_server_bindings` at startup — and the console
   refuses to start if it is listed with no embedder configured, since search embeds its query and
-  cannot run without somewhere to do that. It is listed there, and Haku holds the tool unscoped
-  through the `haku_recall_reads` policy.
+  cannot run without somewhere to do that. When re-enabled, the catalog and access-profile policy
+  must be restored together.
 
 - **The `vector` extension — not an image build.** pgvector is untrusted, so `CREATE EXTENSION`
   needs superuser and the migration (running as `approval_store`) cannot do it — hence a CNPG
@@ -231,9 +237,9 @@ comparable thing in reach and has had far more exposure to real sessions than th
   migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the running
   version serving — so a change to either side wants the `Database` CR reconciled first.
 
-- **Sync.** `haku/console/recall_index_sync.py` sweeps every configured index from the
-  separately deployed `haku-indexer` worker (`haku/console/indexer.py`) in its `chunk` role
-  (`cluster/k8s/haku/console/indexer-deployment.yaml`); the same image's `embed` role drains the
+- **Sync when enabled.** `haku/console/recall_index_sync.py` sweeps every configured index from the
+  separately deployed `haku-indexer` worker (`haku/console/indexer.py`) in its `chunk` role (the
+  per-index `indexer-chunk-*-deployment.yaml` manifests); the same image's `embed` role drains the
   shared embedding queue (`indexer-embed-deployment.yaml`). The console process only reads the
   committed index state for search and status, so index maintenance failing or rolling never
   touches the console's own availability. Each configured Git index runs every thirty seconds
@@ -249,11 +255,11 @@ comparable thing in reach and has had far more exposure to real sessions than th
   embedding model is handled independently by the shared worker's model-specific queue.
 
   Git credentials are per-index: `haku-state` uses **Haku's own Forgejo account** (operator,
-  2026-08-15), so the indexer worker holds something that could write haku-state even though
-  nothing in it does — the console API pod no longer mounts it. `ducktape-public` needs none: it
-  clones the canonical public GitHub remote anonymously. The Forgejo credential cost is recorded
-  where it is paid: `tf/gitops/haku-state/main.tf`, which reflects the Secret into `haku-console`,
-  and the indexer Deployment that consumes it.
+  2026-08-15), so a future indexer worker would hold something that could write haku-state even
+  though nothing in it does. `ducktape-public` needs none: it clones the canonical public GitHub
+  remote anonymously. The credential cost is recorded where it is paid: when enabled,
+  `tf/gitops/haku-state/main.tf` reflects the Secret into `haku-console`, and the indexer
+  Deployment consumes it.
 
 ## Not here yet
 

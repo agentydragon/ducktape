@@ -32,8 +32,8 @@ launch through the Agent UI bridge; it cannot call the route or render the decid
 
 This is transitional. `haku_routine.launch_routine` reaches the same routine through the standard
 MCP approval queue. Once haku-ui uses that path, the Agent UI bridge action and bespoke capability router can
-retire. There is no low-privilege console write tier: haku-ui writes its own state, while the
-console's Recall mirror is read-only.
+retire. There is no low-privilege console write tier: haku-ui writes its own state. Recall storage
+remains in the database for now, but it is not wired into the deployed console.
 
 ## MCP approval queue — authored tool calls, console-approved
 
@@ -129,8 +129,8 @@ changes may remain stale for the configured server's refresh interval; persisten
 The canonical contract is <docs/agent_authority.md>. In short: `Operator`, `Agent`, credential
 bindings, grants, names, profiles, and tool-call principals are durable local identities; every
 Agent call records exact binding provenance; and browser enrollment must converge with the MCP-side
-principal before a binding becomes active. Access profiles independently own auto-approval,
-Recall-index, and in-process-server grants; missing assignments fail closed.
+principal before a binding becomes active. Access profiles independently own auto-approval and
+in-process-server grants; missing assignments fail closed.
 Agents submit/read only their own calls and never approve themselves.
 
 ### In-process MCP servers — no second deployment
@@ -146,19 +146,14 @@ Built-ins are assembled in `mcp/in_process_servers.py`:
 - `gmail` and `google_calendar` execute as the acting Operator's separately linked Google grants.
   Their tool schemas/descriptions are the API contract; `TODO.md` inventories intentionally
   unexposed provider affordances. Auto-approval policy lives in the reviewed deployment config.
-- `haku_index` searches only logical indexes granted by the Agent's access profile; direct Operator
-  calls may read every configured index. In the console it is a database reader over the committed
-  index state (`recall_index_reader.py`). Source materialization and embedding are the separate
-  maintenance stages of `recall_index_sync.py`, run by the independently deployed `haku-indexer`
-  worker (`indexer.py`) as role-flagged Deployments: one chunk Deployment per logical index, each
-  mounting only its own index's config slice, plus one shared embed Deployment. Among the indexer
-  roles only the `haku-state` chunk pod holds the `haku-state` Git credential (Haku's Forgejo
-  account, capable of writes but used read-only for indexing; public Ducktape is anonymous), the
-  embed role the batch embedder endpoint. The API pod holds no Git credential of its own.
-  <../recall_index/README.md> owns the index design.
 - `haku_routine` launches the reviewed routine through ordinary approval.
 - `hostexec` exchanges the acting Operator's login authority only during approved execution; its
   host-side trust boundary is documented in <../hostexec/README.md>.
+
+Recall indexing is currently disabled in deployment. The `recall_index` database schema and data
+remain available for a future re-enable, but the deployed catalog registers no `haku_index` server,
+access profiles grant no Recall indexes, and no index-maintenance workers run. Connected MCP clients
+therefore do not discover or read the retained indexes.
 
 The trusted frontend resolves opaque IDs by composing ordinary read tools. There are no parallel
 preview-only MCP tools or HTTP routes.
