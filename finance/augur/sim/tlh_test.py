@@ -206,5 +206,34 @@ def test_unrepresentable_rate_is_rejected_before_model_runs() -> None:
         )
 
 
+def test_financial_effects_balance_each_transition(assumptions: TlhAssumptions) -> None:
+    portfolio = TlhPortfolio(
+        assumptions,
+        TlhOpening(
+            month=-1,
+            price=77,
+            quantity_scale=10,
+            positions=(TlhOpeningPosition(units=505, reported_tax_basis=3_999, purchase_month=-24),),
+        ),
+    )
+    for month, price in enumerate((77, 43, 100, 99, 120, 3, 0, 50)):
+        before = portfolio.observe().reported_tax_basis
+        harvest = portfolio.advance(TlhMarketUpdate(month=month, price=price))
+        assert portfolio.observe().reported_tax_basis - before == harvest.short_term_gain + harvest.long_term_gain
+        before = portfolio.observe().reported_tax_basis
+        contribution = portfolio.contribute(101)
+        assert portfolio.observe().reported_tax_basis - before == contribution.cash_paid
+        before = portfolio.observe().reported_tax_basis
+        redemption = portfolio.withdraw(min(113, portfolio.observe().value))
+        assert (
+            redemption.cash_received + portfolio.observe().reported_tax_basis - before
+            == redemption.realizations.short_term_gain + redemption.realizations.long_term_gain
+        )
+    before = portfolio.observe().reported_tax_basis
+    final = portfolio.liquidate()
+    assert final.cash_received - before == final.realizations.short_term_gain + final.realizations.long_term_gain
+    assert portfolio.observe() == TlhObservation(value=0, reported_tax_basis=0)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
