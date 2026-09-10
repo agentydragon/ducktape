@@ -200,6 +200,18 @@ explicit standing instruction with modeled terms. Non-mutating tax/trade preview
 reuse canonical calculations with observable inputs and explicit assumptions,
 never the future realized path.
 
+## Managed-account composition
+
+A household-owned managed portfolio attaches a modeled investment service to an
+account. The policy requests contributions/withdrawals and reads current account
+facts; it does not manufacture tax losses or trigger the service's internal
+harvesting each month. Typed model consequences enter canonical execution through
+a separate, narrowly scoped financial-step boundary, not the investor action API.
+The [managed-portfolio plan](managed_portfolio.md) gives the Python composition
+sketch, phase/interface decisions and passive-account → investor-actions → runnable
+comparison slices. These are proposed extensions to the same batch session, not
+implemented APIs or a general entity/plugin framework.
+
 ## Acceptance and remaining choices
 
 `x/monthly_actions` authors a Python batch policy and advances the common action
@@ -231,7 +243,7 @@ use this same session, not a second policy interface.
 
 P12 migrates configured consumers and removes old full-run loops and implicit
 public-portfolio strategy, preserving required existing housing/PE capabilities.
-Bond examples, benchmarks and the app remain. The roadmap separates Python product
+Benchmarks and the app remain. The roadmap separates Python product
 funding, common session reporting and held-bond capture from the narrow harvesting,
 committed-purchase and private-equity timing gates needed for full app cutover.
 Configured source-account claim grouping is all-or-none; each migration must test

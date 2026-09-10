@@ -203,7 +203,10 @@ flowchart TB
     IDENT["IDENT: one rollout identity; private array positions"] --> APP["APP: remaining product-service cutover"]
     RESULT["RESULT: typed common session results"] --> APP
     BONDREPORT["BONDREPORT: project existing held-bond capture"] --> APP
-    GH{"GH: harvesting ownership and phase"} --> HARVEST["HARVEST: migrate existing harvesting"] --> APP
+    GH{"GH: managed-account phase and model boundary"} --> MA1["MA1: passive managed account"]
+    MA1 --> MA2["MA2: contributions and withdrawals"]
+    MA2 --> MA3["MA3: runnable managed-account comparison"]
+    MA2 --> APP
     GHOUSE{"GHOUSE: committed purchase timing and failure"} --> HOUSING["HOUSING: preserve scheduled property lifecycle"] --> APP
     GPE{"GPE: compulsory PE events and tender timing"} --> PE["PE: separate issuer mechanics and tender choice"] --> APP
     APP --> P12
@@ -222,6 +225,7 @@ flowchart TB
     BIND --> RUN
     TAX --> RUN
     BOND -. native tradable or off-par arms .-> RUN
+    MA3 -. managed-account study arm .-> RUN
 
     SCORE["SCORE: fair model comparison"] --> GM{"GM: model adoption evidence"}
     GM --> MODEL["MODEL: adopt justified model changes"]
@@ -251,7 +255,10 @@ their implementations are not backlog. APP still removes configured funding
 lowering and preserves existing scope. The current app has one decision-making
 owner; scripted counterparties do not require a general multi-policy scheduler.
 New adaptive HOUSE/BOND features are not prerequisites for preserving current
-behavior. Benchmarks remain independent P12 consumers.
+behavior. Benchmarks remain independent P12 consumers. The
+[managed-portfolio plan](managed_portfolio.md) specifies GH and MA1–MA3: a
+household-owned account with modeled service behavior, not another household
+harvesting policy. That branch does not wait for housing, PE or RUNTIME/GE.
 
 OUT and CAP can proceed separately. Action-session capture and claim/payment
 identities already exist; CAP reuses them and existing actor views for richer
@@ -334,10 +341,12 @@ apply only to the consuming slice. No convergence node waits for RUNTIME/GE.
 | IDENT      | Stable rollout IDs; metrics own their ID axis. Select by ID and update event schema/callers atomically; test reordered and eventless traces.                                                                                                              | None                                            |
 | RESULT     | Typed finished rollouts, summaries, receipts and stop variants; decode once, preserve columnar traces and migrate all consumers/CLI tests.                                                                                                                | None                                            |
 | BONDREPORT | Reduce canonical bond-principal histories into product metrics, with redemption/stopped-mark controls; no second collector or invented missing-domain zeros.                                                                                              | None                                            |
-| HARVEST    | Move the existing reduced-form harvesting process to the chosen explicit boundary; reuse gain/deferral posting. Preserve sale give-back, mixed holding periods, full liquidation, rejection behavior and year-end tax controls.                           | GH                                              |
+| MA1     | Passive managed-account declaration, Python approximation, canonical loss/basis consequences and scoped capture; no household harvest action. Independent financial controls and acceptance are in the [managed-portfolio plan](managed_portfolio.md).                                                                                                                                                                                | GH                                   |
+| MA2     | Contribution and gross-cash withdrawal actions through the same batch API, with declared liquidation/settlement and exact basis/deferral reconciliation.                                                                                                                                                                                                                                                                              | MA1                                  |
+| MA3     | Runnable paired managed/no-harvest comparison with identical supplied paths, documented CLI tests, compact outcomes and selected replay. Calibration validation remains separate.                                                                                                                                                                                                                                                     | MA2                                  |
 | HOUSING    | Preserve scheduled purchase, occupancy, rent, improvements, sale and mortgage/tax lifecycle through shared financial steps and capture. Test funding failure, purchase basis, deductions and rental transitions. This is not adaptive purchase policy.    | GHOUSE                                          |
 | PE         | Separate compulsory issuer state/cash events from Python tender choice. Enforce eligibility, capacity and lockups through canonical execution; preserve collapse/recovery, IPO transition, gains and event outputs.                                       | GPE                                             |
-| APP        | Cut over all product endpoints to the Python loop and common outputs; selected detail executes once, fans use compact capture. Preserve configured holdings and supported lifecycle/harvest inputs, then remove replaced methods with their last callers. | IDENT, RESULT, BONDREPORT, HARVEST, HOUSING, PE |
+| APP        | Cut over all product endpoints to the Python loop and common outputs; selected detail executes once, fans use compact capture. Preserve configured holdings and supported lifecycle/harvest inputs, then remove replaced methods with their last callers. | IDENT, RESULT, BONDREPORT, MA2, HOUSING, PE |
 
 The default API test configuration includes PE and dated bonds. Public-only
 controls must declare a separate synthetic portfolio, not discard those holdings.
@@ -444,11 +453,15 @@ is a GT/TAX slice for affected housing arms, independent of runtime-language res
 The existing app needs these bounded GP decisions before its affected capability
 migrations, without reopening the settled ordered-action/no-retry contract:
 
-- **GH — harvesting:** decide whether the reduced-form harvest process is an
-  actor-requested operation or a declared managed-product service, and its phase.
-  It currently runs after successful grouped payments (`rust/engine.rs`);
-  removing the action-session guard alone would omit it. Pin what occurs on a
-  stopped path and which current facts the policy needs.
+- **GH — managed-account phase and model boundary:** ownership is settled: the
+  household chooses investment/withdrawal, and a modeled service handles internal
+  harvesting. Pin the phase, opening basis/deferral and gross withdrawal conventions,
+  then the minimum pure Python batch-model → canonical-execution seam described in
+  [the managed-portfolio plan](managed_portfolio.md#gh-bounded-decisions-before-ma1).
+  Current harvesting follows successful grouped payments (`rust/engine.rs`);
+  the proposed pre-observation phase changes failed-path and same-month-flow
+  behavior and needs explicit numerical controls. No general plugin system or
+  second household policy callback.
 - **GHOUSE — committed purchases (deferred):** the intended boundary is a policy
   action that acquires the house and signs the mortgage/contracts together.
   Insufficient funding stops the trajectory, like an unpaid bill; no partial
@@ -505,7 +518,8 @@ all the others to be solved first.
 1. **IDENT, RESULT and NOMCOUPON are dispatched independently.** Keep real
    financial controls and all-caller updates in each PR. BONDREPORT remains a
    separate composition slice, not a new capture implementation.
-2. Resolve **GH** with concrete timing/failure examples; **GHOUSE and GPE are
+2. Resolve **GH** with concrete timing/failure examples and the model-step
+   signature before dispatching **MA1–MA3**. **GHOUSE and GPE are
    deferred**, with the intended action boundaries recorded above. Scope benchmarks independently. APP waits
    for the existing capabilities its inputs require, not new adaptive housing,
    bond trading or a general multi-agent scheduler.
