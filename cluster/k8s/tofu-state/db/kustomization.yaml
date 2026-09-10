@@ -10,5 +10,4 @@ resources:
   - credentials.sops.yaml
   - ollama-bearer-token-credentials.sops.yaml
   - ollama-bearer-token-database.yaml
-  - tenant-databases-absent.yaml
   - postgres-cluster-ovh.yaml

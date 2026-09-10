@@ -6,9 +6,6 @@ metadata:
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
-  # Explicitly retain CNPG's current default while causing it to retry the
-  # role tombstones after their Database resources have removed the databases.
-  logLevel: info
 
   probes:
     liveness:
@@ -67,46 +64,3 @@ spec:
         inRoles: []
         passwordSecret:
           name: tofu-state-ollama-bearer-token-credentials
-      # The abandoned state-isolation pilot created these login roles.  Keep
-      # their absence declarative after the matching Database tombstones drop
-      # the databases they own.
-      - name: tfstate_agent_machine_access
-        ensure: absent
-      - name: tfstate_alloy_otlp_bearer_token
-        ensure: absent
-      - name: tfstate_augur_evidence
-        ensure: absent
-      - name: tfstate_budget_ledger
-        ensure: absent
-      - name: tfstate_cpap_data
-        ensure: absent
-      - name: tfstate_dns_records
-        ensure: absent
-      - name: tfstate_flux_webhook_token
-        ensure: absent
-      - name: tfstate_forgejo_agentydragon
-        ensure: absent
-      - name: tfstate_forgejo_agentydragon_repos
-        ensure: absent
-      - name: tfstate_forgejo_claude
-        ensure: absent
-      - name: tfstate_forgejo_images
-        ensure: absent
-      - name: tfstate_gatus_sso
-        ensure: absent
-      - name: tfstate_github_branch_protection
-        ensure: absent
-      - name: tfstate_github_secrets_sync
-        ensure: absent
-      - name: tfstate_haku_state
-        ensure: absent
-      - name: tfstate_infra_drift
-        ensure: absent
-      - name: tfstate_litellm_api_key
-        ensure: absent
-      - name: tfstate_litellm_keys
-        ensure: absent
-      - name: tfstate_sso_providers
-        ensure: absent
-      - name: tfstate_thrive_scrape
-        ensure: absent
