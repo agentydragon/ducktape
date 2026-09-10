@@ -61,7 +61,8 @@ def compiled() -> CompiledRun:
 
 @pytest.fixture(scope="module")
 def outcomes(compiled: CompiledRun) -> dict[str, list[dict[str, Any]]]:
-    return {capture: _run(compiled, [0, 1], capture) for capture in ("summary", "dense", "forensic")}
+    captures: tuple[Literal["summary", "dense", "forensic"], ...] = ("summary", "dense", "forensic")
+    return {capture: _run(compiled, [0, 1], capture) for capture in captures}
 
 
 def test_same_session_events_and_metrics_reconcile_sales_receipts_and_tax(
@@ -225,7 +226,8 @@ def test_uncaptured_bond_is_not_reported_as_zero_even_after_redemption() -> None
     ).compiled_run
     rollouts = _run(compiled, [0], "summary")
     assert rollouts[0]["stop"] is None
-    assert rollouts[0]["summary"]["ending_book"]["bonds"] == []
+    assert [bond["active"] for bond in rollouts[0]["summary"]["ending_book"]["bonds"]] == [False]
+    assert rollouts[0]["summary"]["cash"][0]["values"][-1] == 10_000
     with pytest.raises(ValueError, match="held-bond principal history"):
         metric_arrays(compiled, rollouts, primary_agent_id="example-household")
 
