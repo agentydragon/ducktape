@@ -86,7 +86,7 @@ macro_rules! frame_value {
 
 /// Declare the canonical frames: `<frame name>: <row type> from <engine field> { columns }`.
 ///
-/// `rollout_index` and `month_index` are on every frame and come from the enclosing rollout
+/// `rollout_id` and `month_index` are on every frame and come from the enclosing rollout
 /// and the row's own month, so they are not repeated per frame.
 macro_rules! event_frames {
     ($(
@@ -99,7 +99,7 @@ macro_rules! event_frames {
             $(#[$meta])*
             #[derive(Debug, Serialize)]
             pub struct $name {
-                pub rollout_index: u32,
+                pub rollout_id: u32,
                 pub month_index: u32,
                 $( pub $field: frame_type!($kind), )*
             }
@@ -117,7 +117,7 @@ macro_rules! event_frames {
                 for rollout in rollouts {
                     $(
                         frames.$target.extend(rollout.$source.iter().map(|row| $name {
-                            rollout_index: rollout.rollout_id,
+                            rollout_id: rollout.rollout_id,
                             month_index: row.month,
                             $( $field: frame_value!($kind row, $($path).+), )*
                         }));

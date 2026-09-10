@@ -1,17 +1,15 @@
 """Event log for the simulation.
 
-Every state-changing happening is a row on an event-kind frame.
-`EventLog` bundles all the kind frames together so the simulate loop
-can hand one object to `apply_events`. Each kind frame's schema is
-keyed by `(rollout_index, month_index, cause_id)` plus the kind-
-specific columns.
+Recorded financial events grouped by kind. Original rollout IDs accompany the
+frames even when a trajectory has no events; an ID is not a selected array column.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Any
 
 import polars as pl
 
@@ -19,7 +17,7 @@ from finance.augur.frames import FrameSpec
 
 TRANSFER_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "from_agent_id": pl.Utf8(),
@@ -41,7 +39,7 @@ TRANSFER_EVENT_SCHEMA = pl.Schema(
 # zeroes the agent's `ordinary_income_ytd` for the next year.
 TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
@@ -56,7 +54,7 @@ TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
 # not mutate state from this frame.
 TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
@@ -92,7 +90,7 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
 # Transfer events; this frame is the liability-side settlement.
 TAX_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
@@ -103,7 +101,7 @@ TAX_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
 
 OBLIGATION_ACCRUAL_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "obligation_id": pl.Utf8(),
@@ -118,7 +116,7 @@ OBLIGATION_ACCRUAL_EVENT_SCHEMA = pl.Schema(
 
 OBLIGATION_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "obligation_id": pl.Utf8(),
@@ -134,7 +132,7 @@ OBLIGATION_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
 
 PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "property_id": pl.Utf8(),
@@ -150,7 +148,7 @@ PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
 
 MORTGAGE_ORIGINATION_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "liability_id": pl.Utf8(),
@@ -168,7 +166,7 @@ MORTGAGE_ORIGINATION_EVENT_SCHEMA = pl.Schema(
 
 MORTGAGE_PAYMENT_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "liability_id": pl.Utf8(),
@@ -189,7 +187,7 @@ MORTGAGE_PAYMENT_EVENT_SCHEMA = pl.Schema(
 # simulation; the actual stopped book is retained and later months are unobserved.
 ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
@@ -211,7 +209,7 @@ ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
 # `month_index - purchase_month_index`.
 LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
@@ -228,12 +226,12 @@ LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
 
 
 SET_RENTED_FRACTION_EVENT_SCHEMA = pl.Schema(
-    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "property_id": pl.Utf8(), "rented_fraction": pl.Float64()}
+    {"rollout_id": pl.Int64(), "month_index": pl.Int64(), "property_id": pl.Utf8(), "rented_fraction": pl.Float64()}
 )
 
 SET_PRIMARY_RESIDENCE_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "agent_id": pl.Utf8(),
         "property_id": pl.Utf8(),
@@ -243,7 +241,7 @@ SET_PRIMARY_RESIDENCE_EVENT_SCHEMA = pl.Schema(
 
 CAPITAL_IMPROVEMENT_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "property_id": pl.Utf8(),
         "amount_quanta": pl.Int64(),
@@ -253,7 +251,7 @@ CAPITAL_IMPROVEMENT_EVENT_SCHEMA = pl.Schema(
 
 PROPERTY_SALE_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "property_id": pl.Utf8(),
         "gross_proceeds_quanta": pl.Int64(),
@@ -268,7 +266,7 @@ PROPERTY_SALE_EVENT_SCHEMA = pl.Schema(
 
 PRIVATE_EQUITY_EVENT_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "issuer_id": pl.Utf8(),
         "asset_id": pl.Utf8(),
@@ -285,7 +283,7 @@ PRIVATE_EQUITY_EVENT_SCHEMA = pl.Schema(
 
 PRIVATE_EQUITY_OPPORTUNITY_SCHEMA = pl.Schema(
     {
-        "rollout_index": pl.Int64(),
+        "rollout_id": pl.Int64(),
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "issuer_id": pl.Utf8(),
@@ -377,17 +375,20 @@ EVENT_FRAME_SPECS = EVENT_FRAMES.ordered()
 
 @dataclass(frozen=True)
 class EventLog:
-    """Per-step or per-simulation collection of events, one frame
-    per event kind."""
+    """Events and their owning original paths, including eventless trajectories."""
 
+    rollout_ids: tuple[int, ...]
     _frames: Mapping[str, pl.DataFrame]
 
     @classmethod
     def empty(cls) -> EventLog:
-        return cls.from_frames({})
+        return cls.from_frames({}, rollout_ids=())
 
     @classmethod
-    def from_frames(cls, frames: Mapping[str, pl.DataFrame]) -> EventLog:
+    def from_frames(cls, frames: Mapping[str, pl.DataFrame], *, rollout_ids: Sequence[int]) -> EventLog:
+        ids = tuple(rollout_ids)
+        if len(set(ids)) != len(ids) or any(id_ < 0 for id_ in ids):
+            raise ValueError("event rollout IDs must be unique and nonnegative")
         unknown = set(frames) - {spec.name for spec in EVENT_FRAME_SPECS}
         if unknown:
             unknown_list = ", ".join(sorted(unknown))
@@ -397,18 +398,37 @@ class EventLog:
             spec.name: spec.normalize(frames[spec.name]) if spec.name in frames else spec.empty()
             for spec in EVENT_FRAME_SPECS
         }
-        return cls(MappingProxyType(by_name))
+        for name, frame in by_name.items():
+            actual = frame.get_column("rollout_id")
+            if actual.null_count() or set(actual) - set(ids):
+                raise ValueError(f"event frame {name!r} contains an undeclared rollout ID")
+        return cls(ids, MappingProxyType(by_name))
+
+    @classmethod
+    def from_serialized(cls, frames: Mapping[str, list[dict[str, Any]]], *, rollout_ids: Sequence[int]) -> EventLog:
+        """Strict frame/column decoding at the result serialization boundary."""
+        expected = {spec.name for spec in EVENT_FRAME_SPECS}
+        if set(frames) != expected:
+            raise ValueError(
+                f"serialized event frames added {sorted(set(frames) - expected)} "
+                f"and omitted {sorted(expected - set(frames))}"
+            )
+        return cls.from_frames(
+            {spec.name: _decode_frame(spec, frames[spec.name]) for spec in EVENT_FRAME_SPECS}, rollout_ids=rollout_ids
+        )
 
     @classmethod
     def concat(cls, logs: Iterable[EventLog]) -> EventLog:
         logs_tuple = tuple(logs)
         return cls.from_frames(
-            {spec.name: spec.concat(log.frame(spec) for log in logs_tuple) for spec in EVENT_FRAME_SPECS}
+            {spec.name: spec.concat(log.frame(spec) for log in logs_tuple) for spec in EVENT_FRAME_SPECS},
+            rollout_ids=tuple(dict.fromkeys(id_ for log in logs_tuple for id_ in log.rollout_ids)),
         )
 
     def at_month(self, month: int) -> EventLog:
         return self.from_frames(
-            {spec.name: self.frame(spec).filter(pl.col("month_index") == month) for spec in EVENT_FRAME_SPECS}
+            {spec.name: self.frame(spec).filter(pl.col("month_index") == month) for spec in EVENT_FRAME_SPECS},
+            rollout_ids=self.rollout_ids,
         )
 
     def frame(self, spec: FrameSpec) -> pl.DataFrame:
@@ -481,3 +501,18 @@ class EventLog:
     @property
     def private_equity_opportunities(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.private_equity_opportunities)
+
+
+def _decode_frame(spec: FrameSpec, rows: list[dict[str, Any]]) -> pl.DataFrame:
+    # Polars otherwise silently ignores extra columns or fills omitted columns with nulls.
+    if not rows:
+        return spec.empty()
+    declared = set(spec.schema.names())
+    for row in rows:
+        present = set(row)
+        if present != declared:
+            raise ValueError(
+                f"event frame {spec.name!r}: serialized row added {sorted(present - declared)} "
+                f"and omitted {sorted(declared - present)}"
+            )
+    return pl.DataFrame(rows, schema=spec.schema)

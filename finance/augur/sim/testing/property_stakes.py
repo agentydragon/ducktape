@@ -326,11 +326,11 @@ class PropertyStakeAcceptance:
         result = backend(home_and_rental_case())
 
         assert result.events.set_rented_fraction_events.to_dicts() == [
-            {"rollout_index": 0, "month_index": 12, "property_id": "rental", "rented_fraction": 0.5}
+            {"rollout_id": 0, "month_index": 12, "property_id": "rental", "rented_fraction": 0.5}
         ]
         assert result.events.capital_improvement_events.select(
-            "rollout_index", "month_index", "property_id", "amount_quanta"
-        ).to_dicts() == [{"rollout_index": 0, "month_index": 12, "property_id": "rental", "amount_quanta": 3_000_000}]
+            "rollout_id", "month_index", "property_id", "amount_quanta"
+        ).to_dicts() == [{"rollout_id": 0, "month_index": 12, "property_id": "rental", "amount_quanta": 3_000_000}]
 
     def test_the_rental_sale_carries_its_own_basis_and_not_the_home_s_exclusion(self, backend: Backend) -> None:
         """§121 belongs to the primary residence, and alice's is `home`.

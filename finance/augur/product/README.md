@@ -4,8 +4,10 @@
 the arrays consumed by `sim.product_metrics` fan/terminal reducers. It owns no
 session or policy. On a dense/forensic result, `rust.event_log.decode_event_log`
 reads that same rollout's `trace`; `projection.project_product_rollout` combines
-those events with the arrays. Pass the original `rollout_id` separately from its
-selected array column.
+those events with the arrays using only the original `rollout_id`. Metric arrays
+retain their ordered IDs; `select(ids)` subsets/reorders those IDs with their
+columns. Event logs retain owning IDs even for eventless paths. A projection
+rejects an ID absent from either input; array-column positions are internal.
 
 Compact public cash/securities histories suffice for population metrics; absent
 detail is `trace=None`. Property, private-equity and held-bond historical values

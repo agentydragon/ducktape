@@ -93,7 +93,7 @@ class RolloutIndependenceAcceptance:
 
         liabilities = backend(one_path_owes_and_one_does_not()).tax_liabilities
         peaks = dict(
-            liabilities.group_by("rollout_index").agg(pl.col("amount_owed_quanta").max().alias("peak")).iter_rows()
+            liabilities.group_by("rollout_id").agg(pl.col("amount_owed_quanta").max().alias("peak")).iter_rows()
         )
         assert peaks[QUIET] == 0, "the flat path should never owe tax"
         assert peaks[TAXED] > 0, "the spiked path should owe tax on its gain"
@@ -112,7 +112,7 @@ class RolloutIndependenceAcceptance:
         rows = backend(one_path_owes_and_one_does_not()).tax_liabilities
 
         def months(rollout: int) -> list[int]:
-            return sorted(rows.filter(pl.col("rollout_index") == rollout).get_column("month_index").to_list())
+            return sorted(rows.filter(pl.col("rollout_id") == rollout).get_column("month_index").to_list())
 
         assert months(TAXED) == [ASSESSED_YEAR_ONE, ASSESSED_YEAR_TWO, SETTLED_YEAR_TWO]
         assert months(QUIET) == [ASSESSED_YEAR_ONE, ASSESSED_YEAR_TWO]

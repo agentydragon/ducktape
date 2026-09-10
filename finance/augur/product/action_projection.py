@@ -86,6 +86,7 @@ def metric_arrays(
         )
         series["shortfall_quanta"][observed - 1, column] = _shortfall(summary)
     return ProductMetricArrays(
+        rollout_ids=tuple(ids),
         month_index=np.arange(snapshot_count, dtype=np.int64),
         failed_month=failed_month,
         currency_code=run.execution_input["currency_code"],

@@ -156,7 +156,6 @@ class ProductService:
         projection = project_product_rollout(
             self._engine.events(run),
             self._engine.product_metrics(run, primary_agent_id=self._primary_agent_id),
-            rollout_index=0,
             rollout_id=0,
             primary_agent_id=self._primary_agent_id,
             asset_label_by_id=self._asset_label_by_id,

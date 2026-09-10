@@ -1,5 +1,7 @@
 """Product metric arrays and pure reductions, independent of trajectory execution."""
 
+from __future__ import annotations
+
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from enum import StrEnum
@@ -70,11 +72,37 @@ class ProductProjectionSummaries:
 class ProductMetricArrays:
     """Exact integer blocks plus observation validity; masked storage is not money."""
 
+    rollout_ids: tuple[int, ...]
     month_index: Int64[np.ndarray, " snapshot"]
     failed_month: Int64[np.ndarray, " rollout"]
     currency_code: str
     currency_quantum: str
     base_series: tuple[Int64[np.ndarray, " snapshot rollout"], ...]
+
+    def __post_init__(self) -> None:
+        if len(set(self.rollout_ids)) != len(self.rollout_ids) or any(id_ < 0 for id_ in self.rollout_ids):
+            raise ValueError("metric rollout IDs must be unique and nonnegative")
+        if self.failed_month.shape != (len(self.rollout_ids),):
+            raise ValueError("failure vector must have one entry per rollout ID")
+        if len(self.base_series) != len(BASE_METRIC_NAMES) or any(
+            values.shape != (len(self.month_index), len(self.rollout_ids)) for values in self.base_series
+        ):
+            raise ValueError("base metric arrays must align with the snapshot and rollout ID axes")
+
+    def select(self, rollout_ids: tuple[int, ...]) -> ProductMetricArrays:
+        """Select/reorder original IDs without detaching labels from array columns."""
+        missing = set(rollout_ids) - set(self.rollout_ids)
+        if missing:
+            raise ValueError(f"unknown metric rollout IDs: {sorted(missing)}")
+        columns = [self.rollout_ids.index(id_) for id_ in rollout_ids]
+        return ProductMetricArrays(
+            rollout_ids=rollout_ids,
+            month_index=self.month_index,
+            failed_month=self.failed_month[columns],
+            currency_code=self.currency_code,
+            currency_quantum=self.currency_quantum,
+            base_series=tuple(values[:, columns] for values in self.base_series),
+        )
 
     @property
     def observed(self) -> Bool[np.ndarray, " snapshot rollout"]:

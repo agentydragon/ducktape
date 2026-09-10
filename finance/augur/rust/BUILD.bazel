@@ -145,11 +145,7 @@ py_library(
 py_library(
     name = "event_log",
     srcs = ["event_log.py"],
-    deps = [
-        "//finance/augur:frames",
-        "//finance/augur/sim:events",
-        "@pypi//polars",
-    ],
+    deps = ["//finance/augur/sim:events"],
 )
 
 py_test(

@@ -87,8 +87,8 @@ def _multi_series(*, levels_by_series: dict[LevelSeriesKey, dict[int, list[float
     paths: SeriesPaths = {}
     for key, by_rollout in levels_by_series.items():
         matrix = np.full((rollout_count, snapshots), np.nan, dtype=np.float64)
-        for rollout_index, levels in by_rollout.items():
-            matrix[rollout_index, : len(levels)] = levels
+        for rollout_position, levels in by_rollout.items():
+            matrix[rollout_position, : len(levels)] = levels
         paths[key] = matrix
     return paths
 
@@ -1178,13 +1178,13 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
         )
         recapture = 12 * (purchase_price * 0.80 / 27.5 / 12)
         expected_by_rollout = {}
-        for rollout_index, sale_level in [(0, 1.2), (1, 1.6)]:
+        for rollout_id, sale_level in [(0, 1.2), (1, 1.6)]:
             gross = purchase_price * sale_level * 0.94
             realized_gain = gross - (purchase_price - recapture)
             post_recapture_gain = realized_gain - recapture
             section_121 = min(post_recapture_gain, 250_000)
             ltcg = post_recapture_gain - section_121
-            expected_by_rollout[rollout_index] = {
+            expected_by_rollout[rollout_id] = {
                 "gross_proceeds_quanta": gross,
                 "mortgage_payoff_quanta": payoff,
                 "net_cash_to_owner_quanta": gross - payoff,
@@ -1195,18 +1195,18 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
             }
 
         sale_rows = {
-            row["rollout_index"]: row
-            for row in result.events.property_sale_events.sort("rollout_index").iter_rows(named=True)
+            row["rollout_id"]: row
+            for row in result.events.property_sale_events.sort("rollout_id").iter_rows(named=True)
         }
         assert set(sale_rows) == {0, 1}
-        for rollout_index, expected in expected_by_rollout.items():
-            row = sale_rows[rollout_index]
+        for rollout_id, expected in expected_by_rollout.items():
+            row = sale_rows[rollout_id]
             assert row["month_index"] == sale_month
             for field, expected_value in expected.items():
                 assert row[field] / 100 == pytest.approx(expected_value, abs=0.02)
 
         federal_sale_year = {
-            row["rollout_index"]: row
+            row["rollout_id"]: row
             for row in result.events.tax_breakdowns.filter(
                 (pl.col("month_index") == 47) & (pl.col("jurisdiction_id") == "federal_us")
             ).iter_rows(named=True)
@@ -1852,7 +1852,7 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
             (pl.col("agent_id") == OWNER_AGENT_ID)
             & (pl.col("classification") == "ltcg")
             & (pl.col("month_index") == sale_month + 1)
-            & (pl.col("rollout_index") == 0)
+            & (pl.col("rollout_id") == 0)
         )
         actual_ltcg = 0 if post_sale_ltcg.is_empty() else float(post_sale_ltcg.get_column("gain_quanta").sum()) / 100
         assert actual_ltcg == pytest.approx(expected_ltcg_usd, abs=1)
@@ -1952,7 +1952,7 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
         primary_rows = result.events.set_primary_residence_events.to_dicts()
         assert primary_rows == [
             {
-                "rollout_index": 0,
+                "rollout_id": 0,
                 "month_index": 6,
                 "agent_id": OWNER_AGENT_ID,
                 "property_id": "p1",
@@ -1988,7 +1988,7 @@ class RentalIncomeTaxationAcceptance(_RentalAcceptance):
 
         assert result.events.set_primary_residence_events.to_dicts() == [
             {
-                "rollout_index": 0,
+                "rollout_id": 0,
                 "month_index": sale_month,
                 "agent_id": OWNER_AGENT_ID,
                 "property_id": "p1",

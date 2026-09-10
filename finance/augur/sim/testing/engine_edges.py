@@ -64,7 +64,7 @@ def _cash(run, agent_id: str, month_index: int) -> int:
     # `.item()` is typed Any; coerce so the lint aspect's mypy doesn't flag no-any-return.
     return int(
         run.cash.filter(
-            (pl.col("agent_id") == agent_id) & (pl.col("month_index") == month_index) & (pl.col("rollout_index") == 0)
+            (pl.col("agent_id") == agent_id) & (pl.col("month_index") == month_index) & (pl.col("rollout_id") == 0)
         )
         .get_column("balance_quanta")
         .item()
@@ -76,14 +76,14 @@ def _gain(run, agent_id: str, classification: str, month_index: int) -> int:
         (pl.col("agent_id") == agent_id)
         & (pl.col("classification") == classification)
         & (pl.col("month_index") == month_index)
-        & (pl.col("rollout_index") == 0)
+        & (pl.col("rollout_id") == 0)
     ).get_column("gain_quanta")
     return int(rows.item()) if len(rows) else 0
 
 
 def _federal_tax(run) -> int:
     rows = run.tax_liabilities.filter(
-        (pl.col("jurisdiction_id") == "federal_us") & (pl.col("rollout_index") == 0)
+        (pl.col("jurisdiction_id") == "federal_us") & (pl.col("rollout_id") == 0)
     ).get_column("amount_owed_quanta")
     return int(rows.sum())
 
@@ -140,7 +140,7 @@ def _pe_external_with_channel_value(
         horizon_months=horizon_months,
     )
     patched = valid.frame.with_columns(
-        pl.when((pl.col("rollout_index") == 0) & (pl.col("month_index") == month))
+        pl.when((pl.col("rollout_id") == 0) & (pl.col("month_index") == month))
         .then(pl.lit(value, dtype=pl.Float64))
         .otherwise(pl.col(channel))
         .alias(channel)
@@ -221,10 +221,10 @@ def _harvest_scenario(
     )
 
 
-def _ytd_gain(result, *, month_index: int, classification: str, rollout_index: int = 0) -> float:
+def _ytd_gain(result, *, month_index: int, classification: str, rollout_id: int = 0) -> float:
     rows = result.capital_gains.filter(
         (pl.col("month_index") == month_index)
-        & (pl.col("rollout_index") == rollout_index)
+        & (pl.col("rollout_id") == rollout_id)
         & (pl.col("agent_id") == "alice")
         & (pl.col("classification") == classification)
     )
@@ -233,14 +233,14 @@ def _ytd_gain(result, *, month_index: int, classification: str, rollout_index: i
     return float(rows.get_column("gain_quanta").sum())
 
 
-def _harvested_short_term_in_month(result, *, calendar_month: int, rollout_index: int = 0) -> float:
+def _harvested_short_term_in_month(result, *, calendar_month: int, rollout_id: int = 0) -> float:
     """Magnitude of short-term loss harvested during `calendar_month` (a positive number).
 
     State snapshot `month_index = m + 1` reflects the end of calendar month `m`, so the loss booked
     during month `m` is the drop in cumulative YTD short-term gain from snapshot `m` to `m + 1`."""
 
-    before = _ytd_gain(result, month_index=calendar_month, classification="stcg", rollout_index=rollout_index)
-    after = _ytd_gain(result, month_index=calendar_month + 1, classification="stcg", rollout_index=rollout_index)
+    before = _ytd_gain(result, month_index=calendar_month, classification="stcg", rollout_id=rollout_id)
+    after = _ytd_gain(result, month_index=calendar_month + 1, classification="stcg", rollout_id=rollout_id)
     return before - after
 
 
@@ -823,8 +823,8 @@ class HarvestAcceptance:
         external_series = _sp500_levels([[1.0, 1.0, 0.8, 0.8], [1.0, 1.0, 1.0, 1.0]])
         result = backend(Case(scenario=scenario, rollout_count=2, paths=external_series, locations={}))
 
-        drawdown_harvest = _harvested_short_term_in_month(result, calendar_month=2, rollout_index=0)
-        flat_harvest = _harvested_short_term_in_month(result, calendar_month=2, rollout_index=1)
+        drawdown_harvest = _harvested_short_term_in_month(result, calendar_month=2, rollout_id=0)
+        flat_harvest = _harvested_short_term_in_month(result, calendar_month=2, rollout_id=1)
         assert drawdown_harvest > flat_harvest > 0.0
 
     def test_long_bull_run_ossifies_harvest_toward_floor(self, backend: Backend) -> None:

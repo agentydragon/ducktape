@@ -96,8 +96,10 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
 
 
 class MaterializedLevelRows(NamedTuple):
+    """Coordinates in the prepared input tensors, not selected result columns."""
+
     key: LevelSeriesKey
-    rollout_index: Int64[np.ndarray, " observation"]
+    rollout_position: Int64[np.ndarray, " observation"]
     month_index: Int64[np.ndarray, " observation"]
     values: Float64[np.ndarray, " observation"]
     present: Bool[np.ndarray, " observation"]
@@ -111,11 +113,11 @@ def materialize_level_rows(
 
     rows: list[MaterializedLevelRows] = []
     for key, frame in value_rows:
-        rollout_index, month_index, values, in_bounds = _frame_values(frame, rollout_count, horizon_months)
+        rollout_position, month_index, values, in_bounds = _frame_values(frame, rollout_count, horizon_months)
         rows.append(
             MaterializedLevelRows(
                 key=key,
-                rollout_index=rollout_index,
+                rollout_position=rollout_position,
                 month_index=month_index,
                 values=values,
                 present=frame.get_column("value").is_not_null().to_numpy(),
@@ -188,13 +190,16 @@ def _frame_values(
     Float64[np.ndarray, " observation"],
     Bool[np.ndarray, " observation"],
 ]:
-    rollout_index = frame.get_column("rollout_index").to_numpy()
+    rollout_position = frame.get_column("rollout_index").to_numpy()
     month_index = frame.get_column("month_index").to_numpy()
     raw_values = frame.get_column("value").to_numpy()
     in_bounds = (
-        (rollout_index >= 0) & (rollout_index < rollout_count) & (month_index >= 0) & (month_index <= horizon_months)
+        (rollout_position >= 0)
+        & (rollout_position < rollout_count)
+        & (month_index >= 0)
+        & (month_index <= horizon_months)
     )
-    return rollout_index, month_index, raw_values, in_bounds
+    return rollout_position, month_index, raw_values, in_bounds
 
 
 def external_series_cubes(
@@ -219,13 +224,13 @@ def external_series_cubes(
         if index is None:
             continue
         keep = rows.in_bounds
-        values[index, rows.rollout_index[keep], rows.month_index[keep]] = rows.values[keep]
+        values[index, rows.rollout_position[keep], rows.month_index[keep]] = rows.values[keep]
         quantize = _money_quantizer(rows.key)
         if quantize is None:
             continue
         keep = rows.in_bounds & np.isfinite(rows.values)
         if keep.any():
-            money_values[index, rows.rollout_index[keep], rows.month_index[keep]] = quantize(
+            money_values[index, rows.rollout_position[keep], rows.month_index[keep]] = quantize(
                 rows.values[keep], quantum=currency_quantum
             )
     return values, money_values
@@ -274,7 +279,7 @@ def validate_series_indexed_amounts(
             present_rollouts = (
                 np.empty(0, dtype=np.int64)
                 if rows is None
-                else np.unique(rows.rollout_index[(rows.month_index == month) & rows.present])
+                else np.unique(rows.rollout_position[(rows.month_index == month) & rows.present])
             )
             if present_rollouts.size < rollout_count:
                 present_set = set(present_rollouts.tolist())
@@ -286,7 +291,7 @@ def validate_series_indexed_amounts(
         zero_base_rollouts = (
             []
             if rows is None
-            else sorted(rows.rollout_index[(rows.month_index == base_month) & (rows.values == 0.0)].tolist())
+            else sorted(rows.rollout_position[(rows.month_index == base_month) & (rows.values == 0.0)].tolist())
         )
         if zero_base_rollouts:
             raise ValueError(

@@ -47,6 +47,7 @@ _EVENT_PRIORITY = {kind: priority for priority, kind in enumerate(ROLLOUT_EVENT_
 class ProductRolloutProjection:
     """One selected rollout in the product API's native read model."""
 
+    rollout_id: int
     currency_code: str
     currency_quantum: str
     monthly_metric_arrays: dict[str, np.ndarray]
@@ -62,25 +63,25 @@ def project_product_rollout(
     events: EventLog,
     metrics: ProductMetricArrays,
     *,
-    rollout_index: int,
     rollout_id: int,
     primary_agent_id: str,
     asset_label_by_id: dict[str, str],
 ) -> ProductRolloutProjection:
-    """Select an array column and its original frame ID, which need not be equal."""
+    """Project one original rollout ID present in both the metric and event results."""
 
-    if rollout_index < 0:
-        raise IndexError(f"rollout_index {rollout_index} is negative")
+    if rollout_id not in metrics.rollout_ids or rollout_id not in events.rollout_ids:
+        raise ValueError(f"rollout ID {rollout_id} must be present in both metric and event results")
+    column = metrics.rollout_ids.index(rollout_id)
 
-    failed_month = int(metrics.failed_month[rollout_index])
-    observed = metrics.observed[:, rollout_index]
+    failed_month = int(metrics.failed_month[column])
+    observed = metrics.observed[:, column]
     monthly_metric_arrays = {
-        name: values[observed].copy() if name == "month_index" else values[observed, rollout_index].copy()
+        name: values[observed].copy() if name == "month_index" else values[observed, column].copy()
         for name, values in metrics.metric_arrays().items()
     }
 
     def rows(frame: pl.DataFrame, **equals: str) -> list[dict[str, Any]]:
-        selected = frame.filter(pl.col("rollout_index") == rollout_id)
+        selected = frame.filter(pl.col("rollout_id") == rollout_id)
         for column, value in equals.items():
             selected = selected.filter(pl.col(column) == value)
         return selected.to_dicts()
@@ -316,6 +317,7 @@ def project_product_rollout(
         ),
     ]
     return ProductRolloutProjection(
+        rollout_id=rollout_id,
         currency_code=metrics.currency_code,
         currency_quantum=metrics.currency_quantum,
         monthly_metric_arrays=monthly_metric_arrays,

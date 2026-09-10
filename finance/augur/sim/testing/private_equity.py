@@ -195,12 +195,12 @@ def cash(result: SimulationResult, *, month: int, agent_id: str = "alice") -> fl
 
 def opportunity(result: SimulationResult, *, month: int) -> dict[str, object]:
     return result.events.private_equity_opportunities.filter(
-        (pl.col("rollout_index") == 0) & (pl.col("month_index") == month)
+        (pl.col("rollout_id") == 0) & (pl.col("month_index") == month)
     ).row(0, named=True)
 
 
 def dispositions(result: SimulationResult, *, month: int) -> pl.DataFrame:
-    return result.events.lot_dispositions.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == month))
+    return result.events.lot_dispositions.filter((pl.col("rollout_id") == 0) & (pl.col("month_index") == month))
 
 
 class PrivateEquityAcceptance:
@@ -271,7 +271,7 @@ class PrivateEquityAcceptance:
         assert row["cause_id"] == "pe_tender_m5_acme"
 
         [marker] = result.events.private_equity_events.filter(
-            (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
+            (pl.col("rollout_id") == 0) & (pl.col("month_index") == tender_month)
         ).iter_rows(named=True)
         assert marker["event_kind"] == "tender"
         assert marker["asset_id"] == ASSET_ID

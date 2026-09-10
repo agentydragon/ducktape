@@ -89,7 +89,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     cash = CHANNEL["cash"].build(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "agent_id": record["account"]["agent_id"],
                 "account_id": record["account"]["account_id"],
@@ -102,7 +102,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     lots = CHANNEL["lots"].build(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "lot_id": record["lot_id"],
                 "agent_id": record["agent_id"],
@@ -120,7 +120,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     income = CHANNEL["income"].build(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "agent_id": record["agent_id"],
                 "income_source": record["income_source"],
@@ -132,7 +132,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     capital_gains = CHANNEL["capital_gains"].build(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "agent_id": record["agent_id"],
                 "classification": classification,
@@ -155,7 +155,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 if record["active"] and previous.get(key, (0, False)) != current:
                     liability_rows.append(
                         {
-                            "rollout_index": rollout["rollout_id"],
+                            "rollout_id": rollout["rollout_id"],
                             "month_index": snapshot["month"],
                             "agent_id": record["agent_id"],
                             "jurisdiction_id": record["jurisdiction_id"],
@@ -168,7 +168,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     properties = CHANNEL["properties"].build(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "property_id": record["property_id"],
                 "location_id": record["location_id"],
@@ -182,7 +182,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     stakes = CHANNEL["property_stakes"].build(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "property_id": record["property_id"],
                 "agent_id": record["owner_agent_id"],
@@ -196,7 +196,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     liability_state = CHANNEL["liabilities"].build(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "liability_id": record["liability_id"],
                 "agent_id": record["agent_id"],
@@ -218,7 +218,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     status = CHANNEL["rollout_status"].build(
         [
             {
-                "rollout_index": rollout["rollout_id"],
+                "rollout_id": rollout["rollout_id"],
                 "status": "active" if rollout["failed_month"] is None else "failed_insufficient_cash",
                 "failed_month": rollout["failed_month"],
             }
@@ -228,7 +228,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     journal = _sorted(
         [
             {
-                "rollout_index": rollout["rollout_id"],
+                "rollout_id": rollout["rollout_id"],
                 "month_index": entry["month"],
                 "cause_id": entry["cause_id"],
                 "imbalance_quanta": sum(posting["amount"] for posting in entry["postings"]),
@@ -236,13 +236,13 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             for rollout in rust["rollouts"]
             for entry in rollout["journal"]
         ],
-        {"rollout_index": pl.Int64, "month_index": pl.Int64, "cause_id": pl.String, "imbalance_quanta": pl.Int64},
-        ["rollout_index", "month_index", "cause_id"],
+        {"rollout_id": pl.Int64, "month_index": pl.Int64, "cause_id": pl.String, "imbalance_quanta": pl.Int64},
+        ["rollout_id", "month_index", "cause_id"],
     )
     tlh_ledger = _sorted(
         [
             {
-                "rollout_index": rollout["rollout_id"],
+                "rollout_id": rollout["rollout_id"],
                 "month_index": snapshot["month"],
                 "policy_index": index,
                 "cumulative_harvest_quanta": value,
@@ -252,17 +252,17 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             for index, value in enumerate(snapshot["tlh_cumulative_harvest"])
         ],
         {
-            "rollout_index": pl.Int64,
+            "rollout_id": pl.Int64,
             "month_index": pl.Int64,
             "policy_index": pl.Int64,
             "cumulative_harvest_quanta": pl.Int64,
         },
-        ["rollout_index", "month_index", "policy_index"],
+        ["rollout_id", "month_index", "policy_index"],
     )
     bonds = _sorted(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "bond_id": record["bond_id"],
                 "agent_id": record["agent_id"],
@@ -272,14 +272,14 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             for rollout, month, record in _rust_rows(rust, "bonds")
         ],
         {
-            "rollout_index": pl.Int64,
+            "rollout_id": pl.Int64,
             "month_index": pl.Int64,
             "bond_id": pl.String,
             "agent_id": pl.String,
             "principal_quanta": pl.Int64,
             "active": pl.Boolean,
         },
-        ["rollout_index", "month_index", "bond_id"],
+        ["rollout_id", "month_index", "bond_id"],
     )
 
     def detail_frame(channel: str, keys: dict[str, Any], money: tuple[str, ...], sort_by: list[str]) -> pl.DataFrame:
@@ -288,7 +288,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         return _sorted(
             [
                 {
-                    "rollout_index": rollout["rollout_id"],
+                    "rollout_id": rollout["rollout_id"],
                     "month_index": record["month"],
                     **{column: record[field] for column, field in keys.items()},
                     **{f"{name}_quanta": record[name] for name in money},
@@ -297,7 +297,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 for record in rollout[channel]
             ],
             {
-                "rollout_index": pl.Int64,
+                "rollout_id": pl.Int64,
                 "month_index": pl.Int64,
                 **dict.fromkeys(keys, pl.String),
                 **{f"{name}_quanta": pl.Int64 for name in money},
@@ -309,13 +309,13 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         "bond_cashflows",
         {"bond_id": "bond_id", "issuer_jurisdiction_id": "issuer_jurisdiction_id"},
         ("coupon", "accretion", "redemption"),
-        ["rollout_index", "month_index", "bond_id"],
+        ["rollout_id", "month_index", "bond_id"],
     )
     distributions = detail_frame(
         "distributions",
         {"asset_id": "asset_id", "issuer_jurisdiction_id": "issuer_jurisdiction_id"},
         ("amount",),
-        ["rollout_index", "month_index", "asset_id"],
+        ["rollout_id", "month_index", "asset_id"],
     )
     tax_accrual_details = detail_frame(
         "tax_accruals",
@@ -335,7 +335,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             "salt_deduction",
             "itemized_deduction",
         ),
-        ["rollout_index", "month_index", "agent_id", "jurisdiction_id"],
+        ["rollout_id", "month_index", "agent_id", "jurisdiction_id"],
     )
     property_sale_details = detail_frame(
         "property_sales",
@@ -349,12 +349,12 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             "section_121_exclusion",
             "long_term_capital_gain",
         ),
-        ["rollout_index", "month_index", "property_id"],
+        ["rollout_id", "month_index", "property_id"],
     )
     property_details = _sorted(
         [
             {
-                "rollout_index": rollout,
+                "rollout_id": rollout,
                 "month_index": month,
                 "property_id": record["property_id"],
                 "rented_fraction_ppb": record["rented_fraction_ppb"],
@@ -366,7 +366,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             if record["active"]
         ],
         {
-            "rollout_index": pl.Int64,
+            "rollout_id": pl.Int64,
             "month_index": pl.Int64,
             "property_id": pl.String,
             "rented_fraction_ppb": pl.Int64,
@@ -374,7 +374,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             "cumulative_depreciation_quanta": pl.Int64,
             "building_basis_quanta": pl.Int64,
         },
-        ["rollout_index", "month_index", "property_id"],
+        ["rollout_id", "month_index", "property_id"],
     )
     return RustResult(
         backend="rust",

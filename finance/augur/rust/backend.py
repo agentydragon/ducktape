@@ -49,6 +49,8 @@ def run_rust_product_metric_arrays(fixture: Mapping[str, Any], *, primary_agent_
 
     metrics = simulator.simulate_product_metrics(json.dumps(fixture), primary_agent_id)
     return ProductMetricArrays(
+        # Configured full runs emit every prepared row in its original order.
+        rollout_ids=tuple(range(metrics.rollout_count)),
         month_index=np.arange(metrics.snapshot_count, dtype=np.int64),
         failed_month=np.asarray(metrics.failed_month, dtype=np.int64),
         currency_code=cast(str, fixture["currency_code"]),

@@ -6,6 +6,7 @@ the runnable monthly-actions example; these are accounting controls, not forecas
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any, Literal, cast
 
@@ -19,6 +20,7 @@ from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, Ro
 from finance.augur.rust.event_log import decode_event_log
 from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions, Finished
 from finance.augur.sim.backend import CompiledRun
+from finance.augur.sim.events import EventLog
 from finance.augur.sim.product_metrics import OutcomeBasis, projection_summaries
 from finance.augur.sim.scenario import BondHolding
 from finance.augur.sim.testing.case import Case, scenario
@@ -47,7 +49,6 @@ def _detail(compiled: CompiledRun, rollouts: list[dict[str, Any]], column: int) 
     return project_product_rollout(
         decode_event_log(rollouts[column]["trace"]),
         metric_arrays(compiled, rollouts, primary_agent_id="example-household"),
-        rollout_index=column,
         rollout_id=rollouts[column]["rollout_id"],
         primary_agent_id="example-household",
         asset_label_by_id={"security:example-stock": "Stipulated stock"},
@@ -56,7 +57,7 @@ def _detail(compiled: CompiledRun, rollouts: list[dict[str, Any]], column: int) 
 
 @pytest.fixture(scope="module")
 def compiled() -> CompiledRun:
-    return prepare()
+    return prepare(rollout_count=5)
 
 
 @pytest.fixture(scope="module")
@@ -200,6 +201,73 @@ def test_projection_rejects_mismatched_actor_and_duplicate_selection(compiled: C
         metric_arrays(compiled, rollouts, primary_agent_id="example-creditor")
     with pytest.raises(ValueError, match="unique selection"):
         metric_arrays(compiled, rollouts * 2, primary_agent_id="example-household")
+
+
+def test_original_ids_own_columns_through_noncontiguous_selection(compiled: CompiledRun) -> None:
+    source = _run(compiled, [0, 1, 2, 3, 4], "dense")
+    selected = _run(compiled, [4, 1, 2], "dense")
+    population = metric_arrays(compiled, selected, primary_agent_id="example-household")
+    assert population.rollout_ids == (4, 1, 2)
+    subset = population.select((1, 4))
+    assert subset.rollout_ids == (1, 4)
+    assert subset.failed_month.tolist() == [0, -1]
+    for rollout_id in subset.rollout_ids:
+        events = decode_event_log(source[rollout_id]["trace"])
+        assert events.rollout_ids == (rollout_id,)
+        assert events.lot_dispositions.get_column("rollout_id").unique().to_list() == [rollout_id]
+        actual = project_product_rollout(
+            events,
+            subset,
+            rollout_id=rollout_id,
+            primary_agent_id="example-household",
+            asset_label_by_id={"security:example-stock": "Stipulated stock"},
+        )
+        expected = _detail(compiled, source, rollout_id)
+        assert actual.rollout_id == expected.rollout_id == rollout_id
+        assert actual.events == expected.events
+        for name, values in actual.monthly_metric_arrays.items():
+            np.testing.assert_array_equal(values, expected.monthly_metric_arrays[name])
+    with pytest.raises(ValueError, match="undeclared rollout ID"):
+        EventLog.from_frames({"lot_dispositions": events.lot_dispositions}, rollout_ids=(1,))
+    with pytest.raises(ValueError, match="both metric and event"):
+        project_product_rollout(
+            decode_event_log(source[1]["trace"]),
+            subset,
+            rollout_id=4,
+            primary_agent_id="example-household",
+            asset_label_by_id={},
+        )
+    with pytest.raises(ValueError, match="unknown metric rollout IDs"):
+        population.select((0,))
+    with pytest.raises(ValueError, match="unique"):
+        population.select((4, 4))
+    with pytest.raises(ValueError, match="failure vector"):
+        replace(population, rollout_ids=(4, 1))
+
+
+def test_eventless_trace_keeps_its_owner_and_rejects_another_paths_metrics() -> None:
+    compiled = Case(
+        scenario(checking(("example-household", Decimal(10))), horizon_months=2, tax_profiles=[]), rollout_count=8
+    ).compiled_run
+
+    def no_actions(batch: list[Decision]) -> list[DecisionActions]:
+        return [DecisionActions(row.rollout_id, row.observation.month, []) for row in batch]
+
+    rollouts = _run(compiled, [7, 2], "dense", no_actions)
+    population = metric_arrays(compiled, rollouts, primary_agent_id="example-household")
+    events = decode_event_log(rollouts[0]["trace"])
+    assert events.rollout_ids == (7,)
+    assert events.transfers.is_empty()
+    detail = project_product_rollout(
+        events, population, rollout_id=7, primary_agent_id="example-household", asset_label_by_id={}
+    )
+    assert detail.events == ()
+    assert detail.rollout_id == 7
+    assert detail.monthly_metric_arrays["cash_quanta"].tolist() == [1_000] * 3
+    with pytest.raises(ValueError, match="both metric and event"):
+        project_product_rollout(
+            events, population, rollout_id=2, primary_agent_id="example-household", asset_label_by_id={}
+        )
 
 
 def test_uncaptured_bond_is_not_reported_as_zero_even_after_redemption() -> None:

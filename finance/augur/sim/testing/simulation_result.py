@@ -50,13 +50,13 @@ class StateChannel:
         return frame.select(pl.col(name).cast(dtype) for name, dtype in self.schema.items()).sort(self.key)
 
 
-_ROLLOUT_MONTH = {"rollout_index": pl.Int64, "month_index": pl.Int64}
+_ROLLOUT_MONTH = {"rollout_id": pl.Int64, "month_index": pl.Int64}
 
 STATE_CHANNELS = (
     StateChannel(
         "cash",
         pl.Schema({**_ROLLOUT_MONTH, "agent_id": pl.String, "account_id": pl.String, "balance_quanta": pl.Int64}),
-        ("rollout_index", "month_index", "agent_id", "account_id"),
+        ("rollout_id", "month_index", "agent_id", "account_id"),
     ),
     StateChannel(
         "lots",
@@ -73,7 +73,7 @@ STATE_CHANNELS = (
                 "quantity_scale": pl.Int64,
             }
         ),
-        ("rollout_index", "month_index", "lot_id"),
+        ("rollout_id", "month_index", "lot_id"),
     ),
     StateChannel(
         # Year-to-date income taxed at ordinary rates, kept by source rather than resolved
@@ -81,12 +81,12 @@ STATE_CHANNELS = (
         # jurisdiction can reach. Which sources exist is the scenario's, not the engine's.
         "income",
         pl.Schema({**_ROLLOUT_MONTH, "agent_id": pl.String, "income_source": pl.String, "income_quanta": pl.Int64}),
-        ("rollout_index", "month_index", "agent_id", "income_source"),
+        ("rollout_id", "month_index", "agent_id", "income_source"),
     ),
     StateChannel(
         "capital_gains",
         pl.Schema({**_ROLLOUT_MONTH, "agent_id": pl.String, "classification": pl.String, "gain_quanta": pl.Int64}),
-        ("rollout_index", "month_index", "agent_id", "classification"),
+        ("rollout_id", "month_index", "agent_id", "classification"),
     ),
     StateChannel(
         "tax_liabilities",
@@ -99,7 +99,7 @@ STATE_CHANNELS = (
                 "amount_owed_quanta": pl.Int64,
             }
         ),
-        ("rollout_index", "month_index", "agent_id", "jurisdiction_id"),
+        ("rollout_id", "month_index", "agent_id", "jurisdiction_id"),
     ),
     StateChannel(
         "properties",
@@ -112,7 +112,7 @@ STATE_CHANNELS = (
                 "adjusted_basis_quanta": pl.Int64,
             }
         ),
-        ("rollout_index", "month_index", "property_id"),
+        ("rollout_id", "month_index", "property_id"),
     ),
     StateChannel(
         "property_stakes",
@@ -125,7 +125,7 @@ STATE_CHANNELS = (
                 "equity_ledger_quanta": pl.Int64,
             }
         ),
-        ("rollout_index", "month_index", "property_id", "agent_id"),
+        ("rollout_id", "month_index", "property_id", "agent_id"),
     ),
     StateChannel(
         "liabilities",
@@ -146,12 +146,12 @@ STATE_CHANNELS = (
                 "interest_paid_ytd_quanta": pl.Int64,
             }
         ),
-        ("rollout_index", "month_index", "liability_id"),
+        ("rollout_id", "month_index", "liability_id"),
     ),
     StateChannel(
         "rollout_status",
-        pl.Schema({"rollout_index": pl.Int64, "status": pl.String, "failed_month": pl.Int64}),
-        ("rollout_index",),
+        pl.Schema({"rollout_id": pl.Int64, "status": pl.String, "failed_month": pl.Int64}),
+        ("rollout_id",),
     ),
 )
 

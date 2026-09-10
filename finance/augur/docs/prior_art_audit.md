@@ -7,13 +7,13 @@ projection engine: it samples exogenous market paths, then projects typed
 scenarios through deterministic actor policies, accounting applications, and
 result views. In financial-risk terms, `SamplingRequest` plus
 `SampledExogenousBundle` is an economic scenario generator input/output,
-`ScenarioSet` is the portfolio of household scenario variants, `rollout_index`
+`ScenarioSet` is the portfolio of household scenario variants, `rollout_id`
 selects one sampled path, and the policy runtime is the pathwise deterministic
 projector.
 
 The important gaps the rest of this audit explores:
 
-- `rollout_index` is not a sufficient trajectory identity. Reproducibility needs
+- A run-scoped `rollout_id` is not sufficient provenance. Reproducibility needs
   IDs backed by persisted evidence/calibration artifacts, generator versions,
   scenario inputs, and any non-market event streams.
 - Policy execution traces need richer coverage for no-op, rejected, instructed,
@@ -230,16 +230,16 @@ Current Augur alignment:
 
 - `SampledExogenousBundle.metadata` carries exogenous model id, seed, rollout count,
   horizon, event stream ids, notes, and source metadata.
-- `rollout_index` is used in actions, policy decisions, observations, ledger
+- Original `rollout_id` is used in actions, policy decisions, observations, ledger
   entries, balance snapshots, accounting details, monthly columns, and selected
   trajectory UI.
 - Shared exogenous paths make paired scenario comparisons meaningful.
 
 Gap:
 
-- `rollout_index` is only an array coordinate. It is not a globally meaningful
-  path identity.
-- Seed plus `rollout_index` is not enough without generator version,
+- `rollout_id` identifies a path within its prepared run, not globally. Selected
+  result-array columns are internal positions and may have a different order.
+- Seed plus `rollout_id` is not enough without generator version,
   factor definitions, evidence/calibration identity, and path-set id.
 - Future non-market randomness could collide with market-path randomness unless
   Augur separates random streams.
@@ -475,7 +475,7 @@ Standardize these names before the next large redesign:
      unrecoverable default.
 
 2. Persist explicit trajectory/path provenance.
-   - Keep `rollout_index`, `PathSetId`, `ExogenousPathId`, and
+   - Keep `rollout_id`, `PathSetId`, `ExogenousPathId`, and
      `ProjectionTrajectoryId` as the public identity vocabulary.
    - Back those IDs with persisted exogenous model, generator version, evidence,
      calibration, seed, path index, risk-factor set, event-stream, and code

@@ -100,6 +100,9 @@ results preserve original path, request, claim, component and account identities
 observed cash/public-holding histories, canonical tax results and the exact stop
 book with its attempted action prefix. No post-stop value is an observation.
 Selected detailed replay agrees with these results on the same supplied paths.
+Results use one original `rollout_id` within a prepared run. Reordering or
+subsetting results does not renumber paths: metric axes and event logs retain
+their IDs, and selected detail resolves its array column internally by that ID.
 For public cash/securities portfolios, the same finished session supplies product
 wealth/shortfall arrays and canonical detailed events without re-execution.
 Shortfall reports unpaid due claims and valid attempted consumption's requested/paid
@@ -183,7 +186,9 @@ deployment config are not supported by the product endpoint yet.
 
 PE state crosses the model↔sim boundary as a single typed
 `PrivateEquityBundle` — one wide polars frame keyed by
-`(rollout_index, month_index, issuer_id)` with ten dtype-typed channels.
+`(rollout_index, month_index, issuer_id)` with ten dtype-typed channels. This
+sampler-frame index is a prepared-array coordinate, not a selected result column;
+execution results retain original `rollout_id` independently of selection order.
 The model layer must emit a complete per-issuer entry whenever a
 scenario holds the issuer; producing an issuer with any channel missing
 is a schema violation, not a runtime sim-compile failure. Channels

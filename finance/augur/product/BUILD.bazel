@@ -317,6 +317,7 @@ py_test(
         "//finance/augur/rust:event_log",
         "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
+        "//finance/augur/sim:events",
         "//finance/augur/sim:product_metrics",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",

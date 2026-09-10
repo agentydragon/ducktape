@@ -295,7 +295,7 @@ class TransferAcceptance:
 
         # Every rollout: Alice ends at 1000 + 24×2000 = 49000.
         alice_final = result.cash.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 24)).sort(
-            "rollout_index"
+            "rollout_id"
         )
         assert alice_final.height == rollout_count
         assert (
@@ -308,9 +308,9 @@ class TransferAcceptance:
 
         # Conservation at every month, across every rollout.
         totals = (
-            result.cash.group_by(["rollout_index", "month_index"])
+            result.cash.group_by(["rollout_id", "month_index"])
             .agg((pl.col("balance_quanta").sum() / 100).alias("total"))
-            .sort(["rollout_index", "month_index"])
+            .sort(["rollout_id", "month_index"])
         )
         assert totals.get_column("total").unique().to_list() == [1000.0]
 
@@ -441,23 +441,23 @@ class IndexedAmountAcceptance:
 
         result = backend(Case(scenario=scenario, rollout_count=2, paths=external_series, locations={}))
 
-        accruals = result.events.obligation_accruals.sort(["rollout_index", "month_index"])
-        for rollout_index in (0, 1):
-            first_year = accruals.filter((pl.col("rollout_index") == rollout_index) & (pl.col("month_index") < 12))
+        accruals = result.events.obligation_accruals.sort(["rollout_id", "month_index"])
+        for rollout_id in (0, 1):
+            first_year = accruals.filter((pl.col("rollout_id") == rollout_id) & (pl.col("month_index") < 12))
             assert first_year.get_column("amount_due_quanta").map_elements(
                 quanta_to_usd, return_dtype=pl.Float64
             ).to_list() == pytest.approx([1_000.0] * 12)
 
         reset_amounts = (
             accruals.filter(pl.col("month_index") == 12)
-            .sort("rollout_index")
+            .sort("rollout_id")
             .get_column("amount_due_quanta")
             .map_elements(quanta_to_usd, return_dtype=pl.Float64)
             .to_list()
         )
         assert reset_amounts == pytest.approx([1_100.0, 900.0])
 
-        final_cash = result.cash.filter(pl.col("month_index") == 13).sort(["rollout_index", "agent_id"])
+        final_cash = result.cash.filter(pl.col("month_index") == 13).sort(["rollout_id", "agent_id"])
         assert final_cash.get_column("balance_quanta").map_elements(
             quanta_to_usd, return_dtype=pl.Float64
         ).to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
@@ -2048,11 +2048,11 @@ class ObligationAcceptance:
 
         result = backend(Case(scenario=scenario, rollout_count=2, paths=external_series, locations={}))
 
-        sales = result.events.lot_dispositions.sort("rollout_index")
+        sales = result.events.lot_dispositions.sort("rollout_id")
         # Fixed-point FIFO sells the exact fractional quanta needed for each rollout's price.
-        assert sales.select("rollout_index", "units_sold", "proceeds_quanta").to_dicts() == [
-            {"rollout_index": 0, "units_sold": pytest.approx(5.0), "proceeds_quanta": 50_000},
-            {"rollout_index": 1, "units_sold": pytest.approx(2.5), "proceeds_quanta": 50_000},
+        assert sales.select("rollout_id", "units_sold", "proceeds_quanta").to_dicts() == [
+            {"rollout_id": 0, "units_sold": pytest.approx(5.0), "proceeds_quanta": 50_000},
+            {"rollout_id": 1, "units_sold": pytest.approx(2.5), "proceeds_quanta": 50_000},
         ]
         assert result.events.rollout_failures.is_empty()
 
@@ -2797,12 +2797,12 @@ class RolloutFailureAcceptance:
         # Five $100 shares were sold, but the $1,000 all-or-none demand paid nothing.
         assert result.events.lot_dispositions.get_column("proceeds_quanta").to_list() == [50_000]
         assert result.events.obligation_settlements.get_column("amount_paid_quanta").to_list() == [0]
-        failed_cash = result.cash.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
+        failed_cash = result.cash.filter((pl.col("rollout_id") == 0) & (pl.col("month_index") >= 1))
         assert failed_cash.select("month_index", "agent_id", "balance_quanta").rows() == [
             (1, "alice", 50_000),
             (1, "landlord", 0),
         ]
-        failed_lots = _lots(result).filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
+        failed_lots = _lots(result).filter((pl.col("rollout_id") == 0) & (pl.col("month_index") >= 1))
         assert failed_lots.get_column("remaining_quantity").to_list() == [0.0]
 
     def test_failed_rollout_skips_future_recurring_transfers(
