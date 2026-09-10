@@ -167,7 +167,7 @@ impl Session {
                     request: Request::Supplied(Money(amount)),
                 };
                 state
-                    .advance_month(&self.input, self.product.as_ref(), Some(&mut policy), None)
+                    .advance_month(&self.input, self.product.as_ref(), Some(&mut policy))
                     .map(|state| (id, state))
                     .map_err(|source| BatchError::Advance {
                         rollout_id: id,

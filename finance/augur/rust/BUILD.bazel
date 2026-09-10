@@ -30,7 +30,6 @@ rust_library(
         "engine/actors.rs",
         "engine/actors/outcomes.rs",
         "engine/actors_test.rs",
-        "engine/allocation.rs",
         "engine/cashflows.rs",
         "engine/claims.rs",
         "engine/errors.rs",

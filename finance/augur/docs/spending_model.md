@@ -15,21 +15,18 @@ It returns nominal consumption in the input's currency quanta. The function
 owns review cadence and memory. Zero requests create no payment action; negative
 requests and function errors reject the run.
 
-`rust/engine/allocation.rs` separately accepts a factory for one declared
-cash-account allocation component. Its opening observation contains only that
-funding account's cash and the declared source pools' sleeve values in fixed
-order. The function returns relative target weights. Source accounts, sleeve
-identities, cash band, purchase permission and drift tolerance remain explicit
-scenario inputs. Zero weights keep a sleeve in scope for sales but receive no
-deposits; quiet-band rebalancing can exit it fully. At least one weight must be
-positive; an all-zero vector does not mean an implicit cash allocation.
+The Python allocation example uses `ActionSession` and ordinary batch functions
+after monthly cashflows and claim assembly. <../sim/sleeves.py> proposes exact
+trades from named account/asset pools, current lots and prices. The policy owns
+weights, cash reserves and drift cadence; it submits trades and payments in one
+ordered action list. Zero targets remain sellable and receive no deposits; a
+full exit selects every unit, including rounded-zero marks. At least one weight
+must be positive. An all-zero vector does not imply a cash allocation.
 
-Neither observation supplies future market paths or mutable books. Row selection
-for native allocation preserves input IDs and caller order; each selected replay
-constructs fresh decision state. Factories must not share mutable policy state
-between paths or depend on invocation order. Current callable spending and
-allocation entrypoints are separate; a joint budget/allocation callback and
-receipt-aware state updates are not yet exposed.
+Neither observation supplies future market paths or mutable books. Python session
+selection preserves input IDs and caller order; each selected replay constructs
+fresh decision state. Policies must not share mutable state between paths or depend
+on invocation order.
 
 Runnable consumers are <../x/bounded_spending/README.md> and
 <../x/allocation_glide/README.md>. A constant or glide target is an experiment

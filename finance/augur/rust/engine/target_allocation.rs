@@ -24,7 +24,6 @@ pub(super) fn execute_target_allocation_sales(
     month: u32,
     obligations: &claims::Claims,
     consumption: Option<&payments::Consume>,
-    decision: Option<&allocation::Policy<'_>>,
 ) -> Result<Vec<PendingAllocationBuy>, SimulationError> {
     let mut pending_buys = Vec::new();
     for (policy_index, policy) in fixture
@@ -66,19 +65,13 @@ pub(super) fn execute_target_allocation_sales(
             .map(|holding| holding.quantity_scale)
             .collect();
         let available_units: Vec<_> = holdings.iter().map(|holding| holding.units).collect();
-        let configured_weights: Vec<_> =
-            policy.sleeves.iter().map(|sleeve| sleeve.weight).collect();
-        let weights = decision
-            .filter(|decision| decision.policy_index == policy_index)
-            .map_or(configured_weights.as_slice(), |decision| {
-                decision.weights.as_slice()
-            });
-        let sleeve_withdrawals = withdrawal_by_sleeve(&values, weights, raise.0)?;
-        let sleeve_deposits = deposit_by_sleeve(&values, weights, invest.0)?;
+        let weights: Vec<_> = policy.sleeves.iter().map(|sleeve| sleeve.weight).collect();
+        let sleeve_withdrawals = withdrawal_by_sleeve(&values, &weights, raise.0)?;
+        let sleeve_deposits = deposit_by_sleeve(&values, &weights, invest.0)?;
         let quiet_band = raise == Money(0) && invest == Money(0);
         let (rebalance_sales, rebalance_buys) = if quiet_band {
             if let Some(tolerance) = policy.rebalance_tolerance_ppb {
-                rebalance_by_sleeve(&values, weights, tolerance)?
+                rebalance_by_sleeve(&values, &weights, tolerance)?
             } else {
                 (vec![0; values.len()], vec![0; values.len()])
             }
@@ -271,15 +264,15 @@ fn source_accounts(policy: &TargetAllocationPolicySpec) -> Vec<&str> {
     }
 }
 
-pub(super) struct SleeveHolding {
-    pub(super) value: i64,
+struct SleeveHolding {
+    value: i64,
     price: i64,
     quantity_scale: i64,
     units: i64,
 }
 
 /// Value the declared source pools with the same per-lot rounding used by execution.
-pub(super) fn sleeve_holdings(
+fn sleeve_holdings(
     input: &ExecutionInput,
     rollout: u32,
     month: u32,

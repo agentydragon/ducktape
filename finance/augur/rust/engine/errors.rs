@@ -28,11 +28,6 @@ pub enum SimulationError {
     UnknownRollout { rollout_id: u32, rollout_count: u32 },
     #[error("selected rollout IDs must be nonempty, distinct and within the execution input")]
     InvalidRolloutSelection,
-    #[error("no target-allocation component for {agent_id}:{account_id}")]
-    MissingTargetAllocationPolicy {
-        agent_id: String,
-        account_id: String,
-    },
     #[error("fixture horizon must contain at least one month")]
     EmptyHorizon,
     #[error("currency code {currency_code:?} must be three uppercase ASCII letters")]

@@ -1,17 +1,6 @@
-load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
-
-rust_binary(
-    name = "runner",
-    srcs = ["policy.rs"],
-    edition = "2024",
-    deps = [
-        "//finance/augur/rust:native_invocation",
-        "//finance/augur/rust:simulator",
-    ],
-)
 
 py_binary(
     name = "compare_bin",
@@ -22,14 +11,14 @@ py_binary(
 py_library(
     name = "compare",
     srcs = ["compare.py"],
-    data = [":runner"],
     deps = [
+        ":policy",
         "//finance/augur/model:series",
         "//finance/augur/rust:invocation",
+        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:scenario",
-        "//util/bazel:runfiles",
         "@pypi//numpy",
     ],
 )
@@ -37,10 +26,23 @@ py_library(
 py_test(
     name = "test_compare",
     srcs = ["test_compare.py"],
+    data = [":compare_bin"],
     deps = [
         ":compare",
         "//:conftest",
         "//finance/augur:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "policy",
+    srcs = ["policy.py"],
+    deps = [
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:cash_band",
+        "//finance/augur/sim:sleeves",
     ],
 )

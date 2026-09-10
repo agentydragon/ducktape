@@ -13,7 +13,7 @@ Internally, `RolloutState` initializes opening books once and advances one month
 a time. The full-horizon drivers loop over that same advancement. Completed or
 failed states do not advance or invoke policies; an execution error consumes the
 state, preventing continuation from a partly applied month. This is not a public
-actor-session API. Existing spending/allocation controls review opening-month
+actor-session API. Existing spending controls review opening-month
 holdings; the separate scoped action control below reviews assembled monthly claims.
 
 The existing extension also exposes `PrototypeSpendingSession`: an experimental
@@ -78,22 +78,10 @@ part of the policy component. `engine::spending::trace_rollout(...)` replays one
 original path with fresh policy state and its original factory/series identity.
 These entry points are native-only; Python/batched callbacks are not exposed here.
 
-`engine::allocation::simulate(input, cash_account, rollout_ids, make_policy)`
-selects one existing account-bound allocation component. Each factory returns
-an ordinary function of opening month, funding-account cash and sleeve values;
-its result supplies relative weights in the declared sleeve order. Explicit
-row selection preserves caller order and original IDs for population/subset or
-individual forensic replay, with fresh policy state. No execution input is
-cloned or mutated to change a target. See <../x/allocation_glide/README.md> for
-the constant-versus-glide call site and funded-consumption/holdings example.
-
-This entrypoint does not yet compose callable spending with allocation or expose
-compact allocation capture. Weights may be zero, but not all zero. A zero-target
-sleeve remains in the sellable scope, is drained first for cash raises and receives
-no deposits. In a quiet drift-rebalancing month it exits completely, including
-fractional units whose marks round to zero; a later positive target permits re-entry.
-Missing sleeve prices reject, not zero-fill. A new target follows the cash-band and quiet-band
-drift conventions below, rather than forcing an immediate full rebalance.
+The Python <../x/allocation_glide/README.md> consumer submits explicit trades and
+claim payments through `ActionSession`. Its optional <../sim/sleeves.py> helpers
+choose withdrawals, deposits and drift trades over named account/asset pools;
+the executor receives exact lot/quantity actions, not target weights.
 
 ## Exact trades
 

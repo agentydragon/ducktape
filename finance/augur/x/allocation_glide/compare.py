@@ -9,33 +9,31 @@ import argparse
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.rust.invocation import invoke, write_prepared_input
-from finance.augur.sim.backend import compile_run
+from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.sim.backend import CompiledRun, compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
-    DriftBand,
     InitialAccountBalance,
     InitialLot,
     Scenario,
     ScheduledObligation,
     SeriesIndexedAmount,
-    SleeveTarget,
-    TargetAllocationPolicy,
 )
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from finance.augur.x.allocation_glide.policy import decide
 
 GROWTH = SecurityKey(symbol="test-growth")
 STEADY = SecurityKey(symbol="test-steady")
 HORIZON_MONTHS = 60
 
 
-def compare(output_dir: Path) -> None:
-    """Compile once; retain both forensic populations and report paid consumption."""
+def prepare() -> CompiledRun:
     scenario = Scenario(
         agents=[Agent(agent_id="test-retiree"), Agent(agent_id="test-world")],
         initial_cash=[
@@ -69,19 +67,6 @@ def compare(output_dir: Path) -> None:
             )
             for month in range(0, HORIZON_MONTHS, 12)
         ],
-        target_allocation_policies=[
-            TargetAllocationPolicy(
-                agent_id="test-retiree",
-                account_id="checking",
-                source_account_ids=("checking",),
-                sleeves=[SleeveTarget(asset=asset, weight=1) for asset in (GROWTH, STEADY)],
-                cash_floor=Decimal(0),
-                cash_ceiling=Decimal(10_000),
-                allow_purchases=True,
-                rebalancing=DriftBand(tolerance=0),
-                cause_id_prefix="test-allocation",
-            )
-        ],
         tax_profiles=[],
         horizon_months=HORIZON_MONTHS,
     )
@@ -91,7 +76,7 @@ def compare(output_dir: Path) -> None:
     growth[1, 12:] = 120.0
     steady = np.full_like(growth, 100.0)
     cpi = np.broadcast_to(1.025 ** (month // 12), growth.shape)
-    run = compile_run(
+    return compile_run(
         scenario,
         rollout_count=3,
         external_series=ExternalSeriesContext.from_level_blocks(
@@ -100,18 +85,44 @@ def compare(output_dir: Path) -> None:
         jurisdictions={},
         locations={},
     )
-    binary = get_required_path(own_repo_rlocation("finance/augur/x/allocation_glide/runner"))
+
+
+def execute(
+    input_json: str,
+    *,
+    annual_step: int,
+    rollout_ids: list[int],
+    capture: Literal["summary", "dense", "forensic"] = "summary",
+) -> list[dict[str, Any]]:
+    session = ActionSession(input_json, "test-retiree", rollout_ids, capture=capture)
+    try:
+        batch = session.start()
+        while not isinstance(batch, Finished):
+            batch = session.advance(decide(batch, annual_step=annual_step))
+        rollouts: list[dict[str, Any]] = json.loads(batch.rollouts_json)
+        return rollouts
+    finally:
+        session.close()
+
+
+def compare(output_dir: Path) -> None:
+    """Compile once; retain compact populations and independently replay selected traces."""
+    run = prepare()
     output_dir.mkdir(parents=True, exist_ok=False)
     input_path = output_dir / "execution-input.json"
     write_prepared_input(run, input_path)
     for name, step in (("constant", 0), ("glide", 5)):
-        output_path = output_dir / f"{name}.json"
-        output = invoke(binary=binary, input_path=input_path, output_path=output_path, arguments=[str(step)])
-        for rollout in output["rollouts"]:
-            paid = sum(row["amount_paid"] for row in rollout["obligations"] if row["obligation_type"] == "cash_spend")
-            print(
-                f"{name} path={rollout['rollout_id']}: consumption_paid=${paid / 100:.2f}; failed_month={rollout['failed_month']}"
+        population = execute(input_path.read_text(), annual_step=step, rollout_ids=[0, 1, 2])
+        (output_dir / f"{name}.json").write_text(json.dumps({"rollouts": population}))
+        traces = execute(input_path.read_text(), annual_step=step, rollout_ids=[2, 0], capture="forensic")
+        (output_dir / f"{name}-traces.json").write_text(json.dumps({"rollouts": traces}))
+        for rollout in population:
+            paid = sum(
+                row["receipt"]["amount_requested"]
+                for row in rollout["summary"]["payments"]
+                if row["target"]["obligation_type"] == "cash_spend" and row["receipt"]["outcome"] == "Paid"
             )
+            print(f"{name} path={rollout['rollout_id']}: consumption_paid=${paid / 100:.2f}; stop={rollout['stop']}")
     (output_dir / "experiment.json").write_text(
         json.dumps(
             {
@@ -127,7 +138,7 @@ def compare(output_dir: Path) -> None:
                 "allow_purchases": True,
                 "quiet_band_drift_tolerance": 0,
                 "growth_target_percent": {"constant": [50] * 5, "glide": [50, 55, 60, 65, 70]},
-                "holdings": "full monthly lots and cash balances in each policy output; final units are not dollar wealth",
+                "holdings": "compact population summaries and selected forensic replays; final units are not dollar wealth",
             },
             indent=2,
         )

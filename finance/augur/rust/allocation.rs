@@ -19,7 +19,7 @@ pub enum AllocationError {
     Arithmetic(#[from] ArithmeticError),
 }
 
-pub fn withdrawal_by_sleeve(
+pub(crate) fn withdrawal_by_sleeve(
     values: &[i64],
     weights: &[i64],
     raise: i64,
@@ -124,7 +124,7 @@ pub fn withdrawal_by_sleeve(
     Ok(taken)
 }
 
-pub fn deposit_by_sleeve(
+pub(crate) fn deposit_by_sleeve(
     values: &[i64],
     weights: &[i64],
     invest: i64,
@@ -214,7 +214,7 @@ pub fn deposit_by_sleeve(
     Ok(given)
 }
 
-pub fn rebalance_by_sleeve(
+pub(crate) fn rebalance_by_sleeve(
     values: &[i64],
     weights: &[i64],
     tolerance_ppb: i64,
@@ -274,7 +274,7 @@ pub fn rebalance_by_sleeve(
     ))
 }
 
-pub fn quantity_for_value(
+pub(crate) fn quantity_for_value(
     value: i64,
     price: i64,
     quantity_scale: i64,

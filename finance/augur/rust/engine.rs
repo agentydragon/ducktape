@@ -19,7 +19,7 @@ use crate::{
         RolloutSummary, SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual,
         TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
     },
-    holdings::{AgentHoldings, HoldingsError, LotView, cash_balance},
+    holdings::{AgentHoldings, HoldingsError, LotView},
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{
         ArithmeticError, Factor, Money, PerUnit, PerUnitRate, Quantity, Units, WIRE_RATE_SCALE,
@@ -37,7 +37,6 @@ use crate::{
 
 mod accounts;
 pub mod actors;
-pub mod allocation;
 mod cashflows;
 pub mod claims;
 mod errors;
@@ -207,7 +206,7 @@ fn simulate_with_capture(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.input, rollout_id, capture_mode, None, None, None)
+            simulate_rollout(fixture.input, rollout_id, capture_mode, None, None)
                 .map(RolloutComputation::into_output)
         })
         .collect();
@@ -232,15 +231,8 @@ pub fn simulate_summaries_validated(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(
-                fixture.input,
-                rollout_id,
-                CaptureMode::Summary,
-                None,
-                None,
-                None,
-            )
-            .map(RolloutComputation::into_summary)
+            simulate_rollout(fixture.input, rollout_id, CaptureMode::Summary, None, None)
+                .map(RolloutComputation::into_summary)
         })
         .collect();
     Ok(PopulationOutput {
@@ -274,7 +266,6 @@ pub fn simulate_product_metrics_validated(
                 rollout_id,
                 CaptureMode::Summary,
                 Some(&inputs),
-                None,
                 None,
             )
             .map(|computation| (computation.product_metrics, computation.failed_month))
@@ -315,10 +306,8 @@ fn simulate_rollout(
     capture_mode: CaptureMode,
     product: Option<&ProductInputs>,
     spending: Option<&mut spending::Policy<'_>>,
-    allocation: Option<&mut allocation::Policy<'_>>,
 ) -> Result<RolloutComputation, SimulationError> {
-    RolloutState::new(fixture, rollout_id, capture_mode, product)?
-        .run(fixture, product, spending, allocation)
+    RolloutState::new(fixture, rollout_id, capture_mode, product)?.run(fixture, product, spending)
 }
 
 impl RolloutState {
@@ -564,15 +553,9 @@ impl RolloutState {
         fixture: &ExecutionInput,
         product: Option<&ProductInputs>,
         mut spending: Option<&mut spending::Policy<'_>>,
-        mut allocation: Option<&mut allocation::Policy<'_>>,
     ) -> Result<RolloutComputation, SimulationError> {
         while !self.is_finished(fixture) {
-            self = self.advance_month(
-                fixture,
-                product,
-                spending.as_deref_mut(),
-                allocation.as_deref_mut(),
-            )?;
+            self = self.advance_month(fixture, product, spending.as_deref_mut())?;
         }
         self.finish(fixture)
     }
@@ -585,16 +568,12 @@ impl RolloutState {
         fixture: &ExecutionInput,
         product: Option<&ProductInputs>,
         mut spending: Option<&mut spending::Policy<'_>>,
-        mut allocation: Option<&mut allocation::Policy<'_>>,
     ) -> Result<Self, SimulationError> {
         if self.is_finished(fixture) {
             return Ok(self);
         }
         let rollout_id = self.rollout_id;
         let month = self.month;
-        if let Some(policy) = allocation.as_deref_mut() {
-            policy.review(fixture, rollout_id, month, &self.ledger, &self.lots)?;
-        }
         // Decide from opening-of-month holdings and current prices, before this month's
         // cashflows. The resulting demand is funded with the other monthly obligations.
         let consumption = if let Some(policy) = spending.as_deref_mut() {
@@ -629,7 +608,6 @@ impl RolloutState {
             month,
             &claims,
             consumption.as_ref(),
-            allocation.as_deref(),
         )?;
         let settlement = settle_grouped(
             &mut payments::Context {
