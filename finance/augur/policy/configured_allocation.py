@@ -10,11 +10,106 @@ from dataclasses import dataclass
 from fractions import Fraction
 
 from finance.augur.policy import sleeves
-from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band
+from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band, validate_band_bounds
 from finance.augur.sim.actions import Action, Buy, Contribute, Liquidate, Sell, Withdraw
 from finance.augur.sim.fixed_point import quantity_for_value
 from finance.augur.sim.observations import Observation, PublicPosition
-from finance.augur.sim.prepared import _AllocationPolicy
+from finance.augur.sim.prepared import (
+    CompiledRun,
+    PreparedAmount,
+    PreparedFixedAmount,
+    PreparedSeries,
+    _AllocationPolicy,
+)
+
+
+def _base_bound(run: CompiledRun, amount: PreparedAmount, series: dict[str, PreparedSeries]) -> int:
+    if isinstance(amount, int):
+        return sleeves._count(amount)
+    if isinstance(amount, PreparedFixedAmount):
+        return sleeves._count(amount.amount)
+    base = sleeves._count(amount.base_amount)
+    if not 0 < amount.adjustment_period_months < 1 << 32 or not 0 <= amount.base_month_index < 1 << 32:
+        raise ValueError("allocation indexed bound has an invalid base month or reset period")
+    if run.scenario.horizon_months and amount.base_month_index != 0:
+        raise ValueError("allocation indexed bound starts before its base month")
+    if amount.series_id != "inflation" and not (amount.series_id.startswith("rent:") and len(amount.series_id) > 5):
+        raise ValueError("allocation indexed bounds require inflation or a rent series")
+    path = series.get(amount.series_id)
+    if path is None:
+        raise ValueError(f"allocation indexed bound is missing series {amount.series_id!r}")
+    required = {amount.base_month_index, *range(0, run.scenario.horizon_months, amount.adjustment_period_months)}
+    for rollout in range(run.rollout_count):
+        for month in required:
+            index = rollout * path.snapshots + month
+            if month >= path.snapshots or index >= len(path.values):
+                raise ValueError("allocation indexed bound is missing a required series level")
+            if not sleeves._count(path.values[index]):
+                raise ValueError("allocation indexed bound requires positive index levels")
+    return base
+
+
+def validate_prepared(run: CompiledRun) -> None:
+    """Reject malformed imported configured policies before any world or month exists.
+
+    Native accounting validates its own facts. These guards belong here because
+    configured policy records are not sent to the financial kernel.
+    """
+    scenario = run.scenario
+    accounts = {(item.account.agent_id, item.account.account_id) for item in scenario.accounts}
+    pools = {(item.agent_id, item.account_id, item.asset_id): item.quantity_scale for item in scenario.holding_pools}
+    managed = {(item.owner_agent_id, item.account_id, item.asset_id) for item in scenario.tlh_portfolios}
+    series = {item.series_id: item for item in run.series}
+    funding = set()
+    for policy_index, policy in enumerate(scenario._target_allocation_policies):
+        key = (policy.agent_id, policy.account_id)
+        if not policy.cause_id_prefix.strip() or key not in accounts:
+            raise ValueError("allocation requires a nonempty cause and declared funding account")
+        if key in funding:
+            raise ValueError("duplicate allocation funding account")
+        funding.add(key)
+        sources = _sources(policy)
+        if len(set(sources)) != len(sources):
+            raise ValueError("allocation source accounts must be unique")
+        weights = [item.weight for item in policy.sleeves]
+        sleeves._validate_values([0] * len(weights), weights)
+        if len({item.asset_id for item in policy.sleeves}) != len(policy.sleeves):
+            raise ValueError("duplicate allocation sleeve")
+        tolerance = policy.rebalance_tolerance_ppb
+        if tolerance is not None:
+            sleeves._count(tolerance)
+            if not policy.allow_purchases:
+                raise ValueError("allocation drift requires purchases")
+        validate_band_bounds(
+            floor=_base_bound(run, policy.cash_floor, series), ceiling=_base_bound(run, policy.cash_ceiling, series)
+        )
+        for sleeve_index, sleeve in enumerate(policy.sleeves):
+            scale = sleeves._count(sleeve.quantity_scale)
+            if not sleeve.asset_id.strip() or str(scale).rstrip("0") != "1":
+                raise ValueError("allocation requires an asset identity and a power-of-ten quantity grid")
+            scales = {
+                pools[(policy.agent_id, source, sleeve.asset_id)]
+                for source in sources
+                if (policy.agent_id, source, sleeve.asset_id) in pools
+            }
+            if scales and scales != {scale}:
+                raise ValueError("allocation quantity grid disagrees with a source holding pool")
+            if not policy.allow_purchases:
+                continue
+            destination = (policy.agent_id, sources[0], sleeve.asset_id)
+            if destination not in pools and destination not in managed:
+                raise ValueError("allocation purchase pool is not declared")
+            prefix = f"{policy.cause_id_prefix}_buy_p{policy_index}_s{sleeve_index}_"
+            for lot in scenario.initial_lots:
+                suffix = lot.lot_id.removeprefix(prefix)
+                if (
+                    lot.lot_id.startswith(prefix)
+                    and suffix.isascii()
+                    and suffix.isdigit()
+                    and str(int(suffix)) == suffix
+                    and int(suffix) < 1 << 32
+                ):
+                    raise ValueError(f"opening lot {lot.lot_id!r} uses a reserved allocation-purchase identity")
 
 
 @dataclass(frozen=True, kw_only=True)

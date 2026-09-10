@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from pydantic import JsonValue
 
-from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan
+from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan, validate_prepared
 from finance.augur.sim import _native, results
 from finance.augur.sim.actions import Buy, DecisionActions
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
@@ -47,6 +47,7 @@ def _amount(session: _Session, rollout_id: int, amount: PreparedAmount) -> int:
 def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> _Session:
     if not isinstance(run, CompiledRun):
         raise TypeError("execution requires a CompiledRun, not serialized input")
+    validate_prepared(run)
     session = _Session(
         run,
         product_actor,

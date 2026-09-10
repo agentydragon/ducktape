@@ -13,11 +13,14 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey
+from finance.augur.policy.configured_allocation import validate_prepared
+from finance.augur.rust.prepared import _decode, _encode
 from finance.augur.rust.result import RustResult, rust_result
+from finance.augur.sim import configured
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.configured import simulate_forensic_json
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
-from finance.augur.sim.prepared import CompiledRun
+from finance.augur.sim.prepared import CompiledRun, PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.scenario import (
     CashflowOnly,
     DistributionTaxSlice,
@@ -323,19 +326,107 @@ def test_generated_purchase_namespace_is_reserved_before_execution() -> None:
     opening = case.scenario.initial_lots[0].model_copy(update={"lot_id": "fund_buy_p0_s0_1000000"})
     authored = case.scenario.model_copy(update={"initial_lots": [opening]})
     with pytest.raises(ValueError, match="reserved allocation-purchase identity"):
-        _prepared(replace(case, scenario=authored))
+        _run(replace(case, scenario=authored))
     disabled = authored.model_copy(update={"target_allocation_policies": [_policy(assets=(STOCK,), purchases=False)]})
-    _prepared(replace(case, scenario=disabled))
+    _run(replace(case, scenario=disabled))
     nonmatching = authored.model_copy(
         update={"initial_lots": [opening.model_copy(update={"lot_id": opening.lot_id + "x"})]}
     )
-    _prepared(replace(case, scenario=nonmatching))
+    _run(replace(case, scenario=nonmatching))
 
 
 def test_missing_asset_quote_is_not_a_zero_valued_holding() -> None:
     case = _case()
     with pytest.raises(ValueError, match=r"(?i)missing|series|level block"):
         _run(replace(case, series={STOCK: case.series[STOCK]}))
+
+
+@pytest.mark.parametrize(
+    ("malformation", "error"),
+    [
+        ("sources", "source accounts must be unique"),
+        ("purchase_pool", "purchase pool is not declared"),
+        ("source_grid", "quantity grid disagrees"),
+        ("invalid_grid", "power-of-ten quantity grid"),
+        ("funding", "declared funding account"),
+        ("cause", "nonempty cause"),
+        ("duplicate_policy", "duplicate allocation funding account"),
+        ("duplicate_sleeve", "duplicate allocation sleeve"),
+        ("zero_weights", "positive target"),
+        ("negative_weight", "nonnegative"),
+        ("disabled_drift", "drift requires purchases"),
+        ("band", "must not exceed"),
+        ("period", "invalid base month or reset period"),
+        ("base_month", "starts before its base month"),
+        ("missing_index", "missing series"),
+        ("future_index", "positive index levels"),
+    ],
+)
+def test_imported_policy_is_rejected_before_any_world_is_constructed(
+    malformation: str, error: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = _prepared(_case(purchases=True, single=True))
+    [policy] = run.scenario._target_allocation_policies
+    [sleeve] = policy.sleeves
+    index = PreparedIndexedAmount(base_amount=0, series_id="inflation", base_month_index=0, adjustment_period_months=12)
+    match malformation:
+        case "sources":
+            policy = replace(policy, source_account_ids=("brokerage", "brokerage"))
+        case "purchase_pool":
+            policy = replace(policy, source_account_ids=("undeclared",))
+        case "source_grid":
+            policy = replace(policy, sleeves=(replace(sleeve, quantity_scale=10),))
+        case "invalid_grid":
+            policy = replace(policy, sleeves=(replace(sleeve, quantity_scale=3),))
+        case "funding":
+            policy = replace(policy, account_id="undeclared")
+        case "cause":
+            policy = replace(policy, cause_id_prefix=" ")
+        case "duplicate_sleeve":
+            policy = replace(policy, sleeves=(sleeve, sleeve))
+        case "zero_weights":
+            policy = replace(policy, sleeves=(replace(sleeve, weight=0),))
+        case "negative_weight":
+            policy = replace(policy, sleeves=(replace(sleeve, weight=-1),))
+        case "disabled_drift":
+            policy = replace(policy, allow_purchases=False, rebalance_tolerance_ppb=0)
+        case "band":
+            policy = replace(policy, cash_floor=1)
+        case "period":
+            policy = replace(policy, cash_ceiling=replace(index, adjustment_period_months=0))
+        case "base_month":
+            policy = replace(policy, cash_ceiling=replace(index, base_month_index=1))
+        case "missing_index" | "future_index":
+            policy = replace(policy, cash_ceiling=index)
+    if malformation == "future_index":
+        run = replace(
+            run,
+            series=(*run.series, PreparedSeries(series_id="inflation", snapshots=14, values=(10**9,) * 12 + (0, 0))),
+        )
+    policies = (policy, policy) if malformation == "duplicate_policy" else (policy,)
+    imported = _decode(_encode(replace(run, scenario=replace(run.scenario, _target_allocation_policies=policies))))
+
+    def unexpected_world(*args: object, **kwargs: object) -> None:
+        raise AssertionError("invalid configured policy reached financial world construction")
+
+    monkeypatch.setattr(configured, "_Session", unexpected_world)
+    with pytest.raises(ValueError, match=error):
+        simulate_forensic_json(imported)
+
+
+def test_prepared_policy_keeps_exact_integer_indices_and_disabled_purchase_scope() -> None:
+    run = _prepared(_case(single=True))
+    [policy] = run.scenario._target_allocation_policies
+    # Policy bounds no longer cross a float transport. An exact i64 index above
+    # 2**53 is valid; absent purchase destinations remain valid for sales-only rules.
+    index = PreparedIndexedAmount(base_amount=0, series_id="inflation", base_month_index=0, adjustment_period_months=12)
+    policy = replace(policy, source_account_ids=("unused-holdings",), cash_ceiling=index)
+    run = replace(
+        run,
+        scenario=replace(run.scenario, _target_allocation_policies=(policy,)),
+        series=(*run.series, PreparedSeries(series_id="inflation", snapshots=14, values=(2**53 + 1,) * 14)),
+    )
+    validate_prepared(_decode(_encode(run)))
 
 
 if __name__ == "__main__":
