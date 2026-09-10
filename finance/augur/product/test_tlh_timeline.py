@@ -125,5 +125,29 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
     assert bool(rollout.trace.journal) == (capture == "forensic")
 
 
+def test_zero_cash_liquidation_is_still_a_redemption(case: Case) -> None:
+    worthless = Case(
+        scenario=case.scenario,
+        rollout_count=1,
+        series={asset: levels([[Decimal(0), Decimal(0)]]) for asset in case.series},
+    )
+    session = ActionSession(worthless.compiled_run, "owner", [0], capture="dense")
+    try:
+        assert not isinstance(session.start(), Finished)
+        result = session.advance(
+            [DecisionActions(0, 0, [Action.liquidate("close-worthless", "owner", "managed", "checking")])]
+        )
+    finally:
+        session.close()
+    assert isinstance(result, Finished)
+    [rollout] = result.rollouts
+    assert rollout.stop is None
+    assert rollout.trace is not None
+    redemption = rollout.trace.events.tlh_financial_effects.filter(operation=TlhOperation.REDEMPTION)
+    assert redemption.select(
+        "cash_amount_quanta", "short_term_gain_quanta", "long_term_gain_quanta", "basis_change_quanta"
+    ).rows() == [(0, 0, -100, -100)]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
