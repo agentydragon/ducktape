@@ -321,3 +321,29 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "sleeves",
+    srcs = ["sleeves.py"],
+    deps = [
+        ":fixed_point",
+        "//finance/augur/rust:simulator_ext",
+    ],
+)
+
+py_test(
+    name = "test_sleeves",
+    srcs = ["test_sleeves.py"],
+    deps = [
+        ":scenario",
+        ":sleeves",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
