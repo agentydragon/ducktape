@@ -74,6 +74,8 @@ class PropertyState(Record):
 
 
 class MortgageState(Record):
+    """Read-only capture combining the Python contract's servicing facts and ledger principal."""
+
     liability_id: str
     property_id: str
     agent_id: str

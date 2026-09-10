@@ -28,6 +28,8 @@ def _round_ratio(numerator: int, denominator: int) -> int:
 
 @dataclass(frozen=True, kw_only=True)
 class MortgageTerms:
+    """Fixed contract facts, including the amount borrowed rather than today's balance."""
+
     liability_id: str
     property_id: str
     borrower: AccountRef
@@ -87,6 +89,8 @@ class MortgagePayment:
 
 @dataclass
 class Mortgage:
+    """Servicing memory; each operation reads outstanding principal from its caller's ledger."""
+
     terms: MortgageTerms
     monthly_payment: int = field(init=False)
     interest_paid_ytd: int = field(init=False, default=0)
