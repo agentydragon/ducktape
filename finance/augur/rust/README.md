@@ -293,6 +293,13 @@ resets on distinct paths, incoming indexed transfers, and explicit payment of
 observed indexed claims through the common session. It also pins half-up
 sub-cent scaling and cashflow-before-payment timing with conserved cash.
 
+`bbr test //finance/augur/rust:obligations_test` runs household claim funding,
+account-scoped sales, optional cash bands and failure controls through explicit
+Python batch actions. A later rejected payment preserves earlier sales/payments:
+two $500 bills against $600 pay the first bill, reject the second with $100
+unchanged, and skip later actions. Stopped paths receive neither future scheduled
+cashflows nor policy calls; another path in the same batch can continue.
+
 The remaining legacy acceptance suites in `sim/testing/` assert integer answers for:
 
 - opening balances and opening equity;

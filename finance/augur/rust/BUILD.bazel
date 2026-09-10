@@ -362,3 +362,24 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_test(
+    name = "obligations_test",
+    srcs = ["obligations_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:cash_band",
+        "//finance/augur/policy:funding",
+        "//finance/augur/policy:sleeves",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:case",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

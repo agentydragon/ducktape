@@ -33,7 +33,11 @@ supported-domain suites onto the common Python action session and the existing t
 books/traces/receipts. Keep independent numerical assertions, not only
 old/new equivalence; delete superseded test contracts/adapters with their last
 readers. Reuse the common-session distribution, public-sale/tax and dated-bond
-controls rather than restoring their configured-runner suites.
+controls rather than restoring their configured-runner suites. The household
+obligation/failure, transfer and indexed-payment controls also use the common
+session; do not restore their deleted legacy suite classes. Remaining sale/tax,
+cash-conservation and feature-specific suites retain their actual numerical
+coverage until their own consumers migrate.
 The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped
 multiple-actor sequencing; separate runs are not a replacement for those joint
 controls. Keep the common-session product bond-value regression as actual adapter

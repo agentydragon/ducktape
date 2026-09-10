@@ -18,9 +18,7 @@ from finance.augur.rust.result import run_rust
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.testing.behaviour import (
     AssetSaleAcceptance,
-    ObligationAcceptance,
     PropertyCarryingCostAcceptance,
-    RolloutFailureAcceptance,
     YearEndTaxAcceptance,
 )
 from finance.augur.sim.testing.case import Case, scenario
@@ -141,19 +139,7 @@ class TestRustYearEndTax(YearEndTaxAcceptance):
         return run_rust
 
 
-class TestRustObligation(ObligationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
-
-
 class TestRustPropertyCarryingCost(PropertyCarryingCostAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
-
-
-class TestRustRolloutFailure(RolloutFailureAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust
