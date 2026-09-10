@@ -1,8 +1,8 @@
 """The cash band: how much the actor raises or invests in a month.
 
-The band's shape is configured here and enforced by `rust/engine/target_allocation.rs`.
-What lives in this module is the one check the engine cannot make for itself, and the
-statement of the rule it implements.
+The band's shape is configured here. `rust/allocation.rs::cash_band` proposes the cash
+adjustment; configured allocation and authored actor policies choose how to act on it.
+This module validates authoring-time bounds before indexed amounts are materialized.
 
 ## The rule
 
@@ -43,10 +43,9 @@ from decimal import Decimal
 def validate_band_bounds(*, floor: Decimal | int, ceiling: Decimal | int) -> None:
     """Check the band's shape at COMPILE time, on the configured amounts.
 
-    It cannot be checked per-month: the bounds may be CPI-indexed, so an inverted band
-    would otherwise surface as a runtime failure on some paths and not others. Validating
-    the base amounts is sufficient rather than a compromise — indexing scales both bounds
-    by the same series, so an ordering that holds at configuration holds on every path.
+    Reject invalid authored bands before sampling paths. The shared runtime proposal
+    helper also validates the resolved bounds; actor policies can call it without this
+    configured-policy model.
     """
 
     if floor < 0:

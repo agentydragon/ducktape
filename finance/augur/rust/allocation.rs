@@ -2,8 +2,8 @@ use std::cmp::Ordering;
 
 use thiserror::Error;
 
-use crate::money::ArithmeticError;
 use crate::money::WIRE_RATE_SCALE;
+use crate::money::{ArithmeticError, Money};
 
 #[derive(Debug, Error)]
 pub enum AllocationError {
@@ -13,10 +13,42 @@ pub enum AllocationError {
     InvalidWeight,
     #[error("allocation rebalance tolerance must not be negative")]
     InvalidTolerance,
+    #[error("cash band must have a nonnegative floor no greater than its ceiling")]
+    InvalidCashBand,
     #[error("allocation rounding residual exceeds available adjustment capacity")]
     RoundingCapacity,
     #[error(transparent)]
     Arithmetic(#[from] ArithmeticError),
+}
+
+/// A cash-budget proposal, not a trade or a guarantee that funding is available.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CashAdjustment {
+    Raise(Money),
+    Invest(Money),
+    Hold,
+}
+
+/// Propose crossing to the far edge of a cash band, with both bounds inclusive.
+///
+/// The caller supplies its projected cash after planned outflows (which may be
+/// negative), chooses any holdings or lots to trade, and may ignore the proposal.
+/// No accounts, prices, obligations, tax estimates or execution are read here.
+pub fn cash_band(
+    projected_cash: Money,
+    floor: Money,
+    ceiling: Money,
+) -> Result<CashAdjustment, AllocationError> {
+    if floor < Money(0) || floor > ceiling {
+        return Err(AllocationError::InvalidCashBand);
+    }
+    Ok(if projected_cash < floor {
+        CashAdjustment::Raise(ceiling.checked_sub(projected_cash)?)
+    } else if projected_cash > ceiling {
+        CashAdjustment::Invest(projected_cash.checked_sub(floor)?)
+    } else {
+        CashAdjustment::Hold
+    })
 }
 
 pub fn withdrawal_by_sleeve(
@@ -391,8 +423,74 @@ fn round_half_up_nonnegative(
 
 #[cfg(test)]
 mod tests {
-    use super::{deposit_by_sleeve, quantity_for_value, rebalance_by_sleeve, withdrawal_by_sleeve};
+    use super::{
+        AllocationError, CashAdjustment, cash_band, deposit_by_sleeve, quantity_for_value,
+        rebalance_by_sleeve, withdrawal_by_sleeve,
+    };
+    use crate::money::Money;
     use proptest::prelude::*;
+
+    #[test]
+    fn cash_band_proposes_the_far_edge_and_holds_at_both_bounds() {
+        for (projected, expected) in [
+            (-40, CashAdjustment::Raise(Money(240))),
+            (99, CashAdjustment::Raise(Money(101))),
+            (100, CashAdjustment::Hold),
+            (150, CashAdjustment::Hold),
+            (200, CashAdjustment::Hold),
+            (201, CashAdjustment::Invest(Money(101))),
+        ] {
+            assert_eq!(
+                cash_band(Money(projected), Money(100), Money(200)).unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            cash_band(Money(0), Money(0), Money(0)).unwrap(),
+            CashAdjustment::Hold
+        );
+        assert_eq!(
+            cash_band(Money(-1), Money(0), Money(0)).unwrap(),
+            CashAdjustment::Raise(Money(1))
+        );
+    }
+
+    #[test]
+    fn cash_band_proposal_composes_with_allocation_without_executing_it() {
+        let CashAdjustment::Raise(raise) = cash_band(Money(-20), Money(10), Money(30)).unwrap()
+        else {
+            panic!("cash shortfall must propose raising funds");
+        };
+        // The caller chooses the scoped portfolio; the proposal does not invent
+        // another source when those holdings cannot supply the requested cash.
+        assert_eq!(raise, Money(50));
+        assert_eq!(
+            withdrawal_by_sleeve(&[20, 10], &[1, 1], raise.0).unwrap(),
+            [20, 10]
+        );
+        let CashAdjustment::Invest(invest) = cash_band(Money(60), Money(10), Money(30)).unwrap()
+        else {
+            panic!("cash surplus must propose investment");
+        };
+        assert_eq!(
+            deposit_by_sleeve(&[0, 0], &[0, 1], invest.0).unwrap(),
+            [0, 50]
+        );
+    }
+
+    #[test]
+    fn cash_band_rejects_invalid_bounds_and_unrepresentable_proposals() {
+        for (floor, ceiling) in [(-1, 0), (2, 1)] {
+            assert!(matches!(
+                cash_band(Money(0), Money(floor), Money(ceiling)),
+                Err(AllocationError::InvalidCashBand)
+            ));
+        }
+        assert!(matches!(
+            cash_band(Money(i64::MIN), Money(0), Money(0)),
+            Err(AllocationError::Arithmetic(_))
+        ));
+    }
 
     #[test]
     fn withdrawal_drains_the_overweight_sleeve_first() {

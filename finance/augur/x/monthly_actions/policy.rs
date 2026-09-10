@@ -3,7 +3,7 @@
 
 use augur_native_invocation::{run, write_output};
 use augur_rust_simulator::{
-    allocation::quantity_for_value,
+    allocation::{CashAdjustment, cash_band, quantity_for_value},
     engine::{
         SimulationError,
         actors::{self, Action, Decision, DecisionActions},
@@ -23,14 +23,19 @@ fn decide(batch: Vec<Decision<'_>>) -> Result<Vec<DecisionActions>, SimulationEr
             let due = claims
                 .iter()
                 .try_fold(Money(0), |total, claim| total.checked_add(claim.amount_due))?;
+            let adjustment = cash_band(
+                observation.books.cash()?.checked_sub(due)?,
+                Money(0),
+                Money(0),
+            )?;
             let mut actions = Vec::new();
             let positions = observation
                 .books
                 .public_positions()
                 .collect::<Result<Vec<_>, _>>()?;
-            if observation.books.month() == 0
+            if let CashAdjustment::Invest(invest) = adjustment
+                && observation.books.month() == 0
                 && positions.is_empty()
-                && observation.books.cash()? > Money(0)
             {
                 let pool = observation.books.holding_pools().next().ok_or_else(|| {
                     SimulationError::UnsupportedActorInput {
@@ -39,12 +44,7 @@ fn decide(batch: Vec<Decision<'_>>) -> Result<Vec<DecisionActions>, SimulationEr
                     }
                 })?;
                 let price = observation.books.public_price(&pool.asset_id)?;
-                let units = quantity_for_value(
-                    observation.books.cash()?.0,
-                    price.0,
-                    pool.quantity_scale,
-                    false,
-                )?;
+                let units = quantity_for_value(invest.0, price.0, pool.quantity_scale, false)?;
                 if units > 0 {
                     actions.push(Action::Buy(PurchaseRequest {
                         cause_id: "opening-investment".into(),
@@ -58,7 +58,9 @@ fn decide(batch: Vec<Decision<'_>>) -> Result<Vec<DecisionActions>, SimulationEr
                     }));
                 }
             }
-            if observation.books.cash()? < due {
+            // This deliberately blunt strategy liquidates all scoped lots rather
+            // than matching the proposed raise; settlement still owns the math.
+            if matches!(adjustment, CashAdjustment::Raise(_)) {
                 for position in positions {
                     actions.push(Action::Sell(SaleRequest {
                         cause_id: format!("fund-{}", position.lot_id()),

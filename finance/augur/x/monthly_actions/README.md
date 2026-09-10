@@ -23,6 +23,11 @@ not calculate a minimal sale or retry an unaffordable bill. Empty intervening
 months still receive a batch decision with no actions. The engine supplies current
 prices and applies the shared lot, payment, tax and stopping operations.
 
+The rule calls `allocation::cash_band` with projected cash minus due claims and a
+zero-width cash band. It responds to `Raise` by liquidating the lots; it uses an
+`Invest` proposal only for the cash-only opening below and otherwise leaves surplus
+cash alone. The helper proposes a budget, not trades or an execution requirement.
+
 At $100, the sale realizes $200 proceeds and $120 long-term gain. The bill uses
 $150, and the later $12 tax claim leaves $38. At $50, the sale realizes $100; the
 bill payment rejects and stops that path. Its sale receipt, realized gain and

@@ -367,6 +367,15 @@ Per-unit distribution paths are nonnegative: zero is an explicit no-payment mont
 Missing or non-finite sampled values are rejected by the compiler, not filled with
 zero. Security and home-value price paths still require strictly positive values.
 
+`allocation::cash_band(projected_cash, floor, ceiling)` is an optional pure policy
+helper: it proposes `Raise` to the ceiling below the floor, `Invest` down to the floor
+above the ceiling, or `Hold` inside the inclusive band. The caller supplies its
+projected cash, chooses whether and how to trade, and issues explicit actions. It
+does not promise funding or read future prices/taxes. The configured allocation
+control and the runnable `x/monthly_actions` actor rule share this calculation;
+`withdrawal_by_sleeve`, `deposit_by_sleeve` and `rebalance_by_sleeve` likewise return
+value proposals without executing them.
+
 Target allocation evaluates the band after all monthly obligations have
 accrued, sells before the grouped funding check, and therefore makes an unpaid
 obligation mean the configured portfolio genuinely could not fund it. Buy

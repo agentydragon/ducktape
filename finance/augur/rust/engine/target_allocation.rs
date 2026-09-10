@@ -2,6 +2,7 @@
 //! purchases that run after they do, and quiet-band drift rebalancing.
 
 use super::*;
+use crate::allocation::{CashAdjustment, cash_band};
 use crate::execution::TargetAllocationPolicySpec;
 
 #[derive(Clone, Debug)]
@@ -45,16 +46,11 @@ pub(super) fn execute_target_allocation_sales(
         let current_cash = ledger.balance(&cash_account)?;
         let floor = amount_value(fixture, rollout_id, month, &policy.cash_floor)?;
         let ceiling = amount_value(fixture, rollout_id, month, &policy.cash_ceiling)?;
-        let projected = current_cash.checked_sub(hard_demand)?;
-        let raise = if projected.0 < floor.0 {
-            ceiling.checked_sub(projected)?
-        } else {
-            Money(0)
-        };
-        let invest = if projected.0 > ceiling.0 {
-            projected.checked_sub(floor)?
-        } else {
-            Money(0)
+        let adjustment = cash_band(current_cash.checked_sub(hard_demand)?, floor, ceiling)?;
+        let (raise, invest) = match adjustment {
+            CashAdjustment::Raise(amount) => (amount, Money(0)),
+            CashAdjustment::Invest(amount) => (Money(0), amount),
+            CashAdjustment::Hold => (Money(0), Money(0)),
         };
 
         let source_accounts = source_accounts(policy);
@@ -75,7 +71,7 @@ pub(super) fn execute_target_allocation_sales(
             });
         let sleeve_withdrawals = withdrawal_by_sleeve(&values, weights, raise.0)?;
         let sleeve_deposits = deposit_by_sleeve(&values, weights, invest.0)?;
-        let quiet_band = raise == Money(0) && invest == Money(0);
+        let quiet_band = adjustment == CashAdjustment::Hold;
         let (rebalance_sales, rebalance_buys) = if quiet_band {
             if let Some(tolerance) = policy.rebalance_tolerance_ppb {
                 rebalance_by_sleeve(&values, weights, tolerance)?
