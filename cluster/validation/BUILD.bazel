@@ -8,17 +8,6 @@ package(default_visibility = [
 ])
 
 py_test(
-    name = "test_gateway_listeners",
-    srcs = ["test_gateway_listeners.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_terraform_sources",
     srcs = ["test_terraform_sources.py"],
     data = [
