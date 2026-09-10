@@ -321,6 +321,23 @@ def _initial_bonds(scenario: Scenario, *, quantum: Decimal) -> tuple[PreparedBon
 
 
 def _target_allocation_policies(scenario: Scenario, *, quantum: Decimal) -> tuple[_AllocationPolicy, ...]:
+    # These lot names belong to future policy purchases, including beyond this
+    # horizon. Reject collisions before any world or policy action is executed.
+    for policy_index, policy in enumerate(scenario.target_allocation_policies):
+        if not policy.allow_purchases:
+            continue
+        for sleeve_index, _ in enumerate(policy.sleeves):
+            prefix = f"{policy.cause_id_prefix}_buy_p{policy_index}_s{sleeve_index}_"
+            for lot in scenario.initial_lots:
+                suffix = lot.lot_id.removeprefix(prefix)
+                if (
+                    lot.lot_id.startswith(prefix)
+                    and suffix.isascii()
+                    and suffix.isdigit()
+                    and str(int(suffix)) == suffix
+                    and int(suffix) < 1 << 32
+                ):
+                    raise ValueError(f"opening lot {lot.lot_id!r} uses a reserved allocation-purchase identity")
     return tuple(
         _AllocationPolicy(
             agent_id=policy.agent_id,

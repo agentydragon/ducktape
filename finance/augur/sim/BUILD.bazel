@@ -449,3 +449,24 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_test(
+    name = "configured_allocation_test",
+    srcs = ["configured_allocation_test.py"],
+    deps = [
+        ":backend",
+        ":configured",
+        ":jurisdictions",
+        ":prepared",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:result",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -159,7 +159,7 @@ def plan(
                         agent_id=policy.agent_id,
                         proceeds_account_id=policy.account_id,
                         asset_id=sleeve.asset_id,
-                        lots=lot_sales,
+                        lots=tuple(lot_sales),
                     )
                 )
                 scales = {lot.lot_id: lot.quantity_scale for lot in candidates}
