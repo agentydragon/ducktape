@@ -17,7 +17,9 @@ from finance.augur.sim.fixed_point import (
     quantity_for_value,
     quantity_scale_for_asset,
     quantity_to_quanta,
+    rate_to_ppb,
     ratio_to_money_factor,
+    round_ppb,
     sampled_array_to_quanta,
     validate_currency_quantum,
 )
@@ -41,6 +43,13 @@ def test_model_boundary_quantization_is_exact() -> None:
     np.testing.assert_array_equal(
         sampled_array_to_quanta(np.array([0.0049, 0.005, -0.005]), quantum="0.01"), np.array([0, 1, -1], dtype=np.int64)
     )
+
+
+def test_dimensionless_rates_and_levels_use_half_away_rounding() -> None:
+    values = np.array([-0.0000000005, 0.0, 0.0000000005, 0.1000000005])
+    expected = [-1, 0, 1, 100_000_001]
+    assert round_ppb(values).tolist() == expected
+    assert [rate_to_ppb(float(value)) for value in values] == expected
 
 
 def test_exact_ratio_compiles_to_integer_money_factor() -> None:

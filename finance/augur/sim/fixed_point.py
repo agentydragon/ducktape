@@ -28,6 +28,19 @@ DEFAULT_UNIT_QUANTA = 1_000_000
 MONEY_FACTOR_SCALE = 1_000_000_000
 
 
+def round_ppb(values: Float64[np.ndarray, " *shape"] | float) -> Int64[np.ndarray, " *shape"]:
+    """Quantize dimensionless levels or rates, half away from zero, to parts per billion."""
+
+    scaled = np.asarray(values, dtype=np.float64) * MONEY_FACTOR_SCALE
+    return (np.sign(scaled) * np.floor(np.abs(scaled) + 0.5)).astype(np.int64)
+
+
+def rate_to_ppb(value: float) -> int:
+    """Quantize one configured rate using the same grid as sampled levels."""
+
+    return int(round_ppb(value))
+
+
 def quantity_for_value(value: int, price: int, quantity_scale: int, *, round_up: bool) -> int:
     """Propose quantity counts from exact money and a current per-unit quote.
 

@@ -20,17 +20,6 @@ py_library(
 )
 
 py_library(
-    name = "income_buckets",
-    srcs = ["income_buckets.py"],
-    deps = [
-        ":helpers",
-        "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "private_equity",
     srcs = ["private_equity.py"],
     deps = [
@@ -62,28 +51,10 @@ py_library(
     deps = [
         ":bonds",
         ":distributions",
-        ":helpers",
-        ":income_buckets",
+        ":income_sources",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:scenario",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "income_buckets_test",
-    srcs = ["income_buckets_test.py"],
-    deps = [
-        ":helpers",
-        ":income_buckets",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -92,6 +63,7 @@ py_test(
     srcs = ["tax_test.py"],
     deps = [
         ":execution",
+        ":tax",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim:external_series",
@@ -120,7 +92,7 @@ py_library(
     name = "execution",
     srcs = ["execution.py"],
     deps = [
-        ":helpers",
+        ":income_sources",
         ":private_equity",
         ":series",
         ":tax",
@@ -151,6 +123,25 @@ py_test(
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:security_distributions",
         "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "income_sources",
+    srcs = ["income_sources.py"],
+    deps = ["//finance/augur/sim:scenario"],
+)
+
+py_test(
+    name = "income_sources_test",
+    srcs = ["income_sources_test.py"],
+    deps = [
+        ":income_sources",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:scenario",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

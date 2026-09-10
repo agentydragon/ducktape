@@ -60,6 +60,11 @@ eligibility terms, or other holder-specific account details.
 
 ## Layout
 
+`sim/compiler/tax.py` resolves filing status and currency quantum into immutable
+tax profiles with variable-length jurisdiction/bracket records and typed income
+categories. Execution-input lowering serializes those records; it does not
+reconstruct tax schedules from padded arrays or reread jurisdiction rules.
+
 | Directory   | Purpose                                                                                                                                 |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `model/`    | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.             |

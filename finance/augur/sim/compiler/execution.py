@@ -9,6 +9,7 @@ from __future__ import annotations
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Mapping
+from dataclasses import asdict
 from decimal import Decimal
 from typing import Any
 
@@ -26,7 +27,7 @@ from finance.augur.model.series import (
     SecurityKey,
 )
 from finance.augur.sim.bonds import coupon_amount_quanta
-from finance.augur.sim.compiler.helpers import StringTable
+from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.compiler.private_equity import PEChannels, compile_pe_channels
 from finance.augur.sim.compiler.series import (
     collect_level_series_keys,
@@ -34,13 +35,14 @@ from finance.augur.sim.compiler.series import (
     materialize_level_rows,
     validate_series_indexed_amounts,
 )
-from finance.augur.sim.compiler.tax import OPEN_ENDED_BRACKET_UPPER_QUANTA, TaxCompileOutput, compile_tax
+from finance.augur.sim.compiler.tax import compile_tax
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import (
-    MONEY_FACTOR_SCALE,
     currency_amount_to_quanta,
     quantity_scale_for_asset,
     quantity_to_quanta,
+    rate_to_ppb,
+    round_ppb,
     sampled_array_to_quanta,
 )
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
@@ -79,21 +81,6 @@ class UnsupportedScenarioError(ValueError):
     no field would have to be dropped, and dropping one changes the answer without changing the
     shape of it.
     """
-
-
-def _round_ppb(values: Float64[np.ndarray, " *shape"] | float) -> Int64[np.ndarray, " *shape"]:
-    """Quantize a dimensionless level or rate onto the parts-per-billion grid.
-
-    Half away from zero on `value * MONEY_FACTOR_SCALE`, matching the engine's own rounding,
-    so a level rounds once here and never again when it multiplies integer money.
-    """
-
-    scaled = np.asarray(values, dtype=np.float64) * MONEY_FACTOR_SCALE
-    return (np.sign(scaled) * np.floor(np.abs(scaled) + 0.5)).astype(np.int64)
-
-
-def _ppb(value: float) -> int:
-    return int(_round_ppb(value))
 
 
 def _account(agent_id: str, account_id: str) -> dict[str, str]:
@@ -184,7 +171,7 @@ def _obligation(obligation: ScheduledObligation | RecurringObligation, *, quantu
         "deduction_category": obligation.deduction_category,
         # Quantized before it multiplies integer money, so the payment is scaled by an exact
         # parts-per-billion numerator rather than a float.
-        "deductible_fraction_ppb": _ppb(obligation.deductible_fraction),
+        "deductible_fraction_ppb": rate_to_ppb(obligation.deductible_fraction),
     }
 
 
@@ -205,7 +192,7 @@ def _series_values(
     if isinstance(key, _MONEY_SERIES_KINDS):
         return money
     if isinstance(key, _INDEX_SERIES_KINDS):
-        return _round_ppb(levels)
+        return round_ppb(levels)
     raise UnsupportedScenarioError(f"level series {key.wire_id!r} has no execution input representation")
 
 
@@ -251,9 +238,9 @@ def _private_equity_series(
             ("regime", channels.regime_codes[index]),
             ("event_kind", pe_channels.event_kind_codes[index]),
             ("sale_opportunity", channels.sale_opportunity_active[index].astype(np.int64)),
-            ("sale_capacity", _round_ppb(channels.sale_capacity_fractions[index])),
-            ("eligible", _round_ppb(channels.eligible_fractions[index])),
-            ("forced_sale", _round_ppb(channels.forced_sale_fractions[index])),
+            ("sale_capacity", round_ppb(channels.sale_capacity_fractions[index])),
+            ("eligible", round_ppb(channels.eligible_fractions[index])),
+            ("forced_sale", round_ppb(channels.forced_sale_fractions[index])),
             ("liquidity_blocked", channels.liquidity_blocked[index].astype(np.int64)),
             ("forced_recovery", channels.forced_recovery_cashout_quanta[index]),
             ("company_valuation", sampled_array_to_quanta(valuation, quantum=quantum)),
@@ -289,69 +276,6 @@ def _jurisdiction_identities(scenario: Scenario, jurisdictions: Mapping[str, Jur
     return [
         {"jurisdiction_id": jurisdiction_id, "level": str(levels[jurisdiction_id])}
         for jurisdiction_id in sorted(levels)
-    ]
-
-
-def _brackets(
-    upper: Int64[np.ndarray, " bracket"], rate: Float64[np.ndarray, " bracket"], count: int
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "upper": None if int(upper[index]) == OPEN_ENDED_BRACKET_UPPER_QUANTA else int(upper[index]),
-            "rate_ppb": _ppb(float(rate[index])),
-        }
-        for index in range(count)
-    ]
-
-
-def _tax_profiles(
-    scenario: Scenario, tax: TaxCompileOutput, strings: StringTable, jurisdictions: Mapping[str, Jurisdiction]
-) -> list[dict[str, Any]]:
-    """Tax profiles built from the compiled tables rather than re-read from the jurisdiction YAML.
-
-    `tax` already holds the bracket edges, rates, standard deductions, prior-year tax and
-    §121 cap, each resolved for its profile's filing status. Taking them from there is what
-    makes a case assessed under one schedule instead of two lookups that have to agree.
-    """
-
-    rules_by_profile: list[list[dict[str, Any]]] = [[] for _ in scenario.tax_profiles]
-    for link, profile_index in enumerate(tax.link_profile.tolist()):
-        jurisdiction_id = strings.values[int(tax.link_jurisdiction[link])]
-        jurisdiction = jurisdictions[jurisdiction_id]
-        rules_by_profile[profile_index].append(
-            {
-                "jurisdiction_id": jurisdiction_id,
-                "exempt_interest_from_levels": sorted(str(level) for level in jurisdiction.exempt_interest_from_levels),
-                "exempts_own_issue": jurisdiction.exempts_own_issue,
-                "ordinary_brackets": _brackets(
-                    tax.link_ordinary_upper[link], tax.link_ordinary_rate[link], int(tax.link_ordinary_count[link])
-                ),
-                "long_term_capital_gain_brackets": _brackets(
-                    tax.link_ltcg_upper[link], tax.link_ltcg_rate[link], int(tax.link_ltcg_count[link])
-                ),
-                "standard_deduction": int(tax.link_standard_deduction[link]),
-                # The taxpayer's own IRC 1211(b) cap, not this engine's constant. It is a
-                # per-profile figure because netting runs once per taxpayer, and
-                # `compile_tax` has already refused a profile whose jurisdictions disagree —
-                # so every link of a profile carries the same number, and writing it per
-                # jurisdiction here is faithful rather than a flattening.
-                "max_capital_loss_ordinary_offset": int(
-                    tax.profile_max_capital_loss_ordinary_offset[tax.link_profile[link]]
-                ),
-                "section_1250_rate_ppb": _ppb(float(tax.link_section_1250_rate[link])),
-            }
-        )
-    return [
-        {
-            "agent_id": profile.agent_id,
-            "tax_authority_agent_id": profile.tax_authority_agent_id,
-            "payment_account_id": profile.payment_account_id,
-            "tax_authority_account_id": profile.tax_authority_account_id,
-            "prior_year_tax": int(tax.profile_prior_year_tax[index]),
-            "section_121_exclusion": int(tax.profile_section_121_exclusion[index]),
-            "jurisdictions": rules_by_profile[index],
-        }
-        for index, profile in enumerate(scenario.tax_profiles)
     ]
 
 
@@ -406,7 +330,7 @@ def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any
 def _initial_bonds(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any]]:
     bonds: list[dict[str, Any]] = []
     for bond in scenario.initial_bonds:
-        rate_ppb = _ppb(bond.annual_coupon_rate)
+        rate_ppb = rate_to_ppb(bond.annual_coupon_rate)
         face = int(currency_amount_to_quanta(bond.face_value, quantum=quantum))
         coupon = (
             {"kind": "indexed", "annual_rate_ppb": rate_ppb}
@@ -460,7 +384,7 @@ def _target_allocation_policies(scenario: Scenario, *, quantum: Decimal) -> list
             "cause_id_prefix": policy.cause_id_prefix,
             "allow_purchases": policy.allow_purchases,
             "rebalance_tolerance_ppb": (
-                _ppb(policy.rebalancing.tolerance) if isinstance(policy.rebalancing, DriftBand) else None
+                rate_to_ppb(policy.rebalancing.tolerance) if isinstance(policy.rebalancing, DriftBand) else None
             ),
         }
         for policy in scenario.target_allocation_policies
@@ -481,8 +405,8 @@ def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> list[dict[st
             "purchase_price": int(currency_amount_to_quanta(purchase.purchase_price, quantum=quantum)),
             "down_payment": int(currency_amount_to_quanta(purchase.down_payment, quantum=quantum)),
             "buyer_closing_cost": int(currency_amount_to_quanta(purchase.buyer_closing_cost, quantum=quantum)),
-            "rented_fraction_ppb": _ppb(purchase.rented_fraction),
-            "land_value_fraction_ppb": _ppb(purchase.land_value_fraction),
+            "rented_fraction_ppb": rate_to_ppb(purchase.rented_fraction),
+            "land_value_fraction_ppb": rate_to_ppb(purchase.land_value_fraction),
             "mortgage": (
                 None
                 if purchase.mortgage is None
@@ -491,7 +415,7 @@ def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> list[dict[st
                     "lender_agent_id": purchase.mortgage.lender_agent_id,
                     "lender_account_id": purchase.mortgage.lender_account_id,
                     "principal": int(currency_amount_to_quanta(purchase.mortgage.principal, quantum=quantum)),
-                    "annual_interest_rate_ppb": _ppb(purchase.mortgage.annual_interest_rate),
+                    "annual_interest_rate_ppb": rate_to_ppb(purchase.mortgage.annual_interest_rate),
                     "term_months": int(purchase.mortgage.term_months),
                 }
             ),
@@ -508,7 +432,7 @@ def _closing_cost_ppb(event: PropertySaleEvent) -> int:
     among them -- for no reason but the coarser grid.
     """
 
-    return _ppb(float(Decimal(str(event.closing_cost_pct)) / 100))
+    return rate_to_ppb(float(Decimal(str(event.closing_cost_pct)) / 100))
 
 
 def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum: Decimal) -> list[dict[str, Any]]:
@@ -531,7 +455,7 @@ def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum
             "location_id": location_id,
             "display_name": locations[location_id].display_name,
             "jurisdiction_ids": list(locations[location_id].jurisdiction_ids),
-            "annual_property_tax_rate_ppb": _ppb(locations[location_id].annual_property_tax_rate),
+            "annual_property_tax_rate_ppb": rate_to_ppb(locations[location_id].annual_property_tax_rate),
             "annual_special_assessment": int(
                 currency_amount_to_quanta(locations[location_id].annual_special_assessment, quantum=quantum)
             ),
@@ -565,8 +489,7 @@ def compile_execution_input(
         currency_quantum=quantum,
     )
     validate_series_indexed_amounts(scenario, rollout_count=rollout_count, rows_by_key={row.key: row for row in rows})
-    strings = StringTable()
-    tax = compile_tax(scenario, strings, dict(jurisdictions))
+    tax = compile_tax(scenario, jurisdictions)
     issuer_ids = tuple(
         sorted(
             {str(lot.asset.issuer_id) for lot in scenario.initial_lots if isinstance(lot.asset, PrivateEquityAssetKey)}
@@ -640,10 +563,8 @@ def compile_execution_input(
                 }
                 for sale in scenario.scheduled_asset_sales
             ],
-            "tax_profiles": _tax_profiles(scenario, tax, strings, jurisdictions),
-            # The income buckets the compiler derived for this scenario, so the ledger reports
-            # the prepared source set instead of rediscovering it.
-            "income_sources": list(tax.buckets.source_wire_ids()),
+            "tax_profiles": [asdict(profile) for profile in tax.profiles],
+            "income_sources": [income_source_wire_id(source) for source in tax.income_sources],
             "distributions": [
                 {
                     "agent_id": distribution.agent_id,
@@ -652,7 +573,7 @@ def compile_execution_input(
                     "to_account_id": distribution.to_account_id,
                     "tax_character": [
                         {
-                            "fraction_ppb": _ppb(tax_slice.fraction),
+                            "fraction_ppb": rate_to_ppb(tax_slice.fraction),
                             "issuer_jurisdiction_id": tax_slice.issuer_jurisdiction_id,
                         }
                         for tax_slice in distribution.tax_character
@@ -680,9 +601,9 @@ def compile_execution_input(
                     "asset_id": _asset_id(policy.asset),
                     "peak_annual_yield_ppb": policy.yield_params.peak_annual_yield_ppb,
                     "floor_annual_yield_ppb": policy.yield_params.floor_annual_yield_ppb,
-                    "maturity_decay_exponent_ppb": _ppb(policy.yield_params.maturity_decay_exponent),
+                    "maturity_decay_exponent_ppb": rate_to_ppb(policy.yield_params.maturity_decay_exponent),
                     "drawdown_sensitivity_ppb": policy.yield_params.drawdown_sensitivity_ppb,
-                    "short_term_fraction_ppb": _ppb(policy.short_term_fraction),
+                    "short_term_fraction_ppb": rate_to_ppb(policy.short_term_fraction),
                 }
                 for policy in scenario.harvest_policies
             ],
@@ -699,7 +620,7 @@ def compile_execution_input(
                 {
                     "month": int(event.month),
                     "property_id": event.property_id,
-                    "rented_fraction_ppb": _ppb(event.rented_fraction),
+                    "rented_fraction_ppb": rate_to_ppb(event.rented_fraction),
                 }
                 for event in lifecycle
                 if isinstance(event, SetRentedFractionEvent)
@@ -742,7 +663,9 @@ def compile_execution_input(
                     "from_account_id": policy.from_account_id,
                     "tax_authority_agent_id": policy.tax_authority_agent_id,
                     "tax_authority_account_id": policy.tax_authority_account_id,
-                    "annual_tax_rate_ppb": (None if policy.annual_tax_rate is None else _ppb(policy.annual_tax_rate)),
+                    "annual_tax_rate_ppb": (
+                        None if policy.annual_tax_rate is None else rate_to_ppb(policy.annual_tax_rate)
+                    ),
                     "start_month": int(policy.start_month),
                     "end_month": None if policy.end_month is None else int(policy.end_month),
                 }
