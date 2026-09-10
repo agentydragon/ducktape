@@ -9,8 +9,8 @@
 use proptest::prelude::*;
 
 use crate::money::{
-    ArithmeticError, Factor, Money, PerUnit, Quantity, Units, is_quantity_scale,
-    mul_div_i128_round_half_up, mul_div_round_half_up,
+    ArithmeticError, Factor, Money, Quantity, is_quantity_scale, mul_div_i128_round_half_up,
+    mul_div_round_half_up,
 };
 
 /// Assert `quotient` is the integer nearest `product / denominator`, an exact tie
