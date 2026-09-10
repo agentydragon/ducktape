@@ -218,7 +218,7 @@ def test_current_payout_funds_an_explicit_same_month_claim() -> None:
     assert result.summary.cash[0].values[-1] == 2_400_000
     [payment] = result.summary.payments
     assert payment.month == 0
-    assert payment.cause_id == "bill"
+    assert payment.cause_id == "bill_m0"
     assert payment.receipt.amount_paid == 200_000
     assert isinstance(payment.receipt.outcome, Paid)
     assert result.trace is not None
