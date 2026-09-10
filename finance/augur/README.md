@@ -21,6 +21,8 @@ compares executable constant/glide allocation targets with actual funded consump
 and holdings on stipulated paths.
 <x/monthly_actions/README.md> submits an explicit monthly sell → pay action list
 and reports actual receipts, tax payment and per-path stopping.
+<x/joint_spending_allocation/README.md> composes spending flexibility and allocation
+on the same synthetic taxable paths, with intended/paid consumption and selected replay.
 
 ## Planning boundary
 

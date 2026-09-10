@@ -1,0 +1,62 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "compare_bin",
+    main_module = "finance.augur.x.joint_spending_allocation.compare",
+    deps = [":compare"],
+)
+
+py_test(
+    name = "test_compare",
+    srcs = ["test_compare.py"],
+    data = [":compare_bin"],
+    deps = [
+        ":compare",
+        ":policy",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/x/bounded_spending:python_policy",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "compare",
+    srcs = ["compare.py"],
+    deps = [
+        ":policy",
+        ":scenario",
+        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:quantiles",
+        "//finance/augur/x/bounded_spending:python_policy",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "policy",
+    srcs = ["policy.py"],
+    deps = [
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/x/allocation_glide:policy",
+        "//finance/augur/x/bounded_spending:python_policy",
+    ],
+)
+
+py_library(
+    name = "scenario",
+    srcs = ["scenario.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+    ],
+)
