@@ -11,7 +11,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_agent_machine_access
   owner: tfstate_agent_machine_access
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -23,7 +24,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_alloy_otlp_bearer_token
   owner: tfstate_alloy_otlp_bearer_token
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -35,7 +37,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_augur_evidence
   owner: tfstate_augur_evidence
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -47,7 +50,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_budget_ledger
   owner: tfstate_budget_ledger
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -59,7 +63,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_cpap_data
   owner: tfstate_cpap_data
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -71,7 +76,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_dns_records
   owner: tfstate_dns_records
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -83,7 +89,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_flux_webhook_token
   owner: tfstate_flux_webhook_token
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -95,7 +102,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_forgejo_agentydragon
   owner: tfstate_forgejo_agentydragon
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -107,7 +115,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_forgejo_agentydragon_repos
   owner: tfstate_forgejo_agentydragon_repos
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -119,7 +128,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_forgejo_claude
   owner: tfstate_forgejo_claude
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -131,7 +141,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_forgejo_images
   owner: tfstate_forgejo_images
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -143,7 +154,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_gatus_sso
   owner: tfstate_gatus_sso
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -155,7 +167,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_github_branch_protection
   owner: tfstate_github_branch_protection
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -167,7 +180,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_github_secrets_sync
   owner: tfstate_github_secrets_sync
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -179,7 +193,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_haku_state
   owner: tfstate_haku_state
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -191,7 +206,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_infra_drift
   owner: tfstate_infra_drift
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -203,7 +219,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_litellm_api_key
   owner: tfstate_litellm_api_key
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -215,7 +232,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_litellm_keys
   owner: tfstate_litellm_keys
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -227,7 +245,8 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_sso_providers
   owner: tfstate_sso_providers
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -239,4 +258,5 @@ spec:
     name: tofu-state-db-ovh
   name: tfstate_thrive_scrape
   owner: tfstate_thrive_scrape
-  databaseReclaimPolicy: retain
+  databaseReclaimPolicy: delete
+  ensure: absent
