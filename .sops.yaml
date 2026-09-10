@@ -39,6 +39,16 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
+  # LiteLLM's instance master key and encryption salt are Flux-only Secrets.
+  # The master key is mirrored into selected runtime namespaces after Flux
+  # decrypts it; neither consumer needs the age private key.
+  - path_regex: cluster/k8s/litellm/secrets/litellm-(master-key|salt-key)\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # CLIProxyAPI client key: Flux applies and reflects it to codex-pod, while
   # workstation and agent-box Codex home-manager configs decrypt the same SSOT.
   # Must precede the generic cluster/k8s rule below.

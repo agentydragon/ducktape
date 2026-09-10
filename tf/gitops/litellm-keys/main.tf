@@ -19,8 +19,8 @@ terraform {
 
 # LiteLLM virtual keys for the Haku worker lanes (haku/archive/2026_08_multi_agent.md).
 # Declarative per-key model allowlists + budgets; deleting a resource here is the
-# kill switch for that lane. Auth = the master key managed by ../litellm-api-key
-# (the litellm-keys Terraform CR dependsOn it).
+# kill switch for that lane. Auth = the SOPS-managed master key applied by
+# cluster/k8s/litellm/secrets/ before the LiteLLM Deployment starts.
 #
 # STATE COUPLING (see cluster/AGENTS.md "Wiping a backing DB orphans tofu state"):
 # litellm_key resources live in the litellm-db CNPG database and their IDs live in

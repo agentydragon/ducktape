@@ -1,6 +1,6 @@
 # Mints the Haku and agent-worker LiteLLM virtual keys (tf/gitops/litellm-keys).
-# Needs the master key (litellm-api-key CR) and a serving LiteLLM with its
-# virtual-key DB; tofu-controller retries on its interval until LiteLLM is up.
+# Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key
+# DB; tofu-controller retries on its interval until LiteLLM is up.
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
@@ -11,8 +11,6 @@ spec:
   approvePlan: "auto"
   refreshBeforeApply: true
   path: ./tf/gitops/litellm-keys
-  dependsOn:
-    - name: litellm-api-key
   sourceRef:
     kind: GitRepository
     name: ducktape

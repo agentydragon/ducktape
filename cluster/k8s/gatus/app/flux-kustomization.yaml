@@ -27,5 +27,7 @@ spec:
       namespace: ducktape-flux
     - name: gatus-sso-tf
       namespace: ducktape-flux
+    - name: litellm-secrets
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux

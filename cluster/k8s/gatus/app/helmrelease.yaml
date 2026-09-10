@@ -35,10 +35,13 @@ spec:
           secretKeyRef:
             name: gatus-db-app
             key: uri
+      LITELLM_API_KEY:
+        valueFrom:
+          secretKeyRef:
+            name: litellm-master-key
+            key: api-key
 
     envFrom:
-      - secretRef:
-          name: litellm-api-key
       - secretRef:
           name: gatus-oidc-secret
 
