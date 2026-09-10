@@ -1,8 +1,8 @@
 """Compose dated-bond investment strategies on a shared batch of discount curves.
 
 This is an instrument-model experiment: one strategy unit owns dated bonds and idle
-cash, distributing coupons. Trading functions live here; household funding remains
-in the Rust engine. Redemptions and sale proceeds stay in unit NAV, never masquerade
+cash, distributing coupons. Trading functions live here; household funding is chosen
+by the Python policy and settled by the action executor. Redemptions and sale proceeds stay in unit NAV, never masquerade
 as interest distributions. Month zero opens the investment without paying a coupon.
 """
 

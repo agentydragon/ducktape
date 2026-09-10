@@ -45,3 +45,12 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "funding",
+    srcs = ["funding.py"],
+    deps = [
+        ":sleeves",
+        "//finance/augur/rust:simulator_ext",
+    ],
+)

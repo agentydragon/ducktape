@@ -2,15 +2,15 @@
 
 A runnable mechanics experiment: identical stipulated discount-curve paths drive
 dated-bond investment constructions and the existing constant-maturity proxy.
-Each construction is crossed with annual household spending, funded by Augur's
-canonical Rust engine. These are named stress paths, not forecasts or a sample
+Each construction is crossed with annual household spending, funded by a Python
+batch policy through Augur's canonical action session. These are named stress paths, not forecasts or a sample
 from which to estimate probabilities. One stress drops the curve to exactly zero
 at month 6, exercising zero-yield pricing without a positive-rate floor.
 
 ```bash
 bb run //finance/augur/x/bond_policies:run_bin -- \
   --output-dir /tmp/augur-bond-comparison \
-  --annual-spending 0 5000 10000
+  --annual-spending 0 5000 10000 --trace-rollouts 4 0
 ```
 
 The output directory must not exist. Defaults use $100,000 initial wealth and
@@ -30,10 +30,13 @@ transaction costs, defaults, inflation, and interest on cash are absent.
   set to zero to match the experiment's start-before-first-coupon convention.
   Comparison with a dated arm therefore changes coupon timing and rollover
   frequency as well as valuation. It does not isolate one source of disagreement.
-- `run.py` gives those paths to `compile_run` and `RustEngine`. Coupons enter
-  checking; a cashflow-only, sales-only policy sells investment units to cover
-  withdrawals, with no cash buffer and no purchases. Surplus coupons accumulate
-  in non-interest-bearing checking cash.
+- `run.py` gives those paths to `compile_run`, then drives `ActionSession` from
+  Python. The shared <../../policy/funding.py> batch policy receives current
+  observations, proposes sales to cover due claims, then full claim payments.
+  Coupons already received in checking reduce the required sale; no purchases,
+  rebalancing, tax gross-up or retry occurs. Surplus coupons accumulate in
+  non-interest-bearing checking cash. Claims retain this experiment's month-12
+  start, distinct from Trinity's opening-month withdrawal convention.
 - The dated constructions retain bond sale proceeds and maturity principal as
   idle cash **inside the investment**, or use proceeds to buy replacement bonds
   when rolling. Principal is not labeled coupon income.
@@ -48,7 +51,7 @@ exposure, not an adaptive spending policy.
 Coupon payments precede same-month unit sales. Dated-bond prices include accrued
 value between coupon dates and exclude the coupon paid at the current date.
 Construction traces are per original investment unit; household quantities and
-cashflows belong to the engine's event frames, not to those traces.
+cashflows belong to action-session results, not to those traces.
 
 ## Inspecting a run
 
@@ -58,19 +61,36 @@ contains the supplied discount factors. Each construction directory contains
 sales, purchases, and redemption. The proxy exposes only prices and coupons;
 its unobserved internal flows are not reported as zero events.
 
-Each spending cell saves its complete `execution_input.json`, canonical event
-frames as Parquet, and monthly product metrics in `metrics.npz`. `summary.json`
-links each path/cell to terminal wealth, spending paid, sale proceeds, and failure
-month. Money in these outputs is in the reported currency quantum; `-1` means no
-failure. Compare named paths directly, without probability weights or rankings
+Each spending cell saves its complete `execution_input.json`, canonical compact
+results in `rollouts.json`, and selected forensic replays in `traces.json`.
+`--trace-rollouts` selects original zero-based path IDs, in the supplied order;
+omit its values for no detailed replays. All cells use the same five paths, and
+replaying a subset does not renumber them.
+
+`summary.json` links each path/cell to observed requested/paid spending, attempted
+payment shortfalls, unpaid claims, tax paid (zero in this tax-free setup), and the
+explicit stop result. A failed payment is not partially paid: any preceding unit
+sale remains effective, that payment changes no books, and only that path stops.
+No later events are invented. Requested/shortfall totals cover attempted payments,
+not unobserved future scheduled withdrawals.
+
+Terminal wealth is cash plus marked units only for completed horizons; stopped
+assets have their own `ending_mark_month` and are not horizon outcomes. Amounts
+are nominal integer USD cents. `stop: null` means completion. Detailed selected
+traces contain actual sale proceeds, basis, distributions and balanced journals;
+compact capture does not pretend to retain those event details. These outputs
+replace the former Parquet frames/`metrics.npz`; no parallel configured run is
+performed. Compare named paths directly, without probability weights or rankings
 inferred from their counts.
 
 ```bash
 bbr test //finance/augur/x/bond_policies:test_run
 ```
 
-Tests check actual Rust funding sales, coupon-before-sale ordering, terminal
-coupon timing, the zero-withdrawal control, and saved event/summary agreement.
+Tests run the actual offline CLI and check funding sales, coupon-before-sale
+ordering, terminal coupon timing, zero withdrawals, internal redemption versus
+household income, fractional units/basis, failed-payment prefixes, and selected
+replay/summary agreement.
 Pricing and construction tests check the underlying bond mechanics separately:
 
 ```bash

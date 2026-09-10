@@ -1,4 +1,4 @@
-"""Sales-only funding of fixed indexed claims; coupons may accumulate in cash."""
+"""Optional sales-only funding of claims from one cash account; surplus cash stays idle."""
 
 from finance.augur.policy.sleeves import withdraw
 from finance.augur.rust.simulator import Action, Decision, DecisionActions
@@ -7,7 +7,11 @@ from finance.augur.rust.simulator import Action, Decision, DecisionActions
 def fund_claims(
     batch: list[Decision], *, targets: dict[tuple[str, str], int], cash_account_id: str
 ) -> list[DecisionActions]:
-    """Propose overweight-first/FIFO sales, then full claim payments in observed order."""
+    """Fund claims on the chosen cash account, then propose full payments in observed order.
+
+    The caller supplies claims payable from this account and selected holding-pool weights.
+    Sales are overweight-first/FIFO; neither purchases nor tax gross-up are proposed.
+    """
     responses = []
     for decision in batch:
         observation = decision.observation

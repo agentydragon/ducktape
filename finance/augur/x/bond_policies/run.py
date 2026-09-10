@@ -7,20 +7,20 @@ paths, not sampled evidence or forecasts, so cells have no probability weights.
 
 import argparse
 import json
+from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
-import polars as pl
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
-from finance.augur.rust.backend import RustEngine
+from finance.augur.policy.funding import fund_claims
+from finance.augur.rust.simulator import ActionSession, Finished
 from finance.augur.sim.backend import CompiledRun, compile_run
-from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
-    CashflowOnly,
     DistributionTaxSlice,
     InitialAccountBalance,
     InitialLot,
@@ -28,8 +28,6 @@ from finance.augur.sim.scenario import (
     Scenario,
     ScheduledObligation,
     SecurityDistribution,
-    SleeveTarget,
-    TargetAllocationPolicy,
 )
 from finance.augur.x.bond_policies.construction import (
     DatedConstruction,
@@ -103,18 +101,6 @@ def compile_construction(
             for month in range(12, horizon_months, 12)
             if annual_spending > 0
         ],
-        target_allocation_policies=[
-            TargetAllocationPolicy(
-                agent_id=HOUSEHOLD,
-                account_id=CHECKING,
-                source_account_ids=(BROKERAGE,),
-                sleeves=[SleeveTarget(asset=asset, weight=1)],
-                cash_floor=Decimal(0),
-                cash_ceiling=Decimal(0),
-                rebalancing=CashflowOnly(),
-                allow_purchases=False,
-            )
-        ],
         tax_profiles=[],
         horizon_months=horizon_months,
     )
@@ -131,11 +117,57 @@ def compile_construction(
     )
 
 
-def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) -> None:
+def execute(
+    run: CompiledRun, *, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"] = "summary"
+) -> list[dict[str, Any]]:
+    """Run the monthly batch policy on selected original paths, without reinvestment."""
+    session = ActionSession(json.dumps(run.execution_input), HOUSEHOLD, list(rollout_ids), capture=capture)
+    try:
+        batch = session.start()
+        while not isinstance(batch, Finished):
+            batch = session.advance(
+                fund_claims(batch, targets={(BROKERAGE, str(STRATEGY)): 1}, cash_account_id=CHECKING)
+            )
+        results: list[dict[str, Any]] = json.loads(batch.rollouts_json)
+        return results
+    finally:
+        session.close()
+
+
+def measurements(rollout: dict[str, Any]) -> dict[str, Any]:
+    """Report observed payment attempts and assets; stopped assets are not terminal wealth."""
+    summary = rollout["summary"]
+    assets = sum(row["values"][-1] for field in ("cash", "public_holdings") for row in summary[field])
+    payments = [
+        row["receipt"]
+        for row in summary["payments"]
+        if row["target"] is not None and row["target"]["obligation_type"] == "cash_spend"
+    ]
+    requested = sum(receipt["amount_requested"] for receipt in payments)
+    paid = sum(receipt["amount_requested"] for receipt in payments if receipt["outcome"] == "Paid")
+    return {
+        "rollout_id": rollout["rollout_id"],
+        "stop": rollout["stop"],
+        "ending_mark_month": summary["ending_mark_month"],
+        "ending_assets_quanta": assets,
+        "terminal_wealth_quanta": assets if rollout["stop"] is None else None,
+        "spending_requested_quanta": requested,
+        "spending_paid_quanta": paid,
+        "attempted_spending_shortfall_quanta": requested - paid,
+        "unpaid_claims": summary["unpaid_claims"],
+        "tax_paid_quanta": sum(row["amount_paid"] for row in summary["tax_payments"]),
+    }
+
+
+def run_experiment(
+    *, output_dir: Path, annual_spending: tuple[Decimal, ...], trace_rollouts: tuple[int, ...] = (4, 0)
+) -> None:
     """Save exact model inputs, construction traces, and canonical household outcomes."""
     if not annual_spending or any(not value.is_finite() or value < 0 for value in annual_spending):
         raise ValueError("annual_spending must contain finite nonnegative amounts")
     curves = stipulated_curves()
+    if len(set(trace_rollouts)) != len(trace_rollouts) or any(not 0 <= index < len(curves) for index in trace_rollouts):
+        raise ValueError("trace_rollouts must be distinct original path IDs")
     constructions = compare_constructions(np.stack(tuple(curves.values())))
     horizon_months = next(iter(curves.values())).shape[0] - 1
     output_dir.mkdir(parents=True, exist_ok=False)
@@ -152,10 +184,13 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
                 "withdrawal_months": list(range(12, horizon_months, 12)),
                 "horizon_months": horizon_months,
                 "tax_profiles": [],
-                "cash_floor_usd": "0",
-                "cash_ceiling_usd": "0",
+                "currency_code": "USD",
+                "currency_quantum": "0.01",
+                "policy": "policy/funding.py:fund_claims; sales only, then full due claims in observed order",
+                "decision_timing": "monthly, after current coupons and claim assembly; no retry",
+                "trace_rollouts": list(trace_rollouts),
                 "allow_purchases": False,
-                "rebalancing": "cashflow_only",
+                "rebalancing": "none; sell units only to cover current due claims",
                 "cash_interest": "none",
                 "transaction_costs": "none",
             },
@@ -163,7 +198,6 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
         )
     )
     summaries = []
-    engine = RustEngine()
     for name, construction in constructions.items():
         strategy_dir = output_dir / name
         strategy_dir.mkdir()
@@ -190,38 +224,20 @@ def run_experiment(*, output_dir: Path, annual_spending: tuple[Decimal, ...]) ->
             cell_dir.mkdir()
             run = compile_construction(construction, annual_spending=spending)
             (cell_dir / "execution_input.json").write_text(json.dumps(run.execution_input))
-            events = engine.events(run)
-            metrics = engine.product_metrics(run, primary_agent_id=HOUSEHOLD)
-            metric_arrays = metrics.metric_arrays()
-            np.savez_compressed(
-                cell_dir / "metrics.npz",
-                allow_pickle=False,
-                **metric_arrays,
-                observed=metrics.observed,
-                failed_month=metrics.failed_month,
-            )
-            for frame in EVENT_FRAME_SPECS:
-                events.frame(frame).write_parquet(cell_dir / f"{frame.name}.parquet")
-            for rollout, path_name in enumerate(curves):
-                selected = pl.col("rollout_index") == rollout
+            results = execute(run, rollout_ids=range(len(curves)))
+            (cell_dir / "rollouts.json").write_text(json.dumps(results))
+            traces = execute(run, rollout_ids=trace_rollouts, capture="forensic") if trace_rollouts else []
+            (cell_dir / "traces.json").write_text(json.dumps(traces))
+            for rollout, path_name in zip(results, curves, strict=True):
                 summaries.append(
                     {
                         "path": path_name,
                         "construction": name,
                         "annual_spending_usd": str(spending),
                         "output": str(cell_dir.relative_to(output_dir)),
-                        "currency_code": metrics.currency_code,
-                        "currency_quantum": metrics.currency_quantum,
-                        "terminal_wealth_quanta": int(metric_arrays["net_worth_quanta"][-1, rollout])
-                        if metrics.failed_month[rollout] < 0
-                        else None,
-                        "spending_paid_quanta": events.obligation_settlements.filter(selected)
-                        .get_column("amount_paid_quanta")
-                        .sum(),
-                        "sale_proceeds_quanta": events.lot_dispositions.filter(selected)
-                        .get_column("proceeds_quanta")
-                        .sum(),
-                        "failed_month": int(metrics.failed_month[rollout]),
+                        "currency_code": "USD",
+                        "currency_quantum": "0.01",
+                        **measurements(rollout),
                     }
                 )
     (output_dir / "summary.json").write_text(json.dumps(summaries, indent=2))
@@ -234,8 +250,13 @@ def main() -> None:
     parser.add_argument(
         "--annual-spending", type=Decimal, nargs="+", default=(Decimal(0), Decimal(5000), Decimal(10000))
     )
+    parser.add_argument("--trace-rollouts", type=int, nargs="*", default=(4, 0))
     args = parser.parse_args()
-    run_experiment(output_dir=args.output_dir, annual_spending=tuple(args.annual_spending))
+    run_experiment(
+        output_dir=args.output_dir,
+        annual_spending=tuple(args.annual_spending),
+        trace_rollouts=tuple(args.trace_rollouts),
+    )
 
 
 if __name__ == "__main__":
