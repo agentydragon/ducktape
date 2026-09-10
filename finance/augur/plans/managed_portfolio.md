@@ -172,7 +172,9 @@ Proposed initial service rules:
 
 - **Opening state:** import already-adjusted broker basis and explicit cohort
   ages directly. Historical cumulative harvesting is not required and must not be
-  subtracted a second time. Missing basis/age needs an explicit supported
+  subtracted a second time. Preserve exact total basis through lowering: $1 of
+  basis over three units must not require a cent-representable per-unit basis.
+  Missing basis/age needs an explicit supported
   approximation or rejection, not a silent zero/default. The proxy's cohort ages
   remain declared approximations, not reconstructed constituent trade history.
 - **Harvest:** estimate total loss with the existing curve, then allocate its
@@ -187,9 +189,13 @@ Proposed initial service rules:
 - **Withdrawal:** deliver the requested gross cash, not an after-tax budget.
   Use managed cash first; any liquidation redeems proxy units pro rata across
   cohorts. Apportion representable units deterministically in cohort-ID order;
-  round the total units needed upward and retain excess proceeds as managed cash.
-  Full exit consumes all units and their remaining basis exactly. Realized gains
+  verify actual per-cohort rounded proceeds and retain excess as managed cash.
+  An aggregate inverse price calculation is not proof of funding or insufficiency.
+  Full exit is an explicit request, not inferred from a cash-first gross amount:
+  it consumes all units and their remaining basis, including rounded-zero positions.
+  Realized gains
   use each disposed cohort's adjusted basis and existing holding-period machinery.
+  Disposition receipts and tax gains must reconcile to that same basis.
   This is an explicit approximate service term, not an investor's hidden FIFO rule
   or a reverse callback to Python during action execution.
 - **Access:** underlying managed positions are not independently tradable through
@@ -211,6 +217,12 @@ MA1 pins the passive cases; MA2 adds funding, cohort and rounding cases. Add
 zero-loss, mixed-age, zero-basis and nonrepresentable-quantity controls alongside
 these exact arithmetic anchors. The gate stays open until these proposed service
 conventions are accepted; no managed-account implementation is dispatched here.
+
+One rounding control: three cohorts each hold 0.5 units at a price of one money
+quantum/unit. With per-cohort half-up proceeds they each liquidate for one quantum;
+selling all can fund a two-quantum withdrawal and retain one quantum cash. An
+aggregate calculation demanding two whole units would incorrectly reject it.
+This is a fixed-point acceptance case, not a change to real product valuation.
 
 The old Rust harvest curve and give-back readers remain only for configured
 consumers until their migration. MA1 reuses the existing Python curve, not a new
