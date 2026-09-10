@@ -21,7 +21,7 @@ def test_income_category_identity(source: TransferIncomeCategory, wire_id: str) 
 
 
 def test_reporting_order_places_corporate_interest_after_named_issuers() -> None:
-    sources = [
+    sources: list[TransferIncomeCategory] = [
         InterestIncome(),
         InterestIncome(issuer_jurisdiction_id="federal_us"),
         OrdinaryIncome(),
