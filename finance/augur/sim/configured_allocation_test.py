@@ -142,7 +142,8 @@ def test_configured_funding_preserves_tax_year_claims_and_surplus(purchases: boo
     assert result.events.tax_settlements.select("month_index", "amount_quanta").rows() == [(12, 2000)]
     assert result.events.lot_dispositions["proceeds_quanta"].sum() == 40_000
     assert result.events.lot_dispositions["cost_basis_consumed_quanta"].sum() == 20_000
-    assert result.events.obligation_settlements["amount_paid_quanta"].sum() == 55_000
+    spending = result.events.obligation_settlements.filter(pl.col("obligation_type") == "cash_spend")
+    assert spending["amount_paid_quanta"].sum() == 55_000
     ending = result.cash.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
     assert ending["balance_quanta"].sum() == (0 if purchases else 3000)
     bought = result.lots.filter((pl.col("month_index") == 13) & (pl.col("purchase_month_index") == 12))
@@ -163,7 +164,8 @@ def test_zero_target_partial_raise_then_full_exit_and_later_tax_funding() -> Non
     assert stock.filter(pl.col("month_index") == 1)["remaining_quantity_quanta"].to_list() == [10_000_000]
     assert stock.filter(pl.col("month_index") == 2)["remaining_quantity_quanta"].to_list() == [0]
     assert result.events.tax_settlements.select("month_index", "amount_quanta").rows() == [(12, 2500)]
-    assert result.events.obligation_settlements["amount_paid_quanta"].sum() == 55_000
+    spending = result.events.obligation_settlements.filter(pl.col("obligation_type") == "cash_spend")
+    assert spending["amount_paid_quanta"].sum() == 55_000
     assert result.events.rollout_failures.is_empty()
 
 
@@ -216,7 +218,7 @@ def test_indexed_monthly_claims_keep_sales_and_next_year_tax_events() -> None:
             series={**case.series, InflationKey(): levels([[Decimal(1)] * 12 + [Decimal(2)] * 2])},
         )
     )
-    paid = result.events.obligation_settlements.sort("month_index")
+    paid = result.events.obligation_settlements.filter(pl.col("obligation_type") == "cash_spend").sort("month_index")
     assert paid["amount_paid_quanta"].to_list() == [1000] * 12 + [2000]
     assert result.events.tax_accruals["amount_quanta"].to_list() == [600]
     assert result.events.tax_settlements.select("month_index", "amount_quanta").rows() == [(12, 600)]

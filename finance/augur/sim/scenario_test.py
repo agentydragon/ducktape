@@ -162,6 +162,27 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("sources", "cause", "error"),
+    [
+        (("brokerage", "brokerage"), "fund", "source accounts must be unique"),
+        (("brokerage",), "  ", "cause prefix must not be empty"),
+    ],
+)
+def test_allocation_rejects_repeated_sources_and_empty_cause(sources: tuple[str, ...], cause: str, error: str) -> None:
+    with pytest.raises(ValidationError, match=error):
+        TargetAllocationPolicy(
+            agent_id="alice",
+            account_id="checking",
+            source_account_ids=sources,
+            sleeves=[SleeveTarget(asset=SecurityKey(symbol="stock"), weight=1)],
+            cause_id_prefix=cause,
+            cash_ceiling=0,
+            allow_purchases=False,
+            rebalancing=CashflowOnly(),
+        )
+
+
 def test_scenario_rejects_duplicate_tax_profile_agent_ids() -> None:
     with pytest.raises(ValidationError, match=r"duplicate TaxProfile\.agent_id.*'alice'"):
         _property_link_validation_scenario(
