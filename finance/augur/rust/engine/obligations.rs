@@ -115,18 +115,16 @@ pub(super) fn settle_grouped(
         let attempted_funding_sources =
             target_allocation_attempted_sources(context.fixture, request.from());
         let month = context.month;
-        if !funded {
-            if target.is_tax_payment {
-                context.recorder.record_tax_payment(TaxPaymentOutcome {
-                    month,
-                    cause_id: firing_id.clone(),
-                    agent_id: request.from().agent_id.clone(),
-                    obligation_type: obligation_type.into(),
-                    amount_due,
-                    amount_paid,
-                    shortfall,
-                })?;
-            }
+        if !funded && target.is_tax_payment {
+            context.recorder.record_tax_payment(TaxPaymentOutcome {
+                month,
+                cause_id: firing_id.clone(),
+                agent_id: request.from().agent_id.clone(),
+                obligation_type: obligation_type.into(),
+                amount_due,
+                amount_paid,
+                shortfall,
+            })?;
         }
         context.recorder.record_obligation(receipt.obligation(
             request,
