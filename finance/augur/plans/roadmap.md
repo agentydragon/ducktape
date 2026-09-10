@@ -345,7 +345,7 @@ delete the native counterpart with its last caller. Native books, tax assessment
 bond math and remaining property/PE mechanics are current responsibilities, not
 a mandate to port every module. No benchmark gate or second supported evaluator.
 
-The active **mortgage ownership slice (PR pending)** gives Python the terms,
+The active **mortgage ownership slice ([#6089](https://github.com/agentydragon/ducktape/pull/6089))** gives Python the terms,
 fixed installment, active servicing state and paid-interest YTD. Outstanding
 principal remains ledger-authoritative; native code accepts immutable payment/tax
 facts and captures read-only statements, without a mutable loan mirror. Verify
