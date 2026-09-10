@@ -69,7 +69,7 @@ inputs:
   disk_bytes:
     description: "Runner disk size in bytes (EstimatedFreeDiskBytes)"
     required: false
-    default: "50000000000"
+    default: "100000000000"
   compute_units:
     description: "Runner vCPU count (EstimatedComputeUnits)"
     required: false

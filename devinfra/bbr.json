@@ -1,6 +1,6 @@
 {
   "runner_exec_properties": {
-    "EstimatedFreeDiskBytes": "50000000000",
+    "EstimatedFreeDiskBytes": "100000000000",
     "EstimatedComputeUnits": "4",
     "workload-isolation-type": "firecracker",
     "init-dockerd": "true",
