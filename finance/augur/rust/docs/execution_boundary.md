@@ -21,20 +21,13 @@ only that list for pool declarations; account scope and observable public prices
 not depend on a strategy executing. Explicit pools permit an all-cash actor to buy
 an asset it did not initially hold.
 
-## Native experiment invocation
+## Experiment invocation
 
-`rust/invocation.py` writes a `CompiledRun` once with `write_prepared_input` and
-invokes an experiment-owned binary with `invoke`. The common argument prefix is
-`INPUT.json OUTPUT.json`; remaining arguments belong to the experiment. The return
-value is the existing decoded output document for experiment-owned analysis.
-Native errors propagate before output is decoded; paths and arguments are passed
-as argv entries, not shell text.
-
-The separate `augur_native_invocation` Rust library loads that input through
-`run` and checks serialization and buffered-write errors through `write_output`.
-The supplied closure still chooses its engine entrypoint, policies, account
-bindings, parameters and selected traces. Financial validation stays in the
-engine. Neither helper changes path identities or caches execution state.
+`rust/invocation.py::write_prepared_input` persists the compiled execution document
+for reproducible experiments. The caller owns paths, parameters, batch policy,
+capture choices and output analysis; the canonical session validates and executes
+financial actions. The file writer does not reinterpret the document or cache
+execution state.
 
 Bounded spending, allocation-glide and monthly actions use the in-process
 `ActionSession` with Python-owned loops and policy functions; they retain

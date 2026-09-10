@@ -67,11 +67,6 @@ class Observations:
             np.asarray(cpi, dtype=object),
         )
 
-    def select(self, rows: slice) -> "Observations":
-        return Observations(
-            self.rollout_ids[rows], self.months[rows], self.cash[rows], self.public_holdings[rows], self.cpi[rows]
-        )
-
 
 def _checked(value: int) -> int:
     if not -(1 << 63) <= value < 1 << 63:

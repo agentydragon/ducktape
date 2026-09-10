@@ -1,16 +1,14 @@
 """Prepared file transport into a Python policy and the canonical action session."""
 
 import json
-import subprocess
 from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
-import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
-from finance.augur.rust.invocation import invoke, write_prepared_input
+from finance.augur.rust.invocation import write_prepared_input
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario
@@ -49,21 +47,6 @@ def test_prepared_input_retains_original_path_cpi_and_selected_replay(tmp_path: 
     assert [row["rollout_id"] for row in replay["rollouts"]] == [2, 0]
     assert [row["summary"] for row in replay["rollouts"]] == [baseline["rollouts"][id_]["summary"] for id_ in [2, 0]]
     assert path.read_text() == encoded
-
-
-@pytest.mark.parametrize(
-    ("contents", "message"),
-    [("[]", "JSON object"), ("42", "JSON object"), ("null", "JSON object"), ("{invalid", "Expecting property name")],
-)
-def test_successful_native_runner_must_produce_an_object(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contents: str, message: str
-) -> None:
-    # The remaining allocation CLI uses this transport; malformed output is an external boundary.
-    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: None)
-    output = tmp_path / "invalid-output.json"
-    output.write_text(contents)
-    with pytest.raises(ValueError, match=message):
-        invoke(binary=Path("test-runner"), input_path=tmp_path / "input.json", output_path=output, arguments=[])
 
 
 if __name__ == "__main__":

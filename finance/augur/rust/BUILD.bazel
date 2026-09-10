@@ -5,23 +5,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 rust_library(
-    name = "native_invocation",
-    srcs = ["invocation.rs"],
-    crate_name = "augur_native_invocation",
-    edition = "2024",
-    deps = [
-        ":simulator",
-        "@crates//:serde",
-        "@crates//:serde_json",
-    ],
-)
-
-rust_test(
-    name = "native_invocation_test",
-    crate = ":native_invocation",
-)
-
-rust_library(
     name = "simulator",
     srcs = [
         "allocation.rs",
@@ -228,7 +211,6 @@ py_test(
         "//finance/augur/sim:scenario",
         "//finance/augur/x/bounded_spending:python_policy",
         "@pypi//numpy",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

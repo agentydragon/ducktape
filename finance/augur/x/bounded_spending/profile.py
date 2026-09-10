@@ -25,7 +25,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.rollouts <= 0 or args.horizon_months <= 0 or args.native_threads <= 0:
         raise ValueError("rollouts, horizon and native threads must be positive")
-    # Set before the extension or native child initializes Rayon's global pool.
+    # Set before the extension initializes Rayon's global pool.
     os.environ["RAYON_NUM_THREADS"] = str(args.native_threads)
     args.output_dir.mkdir(parents=True, exist_ok=False)
     input_json = json.dumps(prepare(rollout_count=args.rollouts, horizon_months=args.horizon_months).execution_input)
