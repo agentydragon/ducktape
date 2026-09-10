@@ -36,8 +36,8 @@ times; a property estimate is not an observable true value. Tax records are know
 filing/payment facts, not hidden future assessments. Events convey executions,
 payments, rejections and new information. No future realized paths or another
 actor's private books. Path routing and capture configuration belong to the runner.
-The bounded-spending migration needs current origin-relative CPI in the common
-observation; add that observed fact, not access to its future sampled path.
+The common observation exposes exact current/origin CPI when modeled; a dependent
+policy rejects its absence. No policy receives the future sampled CPI path.
 
 ## `actions.py`
 
@@ -177,8 +177,11 @@ are ordinary **Python-callable** helpers a policy can compose or ignore. Impleme
 them in Python by default so notebook authors can inspect, edit and replace them
 without rebuilding Rust. A measured hot calculation may use a native kernel behind
 that same Python surface; its current Rust location alone is not justification.
-Port each helper with a real Python action consumer and exact rounding/scale tests,
-then delete the old Rust calculation as its remaining legacy callers migrate.
+`policy/sleeves.py` already provides withdrawal/deposit/rebalance proposals with
+scoped FIFO selection, including zero targets and full exits. Cash-band and exact
+quantity calculations are also Python-callable. P12 deletes the old Rust
+calculations as their remaining configured callers migrate. Add another helper
+only for a concrete consumer, with exact rounding/scale tests.
 Do not grow a native-only helper API first or maintain Python/Rust twins as supported
 alternatives. Helpers use scoped observed lots, cash, prices and product terms; they
 do not duplicate the executor's tax, accounting or settlement machinery.
@@ -212,17 +215,20 @@ are settled. An unpaid due
 claim stops that example after the action list, distinctly from an invalid action.
 GP gates expanded product/housing and multi-policy-actor timing, not this first
 integration. No retry/default/recovery mechanism is part of this interface.
-The existing opening-month/all-or-none cases are spending-probe controls, not
-the destination contract. Migrated consumers must explicitly test and explain
-timing/funding differences rather than hide them in a compatibility runner.
-P8 adds remaining sleeve/lot calculations with their first Python consumers;
-cash-band and exact quantity helpers are already available. P11 independently
-migrates bounded-spending and allocation-glide with only the observations/helpers
-each needs, then demonstrates joint decisions. Retire the scalar amount/weight
-callbacks and spending-only prototype with their last experiment, test and profiler
-callers; these are not supported alternatives to the action session.
+`x/{bounded_spending,allocation_glide,joint_spending_allocation}` compose Python
+policies on the common session. Their controls cover annual cadence, explicit
+funding/reserves, selected replay and joint decisions. Intentions remain separate
+from attempted requests: when an earlier action prevents consumption, its request
+is absent but actual paid consumption is zero for that observed month, not for
+unobserved post-stop months. The bounded-rule scalar/batch comparison and profiler
+use this same session, not a second policy interface.
+
 P12 migrates configured consumers and removes old full-run loops and implicit
 public-portfolio strategy, preserving required existing housing/PE capabilities.
+Trinity is the active first slice; bond examples, benchmarks and the app remain.
+Configured source-account claim grouping is all-or-none; each migration must test
+and explain timing/funding differences rather than hide them in a compatibility
+runner. GP gates only the additional product/multi-actor semantics a slice needs.
 RUNTIME/GE can later change step internals without delaying this sequence.
 The roadmap owns dependencies, per-consumer deletion checkpoints and acceptance;
 this sketch does not introduce another prerequisite chain.
