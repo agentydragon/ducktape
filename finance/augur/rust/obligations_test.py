@@ -53,12 +53,7 @@ def rent_scenario() -> Scenario:
         holding_pools=[HoldingPool(agent_id="alice", account_id="checking", asset=VTI)],
         initial_lots=[
             InitialLot(
-                lot_id="alice_vti",
-                agent_id="alice",
-                asset=VTI,
-                purchase_month_index=-24,
-                quantity=10,
-                cost_basis=500,
+                lot_id="alice_vti", agent_id="alice", asset=VTI, purchase_month_index=-24, quantity=10, cost_basis=500
             )
         ],
         scheduled_obligations=[
