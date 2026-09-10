@@ -39,8 +39,8 @@ parallel paths do not make future months independent. Policies see current
 actor-scoped facts, not future sampled market trajectories. The executor owns
 phase ordering, validation, settlement, liabilities and tax consequences.
 
-`rust/simulator.pyi` declares the current Python action boundary, while
-`rust/engine/actors.rs` implements the retained session and its capability checks.
+`sim/session.py` implements the Python action boundary and owns component state;
+`rust/engine/actors.rs` implements private financial steps and their capability checks.
 Configured allocators, housing and PE behavior are not silently enabled through
 this API. A rejected action stops only its rollout with the successful prefix
 intact; an unpaid due claim is a different stop reason. There is no retry callback
