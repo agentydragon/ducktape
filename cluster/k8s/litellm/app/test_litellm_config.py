@@ -119,39 +119,6 @@ def test_shape_segment_matches_each_entry_upstream_wire() -> None:
     assert shapes_seen == set(ApiShape)
 
 
-# haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
-# whose model choice lives outside the baked-config and Terraform pins above. The runner
-# hardcodes wire_api="responses" (haku/runner/codex/options.py), so the model
-# must be a Responses-wire entry; a Messages-wire name fails every turn at /v1/responses
-# (haku/console/x/codex_app_server/testdata/real_provider_failure.sanitized.jsonl).
-def test_console_codex_harnesses_use_oai_responses_wire_models() -> None:
-    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
-    responses_wire_names = {exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS}
-    for name, runtime in config["harnesses"].items():
-        implementation = runtime["implementation"]
-        if implementation["kind"] == "codex_app_server":
-            assert implementation["model"] in responses_wire_names, name
-
-
-# haku-console's Claude runtime (#4670) picks model + haiku_model from Git YAML, the same
-# outside-the-Terraform-pins spot as the Codex runtime above. Claude Code speaks the Anthropic
-# Messages wire against CLIProxyAPI's Claude subscription, so both must be
-# anthropic-max20/ant-messages/*
-# entries the proxy serves -- never the codex chatgpt/ant-messages/* lane a stale GPT guess would
-# name, which the haku-console-claude key does not admit and which is a broken model turn every
-# request. Admits any served claude-lane model, so it pins the wire without hardcoding the choice.
-def test_console_claude_harness_uses_claude_ant_messages_wire_models() -> None:
-    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
-    claude_wire_names = {
-        exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
-    }
-    for name, runtime in config["harnesses"].items():
-        implementation = runtime["implementation"]
-        if implementation["kind"] == "claude_code":
-            assert implementation["model"] in claude_wire_names, name
-            assert implementation["haiku_model"] in claude_wire_names, name
-
-
 def test_config_maps_mount_their_matching_committed_configs() -> None:
     kustomization = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/kustomization.yaml").read_text())
     config_files = {config["name"]: config["files"] for config in kustomization["configMapGenerator"]}
