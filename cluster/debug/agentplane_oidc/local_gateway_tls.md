@@ -3,7 +3,7 @@
 Read-only observations on 2026-09-10 UTC. No cluster configuration changed.
 PR #5990's global source-address mitigation was not deployed or validated.
 It is being retired in favor of investigating Gateway Service routing; see
-`agentplane_gateway_service_probe.md` for successful app/Actions controls.
+[Gateway Service probes](gateway_service_probe.md) for successful app/Actions controls.
 The direct node-IP failure documented here remains unresolved.
 
 ## Controlled comparison

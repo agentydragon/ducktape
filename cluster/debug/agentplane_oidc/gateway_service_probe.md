@@ -60,7 +60,7 @@ not long-term reliability or browser/OAuth acceptance. The app remains
 CrashLoopBackOff. No live configuration was manually changed and no new
 BuildBuddy invocation was needed for these read-only probes. Prior manifest
 validation passed at
-https://app.buildbuddy.io/invocation/55e6491d-2b25-449c-b71f-f4276880138a.
+<https://app.buildbuddy.io/invocation/55e6491d-2b25-449c-b71f-f4276880138a>.
 
 ## Initial app investigation (before #6007 rollout)
 

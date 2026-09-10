@@ -118,8 +118,8 @@ Changing these is a security-boundary redesign, not a mechanical policy fix.
 `bbr test //cluster/validation:test_egress_allowlists
 //cluster/validation:test_cluster_integration`: both PASSED from cache.
 
-- BuildBuddy: https://app.buildbuddy.io/invocation/691dcda5-c47c-45b1-ab42-aec134cff3b2
-- Runner: https://app.buildbuddy.io/invocation/14e4714e-8d43-4df5-aa12-14e1ecf80b75
+- BuildBuddy: <https://app.buildbuddy.io/invocation/691dcda5-c47c-45b1-ab42-aec134cff3b2>
+- Runner: <https://app.buildbuddy.io/invocation/14e4714e-8d43-4df5-aa12-14e1ecf80b75>
 
 The existing validation does not cover the demonstrated runtime failures or
 the missing TLSRoute listener. No full application acceptance was run.

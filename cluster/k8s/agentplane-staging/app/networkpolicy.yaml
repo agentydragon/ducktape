@@ -94,7 +94,7 @@ spec:
           serverNames:
             - auth.allegedly.works
     # Gateway Service traffic is checked against the selected backend, with
-    # the client's original SNI. See debug/agentplane_gateway_service_probe.md.
+    # the client's original SNI. See cluster/debug/agentplane_oidc/gateway_service_probe.md.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: authentik
