@@ -56,7 +56,7 @@ def test_trinity_keeps_every_start_and_compiles_the_identical_paths(history: Mac
     assert actual.execution_input == expected.execution_input
 
 
-def test_selected_trace_and_metrics_match_the_same_date_in_a_population(history: MacroHistory) -> None:
+def test_selected_trace_and_outcomes_match_the_same_date_in_a_population(history: MacroHistory) -> None:
     model = HistoricalWindowsModel(history=history, equity=EQUITY_SPEC, instruments=(BOND_SPEC,))
     dates = (history.months[2], history.months[0], history.months[3])
     population = _compile(model, dates)
@@ -70,7 +70,9 @@ def test_selected_trace_and_metrics_match_the_same_date_in_a_population(history:
         assert trace["summary"] == summaries[trace["rollout_id"]]["summary"]
         assert trace["stop"] == summaries[trace["rollout_id"]]["stop"]
     assert separate["summary"] == traces[0]["summary"]
-    assert separate["trace"] == traces[0]["trace"]
+    assert separate["trace"]["receipts"] == traces[0]["trace"]["receipts"]
+    # Separately materializing one date assigns it local ID 0, not population ID 2.
+    assert separate["trace"]["financial"] == {**traces[0]["trace"]["financial"], "rollout_id": 0}
     assert traces[0]["trace"]["financial"]["obligations"]
     assert traces[0]["trace"]["financial"]["dispositions"]
     assert len({row["summary"]["cash"][0]["values"][-1] for row in summaries}) > 1
