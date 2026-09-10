@@ -16,8 +16,9 @@ import numpy as np
 from finance.augur.model.series import InflationKey, SecurityKey
 from finance.augur.rust.invocation import write_prepared_input
 from finance.augur.rust.simulator import ActionSession
-from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import (
     Agent,
@@ -89,13 +90,13 @@ def prepare() -> CompiledRun:
 
 
 def execute(
-    input_json: str,
+    prepared: CompiledRun,
     *,
     annual_step: int,
     rollout_ids: list[int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
-    session = ActionSession(input_json, "test-retiree", rollout_ids, capture=capture)
+    session = ActionSession(prepared, "test-retiree", rollout_ids, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -112,9 +113,9 @@ def compare(output_dir: Path) -> None:
     input_path = output_dir / "execution-input.json"
     write_prepared_input(run, input_path)
     for name, step in (("constant", 0), ("glide", 5)):
-        population = execute(input_path.read_text(), annual_step=step, rollout_ids=[0, 1, 2])
+        population = execute(run, annual_step=step, rollout_ids=[0, 1, 2])
         (output_dir / f"{name}.json").write_text(Finished(rollouts=population).model_dump_json())
-        traces = execute(input_path.read_text(), annual_step=step, rollout_ids=[2, 0], capture="forensic")
+        traces = execute(run, annual_step=step, rollout_ids=[2, 0], capture="forensic")
         (output_dir / f"{name}-traces.json").write_text(Finished(rollouts=traces).model_dump_json())
         for rollout in population:
             paid = sum(

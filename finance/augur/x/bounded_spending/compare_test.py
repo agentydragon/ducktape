@@ -57,7 +57,7 @@ def early_claim_failure() -> Finished:
         series={stock: np.array([[100.0] * 3, [300.0] * 3]), InflationKey(): np.ones((2, 3))},
     )
     return run(
-        json.dumps(case.compiled_run.execution_input),
+        case.compiled_run,
         SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 2), {("brokerage", str(stock.symbol)): 1}),
         [0, 1],
     )

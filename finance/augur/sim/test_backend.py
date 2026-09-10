@@ -39,19 +39,18 @@ def test_compile_run_keeps_the_supplied_paths_and_rules() -> None:
         scenario, rollout_count=2, external_series=paths, jurisdictions=jurisdictions, locations=locations
     )
 
-    prepared = run.execution_input
-    assert prepared["scenario"]["horizon_months"] == 1
-    assert prepared["rollout_count"] == 2
-    assert prepared["currency_quantum"] == "0.01"
-    assert prepared["series"][0]["values"] == [1_000_000_000, 1_020_000_000, 1_000_000_000, 990_000_000]
-    assert [a["opening_balance"] for a in prepared["scenario"]["accounts"]] == [125, 0]
-    assert prepared["scenario"]["tax_profiles"][0]["jurisdictions"][0]["standard_deduction"] == 12345
+    assert run.scenario.horizon_months == 1
+    assert run.rollout_count == 2
+    assert run.currency_quantum == "0.01"
+    assert run.series[0].values == (1_000_000_000, 1_020_000_000, 1_000_000_000, 990_000_000)
+    assert [a.opening_balance for a in run.scenario.accounts] == [125, 0]
+    assert run.scenario.tax_profiles[0].jurisdictions[0].standard_deduction == 12345
 
     # The engine receives this prepared value, not mutable authoring objects to reread.
     scenario.initial_cash.clear()
     jurisdictions.clear()
-    assert len(prepared["scenario"]["accounts"]) == 2
-    assert prepared["scenario"]["tax_profiles"][0]["jurisdictions"][0]["standard_deduction"] == 12345
+    assert len(run.scenario.accounts) == 2
+    assert run.scenario.tax_profiles[0].jurisdictions[0].standard_deduction == 12345
 
 
 def test_case_reuses_one_prepared_run() -> None:

@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -88,7 +89,7 @@ def test_tax_free_control_keeps_tax_payments_separate_from_consumption() -> None
     for taxable in (False, True):
         prepared = prepare(paths, rollout_count=3, horizon_months=25, taxable=taxable)
         policy = JointPolicy(Parameters(800, 0, 0), rollout_count=3, annual_step=5)
-        output = run(json.dumps(prepared.execution_input), policy, [2])
+        output = run(prepared, policy, [2])
         reports.append(measurements(output, policy).paths[0])
     untaxed, taxed = reports
     assert untaxed.stop is taxed.stop is None
@@ -103,9 +104,13 @@ def test_tax_free_control_keeps_tax_payments_separate_from_consumption() -> None
 @pytest.mark.parametrize("bill", [100_000, 12_000_000])
 def test_exhaustion_distinguishes_rejected_consumption_from_unattempted_intention(bill: int) -> None:
     prepared = prepare(sample(horizon_months=13), rollout_count=3, horizon_months=13, taxable=True)
-    prepared.execution_input["scenario"]["obligations"][0]["amount_due"] = bill
+    obligations = prepared.scenario.obligations
+    prepared = replace(
+        prepared,
+        scenario=replace(prepared.scenario, obligations=(replace(obligations[0], amount_due=bill), *obligations[1:])),
+    )
     policy = JointPolicy(Parameters(10_000, 0, 0), rollout_count=3, annual_step=0)
-    output = run(json.dumps(prepared.execution_input), policy, [1], capture="forensic")
+    output = run(prepared, policy, [1], capture="forensic")
     report = measurements(output, policy).paths[0]
     assert report.terminal_assets is None
     assert report.ending_mark_month == 0

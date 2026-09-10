@@ -3,16 +3,22 @@
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
+from finance.augur.benchmark.scenario import feature_rich_case
 from finance.augur.model.series import InflationKey
-from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
+from finance.augur.rust.simulator import ActionSession, simulate_forensic_json
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
+from finance.augur.x.monthly_actions.run import prepare
 
 
 def test_prepared_input_retains_original_path_cpi_and_selected_replay(tmp_path: Path) -> None:
@@ -39,14 +45,54 @@ def test_prepared_input_retains_original_path_cpi_and_selected_replay(tmp_path: 
     path = tmp_path / "prepared input.json"
     write_prepared_input(prepared, path)
     encoded = path.read_text()
-    assert json.loads(encoded) == prepared.execution_input
+    decoded = read_prepared_input(path)
+    assert decoded == prepared
     parameters = Parameters(400, 0, 0)
-    baseline = run(encoded, SpendingPolicy(BatchPolicy(parameters, 3), {}), [0, 1, 2])
+    baseline = run(decoded, SpendingPolicy(BatchPolicy(parameters, 3), {}), [0, 1, 2])
     assert [row[12] for row in consumption(baseline)[1]] == [800, 400, 1200]
-    replay = run(encoded, SpendingPolicy(BatchPolicy(parameters, 3), {}), [2, 0], capture="forensic")
+    replay = run(decoded, SpendingPolicy(BatchPolicy(parameters, 3), {}), [2, 0], capture="forensic")
     assert [row.rollout_id for row in replay.rollouts] == [2, 0]
     assert [row.summary for row in replay.rollouts] == [baseline.rollouts[id_].summary for id_ in [2, 0]]
     assert path.read_text() == encoded
+
+
+def test_configured_domains_and_resolved_tax_rules_survive_file_round_trip(tmp_path: Path) -> None:
+    original = feature_rich_case(rollout_count=2, horizon_months=60).compiled_run
+    path = tmp_path / "configured.json"
+    write_prepared_input(original, path)
+    decoded = read_prepared_input(path)
+    assert decoded == original
+    # The still-live configured consumer uses the same prepared authority, including
+    # property lifecycle, PE events, distributions, indexed flows and tax rules.
+    assert simulate_forensic_json(decoded) == simulate_forensic_json(original)
+
+
+@pytest.mark.parametrize("invalid", ["unknown-field", "string-money", "boolean-money", "wrong-version"])
+def test_file_decode_rejects_invalid_prepared_facts(tmp_path: Path, invalid: str) -> None:
+    path = tmp_path / "invalid.json"
+    write_prepared_input(prepare(), path)
+    # Deliberately corrupt the external file, not a second domain representation.
+    document = json.loads(path.read_text())
+    if invalid == "unknown-field":
+        document["scenario"]["accounts"][0]["ignored_money"] = 1
+    elif invalid == "string-money":
+        document["scenario"]["accounts"][0]["opening_balance"] = "100"
+    elif invalid == "boolean-money":
+        document["scenario"]["accounts"][0]["opening_balance"] = True
+    else:
+        document["schema_version"] = 999
+    path.write_text(json.dumps(document))
+    with pytest.raises(ValidationError):
+        read_prepared_input(path)
+
+
+def test_session_does_not_accept_a_parallel_raw_input_surface(tmp_path: Path) -> None:
+    path = tmp_path / "input.json"
+    write_prepared_input(prepare(), path)
+    invalid_inputs: list[Any] = [path.read_text(), json.loads(path.read_text())]
+    for raw in invalid_inputs:
+        with pytest.raises(TypeError, match="CompiledRun"):
+            ActionSession(raw, "example-household", [0])
 
 
 if __name__ == "__main__":

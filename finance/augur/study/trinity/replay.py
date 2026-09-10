@@ -142,8 +142,9 @@ from finance.augur.model.series import (
 )
 from finance.augur.policy.funding import fund_claims
 from finance.augur.rust.simulator import ActionSession
-from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import (
     Agent,
@@ -338,7 +339,7 @@ def execute(
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
     """Python owns the monthly batch loop; native execution owns all financial effects."""
-    session = ActionSession(json.dumps(run.execution_input), RETIREE, list(rollout_ids), capture=capture)
+    session = ActionSession(run, RETIREE, list(rollout_ids), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

@@ -46,10 +46,11 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
 )
 from finance.augur.rust.backend import RustEngine
-from finance.augur.sim.backend import CompiledRun, Engine, compile_run
+from finance.augur.sim.backend import Engine, compile_run
 from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import (
     OutcomeBasis,
     ProductMetricFanSummary,

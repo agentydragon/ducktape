@@ -127,7 +127,11 @@ py_library(
         ":simulator_so",
     ],
     imports = ["../../.."],
-    deps = ["//finance/augur/sim:results"],
+    deps = [
+        ":prepared",  # Imported by the native boundary; not visible to Gazelle.
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:results",
+    ],
 )
 
 py_library(
@@ -139,6 +143,7 @@ py_library(
         "//finance/augur/sim:backend",
         "//finance/augur/sim:events",
         "//finance/augur/sim:metric_composition",
+        "//finance/augur/sim:prepared",
         "//finance/augur/sim:product_metrics",
         "@pypi//jaxtyping",
         "@pypi//numpy",
@@ -179,21 +184,12 @@ py_test(
     ],
 )
 
-# Test scaffolding: it derives an engine's input from a `Case`, which is `sim/testing/`.
-py_library(
-    name = "case_fixture",
-    testonly = True,
-    srcs = ["case_fixture.py"],
-    deps = ["//finance/augur/sim/testing:case"],
-)
-
 # Test scaffolding: it projects a run into the shape the behavioural suites read.
 py_library(
     name = "result",
     testonly = True,
     srcs = ["result.py"],
     deps = [
-        ":case_fixture",
         ":event_log",
         "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:scenario",
@@ -206,7 +202,10 @@ py_library(
 py_library(
     name = "invocation",
     srcs = ["invocation.py"],
-    deps = ["//finance/augur/sim:backend"],
+    deps = [
+        ":prepared",
+        "//finance/augur/sim:prepared",
+    ],
 )
 
 py_test(
@@ -216,12 +215,17 @@ py_test(
         ":invocation",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/benchmark:scenario",
         "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:scenario",
         "//finance/augur/x/bounded_spending:python_policy",
+        "//finance/augur/x/monthly_actions:run",
         "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -233,6 +237,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
@@ -345,5 +350,14 @@ py_test(
         "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "prepared",
+    srcs = ["prepared.py"],
+    deps = [
+        "//finance/augur/sim:prepared",
+        "@pypi//pydantic",
     ],
 )

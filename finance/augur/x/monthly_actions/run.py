@@ -13,11 +13,12 @@ from typing import Literal
 import numpy as np
 
 from finance.augur.model.series import SecurityKey
-from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
 from finance.augur.rust.simulator import ActionSession
-from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import (
     Agent,
@@ -112,7 +113,7 @@ def execute(
     input_path: Path, output_path: Path, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"]
 ) -> Finished:
     """Own the monthly Python loop over one retained action session and write its results."""
-    session = ActionSession(input_path.read_text(), "example-household", list(rollout_ids), capture=capture)
+    session = ActionSession(read_prepared_input(input_path), "example-household", list(rollout_ids), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

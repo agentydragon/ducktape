@@ -17,7 +17,6 @@ from typing import Any, cast
 import polars as pl
 
 from finance.augur.rust import simulator
-from finance.augur.rust.case_fixture import fixture_for
 from finance.augur.rust.event_log import decode_event_log
 from finance.augur.sim.scenario import Scenario
 from finance.augur.sim.testing.case import Case
@@ -69,7 +68,7 @@ def run_rust(case: Case) -> RustResult:
 
     # Forensic rather than dense: a suite wants the balanced journal, which is the
     # double-entry invariant made checkable and is not part of the canonical shape.
-    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(json.dumps(fixture_for(case)))))
+    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(case.compiled_run)))
     return rust_result(rust, case.scenario)
 
 

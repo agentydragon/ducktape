@@ -24,10 +24,10 @@ def test_compiler_uses_the_scenario_currency_quantum_for_static_money() -> None:
     )
     prepared = compile_run(
         scenario, rollout_count=1, external_series=ExternalSeriesContext(), jurisdictions={}, locations={}
-    ).execution_input
-    assert prepared["currency_code"] == "CHF"
-    assert prepared["currency_quantum"] == "0.05"
-    assert prepared["scenario"]["accounts"][0]["opening_balance"] == 25
+    )
+    assert prepared.currency_code == "CHF"
+    assert prepared.currency_quantum == "0.05"
+    assert prepared.scenario.accounts[0].opening_balance == 25
 
 
 def test_compiler_rejects_an_empty_population() -> None:

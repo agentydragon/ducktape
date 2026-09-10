@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 
 from finance.augur.policy.sleeves import withdraw
 from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import ConsumptionTarget, Finished
 
 
@@ -224,7 +225,7 @@ class SpendingPolicy:
 
 
 def run(
-    input_json: str,
+    prepared: CompiledRun,
     policy: Callable[[list[Decision]], list[DecisionActions]],
     rollout_ids: list[int],
     *,
@@ -235,7 +236,7 @@ def run(
     """Python owns the loop; chunks author one complete response before each advance."""
     if chunk_size is not None and chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    session = ActionSession(input_json, "retiree", rollout_ids, capture=capture)
+    session = ActionSession(prepared, "retiree", rollout_ids, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

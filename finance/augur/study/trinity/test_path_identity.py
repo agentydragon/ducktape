@@ -8,9 +8,10 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
-from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import materialize_sampled_exogenous
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.study.trinity.replay import (
     BOND_SPEC,
     EQUITY_SPEC,
@@ -54,7 +55,7 @@ def test_trinity_keeps_every_start_and_compiles_the_identical_paths(history: Mac
         jurisdictions={},
         locations={},
     )
-    assert actual.execution_input == expected.execution_input
+    assert actual == expected
 
 
 def test_selected_trace_and_outcomes_match_the_same_date_in_a_population(history: MacroHistory) -> None:

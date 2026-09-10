@@ -65,8 +65,6 @@ wide exact integer intermediates and path-local memory. `ScalarAdapter` provides
 an authoring comparison through the same batch interface, not another engine API.
 
 ```python
-import json
-
 from finance.augur.x.bounded_spending.python_policy import (
     BatchPolicy, Parameters, SpendingPolicy, run,
 )
@@ -74,7 +72,7 @@ from finance.augur.x.bounded_spending.stress_paths import prepare
 
 prepared = prepare(rollout_count=3, horizon_months=36)
 policy = SpendingPolicy(BatchPolicy(Parameters(400, 1000, 500), 3), {("brokerage", "STOCKS"): 1})
-output = run(json.dumps(prepared.execution_input), policy, [0, 1, 2])
+output = run(prepared, policy, [0, 1, 2])
 ```
 
 The caller owns input paths; policies receive only current actor observations.

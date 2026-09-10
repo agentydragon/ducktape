@@ -1,9 +1,8 @@
 """Exact budgets and scoped proposals, settled by the real action executor."""
 
-import json
+from dataclasses import replace
 from decimal import Decimal
 from itertools import product
-from typing import Any
 
 import pytest
 import pytest_bazel
@@ -11,6 +10,7 @@ import pytest_bazel
 from finance.augur.model.series import SecurityKey
 from finance.augur.policy import sleeves
 from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, RejectedAction, Sell
 from finance.augur.sim.scenario import InitialLot
 from finance.augur.sim.testing.case import Case, flat, scenario
@@ -52,7 +52,7 @@ def test_small_integer_allocations_conserve_cash_and_capacity() -> None:
 
 
 @pytest.fixture
-def input_document() -> dict[str, Any]:
+def prepared() -> CompiledRun:
     first = SecurityKey(symbol="test-first")
     second = SecurityKey(symbol="test-second")
     case = Case(
@@ -81,19 +81,21 @@ def input_document() -> dict[str, Any]:
         rollout_count=1,
         series={asset: flat(Decimal("0.03"), rollout_count=1, horizon_months=2) for asset in (first, second)},
     )
-    document = case.compiled_run.execution_input
+    run = case.compiled_run
     # Same economic holdings, different valid pool quantity grids at the native boundary.
-    for pool in document["scenario"]["holding_pools"]:
-        pool["quantity_scale"] = 1 if pool["account_id"] == "outside" else 10
-    for lot in document["scenario"]["initial_lots"]:
-        scale = 1 if lot["account_id"] == "outside" else 10
-        lot["units"] = lot["units"] * scale // lot["quantity_scale"]
-        lot["quantity_scale"] = scale
-    return document
+    pools = tuple(
+        replace(pool, quantity_scale=1 if pool.account_id == "outside" else 10) for pool in run.scenario.holding_pools
+    )
+    lots = tuple(
+        replace(lot, units=lot.units * scale // lot.quantity_scale, quantity_scale=scale)
+        for lot in run.scenario.initial_lots
+        for scale in [1 if lot.account_id == "outside" else 10]
+    )
+    return replace(run, scenario=replace(run.scenario, holding_pools=pools, initial_lots=lots))
 
 
-def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(input_document: dict[str, Any]) -> None:
-    session = ActionSession(json.dumps(input_document), "test-owner", [0])
+def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -135,10 +137,8 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(input_document
     assert lots["test-second"].units_remaining == 10
 
 
-def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(
-    input_document: dict[str, Any],
-) -> None:
-    session = ActionSession(json.dumps(input_document), "test-owner", [0])
+def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -167,13 +167,14 @@ def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_gr
 
 
 @pytest.mark.parametrize("dust", [False, True])
-def test_zero_target_full_exit_reentry_and_reserved_cash(input_document: dict[str, Any], dust: bool) -> None:
+def test_zero_target_full_exit_reentry_and_reserved_cash(prepared: CompiledRun, dust: bool) -> None:
     if dust:
-        input_document["scenario"]["initial_lots"] = [
-            lot for lot in input_document["scenario"]["initial_lots"] if lot["lot_id"] != "test-newer"
-        ]
-        input_document["scenario"]["initial_lots"][0]["units"] = 1
-    session = ActionSession(json.dumps(input_document), "test-owner", [0])
+        opening_lots = tuple(lot for lot in prepared.scenario.initial_lots if lot.lot_id != "test-newer")
+        prepared = replace(
+            prepared,
+            scenario=replace(prepared.scenario, initial_lots=(replace(opening_lots[0], units=1), *opening_lots[1:])),
+        )
+    session = ActionSession(prepared, "test-owner", [0])
     try:
         batch = session.start()
         for month in (0, 1):
@@ -209,12 +210,16 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(input_document: dict[st
 
 
 @pytest.mark.parametrize("unheld", [False, True])
-def test_deposit_reserves_cash_and_never_buys_zero_target(input_document: dict[str, Any], unheld: bool) -> None:
+def test_deposit_reserves_cash_and_never_buys_zero_target(prepared: CompiledRun, unheld: bool) -> None:
     if unheld:
-        input_document["scenario"]["initial_lots"] = [
-            lot for lot in input_document["scenario"]["initial_lots"] if lot["asset_id"] != "test-second"
-        ]
-    session = ActionSession(json.dumps(input_document), "test-owner", [0])
+        prepared = replace(
+            prepared,
+            scenario=replace(
+                prepared.scenario,
+                initial_lots=tuple(lot for lot in prepared.scenario.initial_lots if lot.asset_id != "test-second"),
+            ),
+        )
+    session = ActionSession(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -250,8 +255,8 @@ def test_deposit_reserves_cash_and_never_buys_zero_target(input_document: dict[s
         session.close()
 
 
-def test_selected_pools_keep_their_own_economic_unit_scale(input_document: dict[str, Any]) -> None:
-    session = ActionSession(json.dumps(input_document), "test-owner", [0])
+def test_selected_pools_keep_their_own_economic_unit_scale(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "test-owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)

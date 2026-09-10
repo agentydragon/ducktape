@@ -4,7 +4,6 @@ The same fixed cash, income-character and redemption expectations formerly exerc
 configured runner. Product carrying-value projection remains a separate backend regression.
 """
 
-import json
 from decimal import Decimal
 from itertools import pairwise
 
@@ -32,7 +31,7 @@ from finance.augur.sim.testing.case import Case, levels
 
 def execute(case: Case) -> Rollout:
     """Pay only observed due claims in order; no native configured policy or rescue."""
-    session = ActionSession(json.dumps(case.compiled_run.execution_input), "alice", [0], capture="forensic")
+    session = ActionSession(case.compiled_run, "alice", [0], capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

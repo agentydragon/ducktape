@@ -1,6 +1,5 @@
 """Path-indexed cashflows and explicit claim payments through the common session."""
 
-import json
 from decimal import Decimal
 
 import numpy as np
@@ -57,9 +56,7 @@ def _run(scenario: Scenario, levels: list[list[float]]) -> list[Rollout]:
             [(RENT, np.asarray(levels, dtype=np.float64))], rollout_count=len(levels), horizon_months=len(levels[0]) - 1
         ),
     )
-    session = ActionSession(
-        json.dumps(case.compiled_run.execution_input), "alice", list(range(case.rollout_count)), capture="forensic"
-    )
+    session = ActionSession(case.compiled_run, "alice", list(range(case.rollout_count)), capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

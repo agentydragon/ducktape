@@ -1,6 +1,5 @@
 """The authored rule reserves already-due claims before proposing an opening buy."""
 
-import json
 from decimal import Decimal
 
 import pytest
@@ -47,7 +46,7 @@ def opening_case(bill_dollars: int) -> Case:
 def test_opening_investment_reserves_claims_and_does_not_rescue_shortfalls(
     opening_case: Case, bought_units: int, paid: int, ending_cash: int
 ) -> None:
-    session = ActionSession(json.dumps(opening_case.compiled_run.execution_input), "example-household", [0])
+    session = ActionSession(opening_case.compiled_run, "example-household", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)

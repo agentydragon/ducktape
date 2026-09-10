@@ -243,6 +243,7 @@ py_library(
         ":external_series",
         ":jurisdictions",
         ":locations",
+        ":prepared",
         ":product_metrics",
         ":scenario",
         "//finance/augur/sim/compiler:execution",
@@ -335,5 +336,18 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "prepared",
+    srcs = ["prepared.py"],
+    deps = [
+        ":books",
+        ":jurisdictions",
+        ":scenario",
+        "//finance/augur/sim/compiler:income_sources",
+        "//finance/augur/sim/compiler:tax",
+        "@pypi//pydantic",
     ],
 )

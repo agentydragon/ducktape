@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from finance.augur.rust.invocation import read_prepared_input
 from finance.augur.sim.results import Finished, Paid
 from finance.augur.x.allocation_glide.compare import execute
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -58,7 +59,7 @@ def test_selected_replay_matches_compact_population_and_keeps_balanced_books(out
         for entry in financial.journal:
             assert sum(posting.amount for posting in entry.postings) == 0
     [replay] = execute(
-        (output / "execution-input.json").read_text(),
+        read_prepared_input(output / "execution-input.json"),
         annual_step=0 if name == "constant" else 5,
         rollout_ids=[2],
         capture="forensic",

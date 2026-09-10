@@ -1,6 +1,6 @@
 """Exercise real Python-owned batches, routing errors, receipt feedback and fatal stops."""
 
-import json
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
@@ -8,6 +8,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import ClaimId, Consume, Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.scenario import ObligationType, ScheduledObligation, ScheduledTransfer
 from finance.augur.sim.testing.case import Case, scenario
@@ -15,7 +16,7 @@ from finance.augur.sim.testing.fixtures import checking
 
 
 @pytest.fixture
-def input_json() -> str:
+def prepared() -> CompiledRun:
     case = Case(
         scenario(
             checking(("alice", Decimal("0.05")), ("world", Decimal(0))),
@@ -47,15 +48,15 @@ def input_json() -> str:
         ),
         rollout_count=2,
     )
-    return json.dumps(case.compiled_run.execution_input)
+    return case.compiled_run
 
 
 def consume(amount: int, cause: str = "chosen-spend") -> Action:
     return Action.consume(0, cause, "budget", ("alice", "checking"), ("world", "checking"), amount)
 
 
-def run(input_json: str, ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
-    session = ActionSession(input_json, "alice", ids)
+def run(prepared: CompiledRun, ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
+    session = ActionSession(prepared, "alice", ids)
     observed: dict[int, list[tuple[int, int]]] = {id_: [] for id_ in ids}
     memory = dict.fromkeys(ids, 0)
     try:
@@ -86,19 +87,19 @@ def run(input_json: str, ids: list[int]) -> tuple[list[Rollout], dict[int, list[
         session.close()
 
 
-def test_current_facts_receipt_memory_and_original_replay(input_json: str) -> None:
-    baseline, observed = run(input_json, [0, 1])
+def test_current_facts_receipt_memory_and_original_replay(prepared: CompiledRun) -> None:
+    baseline, observed = run(prepared, [0, 1])
     assert observed == {id_: [(0, 7), (1, 5), (2, 4), (3, 3)] for id_ in [0, 1]}
     for ids in [[1, 0], [1], [0], [0, 1]]:
-        actual, replay_observed = run(input_json, ids)
+        actual, replay_observed = run(prepared, ids)
         assert actual == [baseline[id_] for id_ in ids]
         assert replay_observed == {id_: observed[id_] for id_ in ids}
     assert [row.rollout_id for row in baseline] == [0, 1]
     assert all(row.stop is None for row in baseline)
 
 
-def test_action_order_prefix_retention_and_independent_continuation(input_json: str) -> None:
-    session = ActionSession(input_json, "alice", [0, 1])
+def test_action_order_prefix_retention_and_independent_continuation(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "alice", [0, 1])
     batch = session.start()
     assert not isinstance(batch, Finished)
     responses = []
@@ -130,8 +131,8 @@ def test_action_order_prefix_retention_and_independent_continuation(input_json: 
         session.advance([])
 
 
-def test_unpaid_due_claim_is_not_an_implicit_payment(input_json: str) -> None:
-    session = ActionSession(input_json, "alice", [1])
+def test_unpaid_due_claim_is_not_an_implicit_payment(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "alice", [1])
     session.start()
     finished = session.advance([DecisionActions(1, 0, [])])
     assert isinstance(finished, Finished)
@@ -143,8 +144,8 @@ def test_unpaid_due_claim_is_not_an_implicit_payment(input_json: str) -> None:
 
 
 @pytest.mark.parametrize("keys", [[], [(0, 0)], [(0, 0), (0, 0)], [(0, 1), (1, 0)], [(0, 0), (2, 0)]])
-def test_bad_routing_aborts_without_resubmission(input_json: str, keys: list[tuple[int, int]]) -> None:
-    session = ActionSession(input_json, "alice", [0, 1])
+def test_bad_routing_aborts_without_resubmission(prepared: CompiledRun, keys: list[tuple[int, int]]) -> None:
+    session = ActionSession(prepared, "alice", [0, 1])
     session.start()
     with pytest.raises(ValueError, match="each active path/month"):
         session.advance([DecisionActions(id_, month, []) for id_, month in keys])
@@ -152,8 +153,8 @@ def test_bad_routing_aborts_without_resubmission(input_json: str, keys: list[tup
         session.advance([DecisionActions(0, 0, []), DecisionActions(1, 0, [])])
 
 
-def test_cross_rollout_claim_handle_is_a_routing_error(input_json: str) -> None:
-    session = ActionSession(input_json, "alice", [0, 1])
+def test_cross_rollout_claim_handle_is_a_routing_error(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "alice", [0, 1])
     batch = session.start()
     assert not isinstance(batch, Finished)
     claim = batch[0].observation.claims[0]
@@ -165,13 +166,15 @@ def test_cross_rollout_claim_handle_is_a_routing_error(input_json: str) -> None:
         session.start()
 
 
-def test_claim_handle_cannot_alias_another_sessions_claim(input_json: str) -> None:
-    first = ActionSession(input_json, "alice", [0])
+def test_claim_handle_cannot_alias_another_sessions_claim(prepared: CompiledRun) -> None:
+    first = ActionSession(prepared, "alice", [0])
     first_batch = first.start()
     assert not isinstance(first_batch, Finished)
     old_claim = first_batch[0].observation.claims[0]
     first.close()
-    second = ActionSession(input_json.replace("one-cent-bill", "different-bill"), "alice", [0])
+    other_claim = replace(prepared.scenario.obligations[0], obligation_id="different-bill")
+    other = replace(prepared, scenario=replace(prepared.scenario, obligations=(other_claim,)))
+    second = ActionSession(other, "alice", [0])
     second_batch = second.start()
     assert not isinstance(second_batch, Finished)
     assert second_batch[0].observation.claims[0].cause_id != old_claim.cause_id
@@ -181,13 +184,13 @@ def test_claim_handle_cannot_alias_another_sessions_claim(input_json: str) -> No
         second.advance([])
 
 
-def test_repeated_start_and_advance_before_start_abort(input_json: str) -> None:
-    early = ActionSession(input_json, "alice", [0])
+def test_repeated_start_and_advance_before_start_abort(prepared: CompiledRun) -> None:
+    early = ActionSession(prepared, "alice", [0])
     with pytest.raises(ValueError, match="lifecycle state"):
         early.advance([])
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         early.start()
-    repeated = ActionSession(input_json, "alice", [0])
+    repeated = ActionSession(prepared, "alice", [0])
     repeated.start()
     with pytest.raises(ValueError, match="lifecycle state"):
         repeated.start()
@@ -195,8 +198,8 @@ def test_repeated_start_and_advance_before_start_abort(input_json: str) -> None:
         repeated.advance([])
 
 
-def test_copied_observations_do_not_mutate_books(input_json: str) -> None:
-    session = ActionSession(input_json, "alice", [0])
+def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "alice", [0])
     batch = session.start()
     assert not isinstance(batch, Finished)
     observation = batch[0].observation
@@ -213,26 +216,26 @@ def test_copied_observations_do_not_mutate_books(input_json: str) -> None:
 
 
 @pytest.mark.parametrize("ids", [[], [0, 0], [2]])
-def test_invalid_selection_rejects_at_construction(input_json: str, ids: list[int]) -> None:
+def test_invalid_selection_rejects_at_construction(prepared: CompiledRun, ids: list[int]) -> None:
     with pytest.raises(ValueError, match="selected rollout IDs"):
-        ActionSession(input_json, "alice", ids)
+        ActionSession(prepared, "alice", ids)
 
 
-def test_invalid_capture_rejects_at_construction(input_json: str) -> None:
+def test_invalid_capture_rejects_at_construction(prepared: CompiledRun) -> None:
     invalid: Any = "invented"
     with pytest.raises(ValueError, match="capture must be"):
-        ActionSession(input_json, "alice", [0], capture=invalid)
+        ActionSession(prepared, "alice", [0], capture=invalid)
 
 
-def test_extraction_error_and_explicit_close_release_the_session(input_json: str) -> None:
-    session = ActionSession(input_json, "alice", [0])
+def test_extraction_error_and_explicit_close_release_the_session(prepared: CompiledRun) -> None:
+    session = ActionSession(prepared, "alice", [0])
     session.start()
     invalid: Any = [None]
     with pytest.raises(TypeError):
         session.advance(invalid)
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         session.start()
-    closed = ActionSession(input_json, "alice", [0])
+    closed = ActionSession(prepared, "alice", [0])
     closed.close()
     closed.close()
     with pytest.raises(ValueError, match="finished, aborted or closed"):

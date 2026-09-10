@@ -1,10 +1,7 @@
 //! In-process Python bindings for the Augur Rust simulator.
 //!
-//! The boundary is deliberately narrow: fixtures cross as JSON bytes, and results cross as
-//! plain Python integers/lists that `backend.py` wraps in numpy without copying semantics
-//! it would have to keep in sync. The alternative — a subprocess exchanging JSON files —
-//! costs a full serialize/parse of a dense `[rollout][snapshot]` matrix per series on every
-//! call, which is what makes it unusable for the product's percentile-fan workload.
+//! Callers supply the authoritative typed prepared run. Serialization is private to this
+//! boundary; policy and reporting code do not read or construct wire documents.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -19,9 +16,15 @@ use augur_rust_simulator::event_frames::FramedOutput;
 use augur_rust_simulator::execution::ExecutionInput;
 use augur_rust_simulator::product::BASE_METRIC_NAMES;
 
-fn parse(fixture_json: &str) -> PyResult<ExecutionInput> {
-    serde_json::from_str(fixture_json)
-        .map_err(|error| PyValueError::new_err(format!("invalid fixture JSON: {error}")))
+fn parse(run: &Bound<'_, PyAny>) -> PyResult<ExecutionInput> {
+    let encoded: String = run
+        .py()
+        .import("finance.augur.rust.prepared")?
+        .getattr("_encode")?
+        .call1((run,))?
+        .extract()?;
+    serde_json::from_str(&encoded)
+        .map_err(|error| PyValueError::new_err(format!("invalid prepared input: {error}")))
 }
 
 fn to_py_err(error: impl std::fmt::Display) -> PyErr {
@@ -47,10 +50,10 @@ pub struct ProductMetrics {
 /// Run every rollout and return only the base product metric series.
 #[pyfunction]
 fn simulate_product_metrics(
-    fixture_json: &str,
+    run: &Bound<'_, PyAny>,
     primary_agent_id: &str,
 ) -> PyResult<ProductMetrics> {
-    let fixture = parse(fixture_json)?;
+    let fixture = parse(run)?;
     let series = Python::attach(|py| {
         py.detach(|| {
             let validated = ValidatedInput::new(&fixture)?;
@@ -72,8 +75,8 @@ fn simulate_product_metrics(
 /// This is the trace path: everything `simulate_forensic_json` carries except the balanced
 /// journal, which is Rust's own double-entry invariant and has no reader on the Python side.
 #[pyfunction]
-fn simulate_dense_json(fixture_json: &str) -> PyResult<String> {
-    let fixture = parse(fixture_json)?;
+fn simulate_dense_json(run: &Bound<'_, PyAny>) -> PyResult<String> {
+    let fixture = parse(run)?;
     let output = Python::attach(|py| {
         py.detach(|| {
             let validated = ValidatedInput::new(&fixture)?;
@@ -90,8 +93,8 @@ fn simulate_dense_json(fixture_json: &str) -> PyResult<String> {
 /// sum to zero. No canonical channel carries it, which is why `simulate_dense_json` leaves
 /// it out.
 #[pyfunction]
-fn simulate_forensic_json(fixture_json: &str) -> PyResult<String> {
-    let fixture = parse(fixture_json)?;
+fn simulate_forensic_json(run: &Bound<'_, PyAny>) -> PyResult<String> {
+    let fixture = parse(run)?;
     let output = Python::attach(|py| {
         py.detach(|| {
             let validated = ValidatedInput::new(&fixture)?;

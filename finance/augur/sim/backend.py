@@ -16,14 +16,13 @@ from the other side.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any
 
-from finance.augur.sim.compiler.execution import compile_execution_input
+from finance.augur.sim.compiler.execution import prepare_run
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import (
     ProductMetricArrays,
     ProductMetricFanSummary,
@@ -31,17 +30,6 @@ from finance.augur.sim.product_metrics import (
     ProductTerminalSummary,
 )
 from finance.augur.sim.scenario import Scenario
-
-
-@dataclass(frozen=True)
-class CompiledRun:
-    """The prepared execution document, consumed directly by the engine.
-
-    This is the sole execution representation. Authored scenario objects, rule sources
-    and sampled frames are not retained or reinterpreted during execution.
-    """
-
-    execution_input: dict[str, Any]
 
 
 def compile_run(
@@ -58,14 +46,12 @@ def compile_run(
     one path population across policy cells and explicitly supply its financial rules.
     """
 
-    return CompiledRun(
-        execution_input=compile_execution_input(
-            scenario,
-            rollout_count=rollout_count,
-            external_series=external_series,
-            jurisdictions=jurisdictions,
-            locations=locations,
-        )
+    return prepare_run(
+        scenario,
+        rollout_count=rollout_count,
+        external_series=external_series,
+        jurisdictions=jurisdictions,
+        locations=locations,
     )
 
 

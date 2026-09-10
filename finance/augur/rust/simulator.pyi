@@ -6,6 +6,7 @@ must be edited in lockstep with the `#[pymodule]` block in `python.rs`.
 
 from typing import Literal
 
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, Receipt
 
 class ProductMetrics:
@@ -26,9 +27,9 @@ class ProductMetrics:
     @property
     def metric_names(self) -> list[str]: ...
 
-def simulate_product_metrics(fixture_json: str, primary_agent_id: str) -> ProductMetrics: ...
-def simulate_dense_json(fixture_json: str) -> str: ...
-def simulate_forensic_json(fixture_json: str) -> str: ...
+def simulate_product_metrics(run: CompiledRun, primary_agent_id: str) -> ProductMetrics: ...
+def simulate_dense_json(run: CompiledRun) -> str: ...
+def simulate_forensic_json(run: CompiledRun) -> str: ...
 
 class HoldingPool:
     @property
@@ -217,7 +218,7 @@ class ActionSession:
 
     def __init__(
         self,
-        input_json: str,
+        run: CompiledRun,
         actor: str,
         rollout_ids: list[int],
         *,

@@ -10,11 +10,12 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
 from finance.augur.rust.simulator import ActionSession, DecisionActions
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.scenario import (
     FilingStatus,
@@ -42,34 +43,36 @@ from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture(params=[Parameters(400, 1000, 500), Parameters(400, 0, 0)])
-def control(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[Parameters, str, Finished, list[Rollout]]:
+def control(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[Parameters, CompiledRun, Finished, list[Rollout]]:
     parameters: Parameters = request.param
     prepared = prepare(rollout_count=3, horizon_months=36)
     path = tmp_path / "input.json"
     write_prepared_input(prepared, path)
     targets = {("brokerage", "STOCKS"): 1}
-    baseline = run(path.read_text(), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2])
-    traces = run(path.read_text(), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2], capture="forensic")
-    return (parameters, path.read_text(), baseline, traces.rollouts)
+    baseline = run(read_prepared_input(path), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2])
+    traces = run(
+        read_prepared_input(path), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2], capture="forensic"
+    )
+    return (parameters, read_prepared_input(path), baseline, traces.rollouts)
 
 
 @pytest.mark.parametrize("batch_authored", [False, True])
 @pytest.mark.parametrize("chunk_size", [None, 1, 2])
 def test_scalar_adapter_and_batch_authoring_preserve_path_identity(
-    control: tuple[Parameters, str, Finished, list[Rollout]], batch_authored: bool, chunk_size: int | None
+    control: tuple[Parameters, CompiledRun, Finished, list[Rollout]], batch_authored: bool, chunk_size: int | None
 ) -> None:
-    parameters, input_json, baseline, traces = control
+    parameters, prepared, baseline, traces = control
     ids = [0, 1, 2]
     policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, ids)
     assert (
-        run(input_json, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), ids, chunk_size=chunk_size, reverse=True)
+        run(prepared, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), ids, chunk_size=chunk_size, reverse=True)
         == baseline
     )
     if chunk_size is None:
         for id_ in reversed(ids):
             replay_policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, [id_])
             trace = run(
-                input_json, SpendingPolicy(replay_policy, {("brokerage", "STOCKS"): 1}), [id_], capture="forensic"
+                prepared, SpendingPolicy(replay_policy, {("brokerage", "STOCKS"): 1}), [id_], capture="forensic"
             )
             assert trace.rollouts == [traces[id_]]
         second_year = [5_250_000, 4_500_000, 4_992_000] if parameters.max_cut_bps else [5_000_000] * 3
@@ -78,11 +81,11 @@ def test_scalar_adapter_and_batch_authoring_preserve_path_identity(
 
 @pytest.mark.parametrize("batch_authored", [False, True])
 def test_depleted_paths_stop_and_live_zero_requests_continue(batch_authored: bool) -> None:
-    input_json = json.dumps(prepare(rollout_count=3, horizon_months=36).execution_input)
+    prepared = prepare(rollout_count=3, horizon_months=36)
     for cut, expected_length, failure in [(0, 13, 12), (10_000, 36, -1)]:
         parameters = Parameters(10_000, cut, 0)
         policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, [0, 1, 2])
-        result = run(input_json, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), [0, 1, 2])
+        result = run(prepared, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), [0, 1, 2])
         assert [row.summary.ending_mark_month if row.stop is not None else -1 for row in result.rollouts] == [
             failure
         ] * 3
@@ -157,9 +160,7 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
         rollout_count=1,
         series={InflationKey(): np.ones((1, 2))},
     )
-    result = run(
-        json.dumps(case.compiled_run.execution_input), SpendingPolicy(BatchPolicy(Parameters(10_000, 0, 0), 1), {}), [0]
-    )
+    result = run(case.compiled_run, SpendingPolicy(BatchPolicy(Parameters(10_000, 0, 0), 1), {}), [0])
     [row] = result.rollouts
     assert consumption(result) == ([[20_000]], [[0]])  # includes the current $100 contribution
     assert row.stop == RejectedAction(month=0, action_index=1)
@@ -174,7 +175,7 @@ def test_current_cpi_is_routed_without_future_values() -> None:
         rollout_count=2,
         series={InflationKey(): np.array([[2.0, 3.0, 90.0], [4.0, 5.0, 70.0]])},
     )
-    session = ActionSession(json.dumps(case.compiled_run.execution_input), "retiree", [1, 0], capture="summary")
+    session = ActionSession(case.compiled_run, "retiree", [1, 0], capture="summary")
     batch = session.start()
     assert not isinstance(batch, Finished)
     assert [row.observation.cpi for row in batch] == [(4_000_000_000, 4_000_000_000), (2_000_000_000, 2_000_000_000)]
@@ -190,11 +191,7 @@ def test_cpi_dependent_rule_does_not_invent_a_flat_missing_index() -> None:
         rollout_count=1,
     )
     with pytest.raises(ValueError, match="requires a supplied CPI"):
-        run(
-            json.dumps(case.compiled_run.execution_input),
-            SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 1), {}),
-            [0],
-        )
+        run(case.compiled_run, SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 1), {}), [0])
 
 
 def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> None:
@@ -240,7 +237,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
     )
     outputs = [
         run(
-            json.dumps(prepared.execution_input),
+            prepared,
             SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 1), {("brokerage", str(stock.symbol)): 1}),
             [0],
             capture="forensic" if forensic else "summary",

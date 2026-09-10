@@ -281,15 +281,15 @@ struct ActionSession {
 #[pymethods]
 impl ActionSession {
     #[new]
-    #[pyo3(signature = (input_json, actor, rollout_ids, *, capture = "forensic"))]
+    #[pyo3(signature = (run, actor, rollout_ids, *, capture = "forensic"))]
     fn new(
         py: Python<'_>,
-        input_json: &str,
+        run: &Bound<'_, PyAny>,
         actor: &str,
         rollout_ids: Vec<u32>,
         capture: &str,
     ) -> PyResult<Self> {
-        let input = parse(input_json)?;
+        let input = parse(run)?;
         let capture = match capture {
             "summary" => CaptureMode::Summary,
             "dense" => CaptureMode::Dense,

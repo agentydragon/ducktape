@@ -1,6 +1,5 @@
 """Real native handoffs preserve exact money, rejected prefixes, and file replay identity."""
 
-import json
 from typing import Literal
 
 import pytest
@@ -15,7 +14,7 @@ from finance.augur.x.monthly_actions.run import prepare
 
 @pytest.mark.parametrize("capture", ["summary", "forensic"])
 def test_native_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["summary", "forensic"]) -> None:
-    session = ActionSession(json.dumps(prepare().execution_input), "example-household", [1, 0], capture=capture)
+    session = ActionSession(prepare(), "example-household", [1, 0], capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

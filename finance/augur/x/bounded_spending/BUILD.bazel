@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//finance/augur/policy:sleeves",
         "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "@pypi//numpy",
     ],
@@ -20,6 +21,7 @@ py_library(
         "//finance/augur/model:series",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:prepared",
         "//finance/augur/study/trinity:replay",
         "@pypi//numpy",
     ],
@@ -31,6 +33,7 @@ py_library(
     deps = [
         ":python_policy",
         ":stress_paths",
+        "//finance/augur/rust:invocation",
         "//finance/augur/sim:results",
     ],
 )
@@ -56,6 +59,7 @@ py_test(
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",

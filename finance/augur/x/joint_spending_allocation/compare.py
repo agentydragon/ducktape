@@ -104,7 +104,6 @@ def compare(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=False)
     input_path = output_dir / "execution-input.json"
     write_prepared_input(prepared, input_path)
-    input_json = input_path.read_text()
     cells = []
     for rate, (flex_name, cut, raise_), (allocation_name, step) in product(
         (400, 800), (("fixed_real", 0, 0), ("bounded", 2000, 500)), (("constant", 0), ("glide", 5))
@@ -112,11 +111,11 @@ def compare(output_dir: Path) -> None:
         name = f"r{rate}-{flex_name}-{allocation_name}"
         parameters = Parameters(rate, cut, raise_)
         policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
-        output = run(input_json, policy, [0, 1, 2])
+        output = run(prepared, policy, [0, 1, 2])
         measured = Output(rollouts=output.rollouts, measurements=measurements(output, policy))
         (output_dir / f"{name}.json").write_text(measured.model_dump_json())
         replay_policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
-        replay = run(input_json, replay_policy, [2, 0], capture="forensic")
+        replay = run(prepared, replay_policy, [2, 0], capture="forensic")
         detailed = Output(rollouts=replay.rollouts, measurements=measurements(replay, replay_policy))
         (output_dir / f"{name}-traces.json").write_text(detailed.model_dump_json())
         cells.append({"name": name, "spending": asdict(parameters), "annual_allocation_step_percent": step})

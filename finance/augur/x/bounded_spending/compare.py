@@ -69,17 +69,16 @@ def compare(
     )
     input_path = output_dir / "execution-input.json"
     write_prepared_input(prepared, input_path)
-    input_json = input_path.read_text()
     for name, cut, raise_ in (("fixed_real", 0, 0), ("bounded", max_cut_bps, max_raise_bps)):
         summary_path = output_dir / f"{name}.json"
         parameters = Parameters(rate_bps, cut, raise_)
         summary = run(
-            input_json, SpendingPolicy(BatchPolicy(parameters, rollout_count), targets), list(range(rollout_count))
+            prepared, SpendingPolicy(BatchPolicy(parameters, rollout_count), targets), list(range(rollout_count))
         )
         summary_path.write_text(summary.model_dump_json())
         for rollout_id in trace_rollouts:
             replay = run(
-                input_json,
+                prepared,
                 SpendingPolicy(BatchPolicy(parameters, rollout_count), targets),
                 [rollout_id],
                 capture="forensic",

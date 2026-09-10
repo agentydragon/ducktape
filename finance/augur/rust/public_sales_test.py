@@ -4,7 +4,6 @@ The fixed sale dates belong to these experiments, not the execution input. Tax
 assessment, exact lot accounting and payment still use the common action session.
 """
 
-import json
 from decimal import Decimal
 
 import numpy as np
@@ -62,7 +61,7 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
 
 
 def _run(case: Case, *, sale_month: int, rollout_ids: list[int]) -> Finished:
-    session = ActionSession(json.dumps(case.compiled_run.execution_input), "alice", rollout_ids)
+    session = ActionSession(case.compiled_run, "alice", rollout_ids)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -266,7 +265,7 @@ def test_selected_reordered_replay_matches_original_paths(
 
 
 def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(independent_paths: Case) -> None:
-    session = ActionSession(json.dumps(independent_paths.compiled_run.execution_input), "alice", [TAXED, QUIET])
+    session = ActionSession(independent_paths.compiled_run, "alice", [TAXED, QUIET])
     observed: dict[int, list[int]] = {TAXED: [], QUIET: []}
     try:
         batch = session.start()

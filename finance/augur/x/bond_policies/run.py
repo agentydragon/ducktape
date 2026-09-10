@@ -17,10 +17,12 @@ from pydantic import TypeAdapter
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import fund_claims
+from finance.augur.rust.invocation import write_prepared_input
 from finance.augur.rust.simulator import ActionSession
-from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.books import Record
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
 from finance.augur.sim.scenario import (
     Agent,
@@ -124,7 +126,7 @@ def execute(
     run: CompiledRun, *, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"] = "summary"
 ) -> list[Rollout]:
     """Run the monthly batch policy on selected original paths, without reinvestment."""
-    session = ActionSession(json.dumps(run.execution_input), HOUSEHOLD, list(rollout_ids), capture=capture)
+    session = ActionSession(run, HOUSEHOLD, list(rollout_ids), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -249,7 +251,7 @@ def run_experiment(
             cell_dir = strategy_dir / f"spending_{cell_index}"
             cell_dir.mkdir()
             run = compile_construction(construction, annual_spending=spending)
-            (cell_dir / "execution_input.json").write_text(json.dumps(run.execution_input))
+            write_prepared_input(run, cell_dir / "execution_input.json")
             results = execute(run, rollout_ids=range(len(curves)))
             (cell_dir / "rollouts.json").write_text(Finished(rollouts=results).model_dump_json())
             traces = execute(run, rollout_ids=trace_rollouts, capture="forensic") if trace_rollouts else []

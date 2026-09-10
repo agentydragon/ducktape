@@ -27,10 +27,11 @@ from jaxtyping import Float64
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
-from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario
 

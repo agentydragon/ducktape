@@ -17,9 +17,11 @@ already supplied paths. Forecast-only evaluation does not require simulator
 instrument declarations. Sharing a model does not imply it supports every
 instrument or that its forecasts are adequate for a particular decision.
 
-Preparation resolves the authored scenario, rules and supplied paths into a
-self-contained execution input. Execution does not reread the original scenario
-or load evidence/tax configuration. Missing or non-finite required paths reject;
+Preparation resolves the authored scenario, rules and supplied paths into one
+self-contained typed value of exact monetary terms, resolved tax rules and paths.
+Sessions and reports consume these facts directly; file/native serialization is
+private, not a parallel mutable domain API. Execution does not reread the original
+scenario or load evidence/tax configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Public security and home-value
 prices are positive; per-unit security distributions may explicitly be zero.
 

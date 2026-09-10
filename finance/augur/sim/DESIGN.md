@@ -8,11 +8,13 @@ They share financial steps but differ in policy control and supported domains.
 ## Preparation and dependencies
 
 `Scenario` describes actors, accounts, holdings, contracts and path bindings.
-`compile_run` in <backend.py> resolves those inputs into `CompiledRun`.
+`compile_run` in <backend.py> resolves those inputs into the typed `CompiledRun`
+defined in <prepared.py>.
 It does not fetch market evidence, fit a model or load tax law independently.
-The lowered document includes exact monetary terms, quantized market paths and
-resolved typed tax records. The public raw execution dictionary remains an input
-boundary limitation, not a domain requirement.
+Prepared records own exact monetary terms, quantized market paths and variable-length
+resolved tax rules. Sessions and metadata readers consume these facts directly;
+the native/file boundary privately serializes them without retaining a parallel
+document or original authoring objects. File decoding returns the same typed records.
 
 `sim/` owns declarations and common books/results; `rust/` imports those Python
 types at its result boundary. Preparation does not depend on the executor.

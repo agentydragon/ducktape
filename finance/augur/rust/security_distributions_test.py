@@ -1,6 +1,5 @@
 """Independent public-distribution controls through the common Python action session."""
 
-import json
 from decimal import Decimal
 from itertools import pairwise
 
@@ -34,7 +33,7 @@ from finance.augur.sim.testing.security_distributions import (
 
 def _run(case: Case) -> Rollout:
     """Receive modeled payouts and explicitly pay observed claims; never trade or retry."""
-    session = ActionSession(json.dumps(case.compiled_run.execution_input), "alice", [0], capture="forensic")
+    session = ActionSession(case.compiled_run, "alice", [0], capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

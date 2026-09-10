@@ -1,6 +1,5 @@
 """Imported total basis survives display, partial sales and full liquidation exactly."""
 
-import json
 from decimal import Decimal
 
 import pytest
@@ -86,7 +85,7 @@ def test_imported_basis_is_exact_through_sales(
         rollout_count=1,
         series={ASSET: levels([[Decimal(1)] * (horizon + 1)])},
     )
-    session = ActionSession(json.dumps(case.compiled_run.execution_input), "test-owner", [0])
+    session = ActionSession(case.compiled_run, "test-owner", [0])
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

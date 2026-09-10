@@ -33,7 +33,7 @@ def execute(
     capture: Literal["summary", "dense", "forensic"] = "summary",
     ids: list[int] | None = None,
 ) -> list[Rollout]:
-    session = ActionSession(json.dumps(case.compiled_run.execution_input), "alice", ids or [0], capture=capture)
+    session = ActionSession(case.compiled_run, "alice", ids or [0], capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -221,7 +221,7 @@ def test_compiled_fixed_coupon_funds_both_controls(
         ]
 
     [actor] = execute(case, spend, "dense")
-    [configured] = json.loads(simulate_dense_json(json.dumps(case.compiled_run.execution_input)))["rollouts"]
+    [configured] = json.loads(simulate_dense_json(case.compiled_run))["rollouts"]
     expected = [(period, coupon, 0), (2 * period, coupon, face)] if coupon else [(2 * period, 0, face)]
     assert actor.trace is not None
     assert [(row.month, row.coupon, row.redemption) for row in actor.trace.bond_cashflows] == expected

@@ -161,7 +161,10 @@ The scoped action control instead follows the ordered execution described below.
 
 ## Scoped household action batches
 
-`simulator.ActionSession(input_json, actor, rollout_ids, capture="forensic")` retains the input and
+`simulator.ActionSession(prepared, actor, rollout_ids, capture="forensic")` accepts a
+`sim.prepared.CompiledRun` of typed resolved facts. The binding privately serializes
+it once; callers do not read or mutate a wire dictionary. `rust.invocation` writes
+this value to a file and reads it back as the same typed object. The session retains the input and
 financial books in process. Python calls `start()`, then submits one batch to
 `advance()` until it receives `Finished`. `Decision` rows carry original rollout
 IDs and copied actor-scoped cash accounts, public positions, held dated bonds, declared pools/quotes,
@@ -231,7 +234,7 @@ are not part of this initial binding.
 from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.results import Finished
 
-session = ActionSession(input_json, actor, original_ids)
+session = ActionSession(prepared, actor, original_ids)
 try:
     batch = session.start()
     while not isinstance(batch, Finished):
@@ -443,7 +446,7 @@ does not use.
 
 ## Product read model
 
-`simulate_product_metrics(fixture, primary_agent_id)` emits the seven base product metric
+`simulate_product_metrics(prepared, primary_agent_id)` emits the seven base product metric
 series plus the per-rollout failure month, under the compact capture mode — no monthly
 snapshot, journal, or event trace. `backend.py` wraps it as the product API's
 `ProductMetricArrays` and `ProductProjectionSummaries`, composing the derived metrics and

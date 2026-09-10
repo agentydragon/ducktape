@@ -1,7 +1,7 @@
 """Prepare the execution input directly from an authored scenario and materialized paths.
 
 Resolve tax rules and quantize money, quantities and index levels once. The resulting
-document is what the engine executes, not an adapter over a second compiled world model.
+typed value is what the engine executes, not an adapter over a second compiled world model.
 Unsupported inputs are rejected rather than silently omitted.
 """
 
@@ -9,9 +9,7 @@ from __future__ import annotations
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Mapping
-from dataclasses import asdict
 from decimal import Decimal
-from typing import Any
 
 import numpy as np
 from jaxtyping import Float64, Int64
@@ -27,7 +25,7 @@ from finance.augur.model.series import (
     SecurityKey,
 )
 from finance.augur.sim.bonds import coupon_amount_quanta
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.private_equity import PEChannels, compile_pe_channels
 from finance.augur.sim.compiler.series import (
     collect_level_series_keys,
@@ -47,27 +45,54 @@ from finance.augur.sim.fixed_point import (
 )
 from finance.augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from finance.augur.sim.locations import Location
+from finance.augur.sim.prepared import (
+    CompiledRun,
+    PreparedAccount,
+    PreparedAmount,
+    PreparedBond,
+    PreparedDistribution,
+    PreparedDistributionSlice,
+    PreparedFixedAmount,
+    PreparedHoldingPool,
+    PreparedIndexedAmount,
+    PreparedIndexedCoupon,
+    PreparedJurisdiction,
+    PreparedLocation,
+    PreparedLot,
+    PreparedObligation,
+    PreparedPropertyCashflow,
+    PreparedRecurringObligation,
+    PreparedRecurringPropertyCashflow,
+    PreparedRecurringTransfer,
+    PreparedScenario,
+    PreparedSeries,
+    PreparedTransfer,
+    _AllocationPolicy,
+    _CapitalImprovement,
+    _HarvestPolicy,
+    _MortgageFinancing,
+    _MortgageInterestDeduction,
+    _PrimaryResidence,
+    _PrimaryResidenceEvent,
+    _PropertyPurchase,
+    _PropertySale,
+    _PropertyTax,
+    _RentedFraction,
+    _SaltCap,
+    _SaltDeduction,
+    _ScheduledSale,
+    _SleeveTarget,
+    _TenderPolicy,
+)
 from finance.augur.sim.scenario import (
     CapitalImprovementEvent,
     DriftBand,
     FixedAmount,
-    InterestIncome,
-    OrdinaryIncome,
     PropertySaleEvent,
-    RecurringObligation,
-    RecurringPropertyCashflow,
-    RecurringTransfer,
     Scenario,
-    ScheduledObligation,
-    ScheduledPropertyCashflow,
-    ScheduledTransfer,
     SeriesIndexedAmount,
     SetRentedFractionEvent,
 )
-
-# Mirrors `INPUT_SCHEMA_VERSION` in `execution.rs`; the simulator rejects any other value, so a
-# schema bump fails loudly here rather than encoding a document the engine will not read.
-INPUT_SCHEMA_VERSION = 14
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -83,96 +108,33 @@ class UnsupportedScenarioError(ValueError):
     """
 
 
-def _account(agent_id: str, account_id: str) -> dict[str, str]:
-    return {"agent_id": agent_id, "account_id": account_id}
-
-
 def _asset_id(asset: AssetKey) -> str:
     """The execution input's flat asset identifier: a bare symbol, or the private-equity wire id."""
 
     return asset.wire_id if isinstance(asset, PrivateEquityAssetKey) else str(asset.symbol)
 
 
-def _amount(amount: object, *, quantum: Decimal, context: str) -> int | dict[str, Any]:
-    """One `AmountSpec` as the execution input's untagged amount: an integer, or a tagged schedule."""
+def _amount(amount: object, *, quantum: Decimal, context: str) -> PreparedAmount:
+    """Resolve exact money once, retaining indexed claims' declared reset convention."""
 
     match amount:
         case Decimal():
             return int(currency_amount_to_quanta(amount, quantum=quantum))
         case FixedAmount():
-            return {"kind": "fixed", "amount": int(currency_amount_to_quanta(amount.amount, quantum=quantum))}
+            return PreparedFixedAmount(amount=int(currency_amount_to_quanta(amount.amount, quantum=quantum)))
         case SeriesIndexedAmount():
             if not isinstance(amount.series, _INDEX_SERIES_KINDS):
                 raise UnsupportedScenarioError(
                     f"{context} is indexed by {amount.series.wire_id!r}, which the execution input's amount "
                     "schedule does not carry; only inflation and rent levels are index series"
                 )
-            return {
-                "kind": "series_indexed",
-                "base_amount": int(currency_amount_to_quanta(amount.base_amount, quantum=quantum)),
-                "series_id": amount.series.wire_id,
-                "base_month_index": int(amount.base_month_index),
-                "adjustment_period_months": int(amount.adjustment_period_months),
-            }
+            return PreparedIndexedAmount(
+                base_amount=int(currency_amount_to_quanta(amount.base_amount, quantum=quantum)),
+                series_id=amount.series.wire_id,
+                base_month_index=int(amount.base_month_index),
+                adjustment_period_months=int(amount.adjustment_period_months),
+            )
     raise UnsupportedScenarioError(f"{context} carries an unsupported amount {amount!r}")
-
-
-def _income_category(category: OrdinaryIncome | InterestIncome | None) -> str | None:
-    """The income source a transfer books to, spelled the way both engines label a row."""
-
-    match category:
-        case None:
-            return None
-        case OrdinaryIncome():
-            return "ordinary"
-        case InterestIncome(issuer_jurisdiction_id=issuer):
-            return f"interest:{issuer if issuer is not None else 'corporate'}"
-
-
-def _span(start_month: int, end_month: int | None) -> dict[str, Any]:
-    """The window a recurring spec fires in: `end_month` is inclusive, and absent means the horizon."""
-
-    return {"start_month": int(start_month), "end_month": None if end_month is None else int(end_month)}
-
-
-def _flow(
-    flow: ScheduledTransfer | RecurringTransfer | ScheduledPropertyCashflow | RecurringPropertyCashflow,
-    *,
-    quantum: Decimal,
-    context: str,
-) -> dict[str, Any]:
-    """What a transfer-shaped spec carries besides its dates and, for a cashflow, its property.
-
-    Four scenario families cross as four execution input structs — transfers and property cashflows,
-    each one-shot or recurring — and they differ only in those two things.
-    """
-
-    return {
-        "cause_id": flow.cause_id,
-        "from": _account(flow.from_agent_id, flow.from_account_id),
-        "to": _account(flow.to_agent_id, flow.to_account_id),
-        "amount": _amount(flow.amount, quantum=quantum, context=context),
-        "income_category": _income_category(flow.income_category),
-        "deduction_category": flow.deduction_category,
-    }
-
-
-def _obligation(obligation: ScheduledObligation | RecurringObligation, *, quantum: Decimal) -> dict[str, Any]:
-    """What an obligation carries besides its dates."""
-
-    context = f"obligation {obligation.obligation_id!r}"
-    return {
-        "obligation_id": obligation.obligation_id,
-        "obligation_type": obligation.obligation_type,
-        "from": _account(obligation.agent_id, obligation.from_account_id),
-        "to": _account(obligation.to_agent_id, obligation.to_account_id),
-        "amount_due": _amount(obligation.amount_due, quantum=quantum, context=context),
-        "property_id": obligation.property_id,
-        "deduction_category": obligation.deduction_category,
-        # Quantized before it multiplies integer money, so the payment is scaled by an exact
-        # parts-per-billion numerator rather than a float.
-        "deductible_fraction_ppb": rate_to_ppb(obligation.deductible_fraction),
-    }
 
 
 def _series_values(
@@ -200,15 +162,15 @@ def _level_series(
     keys: tuple[LevelSeriesKey, ...],
     levels: Float64[np.ndarray, " series rollout snapshot"],
     money: Int64[np.ndarray, " series rollout snapshot"],
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "series_id": key.wire_id,
-            "snapshots": levels.shape[2],
-            "values": _series_values(key, levels[row], money[row]).reshape(-1).tolist(),
-        }
+) -> tuple[PreparedSeries, ...]:
+    return tuple(
+        PreparedSeries(
+            series_id=key.wire_id,
+            snapshots=levels.shape[2],
+            values=tuple(int(value) for value in _series_values(key, levels[row], money[row]).reshape(-1)),
+        )
         for row, key in enumerate(keys)
-    ]
+    )
 
 
 def _private_equity_series(
@@ -219,7 +181,7 @@ def _private_equity_series(
     rollout_count: int,
     horizon_months: int,
     quantum: Decimal,
-) -> list[dict[str, Any]]:
+) -> tuple[PreparedSeries, ...]:
     """The ten per-issuer private-equity channels, in the execution input's typed integer units.
 
     Execution channels have already passed raw-value validation and money quantization.
@@ -228,7 +190,7 @@ def _private_equity_series(
 
     channels = pe_channels.execution
     snapshots = horizon_months + 1
-    series: list[dict[str, Any]] = []
+    series = []
     for index, issuer_id in enumerate(issuer_ids):
         valuation = bundle.issuer_float_matrix(
             issuer_id, "company_valuation_usd", rollout_count=rollout_count, horizon_months=horizon_months
@@ -246,16 +208,18 @@ def _private_equity_series(
             ("company_valuation", sampled_array_to_quanta(valuation, quantum=quantum)),
         ):
             series.append(
-                {
-                    "series_id": f"private_equity_{channel}:{issuer_id}",
-                    "snapshots": snapshots,
-                    "values": np.asarray(values, dtype=np.int64).reshape(-1).tolist(),
-                }
+                PreparedSeries(
+                    series_id=f"private_equity_{channel}:{issuer_id}",
+                    snapshots=snapshots,
+                    values=tuple(int(value) for value in np.asarray(values, dtype=np.int64).reshape(-1)),
+                )
             )
-    return series
+    return tuple(series)
 
 
-def _jurisdiction_identities(scenario: Scenario, jurisdictions: Mapping[str, Jurisdiction]) -> list[dict[str, Any]]:
+def _jurisdiction_identities(
+    scenario: Scenario, jurisdictions: Mapping[str, Jurisdiction]
+) -> tuple[PreparedJurisdiction, ...]:
     """Every jurisdiction whose LEVEL an interest-exemption rule can name.
 
     The compiler resolves an issuer's level with `load_jurisdiction` whether or not a tax profile
@@ -273,23 +237,20 @@ def _jurisdiction_identities(scenario: Scenario, jurisdictions: Mapping[str, Jur
     for issuer_id in issuers:
         if issuer_id is not None and issuer_id not in levels:
             levels[issuer_id] = load_jurisdiction(issuer_id).level
-    return [
-        {"jurisdiction_id": jurisdiction_id, "level": str(levels[jurisdiction_id])}
+    return tuple(
+        PreparedJurisdiction(jurisdiction_id=jurisdiction_id, level=levels[jurisdiction_id])
         for jurisdiction_id in sorted(levels)
-    ]
+    )
 
 
-def _holding_pools(scenario: Scenario) -> list[dict[str, Any]]:
-    pools: dict[tuple[str, str, str], dict[str, Any]] = {}
+def _holding_pools(scenario: Scenario) -> tuple[PreparedHoldingPool, ...]:
+    pools: dict[tuple[str, str, str], PreparedHoldingPool] = {}
 
     def add(agent_id: str, account_id: str, asset: AssetKey) -> None:
         asset_id = _asset_id(asset)
-        pools[agent_id, account_id, asset_id] = {
-            "agent_id": agent_id,
-            "account_id": account_id,
-            "asset_id": asset_id,
-            "quantity_scale": quantity_scale_for_asset(asset),
-        }
+        pools[agent_id, account_id, asset_id] = PreparedHoldingPool(
+            agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale_for_asset(asset)
+        )
 
     for pool in scenario.holding_pools:
         add(pool.agent_id, pool.account_id, pool.asset)
@@ -299,124 +260,123 @@ def _holding_pools(scenario: Scenario) -> list[dict[str, Any]]:
         account_id = policy.source_account_ids[0] if policy.source_account_ids else policy.account_id
         for sleeve in policy.sleeves:
             add(policy.agent_id, account_id, sleeve.asset)
-    return list(pools.values())
+    return tuple(pools.values())
 
 
-def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any]]:
-    lots: list[dict[str, Any]] = []
+def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> tuple[PreparedLot, ...]:
+    lots = []
     for lot in scenario.initial_lots:
         scale = quantity_scale_for_asset(lot.asset)
         units = int(quantity_to_quanta(lot.quantity, scale=scale))
         lots.append(
-            {
-                "lot_id": lot.lot_id,
-                "agent_id": lot.agent_id,
-                "account_id": lot.account_id,
-                "asset_id": _asset_id(lot.asset),
-                "purchase_month": int(lot.purchase_month_index),
-                "quantity_scale": scale,
-                "units": units,
-                "basis": int(currency_amount_to_quanta(lot.cost_basis, quantum=quantum)),
-            }
+            PreparedLot(
+                lot_id=lot.lot_id,
+                agent_id=lot.agent_id,
+                account_id=lot.account_id,
+                asset_id=_asset_id(lot.asset),
+                purchase_month=int(lot.purchase_month_index),
+                quantity_scale=scale,
+                units=units,
+                basis=int(currency_amount_to_quanta(lot.cost_basis, quantum=quantum)),
+            )
         )
-    return lots
+    return tuple(lots)
 
 
-def _initial_bonds(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any]]:
-    bonds: list[dict[str, Any]] = []
+def _initial_bonds(scenario: Scenario, *, quantum: Decimal) -> tuple[PreparedBond, ...]:
+    bonds = []
     for bond in scenario.initial_bonds:
         rate_ppb = rate_to_ppb(bond.annual_coupon_rate)
         face = int(currency_amount_to_quanta(bond.face_value, quantum=quantum))
         coupon = (
-            {"kind": "indexed", "annual_rate_ppb": rate_ppb}
+            PreparedIndexedCoupon(annual_rate_ppb=rate_ppb)
             if bond.inflation_indexed
-            else {
-                "kind": "fixed",
-                "amount": coupon_amount_quanta(
+            else PreparedFixedAmount(
+                amount=coupon_amount_quanta(
                     face_quanta=face,
                     annual_coupon_rate_ppb=rate_ppb,
                     coupon_period_months=int(bond.coupon_period_months),
-                ),
-            }
+                )
+            )
         )
         bonds.append(
-            {
-                "bond_id": bond.bond_id,
-                "agent_id": bond.agent_id,
-                "account_id": bond.account_id,
-                "issuer_jurisdiction_id": bond.issuer_jurisdiction_id,
-                "face_value": face,
-                "purchase_price": int(currency_amount_to_quanta(bond.purchase_price, quantum=quantum)),
-                "coupon": coupon,
-                "coupon_period_months": int(bond.coupon_period_months),
-                "purchase_month_index": int(bond.purchase_month_index),
-                "maturity_month_index": int(bond.maturity_month_index),
-            }
+            PreparedBond(
+                bond_id=bond.bond_id,
+                agent_id=bond.agent_id,
+                account_id=bond.account_id,
+                issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                face_value=face,
+                purchase_price=int(currency_amount_to_quanta(bond.purchase_price, quantum=quantum)),
+                coupon=coupon,
+                coupon_period_months=int(bond.coupon_period_months),
+                purchase_month_index=int(bond.purchase_month_index),
+                maturity_month_index=int(bond.maturity_month_index),
+            )
         )
-    return bonds
+    return tuple(bonds)
 
 
-def _target_allocation_policies(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any]]:
-    return [
-        {
-            "agent_id": policy.agent_id,
-            "account_id": policy.account_id,
-            "source_account_ids": list(policy.source_account_ids),
-            "sleeves": [
-                {
-                    "asset_id": _asset_id(sleeve.asset),
-                    "weight": int(sleeve.weight),
-                    "quantity_scale": quantity_scale_for_asset(sleeve.asset),
-                }
+def _target_allocation_policies(scenario: Scenario, *, quantum: Decimal) -> tuple[_AllocationPolicy, ...]:
+    return tuple(
+        _AllocationPolicy(
+            agent_id=policy.agent_id,
+            account_id=policy.account_id,
+            source_account_ids=tuple(policy.source_account_ids),
+            sleeves=tuple(
+                _SleeveTarget(
+                    asset_id=_asset_id(sleeve.asset),
+                    weight=int(sleeve.weight),
+                    quantity_scale=quantity_scale_for_asset(sleeve.asset),
+                )
                 for sleeve in policy.sleeves
-            ],
-            "cash_floor": _amount(
+            ),
+            cash_floor=_amount(
                 policy.cash_floor, quantum=quantum, context=f"target-allocation floor for {policy.agent_id!r}"
             ),
-            "cash_ceiling": _amount(
+            cash_ceiling=_amount(
                 policy.cash_ceiling, quantum=quantum, context=f"target-allocation ceiling for {policy.agent_id!r}"
             ),
-            "cause_id_prefix": policy.cause_id_prefix,
-            "allow_purchases": policy.allow_purchases,
-            "rebalance_tolerance_ppb": (
+            cause_id_prefix=policy.cause_id_prefix,
+            allow_purchases=policy.allow_purchases,
+            rebalance_tolerance_ppb=(
                 rate_to_ppb(policy.rebalancing.tolerance) if isinstance(policy.rebalancing, DriftBand) else None
             ),
-        }
+        )
         for policy in scenario.target_allocation_policies
-    ]
+    )
 
 
-def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any]]:
-    return [
-        {
-            "month": int(purchase.month),
-            "cause_id": purchase.cause_id,
-            "property_id": purchase.property_id,
-            "location_id": purchase.location_id,
-            "buyer_agent_id": purchase.buyer_agent_id,
-            "buyer_account_id": purchase.buyer_account_id,
-            "seller_agent_id": purchase.seller_agent_id,
-            "seller_account_id": purchase.seller_account_id,
-            "purchase_price": int(currency_amount_to_quanta(purchase.purchase_price, quantum=quantum)),
-            "down_payment": int(currency_amount_to_quanta(purchase.down_payment, quantum=quantum)),
-            "buyer_closing_cost": int(currency_amount_to_quanta(purchase.buyer_closing_cost, quantum=quantum)),
-            "rented_fraction_ppb": rate_to_ppb(purchase.rented_fraction),
-            "land_value_fraction_ppb": rate_to_ppb(purchase.land_value_fraction),
-            "mortgage": (
+def _property_purchases(scenario: Scenario, *, quantum: Decimal) -> tuple[_PropertyPurchase, ...]:
+    return tuple(
+        _PropertyPurchase(
+            month=int(purchase.month),
+            cause_id=purchase.cause_id,
+            property_id=purchase.property_id,
+            location_id=purchase.location_id,
+            buyer_agent_id=purchase.buyer_agent_id,
+            buyer_account_id=purchase.buyer_account_id,
+            seller_agent_id=purchase.seller_agent_id,
+            seller_account_id=purchase.seller_account_id,
+            purchase_price=int(currency_amount_to_quanta(purchase.purchase_price, quantum=quantum)),
+            down_payment=int(currency_amount_to_quanta(purchase.down_payment, quantum=quantum)),
+            buyer_closing_cost=int(currency_amount_to_quanta(purchase.buyer_closing_cost, quantum=quantum)),
+            rented_fraction_ppb=rate_to_ppb(purchase.rented_fraction),
+            land_value_fraction_ppb=rate_to_ppb(purchase.land_value_fraction),
+            mortgage=(
                 None
                 if purchase.mortgage is None
-                else {
-                    "liability_id": purchase.mortgage.liability_id,
-                    "lender_agent_id": purchase.mortgage.lender_agent_id,
-                    "lender_account_id": purchase.mortgage.lender_account_id,
-                    "principal": int(currency_amount_to_quanta(purchase.mortgage.principal, quantum=quantum)),
-                    "annual_interest_rate_ppb": rate_to_ppb(purchase.mortgage.annual_interest_rate),
-                    "term_months": int(purchase.mortgage.term_months),
-                }
+                else _MortgageFinancing(
+                    liability_id=purchase.mortgage.liability_id,
+                    lender_agent_id=purchase.mortgage.lender_agent_id,
+                    lender_account_id=purchase.mortgage.lender_account_id,
+                    principal=int(currency_amount_to_quanta(purchase.mortgage.principal, quantum=quantum)),
+                    annual_interest_rate_ppb=rate_to_ppb(purchase.mortgage.annual_interest_rate),
+                    term_months=int(purchase.mortgage.term_months),
+                )
             ),
-        }
+        )
         for purchase in scenario.scheduled_property_purchases
-    ]
+    )
 
 
 def _closing_cost_ppb(event: PropertySaleEvent) -> int:
@@ -430,7 +390,9 @@ def _closing_cost_ppb(event: PropertySaleEvent) -> int:
     return rate_to_ppb(float(Decimal(str(event.closing_cost_pct)) / 100))
 
 
-def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum: Decimal) -> list[dict[str, Any]]:
+def _locations(
+    scenario: Scenario, locations: Mapping[str, Location], *, quantum: Decimal
+) -> tuple[PreparedLocation, ...]:
     """The locations this scenario actually buys a property in.
 
     The rest of the deployment's catalog is places no property is ever bought, and the execution input's
@@ -445,28 +407,28 @@ def _locations(scenario: Scenario, locations: Mapping[str, Location], *, quantum
                 f"{purchase.location_id!r}; known location ids: {known_location_ids}"
             )
     referenced = sorted({purchase.location_id for purchase in scenario.scheduled_property_purchases})
-    return [
-        {
-            "location_id": location_id,
-            "display_name": locations[location_id].display_name,
-            "jurisdiction_ids": list(locations[location_id].jurisdiction_ids),
-            "annual_property_tax_rate_ppb": rate_to_ppb(locations[location_id].annual_property_tax_rate),
-            "annual_special_assessment": int(
+    return tuple(
+        PreparedLocation(
+            location_id=location_id,
+            display_name=locations[location_id].display_name,
+            jurisdiction_ids=tuple(locations[location_id].jurisdiction_ids),
+            annual_property_tax_rate_ppb=rate_to_ppb(locations[location_id].annual_property_tax_rate),
+            annual_special_assessment=int(
                 currency_amount_to_quanta(locations[location_id].annual_special_assessment, quantum=quantum)
             ),
-        }
+        )
         for location_id in referenced
-    ]
+    )
 
 
-def compile_execution_input(
+def prepare_run(
     scenario: Scenario,
     *,
     rollout_count: int,
     external_series: ExternalSeriesContext,
     jurisdictions: Mapping[str, Jurisdiction],
     locations: Mapping[str, Location],
-) -> dict[str, Any]:
+) -> CompiledRun:
     """Resolve one self-contained execution input; retain no source objects to reread."""
     if rollout_count <= 0:
         raise ValueError(f"rollout_count must be positive; got {rollout_count}")
@@ -498,190 +460,249 @@ def compile_execution_input(
         currency_quantum=quantum,
     )
     lifecycle = scenario.property_lifecycle_events
-    return {
-        "schema_version": INPUT_SCHEMA_VERSION,
-        "currency_code": scenario.currency.code,
-        "currency_quantum": format(quantum, "f"),
-        "rollout_count": rollout_count,
-        "scenario": {
-            "horizon_months": int(scenario.horizon_months),
-            "jurisdictions": _jurisdiction_identities(scenario, jurisdictions),
-            "locations": _locations(scenario, locations, quantum=quantum),
-            "accounts": [
-                {
-                    "account": _account(balance.agent_id, balance.account_id),
-                    "opening_balance": int(currency_amount_to_quanta(balance.balance, quantum=quantum)),
-                }
+    return CompiledRun(
+        currency_code=scenario.currency.code,
+        currency_quantum=format(quantum, "f"),
+        rollout_count=rollout_count,
+        scenario=PreparedScenario(
+            horizon_months=horizon,
+            jurisdictions=_jurisdiction_identities(scenario, jurisdictions),
+            locations=_locations(scenario, locations, quantum=quantum),
+            accounts=tuple(
+                PreparedAccount(
+                    account=AccountRef(agent_id=balance.agent_id, account_id=balance.account_id),
+                    opening_balance=int(currency_amount_to_quanta(balance.balance, quantum=quantum)),
+                )
                 for balance in scenario.initial_cash
-            ],
-            "holding_pools": _holding_pools(scenario),
-            "scheduled_transfers": [
-                {"month": int(transfer.month)}
-                | _flow(transfer, quantum=quantum, context=f"scheduled transfer {transfer.cause_id!r}")
+            ),
+            holding_pools=_holding_pools(scenario),
+            scheduled_transfers=tuple(
+                PreparedTransfer(
+                    month=int(transfer.month),
+                    cause_id=transfer.cause_id,
+                    from_account=AccountRef(agent_id=transfer.from_agent_id, account_id=transfer.from_account_id),
+                    to_account=AccountRef(agent_id=transfer.to_agent_id, account_id=transfer.to_account_id),
+                    amount=_amount(
+                        transfer.amount, quantum=quantum, context=f"scheduled transfer {transfer.cause_id!r}"
+                    ),
+                    income_category=transfer.income_category,
+                    deduction_category=transfer.deduction_category,
+                )
                 for transfer in scenario.scheduled_transfers
-            ],
-            "recurring_transfers": [
-                _span(transfer.start_month, transfer.end_month)
-                | _flow(transfer, quantum=quantum, context=f"recurring transfer {transfer.cause_id!r}")
+            ),
+            recurring_transfers=tuple(
+                PreparedRecurringTransfer(
+                    start_month=int(transfer.start_month),
+                    end_month=None if transfer.end_month is None else int(transfer.end_month),
+                    cause_id=transfer.cause_id,
+                    from_account=AccountRef(agent_id=transfer.from_agent_id, account_id=transfer.from_account_id),
+                    to_account=AccountRef(agent_id=transfer.to_agent_id, account_id=transfer.to_account_id),
+                    amount=_amount(
+                        transfer.amount, quantum=quantum, context=f"recurring transfer {transfer.cause_id!r}"
+                    ),
+                    income_category=transfer.income_category,
+                    deduction_category=transfer.deduction_category,
+                )
                 for transfer in scenario.recurring_transfers
-            ],
-            "scheduled_property_cashflows": [
-                {"month": int(cashflow.month), "property_id": cashflow.property_id}
-                | _flow(cashflow, quantum=quantum, context=f"scheduled property cashflow {cashflow.cause_id!r}")
+            ),
+            scheduled_property_cashflows=tuple(
+                PreparedPropertyCashflow(
+                    month=int(cashflow.month),
+                    property_id=cashflow.property_id,
+                    cause_id=cashflow.cause_id,
+                    from_account=AccountRef(agent_id=cashflow.from_agent_id, account_id=cashflow.from_account_id),
+                    to_account=AccountRef(agent_id=cashflow.to_agent_id, account_id=cashflow.to_account_id),
+                    amount=_amount(
+                        cashflow.amount, quantum=quantum, context=f"scheduled property cashflow {cashflow.cause_id!r}"
+                    ),
+                    income_category=cashflow.income_category,
+                    deduction_category=cashflow.deduction_category,
+                )
                 for cashflow in scenario.scheduled_property_cashflows
-            ],
-            "recurring_property_cashflows": [
-                _span(cashflow.start_month, cashflow.end_month)
-                | {"property_id": cashflow.property_id}
-                | _flow(cashflow, quantum=quantum, context=f"recurring property cashflow {cashflow.cause_id!r}")
+            ),
+            recurring_property_cashflows=tuple(
+                PreparedRecurringPropertyCashflow(
+                    start_month=int(cashflow.start_month),
+                    end_month=None if cashflow.end_month is None else int(cashflow.end_month),
+                    property_id=cashflow.property_id,
+                    cause_id=cashflow.cause_id,
+                    from_account=AccountRef(agent_id=cashflow.from_agent_id, account_id=cashflow.from_account_id),
+                    to_account=AccountRef(agent_id=cashflow.to_agent_id, account_id=cashflow.to_account_id),
+                    amount=_amount(
+                        cashflow.amount, quantum=quantum, context=f"recurring property cashflow {cashflow.cause_id!r}"
+                    ),
+                    income_category=cashflow.income_category,
+                    deduction_category=cashflow.deduction_category,
+                )
                 for cashflow in scenario.recurring_property_cashflows
-            ],
-            "obligations": [
-                {"month": int(obligation.month)} | _obligation(obligation, quantum=quantum)
+            ),
+            obligations=tuple(
+                PreparedObligation(
+                    month=int(obligation.month),
+                    obligation_id=obligation.obligation_id,
+                    obligation_type=obligation.obligation_type,
+                    from_account=AccountRef(agent_id=obligation.agent_id, account_id=obligation.from_account_id),
+                    to_account=AccountRef(agent_id=obligation.to_agent_id, account_id=obligation.to_account_id),
+                    amount_due=_amount(
+                        obligation.amount_due, quantum=quantum, context=f"obligation {obligation.obligation_id!r}"
+                    ),
+                    property_id=obligation.property_id,
+                    deduction_category=obligation.deduction_category,
+                    deductible_fraction_ppb=rate_to_ppb(obligation.deductible_fraction),
+                )
                 for obligation in scenario.scheduled_obligations
-            ],
-            "recurring_obligations": [
-                _span(obligation.start_month, obligation.end_month) | _obligation(obligation, quantum=quantum)
+            ),
+            recurring_obligations=tuple(
+                PreparedRecurringObligation(
+                    start_month=int(obligation.start_month),
+                    end_month=None if obligation.end_month is None else int(obligation.end_month),
+                    obligation_id=obligation.obligation_id,
+                    obligation_type=obligation.obligation_type,
+                    from_account=AccountRef(agent_id=obligation.agent_id, account_id=obligation.from_account_id),
+                    to_account=AccountRef(agent_id=obligation.to_agent_id, account_id=obligation.to_account_id),
+                    amount_due=_amount(
+                        obligation.amount_due, quantum=quantum, context=f"obligation {obligation.obligation_id!r}"
+                    ),
+                    property_id=obligation.property_id,
+                    deduction_category=obligation.deduction_category,
+                    deductible_fraction_ppb=rate_to_ppb(obligation.deductible_fraction),
+                )
                 for obligation in scenario.recurring_obligations
-            ],
-            "initial_lots": _initial_lots(scenario, quantum=quantum),
-            "initial_bonds": _initial_bonds(scenario, quantum=quantum),
-            "scheduled_sales": [
-                {
-                    "month": int(sale.month),
-                    "cause_id": sale.cause_id,
-                    "agent_id": sale.agent_id,
-                    "account_id": sale.source_account_id,
-                    "asset_id": _asset_id(sale.asset),
-                    "units": int(quantity_to_quanta(sale.quantity, scale=quantity_scale_for_asset(sale.asset))),
-                    "proceeds_account_id": sale.proceeds_account_id,
-                }
+            ),
+            initial_lots=_initial_lots(scenario, quantum=quantum),
+            initial_bonds=_initial_bonds(scenario, quantum=quantum),
+            _scheduled_sales=tuple(
+                _ScheduledSale(
+                    month=int(sale.month),
+                    cause_id=sale.cause_id,
+                    agent_id=sale.agent_id,
+                    account_id=sale.source_account_id,
+                    asset_id=_asset_id(sale.asset),
+                    units=int(quantity_to_quanta(sale.quantity, scale=quantity_scale_for_asset(sale.asset))),
+                    proceeds_account_id=sale.proceeds_account_id,
+                )
                 for sale in scenario.scheduled_asset_sales
-            ],
-            "tax_profiles": [asdict(profile) for profile in tax.profiles],
-            "income_sources": [income_source_wire_id(source) for source in tax.income_sources],
-            "distributions": [
-                {
-                    "agent_id": distribution.agent_id,
-                    "holding_account_id": distribution.holding_account_id,
-                    "asset_id": _asset_id(distribution.asset),
-                    "to_account_id": distribution.to_account_id,
-                    "tax_character": [
-                        {
-                            "fraction_ppb": rate_to_ppb(tax_slice.fraction),
-                            "issuer_jurisdiction_id": tax_slice.issuer_jurisdiction_id,
-                        }
+            ),
+            tax_profiles=tax.profiles,
+            income_sources=tax.income_sources,
+            distributions=tuple(
+                PreparedDistribution(
+                    agent_id=distribution.agent_id,
+                    holding_account_id=distribution.holding_account_id,
+                    asset_id=_asset_id(distribution.asset),
+                    to_account_id=distribution.to_account_id,
+                    tax_character=tuple(
+                        PreparedDistributionSlice(
+                            fraction_ppb=rate_to_ppb(tax_slice.fraction),
+                            issuer_jurisdiction_id=tax_slice.issuer_jurisdiction_id,
+                        )
                         for tax_slice in distribution.tax_character
-                    ],
-                }
+                    ),
+                )
                 for distribution in scenario.security_distributions
-            ],
-            "target_allocation_policies": _target_allocation_policies(scenario, quantum=quantum),
-            "private_equity_tender_policies": [
-                {
-                    "owner_agent_id": policy.owner_agent_id,
-                    "proceeds_account_id": policy.proceeds_account_id,
-                    "liquid_net_worth_floor": _amount(
+            ),
+            _target_allocation_policies=_target_allocation_policies(scenario, quantum=quantum),
+            _private_equity_tender_policies=tuple(
+                _TenderPolicy(
+                    owner_agent_id=policy.owner_agent_id,
+                    proceeds_account_id=policy.proceeds_account_id,
+                    liquid_net_worth_floor=_amount(
                         policy.liquid_net_worth_floor,
                         quantum=quantum,
                         context=f"private-equity floor for {policy.owner_agent_id!r}",
                     ),
-                }
+                )
                 for policy in scenario.private_equity_tender_policies
-            ],
-            "harvest_policies": [
-                {
-                    "owner_agent_id": policy.owner_agent_id,
-                    "account_id": policy.account_id,
-                    "asset_id": _asset_id(policy.asset),
-                    "peak_annual_yield_ppb": policy.yield_params.peak_annual_yield_ppb,
-                    "floor_annual_yield_ppb": policy.yield_params.floor_annual_yield_ppb,
-                    "maturity_decay_exponent_ppb": rate_to_ppb(policy.yield_params.maturity_decay_exponent),
-                    "drawdown_sensitivity_ppb": policy.yield_params.drawdown_sensitivity_ppb,
-                    "short_term_fraction_ppb": rate_to_ppb(policy.short_term_fraction),
-                }
+            ),
+            _harvest_policies=tuple(
+                _HarvestPolicy(
+                    owner_agent_id=policy.owner_agent_id,
+                    account_id=policy.account_id,
+                    asset_id=_asset_id(policy.asset),
+                    peak_annual_yield_ppb=policy.yield_params.peak_annual_yield_ppb,
+                    floor_annual_yield_ppb=policy.yield_params.floor_annual_yield_ppb,
+                    maturity_decay_exponent_ppb=rate_to_ppb(policy.yield_params.maturity_decay_exponent),
+                    drawdown_sensitivity_ppb=policy.yield_params.drawdown_sensitivity_ppb,
+                    short_term_fraction_ppb=rate_to_ppb(policy.short_term_fraction),
+                )
                 for policy in scenario.harvest_policies
-            ],
-            "scheduled_property_purchases": _property_purchases(scenario, quantum=quantum),
-            "initial_primary_residences": [
-                {"agent_id": assignment.agent_id, "property_id": assignment.property_id}
+            ),
+            _scheduled_property_purchases=_property_purchases(scenario, quantum=quantum),
+            _initial_primary_residences=tuple(
+                _PrimaryResidence(agent_id=assignment.agent_id, property_id=assignment.property_id)
                 for assignment in scenario.initial_primary_residences
-            ],
-            "primary_residence_events": [
-                {"month": int(event.month), "agent_id": event.agent_id, "property_id": event.property_id}
+            ),
+            _primary_residence_events=tuple(
+                _PrimaryResidenceEvent(month=int(event.month), agent_id=event.agent_id, property_id=event.property_id)
                 for event in scenario.primary_residence_events
-            ],
-            "property_rented_fraction_events": [
-                {
-                    "month": int(event.month),
-                    "property_id": event.property_id,
-                    "rented_fraction_ppb": rate_to_ppb(event.rented_fraction),
-                }
+            ),
+            _property_rented_fraction_events=tuple(
+                _RentedFraction(
+                    month=int(event.month),
+                    property_id=event.property_id,
+                    rented_fraction_ppb=rate_to_ppb(event.rented_fraction),
+                )
                 for event in lifecycle
                 if isinstance(event, SetRentedFractionEvent)
-            ],
-            "capital_improvement_events": [
-                {
-                    "month": int(event.month),
-                    "property_id": event.property_id,
-                    "amount": int(currency_amount_to_quanta(event.amount, quantum=quantum)),
-                    "description": event.description,
-                }
+            ),
+            _capital_improvement_events=tuple(
+                _CapitalImprovement(
+                    month=int(event.month),
+                    property_id=event.property_id,
+                    amount=int(currency_amount_to_quanta(event.amount, quantum=quantum)),
+                    description=event.description,
+                )
                 for event in lifecycle
                 if isinstance(event, CapitalImprovementEvent)
-            ],
-            "property_sales": [
-                {
-                    "month": int(event.month),
-                    "property_id": event.property_id,
-                    "closing_cost_ppb": _closing_cost_ppb(event),
-                }
+            ),
+            _property_sales=tuple(
+                _PropertySale(
+                    month=int(event.month), property_id=event.property_id, closing_cost_ppb=_closing_cost_ppb(event)
+                )
                 for event in lifecycle
                 if isinstance(event, PropertySaleEvent)
-            ],
-            "mortgage_interest_deduction_policies": [
-                {
-                    "liability_id": policy.liability_id,
-                    "owner_agent_id": policy.owner_agent_id,
-                    "debt_class": policy.debt_class,
-                    "per_jurisdiction_principal_cap": {
+            ),
+            _mortgage_interest_deduction_policies=tuple(
+                _MortgageInterestDeduction(
+                    liability_id=policy.liability_id,
+                    owner_agent_id=policy.owner_agent_id,
+                    debt_class=policy.debt_class,
+                    per_jurisdiction_principal_cap={
                         jurisdiction_id: int(currency_amount_to_quanta(cap, quantum=quantum))
                         for jurisdiction_id, cap in policy.per_jurisdiction_principal_cap.items()
                     },
-                }
+                )
                 for policy in scenario.mortgage_interest_deduction_policies
-            ],
-            "property_tax_policies": [
-                {
-                    "property_id": policy.property_id,
-                    "owner_agent_id": policy.owner_agent_id,
-                    "from_account_id": policy.from_account_id,
-                    "tax_authority_agent_id": policy.tax_authority_agent_id,
-                    "tax_authority_account_id": policy.tax_authority_account_id,
-                    "annual_tax_rate_ppb": (
-                        None if policy.annual_tax_rate is None else rate_to_ppb(policy.annual_tax_rate)
-                    ),
-                    "start_month": int(policy.start_month),
-                    "end_month": None if policy.end_month is None else int(policy.end_month),
-                }
+            ),
+            _property_tax_policies=tuple(
+                _PropertyTax(
+                    property_id=policy.property_id,
+                    owner_agent_id=policy.owner_agent_id,
+                    from_account_id=policy.from_account_id,
+                    tax_authority_agent_id=policy.tax_authority_agent_id,
+                    tax_authority_account_id=policy.tax_authority_account_id,
+                    annual_tax_rate_ppb=None if policy.annual_tax_rate is None else rate_to_ppb(policy.annual_tax_rate),
+                    start_month=int(policy.start_month),
+                    end_month=None if policy.end_month is None else int(policy.end_month),
+                )
                 for policy in scenario.property_tax_policies
-            ],
-            "federal_salt_deduction_policies": [
-                {
-                    "profile_id": policy.profile_id,
-                    "federal_jurisdiction_id": policy.federal_jurisdiction_id,
-                    "cap_schedule": [
-                        {
-                            "effective_year_index": int(entry.effective_year_index),
-                            "cap": int(currency_amount_to_quanta(entry.cap, quantum=quantum)),
-                        }
+            ),
+            _federal_salt_deduction_policies=tuple(
+                _SaltDeduction(
+                    profile_id=policy.profile_id,
+                    federal_jurisdiction_id=policy.federal_jurisdiction_id,
+                    cap_schedule=tuple(
+                        _SaltCap(
+                            effective_year_index=int(entry.effective_year_index),
+                            cap=int(currency_amount_to_quanta(entry.cap, quantum=quantum)),
+                        )
                         for entry in policy.cap_schedule
-                    ],
-                }
+                    ),
+                )
                 for policy in scenario.federal_salt_deduction_policies
-            ],
-        },
-        "series": [
+            ),
+        ),
+        series=(
             *_level_series(keys, levels, money),
             *_private_equity_series(
                 issuer_ids,
@@ -691,5 +712,5 @@ def compile_execution_input(
                 horizon_months=horizon,
                 quantum=quantum,
             ),
-        ],
-    }
+        ),
+    )

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from finance.augur.rust.invocation import read_prepared_input
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.results import (
     Executed,
@@ -150,10 +151,9 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
         ],
         check=True,
     )
-    prepared = json.loads((output_dir / "execution-input.json").read_text())["scenario"]
-    assert prepared["initial_lots"] == []
-    assert prepared["target_allocation_policies"] == []
-    assert [(pool["agent_id"], pool["account_id"], pool["asset_id"]) for pool in prepared["holding_pools"]] == [
+    prepared = read_prepared_input(output_dir / "execution-input.json").scenario
+    assert not prepared.initial_lots
+    assert [(pool.agent_id, pool.account_id, pool.asset_id) for pool in prepared.holding_pools] == [
         ("example-household", "brokerage", "example-stock")
     ]
     rollouts = Finished.model_validate_json((output_dir / "outcomes.json").read_text()).rollouts

@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.sim.backend import CompiledRun
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.results import CashSeries, ConsumptionTarget, InsufficientCash, PaymentRejected, Rollout, Summary
 
@@ -51,20 +51,18 @@ def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agen
     and private-equity values must be captured before those portfolios can use this adapter;
     the configured app retains those capabilities. Masked padding is not observed money.
     """
-    scenario = run.execution_input["scenario"]
-    if scenario["scheduled_property_purchases"]:
+    scenario = run.scenario
+    if scenario.has_property_purchases:
         raise ValueError("property and mortgage histories are not captured for product action projection")
-    if any(pool["asset_id"].startswith("private_equity:") for pool in scenario["holding_pools"]):
+    if any(pool.asset_id.startswith("private_equity:") for pool in scenario.holding_pools):
         raise ValueError("private-equity histories are not captured for product action projection")
     bond_accounts = {
-        bond["bond_id"]: bond["account_id"]
-        for bond in scenario["initial_bonds"]
-        if bond["agent_id"] == primary_agent_id
+        bond.bond_id: bond.account_id for bond in scenario.initial_bonds if bond.agent_id == primary_agent_id
     }
     ids = [rollout.rollout_id for rollout in rollouts]
-    if not ids or len(set(ids)) != len(ids) or any(not 0 <= id_ < run.execution_input["rollout_count"] for id_ in ids):
+    if not ids or len(set(ids)) != len(ids) or any(not 0 <= id_ < run.rollout_count for id_ in ids):
         raise ValueError("product projection needs a nonempty unique selection of original rollout IDs")
-    snapshot_count = scenario["horizon_months"] + 1
+    snapshot_count = scenario.horizon_months + 1
     series = {name: np.zeros((snapshot_count, len(rollouts)), dtype=np.int64) for name in BASE_METRIC_NAMES}
     failed_month = np.full(len(rollouts), -1, dtype=np.int64)
     for column, rollout in enumerate(rollouts):
@@ -100,7 +98,7 @@ def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agen
         rollout_ids=tuple(ids),
         month_index=np.arange(snapshot_count, dtype=np.int64),
         failed_month=failed_month,
-        currency_code=run.execution_input["currency_code"],
-        currency_quantum=run.execution_input["currency_quantum"],
+        currency_code=run.currency_code,
+        currency_quantum=run.currency_quantum,
         base_series=tuple(series[name] for name in BASE_METRIC_NAMES),
     )

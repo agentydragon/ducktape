@@ -5,9 +5,10 @@ from decimal import Decimal
 import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.scenario import (
     Agent,
     FilingStatus,

@@ -8,20 +8,15 @@ in-process bindings hand the same document across without a file.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
 from finance.augur.benchmark.scenario import feature_rich_case
-from finance.augur.rust.case_fixture import fixture_for
+from finance.augur.rust.invocation import write_prepared_input
 
 
 def write_fixture(path: Path, *, rollout_count: int, horizon_months: int) -> None:
-    with path.open("w") as file:
-        json.dump(
-            fixture_for(feature_rich_case(rollout_count=rollout_count, horizon_months=horizon_months)),
-            file,
-            separators=(",", ":"),
-        )
+    case = feature_rich_case(rollout_count=rollout_count, horizon_months=horizon_months)
+    write_prepared_input(case.compiled_run, path)
 
 
 def main() -> None:

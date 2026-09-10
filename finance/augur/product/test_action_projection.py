@@ -4,7 +4,6 @@ Stipulated $100/$50 share prices, $40 basis and synthetic 10% LTCG tax come from
 the runnable monthly-actions example; these are accounting controls, not forecasts.
 """
 
-import json
 from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
@@ -19,8 +18,8 @@ from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import ProductRolloutProjection, project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, RolloutFailureEvent, TaxAccrualEvent
 from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
-from finance.augur.sim.backend import CompiledRun
 from finance.augur.sim.events import EventLog
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import OutcomeBasis, projection_summaries
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
 from finance.augur.sim.scenario import BondHolding, InitialAccountBalance
@@ -39,7 +38,7 @@ def _run(
     *,
     actor_id: str = "example-household",
 ) -> list[Rollout]:
-    session = ActionSession(json.dumps(compiled.execution_input), actor_id, ids, capture=capture)
+    session = ActionSession(compiled, actor_id, ids, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

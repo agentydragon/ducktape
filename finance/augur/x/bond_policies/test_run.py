@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from finance.augur.rust.invocation import read_prepared_input
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.x.bond_policies.construction import ProxyConstruction, compare_constructions, stipulated_curves
 from finance.augur.x.bond_policies.run import CELLS, compile_construction, execute, measurements
@@ -185,8 +186,8 @@ def test_cli_exports_inputs_compact_results_and_selected_original_timelines(tmp_
     assert len(reports) == 40
     for cell in reports:
         cell_dir = output / cell.output
-        document = json.loads((cell_dir / "execution_input.json").read_text())
-        assert not document["scenario"]["target_allocation_policies"]
+        prepared = read_prepared_input(cell_dir / "execution_input.json")
+        assert len(prepared.scenario.obligations) == 6
         results = Finished.model_validate_json((cell_dir / "rollouts.json").read_text()).rollouts
         assert [row.rollout_id for row in results] == list(range(5))
         assert all(row.trace is None for row in results)

@@ -4,7 +4,6 @@ Tests use stipulated prices/indexes and, where stated, a synthetic flat tax sche
 The configured product runner remains a separate cutover caller, not a fallback here.
 """
 
-import json
 from decimal import Decimal
 
 import numpy as np
@@ -99,7 +98,7 @@ def run(
         initial_lots=tuple(scenario.initial_lots),
         currency_quantum=scenario.currency.quantum,
     )
-    session = ActionSession(json.dumps(prepared.execution_input), ACTOR, [0])
+    session = ActionSession(prepared, ACTOR, [0])
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
