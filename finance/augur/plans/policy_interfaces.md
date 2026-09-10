@@ -141,11 +141,11 @@ implicit decision to hold. Response coverage belongs to the same monthly batch,
 not a second callback or retry loop. This requirement is recorded for deferred PE
 work; the current action session does not implement it.
 
-The initial action session uses Rust financial-step execution. RUNTIME/GE separately
-reevaluate those internals, including execution strategy, ragged output layout and
-notebook usability. They do not gate interface consolidation or decide who owns
-the loop. A Python implementation of a step would own the same financial time
-evolution; it replaces the internals, not the session's economic contract.
+The current session uses Rust financial steps. Prefer Python moves that improve
+the domain model and experiment composition; keep one canonical implementation
+and migrate callers atomically. GL and RUNTIME/GE are parked optimization work,
+not gates on those moves. A rollout is stateful across time; parallel independent
+rollouts do not require a dense whole-future kernel or equally sized event lists.
 
 ### One batch-shaped policy API
 
@@ -155,11 +155,10 @@ optional scalar-to-batch helper may invoke an author's scalar function once per
 row while routing its per-path memory; it returns the same keyed response batch.
 Neither the engine nor runner dispatches through a separate scalar policy hook.
 
-GL compares that adapter with a directly batch-authored function on the same
-workload. Start with one concrete typed representation and use measured costs/usability
-to revise it atomically, not to postpone convergence or maintain scalar and batch
-engine APIs. A failed cost check blocks the affected workload's cutover, not all
-consumer migration.
+Start with one clear typed representation, chosen for the domain and authoring
+experience. GL may compare layouts/adapters when actual large-N workloads need
+optimization later. No performance budget gates current consumer migration, and
+no separate scalar/batch engine APIs are permitted.
 
 `Batch` leaves row/column layout, ragged actions/lots and chunk size undecided.
 Only active rollouts participate in a monthly decision batch.
