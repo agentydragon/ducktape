@@ -4,8 +4,8 @@ The example has one household cash account. Opening cash buys fractional shares
 within the explicit budget; execution owns prices, basis and taxes.
 """
 
+from finance.augur.policy.cash_band import Invest, Raise, cash_band
 from finance.augur.rust.simulator import Action, Decision, DecisionActions
-from finance.augur.sim.cash_band import Invest, Raise, cash_band
 from finance.augur.sim.fixed_point import quantity_for_value
 
 

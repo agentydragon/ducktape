@@ -23,7 +23,7 @@ not an engine allocation policy. `compare.py` owns the monthly `ActionSession`
 loop and supplies the same selected paths to each arm.
 
 The policy reads current account cash, scoped lots/quotes and already-assembled
-claims. It calls <../../sim/sleeves.py> for optional `withdraw`, `deposit` or
+claims. It calls <../../policy/sleeves.py> for optional `withdraw`, `deposit` or
 `rebalance` action proposals over explicit `(account_id, asset_id)` pools.
 Withdrawal is additional gross cash to raise, not total spending. FIFO orders
 each pool's lots by acquisition month, then lot ID; each lot uses its own quantity

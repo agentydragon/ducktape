@@ -16,7 +16,7 @@ owns review cadence and memory. Zero requests create no payment action; negative
 requests and function errors reject the run.
 
 The Python allocation example uses `ActionSession` and ordinary batch functions
-after monthly cashflows and claim assembly. <../sim/sleeves.py> proposes exact
+after monthly cashflows and claim assembly. <../policy/sleeves.py> proposes exact
 trades from named account/asset pools, current lots and prices. The policy owns
 weights, cash reserves and drift cadence; it submits trades and payments in one
 ordered action list. Zero targets remain sellable and receive no deposits; a

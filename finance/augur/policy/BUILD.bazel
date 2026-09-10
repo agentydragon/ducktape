@@ -1,0 +1,47 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "cash_band",
+    srcs = ["cash_band.py"],
+)
+
+py_library(
+    name = "sleeves",
+    srcs = ["sleeves.py"],
+    deps = [
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:fixed_point",
+    ],
+)
+
+py_test(
+    name = "test_cash_band",
+    srcs = ["test_cash_band.py"],
+    deps = [
+        ":cash_band",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:fixed_point",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sleeves",
+    srcs = ["test_sleeves.py"],
+    deps = [
+        ":sleeves",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

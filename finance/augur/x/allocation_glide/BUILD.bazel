@@ -41,8 +41,8 @@ py_library(
     name = "policy",
     srcs = ["policy.py"],
     deps = [
+        "//finance/augur/policy:cash_band",
+        "//finance/augur/policy:sleeves",
         "//finance/augur/rust:simulator_ext",
-        "//finance/augur/sim:cash_band",
-        "//finance/augur/sim:sleeves",
     ],
 )

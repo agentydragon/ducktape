@@ -79,7 +79,7 @@ original path with fresh policy state and its original factory/series identity.
 These entry points are native-only; Python/batched callbacks are not exposed here.
 
 The Python <../x/allocation_glide/README.md> consumer submits explicit trades and
-claim payments through `ActionSession`. Its optional <../sim/sleeves.py> helpers
+claim payments through `ActionSession`. Its optional <../policy/sleeves.py> helpers
 choose withdrawals, deposits and drift trades over named account/asset pools;
 the executor receives exact lot/quantity actions, not target weights.
 

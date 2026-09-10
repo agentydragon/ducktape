@@ -91,7 +91,7 @@ The session observes after cashflows/claims and returns compact account/pool
 series, payment identities, taxes, stop books and optional dense/forensic traces.
 Receipt feedback is limited to the previous month. Reuse this capture for new
 consumers; CAP's broader domain selection/app projection work remains separate.
-`sim/cash_band.py` and `sim/fixed_point.py::quantity_for_value` are Python-callable
+`policy/cash_band.py` and `sim/fixed_point.py::quantity_for_value` are Python-callable
 calculators used by that example; they neither select portfolios nor execute trades.
 Declared account/asset pools expose current prices even before a first purchase.
 

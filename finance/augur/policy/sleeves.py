@@ -1,4 +1,4 @@
-"""Optional public-portfolio trade proposals over explicitly selected account/asset pools.
+"""Public-portfolio policy proposals over explicitly selected account/asset pools.
 
 Weights are relative nonnegative integers; zero targets remain sellable but receive
 no deposits. Money is integer currency quanta. Helpers neither settle trades nor

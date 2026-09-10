@@ -23,7 +23,7 @@ not calculate a minimal sale or retry an unaffordable bill. Empty intervening
 months still receive a batch decision with no actions. The engine supplies current
 prices and applies the shared lot, payment, tax and stopping operations.
 
-The rule calls `sim.cash_band.cash_band` on cash minus already-due claims, with
+The rule calls `policy.cash_band.cash_band` on cash minus already-due claims, with
 `floor=ceiling=0`. Its `Raise` proposal triggers this rule's full liquidation;
 `Invest` is used only at a cash-only opening, and later investment proposals are
 ignored. `Hold` creates no trade. The helper returns a budget; the policy chooses

@@ -1,8 +1,8 @@
 """Annual target weights, a cash band, and optional sleeve trade proposals."""
 
+from finance.augur.policy import sleeves
+from finance.augur.policy.cash_band import Invest, Raise, cash_band
 from finance.augur.rust.simulator import Action, Decision, DecisionActions
-from finance.augur.sim import sleeves
-from finance.augur.sim.cash_band import Invest, Raise, cash_band
 
 
 def decide(batch: list[Decision], *, annual_step: int) -> list[DecisionActions]:

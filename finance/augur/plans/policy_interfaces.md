@@ -162,7 +162,7 @@ paths must preserve their decisions/results. One rollout's actor cannot use
 observations from alternative rollouts; cross-path optimization belongs in the
 experiment shell. Completed/stopped paths receive no further calls.
 
-## `policies/sleeves.py`
+## `policy/sleeves.py`
 
 ```python
 """Portfolio decision algorithms; propose trades without executing them."""

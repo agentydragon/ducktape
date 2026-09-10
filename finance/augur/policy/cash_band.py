@@ -1,4 +1,4 @@
-"""Optional cash-budget proposals, without choosing or executing any trades.
+"""Cash-budget policy proposals, without choosing or executing any trades.
 
 Crossing a cash-band bound proposes moving to the far edge: raise to the ceiling
 below the floor, or invest down to the floor above the ceiling. Inside the inclusive

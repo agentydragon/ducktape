@@ -144,11 +144,6 @@ py_test(
 )
 
 py_library(
-    name = "cash_band",
-    srcs = ["cash_band.py"],
-)
-
-py_library(
     name = "bonds",
     srcs = ["bonds.py"],
 )
@@ -171,13 +166,13 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
-        ":cash_band",
         ":enums",
         ":fixed_point",
         ":tlh_harvest",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
+        "//finance/augur/policy:cash_band",
         "@pypi//pydantic",
     ],
 )
@@ -305,45 +300,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_cash_band",
-    srcs = ["test_cash_band.py"],
-    deps = [
-        ":cash_band",
-        ":fixed_point",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "sleeves",
-    srcs = ["sleeves.py"],
-    deps = [
-        ":fixed_point",
-        "//finance/augur/rust:simulator_ext",
-    ],
-)
-
-py_test(
-    name = "test_sleeves",
-    srcs = ["test_sleeves.py"],
-    deps = [
-        ":scenario",
-        ":sleeves",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
-        "//finance/augur/sim/testing:case",
-        "//finance/augur/sim/testing:fixtures",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.cash_band import Hold, Invest, Raise, cash_band
+from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band
 from finance.augur.sim.fixed_point import quantity_for_value
 
 

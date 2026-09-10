@@ -30,7 +30,7 @@ from pydantic import (
 from finance.augur.model.asset_key import AssetKey, asset_price_key_or_none
 from finance.augur.model.series import IndexSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
-from finance.augur.sim.cash_band import validate_band_bounds
+from finance.augur.policy.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
