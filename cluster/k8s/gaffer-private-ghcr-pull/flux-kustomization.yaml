@@ -17,15 +17,11 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
     - name: gaffer-private
     - name: reflector
       namespace: ducktape-flux
   healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
       name: gaffer-private-ghcr-pull
       namespace: flux-system

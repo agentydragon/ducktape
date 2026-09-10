@@ -4,7 +4,7 @@ metadata:
   name: github-pat-ghcr-read
   namespace: flux-system
   annotations:
-    description: Fine-grained GitHub PAT with `read:packages` on agentydragon's GHCR namespace. Consumed by the gaffer-private-ghcr-pull Terraform module to mint dockerconfigjson Secrets in flux-system and augur namespaces.
+    description: Fine-grained GitHub PAT with `read:packages` on agentydragon's GHCR namespace. ESO renders it into the gaffer-ghcr-pull Docker pull Secret in flux-system and Reflector distributes it to the consumer namespaces.
 type: Opaque
 stringData:
   token: ENC[AES256_GCM,data:Z+7y5520NpngMvb1hH+ZJ2B3r+23zxgdrVW4LNmHwXv2FPmcOH6Tjw==,iv:yfQwXN4mySUuu7dLieqlrmFRMCirZ373+p50SuPdlFQ=,tag:HBAfIwEgWumHIgUrJOb3Gg==,type:str]
