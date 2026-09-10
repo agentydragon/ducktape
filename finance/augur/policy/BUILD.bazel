@@ -73,3 +73,20 @@ py_library(
         "//finance/augur/sim:prepared",
     ],
 )
+
+py_test(
+    name = "configured_allocation_test",
+    srcs = ["configured_allocation_test.py"],
+    deps = [
+        ":configured_allocation",
+        ":sleeves",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:prepared",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

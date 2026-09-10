@@ -1,17 +1,8 @@
-"""The target-allocation policy, run by an engine rather than computed by the policy.
+"""Configured Python allocation against canonical settlement and recorded books.
 
-`target_allocation_test.py` proves the policy's arithmetic against its own inputs. This
-proves an engine runs it: that the observation it builds is the agent's real state, that the
-orders come back and execute against real lots, and that both legs of the money move.
-
-Everything below reads the channels every engine answers in, so the claims are about what a
-simulator does with an (s,S) cash band and not about how either one computes it. Prices are
-authored flat rather than sampled, so every number is exact.
-
-Two properties in the suite this came from are deliberately not here. Cash conservation was
-stated over a cash tensor including its external contra row, which these channels have no
-counterpart for — the double-entry ledger validates the same thing per journal entry. And
-"sweeping sleeve weights does not recompile" was a claim about a compile cache.
+The shared proposal arithmetic has unit controls in `policy/configured_allocation_test.py`.
+These flat-price scenarios exercise the actual configured Python loop, including
+pre-claim sales, grouped claim settlement, and purchases from remaining cash.
 """
 
 from __future__ import annotations

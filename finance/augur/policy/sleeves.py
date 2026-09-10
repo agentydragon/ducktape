@@ -167,7 +167,7 @@ def _sales(
     cash_account_id: str,
     cause_id: str,
 ) -> tuple[list[Action], int]:
-    actions = []
+    actions: list[Action] = []
     proceeds = 0
     for index, ((pool, lots, _), amount, full_exit) in enumerate(zip(selected, amounts, full_exits, strict=True)):
         sale_lots, raised = _sale_lots(lots, amount, full_exit=full_exit)
@@ -179,7 +179,7 @@ def _sales(
                     agent_id=observation.agent_id,
                     proceeds_account_id=cash_account_id,
                     asset_id=pool.asset_id,
-                    lots=sale_lots,
+                    lots=tuple(sale_lots),
                 )
             )
     return actions, _count(proceeds)
@@ -193,7 +193,7 @@ def _buys(
     cash_budget: int,
     cause_id: str,
 ) -> list[Action]:
-    actions = []
+    actions: list[Action] = []
     for index, ((pool, _, weight), amount) in enumerate(zip(selected, amounts, strict=True)):
         if not amount or not weight:
             continue
