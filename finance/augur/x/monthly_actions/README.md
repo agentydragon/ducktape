@@ -23,6 +23,12 @@ not calculate a minimal sale or retry an unaffordable bill. Empty intervening
 months still receive a batch decision with no actions. The engine supplies current
 prices and applies the shared lot, payment, tax and stopping operations.
 
+The rule calls `sim.cash_band.cash_band` on cash minus already-due claims, with
+`floor=ceiling=0`. Its `Raise` proposal triggers this rule's full liquidation;
+`Invest` is used only at a cash-only opening, and later investment proposals are
+ignored. `Hold` creates no trade. The helper returns a budget; the policy chooses
+actions and the executor checks them.
+
 At $100, the sale realizes $200 proceeds and $120 long-term gain. The bill uses
 $150, and the later $12 tax claim leaves $38. At $50, the sale realizes $100; the
 bill payment rejects and stops that path. Its sale receipt, realized gain and
@@ -58,6 +64,9 @@ This variation starts with $200 cash, no lots and an explicitly declared empty
 brokerage pool. The same authored policy invests the opening cash using the pool's
 current observed price and the exact quantity helper in `sim/fixed_point.py`.
 It floors fractional quantity to the declared scale within the cash budget.
+Any bill already due is reserved first: with $200 cash and a $150 opening bill,
+the policy buys only $50 of the stock and then pays the bill. An unfundable bill
+still fails; a proposal does not create cash or trigger hidden funding.
 No allocation policy or dummy holding declares the asset.
 The bill arrives in month 1; the two stipulated prices rise from $100/$50 to
 $120/$60 then remain fixed. This is a synthetic control, not a market forecast.

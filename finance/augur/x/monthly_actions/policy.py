@@ -5,6 +5,7 @@ within the explicit budget; execution owns prices, basis and taxes.
 """
 
 from finance.augur.rust.simulator import Action, Decision, DecisionActions
+from finance.augur.sim.cash_band import Invest, Raise, cash_band
 from finance.augur.sim.fixed_point import quantity_for_value
 
 
@@ -14,10 +15,13 @@ def decide(batch: list[Decision]) -> list[DecisionActions]:
         observation = decision.observation
         positions = observation.public_positions
         claims = observation.claims
+        adjustment = cash_band(
+            projected_cash=observation.cash - sum(claim.amount_due for claim in claims), floor=0, ceiling=0
+        )
         actions = []
-        if observation.month == 0 and not positions and observation.cash > 0:
+        if isinstance(adjustment, Invest) and observation.month == 0 and not positions:
             pool = observation.holding_pools[0]
-            units = quantity_for_value(observation.cash, pool.price, pool.quantity_scale, round_up=False)
+            units = quantity_for_value(adjustment.amount, pool.price, pool.quantity_scale, round_up=False)
             if units:
                 actions.append(
                     Action.buy(
@@ -30,7 +34,9 @@ def decide(batch: list[Decision]) -> list[DecisionActions]:
                         quantity_scale=pool.quantity_scale,
                     )
                 )
-        if observation.cash < sum(claim.amount_due for claim in claims):
+        # This rule liquidates all lots, not exactly the proposed raise. Later
+        # investment proposals are ignored, leaving any surplus cash available.
+        if isinstance(adjustment, Raise):
             actions.extend(
                 Action.sell(
                     cause_id=f"fund-{position.lot_id}",

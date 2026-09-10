@@ -308,3 +308,16 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_cash_band",
+    srcs = ["test_cash_band.py"],
+    deps = [
+        ":cash_band",
+        ":fixed_point",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

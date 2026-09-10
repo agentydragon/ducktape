@@ -61,6 +61,24 @@ py_library(
     srcs = ["policy.py"],
     deps = [
         "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:cash_band",
         "//finance/augur/sim:fixed_point",
+    ],
+)
+
+py_test(
+    name = "test_policy",
+    srcs = ["test_policy.py"],
+    deps = [
+        ":policy",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
