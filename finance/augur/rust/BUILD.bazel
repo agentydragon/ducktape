@@ -99,6 +99,7 @@ rust_shared_library(
     deps = [
         ":simulator",
         "@crates//:pyo3",
+        "@crates//:serde",
         "@crates//:serde_json",
     ],
 )

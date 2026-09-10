@@ -250,7 +250,7 @@ fn price(
     }
 }
 
-fn record_claims(recorder: &mut Recorder, claims: &claims::Claims) {
+pub(super) fn record_claims(recorder: &mut Recorder, claims: &claims::Claims) {
     for claim in claims.entries.iter().filter(|claim| !claim.paid) {
         recorder.record_obligation(ObligationOutcome {
             month: claims.month,

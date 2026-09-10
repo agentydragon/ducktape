@@ -382,7 +382,7 @@ impl World {
         if let Some(holdings) = &self.holdings {
             let unpaid = self.unpaid_claims(holdings.agent_id());
             self.capture.as_mut().expect("actor capture").unpaid_claims = unpaid;
-            record_claims(&mut self.state.recorder, &self.claims);
+            actors::record_claims(&mut self.state.recorder, &self.claims);
         }
         if failed {
             self.state.failed_month = Some(self.state.month);

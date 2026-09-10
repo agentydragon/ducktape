@@ -276,7 +276,7 @@ fn withdrawal_receipt_does_not_recalculate_component_rounded_value() {
 }
 
 #[test]
-fn selected_component_capture_keeps_observed_stop_marks_and_live_path_identity() {
+fn component_capture_keeps_explicit_stop_marks_and_independent_books() {
     for mode in [
         CaptureMode::Summary,
         CaptureMode::Dense,
@@ -288,105 +288,66 @@ fn selected_component_capture_keeps_observed_stop_marks_and_live_path_identity()
         input.series[0].snapshots = 3;
         input.series[0].values = vec![100, 110, 120, 100, 110, 120];
         let opening = state.tlh_portfolios.clone();
-        let mut session = crate::engine::actors::Session::with_options(
-            input,
-            "alice",
-            &[1, 0],
-            mode,
-            false,
-            None,
-            vec![(1, opening.clone()), (0, opening.clone())],
-        )
-        .unwrap();
-        session.start().unwrap();
-        session.begin_actions(vec![(0, 0), (1, 0)]).unwrap();
-        let action =
-            crate::engine::actors::Action::Withdraw(crate::engine::components::CashRequest {
-                cause_id: "too-much".into(),
-                agent_id: "alice".into(),
-                portfolio_id: "managed".into(),
-                cash_account_id: "checking".into(),
-                amount: Money(101),
-            });
-        session
-            .reject(1, action, "exceeds component value".into())
+        let prepared = crate::engine::world::Prepared::new(input).unwrap();
+        let mut stopped = prepared
+            .world(1, opening.clone(), mode, Some("alice"), None)
             .unwrap();
-        let statuses = session.end_actions().unwrap();
-        assert_eq!(
-            statuses
-                .iter()
-                .map(|row| (row.rollout_id, row.month, row.stopped))
-                .collect::<Vec<_>>(),
-            [(1, 0, true), (0, 0, false)]
-        );
-        let mut live = opening.clone();
-        live[0].value = Money(110);
-        session
-            .set_component_marks(vec![(1, opening.clone()), (0, live.clone())])
+        let mut live = prepared
+            .world(0, opening.clone(), mode, Some("alice"), None)
             .unwrap();
-        session.close_month().unwrap();
+        stopped.prepare_month(0).unwrap();
+        stopped.set_component_marks(opening.clone()).unwrap();
+        stopped.close_month(true, Money(0)).unwrap();
+        for month in 0..2 {
+            live.prepare_month(month).unwrap();
+            let mut marks = opening.clone();
+            marks[0].value = Money(110 + 10 * i64::from(month));
+            live.set_component_marks(marks).unwrap();
+            live.close_month(false, Money(0)).unwrap();
+        }
+        let stopped = stopped.finish().unwrap();
+        let live = live.finish().unwrap();
+        assert_eq!((stopped.rollout_id, live.rollout_id), (1, 0));
+        let stopped_summary = stopped.summary.unwrap();
+        let live_summary = live.summary.unwrap();
         assert_eq!(
-            session
-                .decisions()
-                .unwrap()
-                .iter()
-                .map(|row| row.rollout_id)
-                .collect::<Vec<_>>(),
-            [0]
-        );
-        session.begin_actions(vec![(0, 1)]).unwrap();
-        session.end_actions().unwrap();
-        live[0].value = Money(120);
-        session.set_component_marks(vec![(0, live)]).unwrap();
-        session.close_month().unwrap();
-        let results = session.finish().unwrap();
-        assert_eq!(
-            results.iter().map(|row| row.rollout_id).collect::<Vec<_>>(),
-            [1, 0]
-        );
-        assert_eq!(
-            results[0].summary.public_holdings[0].values,
+            stopped_summary.public_holdings[0].values,
             [Money(100), Money(100)]
         );
         assert_eq!(
-            results[1].summary.public_holdings[0].values,
+            live_summary.public_holdings[0].values,
             [Money(100), Money(110), Money(120)]
         );
-        assert_eq!(results[0].summary.ending_book.tlh_portfolios, opening);
-        assert_eq!(results[0].summary.ending_mark_month, 0);
-        assert_eq!(results[1].summary.ending_mark_month, 2);
-        if let Some(trace) = &results[0].trace {
-            assert_eq!(
-                trace.financial.months.last().unwrap().tlh_portfolios,
-                opening
-            );
+        assert_eq!(stopped_summary.ending_book.tlh_portfolios, opening);
+        assert_eq!(stopped_summary.ending_mark_month, 0);
+        assert_eq!(live_summary.ending_mark_month, 2);
+        if let Some(financial) = stopped.financial {
+            assert_eq!(financial.months.last().unwrap().tlh_portfolios, opening);
         }
     }
 }
 
 #[test]
-fn opening_component_rows_cannot_alias_or_escape_selected_paths() {
+fn opening_component_rows_require_exact_portfolio_coverage() {
     let (input, state) = setup();
-    for rows in [
-        vec![
-            (0, state.tlh_portfolios.clone()),
-            (0, state.tlh_portfolios.clone()),
-        ],
-        vec![(1, state.tlh_portfolios.clone())],
-    ] {
+    let prepared = crate::engine::world::Prepared::new(input).unwrap();
+    let duplicate = [state.tlh_portfolios.clone(), state.tlh_portfolios.clone()].concat();
+    for marks in [Vec::new(), duplicate] {
         assert!(matches!(
-            crate::engine::actors::Session::with_options(
-                input.clone(),
-                "alice",
-                &[0],
-                CaptureMode::Summary,
-                false,
-                None,
-                rows
-            ),
-            Err(SimulationError::InvalidRolloutSelection)
+            prepared.world(0, marks, CaptureMode::Summary, Some("alice"), None),
+            Err(SimulationError::InvalidComponentEffect { .. })
         ));
     }
+    assert!(matches!(
+        prepared.world(
+            1,
+            state.tlh_portfolios,
+            CaptureMode::Summary,
+            Some("alice"),
+            None
+        ),
+        Err(SimulationError::InvalidRolloutSelection)
+    ));
 }
 
 #[test]

@@ -1,61 +1,11 @@
-//! Deterministic action controls, not market forecasts or statutory tax examples.
+//! Financial-world controls. Python's real session tests own batch routing and receipts.
 
 use super::*;
-use crate::engine::actors::{self, Action, Observation, Outcome, Stop};
-use crate::engine::{trades, transfers};
-
-/// Test-only loop over the same steps exposed to Python, not a production driver.
-fn run_batch(
-    input: &ExecutionInput,
-    actor: &str,
-    ids: &[u32],
-    capture: CaptureMode,
-    mut decide: impl FnMut(
-        Vec<actors::Decision<'_>>,
-    ) -> Result<Vec<actors::DecisionActions>, SimulationError>,
-) -> Result<Vec<actors::Rollout>, SimulationError> {
-    let mut session = actors::Session::new(input.clone(), actor, ids, capture)?;
-    session.start()?;
-    while !session.is_finished() {
-        let responses = decide(session.decisions()?)?;
-        session.advance(responses)?;
-    }
-    session.finish()
-}
-
-fn trace(result: &actors::Rollout) -> &actors::Trace {
-    result.trace.as_ref().unwrap()
-}
-
-/// Scalar-style story rules use an experiment-side adapter over the one batch API.
-fn run<Make, Policy>(
-    input: &ExecutionInput,
-    actor: &str,
-    ids: &[u32],
-    make: Make,
-) -> Result<Vec<actors::Rollout>, SimulationError>
-where
-    Make: Fn(u32) -> Policy,
-    Policy: FnMut(Observation) -> Result<Vec<Action>, SimulationError>,
-{
-    let mut policies: BTreeMap<_, _> = ids.iter().map(|&id| (id, make(id))).collect();
-    run_batch(input, actor, ids, CaptureMode::Forensic, |batch| {
-        batch
-            .into_iter()
-            .rev()
-            .map(|decision| {
-                let month = decision.observation.books.month();
-                let actions =
-                    policies.get_mut(&decision.rollout_id).unwrap()(decision.observation)?;
-                Ok(actors::DecisionActions {
-                    rollout_id: decision.rollout_id,
-                    month,
-                    actions,
-                })
-            })
-            .collect()
-    })
-}
+use crate::engine::{
+    actors::{Action, Outcome},
+    trades, transfers,
+    world::{Prepared, World},
+};
 
 fn input(horizon: u32, paths: u32) -> ExecutionInput {
     let (mut input, _) = policy_timing_fixture(horizon);
@@ -111,150 +61,6 @@ fn cash_only_input() -> ExecutionInput {
     input
 }
 
-#[test]
-fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
-    let input = cash_only_input();
-    let output = run(&input, "alice", &[0], |_| {
-        |observation| {
-            let pools: Vec<_> = observation.books.holding_pools().collect();
-            assert_eq!(pools.len(), 1);
-            assert_eq!(pools[0].account_id, "empty-brokerage");
-            let price = observation.books.public_price(&pools[0].asset_id)?;
-            if observation.books.month() == 0 {
-                assert_eq!(price, PerUnit(1_000));
-                assert_eq!(observation.books.public_positions().count(), 0);
-                Ok(vec![Action::Buy(trades::PurchaseRequest {
-                    cause_id: "first-purchase".into(),
-                    agent_id: observation.books.agent_id().into(),
-                    cash_account_id: "checking".into(),
-                    holding_account_id: pools[0].account_id.clone(),
-                    asset_id: pools[0].asset_id.clone(),
-                    lot_id: "new-position".into(),
-                    quantity_scale: pools[0].quantity_scale,
-                    units: Quantity(2_000_000),
-                })])
-            } else {
-                assert_eq!(price, PerUnit(2_000));
-                assert_eq!(observation.books.public_value()?, Money(4_000));
-                assert_eq!(observation.books.cash()?, Money(500));
-                Ok(vec![])
-            }
-        }
-    })
-    .unwrap();
-    let rollout = &output[0];
-    assert!(rollout.stop.is_none());
-    assert_eq!(trace(rollout).receipts.len(), 1);
-    let lot = &trace(rollout).financial.months.last().unwrap().lots[0];
-    assert_eq!(lot.units_remaining, Quantity(2_000_000));
-    assert_eq!(lot.basis_remaining, Money(2_000));
-    assert_eq!(lot.account_id, "empty-brokerage");
-    for journal in &trace(rollout).financial.journal {
-        assert_eq!(
-            journal
-                .postings
-                .iter()
-                .map(|posting| posting.amount.0)
-                .sum::<i64>(),
-            0
-        );
-    }
-}
-
-#[test]
-fn declaring_an_empty_pool_does_not_invest_cash_without_an_action() {
-    let input = cash_only_input();
-    let output = run(&input, "alice", &[0], |_| |_| Ok(vec![])).unwrap();
-    assert!(trace(&output[0]).receipts.is_empty());
-    assert!(output[0].stop.is_none());
-    let ending = trace(&output[0]).financial.months.last().unwrap();
-    assert!(ending.lots.is_empty());
-    assert_eq!(
-        ending
-            .balances
-            .iter()
-            .find(|balance| balance.account == AccountRef::new("alice", "checking"))
-            .unwrap()
-            .balance,
-        Money(2_500)
-    );
-}
-
-#[test]
-fn an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation() {
-    for wrong_scale in [false, true] {
-        let input = cash_only_input();
-        let output = run(&input, "alice", &[0], |_| {
-            move |_| {
-                Ok(vec![Action::Buy(trades::PurchaseRequest {
-                    cause_id: "invalid-purchase".into(),
-                    agent_id: "alice".into(),
-                    cash_account_id: "checking".into(),
-                    holding_account_id: if wrong_scale {
-                        "empty-brokerage"
-                    } else {
-                        "other-brokerage"
-                    }
-                    .into(),
-                    asset_id: "stock".into(),
-                    lot_id: "must-not-exist".into(),
-                    quantity_scale: if wrong_scale { 10 } else { 1_000_000 },
-                    units: Quantity(1),
-                })])
-            }
-        })
-        .unwrap();
-        assert!(matches!(
-            output[0].stop,
-            Some(Stop::RejectedAction {
-                month: 0,
-                action_index: 0
-            })
-        ));
-        assert!(
-            trace(&output[0])
-                .financial
-                .months
-                .last()
-                .unwrap()
-                .lots
-                .is_empty()
-        );
-        assert!(
-            trace(&output[0])
-                .financial
-                .journal
-                .iter()
-                .all(|entry| entry.cause_id != "invalid-purchase")
-        );
-    }
-}
-
-#[test]
-fn declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots() {
-    let mut input = input(1, 1);
-    input.scenario.holding_pools.clear();
-    assert!(matches!(
-        ValidatedInput::new(&input),
-        Err(SimulationError::InvalidHoldingPool { .. })
-    ));
-    input.scenario.initial_lots.clear();
-    input.scenario.holding_pools = vec![holding_pool("alice", "empty", "unpriced", 1_000_000)];
-    assert!(matches!(
-        ValidatedInput::new(&input),
-        Err(SimulationError::MissingSeries { .. })
-    ));
-    input.scenario.holding_pools[0].asset_id = "stock".into();
-    input
-        .scenario
-        .holding_pools
-        .push(input.scenario.holding_pools[0].clone());
-    assert!(matches!(
-        ValidatedInput::new(&input),
-        Err(SimulationError::InvalidHoldingPool { .. })
-    ));
-}
-
 fn transfer(amount: i64) -> Action {
     Action::Transfer(transfers::TransferRequest {
         cause_id: "move-cash".into(),
@@ -289,8 +95,7 @@ fn add_bill(input: &mut ExecutionInput, amount: i64) {
     });
 }
 
-#[test]
-fn cashflows_and_claims_precede_one_call_and_taxes_follow_canonical_sales() {
+fn taxed_input() -> ExecutionInput {
     let mut input = input(13, 1);
     input.scenario.accounts[0].opening_balance = Money(0);
     add_bill(&mut input, 50_000);
@@ -330,70 +135,218 @@ fn cashflows_and_claims_precede_one_call_and_taxes_follow_canonical_sales() {
             section_1250_rate_ppb: 0,
         }],
     });
-    let results = run(&input, "alice", &[0], |_| {
-        let mut calls = 0;
-        move |observation: Observation| {
-            assert_eq!(observation.books.month(), calls);
-            calls += 1;
-            let month = observation.books.month();
-            assert_eq!(
-                observation.books.cash().unwrap(),
-                Money(if month == 0 { 20_000 } else { 0 })
-            );
-            assert_eq!(
-                observation.previous_receipts.len(),
-                if month == 1 { 2 } else { 0 }
-            );
-            let mut actions = match month {
-                0 => vec![sell(30_000_000)],
-                12 => vec![sell(1_500_000)],
-                _ => Vec::new(),
-            };
-            for claim in observation.claims() {
+    input
+}
+
+fn world(input: ExecutionInput, capture: CaptureMode) -> World {
+    Prepared::new(input)
+        .unwrap()
+        .world(0, Vec::new(), capture, Some("alice"), None)
+        .unwrap()
+}
+
+#[test]
+fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
+    let mut world = world(cash_only_input(), CaptureMode::Forensic);
+    world.prepare_month(0).unwrap();
+    let scope = world.scope("alice").unwrap();
+    let observation = world.observe(&scope);
+    let pools: Vec<_> = observation.books.holding_pools().collect();
+    assert_eq!(pools.len(), 1);
+    assert_eq!(pools[0].account_id, "empty-brokerage");
+    assert_eq!(
+        observation.books.public_price("stock").unwrap(),
+        PerUnit(1_000)
+    );
+    assert_eq!(observation.books.public_positions().count(), 0);
+    assert!(matches!(
+        world
+            .apply(
+                "alice",
+                &Action::Buy(trades::PurchaseRequest {
+                    cause_id: "first-purchase".into(),
+                    agent_id: "alice".into(),
+                    cash_account_id: "checking".into(),
+                    holding_account_id: "empty-brokerage".into(),
+                    asset_id: "stock".into(),
+                    lot_id: "new-position".into(),
+                    quantity_scale: 1_000_000,
+                    units: Quantity(2_000_000),
+                }),
+                0
+            )
+            .unwrap(),
+        Outcome::Executed
+    ));
+    world.close_month(false, Money(0)).unwrap();
+    world.prepare_month(1).unwrap();
+    let observation = world.observe(&scope);
+    assert_eq!(
+        observation.books.public_price("stock").unwrap(),
+        PerUnit(2_000)
+    );
+    assert_eq!(observation.books.public_value().unwrap(), Money(4_000));
+    assert_eq!(observation.books.cash().unwrap(), Money(500));
+    world.close_month(false, Money(0)).unwrap();
+    let financial = world.finish().unwrap().financial.unwrap();
+    let lot = &financial.months.last().unwrap().lots[0];
+    assert_eq!(lot.units_remaining, Quantity(2_000_000));
+    assert_eq!(lot.basis_remaining, Money(2_000));
+    assert_eq!(lot.account_id, "empty-brokerage");
+    assert!(financial.journal.iter().all(|entry| {
+        entry
+            .postings
+            .iter()
+            .map(|posting| i128::from(posting.amount.0))
+            .sum::<i128>()
+            == 0
+    }));
+}
+
+#[test]
+fn declaring_an_empty_pool_does_not_invest_cash_without_an_action() {
+    let mut world = world(cash_only_input(), CaptureMode::Forensic);
+    for month in 0..2 {
+        world.prepare_month(month).unwrap();
+        world.close_month(false, Money(0)).unwrap();
+    }
+    let summary = world.finish().unwrap().summary.unwrap();
+    assert!(summary.ending_book.lots.is_empty());
+    assert_eq!(summary.cash[0].values, [Money(2_500); 3]);
+}
+
+#[test]
+fn an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation() {
+    for wrong_scale in [false, true] {
+        let mut world = world(cash_only_input(), CaptureMode::Forensic);
+        world.prepare_month(0).unwrap();
+        let rejected = world
+            .apply(
+                "alice",
+                &Action::Buy(trades::PurchaseRequest {
+                    cause_id: "invalid-purchase".into(),
+                    agent_id: "alice".into(),
+                    cash_account_id: "checking".into(),
+                    holding_account_id: if wrong_scale {
+                        "empty-brokerage"
+                    } else {
+                        "other-brokerage"
+                    }
+                    .into(),
+                    asset_id: "stock".into(),
+                    lot_id: "must-not-exist".into(),
+                    quantity_scale: if wrong_scale { 10 } else { 1_000_000 },
+                    units: Quantity(1),
+                }),
+                0,
+            )
+            .unwrap();
+        assert!(matches!(rejected, Outcome::Rejected(_)));
+        assert_eq!(
+            world.account_balance("alice", "checking").unwrap(),
+            Some(Money(2_500))
+        );
+        world.close_month(true, Money(0)).unwrap();
+        let financial = world.finish().unwrap().financial.unwrap();
+        assert!(financial.months.last().unwrap().lots.is_empty());
+        assert!(
+            financial
+                .journal
+                .iter()
+                .all(|entry| entry.cause_id != "invalid-purchase")
+        );
+    }
+}
+
+#[test]
+fn declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots() {
+    let mut input = input(1, 1);
+    input.scenario.holding_pools.clear();
+    assert!(matches!(
+        ValidatedInput::new(&input),
+        Err(SimulationError::InvalidHoldingPool { .. })
+    ));
+    input.scenario.initial_lots.clear();
+    input.scenario.holding_pools = vec![holding_pool("alice", "empty", "unpriced", 1_000_000)];
+    assert!(matches!(
+        ValidatedInput::new(&input),
+        Err(SimulationError::MissingSeries { .. })
+    ));
+    input.scenario.holding_pools[0].asset_id = "stock".into();
+    input
+        .scenario
+        .holding_pools
+        .push(input.scenario.holding_pools[0].clone());
+    assert!(matches!(
+        ValidatedInput::new(&input),
+        Err(SimulationError::InvalidHoldingPool { .. })
+    ));
+}
+
+#[test]
+fn cashflows_claims_sales_and_cross_year_tax_share_financial_books() {
+    let mut world = world(taxed_input(), CaptureMode::Forensic);
+    let scope = world.scope("alice").unwrap();
+    for month in 0..13 {
+        world.prepare_month(month).unwrap();
+        let observation = world.observe(&scope);
+        assert_eq!(
+            observation.books.cash().unwrap(),
+            Money(if month == 0 { 20_000 } else { 0 })
+        );
+        let claims: Vec<_> = observation
+            .claims()
+            .map(|claim| {
                 assert_eq!(claim.due_month, month);
                 assert_eq!(
                     claim.amount_due,
                     Money(if month == 0 { 50_000 } else { 1_500 })
                 );
-                actions.push(Action::PayClaim(payments::PayClaim {
+                Action::PayClaim(payments::PayClaim {
                     request_id: 7,
                     cause_id: format!("pay-{}", claim.cause_id),
                     claim: claim.id,
                     from: claim.from.clone(),
                     amount: claim.amount_due,
-                }));
-            }
-            Ok(actions)
+                })
+            })
+            .collect();
+        let units = match month {
+            0 => 30_000_000,
+            12 => 1_500_000,
+            _ => 0,
+        };
+        if units != 0 {
+            assert!(matches!(
+                world.apply("alice", &sell(units), 0).unwrap(),
+                Outcome::Executed
+            ));
         }
-    })
-    .unwrap();
-    let result = &results[0];
-    assert!(result.stop.is_none());
-    assert_eq!(trace(result).receipts.len(), 4);
-    assert_eq!(trace(result).financial.months.len(), 14);
+        for (index, claim) in claims.iter().enumerate() {
+            assert!(matches!(
+                world.apply("alice", claim, index + 1).unwrap(),
+                Outcome::Executed
+            ));
+        }
+        assert!(world.unpaid_claims("alice").is_empty());
+        world.close_month(false, Money(0)).unwrap();
+    }
+    let output = world.finish().unwrap();
+    let financial = output.financial.unwrap();
+    assert_eq!(financial.months.len(), 14);
+    assert_eq!(financial.dispositions[0].proceeds, Money(30_000));
+    assert_eq!(financial.dispositions[0].basis, Money(15_000));
+    assert_eq!(financial.dispositions[0].realized_gain, Money(15_000));
+    assert_eq!(financial.tax_payments[0].amount_paid, Money(1_500));
     assert_eq!(
-        trace(result).financial.dispositions[0].proceeds,
-        Money(30_000)
-    );
-    assert_eq!(trace(result).financial.dispositions[0].basis, Money(15_000));
-    assert_eq!(
-        trace(result).financial.dispositions[0].realized_gain,
-        Money(15_000)
-    );
-    assert_eq!(
-        trace(result).financial.tax_payments[0].amount_paid,
-        Money(1_500)
-    );
-    assert_eq!(
-        trace(result)
-            .financial
+        financial
             .obligations
             .iter()
             .map(|row| row.amount_paid)
             .collect::<Vec<_>>(),
         [Money(50_000), Money(1_500)]
     );
-    assert!(trace(result).financial.journal.iter().all(|entry| {
+    assert!(financial.journal.iter().all(|entry| {
         entry
             .postings
             .iter()
@@ -405,424 +358,247 @@ fn cashflows_and_claims_precede_one_call_and_taxes_follow_canonical_sales() {
 
 #[test]
 fn ordered_actions_can_buy_before_transferring_and_buy_again() {
-    let input = input(2, 1);
-    let result = run(&input, "alice", &[0], |_| {
-        |observation: Observation| {
-            if observation.books.month() == 0 {
-                Ok(vec![
-                    sell(20_000_000),
-                    buy("first-buy", "checking", 10_000_000),
-                    transfer(15_000),
-                    buy("second-buy", "reserve", 15_000_000),
-                    consume(5_000),
-                ])
-            } else {
-                assert_eq!(observation.previous_receipts.len(), 5);
-                assert!(
-                    observation
-                        .previous_receipts
-                        .iter()
-                        .all(|receipt| matches!(receipt.outcome, Outcome::Executed))
-                );
-                assert_eq!(observation.books.cash().unwrap(), Money(0));
-                assert_eq!(observation.books.public_value().unwrap(), Money(105_000));
-                Ok(Vec::new())
-            }
-        }
-    })
-    .unwrap();
-    assert!(result[0].stop.is_none());
-    let causes: Vec<_> = trace(&result[0])
-        .financial
-        .journal
-        .iter()
-        .filter(|entry| entry.month == 0)
-        .map(|entry| entry.cause_id.as_str())
-        .collect();
-    let selected: Vec<_> = causes
-        .into_iter()
-        .filter(|id| {
-            [
-                "chosen-sale",
-                "first-buy",
-                "move-cash",
-                "second-buy",
-                "chosen-consumption",
-            ]
-            .contains(id)
-        })
-        .collect();
+    let mut world = world(input(2, 1), CaptureMode::Forensic);
+    world.prepare_month(0).unwrap();
+    for (index, action) in [
+        sell(20_000_000),
+        buy("first-buy", "checking", 10_000_000),
+        transfer(15_000),
+        buy("second-buy", "reserve", 15_000_000),
+        consume(5_000),
+    ]
+    .iter()
+    .enumerate()
+    {
+        assert!(matches!(
+            world.apply("alice", action, index).unwrap(),
+            Outcome::Executed
+        ));
+    }
+    world.close_month(false, Money(0)).unwrap();
+    world.prepare_month(1).unwrap();
+    let scope = world.scope("alice").unwrap();
+    let observation = world.observe(&scope);
+    assert_eq!(observation.books.cash().unwrap(), Money(0));
+    assert_eq!(observation.books.public_value().unwrap(), Money(105_000));
+    world.close_month(false, Money(0)).unwrap();
+    let financial = world.finish().unwrap().financial.unwrap();
+    let chosen = [
+        "chosen-sale",
+        "first-buy",
+        "move-cash",
+        "second-buy",
+        "chosen-consumption",
+    ];
     assert_eq!(
-        selected,
-        [
-            "chosen-sale",
-            "first-buy",
-            "move-cash",
-            "second-buy",
-            "chosen-consumption"
-        ]
+        financial
+            .journal
+            .iter()
+            .filter(|entry| chosen.contains(&entry.cause_id.as_str()))
+            .map(|entry| entry.cause_id.as_str())
+            .collect::<Vec<_>>(),
+        chosen
     );
 }
 
 #[test]
-fn failed_action_preserves_successful_prefix_and_independent_paths_continue() {
-    let input = input(3, 2);
-    let make = |id| {
-        let mut calls = 0;
-        move |observation: Observation| {
-            assert_eq!(observation.books.month(), calls);
-            calls += 1;
-            if id == 0 {
-                assert_eq!(calls, 1, "failed path must never be called again");
-                Ok(vec![
-                    sell(10_000_000),
-                    buy("impossible", "checking", 1_000_000_000),
-                    transfer(1),
-                    consume(1),
-                ])
-            } else {
-                Ok(vec![consume(1_000)])
-            }
-        }
-    };
-    let results = run(&input, "alice", &[1, 0], make).unwrap();
-    assert!(results[0].stop.is_none());
-    assert_eq!(trace(&results[0]).financial.months.len(), 4);
-    assert_eq!(trace(&results[0]).receipts.len(), 3);
+fn rejected_financial_request_preserves_prior_sale_and_independent_world() {
+    let prepared = Prepared::new(input(3, 2)).unwrap();
+    let mut failed = prepared
+        .world(0, Vec::new(), CaptureMode::Forensic, Some("alice"), None)
+        .unwrap();
+    let mut live = prepared
+        .world(1, Vec::new(), CaptureMode::Forensic, Some("alice"), None)
+        .unwrap();
+    failed.prepare_month(0).unwrap();
     assert!(matches!(
-        results[1].stop,
-        Some(Stop::RejectedAction {
-            month: 0,
-            action_index: 1
-        })
+        failed.apply("alice", &sell(10_000_000), 0).unwrap(),
+        Outcome::Executed
     ));
-    assert_eq!(trace(&results[1]).receipts.len(), 2);
-    assert_eq!(trace(&results[1]).financial.dispositions.len(), 1);
-    assert!(trace(&results[1]).financial.transfers.is_empty());
-    assert_eq!(trace(&results[1]).financial.months.len(), 2);
-    assert_eq!(trace(&results[1]).financial.months[1].lots.len(), 1);
+    assert!(matches!(
+        failed
+            .apply("alice", &buy("impossible", "checking", 1_000_000_000), 1)
+            .unwrap(),
+        Outcome::Rejected(_)
+    ));
+    failed.close_month(true, Money(0)).unwrap();
+    for month in 0..3 {
+        live.prepare_month(month).unwrap();
+        assert!(matches!(
+            live.apply("alice", &consume(1_000), 0).unwrap(),
+            Outcome::Executed
+        ));
+        live.close_month(false, Money(0)).unwrap();
+    }
+    let failed = failed.finish().unwrap().financial.unwrap();
+    let live = live.finish().unwrap().financial.unwrap();
+    assert_eq!(failed.dispositions.len(), 1);
+    assert!(failed.transfers.is_empty());
+    assert_eq!(failed.months.len(), 2);
     assert_eq!(
-        trace(&results[1]).financial.months[1].lots[0].units_remaining,
+        failed.months[1].lots[0].units_remaining,
         Quantity(90_000_000)
     );
-    assert_eq!(
-        trace(&results[1]).financial.months[1].lots[0].basis_remaining,
-        Money(45_000)
-    );
-    for result in results {
-        let replay = run(&input, "alice", &[result.rollout_id], make).unwrap();
-        assert_eq!(
-            serde_json::to_value(&replay[0]).unwrap(),
-            serde_json::to_value(result).unwrap()
-        );
-    }
-}
-
-#[test]
-fn ignoring_claims_stops_without_any_hidden_sale_or_payment() {
-    let mut input = input(3, 1);
-    add_bill(&mut input, 20_000);
-    let result = run(&input, "alice", &[0], |_| {
-        |observation: Observation| {
-            assert_eq!(observation.books.month(), 0);
-            assert_eq!(observation.claims().count(), 1);
-            Ok(Vec::new())
-        }
-    })
-    .unwrap();
-    assert!(
-        matches!(&result[0].stop, Some(Stop::UnpaidClaims { month: 0, claims }) if claims.len() == 1)
-    );
-    assert!(trace(&result[0]).receipts.is_empty());
-    assert!(trace(&result[0]).financial.dispositions.is_empty());
-    assert!(trace(&result[0]).financial.transfers.is_empty());
-    assert_eq!(
-        trace(&result[0]).financial.obligations[0].amount_paid,
-        Money(0)
-    );
-    assert_eq!(trace(&result[0]).financial.months.len(), 2);
-}
-
-#[test]
-fn input_overlap_is_rejected_before_policy_not_silently_ignored() {
-    let (input, _) = policy_timing_fixture(1);
-    assert!(matches!(
-        run(&input, "alice", &[0], |_| |_| panic!(
-            "unsupported configured allocation"
-        )),
-        Err(SimulationError::UnsupportedActorInput { .. })
-    ));
+    assert_eq!(failed.months[1].lots[0].basis_remaining, Money(45_000));
+    assert_eq!(live.months.len(), 4);
+    assert_eq!(live.obligations.len(), 3);
 }
 
 #[test]
 fn payment_capture_names_the_actual_selected_source() {
     let mut input = input(1, 1);
     add_bill(&mut input, 5_000);
-    let result = run(&input, "alice", &[0], |_| {
-        |observation: Observation| {
-            let claim = observation.claims().next().unwrap();
-            Ok(vec![
-                transfer(5_000),
-                Action::PayClaim(payments::PayClaim {
+    let mut world = world(input, CaptureMode::Forensic);
+    world.prepare_month(0).unwrap();
+    let scope = world.scope("alice").unwrap();
+    let claim = world.observe(&scope).claims().next().unwrap().id;
+    assert!(matches!(
+        world.apply("alice", &transfer(5_000), 0).unwrap(),
+        Outcome::Executed
+    ));
+    assert!(matches!(
+        world
+            .apply(
+                "alice",
+                &Action::PayClaim(payments::PayClaim {
                     request_id: 11,
                     cause_id: "pay-from-reserve".into(),
-                    claim: claim.id,
+                    claim,
                     from: AccountRef::new("alice", "reserve"),
-                    amount: claim.amount_due,
+                    amount: Money(5_000),
                 }),
-            ])
-        }
-    })
-    .unwrap();
-    assert!(result[0].stop.is_none());
-    assert_eq!(trace(&result[0]).financial.obligations.len(), 1);
+                1
+            )
+            .unwrap(),
+        Outcome::Executed
+    ));
+    world.close_month(false, Money(0)).unwrap();
+    let output = world.finish().unwrap();
+    let financial = output.financial.unwrap();
+    assert_eq!(financial.obligations.len(), 1);
+    assert_eq!(financial.obligations[0].from.account_id, "reserve");
+    assert_eq!(financial.obligations[0].amount_paid, Money(5_000));
     assert_eq!(
-        trace(&result[0]).financial.obligations[0].from.account_id,
+        output.summary.unwrap().payments[0].from.account_id,
         "reserve"
     );
-    assert_eq!(
-        trace(&result[0]).financial.obligations[0].amount_paid,
-        Money(5_000)
-    );
-}
-
-#[test]
-fn batch_native_memory_and_scalar_adaptation_share_routing_and_stops() {
-    let input = input(3, 3);
-    let mut calls = BTreeMap::<u32, u32>::new();
-    let mut sizes = Vec::new();
-    let batch = run_batch(
-        &input,
-        "alice",
-        &[2, 0, 1],
-        CaptureMode::Forensic,
-        |decisions| {
-            sizes.push(decisions.len());
-            Ok(decisions
-                .into_iter()
-                .rev()
-                .map(|decision| {
-                    let month = decision.observation.books.month();
-                    let count = calls.entry(decision.rollout_id).or_default();
-                    assert_eq!(month, *count);
-                    *count += 1;
-                    let fail = (decision.rollout_id == 0 && month == 0)
-                        || (decision.rollout_id == 2 && month == 1);
-                    actors::DecisionActions {
-                        rollout_id: decision.rollout_id,
-                        month,
-                        actions: vec![consume(if fail { 1_000_000 } else { 1_000 })],
-                    }
-                })
-                .collect())
-        },
-    )
-    .unwrap();
-    assert_eq!(sizes, [3, 2, 1]);
-    assert_eq!(calls, BTreeMap::from([(0, 1), (1, 3), (2, 2)]));
-    for result in batch {
-        let id = result.rollout_id;
-        let adapted = run(&input, "alice", &[id], |id| {
-            move |observation: Observation| {
-                let month = observation.books.month();
-                let fail = (id == 0 && month == 0) || (id == 2 && month == 1);
-                Ok(vec![consume(if fail { 1_000_000 } else { 1_000 })])
-            }
-        })
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(result).unwrap(),
-            serde_json::to_value(&adapted[0]).unwrap()
-        );
-    }
-}
-
-#[test]
-fn malformed_batch_keys_are_simulator_errors_not_action_failures() {
-    let input = input(2, 2);
-    for keys in [
-        vec![(0, 0)],
-        vec![(0, 0), (0, 0)],
-        vec![(0, 1), (1, 0)],
-        vec![(0, 0), (2, 0)],
-    ] {
-        let mut calls = 0;
-        let result = run_batch(
-            &input,
-            "alice",
-            &[0, 1],
-            CaptureMode::Forensic,
-            |decisions| {
-                calls += 1;
-                assert_eq!(decisions.len(), 2);
-                Ok(keys
-                    .iter()
-                    .map(|&(rollout_id, month)| actors::DecisionActions {
-                        rollout_id,
-                        month,
-                        actions: Vec::new(),
-                    })
-                    .collect())
-            },
-        );
-        assert!(matches!(
-            result,
-            Err(SimulationError::InvalidActorResponses)
-        ));
-        assert_eq!(calls, 1);
-    }
 }
 
 #[test]
 fn compact_capture_replays_observed_prefixes_and_canonical_payment_identity() {
-    let mut input = input(3, 3);
-    let prices = input
+    let mut input = input(3, 1);
+    input
         .series
         .iter_mut()
         .find(|series| series.series_id == "security:stock")
-        .unwrap();
-    prices.values = [1_000, 2_000, 9_000, 10_000].repeat(3);
-    let simulate = |ids: &[u32], capture| {
-        run_batch(&input, "alice", ids, capture, |batch| {
-            Ok(batch
-                .into_iter()
-                .rev()
-                .map(|decision| {
-                    let month = decision.observation.books.month();
-                    if month > 0 {
-                        assert_eq!(decision.observation.previous_receipts.len(), 2);
-                        assert!(
-                            decision
-                                .observation
-                                .previous_receipts
-                                .iter()
-                                .all(|receipt| receipt.month == month - 1)
-                        );
-                    }
-                    let amount = if decision.rollout_id == 1 && month == 1 {
-                        1_000_000
-                    } else {
-                        1_000
-                    };
-                    actors::DecisionActions {
-                        rollout_id: decision.rollout_id,
-                        month,
-                        actions: vec![sell(1_000_000), consume(amount)],
-                    }
-                })
-                .collect())
-        })
         .unwrap()
-    };
-    let population = simulate(&[2, 1, 0], CaptureMode::Summary);
-    for result in &population {
-        assert!(result.trace.is_none());
-        for capture in [CaptureMode::Dense, CaptureMode::Forensic] {
-            let detailed = simulate(&[result.rollout_id], capture);
+        .values = vec![1_000, 2_000, 9_000, 10_000];
+    let mut outputs = Vec::new();
+    for capture in [
+        CaptureMode::Summary,
+        CaptureMode::Dense,
+        CaptureMode::Forensic,
+    ] {
+        let mut world = world(input.clone(), capture);
+        for month in 0..2 {
+            world.prepare_month(month).unwrap();
+            assert!(matches!(
+                world.apply("alice", &sell(1_000_000), 0).unwrap(),
+                Outcome::Executed
+            ));
+            let outcome = world
+                .apply(
+                    "alice",
+                    &consume(if month == 1 { 1_000_000 } else { 1_000 }),
+                    1,
+                )
+                .unwrap();
+            assert_eq!(matches!(outcome, Outcome::Rejected(_)), month == 1);
+            world.close_month(month == 1, Money(0)).unwrap();
+        }
+        outputs.push(world.finish().unwrap());
+    }
+    let compact = outputs[0].summary.as_ref().unwrap();
+    assert!(outputs[0].financial.is_none());
+    for output in &outputs[1..] {
+        assert_eq!(
+            serde_json::to_value(compact).unwrap(),
+            serde_json::to_value(output.summary.as_ref().unwrap()).unwrap()
+        );
+        let financial = output.financial.as_ref().unwrap();
+        assert_eq!(&compact.ending_book, financial.months.last().unwrap());
+        for payment in &compact.payments {
+            assert_eq!(payment.action_index, 1);
+            assert_eq!(payment.receipt.request_id, 3);
+            assert_eq!(payment.from, AccountRef::new("alice", "checking"));
             assert_eq!(
-                serde_json::to_value(&result.summary).unwrap(),
-                serde_json::to_value(&detailed[0].summary).unwrap()
+                payment.target.as_ref().unwrap().to,
+                AccountRef::new("world", "checking")
             );
-            let financial = &trace(&detailed[0]).financial;
             assert_eq!(
-                &result.summary.ending_book,
-                financial.months.last().unwrap()
+                payment.receipt.target,
+                payments::Target::Consumption {
+                    component_id: "flex-budget".into()
+                }
             );
-            for payment in &result.summary.payments {
-                assert_eq!(payment.receipt.request_id, 3);
-                assert_eq!(payment.from, AccountRef::new("alice", "checking"));
-                assert_eq!(
-                    payment.target.as_ref().unwrap().to,
-                    AccountRef::new("world", "checking")
-                );
-                assert_eq!(
-                    payment.receipt.target,
-                    payments::Target::Consumption {
-                        component_id: "flex-budget".into()
-                    }
-                );
-                let paid = financial
-                    .obligations
-                    .iter()
-                    .filter(|event| event.month == payment.month)
-                    .map(|event| event.amount_paid.0)
-                    .sum::<i64>();
-                assert_eq!(payment.receipt.amount_paid(), Money(paid));
-            }
+            let paid = financial
+                .obligations
+                .iter()
+                .filter(|row| row.month == payment.month)
+                .map(|row| row.amount_paid.0)
+                .sum();
+            assert_eq!(payment.receipt.amount_paid(), Money(paid));
         }
     }
-    let stopped = &population[1];
-    assert_eq!(stopped.summary.ending_book.month, 2);
-    assert_eq!(stopped.summary.ending_mark_month, 1);
+    assert_eq!(compact.ending_book.month, 2);
+    assert_eq!(compact.ending_mark_month, 1);
     assert_eq!(
-        stopped.summary.public_holdings[0].values,
+        compact.public_holdings[0].values,
         [Money(100_000), Money(198_000), Money(196_000)]
     );
-    assert!(
-        stopped
-            .summary
-            .cash
-            .iter()
-            .all(|cash| cash.values.len() == 3)
-    );
+    assert!(compact.cash.iter().all(|cash| cash.values.len() == 3));
     assert_eq!(
-        stopped.summary.ending_book.lots[0].units_remaining,
+        compact.ending_book.lots[0].units_remaining,
         Quantity(98_000_000)
     );
-    assert_eq!(stopped.summary.last_receipts.len(), 2);
-    assert!(matches!(
-        stopped.summary.last_receipts[0].outcome,
-        Outcome::Executed
-    ));
-    assert!(matches!(
-        stopped.summary.last_receipts[1].outcome,
-        Outcome::Rejected(_)
-    ));
-    assert_eq!(stopped.summary.payments[1].receipt.amount_paid(), Money(0));
-    assert_eq!(stopped.summary.cash[0].values.last(), Some(&Money(12_000)));
-    let chunked = simulate(&[1, 2], CaptureMode::Summary);
-    assert_eq!(
-        serde_json::to_value(&chunked[0]).unwrap(),
-        serde_json::to_value(stopped).unwrap()
-    );
-    assert_eq!(
-        serde_json::to_value(&chunked[1]).unwrap(),
-        serde_json::to_value(&population[0]).unwrap()
-    );
+    assert_eq!(compact.payments[1].receipt.amount_paid(), Money(0));
+    assert_eq!(compact.cash[0].values.last(), Some(&Money(12_000)));
 }
 
 #[test]
-fn compact_unpaid_claims_keep_occurrence_and_source_without_trace() {
+fn unpaid_claims_keep_occurrence_and_source_without_hidden_sales() {
     let mut input = input(3, 1);
     add_bill(&mut input, 5_000);
-    add_bill(&mut input, 7_000); // Equal labels must not alias two occurrences.
-    let results = run_batch(&input, "alice", &[0], CaptureMode::Summary, |batch| {
-        Ok(batch
-            .into_iter()
-            .map(|decision| actors::DecisionActions {
-                rollout_id: decision.rollout_id,
-                month: decision.observation.books.month(),
-                actions: Vec::new(),
-            })
-            .collect())
-    })
-    .unwrap();
-    let result = &results[0];
-    assert!(
-        matches!(&result.stop, Some(Stop::UnpaidClaims { month: 0, claims }) if claims.len() == 2)
-    );
-    let claims = &result.summary.unpaid_claims;
-    assert_ne!(claims[0].id, claims[1].id);
-    assert_eq!(claims[0].cause_id, claims[1].cause_id);
-    assert_eq!(claims[0].from, AccountRef::new("alice", "checking"));
-    assert_eq!(claims[0].to, AccountRef::new("world", "checking"));
-    assert_eq!(
-        (claims[0].amount_due, claims[1].amount_due),
-        (Money(5_000), Money(7_000))
-    );
-    assert!(result.summary.payments.is_empty());
-    assert_eq!(
-        result.summary.cash[0].values,
-        [Money(10_000), Money(10_000)]
-    );
+    add_bill(&mut input, 7_000);
+    for capture in [CaptureMode::Summary, CaptureMode::Forensic] {
+        let mut world = world(input.clone(), capture);
+        world.prepare_month(0).unwrap();
+        let unpaid = world.unpaid_claims("alice");
+        assert_eq!(unpaid.len(), 2);
+        assert_ne!(unpaid[0].id, unpaid[1].id);
+        world.close_month(true, Money(0)).unwrap();
+        let output = world.finish().unwrap();
+        let summary = output.summary.unwrap();
+        let claims = &summary.unpaid_claims;
+        assert_ne!(claims[0].id, claims[1].id);
+        assert_eq!(claims[0].cause_id, claims[1].cause_id);
+        assert_eq!(claims[0].from, AccountRef::new("alice", "checking"));
+        assert_eq!(claims[0].to, AccountRef::new("world", "checking"));
+        assert_eq!(
+            (claims[0].amount_due, claims[1].amount_due),
+            (Money(5_000), Money(7_000))
+        );
+        assert!(summary.payments.is_empty());
+        assert_eq!(summary.cash[0].values, [Money(10_000), Money(10_000)]);
+        if let Some(financial) = output.financial {
+            assert!(financial.dispositions.is_empty());
+            assert!(financial.transfers.is_empty());
+            assert!(
+                financial
+                    .obligations
+                    .iter()
+                    .all(|row| row.amount_paid == Money(0))
+            );
+        }
+    }
 }

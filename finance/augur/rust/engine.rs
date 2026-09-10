@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
 use rayon::prelude::*;
 use thiserror::Error;
 
@@ -9,12 +10,11 @@ use crate::{
         CapitalGainState, CapitalImprovementOutcome, DistributionOutcome, ExecutionInput,
         INPUT_SCHEMA_VERSION, IncomeState, InitialLotSpec, LotDisposition, MonthOutput,
         MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState, ObligationOutcome,
-        PopulationOutput, PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome,
-        PrivateEquityProtocolOutcome, PropertyPurchaseOutcome, PropertyRentedFractionOutcome,
-        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput,
-        RolloutSummary, SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual,
-        TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome, TlhFinancialEffect,
-        TlhPortfolioObservation, TransferOutcome,
+        PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome, PrivateEquityProtocolOutcome,
+        PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
+        PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput, RolloutSummary,
+        SecurityLotState, SeriesSpec, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome,
+        TaxSettlementOutcome, TlhFinancialEffect, TlhPortfolioObservation, TransferOutcome,
     },
     holdings::{AgentHoldings, HoldingsError, LotView},
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
@@ -22,14 +22,17 @@ use crate::{
         ArithmeticError, Factor, Money, PerUnit, PerUnitRate, Quantity, Units, WIRE_RATE_SCALE,
         is_quantity_scale, mul_div_i128_round_half_up, mul_div_round_half_up,
     },
-    product::{
-        BaseMetrics, ProductError, ProductInputs, ProductMetricSeries, SnapshotState,
-        snapshot_metrics,
-    },
+    product::{BaseMetrics, ProductError, ProductInputs, SnapshotState, snapshot_metrics},
     tax::{
         IncomeLedger, IncomeSource, JurisdictionLevel, TaxError, TaxFacts, TaxRules, TaxState,
         assess, net_capital_gains, validate_rules,
     },
+};
+
+#[cfg(test)]
+use crate::{
+    execution::{PopulationOutput, SimulationOutput},
+    product::ProductMetricSeries,
 };
 
 mod accounts;
@@ -610,6 +613,7 @@ impl RolloutState {
 
     /// Apply scheduled events and assemble due claims without choosing their funding.
     /// Callers place their single policy review on the appropriate side of this phase.
+    #[cfg(test)]
     fn prepare_month(
         &mut self,
         fixture: &ExecutionInput,

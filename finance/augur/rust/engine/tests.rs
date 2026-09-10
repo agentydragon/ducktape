@@ -584,6 +584,7 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
     // Same opening books, two stipulated price paths: raising 40,000 realizes
     // gains of 20,000 or 30,000. The synthetic 10% tax is paid the next year.
     let mut input = allocation_tax_and_consumption_fixture();
+    input.scenario.target_allocation_policies.clear();
     input.rollout_count = 2;
     for series in &mut input.series {
         let multiplier = if series.series_id.starts_with("security:") {
@@ -599,12 +600,52 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
                 .map(|value| value * multiplier),
         );
     }
-    let validated = ValidatedInput::new(&input).unwrap();
+    let prepared = crate::engine::world::Prepared::new(input).unwrap();
     // Both states exist before either runs, and execution need not follow path order.
-    let [second, first] = [1, 0]
-        .map(|id| RolloutState::new(validated.input, id, CaptureMode::Forensic, None).unwrap());
-    for (state, tax_paid, remaining_basis) in [(second, 3_000, 40_000), (first, 2_000, 30_000)] {
-        let output = state.run(&input, None).unwrap().into_output();
+    let [second, first] = [1, 0].map(|id| {
+        prepared
+            .world(id, Vec::new(), CaptureMode::Forensic, None, None)
+            .unwrap()
+    });
+    for (mut world, units, tax_paid, remaining_basis) in [
+        (second, 10_000_000, 3_000, 40_000),
+        (first, 20_000_000, 2_000, 30_000),
+    ] {
+        for month in 0..13 {
+            world.prepare_month(month).unwrap();
+            if month == 0 {
+                for (index, (asset, lot)) in
+                    [("stock", "timing-stock"), ("second", "test-second-lot")]
+                        .into_iter()
+                        .enumerate()
+                {
+                    let outcome = world
+                        .apply(
+                            "alice",
+                            &crate::engine::actors::Action::Sell(
+                                crate::engine::trades::SaleRequest {
+                                    cause_id: format!("sell-{asset}"),
+                                    agent_id: "alice".into(),
+                                    proceeds_account_id: "checking".into(),
+                                    asset_id: asset.into(),
+                                    lots: vec![crate::engine::trades::LotSale {
+                                        account_id: "checking".into(),
+                                        lot_id: lot.into(),
+                                        units: Quantity(units),
+                                    }],
+                                },
+                            ),
+                            index,
+                        )
+                        .unwrap();
+                    assert!(matches!(outcome, crate::engine::actors::Outcome::Executed));
+                }
+            }
+            let settled = world.settle_claims().unwrap();
+            assert!(!settled.failed);
+            world.close_month(false, settled.product_shortfall).unwrap();
+        }
+        let output = world.finish().unwrap().financial.unwrap();
         assert_eq!(output.failed_month, None);
         assert_eq!(output.tax_payments[0].month, 12);
         assert_eq!(output.tax_payments[0].amount_paid, Money(tax_paid));
@@ -640,8 +681,23 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
 
 #[test]
 fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
+    let mut scheduled = allocation_tax_and_consumption_fixture();
+    scheduled.scenario.target_allocation_policies.clear();
+    scheduled.scenario.scheduled_sales = scheduled
+        .scenario
+        .initial_lots
+        .iter()
+        .map(|lot| ScheduledSaleSpec {
+            month: 0,
+            cause_id: format!("explicit-sale-{}", lot.asset_id),
+            agent_id: lot.agent_id.clone(),
+            lot_id: lot.lot_id.clone(),
+            units: Quantity(20_000_000),
+            proceeds_account_id: "checking".into(),
+        })
+        .collect();
     for (input, year_end_tax) in [
-        (allocation_tax_and_consumption_fixture(), Money(2_000)),
+        (scheduled, Money(2_000)),
         (stopped_book_fixture(15, 9).0, Money(50)),
     ] {
         ValidatedInput::new(&input).unwrap();
