@@ -662,6 +662,10 @@ class TargetAllocationPolicy(BaseModel):
 
     @model_validator(mode="after")
     def _reject_duplicate_and_inverted(self) -> TargetAllocationPolicy:
+        if not self.cause_id_prefix.strip():
+            raise ValueError("target-allocation cause prefix must not be empty")
+        if len(set(self.source_account_ids)) != len(self.source_account_ids):
+            raise ValueError("target-allocation source accounts must be unique")
         if not self.sleeves:
             raise ValueError(
                 f"target-allocation policy for {self.agent_id}/{self.account_id} names no sleeves; "
