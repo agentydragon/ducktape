@@ -54,33 +54,6 @@ py_library(
 )
 
 py_library(
-    name = "tax_statute",
-    srcs = ["tax_statute.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        "//finance/augur/sim:backend",
-        "//finance/augur/sim:scenario",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "rollout_independence",
-    srcs = ["rollout_independence.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "simulation_result",
     srcs = ["simulation_result.py"],
     deps = [

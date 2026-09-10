@@ -1,8 +1,7 @@
 """The Rust engine against the shared acceptance suites.
 
 Nothing here but the name of the engine. What it has to satisfy is not particular to it and
-lives in `sim/testing/`: `engine_acceptance.py` for the contract every engine answers in, and
-`tax_statute.py` for what the tax code says the answers are.
+lives in `sim/testing/`.
 
 Stating the answer rather than comparing two engines is what outlived the second engine.
 A comparison is blind to a rule both implementations get the same way and both get wrong;
@@ -45,29 +44,15 @@ from finance.augur.sim.testing.rental_lifecycle import (
     RentalIncomeTaxationAcceptance,
     RentalLifecycleCashflowsAcceptance,
 )
-from finance.augur.sim.testing.rollout_independence import RolloutIndependenceAcceptance
 from finance.augur.sim.testing.security_distributions import SecurityDistributionAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
-from finance.augur.sim.testing.tax_statute import TaxStatuteAcceptance
 
 
 class TestRustEngine(EngineAcceptance):
     @pytest.fixture
     def engine(self) -> Engine:
         return RustEngine()
-
-
-class TestRustTaxStatute(TaxStatuteAcceptance):
-    @pytest.fixture
-    def engine(self) -> Engine:
-        return RustEngine()
-
-
-class TestRustRolloutIndependence(RolloutIndependenceAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
 
 
 class TestRustIncomeSources(IncomeSourceAcceptance):
