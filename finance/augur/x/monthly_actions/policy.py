@@ -45,7 +45,7 @@ def decide(batch: list[Decision]) -> list[DecisionActions]:
                     agent_id=observation.agent_id,
                     proceeds_account_id="checking",
                     asset_id=position.asset_id,
-                    lots=[LotSale(account_id=position.account_id, lot_id=position.lot_id, units=position.units)],
+                    lots=(LotSale(account_id=position.account_id, lot_id=position.lot_id, units=position.units),),
                 )
                 for position in positions
             )
