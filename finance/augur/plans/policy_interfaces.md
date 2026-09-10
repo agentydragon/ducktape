@@ -1,8 +1,9 @@
 # Actor-facing policy interfaces
 
-Target design for the remaining migration and gates GP/GL/GE in [the roadmap](roadmap.md),
-not implemented API declarations. Module names and types below are sketches;
-reuse existing domain types and introduce fields only for a supported consumer.
+Target design for the remaining migration and gates GP/GL/GE in [the roadmap](roadmap.md).
+The common action session is implemented in `rust/simulator.pyi`; module names and
+richer types below are sketches, not additional API declarations. Reuse existing
+domain types and introduce fields only for a supported consumer.
 
 The boundary is economic agency: a policy sees information available to its actor
 and requests actions that actor could take. The environment owns contracts,
@@ -35,6 +36,8 @@ times; a property estimate is not an observable true value. Tax records are know
 filing/payment facts, not hidden future assessments. Events convey executions,
 payments, rejections and new information. No future realized paths or another
 actor's private books. Path routing and capture configuration belong to the runner.
+The bounded-spending migration needs current origin-relative CPI in the common
+observation; add that observed fact, not access to its future sampled path.
 
 ## `actions.py`
 
@@ -190,12 +193,11 @@ never the future realized path.
 
 ## Acceptance and remaining choices
 
-The landed native actor loop in `rust/engine/actors.rs` observes a bill and accepts
-`[Sell(...), PayClaim(...)]` in one batch response. Its native tests cover immediate
-sale cash, request/result identity, lot/basis/tax reconciliation and a
-non-sells-first action chain. The landed `x/monthly_actions` consumer has CI
-coverage of its real CLI and generated financial inputs; P9 migrates it to the
-Python session and removes its native callback driver.
+`x/monthly_actions` authors a Python batch policy and advances the common action
+session, including its population/profile and selected-replay entrypoints. Its CI
+controls cover immediate sale cash, lot/basis/tax reconciliation, fatal action
+prefixes and summary/trace agreement with generated financial inputs. Native tests
+exercise the same steps, not an alternative production callback driver.
 
 A failing middle action must leave the successful prefix intact, apply none of
 the failed action, and execute neither later actions nor later policy calls for
@@ -213,10 +215,12 @@ integration. No retry/default/recovery mechanism is part of this interface.
 The existing opening-month/all-or-none cases are spending-probe controls, not
 the destination contract. Migrated consumers must explicitly test and explain
 timing/funding differences rather than hide them in a compatibility runner.
-P9 uses the landed declarations and replaces the native actor driver with the
-general Python session. Remaining P8 follows that contract with Python-callable
-helpers and first consumers. P11 uses those helpers and compact capture to migrate experiments
-and retire the scalar amount/weight callbacks plus spending-only Python prototype.
+P8 adds remaining sleeve/lot calculations with their first Python consumers;
+cash-band and exact quantity helpers are already available. P11 independently
+migrates bounded-spending and allocation-glide with only the observations/helpers
+each needs, then demonstrates joint decisions. Retire the scalar amount/weight
+callbacks and spending-only prototype with their last experiment, test and profiler
+callers; these are not supported alternatives to the action session.
 P12 migrates configured consumers and removes old full-run loops and implicit
 public-portfolio strategy, preserving required existing housing/PE capabilities.
 RUNTIME/GE can later change step internals without delaying this sequence.
