@@ -21,7 +21,7 @@ import pytest
 from finance.augur.model.deterministic import Constant
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
-from finance.augur.model.series import LevelSeriesKey, LocationId, SecurityKey, SecuritySymbol
+from finance.augur.model.series import LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import round_currency_amount

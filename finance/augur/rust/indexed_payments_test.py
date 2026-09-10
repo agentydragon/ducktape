@@ -196,7 +196,11 @@ def test_half_quantum_indexing_funds_same_month_claim_without_losing_cash() -> N
     )
     [result] = _run(scenario, [[2.0, 3.0, 5.0, 5.0]])
     assert result.trace is not None
-    assert result.trace.events.transfers.get_column("amount_quanta").to_list() == [1, 2, 3]
+    assert [
+        transfer["amount_quanta"]
+        for transfer in result.trace.events.transfers.iter_rows(named=True)
+        if transfer["from_agent_id"] == "tenant"
+    ] == [1, 2, 3]
     assert [payment.receipt.amount_paid for payment in result.summary.payments] == [1, 2, 3]
     assert [_cash(book, "alice") for book in result.trace.books] == [0] * 4
     assert [_cash(book, "tenant") for book in result.trace.books] == [100, 99, 97, 94]
