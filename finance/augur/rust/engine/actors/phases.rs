@@ -7,6 +7,8 @@ use super::*;
 pub(super) enum ActionPhase {
     Awaiting,
     Executing,
+    Settled,
+    PrivateEquityComplete,
     Ended,
 }
 
@@ -157,7 +159,10 @@ impl Session {
     }
 
     pub fn apply(&mut self, rollout_id: u32, action: Action) -> Result<Receipt, SimulationError> {
-        if self.action_phase != ActionPhase::Executing {
+        if !matches!(
+            self.action_phase,
+            ActionPhase::Executing | ActionPhase::Settled
+        ) {
             return Err(SimulationError::InvalidActorSessionState);
         }
         let Phase::Pending { paths, claims } = &mut self.phase else {
@@ -205,7 +210,10 @@ impl Session {
         action: Action,
         detail: String,
     ) -> Result<Receipt, SimulationError> {
-        if self.action_phase != ActionPhase::Executing {
+        if !matches!(
+            self.action_phase,
+            ActionPhase::Executing | ActionPhase::Settled
+        ) {
             return Err(SimulationError::InvalidActorSessionState);
         }
         let Phase::Pending { paths, claims } = &mut self.phase else {
@@ -233,8 +241,14 @@ impl Session {
         effects: &components::ComponentEffects,
         action: Option<Action>,
     ) -> Result<Option<Receipt>, SimulationError> {
-        if self.action_phase == ActionPhase::Ended
-            || (action.is_some() && self.action_phase != ActionPhase::Executing)
+        if matches!(
+            self.action_phase,
+            ActionPhase::Ended | ActionPhase::PrivateEquityComplete
+        ) || (action.is_some()
+            && !matches!(
+                self.action_phase,
+                ActionPhase::Executing | ActionPhase::Settled
+            ))
         {
             return Err(SimulationError::InvalidActorSessionState);
         }
@@ -296,7 +310,13 @@ impl Session {
     }
 
     pub fn end_actions(&mut self) -> Result<Vec<PathStatus>, SimulationError> {
-        if self.action_phase != ActionPhase::Executing {
+        if self.action_phase
+            != (if self.configured {
+                ActionPhase::PrivateEquityComplete
+            } else {
+                ActionPhase::Executing
+            })
+        {
             return Err(SimulationError::InvalidActorSessionState);
         }
         let Phase::Pending { paths, claims } = &mut self.phase else {
@@ -409,7 +429,7 @@ impl Session {
         rollout_id: u32,
         order: &PendingAllocationBuy,
     ) -> Result<Option<Action>, SimulationError> {
-        if !self.configured || self.action_phase != ActionPhase::Executing {
+        if !self.configured || self.action_phase != ActionPhase::Settled {
             return Err(SimulationError::InvalidActorSessionState);
         }
         let Phase::Pending { paths, claims } = &mut self.phase else {
@@ -518,11 +538,12 @@ impl Session {
                 state.failed_month = Some(state.month);
             }
         }
+        self.action_phase = ActionPhase::Settled;
         self.statuses()
     }
 
     pub fn run_private_equity(&mut self) -> Result<(), SimulationError> {
-        if !self.configured || self.action_phase != ActionPhase::Executing {
+        if !self.configured || self.action_phase != ActionPhase::Settled {
             return Err(SimulationError::InvalidActorSessionState);
         }
         let Phase::Pending { paths, claims } = &mut self.phase else {
@@ -544,6 +565,7 @@ impl Session {
                 state.month,
             )?;
         }
+        self.action_phase = ActionPhase::PrivateEquityComplete;
         Ok(())
     }
 

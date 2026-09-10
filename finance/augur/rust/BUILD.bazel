@@ -37,6 +37,7 @@ rust_library(
         "engine/cashflows.rs",
         "engine/claims.rs",
         "engine/components.rs",
+        "engine/components_test.rs",
         "engine/errors.rs",
         "engine/obligations.rs",
         "engine/observations.rs",

@@ -352,6 +352,9 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
     let mut portfolio_pools = BTreeSet::new();
     for portfolio in &fixture.scenario.tlh_portfolios {
         validate_identifier("TLH portfolio", &portfolio.portfolio_id)?;
+        validate_identifier("component owner", &portfolio.owner_agent_id)?;
+        validate_identifier("component account", &portfolio.account_id)?;
+        validate_identifier("component asset", &portfolio.asset_id)?;
         if !portfolio_pools.insert((
             &portfolio.owner_agent_id,
             &portfolio.account_id,
@@ -361,7 +364,6 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 && lot.account_id == portfolio.account_id
                 && lot.asset_id == portfolio.asset_id
         }) || !portfolio_ids.insert(&portfolio.portfolio_id)
-            || !agents.contains(&portfolio.owner_agent_id)
             || private_equity_issuer(&portfolio.asset_id).is_some()
         {
             return Err(SimulationError::InvalidComponentEffect {
@@ -372,11 +374,6 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
         if !series_ids.contains(&series_id) {
             return Err(SimulationError::MissingSeries { series_id });
         }
-        validate_account(
-            &accounts,
-            &AccountRef::new(&portfolio.owner_agent_id, &portfolio.account_id),
-            "managed portfolio",
-        )?;
     }
     let mut bonds = BTreeSet::new();
     for bond in &fixture.scenario.initial_bonds {

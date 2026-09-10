@@ -450,10 +450,6 @@ pub struct TlhPortfolioObservation {
     pub reported_tax_basis: Money,
 }
 
-const fn default_rate_scale() -> i64 {
-    1_000_000_000
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SleeveTargetSpec {

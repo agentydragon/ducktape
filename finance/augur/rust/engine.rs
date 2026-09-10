@@ -79,7 +79,6 @@ use validation::*;
 
 const EXTERNAL_AGENT: &str = "__external__";
 const OPENING_EQUITY: &str = "equity:opening";
-const MONTHS_PER_YEAR: i64 = 12;
 const MAX_EXACT_F64_INTEGER: i64 = 1_i64 << 53;
 const CONTRACT_SCALE: i128 = 1_000_000_000_000_000_000;
 const SECTION_121_LOOKBACK_MONTHS: usize = 60;
@@ -98,6 +97,7 @@ struct RolloutComputation {
     recorder: Recorder,
     failed_month: Option<u32>,
     /// Observed snapshots only, empty when no product agent was selected.
+    #[cfg(test)]
     product_metrics: Vec<BaseMetrics>,
 }
 
@@ -160,11 +160,13 @@ impl RolloutComputation {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub struct ValidatedInput<'a> {
     input: &'a ExecutionInput,
 }
 
+#[cfg(test)]
 impl<'a> ValidatedInput<'a> {
     pub fn new(fixture: &'a ExecutionInput) -> Result<Self, SimulationError> {
         validate_fixture(fixture)?;
@@ -340,6 +342,7 @@ impl RolloutState {
             accounts.push(realized_gain_account(&pool.agent_id));
         }
         for portfolio in &fixture.scenario.tlh_portfolios {
+            accounts.push(AccountRef::new(&portfolio.owner_agent_id, OPENING_EQUITY));
             accounts.push(AccountRef::new(
                 &portfolio.owner_agent_id,
                 format!("asset:managed-portfolio:{}", portfolio.portfolio_id),
@@ -814,6 +817,7 @@ impl RolloutState {
             ending_tlh_portfolios: self.tlh_portfolios,
             recorder: self.recorder,
             failed_month: self.failed_month,
+            #[cfg(test)]
             product_metrics: self.product_metrics,
         })
     }

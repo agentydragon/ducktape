@@ -213,7 +213,16 @@ pub(super) fn settle(
     validate_observation(input, observation)?;
     for slice in &effects.interest {
         let source = IncomeSource::interest(slice.issuer_jurisdiction_id.as_deref());
-        if slice.amount.0 < 0 || !input.scenario.income_sources.contains(&source) {
+        if slice.amount.0 < 0
+            || !input.scenario.income_sources.contains(&source)
+            || slice.issuer_jurisdiction_id.as_ref().is_some_and(|issuer| {
+                !input
+                    .scenario
+                    .jurisdictions
+                    .iter()
+                    .any(|item| &item.jurisdiction_id == issuer)
+            })
+        {
             return Err(SimulationError::InvalidComponentEffect {
                 reason: "component interest needs a declared income source and nonnegative amount"
                     .into(),

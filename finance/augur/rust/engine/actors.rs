@@ -242,7 +242,7 @@ impl Session {
         component_observations: Vec<(u32, Vec<TlhPortfolioObservation>)>,
     ) -> Result<Self, SimulationError> {
         if configured {
-            ValidatedInput::new(&input)?;
+            validate_fixture(&input)?;
         } else {
             validate(&input, actor)?;
         }
@@ -518,7 +518,7 @@ fn finish_actions(path: &mut Path, holdings: &AgentHoldings, claims: &claims::Cl
 }
 
 fn validate(input: &ExecutionInput, actor: &str) -> Result<(), SimulationError> {
-    ValidatedInput::new(input)?;
+    validate_fixture(input)?;
     let scenario = &input.scenario;
     if !scenario.target_allocation_policies.is_empty()
         || !scenario.private_equity_tender_policies.is_empty()

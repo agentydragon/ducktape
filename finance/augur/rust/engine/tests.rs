@@ -23,6 +23,9 @@ mod trades;
 #[path = "transfers_test.rs"]
 mod transfers;
 
+#[path = "components_test.rs"]
+mod components;
+
 fn holding_pool(agent: &str, account: &str, asset: &str, scale: i64) -> HoldingPoolSpec {
     HoldingPoolSpec {
         agent_id: agent.into(),
