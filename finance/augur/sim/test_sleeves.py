@@ -174,7 +174,12 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(input_document: dict[st
     assert next(lot for lot in lots if lot["lot_id"] == "test-outside")["units_remaining"] == 1
 
 
-def test_deposit_reserves_cash_and_never_buys_zero_target(input_document: dict[str, Any]) -> None:
+@pytest.mark.parametrize("unheld", [False, True])
+def test_deposit_reserves_cash_and_never_buys_zero_target(input_document: dict[str, Any], unheld: bool) -> None:
+    if unheld:
+        input_document["scenario"]["initial_lots"] = [
+            lot for lot in input_document["scenario"]["initial_lots"] if lot["asset_id"] != "test-second"
+        ]
     session = ActionSession(json.dumps(input_document), "test-owner", [0])
     try:
         batch = session.start()
@@ -209,6 +214,36 @@ def test_deposit_reserves_cash_and_never_buys_zero_target(input_document: dict[s
             sleeves.withdraw(observation, targets=targets, cash_account_id="checking", amount=True, cause_id="boolean")
     finally:
         session.close()
+
+
+def test_selected_pools_keep_their_own_economic_unit_scale(input_document: dict[str, Any]) -> None:
+    session = ActionSession(json.dumps(input_document), "test-owner", [0])
+    try:
+        batch = session.start()
+        assert not isinstance(batch, Finished)
+        actions = sleeves.withdraw(
+            batch[0].observation,
+            targets={("portfolio", "test-second"): 1, ("outside", "test-first"): 1},
+            cash_account_id="checking",
+            amount=3,
+            cause_id="mixed-grids",
+        )
+        batch = session.advance([DecisionActions(0, 0, actions)])
+        assert not isinstance(batch, Finished)
+        assert batch[0].observation.cash == 12
+        # Equal 3-quanta sleeves get budgets 2/1 after the stable residual rule.
+        # Ceiling to their own grids sells 7/10 of one unit and 1 indivisible unit,
+        # for 2+3 quanta: executable proceeds can exceed the 3-quanta request.
+        remaining = {(lot.account_id, lot.asset_id): lot.units for lot in batch[0].observation.public_positions}
+        assert remaining[("portfolio", "test-second")] == 3
+        assert ("outside", "test-first") not in remaining
+        finished = session.advance([DecisionActions(0, 1, [])])
+        assert isinstance(finished, Finished)
+        [result] = json.loads(finished.rollouts_json)
+    finally:
+        session.close()
+    sales = result["trace"]["financial"]["dispositions"]
+    assert [(sale["quantity_scale"], sale["units"], sale["proceeds"]) for sale in sales] == [(10, 7, 2), (1, 1, 3)]
 
 
 if __name__ == "__main__":
