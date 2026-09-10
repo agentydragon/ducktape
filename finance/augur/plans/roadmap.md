@@ -457,7 +457,7 @@ migrations, without reopening the settled ordered-action/no-retry contract:
   household chooses investment/withdrawal, and a modeled service handles internal
   harvesting. Pin the phase, opening basis/deferral and gross withdrawal conventions,
   then the minimum pure Python batch-model → canonical-execution seam described in
-  [the managed-portfolio plan](managed_portfolio.md#gh-bounded-decisions-before-ma1).
+  [the concrete proposal](managed_portfolio.md#gh-concrete-proposal-for-review-before-ma1).
   Current harvesting follows successful grouped payments (`rust/engine.rs`);
   the proposed pre-observation phase changes failed-path and same-month-flow
   behavior and needs explicit numerical controls. No general plugin system or

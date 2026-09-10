@@ -72,11 +72,11 @@ service's supported prices/payouts; the household never sees future paths.
   an independently evolving second book. Keep calibration parameters out of
   household actions. Do not add another copy of the formula.
 - **Canonical product execution:** owns balances, position/cohort state,
-  loss/basis linkage, realized gains, settlement and validation. Choose one
-  authoritative representation of adjusted basis/remaining deferral; do not keep
-  independently mutable original basis, adjusted basis and cumulative loss totals.
-  Preserve the current model's cohort and give-back conventions explicitly rather
-  than claiming statutory constituent-level fidelity.
+  loss/basis linkage, realized gains, settlement and validation. Use each cohort's
+  adjusted remaining tax basis as authority; harvest history is reporting, not a
+  second mutable basis accumulator. Preserve explicit cohort character assumptions
+  without claiming statutory constituent-level fidelity. Count underlying managed
+  positions once in wealth; the account summary is not an additional owned asset.
 - **Observations and results:** expose current account value, available cash,
   relevant basis/cohorts and settlement terms to its owner. Report actual realized
   losses/gains, basis consequences and receipts from canonical state/events, with
@@ -89,42 +89,128 @@ move existing modules only as needed by the first consumer, with brief responsib
 docstrings. No entity registry, general plugin protocol, nested simulator,
 arbitrary posting action or parallel policy callable is required.
 
-## GH: bounded decisions before MA1
+## GH: concrete proposal for review before MA1
 
-Ownership is settled: modeled managed-account service, not a household request to
-manufacture losses. Resolve these remaining choices with small numerical timelines
-and a concrete signature sketch before implementation:
+Ownership is settled; these phase and accounting conventions are proposed model
+choices, not implemented behavior or provider/statutory claims. Review them before
+MA1. The synthetic amounts below are accounting controls, not yield estimates.
 
-1. **Monthly phase.** Proposed initial convention: update existing account
-   holdings/market cashflows and modeled harvesting before the household observes;
-   execute its ordered contributions/withdrawals/payments afterward; close taxes
-   through the existing financial steps. New contributions first participate in
-   the next period's harvesting. Specify month zero, liquidation and year-end
-   treatment. This differs from the current harvest-after-successful-payments
-   phase: show and label that difference, including a path that later stops.
-2. **Model-to-execution seam.** Reuse the Python-controlled session to invoke one
-   pure batch approximation at the product's fixed phase, then validate/apply its
-   typed consequences canonically before producing policy observations. Sketch
-   the minimum Rust step/input-output additions for that operation; no callback
-   into household policy and no public arbitrary-tax-loss action. The model's
-   inputs/effects are distinct from investor observations/actions. One caller
-   advance still advances one month; no second driver or user-managed tax phases.
-   If invoking Python model code requires a Python wrapper around native steps,
-   replace the existing public session surface and its callers atomically; do not
-   leave a second supported raw-native session API for other experiments.
-3. **Initial financial scope.** Pin contribution basis/cohort creation,
-   withdrawal liquidation/give-back selection and ST/LT conventions, full-exit
-   rounding and the one authoritative deferral representation. Start with an
-   explicitly declared immediate, gross-cash withdrawal approximation, not a
-   claim about a provider's real settlement delays or after-tax spendable money.
-   Existing imported cohorts need supported opening basis/deferral; reject a
-   missing required opening fact rather than silently initializing it to zero.
+### Monthly phase
 
-Model effects must be tied to the current account/rollout/phase, bounded by
-available positions and applicable basis, and applied once. Validation failure
-must not partially mutate that account. Invalid household actions retain the
-existing stopped-rollout/successful-prefix contract. Do not request a second
-household decision after effects or an unsuccessful withdrawal.
+Prepare existing market cashflows and due claims → apply modeled harvesting →
+observe once → execute household actions in order → existing month-end closing.
+Current `actors::Session::prepare` already retains claims before publishing
+observations; insert the managed step there, not another household decision.
+
+Month zero is the first modeled monthly event, including one baseline harvest on
+opening positions, as in the current reduced-form process. With no preceding
+sampled price, its drawdown input is zero. This is an explicit coarse monthly
+convention, not a claim that a month elapsed before the opening valuation. A new
+contribution after observation first participates in the following month's
+harvesting. Opening tax facts describe pre-simulation activity; never harvest that
+history again. December's modeled losses reach that year's ordinary closing;
+prior-year tax claims already due do not get retroactively rewritten.
+
+A failed later payment cannot undo already-applied harvesting. A stopped path
+retains those realized facts/basis changes but receives no subsequent monthly
+steps. Preserve existing stopped-path closing rules, including no fabricated
+year-end assessment when failure prevented it. Results must distinguish recorded
+facts from an assessment never performed. This intentionally replaces current
+harvesting's dependency on successful grouped payments.
+
+### Single Python session, one private model handoff
+
+Put the public `ActionSession` in a Python orchestration module, keeping its
+`start/advance/close` contract and one batch policy shape. The existing native
+session becomes its private financial-step implementation; migrate all Python
+callers atomically, without a second supported public raw-native session.
+
+The native preparation result gains one concrete internal alternative,
+`ManagedStep`, containing current inputs keyed by rollout/account/month. Inputs
+include invested market value, remaining adjusted basis, current/prior index
+marks and declared approximation parameters. They contain no future path.
+The pure Python model returns one nonnegative ST/LT loss estimate per input.
+Native application checks exact pending identity/coverage, bounds losses by basis,
+updates basis and tax facts together, then exposes ordinary policy observations.
+No arbitrary tax-write action or general effect language is needed.
+
+```python
+# Private implementation sketch, not another experiment-visible loop.
+def estimate_harvest(inputs: list[ManagedInput]) -> list[HarvestEstimate]:
+    """Estimate nonnegative ST/LT losses in money quanta; retain each input key."""
+    ...
+
+def _finish_preparation(self, pending):
+    if isinstance(pending, ManagedStep):
+        estimates = self._harvest_model(pending.inputs)
+        return self._native.apply_managed(estimates)
+    return pending  # ordinary decision batch or Finished
+
+def start(self):
+    return self._finish_preparation(self._native.start())
+
+def advance(self, responses):
+    return self._finish_preparation(self._native.advance(responses))
+```
+
+There is at most one managed handoff per month, never a retry loop. Zero managed
+accounts bypass it. Invalid model output is a model/programming error that aborts
+the session, not investment ruin to include in a success-rate estimate; validate
+the batch before applying its effects. Investor action rejection retains the
+existing per-rollout successful-prefix rule. Product models cannot mutate books.
+
+### Basis and investor operations
+
+The old pool-wide deferred-loss scalar moves gains between cohorts after new
+contributions: start with one $100-cost unit and $20 deferred loss, add a new $100
+unit, then sell only the new unit for $100. The existing per-unit give-back
+recognizes $10 gain on that new unit. Full liquidation conserves the total $20,
+but timing and ST/LT character can move. Do not preserve this as a compatibility
+requirement (`rust/engine/tlh.rs::tlh_give_back_for_pool_sale`).
+
+Proposed initial service rules:
+
+- **Opening state:** import already-adjusted broker basis and explicit cohort
+  ages directly. Historical cumulative harvesting is not required and must not be
+  subtracted a second time. Missing basis/age needs an explicit supported
+  approximation or rejection, not a silent zero/default. The proxy's cohort ages
+  remain declared approximations, not reconstructed constituent trade history.
+- **Harvest:** estimate total loss with the existing curve, then allocate its
+  basis reduction across cohorts in proportion to their remaining adjusted basis.
+  Exact residual quanta follow stable cohort-ID order. Total basis reduction equals
+  the booked ST+LT loss; no cohort goes negative. The declared ST/LT split remains
+  the reduced-form model parameter, not a claim about actual constituent sales.
+- **Contribution:** debit the specified outside cash account, acquire proxy units
+  at the current mark, and create a new current-period cohort with basis equal to
+  acquisition cost. Fractional-unit rounding leaves residual cash inside the
+  managed account. It does not inherit an older cohort's deferred gains.
+- **Withdrawal:** deliver the requested gross cash, not an after-tax budget.
+  Use managed cash first; any liquidation redeems proxy units pro rata across
+  cohorts. Apportion representable units deterministically in cohort-ID order;
+  round the total units needed upward and retain excess proceeds as managed cash.
+  Full exit consumes all units and their remaining basis exactly. Realized gains
+  use each disposed cohort's adjusted basis and existing holding-period machinery.
+  This is an explicit approximate service term, not an investor's hidden FIFO rule
+  or a reverse callback to Python during action execution.
+- **Access:** underlying managed positions are not independently tradable through
+  ordinary public `Sell/Buy` actions or transferable around the service rules.
+  An unfundable contribution/withdrawal rejects without partial mutations; earlier
+  successful actions survive. Immediate cash availability is the initial declared
+  approximation, not a real-provider settlement guarantee.
+
+| Control                                                             | Expected result under the proposed convention                                                                                                          |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Opening value/basis $100/$100, estimated ST loss $10                | Value remains $100; adjusted basis $90; realized ST loss $10; no cash minted.                                                                          |
+| After that harvest, contribute $100 at an unchanged price           | Old cohort basis $90, new cohort basis $100; neither additional same-month harvest nor redistribution of old deferral.                                 |
+| Withdraw $100 from those equal-sized cohorts, unchanged price       | Half of each cohort redeemed: $95 basis disposed, $5 gain, $95 remaining basis; withdrawal is $100 cash, not $100 net of taxes.                        |
+| Liquidate the remaining positions at the same price                 | Additional $5 gain; no positions or stranded basis/deferral; total realized gains offset the earlier $10 modeled loss before character/timing effects. |
+| Opening $100 position, loss $10, then an unfundable $150 withdrawal | Withdrawal changes nothing; retain value $100, basis $90 and the already-recorded $10 loss; stop that trajectory.                                      |
+| Same loss during December; path completes the month                 | Include the loss once in that year's canonical assessment. A failed December path instead preserves facts without inventing a completed assessment.    |
+
+MA1 pins the passive cases; MA2 adds funding, cohort and rounding cases. Add
+zero-loss, mixed-age, zero-basis and nonrepresentable-quantity controls alongside
+these exact arithmetic anchors. The gate stays open until these proposed service
+conventions are accepted; no managed-account implementation is dispatched here.
 
 The old Rust harvest curve and give-back readers remain only for configured
 consumers until their migration. MA1 reuses the existing Python curve, not a new
