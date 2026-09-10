@@ -4,12 +4,12 @@ The native financial kernels used by Python-owned action and configured drivers.
 Prepared facts originate in `finance/augur/sim`; `execution.rs` declares the private
 native input and financial result records. Validation runs once before execution.
 
-`engine::world::Prepared` shares one validated input between independent `World`
-handles. Each owns one rollout's ledger, lots, contracts, tax state, claims and
-capture. Its operations apply opening facts, settle one exact request or a configured
-payment group, and close a financial month with caller-supplied failure/shortfall facts.
-Python owns batch routing, policy calls, receipt histories, stopping and phase order;
-the native handle has no session lifecycle or production full-horizon runner.
+`engine/world.rs::Prepared` validates a prepared run and creates one `World` per
+selected path. Each world owns financial books and exposes private opening,
+transaction, settlement, closing and capture operations. `sim/session.py` owns
+month sequencing, active paths, receipts and stop lifecycle; `sim/configured.py`
+uses that same Python session for the remaining configured control. There is no
+production native session or full-horizon runner.
 
 ## Invariants
 
@@ -95,13 +95,13 @@ No policy selection, automatic funding, delayed settlement or batch rollback is 
 ## Scoped holdings
 
 `holdings.rs` reads canonical books without a reporting layout. `AgentHoldings`
-resolves an actor's declared cash accounts and public price rows once; spending
+resolves an actor's declared cash accounts and public price rows; current
 observations and product capture use that scope. Allocation instead selects its
 funding account and declared source pools/sleeves. A borrowed `LotView` shares
 per-lot valuation: round each lot to currency quanta before adding values.
 Neither scope implies after-tax liquidation proceeds. Callers supply the observed
 mark month; a stopped book uses its failure-event marks, never future prices.
-CPI in the spending observation is current inflation relative to path origin.
+CPI in the Python observation is current inflation relative to path origin.
 
 Dated bonds carry par or current indexed principal, not a tradable market quote.
 Their position lifetime follows processed events separately from valuation marks:
@@ -110,9 +110,9 @@ replaces it in snapshot `m + 1`. A horizon ending at `m` has not executed that
 redemption. Failed closings retain the event month's CPI and the actually processed
 redemptions, independent of the later snapshot label.
 
-`engine::observations::ActorBooks` gives spending functions borrowed account,
-remaining public-lot/basis, active borrower-mortgage and recorded tax views at
-their opening review. The view fixes the actor and mark month; it cannot read
+`engine::observations::ActorBooks` reads account, remaining public-lot/basis,
+active borrower-mortgage and recorded tax facts for native observation projection.
+The view fixes the actor and mark month; it cannot read
 another actor's books or request future path values. Tax views expose recorded
 income, jurisdiction facts and assessed outstanding liabilities, not hypothetical
 future assessments. These tax views are currently native-only; the Python Observation
@@ -172,7 +172,10 @@ errors which close the session, not resubmittable actions. A caller may adapt
 scalar authoring over these rows; there is no scalar actor-engine entry point.
 
 Each list uses exact `Sell`, `Buy`, `Transfer`, `PayClaim`, `Consume`, and managed
-`Contribute`, `Withdraw` or `Liquidate` requests.
+`Contribute`, `Withdraw` or `Liquidate` requests from `sim/actions.py`.
+`sim/observations.py` defines frozen current facts and decision rows. These are
+Python-owned domain objects, not public PyO3 wrappers. Historical claim-payment
+receipts retain the occurrence ID without retaining an executable session handle.
 Canonical trade/payment/transfer operations own admission, atomic effects, lot
 basis and taxes. Receipts retain executed or rejected requests, but not an
 unattempted suffix. `Rollout::stop` distinguishes a rejected action (identified by
@@ -186,7 +189,8 @@ component operation, not an investor Harvest action.
 
 `capture="summary"` omits detailed trace retention; `"dense"` adds financial event
 tables and monthly books, and `"forensic"` adds the journal. Every mode returns the
-same summary: account cash, public-pool gross marks and dated-bond principal over observed snapshots,
+same summary: account cash, public-pool gross marks, dated-bond principal and
+opaque TLH value over observed snapshots,
 keyed payment outcomes, canonical tax records, unpaid claims, the exact ending
 book and the last month's attempted action prefix. There is no post-stop padding.
 Snapshot 0 is opening; snapshot `m + 1` is after event month `m`. The stopped final
@@ -247,7 +251,7 @@ and monthly actions use this session for their Python-owned policy loops.
 `Finished.rollouts` preserves the requested original ID order. Each rollout has a
 typed `summary`, optional `stop`, and optional `trace`. A trace contains typed
 historical books, journal, bond/distribution cashflows and receipts, plus the
-existing columnar `EventLog` for event queries. The Python boundary decodes its
+existing columnar `EventLog` for event queries. Python boundary codecs decode the
 private transport once; domain consumers do not parse JSON or retain a second
 raw result tree. For file I/O, use `Finished.model_dump_json()` and
 `Finished.model_validate_json()`; an individual replay uses the same methods on
@@ -261,7 +265,8 @@ agreement at explicit stopped marks. They run with
 `bbr test //finance/augur/rust:simulator_test`; their supplied paths and flat tax
 brackets are deterministic controls, not market forecasts or statutory coverage.
 `bbr test //finance/augur/rust:action_test` exercises the real Python boundary,
-including receipt-aware memory, complete-batch routing, selected replay and closure.
+including ordered prefixes, unpaid-claim stops, receipt-aware memory,
+complete-batch routing, selected replay and closure.
 
 ## Covered behavior
 
@@ -429,22 +434,21 @@ zero. Ordinary security and home-value prices must be positive. A security serie
 used exclusively by TLH portfolios may reach zero for worthless-exposure
 liquidation; negative prices remain invalid.
 
-Target allocation evaluates the band after all monthly obligations have
-accrued, sells before the grouped funding check, and therefore makes an unpaid
-obligation mean the configured portfolio genuinely could not fund it. Buy
+`policy/configured_allocation.py` proposes configured allocation using the shared
+Python sleeve helpers. It evaluates the band after monthly obligations have
+accrued and proposes sales before the grouped funding check. An unpaid group means
+that this configured strategy did not fund it, not that no possible strategy could.
+Buy
 orders are decided from that same pre-settlement observation but execute only
 after obligations settle, with a floor affordability clamp against then-current
-cash. Each purchase fills the next preallocated per-sleeve lot slot, records the
-rollout's observed price and acquisition month, and aborts the run rather than
-silently dropping a purchase when capacity is exhausted. Purchased lots join
+cash. Each ordinary purchase gets a path-local policy/sleeve lot identity and
+records the rollout's observed price and acquisition month. Purchased lots join
 the first configured source-account pool for later FIFO sales. Selected traces
 expose the source and proceeds accounts on every lot disposition and the ordered
 sleeve identities attempted for every matching obligation. Optional quiet-band
 drift rebalancing is all-or-nothing, returns every sleeve to its floored target,
 and suppresses itself whenever the cash band is already raising or investing.
-Sleeve quantity scales are explicit input integers, taken during input preparation
-from the sleeve's own asset, so the fixture cannot state a scale the Python side
-does not use.
+Sleeve quantity scales are explicit prepared integers taken from the sleeve's own asset.
 
 ## Product read model
 
@@ -460,38 +464,13 @@ Metric valuation and observation boundaries:
 supplied rules and materialized paths become the prepared integer execution input
 once. The backend transports it without further financial compilation.
 
-This engine serves all four projection endpoints, the selected rollout included.
+The configured Python driver serves all four projection endpoints, the selected rollout included.
 `ProductService` holds an `Engine` (<../sim/backend.py>) rather than reaching for this
 package directly, so everything above that contract — the derived metrics, the terminal
 reduction, the percentile brackets, and the rollout projection — is written against the
-canonical event frames rather than against this engine's output layout. The seam is what
-makes a second engine possible; it is not evidence that one exists.
-
-### What porting off the retired engine can and cannot change
-
-Consumers outside this repo still call the JAX entry points this engine replaced, and each
-one has to be ported. What that port is allowed to move is settled, and worth knowing before
-anyone re-derives it from a diff of two runs.
-
-Until the JAX engine was retired (`2d1d2a07c`), a differential suite compared both engines on
-every commit — untagged targets, so `bazel test //...` ran them. `product_failure_test.py`
-asserted **exact integer equality** of the per-rollout failure month and of every product
-metric array, on the feature-rich scenario with an unfundable obligation, for two agents.
-`product_scenario_test.py` did the same for one `ScenarioKey` against the fixture
-deployment's own portfolio and sampled model, funded and after ruin.
-
-So a port that moves a consumer from the JAX product entry points onto the `Engine` contract
-should return the same failure vector and the same metric arrays, to the integer. A grid whose
-numbers move across such a port has changed something else — most likely the sampler, since
-`model/structural_macro.py` and `fit/structural_macro.py` were reworked over the same period.
-Establish that separately before reading a difference as an engine difference.
-
-The one place the engines were known to differ is event-frame recording **inside a failed
-rollout's failure month**, and it is structural rather than a bug either side owns: Rust stops
-inside its month loop at the phase that could not pay, so whether a phase was recorded depends
-on where it sits in that order, while a vectorized scan reports the whole failure month or
-none of it. No month-level rule reproduces an ordering within one month. Product metrics and
-the failure vector were never part of that divergence.
+canonical event frames rather than against native storage. The common action-session
+projection in `product/action_projection.py` uses the same financial facts; it does
+not yet replace the configured app's housing/PE and grouped-funding capabilities.
 
 Preparation, precision and the remaining language-binding boundary:
 [docs/execution_boundary.md](docs/execution_boundary.md).
@@ -499,24 +478,27 @@ Preparation, precision and the remaining language-binding boundary:
 ## Python extension
 
 `_simulator.so` is the private extension built from `python.rs`, typed by
-`_simulator.pyi`. Public callers use `sim/session.py` or the remaining
-`sim/configured.py` control. Native phase methods never invoke Python callbacks.
-The boundary lowers a typed prepared run privately and decodes typed action results
-once; file serialization is owned by explicit I/O callers. The standalone native CLI
+`_simulator.pyi`. Its private `_PreparedWorlds` and `_World` expose financial
+primitives, not action/observation classes or a session lifecycle. Public callers
+use `sim/session.py` or the remaining `sim/configured.py` control. Python codecs
+lower prepared facts and requests privately and decode observed facts and financial
+results once; Python adds its receipts and stop state. File serialization belongs
+to explicit I/O callers. The standalone native CLI
 and native benchmark month loop have been removed.
 
-Scenario features the fixture cannot express are refused rather than encoded without them:
+Scenario features the prepared input cannot express are refused rather than encoded without them:
 [docs/execution_boundary.md](docs/execution_boundary.md).
 
 ## Layout
 
 `engine.rs` retains shared financial state and opening/closing kernels. Native
 modules include `property`, `claims`, `obligations`, `taxes`, `securities`,
-`target_allocation`, `private_equity`, `components`, `trades`, `cashflows`,
+`world`, `actors`, `private_equity`, `components`, `trades`, `cashflows`,
 `transfers`, `recorder`, `accounts`, `errors` and `validation`.
-`actors/phases.rs` exposes the private bounded calls used by both Python drivers.
-Native test-only harnesses can loop those existing kernels; they are not exported
-production runtimes.
+`world.rs` exposes the private financial calls used by both Python drivers.
+Actor tests exercise these calls directly. Remaining test-only configured
+`engine.rs::simulate*` helpers still drive existing acceptance readers; they are
+not exported production runtimes.
 
 The Python-controlled feature-rich benchmark lives in <../benchmark/README.md>.
 It measures the configured runner, including native financial steps and the
@@ -525,7 +507,6 @@ Python-owned TLH model.
 ## Targets
 
 ```text
-//finance/augur/rust:simulator_cli
 //finance/augur/rust:simulator_ext
 //finance/augur/rust:simulator_test
 //finance/augur/benchmark:driver_bin

@@ -19,7 +19,7 @@ Shared proposal helpers live in <../policy/>; they do not settle trades or taxes
 
 `CompiledRun` in <prepared.py> owns typed resolved facts: exact integer money,
 quantities, tax rules and supplied paths. The compiler constructs these directly;
-file/native serialization is private to `rust/`. Sessions accept the prepared value,
+file/native serialization is private to the I/O boundaries. Sessions accept the prepared value,
 not a mutable wire dictionary. The app and remaining legacy acceptance/benchmark
 consumers use the same prepared facts through the configured `Engine` contract;
 it is not the interface new experiments should extend.

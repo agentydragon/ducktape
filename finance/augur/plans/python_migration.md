@@ -7,6 +7,12 @@ clearer to compose and inspect. This is not a rewrite benchmark contest. The
 
 ## Choose subsequent moves by domain value
 
+The [current boundary](../sim/DESIGN.md) already places session sequencing,
+public action/observation definitions and configured allocation proposals in
+Python. PYSTEP is not a backlog to move those again. Native worlds retain financial
+books, settlement, tax assessment, bond math and existing contractual processing;
+choose subsequent moves for a concrete domain consumer, not language coverage.
+
 The next priority is a coherent model that experiments can compose, not a sequence
 of the easiest arithmetic kernels to port. Use the opaque TLH portfolio and FIRE
 studies to expose needed boundaries:
@@ -40,7 +46,8 @@ The [TLH integration acceptance](managed_portfolio.md) covers every driver and
 native-reader retirement, not only a new example. The common and configured
 Python loops advance the component before investor operations, including
 scheduled redemptions, regardless of a later funding failure. Verify that
-integration before removing MA1/MA2; MA3 remains a future paired experiment.
+integration under the revised Python session and request types before removing
+MA1/MA2; MA3 remains a future paired experiment.
 
 Move the definitions and financial steps to Python where that makes this object
 model clearer, easier to inspect and less dependent on duplicated binding/schema

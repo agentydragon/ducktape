@@ -1,7 +1,7 @@
 # Augur simulator implementation
 
 The current code has one canonical set of financial mechanics and two remaining
-orchestration surfaces: the common monthly action session and the configured
+Python orchestration surfaces: the common monthly action session and the configured
 runner used by the app, feature-rich benchmark and legacy acceptance readers.
 They share financial steps but differ in policy control and supported domains.
 
@@ -36,11 +36,15 @@ authored scenario + supplied paths/rules
 
 The caller owns the time loop and optional policy memory. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
-actor-scoped facts, not future sampled market trajectories. The executor owns
-phase ordering, validation, settlement, liabilities and tax consequences.
+actor-scoped facts, not future sampled market trajectories. The Python session
+owns month/phase sequencing, active paths, receipts and fatal-stop lifecycle.
+Native financial operations own books, transaction validation, settlement,
+liabilities and tax consequences.
 
-`sim/session.py` implements the Python action boundary and owns component state;
-`rust/engine/actors.rs` implements private financial steps and their capability checks.
+`sim/session.py` owns component state and invokes one private native
+`rust/engine/world.rs::World` per selected path. `actions.py` owns exact requests;
+`observations.py` owns frozen current facts and private claim authority. There is
+no second public native action/observation representation or native session driver.
 Configured allocators, housing and PE behavior are not silently enabled through
 this API. A rejected action stops only its rollout with the successful prefix
 intact; an unpaid due claim is a different stop reason. There is no retry callback
@@ -50,7 +54,8 @@ within the month.
 
 Money and quantities use their declared fixed-point scales. Canonical state is
 not reconstructed by replaying event descriptions. `books.py` and `results.py`
-define typed books, receipts, stops and completed results; `events.py` defines
+define typed books, receipts, stops and completed results; receipts reuse the
+request definitions in `actions.py`. `events.py` defines
 the columnar event frames. Compact capture and selected dense/forensic capture
 come from the same financial execution.
 
@@ -63,7 +68,9 @@ comparing stopped books with completed horizons.
 
 `Engine` in <backend.py> and `RustEngine` in <../rust/backend.py> serve the
 existing product methods. Their configured runner owns full-horizon loops and
-implicit allocation/grouped-funding behavior. The app's projections do not define
+implicit allocation/grouped-funding behavior. `policy/configured_allocation.py`
+proposes trades through shared Python helpers; native operations settle them.
+The app's projections do not define
 the financial capabilities or output shape required by every experiment.
 
 `sim/testing/simulation_result.py` and `rust/result.py` are the separate legacy

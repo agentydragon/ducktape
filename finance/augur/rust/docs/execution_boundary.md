@@ -1,19 +1,23 @@
 # Execution input
 
-`sim.backend.compile_run` prepares a self-contained execution document from a
-`Scenario`, materialized paths, jurisdiction rules and locations. The engine
-consumes that document directly; it never rereads the authoring inputs.
+`sim.backend.compile_run` prepares a typed `sim.prepared.CompiledRun` from a
+`Scenario`, materialized paths, jurisdiction rules and locations. Sessions consume
+those resolved facts directly; they never reread the authoring inputs.
 
 `sim/compiler/execution.py` owns preparation: resolve tax rules for each filing
 profile, validate sampled values, and convert money, quantities and rates into
 the engine's exact integer units. It does not allocate a second world model with
-cashflow slots, lot masks, or precomputed obligation tensors. Runtime scheduling,
-holdings, FIFO sales and settlement belong to Rust.
+cashflow slots, lot masks, or precomputed obligation tensors. Python owns session
+sequencing and policy proposals, including configured allocation. Native worlds
+retain books, contractual cashflow/claim processing, exact transactions, taxes,
+bond calculations and remaining configured housing/PE mechanics. Scheduled and PE
+sales still select FIFO before calling canonical lot-sale accounting.
 
-The production Rust input type is `ExecutionInput` in `rust/execution.rs`.
-JSON is currently the Python/Rust transport. The Python writer and Rust fields
-spell the transport schema separately. Unsupported series types are refused,
-and Rust validates the resulting input before execution.
+The private Rust input type is `ExecutionInput` in `rust/execution.rs`.
+JSON is currently the private transport, not another authoring API. Native
+validation runs before creating worlds. `sim/actions.py` and `sim/observations.py`
+own public requests and current facts; private codecs decode native observations
+and financial results once. Unsupported series types are refused.
 
 The compiler lowers explicit `Scenario.holding_pools`, initial lots and configured
 allocation sleeves into one execution `holding_pools` list. The native engine reads
@@ -23,11 +27,11 @@ an asset it did not initially hold.
 
 ## Experiment invocation
 
-`rust/invocation.py::write_prepared_input` persists the compiled execution document
+`rust/invocation.py::write_prepared_input` persists the typed compiled run
 for reproducible experiments. The caller owns paths, parameters, batch policy,
 capture choices and output analysis; the canonical session validates and executes
 financial actions. The file writer does not reinterpret the document or cache
-execution state.
+execution state. Reading the artifact returns the same typed prepared records.
 
 Bounded spending, allocation-glide and monthly actions use the in-process
 `ActionSession` with Python-owned loops and policy functions; they retain
@@ -47,6 +51,6 @@ Bounded spending, allocation-glide and monthly actions use the in-process
   currency amounts before rounding.
 
 Tests author ordinary scenarios and run the same preparation. Test helpers may
-copy or serialize the prepared document, but do not maintain another encoder or
+copy or serialize the prepared value, but do not maintain another encoder or
 tax-rule interpretation. Exact-money, statute, funding, lifecycle and rollout
 acceptance tests exercise this same production path.

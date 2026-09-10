@@ -46,7 +46,7 @@ a completed assessment for a stopped path. Snapshot valuation at a closing mark
 must not advance the component or realize another month's losses.
 
 The common public session remains Python-owned with one batch policy API. Its
-private financial phases accept the component's concrete financial effects;
+private native-world calls accept the component's concrete financial effects;
 there is no model callback, generic managed-step protocol or experiment-visible
 handoff loop. A policy does not request monthly harvesting. Component investment
 requests participate in the same caller-ordered list and successful-prefix rule
@@ -76,12 +76,14 @@ native TLH state/formulas to remain.
 The draft removes `rust/engine/tlh.rs`, native harvest/give-back state and lowering,
 and `sim/tlh_harvest.py`. Scenario/compiler, portfolio-source configuration,
 benchmark construction and acceptance readers now use the component contract.
-Verify actual configured sales, funding, distributions and failure paths before
-closing MA2; source deletion alone is not financial acceptance. Keep independent
+Verify actual configured sales, funding, distributions and failure paths under the
+revised Python-owned session, request types and allocation proposer before closing
+MA2; source deletion alone is not financial acceptance. Keep independent
 cohort/basis assertions rather than merely deleting old give-back tests.
 
-`sim/session.py` and `sim/configured.py` own the production outer loops;
-configured strategy and legacy output retirement remain P12, not missing TLH
+`sim/session.py` owns lifecycle and component state; `sim/configured.py` composes
+the same session with Python allocation proposals and existing grouped claims.
+Configured strategy-input and legacy output retirement remain P12, not missing TLH
 implementation. Dense/forensic capture must retain the settled component effects
 with explicit operation, signed cash, gains and basis change. Product timelines
 must not lose redemptions or invent public-stock units; compact mode need not

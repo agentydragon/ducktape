@@ -1,9 +1,11 @@
 # Actor-facing policy interfaces
 
 Target design for the remaining migration and gates GP/GL/GE in [the roadmap](roadmap.md).
-Reuse the common `ActionSession` and its single batch contract; module names and
-richer types below are sketches, not additional API declarations. Reuse existing
-domain types and introduce fields only for a supported consumer.
+Reuse the common `ActionSession` and its single batch contract. Public requests
+already belong to `sim/actions.py`, current facts to `sim/observations.py`, and
+lifecycle to `sim/session.py`; there is no public native wrapper counterpart.
+The richer types below are sketches, not additional API declarations. Extend
+existing domain types only for a supported consumer.
 
 The boundary is economic agency: a policy sees information available to its actor
 and requests actions that actor could take. The environment owns contracts,
@@ -219,7 +221,7 @@ manufacture losses or trigger monthly harvesting.
 
 The Python session advances each component once before investor operations,
 including scheduled/configured redemptions, then settles its financial effects
-through private engine phases. Candidate state is adopted only with accepted
+through private native-world financial calls. Candidate state is adopted only with accepted
 cash/tax settlement. Native code may retain immutable reporting statements, never
 a mirrored mutable position/basis book. No custom exception taxonomy, model
 callback handoff or generic managed-account API is needed.
@@ -235,7 +237,9 @@ slice above; fixed investor-flow controls do not.
 session, including its population/profile and selected-replay entrypoints. Its CI
 controls cover immediate sale cash, lot/basis/tax reconciliation, fatal action
 prefixes and summary/trace agreement with generated financial inputs. Native tests
-exercise the same steps, not an alternative production callback driver.
+exercise world operations directly; Python session tests own lifecycle, batch
+routing and claim-authority controls. Retained historical receipts must not retain
+executable claim authority or permit request mutation to rewrite history.
 
 A failing middle action must leave the successful prefix intact, apply none of
 the failed action, and execute neither later actions nor later policy calls for
@@ -261,7 +265,10 @@ use this same session, not a second policy interface.
 P12 migrates the remaining configured Python consumers to common actions/results
 and removes implicit public-portfolio strategy, preserving required existing
 housing/PE capabilities. The feature-rich benchmark, app and legacy acceptance
-readers remain; native full-run helpers are test-only, not a second public driver.
+readers remain. Their configured allocation proposer is Python-owned and reuses
+shared sleeve helpers; retiring its implicit schema/orchestration is distinct from
+moving the strategy's implementation. The remaining `engine.rs::simulate*`
+configured helpers are test-only, not a second public driver.
 ACCEPT moves supported consumers to the common session; BENCH retains its
 housing/PE/harvest/multiple-actor dependencies. Existing Python funding, common
 reporting and held-bond capture are reused, not reimplemented. New `product/`

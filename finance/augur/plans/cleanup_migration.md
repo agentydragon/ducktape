@@ -28,8 +28,10 @@ The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped
 multiple-actor sequencing; separate runs are not a replacement for those joint
 controls. Keep the common-session product bond-value regression as actual adapter
 coverage, rather than a weaker principal-only assertion. Native step tests remain
-useful, but no test should retain an obsolete
-full-run entrypoint solely to preserve its test harness. Housing/PE/harvest suites wait only for
+useful. The remaining `engine.rs::simulate*` and `RolloutState::run` helpers are
+test-only configured drivers, not the removed actor-session harness. Retire each
+with its last acceptance reader; no test should retain an obsolete full-run
+entrypoint solely to preserve its harness. Housing/PE/harvest suites wait only for
 their affected capabilities, not the whole acceptance migration. Do not discard
 regressions or wrap the old runner behind the new result type.
 
@@ -49,7 +51,9 @@ for this benchmark.
 P12 also deletes `compiler/execution.py::_holding_pools`' strategy-derived
 declarations/first-source-account choice and
 `product/scenarios.py::_target_allocation_policies_from_funding_policy` with their
-last configured allocator consumers. Declarations, not a strategy configuration,
+last configured allocator consumers, along with `policy/configured_allocation.py`'s
+configured-policy reader. The proposer is already Python-owned and calls shared
+sleeve helpers; its language port is not remaining work. Declarations, not a strategy configuration,
 must determine available accounts/instruments. APP owns the existing app's final
 cutover; do not add new endpoints or financial features there.
 

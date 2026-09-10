@@ -43,11 +43,12 @@ and responsibility docstrings beside the implementing modules.
 The near-term policy milestone is **one batch action interface and Python-controlled
 outer loops everywhere**, including examples, benchmarks and the app. A Python
 `run(...)` convenience function uses the same session as an experiment-owned loop.
-The executor owns financial phase ordering, settlement, taxes and state transitions;
-the caller advances between decision opportunities, not individual accounting rules.
+The Python session owns phase ordering and rollout lifecycle; native worlds retain
+financial books, settlement and taxes. The caller advances between decision
+opportunities, not individual accounting rules.
 P12 cuts over the remaining configured Python consumers to ordinary batch actions
 and common results, then deletes their implicit strategy and legacy adapters.
-Test-only native full-run helpers retire with their acceptance readers; they are
+Test-only configured native full-run helpers retire with their acceptance readers; they are
 not another production interface.
 
 The priority is **domain modeling and experiment APIs, not large-N performance**.
@@ -95,9 +96,10 @@ cannot make it disappear.
 
 Reuse `compile_run` and caller-supplied paths, shared market/product construction,
 scoring without simulator output, canonical lot/tax/payment operations and
-purchase-anchored property marks. `rust/engine/actors.rs::Session` retains the
-financial state and prepared paths; the existing Python extension exposes typed
-current observations and exact ordered actions. `x/monthly_actions` owns its
+purchase-anchored property marks. `sim/session.py` owns selected paths, sequencing,
+receipts and stop lifecycle; private native worlds retain financial books.
+`sim/actions.py` and `sim/observations.py` own requests and current facts, decoded
+once at the private boundary rather than exposed as public PyO3 classes. `x/monthly_actions` owns its
 Python policy and outer loop, including population, selected replay and profile
 entrypoints. Its generated financial controls run in CI.
 
@@ -117,9 +119,10 @@ prepared-file test. The joint example varies both policy dimensions on shared
 synthetic taxable paths, records intentions separately from actual requests and
 payments, and verifies selected replay. An unattempted request remains absent;
 its observed paid amount is zero, while post-stop months remain unobserved.
-P12 owns the remaining configured runner: its inline cash-band strategy and
-`rust/allocation.rs` support exact rounded funding, selected zero targets and
-full exits, including rounded-zero dust. An all-zero target vector remains invalid;
+P12 owns retirement of the remaining configured runner and implicit policy input.
+Its Python `policy/configured_allocation.py` proposer uses shared sleeve helpers
+for rounded funding, selected zero targets and full exits, including rounded-zero
+dust. An all-zero target vector remains invalid;
 product-shell exclusion is distinct from a selected core zero target.
 
 Reuse [Trinity](../study/trinity/README.md),
@@ -169,17 +172,17 @@ and cross-actor timing, not the initial ordered-action integration.
 
 Paths are relative to `finance/augur/`. Each row names the change that removes it.
 
-| Existing problem and evidence                                                                                                                                    | Replacement / deletion criterion                                                                                                                                 | Landing unit   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Product-shaped `Engine` methods require a primary actor and fixed metric slabs (`sim/backend.py`); known contract/tax views are not yet selected domain capture. | Extend scoped facts and compact session outcomes; app projections consume selected domain outputs. No new study requires every product slab.                     | CAP            |
-| Configured target-allocation policies invoke engine-owned funding/cash-band/drift and lot-selection heuristics (`rust/engine/target_allocation.rs`).             | Use the common action session and Python proposal helpers; remove implicit public-portfolio strategy from execution input with its last caller.                  | P12; GP        |
-| Configured settlement still groups generated claims by source account under all-or-none funding, including scheduled spending claims.                            | Contracts generate claims; actors choose funding and ordered payments through the common session. Resolve each consumer's grouping convention explicitly.        | P12, HOUSE; GP |
-| A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                             | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                           | BIND, TAX      |
-| `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                               | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled. | BOND           |
-| Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`. | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.   | GT, TAX        |
-| `sim/configured.py` owns a Python loop but still drives implicit allocation/grouped claims and legacy output methods.                                            | Move callers to ordinary batch actions/common results and delete those configured branches. Retire test-only native full-run helpers with their readers.         | P12            |
-| Configured forensic output has a separate acceptance-test result model and adapter.                                                                              | Move real suites to common typed results; delete old test contracts with last readers.                                                                           | ACCEPT         |
-| The Python benchmark still consumes the configured runner and its legacy serialized outputs.                                                                     | Move the complete workload to common actions/results before deleting its configured dependencies.                                                                | BENCH          |
+| Existing problem and evidence                                                                                                                                    | Replacement / deletion criterion                                                                                                                                    | Landing unit   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Product-shaped `Engine` methods require a primary actor and fixed metric slabs (`sim/backend.py`); known contract/tax views are not yet selected domain capture. | Extend scoped facts and compact session outcomes; app projections consume selected domain outputs. No new study requires every product slab.                        | CAP            |
+| Configured policy input still selects implicit funding/rebalancing through `policy/configured_allocation.py` and `sim/configured.py`.                            | Migrate consumers to common actions; remove configured policy schemas, lowering and orchestration with their last caller, reusing the shared Python helpers.        | P12; GP        |
+| Configured settlement still groups generated claims by source account under all-or-none funding, including scheduled spending claims.                            | Contracts generate claims; actors choose funding and ordered payments through the common session. Resolve each consumer's grouping convention explicitly.           | P12, HOUSE; GP |
+| A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                             | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                              | BIND, TAX      |
+| `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                               | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled.    | BOND           |
+| Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`. | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.      | GT, TAX        |
+| `sim/configured.py` still drives implicit allocation/grouped claims and legacy output methods over the shared Python session.                                    | Move callers to ordinary batch actions/common results and delete those configured branches. Retire test-only configured native full-run helpers with their readers. | P12            |
+| Configured forensic output has a separate acceptance-test result model and adapter.                                                                              | Move real suites to common typed results; delete old test contracts with last readers.                                                                              | ACCEPT         |
+| The Python benchmark still consumes the configured runner and its legacy serialized outputs.                                                                     | Move the complete workload to common actions/results before deleting its configured dependencies.                                                                   | BENCH          |
 
 The user-facing experiment **RUN** must use canonical execution.
 
@@ -271,8 +274,9 @@ benchmark. Supported ACCEPT slices remain independently landable. The
 component owns private positions/basis and monthly modeled losses. The native
 engine settles financial effects and captures read-only statements, not a mirrored
 cohort book. The implementation is present in draft
-[#6083](https://github.com/agentydragon/ducktape/pull/6083); all-driver integration,
-financial-event visibility and native-reader deletion still require acceptance.
+[#6083](https://github.com/agentydragon/ducktape/pull/6083); the revised Python
+session/types/configured-allocation integration, financial-event visibility and
+native-reader retirement still require integrated acceptance.
 MA1/MA2 remain until that evidence passes. This branch does not wait for housing, PE
 or RUNTIME/GE.
 
@@ -342,9 +346,12 @@ domain model, not the reverse.
 
 Prioritize the concrete input/reader cleanups, TLH-component composition
 and relevant FIRE studies, not a performance-led kernel campaign.
-PYSTEP moves financial definitions/steps where
-that improves those consumers, verifies correctness and deletes native counterparts
-with their last callers. No benchmark gate or second supported evaluator.
+PYSTEP covers subsequent financial-domain moves, not another port of the Python
+session, public action/observation types or configured allocation proposer.
+Choose a complete useful boundary for an actual consumer, verify correctness and
+delete the native counterpart with its last caller. Native books, tax assessment,
+bond math and remaining contractual mechanics are current responsibilities, not
+a mandate to port every module. No benchmark gate or second supported evaluator.
 
 ### Policy-interface PRs and acceptance
 
@@ -407,24 +414,22 @@ scopes IDTYPES without turning artifact/wire churn into an active cleanup prereq
 
 Reuse `policy/{cash_band,sleeves}.py` for public-portfolio proposals. Their tests
 cover exact allocation, reserved cash, zero targets/full exits, FIFO scoping and
-quantity scales. Delete each corresponding Rust calculation with its last legacy
-caller; no new native helper consumers or reverse Python callbacks to bridge the
-configured runner. A newly required product-specific calculation must have a real
+quantity scales. Configured allocation now calls these helpers from Python;
+P12 removes its implicit input/orchestration, not an unfinished language port.
+A newly required product-specific calculation must have a real
 Python consumer and independent financial checks. In particular, do not promote
 mixed-scale raw-quantity PE selection to a generic helper contract.
 
 Current legacy readers make that retirement concrete:
 
-- `rust/engine/target_allocation.rs` owns inline cash-band strategy and calls
-  `rust/allocation.rs::{withdrawal_by_sleeve,deposit_by_sleeve,rebalance_by_sleeve}`:
-  P12 removes those configured callers.
-- `rust/engine/trades.rs::select_fifo` serves target allocation,
+- `policy/configured_allocation.py` proposes sales and deferred purchases for
+  `sim/configured.py`; retire its configured-policy reader with the last consumer,
+  not the shared sleeve calculations. The compiler's strategy-derived pool and
+  first-source-account lowering retires with that input.
+- `rust/engine/trades.rs::select_fifo` serves
   `rust/engine/securities.rs` scheduled sales and
   `rust/engine/private_equity.rs` recovery/forced/tender flows: their respective
   P12 public/expanded-product migrations remove the legacy selection strategy.
-- `rust/allocation.rs::quantity_for_value` serves only `rust/engine/target_allocation.rs`
-  outside its tests. P12 removes that reader and the native calculation; Python
-  policies already use `sim/fixed_point.py::quantity_for_value`.
 
 P12 must also preserve the product shell's explicit exclusion authority: its current
 zero weight means "do not sell this holding", whereas a zero target in a selected
@@ -433,7 +438,8 @@ when migrating that shell; do not silently turn an excluded holding into a sale.
 
 ### Deletion checkpoints, not another interface family
 
-P12 removes configured Python entrypoints, remaining test-only Rust drivers and the implicit
+P12 removes configured Python entrypoints, the remaining test-only configured
+`engine.rs::simulate*` / `RolloutState::run` readers and the implicit
 allocator/grouped-payment orchestration. The app can retain projections over
 common outputs, not a private simulation interface. Delete each superseded path
 in its last caller's migration PR, not a later cleanup campaign. The active
@@ -463,7 +469,7 @@ gates tax-aware policy rules, not MA3's fixed-flow accounting control or all stu
 
 | Unit    | Independently reviewable change(s)                                                                                                                                                                                                                                                                                                                                                                         | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                                                                             |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PYSTEP  | Move domain definitions and financial steps to Python where actual component/study consumers benefit; switch all callers and delete the native counterpart.                                                                                                                                                                                                                                                | Correct financial behavior, coherent ownership and an all-callers migration boundary. No speedup or large-N cost gate; no reverse-callback workaround or supported duplicate evaluator.                                                                                                                                                                                                                                  |
+| PYSTEP  | Move subsequent financial-domain definitions/steps where actual component/study consumers benefit; public types, session orchestration and configured proposals are already Python-owned. Switch all callers and delete each replaced native counterpart.                                                                                                                                                  | Correct financial behavior, coherent ownership and an all-callers migration boundary. No speedup or large-N cost gate; no reverse-callback workaround or supported duplicate evaluator.                                                                                                                                                                                                                                  |
 | RUNTIME | Parked: investigate an actual slow workload when large-N use requires it, separating language, execution and output layout.                                                                                                                                                                                                                                                                                | Comparable financial work/outputs and real profiling, not historical aggregate speedup attribution. No prerequisite edge to current domain/API work.                                                                                                                                                                                                                                                                     |
 | CAP     | Only consumer-required domain facts/reductions and retirement of product-specific `Engine` output methods. Reuse actor-session capture; preserve existing app behavior without new app features or enrichment of the old runner. Keep selected traces and compact capture distinct.                                                                                                                        | Actor/account/component selection without every base slab, stable path IDs and explicit observed/stopped validity. Richer contract/tax capture uses existing actor views. Do not claim current Python reductions run in Rust. No universal metric enum or duplicate compact collector.                                                                                                                                   |
 | BIND    | First make proxy/distributing-product semantics explicit and validate held **and purchasable** support at composition. Then supply equity price-return **and dividend-amount paths**, with explicit historical/fitted payout assumptions, coordinated with TAX's supported character slice. Reuse typed conditioning records; IDTYPES is deferred and does not gate this slice. Reuse existing typed keys. | A total-return proxy cannot silently become a taxable distributing holding. Missing payouts, incompatible tax character and double-counted total returns reject before execution; legitimate zero payouts remain valid. Price plus payouts reconcile before tax, with timing and provenance. Product terms, construction assumptions and investor strategy have distinct owners; no global registry or universal fitter. |
@@ -562,7 +568,8 @@ all the others to be solved first.
    permit; multiple-taxpayer cases still need GP's scoped actor sequencing.
 2. **MA1/MA2** acceptance is in draft
    [#6083](https://github.com/agentydragon/ducktape/pull/6083). Verify all-driver
-   financial integration and retirement before removing these nodes. One advance
+   financial integration and retirement under the revised Python boundary before
+   removing these nodes. One advance
    precedes investor operations, including scheduled sales; later funding failure
    does not suppress harvesting. Native TLH retirement does not wait for full
    APP/P12. **MA3** remains a future runnable paired comparison. Continue
