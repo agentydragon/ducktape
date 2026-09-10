@@ -14,9 +14,6 @@ spec:
     kind: GitRepository
     name: ducktape
 
-    # Wait for the Terraform apply (attaches user-level SSH keys to the existing
-    # OIDC-created agentydragon account) so post-merge verification can use the
-    # Ready condition before attempting git-over-SSH.
     namespace: ducktape-flux
   # The replacement remains suspended through the state transfer and therefore
   # has no Ready condition yet. The old CR was suspended only after its last
@@ -28,8 +25,6 @@ spec:
       name: forgejo-agentydragon
       namespace: flux-system
   dependsOn:
-    - name: forgejo # Forgejo API must be up (provider target)
-      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db
