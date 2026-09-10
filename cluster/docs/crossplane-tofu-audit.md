@@ -1,162 +1,83 @@
 # Crossplane and Kubernetes-secret OpenTofu audit
 
-This records the September 2026 inventory taken while deciding whether
-Crossplane can replace the GitOps OpenTofu roots. It is a design note, not a
-migration instruction: no root should be removed until its replacement is
-ready, reconciled, and its consumers have passed an authenticated check.
+This records the September 2026 inventory used to decide whether Crossplane can
+replace GitOps OpenTofu roots. It is not a migration instruction: retire a root
+only after its replacement has reconciled and its consumers have passed their
+functional checks.
 
 ## Crossplane coverage
 
-The cluster does not currently install Crossplane. Of the 22 `tf/gitops`
-roots, only two external APIs have a practical Crossplane path:
+The cluster does not install Crossplane. At the initial audit there were 22
+`tf/gitops` roots. Three Kubernetes-secret roots have since been retired, so
+there are now 19. Only two external APIs have a practical Crossplane path:
 
-| Terraform resources                                                                                                                           | Roots                                                                                                                     | Assessment                                                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `aws_route53_record`                                                                                                                          | `dns-records`                                                                                                             | A supported Crossplane Route53 `Record` resource exists. `aws_route53domains_registered_domain` has no equivalent in that provider's published resource list, so this root cannot move as a unit.        |
-| `github_actions_secret`, `github_actions_variable`, `github_repository_environment`, `github_repository_ruleset`, `github_repository_webhook` | `github-secrets-sync`, `github-branch-protection`, `flux-webhook-token`                                                   | The community `provider-upjet-github` has equivalents, but its managed-resource APIs are `v1alpha1`. Treat the three roots as one optional migration after a provider and credential-scoping evaluation. |
-| `forgejo_*`                                                                                                                                   | `augur-evidence`, `budget-ledger`, `cpap-data`, `forgejo-agentydragon*`, `forgejo-claude`, `forgejo-images`, `haku-state` | No maintained Crossplane provider was identified.                                                                                                                                                        |
-| `authentik_*`                                                                                                                                 | `agent-machine-access`, `alloy-otlp-bearer-token`, `gatus-sso`, `sso-providers`                                           | No maintained Crossplane provider was identified.                                                                                                                                                        |
-| `litellm_*`, `claude-managed-agents_*`                                                                                                        | `litellm-keys`, `haku-cloud-agent`                                                                                        | No usable Crossplane provider was identified.                                                                                                                                                            |
+| Terraform resources                                                                                                                           | Roots                                                                                                                     | Assessment                                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `aws_route53_record`                                                                                                                          | `dns-records`                                                                                                             | A supported Crossplane Route53 `Record` resource exists. `aws_route53domains_registered_domain` has no equivalent in that provider's published resource list, so this root cannot move as a unit.      |
+| `github_actions_secret`, `github_actions_variable`, `github_repository_environment`, `github_repository_ruleset`, `github_repository_webhook` | `github-secrets-sync`, `github-branch-protection`, `flux-webhook-token`                                                   | The community `provider-upjet-github` has equivalents, but its managed-resource APIs are `v1alpha1`. Treat the three roots as one optional migration after provider and credential-scoping evaluation. |
+| `forgejo_*`                                                                                                                                   | `augur-evidence`, `budget-ledger`, `cpap-data`, `forgejo-agentydragon*`, `forgejo-claude`, `forgejo-images`, `haku-state` | No maintained Crossplane provider was identified.                                                                                                                                                      |
+| `authentik_*`                                                                                                                                 | `agent-machine-access`, `alloy-otlp-bearer-token`, `gatus-sso`, `sso-providers`                                           | No maintained Crossplane provider was identified.                                                                                                                                                      |
+| `litellm_*`, `claude-managed-agents_*`                                                                                                        | `litellm-keys`, `haku-cloud-agent`                                                                                        | No usable Crossplane provider was identified.                                                                                                                                                          |
 
-Installing Crossplane's OpenTofu/Terraform provider would not solve the
-tofu-controller runner-RBAC problem. It would run the same abstraction behind
-another controller, while retaining provider credentials and Terraform state.
+Installing Crossplane's OpenTofu/Terraform provider would not address the
+tofu-controller runner-RBAC problem. It would retain Terraform state and the
+same provider credential model behind another controller.
 
-## Kubernetes-only roots
+## Completed Kubernetes-secret retirements
 
-Three roots use OpenTofu principally to mint or reshape Kubernetes Secrets.
-They are candidates to retire from OpenTofu, but **ESO is not an external
-secret-manager replacement in this cluster**. The standing design is SOPS as
-the secret source of truth; ESO's Kubernetes provider only copies or renders
-those in-cluster source Secrets. See `cluster/docs/decisions.md` under
-"Secrets: SOPS SSOT".
+ESO is not an external-secret-manager replacement in this cluster. SOPS
+remains the secret source of truth; ESO's Kubernetes provider copies or renders
+in-cluster source Secrets. See `cluster/docs/decisions.md` under "Secrets: SOPS
+SSOT".
 
-### `ollama-bearer-token`
+### `ollama-bearer-token` — deployed in #6049
 
-Current shape:
+The Terraform `random_password` and Kubernetes Secret writer were replaced by
+an ESO `Password` generator and `ExternalSecret` in `ollama`. The target keeps
+the Reflector annotations that copy it to `claude-sandbox`; this deliberately
+rotated the direct Ollama token.
 
-- `random_password.bearer_token` persists a 48-character value in Terraform
-  state.
-- `kubernetes_secret_v1_data` writes `ollama/ollama-bearer-token:token`.
-- `ollama`'s nginx sidecar consumes it as `OLLAMA_DIRECT_TOKEN`.
-- Emberstack Reflector mirrors it to `claude-sandbox`; the source-object
-  annotations are in `cluster/k8s/ollama/secrets/ollama-bearer-token.yaml`.
+The live check found the generator and ExternalSecret `Ready`, the reflected
+Secret present, Ollama ready, and an authenticated request to the direct Ollama
+endpoint returned HTTP 200. State cleanup is deliberately separate from this
+source migration.
 
-This can be replaced by the exact native ESO pattern already used for the
-OpenClaw gateway passwords:
+### `gaffer-private-ghcr-pull` — deployed in #6053
 
-```yaml
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
-  name: ollama-bearer-token-generator
-  namespace: ollama
-spec:
-  length: 48
-  digits: 12
-  symbols: 0
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: ollama-bearer-token
-  namespace: ollama
-spec:
-  refreshInterval: 8760h
-  target:
-    name: ollama-bearer-token
-    creationPolicy: Owner
-    deletionPolicy: Retain
-    template:
-      metadata:
-        annotations:
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: claude-sandbox
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: claude-sandbox
-      data:
-        token: "{{ .password }}"
-  dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: ollama-bearer-token-generator
-```
+OpenTofu had only reshaped the SOPS-managed
+`flux-system/github-pat-ghcr-read:token` into a Docker-config Secret. The
+replacement renders `flux-system/gaffer-ghcr-pull` through ESO. A source
+ServiceAccount can read only the SOPS PAT; a separate reader identity can read
+only the rendered pull Secret. A `ClusterExternalSecret` distributes the pull
+Secret to the consumer namespaces, replacing Reflector fanout.
 
-The proof is on disk: `cluster/k8s/agents/public-coder-agent/app/gateway-password-eso.yaml`
-and `cluster/k8s/agents/haku-openclaw-spike/app/gateway-password-eso.yaml` use
-this same `Password` plus `ExternalSecret` pattern, with a retained target and
-a one-year refresh interval. The live `Password`, `ExternalSecret`, and
-`SecretStore` CRDs are installed; on 2026-09-09 the public-coder gateway
-`ExternalSecret` reported `Ready=True, SecretSynced`.
+The source ExternalSecret, SecretStores, and ClusterExternalSecret reconciled.
+The source Docker-config Secret and the `thrive-scraper` copy had the expected
+type. `augur` and `listing-monitor` did not exist during that check, so ESO will
+create copies when those namespaces appear. State cleanup remains gated on the
+final Flux health check.
 
-This is a deliberate token rotation. ESO's Password generator cannot import
-the token held only in Terraform state. The safe sequence is to deploy the new
-objects, let workloads and the reflected client Secret converge, test an
-authenticated direct Ollama request, and only then remove the Terraform CR and
-state. If retaining the exact current token matters, put it in a new
-SOPS-encrypted Secret instead of using a generator.
+### `litellm-api-key` — deployed in #6061
 
-### `litellm-api-key`
+The master key and salt moved to SOPS-encrypted Secrets in
+`cluster/k8s/litellm/secrets/`; the existing master key was preserved and the
+salt was intentionally rotated. Gatus now references
+`litellm-master-key:api-key` directly, eliminating the duplicate Gatus Secret.
+The master-key Reflector fanout remains in place and can be evaluated for ESO
+separately.
 
-This root creates three Secrets from two generated values:
+The salt rotation was authorized with the known database state: zero
+credential rows, zero model rows, and nine LiteLLM virtual-key rows. The
+remaining `litellm-keys` root still manages those external LiteLLM virtual keys
+and teams, so it does not become a Kubernetes-secret retirement.
 
-- `litellm/litellm-master-key:api-key`, reflected to `claude-sandbox` and
-  `props`, and a differently-keyed `gatus/litellm-api-key:LITELLM_API_KEY`.
-- `litellm/litellm-salt-key:key`.
+## Remaining sequence
 
-The master key can be rotated, but the salt key explicitly cannot: LiteLLM uses
-it to encrypt credential material already stored in its database. A generated
-ESO password is therefore inappropriate for this root as a whole. The correct
-replacement is two SOPS-encrypted source Secrets, deployed by Flux, preserving
-the current values:
-
-1. Create `litellm-master-key.sops.yaml` and `litellm-salt-key.sops.yaml` in
-   `cluster/k8s/litellm/secrets/` with the existing key names and values.
-2. Retain the master-key reflection annotations and add `gatus` as a consumer.
-3. Change Gatus from `envFrom: litellm-api-key` to an explicit
-   `LITELLM_API_KEY` `secretKeyRef` for `litellm-master-key:api-key`; this
-   removes the duplicate Secret rather than duplicating an API key ciphertext.
-4. Confirm the LiteLLM deployment, Gatus, and reflected consumers use the
-   preserved value. Only then remove `litellm-api-key`'s Terraform CR and
-   state.
-
-The source must be SOPS rather than a Password generator because preserving
-`litellm-salt-key` is an invariant. ESO may still distribute a SOPS source
-Secret cross-namespace, but it does not make the source value durable by
-itself.
-
-### `gaffer-private-ghcr-pull`
-
-This is not a random value. The source is already a SOPS Secret:
-`flux-system/github-pat-ghcr-read:token`. OpenTofu merely transforms it into
-the `kubernetes.io/dockerconfigjson` Secret `flux-system/gaffer-ghcr-pull` and
-Reflector fans it out to `augur`, `listing-monitor`, and `thrive-scraper`.
-
-ESO can render that target without OpenTofu. Use a namespaced `SecretStore` in
-`flux-system`, authenticated by a dedicated ServiceAccount whose Role grants
-only `get` on `github-pat-ghcr-read`, then an `ExternalSecret` that reads the
-PAT and templates `.dockerconfigjson`. Keep the existing Reflector annotations
-on the target. This is an established least-privilege pattern in
-`cluster/k8s/agents/public-coder-agent/backup/repository-secret-store.yaml`:
-it uses a ServiceAccount, a Role with `resourceNames`, and a same-namespace
-Kubernetes `SecretStore` to compose a target Secret.
-
-That exact `SecretStore` was also live and `Ready=True, Valid` on 2026-09-09.
-
-The proposed target needs no generated state and does not rotate the PAT. The
-cutover checks are: ESO `Ready=True`, the source and each reflected pull Secret
-exist with Docker config type, and a newly scheduled private-image Pod can pull
-in every consumer namespace. Then remove the Terraform CR and state.
-
-## Recommended order
-
-1. Move `gaffer-private-ghcr-pull` first. It is a pure SOPS-to-ESO rendering
-   change and has an exact in-repository least-privilege template.
-2. Move `ollama-bearer-token` next only as an explicitly tested rotation, or
-   preserve it through SOPS if rotation is undesirable.
-3. Move `litellm-api-key` as a SOPS preservation migration, including the
-   no-rotation salt-key check. Do not treat it as a disposable random secret.
-4. Revisit Crossplane only after those removals: Route53 records are the first
-   supported-provider pilot; GitHub is a separate community-provider decision.
+1. Confirm the final Flux/workload health for #6053 and #6061, then remove the
+   corresponding obsolete tofu-state database and credential resources.
+2. Keep the remaining 19 roots on OpenTofu. The controller's runner service
+   account still assumes broad cluster Secret access, so moving more roots
+   there would not improve the security boundary.
+3. If Crossplane is adopted, pilot only Route53 records after its provider and
+   credential scope are reviewed. Evaluate the GitHub bundle independently;
+   do not install Crossplane's OpenTofu provider as a workaround.
