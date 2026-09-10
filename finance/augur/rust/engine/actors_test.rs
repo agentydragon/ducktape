@@ -125,12 +125,12 @@ fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
     .unwrap();
     let rollout = &output[0];
     assert!(rollout.stop.is_none());
-    assert_eq!(rollout.receipts.len(), 1);
-    let lot = &rollout.financial.months.last().unwrap().lots[0];
+    assert_eq!(trace(rollout).receipts.len(), 1);
+    let lot = &trace(rollout).financial.months.last().unwrap().lots[0];
     assert_eq!(lot.units_remaining, Quantity(2_000_000));
     assert_eq!(lot.basis_remaining, Money(2_000));
     assert_eq!(lot.account_id, "empty-brokerage");
-    for journal in &rollout.financial.journal {
+    for journal in &trace(rollout).financial.journal {
         assert_eq!(
             journal
                 .postings
@@ -146,9 +146,9 @@ fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
 fn declaring_an_empty_pool_does_not_invest_cash_without_an_action() {
     let input = cash_only_input();
     let output = run(&input, "alice", &[0], |_| |_| Ok(vec![])).unwrap();
-    assert!(output[0].receipts.is_empty());
+    assert!(trace(&output[0]).receipts.is_empty());
     assert!(output[0].stop.is_none());
-    let ending = output[0].financial.months.last().unwrap();
+    let ending = trace(&output[0]).financial.months.last().unwrap();
     assert!(ending.lots.is_empty());
     assert_eq!(
         ending
@@ -192,9 +192,17 @@ fn an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation() {
                 action_index: 0
             })
         ));
-        assert!(output[0].financial.months.last().unwrap().lots.is_empty());
         assert!(
-            output[0]
+            trace(&output[0])
+                .financial
+                .months
+                .last()
+                .unwrap()
+                .lots
+                .is_empty()
+        );
+        assert!(
+            trace(&output[0])
                 .financial
                 .journal
                 .iter()
