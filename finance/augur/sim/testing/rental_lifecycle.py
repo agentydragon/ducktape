@@ -17,7 +17,7 @@ and asserted the same product back could not fail for any bug.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 import numpy as np
 import polars as pl
@@ -26,7 +26,6 @@ import pytest
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
 from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
-from finance.augur.sim.runtime import mortgage_monthly_payment
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
@@ -93,13 +92,25 @@ def _multi_series(*, levels_by_series: dict[LevelSeriesKey, dict[int, list[float
     return paths
 
 
+def _mortgage_monthly_payment(
+    principal: Decimal, annual_interest_rate: float, term_months: int, *, currency_quantum: Decimal
+) -> Decimal:
+    """Independent high-precision annuity expectation, rounded once to currency."""
+    monthly_rate = Decimal(str(annual_interest_rate)) / 12
+    if monthly_rate == 0:
+        payment = principal / term_months
+    else:
+        payment = principal * monthly_rate / (1 - (1 + monthly_rate) ** -term_months)
+    return payment.quantize(currency_quantum, rounding=ROUND_HALF_UP)
+
+
 def _mortgage_balance_and_interest_after_payments(
     *, principal: float, annual_interest_rate: float, term_months: int, payment_count: int
 ) -> tuple[float, float]:
     balance = float(principal)
     interest_paid = 0.0
     payment = float(
-        mortgage_monthly_payment(
+        _mortgage_monthly_payment(
             Decimal(str(principal)), annual_interest_rate, term_months, currency_quantum=Decimal("0.01")
         )
     )

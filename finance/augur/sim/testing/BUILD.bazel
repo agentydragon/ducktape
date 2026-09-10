@@ -161,7 +161,6 @@ py_library(
         "//finance/augur/model:series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:locations",
-        "//finance/augur/sim:runtime",
         "//finance/augur/sim:scenario",
         "@pypi//numpy",
         "@pypi//polars",
