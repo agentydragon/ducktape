@@ -126,7 +126,9 @@ def test_failed_payment_preserves_sale_prefix_without_stopping_other_paths() -> 
     assert report["spending_paid_quanta"] == 0
     assert report["unpaid_claims"][0]["amount_due"] == 12_000_000
     assert failed["trace"]["financial"]["dispositions"][0]["proceeds"] == 10_000_000
-    assert failed["summary"]["ending_book"]["lots"] == []
+    # Canonical books retain the exhausted lot's identity, with no units or basis left.
+    lot = failed["summary"]["ending_book"]["lots"][0]
+    assert (lot["units_remaining"], lot["basis_remaining"]) == (0, 0)
     assert failed["summary"]["ending_book"]["month"] == 13
     assert completed["stop"] is None
     assert measurements(completed)["spending_paid_quanta"] == 12_000_000
