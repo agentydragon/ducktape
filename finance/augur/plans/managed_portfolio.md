@@ -1,9 +1,10 @@
 # Python-owned TLH portfolio migration
 
-The representation and phase are agreed; implementation and driver acceptance
-remain in progress. The [roadmap](roadmap.md) owns dispatch. MA1–MA3 are task IDs,
-not a request for a generic managed-account abstraction. Remove completed slices
-after their implementations and actual callers land.
+The representation and phase are agreed. Draft
+[#6083](https://github.com/agentydragon/ducktape/pull/6083) implements the component
+and driver migration; integration acceptance is still pending. The [roadmap](roadmap.md)
+owns dispatch. Retain MA1/MA2 until those checks pass and the integration lands;
+MA3 remains a future experiment, not a generic managed-account abstraction.
 
 ## Approved boundary
 
@@ -72,17 +73,27 @@ or parallel curve as a fallback. Remaining non-TLH configured strategy, housing
 and PE can still await their named P12 migrations. Their deferral does not permit
 native TLH state/formulas to remain.
 
-The current deletion inventory includes `rust/engine/tlh.rs`, harvest/give-back
-calls and accumulators in `rust/engine.rs` and `rust/engine/trades.rs`, native
-`HarvestPolicy` lowering and ending-harvest fields, and `sim/tlh_harvest.py`.
-Migrate its parameter readers in scenario/compiler, portfolio-source configuration,
-benchmark construction and acceptance tests to the concrete component contract.
-Replace legacy give-back assertions with independent cohort/basis controls; do
-not delete coverage merely because its old state field disappears.
+The draft removes `rust/engine/tlh.rs`, native harvest/give-back state and lowering,
+and `sim/tlh_harvest.py`. Scenario/compiler, portfolio-source configuration,
+benchmark construction and acceptance readers now use the component contract.
+Verify actual configured sales, funding, distributions and failure paths before
+closing MA2; source deletion alone is not financial acceptance. Keep independent
+cohort/basis assertions rather than merely deleting old give-back tests.
+
+`sim/session.py` and `sim/configured.py` own the production outer loops;
+configured strategy and legacy output retirement remain P12, not missing TLH
+implementation. Dense/forensic capture must retain the settled component effects
+with explicit operation, signed cash, gains and basis change. Product timelines
+must not lose redemptions or invent public-stock units; compact mode need not
+retain that history.
 
 MA3 and supported experiment consumers need not wait for the app's existing
 housing/PE branches or performance work. BIND/TAX gate expanded product/statutory
 claims, not clearly labeled synthetic controls.
+Tax-aware investor rules need CAP's
+[recorded-tax observation slice](policy_interfaces.md#observationspy); current
+Python observations expose component value/basis but not the household's tax
+facts. Fixed-flow harvesting/no-harvest comparisons need not wait for that slice.
 
 ## Decisive integration controls
 

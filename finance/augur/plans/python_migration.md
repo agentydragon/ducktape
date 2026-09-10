@@ -24,24 +24,23 @@ studies to expose needed boundaries:
   This is a concrete reduced-form model, not a generic managed-account container.
 - Study authors load/sample paths, supply ordinary Python batch policies, advance
   the common session and inspect typed outcomes. Trinity, flexible-spending,
-  allocation and TLH examples exercise this composition; they need
-  neither the app nor a universal experiment framework.
+  and allocation examples exercise this composition. MA3 adds the paired TLH
+  experiment; neither needs the app or a universal experiment framework.
 
-Typed common outputs do not finish typing the world. The concrete
-[input/reader cleanup slices](cleanup_migration.md) cover INPUT's public
-`CompiledRun.execution_input` leak and the remaining P12 readers. Reuse typed
-prepared tax records, exact total opening lot basis and typed conditioning
-observations. These slices need not wait for a wholesale Python executor rewrite.
+Reuse the typed `CompiledRun`, prepared tax records, exact total opening lot basis
+and typed conditioning observations. Private lowering is not a second authoring
+format. The [remaining reader cleanup](cleanup_migration.md) does not require a
+wholesale Python executor rewrite.
 
 The `product/` shell is not a new-feature priority. Its changes should correct
 existing behavior or retire legacy interfaces; experiments remain the primary
 consumers driving new domain capabilities.
 
-The [TLH migration](managed_portfolio.md) includes every driver and native reader,
-not only a new Python example. Advance once before investor operations, including
-scheduled/configured redemptions, regardless of a later funding failure. Remove
-the old native formula, give-back state and replaced Python curve; no callback
-handoff or parallel TLH implementation waits for the app's housing/PE migration.
+The [TLH integration acceptance](managed_portfolio.md) covers every driver and
+native-reader retirement, not only a new example. The common and configured
+Python loops advance the component before investor operations, including
+scheduled redemptions, regardless of a later funding failure. Verify that
+integration before removing MA1/MA2; MA3 remains a future paired experiment.
 
 Move the definitions and financial steps to Python where that makes this object
 model clearer, easier to inspect and less dependent on duplicated binding/schema
@@ -51,7 +50,8 @@ counterpart. A speedup or large-N benchmark is not a prerequisite. Do not add
 reverse callbacks or a second supported evaluator merely to move a small function.
 
 Annual tax assessment illustrates a real content dependency, not the next
-mandatory port: both native runners call `engine/taxes.rs::accrue_year_end_taxes`.
+mandatory port: the common and configured Python loops share the native close
+that calls `engine/taxes.rs::accrue_year_end_taxes`.
 It owns netting, deductions, state assessment, SALT-dependent federal reassessment,
 liability creation and reset. A pure `rust/tax.rs::assess` port alone does not
 replace that orchestration. Choose a complete useful boundary when a consumer

@@ -1,7 +1,8 @@
 """Project finished action-session outcomes; never run a policy or a financial evaluator.
 
-Compact cash/public marks and held-bond principal support the product's fan and terminal reductions. Detailed
-events use the same result's typed `trace.events`.
+Compact cash, public/TLH aggregate marks and held-bond principal support the
+product's fan and terminal reductions. Detailed events use the same result's
+typed `trace.events`; TLH marks do not disclose constituent positions.
 An absent history is not an observed zero holding.
 """
 
@@ -47,7 +48,7 @@ def _shortfall(summary: Summary) -> int:
 def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agent_id: str) -> ProductMetricArrays:
     """Use finished results from this prepared run, in their supplied selection order.
 
-    Cash, public securities and held-bond principal are supported here. Historical property
+    Cash, public securities, opaque TLH value and held-bond principal are supported here. Historical property
     and private-equity values must be captured before those portfolios can use this adapter;
     the configured app retains those capabilities. Masked padding is not observed money.
     """

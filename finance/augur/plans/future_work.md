@@ -8,8 +8,8 @@ assumptions remain downstream.
 
 ## Domain/API cleanup
 
-- **INPUT / BIND:** finish typed prepared facts and explicit financial-product
-  bindings, reusing typed conditioning/artifact observations. Distinguish configured
+- **BIND:** use typed prepared facts and conditioning/artifact observations for
+  explicit financial-product bindings. Distinguish configured
   opening levels, relative path anchors and fixed contractual amounts. Keep their
   anchoring conventions explicit at composition, not inferred from source names.
 - **P12 / ACCEPT / CAP:** retire configured drivers and test adapters while
@@ -33,12 +33,13 @@ assumptions remain downstream.
 - **IDTYPES, deferred:** use distinct strongly typed entity IDs so security and
   property identities cannot be interchanged at domain/API boundaries. This is
   not merely a prefix spelling change. Preserve existing typed keys; do not make
-  a global serialization/ID sweep a prerequisite for INPUT or BIND.
+  a global serialization/ID sweep a prerequisite for product composition.
 
 ## Reduced-form TLH portfolios
 
-**MA1–MA3** implement the approved opaque Python component and migrate all drivers;
-see [the TLH migration plan](managed_portfolio.md). Representation and the common
+**MA1/MA2** retain integration acceptance for the implemented opaque Python
+component and its drivers; **MA3** remains the paired experiment. See
+[the TLH migration plan](managed_portfolio.md). Representation and the common
 pre-investor monthly phase are settled, not a gate to reopen here.
 
 - Check modeled realized losses and subsequent gain/basis consequences against

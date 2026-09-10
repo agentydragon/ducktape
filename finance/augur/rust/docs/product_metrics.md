@@ -6,20 +6,28 @@ owes the product read model, including the observation boundary when execution s
 
 ## The split
 
-The engine emits only the seven base series plus the per-rollout failure month. Everything
-above that — the derived metrics, the terminal reduction, the percentile brackets, the
-interpolation — is `sim/metric_composition.py` and `sim/quantiles.py`, reached
-through the backend-neutral `Engine` contract rather than from this package.
+The configured product adapter calls the Python `sim/configured.py` loop, whose
+native steps capture base series and the per-rollout failure month. The common
+action result instead supplies scoped numeric histories to
+`product/action_projection.py`. Both use `sim/metric_composition.py` and
+`sim/quantiles.py` for derived metrics, terminal reductions and percentile interpolation.
 
-The split is what the contract is for: an engine owes integers, and the read model owes
-every reduction over them. Adding a base metric means touching `BASE_METRIC_NAMES` and
-`rust/product.rs`. Adding a _derived_ metric means touching `compose_metric` alone.
+Valuation remains canonical; neither adapter reconstructs trades, tax or basis.
+Derived metrics use `compose_metric`; numeric histories describe only observations
+actually reached by their original rollout IDs.
 
 ## Why the metrics are not read out of dense output
 
-`simulate_product_metrics` runs under `CaptureMode::Summary`: no monthly snapshot, no
-journal, no event trace. The percentile fan is the 100,000-rollout workload, and it needs
-`snapshots × rollouts` integers per metric, not a dense output tree.
+`sim/configured.py::simulate_product_metrics` requests summary capture: no monthly
+book, journal or event trace. Common-action compact results likewise retain scoped
+numeric histories without dense books. Selected dense/forensic captures retain
+canonical events; only forensic capture includes the journal.
+
+Opaque TLH value appears once in holdings wealth. Its contribution, redemption,
+modeled-realization and distribution records are `tlh_financial_effects`, not
+public-lot dispositions. They retain signed cash, ST/LT gains and basis changes
+for the product timeline, including zero-cash liquidation. Tax consequences
+still come from canonical household tax records.
 
 ## Failed rollouts
 
@@ -47,7 +55,9 @@ Aggregate outcomes declare their `OutcomeBasis`:
   snapshot `f+1`. It is amount due minus actually paid, including tax and contract
   demands—not additional cash required to make a funding group payable, and not a
   projection of future shortfalls. An all-or-none group can leave 1,100 unpaid while
-  retaining 1,000 cash. Another source-account group can still pay its consumption.
+  retaining 1,000 cash. Another source-account group can still pay its claims.
+  Common-action reporting also includes the valid attempted consumption gap;
+  rejected discretionary consumption is not a new incurred liability.
 
 This basis governs the aggregate population; each monthly fan has its own observation
 count. Currency quantiles remain exact integers, with null absence at the product/API
@@ -70,8 +80,8 @@ under their own rules, not this purchase-price-index valuation.
 
 ## What the encoder has to preserve
 
-`sim/compiler/execution.py` prepares the integer execution input directly from the
-scenario and supplied paths. The backend only transports it:
+`sim/compiler/execution.py` prepares typed integer facts directly from the
+scenario and supplied paths. Native serialization is private to the boundary:
 
 - security prices, home values and PE marks cross as integer currency quanta;
 - distribution rates retain sub-quantum precision until multiplied by holdings;

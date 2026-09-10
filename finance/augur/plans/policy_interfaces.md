@@ -39,6 +39,14 @@ actor's private books. Path routing and capture configuration belong to the runn
 The common observation exposes exact current/origin CPI when modeled; a dependent
 policy rejects its absence. No policy receives the future sampled CPI path.
 
+`tax_records` above is still a target, not a field on the Python observation.
+CAP must expose actor-scoped recorded income, jurisdiction gain/carryforward
+facts and assessed outstanding liabilities from the existing native `ActorBooks`
+views when a tax-aware policy needs them. Current TLH value/basis and payment
+claims are not a substitute. Test visibility after the month's modeled losses,
+after a prior sale and across year-end/reset; exclude future assessments and
+other actors' facts. Reuse the canonical records, not a policy-side tax ledger.
+
 ## `actions.py`
 
 ```python
@@ -55,7 +63,7 @@ class PayClaim:
     claim: ClaimId
     amount: Money
 
-type Action = Sell | Buy | Transfer | PayClaim | Consume
+type Action = Sell | Buy | Transfer | PayClaim | Consume | Contribute | Withdraw | Liquidate
 ```
 
 `Buy` names an account, instrument and quantity; `Transfer` names source,
@@ -216,9 +224,10 @@ cash/tax settlement. Native code may retain immutable reporting statements, neve
 a mirrored mutable position/basis book. No custom exception taxonomy, model
 callback handoff or generic managed-account API is needed.
 
-The [TLH migration plan](managed_portfolio.md) retains component, all-driver/native
-deletion and runnable-comparison acceptance. Representation and timing are agreed;
-the integrations are not declared complete by this target document.
+The [TLH migration plan](managed_portfolio.md) retains acceptance of the implemented
+component/all-driver integration and native deletion. MA3's runnable comparison
+is still future work. Tax-aware rules additionally need the CAP tax-observation
+slice above; fixed investor-flow controls do not.
 
 ## Acceptance and remaining choices
 
@@ -249,9 +258,10 @@ is absent but actual paid consumption is zero for that observed month, not for
 unobserved post-stop months. The bounded-rule scalar/batch comparison and profiler
 use this same session, not a second policy interface.
 
-P12 migrates configured consumers and removes old full-run loops and implicit
-public-portfolio strategy, preserving required existing housing/PE capabilities.
-The feature-rich benchmark, app and legacy acceptance readers remain.
+P12 migrates the remaining configured Python consumers to common actions/results
+and removes implicit public-portfolio strategy, preserving required existing
+housing/PE capabilities. The feature-rich benchmark, app and legacy acceptance
+readers remain; native full-run helpers are test-only, not a second public driver.
 ACCEPT moves supported consumers to the common session; BENCH retains its
 housing/PE/harvest/multiple-actor dependencies. Existing Python funding, common
 reporting and held-bond capture are reused, not reimplemented. New `product/`

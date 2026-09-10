@@ -4,20 +4,6 @@ The [roadmap](roadmap.md) owns dependencies and dispatch. These are bounded
 deletion criteria for gaps found in the live-reader audit, not a new framework
 or a second migration plan. Remove each section with its last reader.
 
-## Input objects
-
-**INPUT — private lowering, typed prepared inputs.** `CompiledRun.execution_input`
-is a public mutable nested wire dictionary. Common-session callers serialize it;
-product projections inspect it for domain metadata, and a joint-example test
-mutates it. Keep typed declarations/prepared facts authoritative; expose needed
-metadata through the existing prepared-run object and keep serialization at the
-native boundary. Migrate all callers, tests and file-entrypoint readers atomically.
-Do not retain a public raw tree beside the typed tree, merely add casts, or add a
-new executor abstraction. Consume the existing typed prepared tax records and
-common outputs rather than introducing another representation.
-INPUT need not wait for P12: still-live configured strategies can lower privately
-until their last consumers move, but must not dictate the public domain objects.
-
 ## P12 reader retirement
 
 Remaining TLH/feature-rich/native-test consumers still use scheduled public sales.
@@ -47,16 +33,18 @@ full-run entrypoint solely to preserve its test harness. Housing/PE/harvest suit
 their affected capabilities, not the whole acceptance migration. Do not discard
 regressions or wrap the old runner behind the new result type.
 
-**BENCH — feature-rich benchmark consumer.** The remaining standalone native
-benchmark runs `feature_rich_case`, which includes housing, PE, harvesting and
-multiple obligated actors. It is not a ready public-only migration. Preserve that
-financial workload while moving its outer loop to Python after the affected
-MA2/HOUSING/PE capabilities and GP's multiple-actor timing contract exist. Do not
-strip holdings/claims or substitute a smaller workload to declare retirement.
+**BENCH — feature-rich benchmark consumer.** `benchmark/driver.py` now owns the
+Python loop through `sim/configured.py`; its complete `feature_rich_case` still
+uses configured allocation, scheduled sales and grouped claims. Migration to
+ordinary batch actions and common typed outcomes remains. Preserve housing, PE,
+TLH and multiple obligated actors while resolving the affected
+MA2/HOUSING/PE capabilities and GP's multiple-actor timing. Do not strip
+holdings/claims or substitute a smaller workload to declare retirement.
 Resolve only the actor sequencing this workload needs, not a universal scheduler.
-Delete the native full-run benchmark driver with the migrated caller; there is
-no throughput or RUNTIME gate. Other Python experiments already exercise the
-public session and need not wait for this benchmark.
+Delete the benchmark's configured entrypoint/output dependencies with that
+cutover; there is no throughput or RUNTIME gate. Its native-only driver is gone.
+Other Python experiments already exercise the public session and need not wait
+for this benchmark.
 
 P12 also deletes `compiler/execution.py::_holding_pools`' strategy-derived
 declarations/first-source-account choice and
