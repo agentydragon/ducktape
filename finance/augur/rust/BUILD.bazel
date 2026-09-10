@@ -220,6 +220,7 @@ py_test(
         "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/x/bounded_spending:python_policy",
         "//finance/augur/x/monthly_actions:run",
