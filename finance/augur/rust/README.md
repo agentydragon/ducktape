@@ -274,6 +274,12 @@ bond-case construction stays in `sim/testing/bonds.py`. The product bond carryin
 regression remains in `backend_test.py` until product action projection supports that
 history; it is not replaced with a narrower principal-only assertion.
 
+`bbr test //finance/augur/rust:security_distributions_test` runs the public-fund
+payout, issuer-exemption and sub-quantum payment controls through the same typed
+session. The policy only pays observed claims; distribution cash and source income
+remain canonical engine facts. Compiler controls share the authored cases in
+`sim/testing/security_distributions.py`, not an alternative result adapter.
+
 The remaining legacy acceptance suites in `sim/testing/` assert integer answers for:
 
 - opening balances and opening equity;

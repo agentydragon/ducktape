@@ -37,7 +37,6 @@ class RustResult(SimulationResult):
 
     journal: pl.DataFrame
     tlh_ledger: pl.DataFrame
-    distributions: pl.DataFrame
     # The accrual fields recorded beyond the canonical `tax_breakdowns` frame: §1250 tax and
     # the shared capital-loss carryforward, neither of which the canonical frame carries.
     tax_accrual_details: pl.DataFrame
@@ -281,12 +280,6 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             sort_by,
         )
 
-    distributions = detail_frame(
-        "distributions",
-        {"asset_id": "asset_id", "issuer_jurisdiction_id": "issuer_jurisdiction_id"},
-        ("amount",),
-        ["rollout_id", "month_index", "asset_id"],
-    )
     tax_accrual_details = detail_frame(
         "tax_accruals",
         {"agent_id": "agent_id", "jurisdiction_id": "jurisdiction_id"},
@@ -360,7 +353,6 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         rollout_status=status,
         journal=journal,
         tlh_ledger=tlh_ledger,
-        distributions=distributions,
         tax_accrual_details=tax_accrual_details,
         property_sale_details=property_sale_details,
         property_details=property_details,

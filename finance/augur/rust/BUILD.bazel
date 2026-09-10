@@ -173,7 +173,6 @@ py_test(
         "//finance/augur/sim/testing:private_equity",
         "//finance/augur/sim/testing:property_stakes",
         "//finance/augur/sim/testing:rental_lifecycle",
-        "//finance/augur/sim/testing:security_distributions",
         "//finance/augur/sim/testing:simulation_result",
         "//finance/augur/sim/testing:target_allocation",
         "@pypi//pytest",
@@ -274,6 +273,23 @@ py_test(
         "//finance/augur/sim:results",
         "//finance/augur/sim/testing:bonds",
         "//finance/augur/sim/testing:case",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "security_distributions_test",
+    srcs = ["security_distributions_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "//finance/augur/sim/testing:security_distributions",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

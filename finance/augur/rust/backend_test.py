@@ -44,7 +44,6 @@ from finance.augur.sim.testing.rental_lifecycle import (
     RentalIncomeTaxationAcceptance,
     RentalLifecycleCashflowsAcceptance,
 )
-from finance.augur.sim.testing.security_distributions import SecurityDistributionAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
 
@@ -56,12 +55,6 @@ class TestRustEngine(EngineAcceptance):
 
 
 class TestRustIncomeSources(IncomeSourceAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
-
-
-class TestRustSecurityDistributions(SecurityDistributionAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust
