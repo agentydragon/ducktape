@@ -105,8 +105,7 @@ spec:
               mountPath: /etc/agentplane-mcp
               readOnly: true
             - name: github-mcp-client
-              mountPath: /etc/agentplane-mcp/github-client-secret
-              subPath: client_secret
+              mountPath: /etc/agentplane-github
               readOnly: true
             - name: settings
               mountPath: /etc/agentplane-actions
@@ -139,6 +138,9 @@ spec:
           secret:
             secretName: haku-console-github-mcp-client-credentials
             defaultMode: 0440
+            items:
+              - key: client_secret
+                path: client_secret
         - name: oauth
           secret:
             secretName: agentplane-mcp-oauth
