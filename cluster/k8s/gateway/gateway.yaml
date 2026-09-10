@@ -36,15 +36,6 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    - name: kube-api-passthrough
-      hostname: "api.allegedly.works"
-      port: 443
-      protocol: TLS
-      tls:
-        mode: Passthrough
-      allowedRoutes:
-        namespaces:
-          from: All
     - name: http
       port: 80
       protocol: HTTP

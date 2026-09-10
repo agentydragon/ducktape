@@ -26,9 +26,8 @@ here, no client_secret on the sandbox.
 
 Server is https://kubeapi.allegedly.works — an HTTPRoute on the Cilium
 Gateway terminating the wildcard LE cert and re-encrypting to kube-apiserver.
-The legacy api.allegedly.works TLS-passthrough route is untouched by this
-migration; laptop kubectl uses an unrelated admin kubeconfig deployed by
-home-manager. See cluster/docs/lessons_learned/
+Direct client-certificate access uses api.allegedly.works:6443.
+Laptop kubectl uses an admin kubeconfig deployed by home-manager. See cluster/docs/lessons_learned/
 2026_04_24_k8s_auth_through_mitm_proxy.md for the full investigation.
 
 Usage:

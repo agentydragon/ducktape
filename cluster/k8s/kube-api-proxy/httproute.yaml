@@ -12,7 +12,7 @@ metadata:
 
       Purpose: works through Claude Code web's L7 TLS-terminating egress proxy,
       which rejects the cluster-CA-signed cert that api.allegedly.works presents
-      on the sibling TLSRoute. See ../docs/lessons_learned/ for the full story.
+      on the direct API endpoint (:6443). See ../docs/lessons_learned/ for the full story.
       Auth is bearer-JWT only (client certs die at the MITM boundary; see the
       kubeconfig.py docstring in devinfra/k8s/kubeconfig.py).
 spec:

@@ -217,11 +217,9 @@ Hit list when this changes:
 | TF state / `cluster/.envrc`   | `api.allegedly.works:6443` | `terraform/main/kubeconfig`, written by OpenTofu |
 | `~/.kube/config` (wyrm2)      | `localhost:7445`           | Via local haproxy                                |
 
-`api.allegedly.works` exists on port 443 behind the cluster Cilium Gateway
-(TLSRoute in `k8s/kube-api-proxy/` with TLS passthrough to the `kubernetes`
-Service). This is what Claude Code web sandboxes use to reach the k8s API —
-Anthropic's egress proxy only allows port 443 outbound, so a non-standard port
-would not work. TLS passthrough preserves client certificates for x509 auth.
+Claude Code web uses `kubeapi.allegedly.works:443`, which terminates publicly
+trusted TLS and forwards bearer authentication to the API server. Direct admin
+access uses `api.allegedly.works:6443` and preserves client-certificate authentication.
 
 ## OpenTofu State Backend
 
