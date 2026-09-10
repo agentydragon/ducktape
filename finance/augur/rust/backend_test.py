@@ -22,7 +22,6 @@ from finance.augur.sim.testing.behaviour import (
     ObligationAcceptance,
     PropertyCarryingCostAcceptance,
     RolloutFailureAcceptance,
-    TransferAcceptance,
     YearEndTaxAcceptance,
 )
 from finance.augur.sim.testing.case import Case, scenario
@@ -126,12 +125,6 @@ class TestRustRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
 
 
 class TestRustRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
-
-
-class TestRustTransfer(TransferAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust

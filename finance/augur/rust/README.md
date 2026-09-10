@@ -280,10 +280,14 @@ session. The policy only pays observed claims; distribution cash and source inco
 remain canonical engine facts. Compiler controls share the authored cases in
 `sim/testing/security_distributions.py`, not an alternative result adapter.
 
+`bbr test //finance/augur/rust:transfers_test` runs scheduled and recurring scripted
+cashflows through the common session with Alice as the sole decision actor. Exact
+cash books include the scripted counterparties, preserving conservation checks
+across 1,000 identical paths without retaining the configured test runner.
+
 The remaining legacy acceptance suites in `sim/testing/` assert integer answers for:
 
 - opening balances and opening equity;
-- scheduled and recurring transfers;
 - scalar, tagged-fixed, and inflation/rent-series-indexed amounts across
   transfers, property cashflows, and obligations, including rollout-specific
   monthly or periodic reset boundaries and exact half-up ratio scaling;

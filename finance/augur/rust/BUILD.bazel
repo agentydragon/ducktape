@@ -293,3 +293,19 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "transfers_test",
+    srcs = ["transfers_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:case",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
