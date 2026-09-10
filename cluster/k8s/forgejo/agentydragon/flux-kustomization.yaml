@@ -9,9 +9,7 @@ spec:
   timeout: 10m
   path: ./cluster/k8s/forgejo/agentydragon
   prune: true
-  # The replacement Terraform is deliberately suspended until the state Job has
-  # completed. The activation change restores this health gate.
-  wait: false
+  wait: true
   sourceRef:
     kind: GitRepository
     name: ducktape
@@ -20,6 +18,15 @@ spec:
     # OIDC-created agentydragon account) so post-merge verification can use the
     # Ready condition before attempting git-over-SSH.
     namespace: ducktape-flux
+  # The replacement remains suspended through the state transfer and therefore
+  # has no Ready condition yet. The old CR was suspended only after its last
+  # successful reconciliation, so it is the temporary health gate. Activation
+  # switches this back to the replacement before deleting the old CR.
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: forgejo-agentydragon
+      namespace: flux-system
   dependsOn:
     - name: forgejo # Forgejo API must be up (provider target)
       namespace: ducktape-flux
