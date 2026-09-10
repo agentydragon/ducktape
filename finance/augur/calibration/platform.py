@@ -41,14 +41,13 @@ class Market:
 
     id: str
     url: str
-    # The live quote (order book or AMM pool price). `implied_probability(quote, volume=...)` turns
+    # The snapshot's quote (order book or AMM pool price). `implied_probability(quote, volume=...)` turns
     # it into a single YES probability; markets expose trades/quotes, not a probability directly.
     quote: Quote
     volume: float | None = None
     volume_unit: str | None = None
-    # The market's current title/question and verbatim resolution rules, fetched LIVE alongside the
-    # price so they can't drift from the platform. `None` when the response carried none. The
-    # catalog no longer stores these per market — they are populated from this live snapshot.
+    # Title/question and resolution rules from the same snapshot as the quote;
+    # absent when that snapshot carries none. A mirrored snapshot may be stale.
     title: str | None = None
     rules: str | None = None
 

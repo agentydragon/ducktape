@@ -7,10 +7,9 @@
 # cleanly-mappable (`exact`) markets per rollout and surfaces the rest. Each exact market's
 # typed `mapping` is the resolver's contract.
 #
-# NOTE: market title/question and verbatim resolution criteria are NOT parsed data -- they are
-# fetched LIVE from the platform at scoring time (Market.title / Market.rules) so they can never
-# drift from the source. The `# question:` lines below are human-readable comments only; this
-# file carries stable IDs, mappings, and `notes` as data.
+# Market title/question and resolution criteria come from the supplied quote snapshot,
+# which production reads from the evidence mirror. The `# question:` lines below are
+# human-readable comments only; this file carries IDs, mappings and `notes` as data.
 
 metadata:
   source: manifold

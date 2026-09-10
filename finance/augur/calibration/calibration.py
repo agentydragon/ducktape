@@ -140,8 +140,7 @@ class CleanRow(BaseModel):
     """An apples-to-apples comparison: a market augur models as an event."""
 
     market_id: str
-    # Title fetched LIVE from the platform (the catalog no longer stores it, so it can't
-    # drift); `None` when the platform response carried none.
+    # Title from the supplied market snapshot; absent when that snapshot carries none.
     question: str | None = None
     url: str
     platform: str

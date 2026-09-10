@@ -166,6 +166,13 @@ These are retained ideas, not active DAG prerequisites. New `product/` and UI
 features remain deprioritized; correctness and legacy retirement are separate.
 Richer PE app controls are dropped from the backlog, not queued as deferred work.
 
+- Retirement of the smooth-dilution PE mode and the experimental PM reifier is
+  deferred. The owner found smooth dilution unsatisfactory for fidelity; its
+  continued presence is not an endorsement. PM-based forecast comparison remains
+  a possible later experiment, but keeping the reifier executable is not a
+  requirement. If calibration/reification code is deleted, leave a revival task
+  for comparing Augur forecasts with prediction-market beliefs; do not silently
+  lose that research intent or turn it into a current feature obligation.
 - Keep existing evidence loaders and access working. Postpone new fetch-cadence,
   caching and throttling infrastructure until observed throttling justifies it;
   no speculative ingestion subsystem or cache prerequisite for studies. Quote
