@@ -8,20 +8,25 @@ from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.study.trinity.replay import EQUITY, build_scenario
 
 
-def prepare(*, rollout_count: int, horizon_months: int) -> CompiledRun:
-    """Repeat three deterministic stress cases over a tax-free, sales-only equity sleeve."""
+def sample(*, rollout_count: int, horizon_months: int) -> ExternalSeriesContext:
+    """Repeat three deterministic price/CPI cases, not independent probability samples."""
     prices = np.full((rollout_count, horizon_months + 1), 100.0)
     prices[::3, 12:] = 200.0
     prices[1::3, 12:] = 50.0
     prices[2::3, 12:] = 130.0
     cpi = np.ones_like(prices)
     cpi[:, 12:] = 1.25
-    paths = ExternalSeriesContext.from_level_blocks(
+    return ExternalSeriesContext.from_level_blocks(
         [(SecurityKey(symbol=EQUITY), prices), (InflationKey(), cpi)],
         rollout_count=rollout_count,
         horizon_months=horizon_months,
     )
+
+
+def prepare(*, rollout_count: int, horizon_months: int) -> CompiledRun:
+    """A tax-free equity portfolio; the Python policy supplies sales and consumption."""
     scenario = build_scenario(equity_share=1.0, withdrawal_rate=0.04).model_copy(
-        update={"scheduled_obligations": [], "horizon_months": horizon_months}
+        update={"scheduled_obligations": [], "target_allocation_policies": [], "horizon_months": horizon_months}
     )
+    paths = sample(rollout_count=rollout_count, horizon_months=horizon_months)
     return compile_run(scenario, rollout_count=rollout_count, external_series=paths, jurisdictions={}, locations={})

@@ -59,6 +59,7 @@ struct Claim {
 struct Observation {
     agent_id: String,
     month: u32,
+    cpi: (i64, i64),
     cash: i64,
     public_holdings: i64,
     accounts: Vec<(String, i64)>,
@@ -326,11 +327,13 @@ impl ActionSession {
             .map(|decision| {
                 let observation = decision.observation;
                 let books = &observation.books;
+                let cpi = books.cpi().map_err(to_py_err)?;
                 Ok(Decision {
                     rollout_id: decision.rollout_id,
                     observation: Observation {
                         agent_id: books.agent_id().into(),
                         month: books.month(),
+                        cpi: (cpi.numerator(), cpi.denominator()),
                         cash: books.cash().map_err(to_py_err)?.0,
                         public_holdings: books.public_value().map_err(to_py_err)?.0,
                         accounts: books

@@ -8,12 +8,14 @@ Neither implementation performs financial settlement or computes tax.
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, cast
+from itertools import batched
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.rust.simulator import PrototypeSpendingSession, SpendingObservationBatch
+from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions, Finished
+from finance.augur.sim.sleeves import withdraw
 
 
 @dataclass(frozen=True)
@@ -50,13 +52,13 @@ class Observations:
     cpi: NDArray[np.object_]
 
     @classmethod
-    def from_native(cls, batch: SpendingObservationBatch) -> "Observations":
+    def from_native(cls, batch: list[Decision]) -> "Observations":
         return cls(
-            np.asarray(batch.rollout_ids, dtype=np.int64),
-            np.asarray(batch.months, dtype=np.int64),
-            np.asarray(batch.cash, dtype=object),
-            np.asarray(batch.public_holdings, dtype=object),
-            np.asarray(batch.price_numerators, dtype=object),
+            np.asarray([row.rollout_id for row in batch], dtype=np.int64),
+            np.asarray([row.observation.month for row in batch], dtype=np.int64),
+            np.asarray([row.observation.cash for row in batch], dtype=object),
+            np.asarray([row.observation.public_holdings for row in batch], dtype=object),
+            np.asarray([row.observation.cpi[0] for row in batch], dtype=object),
         )
 
     def select(self, rows: slice) -> "Observations":
@@ -171,45 +173,101 @@ class BatchPolicy:
         return requests.tolist()
 
 
+class SpendingPolicy:
+    """Sales-only funding proposals, then due-claim payments, then chosen consumption.
+
+    The rule sees current cashflows and claims. Failed execution retains its successful
+    prefix; this policy never asks the engine to retry, cut spending or allocate for it.
+    """
+
+    def __init__(self, rule: Callable[[Observations], list[int]], targets: dict[tuple[str, str], int]) -> None:
+        self.rule = rule
+        self.targets = targets
+
+    def __call__(self, batch: list[Decision]) -> list[DecisionActions]:
+        responses = []
+        for decision, amount in zip(batch, self.rule(Observations.from_native(batch)), strict=True):
+            observation = decision.observation
+            claims = observation.claims
+            cause = f"annual_consumption_m{observation.month}"
+            actions = (
+                withdraw(
+                    observation,
+                    targets=self.targets,
+                    cash_account_id="checking",
+                    amount=max(
+                        0, amount + sum(claim.amount_due for claim in claims) - dict(observation.accounts)["checking"]
+                    ),
+                    cause_id=f"fund-{cause}",
+                )
+                if self.targets
+                else []
+            )
+            actions.extend(
+                Action.pay_claim(index, f"pay-{claim.cause_id}", claim, claim.from_account, claim.amount_due)
+                for index, claim in enumerate(claims)
+            )
+            if amount:
+                actions.append(
+                    Action.consume(
+                        len(claims),
+                        cause,
+                        "annual_consumption",
+                        (observation.agent_id, "checking"),
+                        ("world", "checking"),
+                        amount,
+                    )
+                )
+            responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
+        return responses
+
+
 def run(
     input_json: str,
-    policy: Callable[[Observations], list[int]],
+    policy: Callable[[list[Decision]], list[DecisionActions]],
     rollout_ids: list[int],
     *,
-    forensic: bool = False,
+    capture: Literal["summary", "dense", "forensic"] = "summary",
     chunk_size: int | None = None,
     reverse: bool = False,
 ) -> dict[str, Any]:
-    """Own the monthly outer loop; pass a fresh policy instance for each run/replay.
-
-    The callable can be edited/replaced in a notebook without rebuilding Rust. Each
-    path is decided once per month; independent chunks have no cross-path feedback.
-    Configured native funding/tax mechanics still execute all financial effects.
-    """
+    """Python owns the loop; chunks author one complete response before each advance."""
     if chunk_size is not None and chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    session = PrototypeSpendingSession(
-        input_json,
-        json.dumps(
-            {
-                "from": {"agent_id": "retiree", "account_id": "checking"},
-                "to": {"agent_id": "world", "account_id": "checking"},
-                "cause_id": "annual_consumption",
-            }
-        ),
-        rollout_ids,
-        forensic=forensic,
-    )
+    session = ActionSession(input_json, "retiree", rollout_ids, capture=capture)
     try:
-        while (native := session.observe()).rollout_ids:
-            observations = Observations.from_native(native)
+        batch = session.start()
+        while not isinstance(batch, Finished):
             if reverse:
-                observations = observations.select(slice(None, None, -1))
-            size = chunk_size or len(observations.rollout_ids)
-            for start in range(0, len(observations.rollout_ids), size):
-                chunk = observations.select(slice(start, start + size))
-                amounts = policy(chunk)
-                session.advance(list(zip(chunk.rollout_ids.tolist(), chunk.months.tolist(), amounts, strict=True)))
-        return cast(dict[str, Any], json.loads(session.finish_json()))
+                batch.reverse()
+            responses = [
+                response
+                for chunk in batched(batch, chunk_size or len(batch), strict=False)
+                for response in policy(list(chunk))
+            ]
+            batch = session.advance(responses)
+        return {"rollouts": json.loads(batch.rollouts_json)}
     finally:
         session.close()
+
+
+def consumption(output: dict[str, Any]) -> tuple[list[list[int | None]], list[list[int | None]]]:
+    """Project this component's attempted requests; an unattempted action is absent."""
+    requested = []
+    paid = []
+    for rollout in output["rollouts"]:
+        summary = rollout["summary"]
+        amounts: list[int | None] = [0] * summary["ending_book"]["month"]
+        receipts: list[int | None] = [0] * len(amounts)
+        # This policy omits live zero requests. On a stopped month, absence can also
+        # mean an earlier action prevented consumption; do not turn that into zero.
+        if rollout["stop"] is not None:
+            amounts[-1] = receipts[-1] = None
+        for payment in summary["payments"]:
+            receipt = payment["receipt"]
+            if receipt["target"] == {"Consumption": {"component_id": "annual_consumption"}}:
+                amounts[payment["month"]] = receipt["amount_requested"]
+                receipts[payment["month"]] = receipt["amount_requested"] if receipt["outcome"] == "Paid" else 0
+        requested.append(amounts)
+        paid.append(receipts)
+    return requested, paid

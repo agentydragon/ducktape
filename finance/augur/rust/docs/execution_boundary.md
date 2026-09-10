@@ -36,9 +36,9 @@ The supplied closure still chooses its engine entrypoint, policies, account
 bindings, parameters and selected traces. Financial validation stays in the
 engine. Neither helper changes path identities or caches execution state.
 
-The bounded-spending native control uses this file transport. Allocation-glide and
-monthly-actions use the in-process `ActionSession` with Python-owned loops and
-policy functions; they retain `write_prepared_input` for reproducible artifacts.
+Bounded spending, allocation-glide and monthly actions use the in-process
+`ActionSession` with Python-owned loops and policy functions; they retain
+`write_prepared_input` for reproducible artifacts.
 
 ## Precision and validation
 

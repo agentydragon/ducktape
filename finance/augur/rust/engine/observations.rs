@@ -37,6 +37,21 @@ impl ActorBooks<'_> {
         self.month
     }
 
+    /// Observed CPI relative to this path's origin, retaining the exact index ratio.
+    pub fn cpi(&self) -> Result<Factor, SimulationError> {
+        let current = series_value(self.input, "inflation", self.rollout, self.month)?;
+        let origin = series_value(self.input, "inflation", self.rollout, 0)?;
+        validate_amount_index_level(
+            "actor observation",
+            "inflation",
+            self.rollout,
+            self.month,
+            current,
+        )?;
+        validate_amount_index_level("actor observation", "inflation", self.rollout, 0, origin)?;
+        Ok(Factor::new(current, origin))
+    }
+
     /// Declared cash accounts only, not internal equity, tax or asset-basis postings.
     pub fn accounts(&self) -> impl Iterator<Item = Result<Account<'_>, LedgerError>> {
         self.scope.accounts().map(|account| {

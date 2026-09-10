@@ -7,8 +7,6 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 
-pub mod batch;
-
 /// Where consumption is paid to another actor, with an experiment-chosen event prefix.
 /// Requests add to (never replace) the input's obligations.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -206,12 +204,7 @@ fn validate(input: &ExecutionInput, spending: &Spending) -> Result<AgentHoldings
 pub(super) struct Policy<'a> {
     spending: &'a Spending,
     holdings: &'a AgentHoldings,
-    request: Request<'a>,
-}
-
-enum Request<'a> {
-    Decide(&'a mut dyn FnMut(Observation) -> Result<Money, SimulationError>),
-    Supplied(Money),
+    decide: &'a mut dyn FnMut(Observation) -> Result<Money, SimulationError>,
 }
 
 fn observe<'a>(
@@ -249,7 +242,7 @@ impl<'a> Policy<'a> {
         Self {
             spending,
             holdings,
-            request: Request::Decide(decide),
+            decide,
         }
     }
 
@@ -260,12 +253,7 @@ impl<'a> Policy<'a> {
         month: u32,
         books: observations::Books<'_>,
     ) -> Result<Option<payments::Consume>, SimulationError> {
-        let amount_due = match &mut self.request {
-            Request::Decide(decide) => {
-                decide(observe(self.holdings, input, rollout, month, books)?)?
-            }
-            Request::Supplied(amount) => *amount,
-        };
+        let amount_due = (self.decide)(observe(self.holdings, input, rollout, month, books)?)?;
         let cause_id = format!("{}_m{month}", self.spending.cause_id);
         if amount_due.0 < 0 {
             return Err(SimulationError::InvalidAmount {

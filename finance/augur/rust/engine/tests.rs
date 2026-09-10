@@ -203,40 +203,6 @@ fn executable_spending_matches_scheduled_funding_and_tax_events() {
     })
     .unwrap();
     assert_eq!(compact.product_metrics, scheduled_metrics);
-    for forensic in [false, true] {
-        let mut session =
-            spending::batch::Session::new(fixture.clone(), spending.clone(), vec![0, 1], forensic)
-                .unwrap();
-        loop {
-            let batch = session.observe().unwrap();
-            if batch.rollout_ids.is_empty() {
-                break;
-            }
-            // Reverse and submit singleton chunks without changing path identity or
-            // policy timing. Native callbacks above use the same exact ratio arithmetic.
-            for row in (0..batch.rollout_ids.len()).rev() {
-                let amount = Money(1_000)
-                    .scaled_by(
-                        Factor::new(batch.price_numerators[row], batch.price_denominators[row]),
-                        "fixed real spending",
-                    )
-                    .unwrap();
-                session
-                    .advance(vec![(batch.rollout_ids[row], batch.months[row], amount.0)])
-                    .unwrap();
-            }
-        }
-        let actual = match session.finish().unwrap() {
-            spending::batch::Output::Summary(summary) => serde_json::to_value(summary).unwrap(),
-            spending::batch::Output::Forensic(output) => serde_json::to_value(output).unwrap(),
-        };
-        let expected = if forensic {
-            serde_json::to_value(&executable).unwrap()
-        } else {
-            serde_json::to_value(&compact).unwrap()
-        };
-        assert_eq!(actual, expected);
-    }
     for rollout in &executable.rollouts {
         assert_eq!(rollout.failed_month, None);
         assert!(!rollout.dispositions.is_empty());
