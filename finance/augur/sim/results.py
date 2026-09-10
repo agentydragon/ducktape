@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, InstanceOf, JsonValue, TypeAdapter, field_serializer, field_validator, model_validator
 
+from finance.augur.sim.actions import Action, ClaimId
 from finance.augur.sim.books import (
     AccountRef,
     BondCashflowOutcome,
@@ -16,11 +17,6 @@ from finance.augur.sim.books import (
     TaxSettlementOutcome,
 )
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
-
-
-class ClaimId(Record):
-    month: int
-    index: int
 
 
 class RejectedAction(Record):
@@ -93,91 +89,6 @@ class PaymentReceipt(Record):
         return self.amount_requested if isinstance(self.outcome, Paid) else 0
 
 
-class LotSale(Record):
-    account_id: str
-    lot_id: str
-    units: int
-
-
-class Sell(Record):
-    kind: Literal["Sell"] = "Sell"
-    cause_id: str
-    agent_id: str
-    proceeds_account_id: str
-    asset_id: str
-    lots: list[LotSale]
-
-
-class Buy(Record):
-    kind: Literal["Buy"] = "Buy"
-    cause_id: str
-    agent_id: str
-    cash_account_id: str
-    holding_account_id: str
-    asset_id: str
-    lot_id: str
-    quantity_scale: int
-    units: int
-
-
-class Transfer(Record):
-    kind: Literal["Transfer"] = "Transfer"
-    cause_id: str
-    from_account: AccountRef = Field(alias="from")
-    to_account: AccountRef = Field(alias="to")
-    amount: int
-
-
-class PayClaim(Record):
-    kind: Literal["PayClaim"] = "PayClaim"
-    request_id: int
-    cause_id: str
-    claim: ClaimId
-    from_account: AccountRef = Field(alias="from")
-    amount: int
-
-
-class Consume(Record):
-    kind: Literal["Consume"] = "Consume"
-    request_id: int
-    cause_id: str
-    component_id: str
-    from_account: AccountRef = Field(alias="from")
-    to_account: AccountRef = Field(alias="to")
-    amount: int
-
-
-class Contribute(Record):
-    kind: Literal["Contribute"] = "Contribute"
-    cause_id: str
-    agent_id: str
-    portfolio_id: str
-    cash_account_id: str
-    amount: int
-
-
-class Withdraw(Record):
-    kind: Literal["Withdraw"] = "Withdraw"
-    cause_id: str
-    agent_id: str
-    portfolio_id: str
-    cash_account_id: str
-    amount: int
-
-
-class Liquidate(Record):
-    kind: Literal["Liquidate"] = "Liquidate"
-    cause_id: str
-    agent_id: str
-    portfolio_id: str
-    cash_account_id: str
-
-
-type Action = Annotated[
-    Sell | Buy | Transfer | PayClaim | Consume | Contribute | Withdraw | Liquidate, Field(discriminator="kind")
-]
-
-
 class InvalidRequest(Record):
     kind: Literal["InvalidRequest"] = "InvalidRequest"
     detail: str
@@ -205,12 +116,6 @@ class Receipt(Record):
 
 
 _RECEIPTS = TypeAdapter(list[Receipt])
-_ACTION: TypeAdapter[Action] = TypeAdapter(Action)
-
-
-def action_from_json(document: str) -> Action:
-    """Decode a private native request for dispatch by the owning Python session."""
-    return _ACTION.validate_json(document)
 
 
 def receipts_from_json(document: str) -> list[Receipt]:

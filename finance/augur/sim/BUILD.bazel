@@ -294,6 +294,7 @@ py_library(
     name = "results",
     srcs = ["results.py"],
     deps = [
+        ":actions",
         ":books",
         ":events",
         "@pypi//pydantic",
@@ -393,5 +394,25 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "actions",
+    srcs = ["actions.py"],
+    deps = [
+        ":books",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "observations",
+    srcs = ["observations.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":results",
+        "@pypi//pydantic",
     ],
 )
