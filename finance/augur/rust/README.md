@@ -110,8 +110,8 @@ replaces it in snapshot `m + 1`. A horizon ending at `m` has not executed that
 redemption. Failed closings retain the event month's CPI and the actually processed
 redemptions, independent of the later snapshot label.
 
-`engine::observations::ActorBooks` reads account, remaining public-lot/basis,
-active borrower-mortgage and recorded tax facts for native observation projection.
+`engine::observations::ActorBooks` reads account, remaining public-lot/basis
+and recorded tax facts for native observation projection.
 The view fixes the actor and mark month; it cannot read
 another actor's books or request future path values. Tax views expose recorded
 income, jurisdiction facts and assessed outstanding liabilities, not hypothetical
@@ -131,12 +131,12 @@ second evaluation of scheduled terms. The monthly actor review follows that asse
 observation does not reapply either phase.
 
 `engine/claims.rs` assembles configured demands from the current month's terms,
-live mortgages and assessed tax liabilities. It does not move money or decide
+Python-supplied mortgage installments and assessed tax liabilities. It does not move money or decide
 funding. Each occurrence has a rollout-local month/index handle independent of
 its cause label; paid claims no longer appear in the due-claim view.
 
 `engine/payments.rs` executes `PayClaim` and `Consume` requests using the same
-canonical transfer, deduction, mortgage and tax effects. A claim payment names
+canonical transfer, deduction, mortgage posting and tax effects. A claim payment names
 the occurrence, exact full amount and an owned, declared funding account; the
 claim fixes its recipient and effect. Consumption names a separate component,
 another actor's recipient account and positive amount, without becoming a contract
@@ -329,8 +329,8 @@ The remaining legacy acceptance suites in `sim/testing/` assert integer answers 
   acquisition-debt principal caps, home-equity-debt exclusion, and sale-time
   §1250 recapture with federal capped-rate versus state ordinary-income
   treatment;
-- fixed-payment mortgage origination, monthly interest/principal splitting,
-  same-source funding-group settlement, and property-tax carrying costs;
+- mortgage origination/payment/payoff postings and same-source funding-group
+  settlement using Python-computed installments, plus property-tax carrying costs;
 - grouped scheduled and recurring obligations, including property-gated ones
   that stop accruing at the sale and deduct their property's runtime rented
   share of every payment from the payer's ordinary income;
@@ -448,6 +448,15 @@ sleeve identities attempted for every matching obligation. Optional quiet-band
 drift rebalancing is all-or-nothing, returns every sleeve to its floored target,
 and suppresses itself whenever the cash band is already raising or investing.
 Sleeve quantity scales are explicit prepared integers taken from the sleeve's own asset.
+
+## Mortgage boundary
+
+Mortgage terms, fixed installments, active state and paid-interest YTD belong to
+`sim/mortgage.py`. The ledger owns outstanding principal. Native posting operations
+validate supplied immutable payment facts; year-end assessment consumes supplied
+interest facts, and capture retains read-only statements. Neither capture nor
+tax assessment owns a mutable loan mirror. Configured lifecycle conventions:
+<../docs/rental_and_lifecycle.md>.
 
 ## Product read model
 

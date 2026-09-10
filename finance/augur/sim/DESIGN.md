@@ -41,6 +41,12 @@ owns month/phase sequencing, active paths, receipts and fatal-stop lifecycle.
 Native financial operations own books, transaction validation, settlement,
 liabilities and tax consequences.
 
+`mortgage.py` owns loan terms, the fixed installment, active servicing state and
+paid-interest YTD. Outstanding principal remains authoritative in the liability
+ledger. Python supplies immutable payment and year-end facts to native accounting;
+capture DTOs do not maintain another mutable mortgage. Configured purchase/sale
+timing is documented in <../docs/rental_and_lifecycle.md>.
+
 `sim/session.py` owns component state and invokes one private native
 `rust/engine/world.rs::World` per selected path. `actions.py` owns exact requests;
 `observations.py` owns frozen current facts and private claim authority. There is

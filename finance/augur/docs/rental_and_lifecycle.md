@@ -1,8 +1,7 @@
 # Rental And Property Lifecycle
 
-Current-state notes for Augur's owned-property rental, primary-residence, and sale
-modeling. The original implementation plan lived in `augur/plans/`; the plan is now
-mostly shipped, so this doc keeps only behavior and remaining gotchas.
+Current-state notes for configured owned-property rental, primary-residence,
+mortgage servicing and sale modeling.
 
 ## Product Surface
 
@@ -53,6 +52,21 @@ cashflows in the sale month.
 
 ## Simulator Behavior
 
+`sim/mortgage.py` owns mortgage terms, the fixed installment, servicing eligibility
+and year-to-date paid-interest totals. Outstanding principal is read from the
+canonical liability ledger, not copied into another mutable loan balance.
+Native accounting accepts immutable installment and year-end interest facts;
+captured mortgage records are read-only statements, not a second servicing model.
+Only settled payments update paid-interest totals. Year-end tax assessment consumes
+those facts before Python resets them; paying off a loan does not erase that year's
+already-paid interest.
+
+Configured purchases still precede the policy observation. A mortgage's first
+payment is due in the month after origination. A property sale pays off the current
+ledger principal before that month's servicing, so the sold property creates no
+later mortgage installment. This timing does not provide a household purchase
+action or change the configured all-or-none funding groups.
+
 The sim-level scenario separates property use from property ownership:
 
 - `ScheduledPropertyPurchase.rented_fraction` is the initial rented share.
@@ -66,8 +80,8 @@ The sim-level scenario separates property use from property ownership:
   ownership lifecycle, then decodes fired rows into the generic transfer event
   frame without adding `property_id` to transfer events.
 
-At runtime, the engine carries mutable per-property `rented_fraction` and building basis
-buffers. Within each month, primary-residence events fire first, then property
+Native property state retains mutable `rented_fraction` and building basis.
+Within each configured month, primary-residence events fire first, then property
 lifecycle events, then generic transfers, property purchases, property cashflows,
 asset sales, obligations, owner-occupied-month accrual, depreciation, and tax
 accrual. This means a same-month primary-residence event can fire before a sale,
@@ -82,7 +96,8 @@ Schedule E and owner-use splits read the runtime rented fraction:
 - rental income is ordinary income;
 - management, leasing, HOA, insurance, maintenance, property-tax rented share,
   mortgage-interest rented share, and depreciation can deduct against ordinary income;
-- owner-share mortgage interest flows through MID;
+- Python records the owner/rental split of each settled mortgage installment;
+  owner-share interest flows through MID;
 - owner-share property tax flows through federal SALT.
 
 Section 121 qualifying-use months accrue only when all are true:

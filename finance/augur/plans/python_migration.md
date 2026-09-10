@@ -10,8 +10,16 @@ clearer to compose and inspect. This is not a rewrite benchmark contest. The
 The [current boundary](../sim/DESIGN.md) already places session sequencing,
 public action/observation definitions and configured allocation proposals in
 Python. PYSTEP is not a backlog to move those again. Native worlds retain financial
-books, settlement, tax assessment, bond math and existing contractual processing;
+books, settlement, tax assessment, bond math and remaining property/PE processing;
 choose subsequent moves for a concrete domain consumer, not language coverage.
+
+The active mortgage slice (PR pending) moves terms, fixed installments, servicing
+state and paid-interest YTD to `sim/mortgage.py`, reading outstanding principal
+from the ledger. Native code receives immutable payment/tax facts and retains
+capture statements only. Acceptance must cover amortization, rejected-payment
+atomicity, payoff, yearly interest and existing configured outputs before this
+slice leaves PYSTEP. It preserves configured pre-observation acquisition and
+does not settle GHOUSE, enable purchase actions or complete HOUSING/APP.
 
 The next priority is a coherent model that experiments can compose, not a sequence
 of the easiest arithmetic kernels to port. Use the opaque TLH portfolio and FIRE

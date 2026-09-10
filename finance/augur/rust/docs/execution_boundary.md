@@ -10,7 +10,11 @@ the engine's exact integer units. It does not allocate a second world model with
 cashflow slots, lot masks, or precomputed obligation tensors. Python owns session
 sequencing and policy proposals, including configured allocation. Native worlds
 retain books, contractual cashflow/claim processing, exact transactions, taxes,
-bond calculations and remaining configured housing/PE mechanics. Scheduled and PE
+bond calculations and remaining configured property/PE mechanics. Mortgage terms,
+fixed installments, active servicing and paid-interest YTD belong to Python;
+outstanding principal is read from the ledger. Native mortgage inputs are immutable
+payment and tax facts, with read-only capture records rather than a loan-state mirror.
+Scheduled and PE
 sales still select FIFO before calling canonical lot-sale accounting.
 
 The private Rust input type is `ExecutionInput` in `rust/execution.rs`.

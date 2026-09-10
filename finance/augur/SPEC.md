@@ -131,6 +131,10 @@ costs, rent/occupancy changes, disposal and PE liquidity events. These are not y
 callable housing/PE actions in the common session. Changing a policy does not
 make an existing contract cease to exist.
 
+Mortgage installments, interest and payoff reconcile to the outstanding principal
+in the liability ledger. Servicing state and reporting do not maintain independent
+authoritative loan balances. An unpaid installment does not count as paid interest.
+
 Property valuation grows the nominal purchase price by the supplied home-value
 path since purchase. Pre-purchase index changes do not alter the purchase anchor.
 Sale costs, loan payoff and tax basis are separate; no property sale is implied
