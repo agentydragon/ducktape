@@ -63,8 +63,11 @@ decodes configured forensic output into the separate
 supported-domain suites onto the common Python action session and the existing typed
 books/traces/receipts. Keep independent numerical assertions, not only
 old/new equivalence; delete superseded test contracts/adapters with their last
-readers. Bond cashflow/tax controls can move independently; the existing product
-bond-value regression remains until BONDREPORT replaces that actual adapter
+readers. `sim/testing/security_distributions.py` is a supported single-actor
+next slice: retain independent payout, issuer-exemption and sub-quantum controls.
+The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped
+multiple-actor sequencing; separate runs are not a replacement for those joint
+controls. The existing product bond-value regression remains until BONDREPORT replaces that actual adapter
 coverage, rather than a weaker principal-only assertion. Native step tests remain
 useful, but no test should retain an obsolete
 full-run entrypoint solely to preserve its test harness. Housing/PE/harvest suites wait only for

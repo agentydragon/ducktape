@@ -6,7 +6,7 @@ and examines distributions and individual timelines. The primary acceptance
 case is joint spending-flexibility × allocation planning with supported taxes.
 Housing remains a capability; the house-buying web app does not define the library.
 
-Grounded at `devel` `0d8498b725` (2026-09-10 UTC). The
+Grounded at `devel` `87fee1660e` (2026-09-10 UTC). The
 [experiment/interface sketches, PR #5859](https://github.com/agentydragon/ducktape/pull/5859)
 remain a proposal, not an API to implement wholesale. This plan owns sequencing;
 [allocation experiments](allocation_program.md) owns the remaining experiment
@@ -232,6 +232,7 @@ flowchart TB
     HOUSING --> BENCH
     PE --> BENCH
     GP -- required multiple-actor sequencing --> BENCH
+    GP -. multiple-taxpayer acceptance cases only .-> ACCEPT
     BENCH --> P12
     MA2 -. affected harvest suites only .-> ACCEPT
     HOUSING -. affected housing suites only .-> ACCEPT
@@ -308,8 +309,10 @@ observations, executable policies, economic actions and execution results.
 Configured consumers must use the existing action session and optional Python
 proposal helpers. GP and BOND/HOUSE define the scoped action/execution contracts.
 
-Keep the common session's Rust financial steps while migrating consumers;
-RUNTIME/GE may revise step internals later without changing loop ownership.
+Reuse the canonical financial steps while migrating consumers; PYSTEP may move
+those steps and their domain objects to Python when that improves composition.
+Delete the native counterpart with its last reader, without a performance gate.
+RUNTIME/GE are later optimization choices, not owners of the language boundary.
 The sole policy callable accepts and returns batches. GL compares optional
 scalar adaptation against directly batch-authored functions on that same boundary.
 Data layout and costs remain open, not the number of supported policy shapes.
@@ -559,9 +562,10 @@ all the others to be solved first.
 
 ## Current dispatch and priorities
 
-1. **Supported ACCEPT slices** are dispatched against the existing typed session
-   contract, beginning with bond cashflow/tax cases. Preserve the existing product
-   bond-value regression until BONDREPORT supplies its actual replacement.
+1. Continue **supported ACCEPT slices** against the existing typed session
+   contract. Security-distribution controls are a ready next slice; do not treat
+   multiple-taxpayer income cases as single-actor controls. Preserve the existing
+   product bond-value regression until BONDREPORT supplies its actual replacement.
 2. **TAXINPUT, BASIS, OBSINPUT and DOCS** are ready cleanup slices; INPUT consumes
    TAXINPUT's record contract. Their concrete scope is in the cleanup plan.
    BONDREPORT is allowed legacy-retirement integration, not a product feature
