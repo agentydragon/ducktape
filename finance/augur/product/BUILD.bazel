@@ -335,3 +335,26 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_tlh_timeline",
+    srcs = ["test_tlh_timeline.py"],
+    deps = [
+        ":action_projection",
+        ":conftest",
+        ":projection",
+        ":wire",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim:tlh",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

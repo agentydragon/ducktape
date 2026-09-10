@@ -393,6 +393,7 @@ class TlhFinancialEffectEvent(_RolloutEventBase):
     """Aggregate settled effects of an opaque modeled TLH portfolio."""
 
     kind: Literal["tlh_financial_effect"] = "tlh_financial_effect"
+    amount_quanta: CurrencyQuanta = Field(description="Signed cash into household cash; contributions are negative.")
     cause_id: str
     portfolio_id: str
     account_id: str

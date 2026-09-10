@@ -663,6 +663,16 @@ ts_library(
 )
 
 ts_library(
+    name = "data_helpers_test_lib",
+    srcs = ["data_helpers.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":data_helpers",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "url_state_test_lib",
     srcs = ["url_state.test.ts"],
     tsconfig = TSCONFIG,
@@ -745,6 +755,20 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":format_test_lib",
+        "//:node_modules/vitest",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "data_helpers_test",
+    args = [
+        "run",
+        "data_helpers.test.js",
+    ],
+    chdir = package_name(),
+    data = [
+        "vitest.config.ts",
+        ":data_helpers_test_lib",
         "//:node_modules/vitest",
     ],
 )
