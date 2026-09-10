@@ -80,16 +80,9 @@ impl ProductInputs {
             }
             Ok(())
         };
-        for lot in &fixture.scenario.initial_lots {
-            if lot.agent_id == primary_agent_id {
-                register_asset(&lot.asset_id)?;
-            }
-        }
-        for policy in &fixture.scenario.target_allocation_policies {
-            if policy.agent_id == primary_agent_id {
-                for sleeve in &policy.sleeves {
-                    register_asset(&sleeve.asset_id)?;
-                }
+        for pool in &fixture.scenario.holding_pools {
+            if pool.agent_id == primary_agent_id {
+                register_asset(&pool.asset_id)?;
             }
         }
 

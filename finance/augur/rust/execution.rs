@@ -9,7 +9,7 @@ use crate::{
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const INPUT_SCHEMA_VERSION: u32 = 12;
+pub const INPUT_SCHEMA_VERSION: u32 = 13;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -28,6 +28,8 @@ pub struct ExecutionInput {
 pub struct ScenarioSpec {
     pub horizon_months: u32,
     pub accounts: Vec<AccountSpec>,
+    #[serde(default)]
+    pub holding_pools: Vec<HoldingPoolSpec>,
     #[serde(default)]
     pub jurisdictions: Vec<JurisdictionIdentitySpec>,
     #[serde(default)]
@@ -113,6 +115,17 @@ pub struct LocationSpec {
 pub struct AccountSpec {
     pub account: AccountRef,
     pub opening_balance: Money,
+}
+
+/// An owned account/asset pool, including an empty pool available for later purchases.
+/// This declares product/account scope, not a target weight or an instruction to trade.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HoldingPoolSpec {
+    pub agent_id: String,
+    pub account_id: String,
+    pub asset_id: String,
+    pub quantity_scale: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -15,6 +15,7 @@ struct Books {
 impl Books {
     fn new() -> Self {
         let mut input = minimal_fixture();
+        input.scenario.holding_pools = vec![holding_pool("alice", "brokerage", "fund", 10)];
         input.scenario.accounts.push(AccountSpec {
             account: AccountRef::new("alice", "brokerage"),
             opening_balance: Money(0),
@@ -59,7 +60,7 @@ impl Books {
             })
             .collect();
         let cash = AccountRef::new("alice", "checking");
-        let basis = asset_basis_account(&input.scenario.initial_lots[0]);
+        let basis = asset_basis_account("alice", "brokerage", "fund");
         let equity = AccountRef::new("alice", OPENING_EQUITY);
         let mut ledger = Ledger::with_accounts([
             cash.clone(),

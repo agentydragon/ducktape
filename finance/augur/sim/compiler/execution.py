@@ -64,7 +64,7 @@ from finance.augur.sim.scenario import (
 
 # Mirrors `INPUT_SCHEMA_VERSION` in `execution.rs`; the simulator rejects any other value, so a
 # schema bump fails loudly here rather than encoding a document the engine will not read.
-INPUT_SCHEMA_VERSION = 12
+INPUT_SCHEMA_VERSION = 13
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -354,6 +354,29 @@ def _tax_profiles(
     ]
 
 
+def _holding_pools(scenario: Scenario) -> list[dict[str, Any]]:
+    pools: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+    def add(agent_id: str, account_id: str, asset: AssetKey) -> None:
+        asset_id = _asset_id(asset)
+        pools[agent_id, account_id, asset_id] = {
+            "agent_id": agent_id,
+            "account_id": account_id,
+            "asset_id": asset_id,
+            "quantity_scale": quantity_scale_for_asset(asset),
+        }
+
+    for pool in scenario.holding_pools:
+        add(pool.agent_id, pool.account_id, pool.asset)
+    for lot in scenario.initial_lots:
+        add(lot.agent_id, lot.account_id, lot.asset)
+    for policy in scenario.target_allocation_policies:
+        account_id = policy.source_account_ids[0] if policy.source_account_ids else policy.account_id
+        for sleeve in policy.sleeves:
+            add(policy.agent_id, account_id, sleeve.asset)
+    return list(pools.values())
+
+
 def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, Any]]:
     lots: list[dict[str, Any]] = []
     for lot in scenario.initial_lots:
@@ -560,6 +583,7 @@ def compile_execution_input(
                 }
                 for balance in scenario.initial_cash
             ],
+            "holding_pools": _holding_pools(scenario),
             "scheduled_transfers": [
                 {"month": int(transfer.month)}
                 | _flow(transfer, quantum=quantum, context=f"scheduled transfer {transfer.cause_id!r}")

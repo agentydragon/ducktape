@@ -1,8 +1,8 @@
 //! Unit tests for the engine's internals.
 
 use crate::execution::{
-    AccountSpec, BondSpec, DistributionSpec, DistributionTaxSliceSpec, InitialLotSpec,
-    JurisdictionIdentitySpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
+    AccountSpec, BondSpec, DistributionSpec, DistributionTaxSliceSpec, HoldingPoolSpec,
+    InitialLotSpec, JurisdictionIdentitySpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
     PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec, ScheduledPropertyPurchaseSpec,
     ScheduledSaleSpec, ScheduledTransferSpec, SeriesIndexedAmountKind, SeriesIndexedAmountSpec,
     SeriesSpec, SleeveTargetSpec, TargetAllocationPolicySpec, TaxProfileSpec,
@@ -23,6 +23,15 @@ mod trades;
 #[path = "transfers_test.rs"]
 mod transfers;
 
+fn holding_pool(agent: &str, account: &str, asset: &str, scale: i64) -> HoldingPoolSpec {
+    HoldingPoolSpec {
+        agent_id: agent.into(),
+        account_id: account.into(),
+        asset_id: asset.into(),
+        quantity_scale: scale,
+    }
+}
+
 pub(super) fn minimal_fixture() -> ExecutionInput {
     ExecutionInput {
         schema_version: INPUT_SCHEMA_VERSION,
@@ -31,6 +40,7 @@ pub(super) fn minimal_fixture() -> ExecutionInput {
         rollout_count: 1,
         scenario: ScenarioSpec {
             horizon_months: 1,
+            holding_pools: vec![],
             accounts: vec![AccountSpec {
                 account: AccountRef::new("alice", "checking"),
                 opening_balance: Money(0),
@@ -97,6 +107,7 @@ pub(super) fn spending_fixture() -> (ExecutionInput, spending::Spending) {
 fn executable_spending_matches_scheduled_funding_and_tax_events() {
     let (mut fixture, spending) = spending_fixture();
     fixture.scenario.accounts[0].opening_balance = Money(0);
+    fixture.scenario.holding_pools = vec![holding_pool("alice", "checking", "stock", 1_000_000)];
     fixture.scenario.initial_lots.push(InitialLotSpec {
         lot_id: "stock".into(),
         agent_id: "alice".into(),
@@ -503,6 +514,7 @@ fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, spending::Spen
     input.rollout_count = 1;
     input.scenario.horizon_months = horizon_months;
     input.scenario.accounts[0].opening_balance = Money(10_000);
+    input.scenario.holding_pools = vec![holding_pool("alice", "checking", "stock", 1_000_000)];
     input.series[0].snapshots = horizon_months + 1;
     input.series[0].values = vec![WIRE_RATE_SCALE; horizon_months as usize + 1];
     input.scenario.initial_lots.push(InitialLotSpec {
@@ -544,6 +556,10 @@ fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, spending::Spen
 /// $100 cash and two $500 sleeves, each with $250 basis, priced at $10/share.
 fn allocation_fixture(horizon_months: u32) -> ExecutionInput {
     let (mut input, _) = policy_timing_fixture(horizon_months);
+    input
+        .scenario
+        .holding_pools
+        .push(holding_pool("alice", "checking", "second", 1_000_000));
     input.scenario.initial_lots[0].units = Quantity(50_000_000);
     input.scenario.initial_lots[0].basis = Money(25_000);
     let mut second = input.scenario.initial_lots[0].clone();
@@ -567,6 +583,12 @@ fn allocation_fixture(horizon_months: u32) -> ExecutionInput {
 
 fn scoped_observation_fixture() -> (ExecutionInput, spending::Spending) {
     let (mut input, spending) = policy_timing_fixture(3);
+    input.scenario.holding_pools = vec![
+        holding_pool("alice", "checking", "stock", 10),
+        holding_pool("alice", "checking", "second", 10),
+        holding_pool("alice", "reserve", "stock", 10),
+        holding_pool("bob", "checking", "stock", 10),
+    ];
     input.scenario.accounts[0].opening_balance = Money(100);
     for (agent, account, cash) in [("alice", "reserve", 900), ("bob", "checking", 5_000)] {
         input.scenario.accounts.push(AccountSpec {
@@ -1181,6 +1203,13 @@ fn zero_target_full_exit_consumes_all_units_and_basis_then_can_reenter() {
         input.scenario.initial_lots[1].quantity_scale = 10;
         input.scenario.initial_lots[1].units = Quantity(10);
         input.scenario.initial_lots[1].basis = Money(2);
+        for pool in &mut input.scenario.holding_pools {
+            pool.quantity_scale = 10;
+        }
+        input
+            .scenario
+            .holding_pools
+            .push(holding_pool("alice", "outside-pool", "stock", 10));
         input.scenario.accounts.push(AccountSpec {
             account: AccountRef::new("alice", "outside-pool"),
             opening_balance: Money(0),
@@ -1344,6 +1373,10 @@ fn zero_target_exit_and_later_sale_fund_canonical_tax_and_consumption() {
 #[test]
 fn allocation_functions_are_isolated_under_selection_reordering_and_replay() {
     let mut input = allocation_fixture(4);
+    input
+        .scenario
+        .holding_pools
+        .push(holding_pool("alice", "outside-pool", "stock", 1_000_000));
     input.rollout_count = 3;
     for series in &mut input.series {
         series.values = series.values.repeat(3);
@@ -1738,6 +1771,12 @@ pub(super) fn stopped_book_fixture(
                 term_months: 90,
             }),
         });
+    input.scenario.holding_pools.push(holding_pool(
+        "alice",
+        "checking",
+        "private_equity:test-issuer",
+        1_000_000,
+    ));
     input.scenario.initial_lots.push(InitialLotSpec {
         lot_id: "private-test-lot".into(),
         agent_id: "alice".into(),
@@ -2588,6 +2627,7 @@ fn rejects_income_from_a_source_the_scenario_did_not_declare() {
 #[test]
 fn distribution_tax_character_requires_a_complete_known_issuer_split() {
     let mut fixture = minimal_fixture();
+    fixture.scenario.holding_pools = vec![holding_pool("alice", "brokerage", "bnd", 1_000_000)];
     fixture.scenario.income_sources.extend([
         IncomeSource::interest(None),
         IncomeSource::interest(Some("federal_us")),
@@ -2617,6 +2657,11 @@ fn distribution_tax_character_requires_a_complete_known_issuer_split() {
         snapshots: 2,
         values: vec![1, 1],
     }];
+    fixture.series.push(SeriesSpec {
+        series_id: "security:bnd".into(),
+        snapshots: 2,
+        values: vec![1, 1],
+    });
     assert!(matches!(
         simulate(&fixture),
         Err(SimulationError::InvalidDistributionTaxCharacter { .. })
@@ -2677,6 +2722,12 @@ fn rejects_invalid_property_contracts_before_rollout_execution() {
 #[test]
 fn rejects_mixed_quantity_scales_and_invalid_security_prices() {
     let mut fixture = minimal_fixture();
+    fixture.scenario.holding_pools = vec![holding_pool("alice", "brokerage", "vti", 1_000_000)];
+    fixture.series.push(SeriesSpec {
+        series_id: "security:vti".into(),
+        snapshots: 2,
+        values: vec![100, 100],
+    });
     fixture.scenario.initial_lots = vec![
         InitialLotSpec {
             lot_id: "a".into(),
@@ -2761,6 +2812,7 @@ fn transfer_and_fifo_sale_remain_balanced() {
         rollout_count: 2,
         scenario: ScenarioSpec {
             horizon_months: 2,
+            holding_pools: vec![holding_pool("alice", "brokerage", "vti", 1_000_000)],
             accounts: vec![
                 AccountSpec {
                     account: alice_cash.clone(),
@@ -3162,6 +3214,7 @@ fn oversell_is_rejected_before_any_disposition() {
         rollout_count: 1,
         scenario: ScenarioSpec {
             horizon_months: 1,
+            holding_pools: vec![holding_pool("alice", "brokerage", "vti", 1_000_000)],
             accounts: vec![AccountSpec {
                 account: alice_cash,
                 opening_balance: Money(0),
@@ -3237,6 +3290,7 @@ fn failure_stops_future_actions_and_preserves_the_observed_book() {
         rollout_count: 1,
         scenario: ScenarioSpec {
             horizon_months: 2,
+            holding_pools: vec![],
             accounts: vec![
                 AccountSpec {
                     account: alice_cash.clone(),
@@ -3320,6 +3374,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
         rollout_count: 1,
         scenario: ScenarioSpec {
             horizon_months: 3,
+            holding_pools: vec![],
             accounts: vec![
                 AccountSpec {
                     account: alice_cash.clone(),
@@ -3420,6 +3475,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
 
 fn buying_fixture(horizon_months: u32) -> ExecutionInput {
     let mut fixture = minimal_fixture();
+    fixture.scenario.holding_pools = vec![holding_pool("alice", "brokerage", "stock", 1_000_000)];
     fixture.scenario.horizon_months = horizon_months;
     fixture.scenario.accounts[0].opening_balance = Money(20_000);
     fixture.scenario.target_allocation_policies = vec![TargetAllocationPolicySpec {

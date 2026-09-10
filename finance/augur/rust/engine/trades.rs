@@ -321,7 +321,11 @@ pub(super) fn execute_lot_sale(
             lot.basis_remaining.checked_sub(item.basis)?,
         ));
         postings.push(Posting {
-            account: asset_basis_account(&lot.spec),
+            account: asset_basis_account(
+                &lot.spec.agent_id,
+                &lot.spec.account_id,
+                &lot.spec.asset_id,
+            ),
             amount: item.basis.checked_neg()?,
         });
         dispositions.push(LotDisposition {
@@ -394,36 +398,12 @@ pub(super) fn execute_purchase(
             "purchase needs a new nonempty lot ID",
         ));
     }
-    // Holding pools are declared by lots/allocation bindings, not by the cash-account list.
-    let declared = input
-        .scenario
-        .initial_lots
-        .iter()
-        .filter(|lot| {
-            lot.agent_id == request.agent_id && lot.account_id == request.holding_account_id
-        })
-        .map(|lot| (&lot.asset_id, lot.quantity_scale))
-        .chain(
-            input
-                .scenario
-                .target_allocation_policies
-                .iter()
-                .filter(|policy| {
-                    policy.agent_id == request.agent_id
-                        && policy
-                            .source_account_ids
-                            .first()
-                            .unwrap_or(&policy.account_id)
-                            == &request.holding_account_id
-                })
-                .flat_map(|policy| {
-                    policy
-                        .sleeves
-                        .iter()
-                        .map(|sleeve| (&sleeve.asset_id, sleeve.quantity_scale))
-                }),
-        )
-        .any(|(asset, scale)| asset == &request.asset_id && scale == request.quantity_scale);
+    let declared = input.scenario.holding_pools.iter().any(|pool| {
+        pool.agent_id == request.agent_id
+            && pool.account_id == request.holding_account_id
+            && pool.asset_id == request.asset_id
+            && pool.quantity_scale == request.quantity_scale
+    });
     if !declared {
         return Err(invalid(
             &request.cause_id,
@@ -460,7 +440,7 @@ pub(super) fn execute_purchase(
                     amount: spent.checked_neg()?,
                 },
                 Posting {
-                    account: asset_basis_account(&spec),
+                    account: asset_basis_account(&spec.agent_id, &spec.account_id, &spec.asset_id),
                     amount: spent,
                 },
             ],

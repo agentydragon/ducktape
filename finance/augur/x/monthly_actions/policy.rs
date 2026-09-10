@@ -3,13 +3,14 @@
 
 use augur_native_invocation::{run, write_output};
 use augur_rust_simulator::{
+    allocation::quantity_for_value,
     engine::{
         SimulationError,
         actors::{self, Action, Decision, DecisionActions},
         payments::PayClaim,
-        trades::{LotSale, SaleRequest},
+        trades::{LotSale, PurchaseRequest, SaleRequest},
     },
-    money::Money,
+    money::{Money, Quantity},
 };
 use serde::Serialize;
 
@@ -23,9 +24,42 @@ fn decide(batch: Vec<Decision<'_>>) -> Result<Vec<DecisionActions>, SimulationEr
                 .iter()
                 .try_fold(Money(0), |total, claim| total.checked_add(claim.amount_due))?;
             let mut actions = Vec::new();
+            let positions = observation
+                .books
+                .public_positions()
+                .collect::<Result<Vec<_>, _>>()?;
+            if observation.books.month() == 0
+                && positions.is_empty()
+                && observation.books.cash()? > Money(0)
+            {
+                let pool = observation.books.holding_pools().next().ok_or_else(|| {
+                    SimulationError::UnsupportedActorInput {
+                        reason: "the example's opening investment requires a declared public pool"
+                            .into(),
+                    }
+                })?;
+                let price = observation.books.public_price(&pool.asset_id)?;
+                let units = quantity_for_value(
+                    observation.books.cash()?.0,
+                    price.0,
+                    pool.quantity_scale,
+                    false,
+                )?;
+                if units > 0 {
+                    actions.push(Action::Buy(PurchaseRequest {
+                        cause_id: "opening-investment".into(),
+                        agent_id: observation.books.agent_id().into(),
+                        cash_account_id: "checking".into(),
+                        holding_account_id: pool.account_id.clone(),
+                        asset_id: pool.asset_id.clone(),
+                        lot_id: "opening-investment".into(),
+                        quantity_scale: pool.quantity_scale,
+                        units: Quantity(units),
+                    }));
+                }
+            }
             if observation.books.cash()? < due {
-                for position in observation.books.public_positions() {
-                    let position = position?;
+                for position in positions {
                     actions.push(Action::Sell(SaleRequest {
                         cause_id: format!("fund-{}", position.lot_id()),
                         agent_id: observation.books.agent_id().into(),

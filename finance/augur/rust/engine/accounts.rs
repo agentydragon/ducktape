@@ -3,11 +3,8 @@
 
 use super::*;
 
-pub(super) fn asset_basis_account(lot: &InitialLotSpec) -> AccountRef {
-    AccountRef::new(
-        &lot.agent_id,
-        format!("asset-basis:{}:{}", lot.account_id, lot.asset_id),
-    )
+pub(super) fn asset_basis_account(agent_id: &str, account_id: &str, asset_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("asset-basis:{account_id}:{asset_id}"))
 }
 
 pub(super) fn realized_gain_account(agent_id: &str) -> AccountRef {

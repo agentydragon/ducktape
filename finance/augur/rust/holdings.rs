@@ -35,7 +35,7 @@ pub fn cash_balance<'a>(
     })
 }
 
-/// Actor-wide declared cash accounts and public assets, including configured buy sleeves.
+/// Actor-wide declared cash accounts and public holding pools, including empty pools.
 /// Public holdings exclude private equity, individual bonds and property; they are gross
 /// marks, not the proceeds of a hypothetical after-tax liquidation.
 #[derive(Clone, Debug)]
@@ -67,20 +67,10 @@ impl AgentHoldings {
             .collect();
         let assets = input
             .scenario
-            .initial_lots
+            .holding_pools
             .iter()
-            .filter(|lot| lot.agent_id == agent_id)
-            .map(|lot| lot.asset_id.as_str())
-            .chain(
-                input
-                    .scenario
-                    .target_allocation_policies
-                    .iter()
-                    .filter(|policy| policy.agent_id == agent_id)
-                    .flat_map(|policy| {
-                        policy.sleeves.iter().map(|sleeve| sleeve.asset_id.as_str())
-                    }),
-            );
+            .filter(|pool| pool.agent_id == agent_id)
+            .map(|pool| pool.asset_id.as_str());
         let mut public_series_by_asset = BTreeMap::new();
         for asset_id in assets.filter(|asset| {
             asset

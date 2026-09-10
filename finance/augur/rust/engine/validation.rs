@@ -225,6 +225,38 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
 
     let mut lots = BTreeSet::new();
     let mut pool_scales = BTreeMap::new();
+    for pool in &fixture.scenario.holding_pools {
+        validate_identifier("holding-pool account", &pool.account_id)?;
+        validate_identifier("holding-pool asset", &pool.asset_id)?;
+        if !agents.contains(&pool.agent_id) {
+            return Err(SimulationError::UnknownAccountReference {
+                context: "holding pool".into(),
+                agent_id: pool.agent_id.clone(),
+                account_id: pool.account_id.clone(),
+            });
+        }
+        let key = (
+            pool.agent_id.clone(),
+            pool.account_id.clone(),
+            pool.asset_id.clone(),
+        );
+        if !is_quantity_scale(pool.quantity_scale)
+            || pool_scales.insert(key, pool.quantity_scale).is_some()
+        {
+            return Err(SimulationError::InvalidHoldingPool {
+                agent_id: pool.agent_id.clone(),
+                account_id: pool.account_id.clone(),
+                asset_id: pool.asset_id.clone(),
+                reason: "duplicate declaration or invalid quantity scale".into(),
+            });
+        }
+        if private_equity_issuer(&pool.asset_id).is_none() {
+            let series_id = format!("security:{}", pool.asset_id);
+            if !series_ids.contains(&series_id) {
+                return Err(SimulationError::MissingSeries { series_id });
+            }
+        }
+    }
     for lot in &fixture.scenario.initial_lots {
         validate_identifier("lot", &lot.lot_id)?;
         validate_identifier("asset", &lot.asset_id)?;
@@ -251,9 +283,16 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
             lot.account_id.clone(),
             lot.asset_id.clone(),
         );
-        if let Some(first_scale) = pool_scales.insert(pool, lot.quantity_scale)
-            && first_scale != lot.quantity_scale
-        {
+        let first_scale =
+            *pool_scales
+                .get(&pool)
+                .ok_or_else(|| SimulationError::InvalidHoldingPool {
+                    agent_id: lot.agent_id.clone(),
+                    account_id: lot.account_id.clone(),
+                    asset_id: lot.asset_id.clone(),
+                    reason: format!("lot {:?} has no declared pool", lot.lot_id),
+                })?;
+        if first_scale != lot.quantity_scale {
             return Err(SimulationError::MixedQuantityScale {
                 agent_id: lot.agent_id.clone(),
                 account_id: lot.account_id.clone(),
@@ -331,33 +370,6 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
             &AccountRef::new(&policy.owner_agent_id, &policy.account_id),
             "harvest policy",
         )?;
-    }
-    for policy in &fixture.scenario.target_allocation_policies {
-        if !policy.allow_purchases {
-            continue;
-        }
-        let account_id = policy
-            .source_account_ids
-            .first()
-            .unwrap_or(&policy.account_id);
-        for sleeve in &policy.sleeves {
-            let pool = (
-                policy.agent_id.clone(),
-                account_id.clone(),
-                sleeve.asset_id.clone(),
-            );
-            if let Some(first_scale) = pool_scales.insert(pool, sleeve.quantity_scale)
-                && first_scale != sleeve.quantity_scale
-            {
-                return Err(SimulationError::MixedQuantityScale {
-                    agent_id: policy.agent_id.clone(),
-                    account_id: account_id.clone(),
-                    asset_id: sleeve.asset_id.clone(),
-                    first_scale,
-                    second_scale: sleeve.quantity_scale,
-                });
-            }
-        }
     }
     let mut bonds = BTreeSet::new();
     for bond in &fixture.scenario.initial_bonds {
@@ -672,6 +684,18 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 });
             }
             if policy.allow_purchases {
+                if !pool_scales.contains_key(&(
+                    policy.agent_id.clone(),
+                    sources[0].to_owned(),
+                    sleeve.asset_id.clone(),
+                )) {
+                    return Err(SimulationError::InvalidHoldingPool {
+                        agent_id: policy.agent_id.clone(),
+                        account_id: sources[0].to_owned(),
+                        asset_id: sleeve.asset_id.clone(),
+                        reason: "allocation purchase pool is not declared".into(),
+                    });
+                }
                 let prefix = format!(
                     "{}_buy_p{policy_index}_s{sleeve_index}_",
                     policy.cause_id_prefix

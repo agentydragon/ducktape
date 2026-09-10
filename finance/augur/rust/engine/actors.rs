@@ -4,9 +4,8 @@
 use super::*;
 use serde::Serialize;
 
-/// Exact immediate-cash requests in public pools/assets declared by initial lots.
-/// Sequence order is execution order, not priority by type. An all-cash input cannot
-/// introduce a new asset through this scoped control.
+/// Exact immediate-cash requests in declared public pools/assets, including empty pools.
+/// Sequence order is execution order, not priority by type.
 #[derive(Clone, Debug, Serialize)]
 pub enum Action {
     Sell(trades::SaleRequest),
@@ -282,9 +281,9 @@ fn validate(input: &ExecutionInput, actor: &str) -> Result<(), SimulationError> 
         || !scenario.property_tax_policies.is_empty()
         || !scenario.federal_salt_deduction_policies.is_empty()
         || scenario
-            .initial_lots
+            .holding_pools
             .iter()
-            .any(|lot| private_equity_issuer(&lot.asset_id).is_some())
+            .any(|pool| private_equity_issuer(&pool.asset_id).is_some())
     {
         return Err(SimulationError::UnsupportedActorInput {
             reason: "the scoped actor control supports public securities, cash and due claims, not housing or private equity".into(),
@@ -460,7 +459,7 @@ fn price(
         Ok(price) => Ok(price),
         Err(HoldingsError::MissingSeries { .. }) => Err(SimulationError::InvalidTrade {
             cause_id: cause_id.into(),
-            reason: "asset is not a declared public holding".into(),
+            reason: "asset has no declared public holding pool".into(),
         }),
         Err(error) => Err(error.into()),
     }

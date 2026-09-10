@@ -47,6 +47,8 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
             seen.add(key)
             keys.append(key)
 
+    for pool in scenario.holding_pools:
+        add(asset_price_key_or_none(pool.asset))
     # Holdings are marked every month off their asset-price series.
     for lot in scenario.initial_lots:
         add(asset_price_key_or_none(lot.asset))
@@ -151,6 +153,8 @@ def collect_level_series_keys(
     # nothing else: identical scenarios must compile to identical row assignments.
     for rows in level_rows:
         add(rows.key)
+    for pool in scenario.holding_pools:
+        add(asset_price_key_or_none(pool.asset))
     for scheduled_transfer in scenario.scheduled_transfers:
         _add_amount_series_key(scheduled_transfer.amount, add)
     for recurring_transfer in scenario.recurring_transfers:

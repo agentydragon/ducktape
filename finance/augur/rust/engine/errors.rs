@@ -84,6 +84,13 @@ pub enum SimulationError {
     },
     #[error("lot {lot_id:?} has invalid quantity scale {quantity_scale}")]
     InvalidQuantityScale { lot_id: String, quantity_scale: i64 },
+    #[error("invalid holding pool {agent_id}:{account_id}:{asset_id}: {reason}")]
+    InvalidHoldingPool {
+        agent_id: String,
+        account_id: String,
+        asset_id: String,
+        reason: String,
+    },
     #[error("lot {lot_id:?} has non-positive units {units} or negative basis {basis}")]
     InvalidLot {
         lot_id: String,

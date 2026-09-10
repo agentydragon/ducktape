@@ -75,6 +75,155 @@ fn buy(id: &str, cash: &str, units: i64) -> Action {
     })
 }
 
+fn cash_only_input() -> ExecutionInput {
+    let mut input = input(2, 1);
+    input.scenario.initial_lots.clear();
+    input.scenario.accounts[0].opening_balance = Money(2_500);
+    input.scenario.holding_pools[0].account_id = "empty-brokerage".into();
+    input
+        .scenario
+        .holding_pools
+        .push(holding_pool("world", "other-brokerage", "stock", 1_000_000));
+    input.series[1].values = vec![1_000, 2_000, 3_000];
+    input
+}
+
+#[test]
+fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
+    let input = cash_only_input();
+    let output = run(&input, "alice", &[0], |_| {
+        |observation| {
+            let pools: Vec<_> = observation.books.holding_pools().collect();
+            assert_eq!(pools.len(), 1);
+            assert_eq!(pools[0].account_id, "empty-brokerage");
+            let price = observation.books.public_price(&pools[0].asset_id)?;
+            if observation.books.month() == 0 {
+                assert_eq!(price, PerUnit(1_000));
+                assert_eq!(observation.books.public_positions().count(), 0);
+                Ok(vec![Action::Buy(trades::PurchaseRequest {
+                    cause_id: "first-purchase".into(),
+                    agent_id: observation.books.agent_id().into(),
+                    cash_account_id: "checking".into(),
+                    holding_account_id: pools[0].account_id.clone(),
+                    asset_id: pools[0].asset_id.clone(),
+                    lot_id: "new-position".into(),
+                    quantity_scale: pools[0].quantity_scale,
+                    units: Quantity(2_000_000),
+                })])
+            } else {
+                assert_eq!(price, PerUnit(2_000));
+                assert_eq!(observation.books.public_value()?, Money(4_000));
+                assert_eq!(observation.books.cash()?, Money(500));
+                Ok(vec![])
+            }
+        }
+    })
+    .unwrap();
+    let rollout = &output[0];
+    assert!(rollout.stop.is_none());
+    assert_eq!(rollout.receipts.len(), 1);
+    let lot = &rollout.financial.months.last().unwrap().lots[0];
+    assert_eq!(lot.units_remaining, Quantity(2_000_000));
+    assert_eq!(lot.basis_remaining, Money(2_000));
+    assert_eq!(lot.account_id, "empty-brokerage");
+    for journal in &rollout.financial.journal {
+        assert_eq!(
+            journal
+                .postings
+                .iter()
+                .map(|posting| posting.amount.0)
+                .sum::<i64>(),
+            0
+        );
+    }
+}
+
+#[test]
+fn declaring_an_empty_pool_does_not_invest_cash_without_an_action() {
+    let input = cash_only_input();
+    let output = run(&input, "alice", &[0], |_| |_| Ok(vec![])).unwrap();
+    assert!(output[0].receipts.is_empty());
+    assert!(output[0].stop.is_none());
+    let ending = output[0].financial.months.last().unwrap();
+    assert!(ending.lots.is_empty());
+    assert_eq!(
+        ending
+            .balances
+            .iter()
+            .find(|balance| balance.account == AccountRef::new("alice", "checking"))
+            .unwrap()
+            .balance,
+        Money(2_500)
+    );
+}
+
+#[test]
+fn an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation() {
+    for wrong_scale in [false, true] {
+        let input = cash_only_input();
+        let output = run(&input, "alice", &[0], |_| {
+            move |_| {
+                Ok(vec![Action::Buy(trades::PurchaseRequest {
+                    cause_id: "invalid-purchase".into(),
+                    agent_id: "alice".into(),
+                    cash_account_id: "checking".into(),
+                    holding_account_id: if wrong_scale {
+                        "empty-brokerage"
+                    } else {
+                        "other-brokerage"
+                    }
+                    .into(),
+                    asset_id: "stock".into(),
+                    lot_id: "must-not-exist".into(),
+                    quantity_scale: if wrong_scale { 10 } else { 1_000_000 },
+                    units: Quantity(1),
+                })])
+            }
+        })
+        .unwrap();
+        assert!(matches!(
+            output[0].stop,
+            Some(Stop::RejectedAction {
+                month: 0,
+                action_index: 0
+            })
+        ));
+        assert!(output[0].financial.months.last().unwrap().lots.is_empty());
+        assert!(
+            output[0]
+                .financial
+                .journal
+                .iter()
+                .all(|entry| entry.cause_id != "invalid-purchase")
+        );
+    }
+}
+
+#[test]
+fn declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots() {
+    let mut input = input(1, 1);
+    input.scenario.holding_pools.clear();
+    assert!(matches!(
+        ValidatedInput::new(&input),
+        Err(SimulationError::InvalidHoldingPool { .. })
+    ));
+    input.scenario.initial_lots.clear();
+    input.scenario.holding_pools = vec![holding_pool("alice", "empty", "unpriced", 1_000_000)];
+    assert!(matches!(
+        ValidatedInput::new(&input),
+        Err(SimulationError::MissingSeries { .. })
+    ));
+    input.scenario.holding_pools[0].asset_id = "stock".into();
+    input
+        .scenario
+        .holding_pools
+        .push(input.scenario.holding_pools[0].clone());
+    assert!(matches!(
+        ValidatedInput::new(&input),
+        Err(SimulationError::InvalidHoldingPool { .. })
+    ));
+}
+
 fn transfer(amount: i64) -> Action {
     Action::Transfer(transfers::TransferRequest {
         cause_id: "move-cash".into(),

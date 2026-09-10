@@ -15,6 +15,12 @@ JSON is currently the Python/Rust transport. The Python writer and Rust fields
 spell the transport schema separately. Unsupported series types are refused,
 and Rust validates the resulting input before execution.
 
+The compiler lowers explicit `Scenario.holding_pools`, initial lots and configured
+allocation sleeves into one execution `holding_pools` list. The native engine reads
+only that list for pool declarations; account scope and observable public prices do
+not depend on a strategy executing. Explicit pools permit an all-cash actor to buy
+an asset it did not initially hold.
+
 ## Native experiment invocation
 
 `rust/invocation.py` writes a `CompiledRun` once with `write_prepared_input` and

@@ -50,6 +50,10 @@ The spending function can inspect its actor's declared cash accounts, remaining
 public lots and basis, originated borrower mortgages, and recorded income and
 tax facts. These are read-only opening books, marked at the current review month;
 another actor's private books and future realized values are not observable.
+Holding pools declare owned account/asset scope independently of investment strategy.
+An empty public pool exposes its current supplied price and supports an explicitly
+requested purchase without an initial lot or allocation policy. Declaring a pool
+alone creates no position or transaction; its quantity scale must agree with its lots.
 Planned purchases do not create observable loan contracts before origination,
 and future tax assessments do not appear as current liabilities. This review
 still precedes the month's cashflows and claim assembly.

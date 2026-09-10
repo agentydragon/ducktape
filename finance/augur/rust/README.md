@@ -117,10 +117,15 @@ capital-gain rows and TLH entries. Journal and receipt counters are checked befo
 posting. Rejection therefore changes none of those books or records. This guarantee
 is per trade, not a rollback of prior monthly actions or a batch of trades.
 
+`ScenarioSpec.holding_pools` declares owner/account/asset/quantity-scale bindings,
+including empty pools. These bindings, not initial lots or allocation strategies,
+own purchase admission, observable public-price scope and internal asset accounts.
+Every initial lot must match its declared pool; every public pool requires its supplied
+price path. A holding account need not also be a declared cash account.
+
 Purchases use already declared holding pools and exact quantity scales. Allocation
 still chooses/clamps its order after funding; the exact executor rejects insufficient
-cash. Cash accounts and holding pools have different declarations: a lot's holding
-account need not also be a cash account. New actor invocation, transfer admission,
+cash. Cash accounts and holding pools have different declarations. New actor invocation, transfer admission,
 settlement delays and alternative funding/rebalance strategies are not provided by
 this module.
 
@@ -162,6 +167,10 @@ future assessments. Scheduled purchases are not originated contracts.
 Reduced-form harvesting's cumulative basis reductions remain separate scoped
 account/asset-pool facts; a public lot's `book_basis()` alone is not its complete
 adjusted tax basis when harvesting is enabled.
+
+`holding_pools()` also exposes owned public pools with no remaining lots, and
+`public_price(asset_id)` reads their quote at the view's current mark month. Declaring
+a pool creates no position, cash movement or policy decision.
 
 Assembled claims have a separate payer-scoped `Claim` projection, shared by
 allocation's demand read. Claim amounts come from canonical assembly, not a
@@ -213,10 +222,9 @@ actor execution has no implicit pre/post allocation, harvesting, sale or payment
 This native forensic control supports one decision-making household and scripted
 counterparties. It rejects configured allocation/harvesting/tender policies and
 scheduled sales rather than silently bypassing them. Housing and private-equity
-lifecycle inputs are not supported. Public trades require asset/pool declarations
-from initial lots: an all-cash start cannot yet buy a previously unheld asset.
-Policy-independent market/pool declarations and the Python action session are
-later work, not dummy allocation configurations or a second evaluator here.
+lifecycle inputs are not supported. Public trades use the explicit holding pools,
+so an all-cash start can buy a previously unheld asset without a dummy lot or policy.
+The Python action session is a separate entrypoint migration.
 
 The `engine/actors_test.rs` stories run with
 `bbr test //finance/augur/rust:simulator_test`. They include contribution → bill →

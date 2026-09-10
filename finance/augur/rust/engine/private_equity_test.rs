@@ -6,6 +6,18 @@ use crate::execution::PrivateEquityTenderPolicySpec;
 fn recovery_input(total: i64, positions: &[(i64, i64)]) -> ExecutionInput {
     let mut input = minimal_fixture();
     input.currency_quantum = "1".into();
+    input.scenario.holding_pools = positions
+        .iter()
+        .enumerate()
+        .map(|(index, (_, scale))| {
+            holding_pool(
+                "alice",
+                &format!("holding-{index}"),
+                "private_equity:acme",
+                *scale,
+            )
+        })
+        .collect();
     input.scenario.initial_lots = positions
         .iter()
         .enumerate()

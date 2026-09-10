@@ -83,5 +83,46 @@ def test_original_path_identity_survives_reordering_and_selected_replay(
         assert actual == [expected[rollout_id] for rollout_id in ids]
 
 
+def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path) -> None:
+    output_dir = tmp_path / "cash-only"
+    subprocess.run(
+        [
+            get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/run_bin")),
+            "--output-dir",
+            output_dir,
+            "--cash-only-start",
+        ],
+        check=True,
+    )
+    prepared = json.loads((output_dir / "execution-input.json").read_text())["scenario"]
+    assert prepared["initial_lots"] == []
+    assert prepared["target_allocation_policies"] == []
+    assert [(pool["agent_id"], pool["account_id"], pool["asset_id"]) for pool in prepared["holding_pools"]] == [
+        ("example-household", "brokerage", "example-stock")
+    ]
+    rollouts = json.loads((output_dir / "outcomes.json").read_text())["rollouts"]
+    for rollout, units in zip(rollouts, [2_000_000, 4_000_000], strict=True):
+        assert rollout["stop"] is None
+        assert [next(iter(row["action"])) for row in rollout["receipts"]] == ["Buy", "Sell", "PayClaim", "PayClaim"]
+        financial = rollout["financial"]
+        assert financial["months"][0]["lots"] == []
+        bought = financial["months"][1]["lots"][0]
+        assert (bought["account_id"], bought["units_remaining"], bought["basis_remaining"]) == (
+            "brokerage",
+            units,
+            20_000,
+        )
+        sale = financial["dispositions"][0]
+        assert (sale["proceeds"], sale["basis"], sale["realized_gain"]) == (24_000, 20_000, 4_000)
+        assert [(row["month"], row["amount_paid"]) for row in financial["obligations"]] == [(1, 15_000), (12, 800)]
+        assert financial["tax_accruals"][0]["short_term_gain"] == 4_000
+        ending_cash = next(
+            row["balance"]
+            for row in financial["months"][-1]["balances"]
+            if row["account"] == {"agent_id": "example-household", "account_id": "checking"}
+        )
+        assert ending_cash == 8_200
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -5,6 +5,7 @@
 //! Current marks are gross values, not promised sale proceeds or tax previews.
 
 use super::*;
+use crate::execution::HoldingPoolSpec;
 
 /// Borrow the authoritative state at one execution boundary, without capture tables.
 pub(super) struct Books<'a> {
@@ -50,6 +51,19 @@ impl ActorBooks<'_> {
         self.scope.cash(self.books.ledger)
     }
 
+    /// Owned public pools, including unheld assets available for purchase.
+    pub fn holding_pools(&self) -> impl Iterator<Item = &HoldingPoolSpec> {
+        self.input.scenario.holding_pools.iter().filter(|pool| {
+            pool.agent_id == self.agent_id() && private_equity_issuer(&pool.asset_id).is_none()
+        })
+    }
+
+    /// A declared public asset's quote at this observation's month, without a position.
+    pub fn public_price(&self, asset_id: &str) -> Result<PerUnit, HoldingsError> {
+        self.scope
+            .public_price(self.input, asset_id, self.rollout, self.month)
+    }
+
     /// Remaining public lots, with current book basis and current marks. Liquidated
     /// lots and private-equity positions are not public positions.
     pub fn public_positions(
@@ -66,12 +80,7 @@ impl ActorBooks<'_> {
             .map(|lot| {
                 Ok(PublicPosition {
                     lot,
-                    price: self.scope.public_price(
-                        self.input,
-                        &lot.spec.asset_id,
-                        self.rollout,
-                        self.month,
-                    )?,
+                    price: self.public_price(&lot.spec.asset_id)?,
                 })
             })
     }

@@ -41,3 +41,21 @@ Input/output transport uses the shared
 [native invocation helpers](../../rust/docs/execution_boundary.md#native-experiment-invocation).
 This is a compiled Rust batch-policy consumer, not a Python callback bridge or a
 new experiment framework.
+
+## Cash-only opening
+
+```bash
+bb run //finance/augur/x/monthly_actions:run_bin -- --output-dir /tmp/augur-cash-only --cash-only-start
+```
+
+This variation starts with $200 cash, no lots and an explicitly declared empty
+brokerage pool. The same authored policy invests the opening cash using the pool's
+current observed price. No allocation policy or dummy holding declares the asset.
+The bill arrives in month 1; the two stipulated prices rise from $100/$50 to
+$120/$60 then remain fixed. This is a synthetic control, not a market forecast.
+
+The paths buy two/four shares, each with $200 total basis. Their later sales each
+produce $240 and $40 short-term gain. After the $150 bill and the synthetic 20%
+short-term tax ($8), each retains $82. The offline CLI test verifies these actual
+purchase, sale and payment effects; native tests also show that omitting the buy
+leaves an empty pool and unchanged cash.

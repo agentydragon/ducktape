@@ -496,6 +496,19 @@ class SecurityDistribution(BaseModel):
         return self
 
 
+class HoldingPool(BaseModel):
+    """An owned account/asset pool that may be empty at the start.
+
+    Declaring a pool supplies its account/product scope and public price requirement;
+    it neither creates a position nor asks a policy to invest. Available actions
+    still depend on the product's execution support.
+    """
+
+    agent_id: str
+    account_id: str
+    asset: AssetKey
+
+
 class InitialLot(BaseModel):
     """A tax lot that exists at scenario start. Models pre-existing
     holdings: Alice already owns 100 units of VTI bought 24 months
@@ -1070,6 +1083,7 @@ class Scenario(BaseModel):
     currency: Currency = Field(default_factory=Currency)
     agents: list[Agent]
     initial_cash: list[InitialAccountBalance]
+    holding_pools: list[HoldingPool] = Field(default_factory=list)
     initial_lots: list[InitialLot] = Field(default_factory=list)
     initial_bonds: list[BondHolding] = Field(default_factory=list)
     security_distributions: list[SecurityDistribution] = Field(default_factory=list)
@@ -1099,6 +1113,16 @@ class Scenario(BaseModel):
     tax_profiles: list[TaxProfile]
     target_allocation_policies: list[TargetAllocationPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt
+
+    @model_validator(mode="after")
+    def _reject_duplicate_holding_pools(self) -> Scenario:
+        seen: set[tuple[str, str, str]] = set()
+        for pool in self.holding_pools:
+            key = (pool.agent_id, pool.account_id, pool.asset.wire_id)
+            if key in seen:
+                raise ValueError(f"duplicate holding pool: {key}")
+            seen.add(key)
+        return self
 
     @model_validator(mode="after")
     def _reject_duplicate_agent_ids(self) -> Scenario:

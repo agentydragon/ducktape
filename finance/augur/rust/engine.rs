@@ -337,29 +337,13 @@ impl RolloutState {
             accounts.push(AccountRef::new(&spec.account.agent_id, OPENING_EQUITY));
         }
         accounts.push(AccountRef::new(EXTERNAL_AGENT, "boundary"));
-        for lot in &fixture.scenario.initial_lots {
-            accounts.push(asset_basis_account(lot));
-            accounts.push(realized_gain_account(&lot.agent_id));
-            accounts.push(AccountRef::new(&lot.agent_id, OPENING_EQUITY));
-        }
-        for policy in &fixture.scenario.target_allocation_policies {
-            let account_id = policy
-                .source_account_ids
-                .first()
-                .unwrap_or(&policy.account_id);
-            accounts.push(realized_gain_account(&policy.agent_id));
-            for sleeve in &policy.sleeves {
-                accounts.push(asset_basis_account(&InitialLotSpec {
-                    lot_id: String::new(),
-                    agent_id: policy.agent_id.clone(),
-                    account_id: account_id.clone(),
-                    asset_id: sleeve.asset_id.clone(),
-                    purchase_month: 0,
-                    quantity_scale: sleeve.quantity_scale,
-                    units: Quantity(0),
-                    basis: Money(0),
-                }));
-            }
+        for pool in &fixture.scenario.holding_pools {
+            accounts.push(asset_basis_account(
+                &pool.agent_id,
+                &pool.account_id,
+                &pool.asset_id,
+            ));
+            accounts.push(realized_gain_account(&pool.agent_id));
         }
         for profile in &fixture.scenario.tax_profiles {
             accounts.push(tax_prepayment_account(&profile.agent_id));
@@ -478,7 +462,11 @@ impl RolloutState {
                         cause_id: format!("opening-lot:{}", spec.lot_id),
                         postings: vec![
                             Posting {
-                                account: asset_basis_account(spec),
+                                account: asset_basis_account(
+                                    &spec.agent_id,
+                                    &spec.account_id,
+                                    &spec.asset_id,
+                                ),
                                 amount: spec.basis,
                             },
                             Posting {
