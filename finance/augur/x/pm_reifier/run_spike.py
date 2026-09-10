@@ -3,7 +3,7 @@
 Question: can an LLM act as the base measure Q in the "reify PM marginals into trajectories"
 plan — i.e. emit a diverse cloud of trajectories *in augur's native shape* whose marginals,
 after one max-ent reweight to the market prices, snap to those prices without the effective
-sample size collapsing? See augur/plans/interpolating_prediction_markets.md.
+sample size collapsing? Optional research context: finance/augur/plans/market_model_research.md.
 
 augur's native trajectory (augur/model/state_space.py): a DENSE MONTHLY level path per factor,
 shape (rollout, horizon_months+1, factors). Factors are augur wire-ids: `inflation` (CPI index),

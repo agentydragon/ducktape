@@ -2,8 +2,8 @@
 
 Sibling of `bayes_dilution.py`: same scale-reverting V drift, but replaces the smooth
 `(1+r)^(t/12)` dilution path with discrete primary-round event jumps + a continuous
-employee-mint stream. The structural fix for the asymmetric-regularization defect
-documented in `augur/plans/mint_streams_model.md`.
+employee-mint stream. Implemented conventions and remaining model limitations are
+documented in `finance/augur/docs/private_equity_model.md`.
 
 Key trick that makes this tractable: primary-round event *times* are observed (annotated
 in the JSONL via `valuation_kind="primary"`). So:
@@ -62,8 +62,8 @@ class BayesianMintStreamsPriors:
     """Hyperparameters of the informative priors for the mint-streams fit.
 
     Same governing philosophy as `BayesianDilutionPriors`: every default is a FORWARD belief
-    about a maturing private company, not an in-sample regression to the boom. See plans/
-    mint_streams_model.md for derivations; the reversion-shape and V-vol defaults are reused
+    about a maturing private company, not an in-sample regression to the boom. The
+    reversion-shape and V-vol defaults are reused
     verbatim from the dilution prior since the V process is unchanged.
     """
 

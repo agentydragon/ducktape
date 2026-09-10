@@ -1,7 +1,14 @@
 # PM-reifier spike: can an LLM be a base measure `Q` for augur?
 
-Throwaway experiment for `augur/plans/interpolating_prediction_markets.md` (design PRs #1903 / #1904).
-**Not production code** — lives in `x/`, not Bazel-built.
+Historical June 2026 experiment (design PRs #1903 / #1904), not production code or
+Augur's required model architecture. [Surviving research questions](../../plans/market_model_research.md)
+are optional; the roadmap owns any future dispatch. Reifier retirement is deferred,
+but keeping these scripts executable is not a requirement.
+
+The LLM drivers remain exploratory scripts; the evidence reader and structured
+baseline have targets in [BUILD.bazel](BUILD.bazel). Recorded run numbers and
+operational observations below have not been refreshed by the documentation
+reconciliation and do not establish current model rankings or leakage guarantees.
 
 ## The question
 
@@ -42,7 +49,7 @@ The numbers below are what those runs produced; re-run the scripts to regenerate
 Operational z.ai behavior (caching, rate-limit tiers, param quirks, quota API) lives in
 `docs/zai_api.md`. Market prices in the reify runs are **illustrative**, not pulled live.
 
-## What we learned
+## Recorded observations (June 2026)
 
 ### 1. Reify works, but raw dense emission doesn't
 
@@ -180,7 +187,7 @@ needs: **coverage/dispersion**. The LLM's edge would have to come from _skill_ (
 means / regime awareness), not from honest uncertainty — and here it didn't show. (Same n≈20-effective
 caveat; the bias directions and the tail-escape split are the robust signals.)
 
-## Validation methodology & next steps
+## Historical methodology and follow-up ideas
 
 We are scoring a **distribution**, so the metrics are distributional (PIT/rank histograms, CRPS,
 reliability) and every comparison should be **relative** (LLM vs structured `Q` vs crowd). The clean

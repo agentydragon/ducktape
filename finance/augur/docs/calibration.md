@@ -66,6 +66,8 @@ leaving it disabled selects the independent latent-mark process. Smooth dilution
 and the discrete primary-round/employee-mint process are separate supported modes,
 with configuration validation preventing their simultaneous use. A sampled latent
 mark is not a guarantee of liquidity or proceeds for a particular holder.
+The [PE model conventions](private_equity_model.md) describe the implemented
+issuance and fitter/runtime distinctions; they are not an adoption decision.
 
 Scale-dependent valuation drift is an optional model assumption, not a financial
 rule or proof of predictive quality. <../fit/bayes_dilution.py> separates fixed

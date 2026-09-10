@@ -2,10 +2,11 @@
 
 Last trimmed: 2026-06-12.
 
-`loom` converts prediction-market marginals plus dated evidence into coherent
-forecastable worlds. Augur is the first consumer, but not the owner: `loom`
-emits generic artifacts and Augur maps them into its own exogenous bundles on
-the Augur side.
+The proposed `loom` pipeline converts prediction-market marginals plus dated
+evidence into forecastable worlds. Augur is a prospective consumer, not the owner:
+the proposed bridge maps generic artifacts into Augur's own bundles. These
+pipeline proposals do not gate Augur's current experiments or override its
+[model-adoption roadmap](../finance/augur/plans/roadmap.md).
 
 ## Current State
 
@@ -28,10 +29,9 @@ the Augur side.
   lives under `finance/augur/`.
 - Shared generic market/evidence code should move to shared packages in atomic
   PRs that update all callers. Do not copy Augur code into Loom.
-- Dense liquid macro paths are classical state-space models fit on history, then
-  softly reweighted to market constraints. The LLM stays out of this hot path.
-- Sparse entity/event programs may be authored or revised by an LLM, but their
-  parameters are fit and gated by classical machinery.
+- Classical macro paths with soft market reweighting and authored sparse-event
+  programs are candidate approaches, not a required model family or exclusive
+  authoring method. Evaluate their behavior against alternatives.
 - Prediction-market prices are marginals, not trajectories. Loom supplies the
   coupling and validates the resulting joint paths.
 - Matching market prices is reproduction, not skill. Skill only comes from
@@ -55,7 +55,10 @@ the Augur side.
 - **Diagnostics**: residual table, ESS, infeasible/all-zero constraints,
   grammar validity, monotone ladder checks, and rendered sample-world summaries.
 
-## Active Lanes
+## Proposed pipeline and separate eval work
+
+These retain the earlier design, not a fresh dispatch or an Augur priority order.
+Current gym/Wayback operations remain with the local trackers linked below.
 
 1. **Market task harvesting.** Turn `plans/market_harvest.md` into the
    market-resolved gym family: Manifold backfill, Polymarket post-CLOB history,
@@ -103,7 +106,5 @@ the Augur side.
 - `wayback/cache/PLAN.md`: cache service design/status.
 - `docs/archive_org_apis.md`: Internet Archive API behavior notes.
 - `plans/market_harvest.md`: market source survey and harvest design.
-- `../finance/augur/plans/interpolating_prediction_markets.md`: Augur-side
-  framing of marginals-to-trajectories.
-- `../finance/augur/plans/exogenous_rollout_architecture.md`: state-space macro
-  and sparse event architecture.
+- `../finance/augur/plans/market_model_research.md`: optional marginal-to-joint
+  and sparse-company research questions, under Augur's existing adoption gates.

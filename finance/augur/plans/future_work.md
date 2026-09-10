@@ -162,6 +162,15 @@ model families are candidates, not mandatory implementation projects.
   account for failed/non-exited companies; do not tune a hazard solely to one
   anecdote or market quote. Existing behavior is described in
   [the calibration contract](../docs/calibration.md), not a pending implementation plan.
+- Reconcile the mint-stream fitter's Poisson event-rate posterior with the
+  sampler's direct monthly Bernoulli probability, and validate the non-unit
+  step-up valuation/share convention before claiming cash/cap-table fidelity.
+  [Current PE conventions](../docs/private_equity_model.md) identify the affected
+  implementations. Neither this question nor synthetic sanity bands endorse
+  smooth-dilution fidelity or select a deployment default.
+- [Optional PM and sparse-company research](market_model_research.md) retains
+  market-quality/duplicate weighting, joint-coupling and censored-reference-class
+  questions. It is not an additional architecture mandate or gate stack.
 
 ## Deferred evidence operations and app work
 

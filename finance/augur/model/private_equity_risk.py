@@ -67,8 +67,8 @@ class PrimaryRoundConfig(FrozenModel):
     by an implied amount. Hazard, cash-size, and step-up are all stochastic per rollout.
 
     Replaces the smooth `annual_dilution_rate` channel when set. The legacy channel is
-    still available for the existing `bayesian` preset by leaving this unset; the new
-    `bayesian_mint_streams` preset uses this. See augur/plans/mint_streams_model.md.
+    still available by leaving this unset. See finance/augur/docs/private_equity_model.md for
+    the implemented conventions and their limitations.
     """
 
     monthly_hazard: float = Field(

@@ -1238,10 +1238,9 @@ def test_mint_streams_central_trajectory_does_not_collapse() -> None:
     """Mirrors gaffer-private's `bayesian_mint_streams` preset (NUTS posterior parameters).
 
     Verifies that with mint-streams ON, the central per-share mark trajectory at 10 years is in
-    a sensible range (not the $280 boom-collapse the legacy `bayesian` preset gives). This is the
-    behavioral fix for the asymmetric-regularization defect documented in
-    `augur/plans/mint_streams_model.md` — primary-round dilution is now decoupled from forward
-    V-drift, so the per-share mark stays roughly flat-to-up while V grows.
+    a sensible range (not the $280 boom-collapse the legacy `bayesian` preset gives). This is
+    a preset-shaped behavior control, not held-out validation of the model. See
+    `finance/augur/docs/private_equity_model.md` for the current conventions and limits.
 
     Parameters here mirror the bayesian_mint_streams preset (NUTS posterior 2026-06).
     Loose acceptance bands:

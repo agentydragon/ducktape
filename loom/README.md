@@ -1,13 +1,13 @@
 # loom
 
-Interpolates prediction-market **marginals** ("P(S&P ≥ X by date Y)", "P(OpenAI
+Proposed pipeline: interpolate prediction-market **marginals** ("P(S&P ≥ X by date Y)", "P(OpenAI
 IPO by 2028)") into **rollouts**: weighted sets of coherent world trajectories —
 dense monthly numeric series plus discrete event streams that satisfy
 structural validity — whose implied marginals land on the market prices.
 
-Standalone program, deliberately loosely coupled to augur: loom emits a
-serialized **WorldSet** artifact; augur (the first consumer) reads it through a
-thin bridge on augur's side. `//loom/...` never depends on
+The proposed integration is deliberately loosely coupled: Loom would emit a
+serialized **WorldSet** artifact; Augur would read it through an Augur-side
+bridge. Neither artifact nor bridge is implemented. `//loom/...` never depends on
 `//finance/augur/...`.
 
 ## gym
@@ -28,7 +28,6 @@ LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval_bin -- \
 ```
 
 Status: gym core landed; pipeline at plan stage — see <PLAN.md>.
-The position and prior experiments this program executes live in augur:
-`finance/augur/plans/interpolating_prediction_markets.md`,
-`finance/augur/plans/exogenous_rollout_architecture.md`, and the
-`finance/augur/x/pm_reifier/` spike.
+Augur's [optional model research](../finance/augur/plans/market_model_research.md)
+and historical [PM-reifier spike](../finance/augur/x/pm_reifier/README.md) provide
+context, not an obligation for every Augur provider to use prediction markets or an LLM.
