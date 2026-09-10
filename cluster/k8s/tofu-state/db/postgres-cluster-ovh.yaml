@@ -40,11 +40,72 @@ spec:
 
   postgresql:
     pg_hba:
-      # Isolate the Ollama state login and database in both directions before
-      # CNPG's default host rule. Other state runners keep their existing access.
+      # Each root state role reaches only its own database over TLS. Keep these
+      # entries ahead of CNPG's default host rule so a credential cannot cross
+      # a database boundary through PostgreSQL's default PUBLIC CONNECT grant.
       - hostssl tfstate_ollama_bearer_token tfstate_ollama_bearer_token all scram-sha-256
-      - host all tfstate_ollama_bearer_token all reject
       - host tfstate_ollama_bearer_token all all reject
+      - host all tfstate_ollama_bearer_token all reject
+      - hostssl tfstate_agent_machine_access tfstate_agent_machine_access all scram-sha-256
+      - host tfstate_agent_machine_access all all reject
+      - host all tfstate_agent_machine_access all reject
+      - hostssl tfstate_alloy_otlp_bearer_token tfstate_alloy_otlp_bearer_token all scram-sha-256
+      - host tfstate_alloy_otlp_bearer_token all all reject
+      - host all tfstate_alloy_otlp_bearer_token all reject
+      - hostssl tfstate_augur_evidence tfstate_augur_evidence all scram-sha-256
+      - host tfstate_augur_evidence all all reject
+      - host all tfstate_augur_evidence all reject
+      - hostssl tfstate_budget_ledger tfstate_budget_ledger all scram-sha-256
+      - host tfstate_budget_ledger all all reject
+      - host all tfstate_budget_ledger all reject
+      - hostssl tfstate_cpap_data tfstate_cpap_data all scram-sha-256
+      - host tfstate_cpap_data all all reject
+      - host all tfstate_cpap_data all reject
+      - hostssl tfstate_dns_records tfstate_dns_records all scram-sha-256
+      - host tfstate_dns_records all all reject
+      - host all tfstate_dns_records all reject
+      - hostssl tfstate_flux_webhook_token tfstate_flux_webhook_token all scram-sha-256
+      - host tfstate_flux_webhook_token all all reject
+      - host all tfstate_flux_webhook_token all reject
+      - hostssl tfstate_forgejo_agentydragon tfstate_forgejo_agentydragon all scram-sha-256
+      - host tfstate_forgejo_agentydragon all all reject
+      - host all tfstate_forgejo_agentydragon all reject
+      - hostssl tfstate_forgejo_agentydragon_repos tfstate_forgejo_agentydragon_repos all scram-sha-256
+      - host tfstate_forgejo_agentydragon_repos all all reject
+      - host all tfstate_forgejo_agentydragon_repos all reject
+      - hostssl tfstate_forgejo_claude tfstate_forgejo_claude all scram-sha-256
+      - host tfstate_forgejo_claude all all reject
+      - host all tfstate_forgejo_claude all reject
+      - hostssl tfstate_forgejo_images tfstate_forgejo_images all scram-sha-256
+      - host tfstate_forgejo_images all all reject
+      - host all tfstate_forgejo_images all reject
+      - hostssl tfstate_gatus_sso tfstate_gatus_sso all scram-sha-256
+      - host tfstate_gatus_sso all all reject
+      - host all tfstate_gatus_sso all reject
+      - hostssl tfstate_github_branch_protection tfstate_github_branch_protection all scram-sha-256
+      - host tfstate_github_branch_protection all all reject
+      - host all tfstate_github_branch_protection all reject
+      - hostssl tfstate_github_secrets_sync tfstate_github_secrets_sync all scram-sha-256
+      - host tfstate_github_secrets_sync all all reject
+      - host all tfstate_github_secrets_sync all reject
+      - hostssl tfstate_haku_state tfstate_haku_state all scram-sha-256
+      - host tfstate_haku_state all all reject
+      - host all tfstate_haku_state all reject
+      - hostssl tfstate_infra_drift tfstate_infra_drift all scram-sha-256
+      - host tfstate_infra_drift all all reject
+      - host all tfstate_infra_drift all reject
+      - hostssl tfstate_litellm_api_key tfstate_litellm_api_key all scram-sha-256
+      - host tfstate_litellm_api_key all all reject
+      - host all tfstate_litellm_api_key all reject
+      - hostssl tfstate_litellm_keys tfstate_litellm_keys all scram-sha-256
+      - host tfstate_litellm_keys all all reject
+      - host all tfstate_litellm_keys all reject
+      - hostssl tfstate_sso_providers tfstate_sso_providers all scram-sha-256
+      - host tfstate_sso_providers all all reject
+      - host all tfstate_sso_providers all reject
+      - hostssl tfstate_thrive_scrape tfstate_thrive_scrape all scram-sha-256
+      - host tfstate_thrive_scrape all all reject
+      - host all tfstate_thrive_scrape all reject
 
   managed:
     roles:
@@ -64,3 +125,223 @@ spec:
         inRoles: []
         passwordSecret:
           name: tofu-state-ollama-bearer-token-credentials
+      - name: tfstate_agent_machine_access
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-agent-machine-access-credentials
+      - name: tfstate_alloy_otlp_bearer_token
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-alloy-otlp-bearer-token-credentials
+      - name: tfstate_augur_evidence
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-augur-evidence-credentials
+      - name: tfstate_budget_ledger
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-budget-ledger-credentials
+      - name: tfstate_cpap_data
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-cpap-data-credentials
+      - name: tfstate_dns_records
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-dns-records-credentials
+      - name: tfstate_flux_webhook_token
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-flux-webhook-token-credentials
+      - name: tfstate_forgejo_agentydragon
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-forgejo-agentydragon-credentials
+      - name: tfstate_forgejo_agentydragon_repos
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-forgejo-agentydragon-repos-credentials
+      - name: tfstate_forgejo_claude
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-forgejo-claude-credentials
+      - name: tfstate_forgejo_images
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-forgejo-images-credentials
+      - name: tfstate_gatus_sso
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-gatus-sso-credentials
+      - name: tfstate_github_branch_protection
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-github-branch-protection-credentials
+      - name: tfstate_github_secrets_sync
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-github-secrets-sync-credentials
+      - name: tfstate_haku_state
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-haku-state-credentials
+      - name: tfstate_infra_drift
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-infra-drift-credentials
+      - name: tfstate_litellm_api_key
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-litellm-api-key-credentials
+      - name: tfstate_litellm_keys
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-litellm-keys-credentials
+      - name: tfstate_sso_providers
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-sso-providers-credentials
+      - name: tfstate_thrive_scrape
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        replication: false
+        bypassrls: false
+        inRoles: []
+        passwordSecret:
+          name: tofu-state-thrive-scrape-credentials
