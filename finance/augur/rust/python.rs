@@ -9,6 +9,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+mod action_bindings;
+
 use augur_rust_simulator::engine::{
     ValidatedInput, simulate_dense_validated, simulate_product_metrics_validated,
     simulate_summaries_validated, simulate_validated, spending::batch,
@@ -208,6 +210,7 @@ impl PrototypeSpendingSession {
 
 #[pymodule]
 fn simulator(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    action_bindings::register(module)?;
     module.add_class::<ProductMetrics>()?;
     module.add_class::<SpendingObservationBatch>()?;
     module.add_class::<PrototypeSpendingSession>()?;

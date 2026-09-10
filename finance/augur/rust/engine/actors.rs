@@ -1,5 +1,5 @@
 //! One monthly household decision: scheduled facts, ordered actions, then closing.
-//! Compact outcomes and selected traces share this native scoped execution path.
+//! Retained stepping for Python-owned batch policy loops; no native policy driver.
 
 use super::*;
 use serde::Serialize;
@@ -112,66 +112,104 @@ struct Path {
     stop: Option<Stop>,
 }
 
-/// One function shape: active monthly decision batch -> keyed ordered action lists.
-/// The caller owns policy memory, keyed by original path identity. A scalar policy
-/// may be adapted by the caller; the engine has no scalar policy entrypoint.
-///
-/// Every active path appears once. A rejected action or unpaid due claim stops only
-/// that path. Invalid routing/input and arithmetic/accounting defects remain simulator
-/// errors, not modeled action failures. Capture changes retained results only, never
-/// financial execution, policy observations or the set/order of policy calls.
-pub fn simulate(
-    input: &ExecutionInput,
-    actor: &str,
-    rollout_ids: &[u32],
-    capture_mode: CaptureMode,
-    mut decide: impl FnMut(Vec<Decision<'_>>) -> Result<Vec<DecisionActions>, SimulationError>,
-) -> Result<Vec<Rollout>, SimulationError> {
-    validate(input, actor)?;
-    let holdings = AgentHoldings::resolve(input, actor)?;
-    let selected: BTreeSet<_> = rollout_ids.iter().copied().collect();
-    if selected.is_empty()
-        || selected.len() != rollout_ids.len()
-        || selected.iter().any(|id| *id >= input.rollout_count)
-    {
-        return Err(SimulationError::InvalidRolloutSelection);
-    }
-    let mut paths = rollout_ids
-        .par_iter()
-        .map(|&rollout_id| {
-            let mut state = RolloutState::new(input, rollout_id, capture_mode, None)?;
-            state.recorder.capture_taxes = true;
-            let mut capture = outcomes::Capture::new(&holdings);
-            capture.snapshot(input, &holdings, &state)?;
-            Ok(Path {
-                state,
-                previous_receipts: Vec::new(),
-                trace_receipts: capture_mode.captures_output().then(Vec::new),
-                capture,
-                stop: None,
+enum Phase {
+    New(Vec<Path>),
+    Pending {
+        paths: Vec<Path>,
+        claims: Vec<Option<claims::Claims>>,
+    },
+    Finished(Vec<Path>),
+    Closed,
+}
+
+/// One owned input and isolated path books, advanced only by the caller's monthly batch.
+/// Routing/programming errors abort the session; a financial rejection stops its path.
+pub struct Session {
+    input: ExecutionInput,
+    holdings: AgentHoldings,
+    phase: Phase,
+}
+
+impl Session {
+    pub fn new(
+        input: ExecutionInput,
+        actor: &str,
+        rollout_ids: &[u32],
+        capture_mode: CaptureMode,
+    ) -> Result<Self, SimulationError> {
+        validate(&input, actor)?;
+        let holdings = AgentHoldings::resolve(&input, actor)?;
+        let selected: BTreeSet<_> = rollout_ids.iter().copied().collect();
+        if selected.is_empty()
+            || selected.len() != rollout_ids.len()
+            || selected.iter().any(|id| *id >= input.rollout_count)
+        {
+            return Err(SimulationError::InvalidRolloutSelection);
+        }
+        let paths = rollout_ids
+            .par_iter()
+            .map(|&rollout_id| {
+                let mut state = RolloutState::new(&input, rollout_id, capture_mode, None)?;
+                state.recorder.capture_taxes = true;
+                let mut capture = outcomes::Capture::new(&holdings);
+                capture.snapshot(&input, &holdings, &state)?;
+                Ok(Path {
+                    state,
+                    previous_receipts: Vec::new(),
+                    trace_receipts: capture_mode.captures_output().then(Vec::new),
+                    capture,
+                    stop: None,
+                })
             })
+            .collect::<Result<_, SimulationError>>()?;
+        Ok(Self {
+            input,
+            holdings,
+            phase: Phase::New(paths),
         })
-        .collect::<Result<Vec<_>, SimulationError>>()?;
-    while paths.iter().any(|path| !path.state.is_finished(input)) {
-        let prepared = paths
+    }
+
+    /// Apply scheduled facts and assemble the first claims exactly once.
+    pub fn start(&mut self) -> Result<(), SimulationError> {
+        let Phase::New(paths) = std::mem::replace(&mut self.phase, Phase::Closed) else {
+            return Err(SimulationError::InvalidActorSessionState);
+        };
+        self.prepare(paths)
+    }
+
+    fn prepare(&mut self, mut paths: Vec<Path>) -> Result<(), SimulationError> {
+        if paths.iter().all(|path| path.state.is_finished(&self.input)) {
+            self.phase = Phase::Finished(paths);
+            return Ok(());
+        }
+        let claims = paths
             .par_iter_mut()
             .map(|path| {
-                if path.state.is_finished(input) {
+                if path.state.is_finished(&self.input) {
                     Ok(None)
                 } else {
-                    path.state.prepare_month(input).map(Some)
+                    path.state.prepare_month(&self.input).map(Some)
                 }
             })
             .collect::<Result<Vec<_>, SimulationError>>()?;
-        let batch = paths
+        self.phase = Phase::Pending { paths, claims };
+        Ok(())
+    }
+
+    /// Borrow only current, scoped facts. Reads never reapply scheduled cashflows.
+    pub fn decisions(&self) -> Result<Vec<Decision<'_>>, SimulationError> {
+        let Phase::Pending { paths, claims } = &self.phase else {
+            return Err(SimulationError::InvalidActorSessionState);
+        };
+        Ok(paths
             .iter()
-            .zip(&prepared)
+            .zip(claims)
             .filter_map(|(path, claims)| {
                 claims.as_ref().map(|claims| Decision {
                     rollout_id: path.state.rollout_id,
                     observation: Observation {
                         books: observations::ActorBooks {
-                            scope: &holdings,
+                            scope: &self.holdings,
                             books: observations::Books {
                                 ledger: &path.state.ledger,
                                 lots: &path.state.lots,
@@ -180,7 +218,7 @@ pub fn simulate(
                                 tax_liabilities: &path.state.tax_liabilities,
                                 tlh_cumulative_harvest: &path.state.tlh_cumulative_harvest,
                             },
-                            input,
+                            input: &self.input,
                             rollout: path.state.rollout_id,
                             month: path.state.month,
                         },
@@ -189,12 +227,23 @@ pub fn simulate(
                     },
                 })
             })
-            .collect::<Vec<_>>();
-        let expected: BTreeSet<_> = batch
+            .collect())
+    }
+
+    /// Execute the complete pending batch in caller action order, then prepare next month.
+    /// Validate every routing key before executing any path; no corrected resubmission.
+    pub fn advance(&mut self, responses: Vec<DecisionActions>) -> Result<(), SimulationError> {
+        let Phase::Pending { mut paths, claims } =
+            std::mem::replace(&mut self.phase, Phase::Closed)
+        else {
+            return Err(SimulationError::InvalidActorSessionState);
+        };
+        let expected: BTreeSet<_> = paths
             .iter()
-            .map(|decision| (decision.rollout_id, decision.observation.books.month()))
+            .zip(&claims)
+            .filter(|(_, claims)| claims.is_some())
+            .map(|(path, _)| (path.state.rollout_id, path.state.month))
             .collect();
-        let responses = decide(batch)?;
         let actual: BTreeSet<_> = responses
             .iter()
             .map(|response| (response.rollout_id, response.month))
@@ -210,34 +259,49 @@ pub fn simulate(
             .iter()
             .map(|path| by_id.remove(&path.state.rollout_id))
             .collect();
-        paths
-            .par_iter_mut()
-            .zip(prepared)
-            .zip(routed)
-            .try_for_each(|((path, claims), actions)| match (claims, actions) {
-                (Some(claims), Some(actions)) => advance(path, input, &holdings, claims, actions),
+        paths.par_iter_mut().zip(claims).zip(routed).try_for_each(
+            |((path, claims), actions)| match (claims, actions) {
+                (Some(claims), Some(actions)) => {
+                    advance(path, &self.input, &self.holdings, claims, actions)
+                }
                 (None, None) => Ok(()),
                 _ => unreachable!("validated active decision routing"),
-            })?;
+            },
+        )?;
+        self.prepare(paths)
     }
-    paths
-        .into_iter()
-        .map(|mut path| {
-            let summary =
-                path.capture
-                    .finish(input, actor, &mut path.state, path.previous_receipts)?;
-            let computation = path.state.finish(input)?;
-            Ok(Rollout {
-                rollout_id: computation.rollout_id,
-                summary,
-                trace: path.trace_receipts.map(|receipts| Trace {
-                    financial: computation.into_output(),
-                    receipts,
-                }),
-                stop: path.stop,
+
+    pub fn is_finished(&self) -> bool {
+        matches!(self.phase, Phase::Finished(_))
+    }
+
+    /// Consume terminal results in the caller's original selection order.
+    pub fn finish(&mut self) -> Result<Vec<Rollout>, SimulationError> {
+        let Phase::Finished(paths) = std::mem::replace(&mut self.phase, Phase::Closed) else {
+            return Err(SimulationError::InvalidActorSessionState);
+        };
+        paths
+            .into_iter()
+            .map(|mut path| {
+                let summary = path.capture.finish(
+                    &self.input,
+                    self.holdings.agent_id(),
+                    &mut path.state,
+                    path.previous_receipts,
+                )?;
+                let computation = path.state.finish(&self.input)?;
+                Ok(Rollout {
+                    rollout_id: computation.rollout_id,
+                    summary,
+                    trace: path.trace_receipts.map(|receipts| Trace {
+                        financial: computation.into_output(),
+                        receipts,
+                    }),
+                    stop: path.stop,
+                })
             })
-        })
-        .collect()
+            .collect()
+    }
 }
 
 fn advance(

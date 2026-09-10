@@ -178,6 +178,10 @@ impl PublicPosition<'_> {
         Units::new(self.lot.units_remaining, self.lot.spec.quantity_scale)
     }
 
+    pub fn quantity_scale(&self) -> i64 {
+        self.lot.spec.quantity_scale
+    }
+
     /// Remaining lot-book basis, before the pool-level `harvest_adjustments`.
     pub fn book_basis(&self) -> Money {
         self.lot.basis_remaining

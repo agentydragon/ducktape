@@ -12,6 +12,8 @@ pub enum SimulationError {
     UnsupportedActorInput { reason: String },
     #[error("actor responses must name each active path/month exactly once")]
     InvalidActorResponses,
+    #[error("actor session operation does not match its pending lifecycle state")]
+    InvalidActorSessionState,
     #[error(transparent)]
     PropertyValuation(#[from] crate::property::ValuationError),
     #[error(transparent)]

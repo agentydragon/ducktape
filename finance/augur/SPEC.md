@@ -67,11 +67,15 @@ Expected action rejection leaves books unchanged. The current runner retains
 its explicit all-or-none funding-group control; individual payment execution
 does not select an alternative funding strategy or retry a policy.
 
-The scoped household action control accepts one policy function shape: a batch of
+The scoped household action session accepts one policy function shape: a batch of
 active actor/path observations returns a keyed batch of ordered action lists.
 Original path identities survive selection, reordering and replay; policy memory
 belongs to the caller. A scalar-authored policy can be adapted over this same
 batch interface, not a second engine interface.
+Python owns its outer monthly loop, submitting actions through one in-process
+start/advance session. Financial state and prepared paths stay in the executor;
+Python receives copied current facts and cannot mutate the books. This action
+session has no alternative native policy-loop entrypoint.
 
 Its monthly decision occurs after scheduled cashflows and due-claim assembly.
 Each active path receives exactly one decision per month. Exact sales, purchases,

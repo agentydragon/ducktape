@@ -5,6 +5,7 @@ tax example. The prepared document retains the complete financial assumptions.
 """
 
 import argparse
+import json
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +14,8 @@ from typing import Any, Literal
 import numpy as np
 
 from finance.augur.model.series import SecurityKey
-from finance.augur.rust.invocation import invoke, write_prepared_input
+from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.rust.simulator import ActionSession, Finished
 from finance.augur.sim.backend import CompiledRun, compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
@@ -28,7 +30,7 @@ from finance.augur.sim.scenario import (
     ScheduledObligation,
     TaxProfile,
 )
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from finance.augur.x.monthly_actions.policy import decide
 
 
 def prepare(rollout_count: int = 2, horizon_months: int = 13, *, cash_only_start: bool = False) -> CompiledRun:
@@ -109,13 +111,17 @@ def prepare(rollout_count: int = 2, horizon_months: int = 13, *, cash_only_start
 def execute(
     input_path: Path, output_path: Path, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"]
 ) -> dict[str, Any]:
-    """Run and decode selected paths from an already prepared document."""
-    return invoke(
-        binary=get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/runner")),
-        input_path=input_path,
-        output_path=output_path,
-        arguments=[capture, *(str(rollout_id) for rollout_id in rollout_ids)],
-    )
+    """Own the monthly Python loop over one retained action session and write its results."""
+    session = ActionSession(input_path.read_text(), "example-household", list(rollout_ids), capture=capture)
+    try:
+        batch = session.start()
+        while not isinstance(batch, Finished):
+            batch = session.advance(decide(batch))
+        output = {"rollouts": json.loads(batch.rollouts_json)}
+    finally:
+        session.close()
+    output_path.write_text(json.dumps(output))
+    return output
 
 
 def run_example(

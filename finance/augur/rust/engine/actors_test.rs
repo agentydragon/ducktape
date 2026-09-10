@@ -4,6 +4,25 @@ use super::*;
 use crate::engine::actors::{self, Action, Observation, Outcome, Stop};
 use crate::engine::{trades, transfers};
 
+/// Test-only loop over the same steps exposed to Python, not a production driver.
+fn run_batch(
+    input: &ExecutionInput,
+    actor: &str,
+    ids: &[u32],
+    capture: CaptureMode,
+    mut decide: impl FnMut(
+        Vec<actors::Decision<'_>>,
+    ) -> Result<Vec<actors::DecisionActions>, SimulationError>,
+) -> Result<Vec<actors::Rollout>, SimulationError> {
+    let mut session = actors::Session::new(input.clone(), actor, ids, capture)?;
+    session.start()?;
+    while !session.is_finished() {
+        let responses = decide(session.decisions()?)?;
+        session.advance(responses)?;
+    }
+    session.finish()
+}
+
 fn trace(result: &actors::Rollout) -> &actors::Trace {
     result.trace.as_ref().unwrap()
 }
@@ -20,7 +39,7 @@ where
     Policy: FnMut(Observation) -> Result<Vec<Action>, SimulationError>,
 {
     let mut policies: BTreeMap<_, _> = ids.iter().map(|&id| (id, make(id))).collect();
-    actors::simulate(input, actor, ids, CaptureMode::Forensic, |batch| {
+    run_batch(input, actor, ids, CaptureMode::Forensic, |batch| {
         batch
             .into_iter()
             .rev()
@@ -572,7 +591,7 @@ fn batch_native_memory_and_scalar_adaptation_share_routing_and_stops() {
     let input = input(3, 3);
     let mut calls = BTreeMap::<u32, u32>::new();
     let mut sizes = Vec::new();
-    let batch = actors::simulate(
+    let batch = run_batch(
         &input,
         "alice",
         &[2, 0, 1],
@@ -628,7 +647,7 @@ fn malformed_batch_keys_are_simulator_errors_not_action_failures() {
         vec![(0, 0), (2, 0)],
     ] {
         let mut calls = 0;
-        let result = actors::simulate(
+        let result = run_batch(
             &input,
             "alice",
             &[0, 1],
@@ -664,7 +683,7 @@ fn compact_capture_replays_observed_prefixes_and_canonical_payment_identity() {
         .unwrap();
     prices.values = [1_000, 2_000, 9_000, 10_000].repeat(3);
     let simulate = |ids: &[u32], capture| {
-        actors::simulate(&input, "alice", ids, capture, |batch| {
+        run_batch(&input, "alice", ids, capture, |batch| {
             Ok(batch
                 .into_iter()
                 .rev()
@@ -777,7 +796,7 @@ fn compact_unpaid_claims_keep_occurrence_and_source_without_trace() {
     let mut input = input(3, 1);
     add_bill(&mut input, 5_000);
     add_bill(&mut input, 7_000); // Equal labels must not alias two occurrences.
-    let results = actors::simulate(&input, "alice", &[0], CaptureMode::Summary, |batch| {
+    let results = run_batch(&input, "alice", &[0], CaptureMode::Summary, |batch| {
         Ok(batch
             .into_iter()
             .map(|decision| actors::DecisionActions {

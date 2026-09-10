@@ -28,6 +28,24 @@ DEFAULT_UNIT_QUANTA = 1_000_000
 MONEY_FACTOR_SCALE = 1_000_000_000
 
 
+def quantity_for_value(value: int, price: int, quantity_scale: int, *, round_up: bool) -> int:
+    """Propose quantity counts from exact money and a current per-unit quote.
+
+    Floor for a purchase budget; ceiling for a requested gross sale value. This
+    chooses a quantity, not lots or execution effects; sale taxes are not included.
+    """
+
+    if any(not isinstance(number, int) or isinstance(number, bool) for number in (value, price, quantity_scale)):
+        raise TypeError("quantity conversion requires integer money, price and scale")
+    if value < 0 or price <= 0 or quantity_scale <= 0:
+        raise ValueError("value must be nonnegative; price and quantity scale must be positive")
+    scaled = value * quantity_scale
+    quantity = -(-scaled // price) if round_up else scaled // price
+    if quantity >= 1 << 63:
+        raise OverflowError("quantity does not fit signed 64-bit counts")
+    return quantity
+
+
 def _exact_decimal(value: Any, *, field: str = "value") -> Decimal:
     """Parse an exact external decimal without silently accepting a float.
 

@@ -201,12 +201,16 @@ The scoped action control instead follows the ordered execution described below.
 
 ## Scoped household action batches
 
-`engine::actors::simulate(input, actor, rollout_ids, capture, decide)` calls one ordinary
-batch function after the shared monthly preparation phase. `Decision` rows carry
-original rollout IDs plus actor-scoped books, current due claims and the previous
-decision's receipts. The caller keeps policy memory. `DecisionActions` returns
+`simulator.ActionSession(input_json, actor, rollout_ids, capture="forensic")` retains the input and
+financial books in process. Python calls `start()`, then submits one batch to
+`advance()` until it receives `Finished`. `Decision` rows carry original rollout
+IDs and copied actor-scoped cash accounts, public positions, declared pools/quotes,
+current claims and previous-month receipts. The caller keeps policy memory and
+owns the outer loop; `engine::actors::Session` owns financial stepping, not callbacks.
+`DecisionActions` returns
 one ordered list for each active `(rollout_id, month)`; response order is immaterial.
-Missing, duplicate, stale or unknown keys are simulator errors. A caller may adapt
+Missing, duplicate, stale or unknown keys and cross-path/session claim handles are simulator
+errors which close the session, not resubmittable actions. A caller may adapt
 scalar authoring over these rows; there is no scalar actor-engine entry point.
 
 Each list uses exact `Sell`, `Buy`, `Transfer`, `PayClaim` and `Consume` requests.
@@ -219,8 +223,8 @@ accounting/arithmetic failures return a simulator error, not an action rejection
 Preparation and closing share the configured runner's financial implementations;
 actor execution has no implicit pre/post allocation, harvesting, sale or payment.
 
-`CaptureMode::Summary` omits detailed trace retention; `Dense` adds financial event
-tables and monthly books, and `Forensic` adds the journal. Every mode returns the
+`capture="summary"` omits detailed trace retention; `"dense"` adds financial event
+tables and monthly books, and `"forensic"` adds the journal. Every mode returns the
 same summary: account cash and public-pool gross marks over observed snapshots,
 keyed payment outcomes, canonical tax records, unpaid claims, the exact ending
 book and the last month's attempted action prefix. There is no post-stop padding.
@@ -234,20 +238,41 @@ Capture does not change policy observations: only the previous month's receipts
 reach the next decision, even when all historical receipts are retained for replay.
 Detailed output is `Rollout::trace`; its absence is not a zero-valued financial history.
 
-This native control supports one decision-making household and scripted
+This session supports one decision-making household and scripted
 counterparties. It rejects configured allocation/harvesting/tender policies and
 scheduled sales rather than silently bypassing them. Housing and private-equity
 lifecycle inputs are not supported. Public trades use the explicit holding pools,
 so an all-cash start can buy a previously unheld asset without a dummy lot or policy.
-The Python action session is a separate entrypoint migration.
+Current account and quote records are frozen typed objects; money and quantities
+are exact integers with the declared currency/quantity scales. Prior receipts and
+terminal results keep their canonical JSON encoding. No full future series or
+mutable native books cross the boundary. Higher-level tax/contract observations
+are not part of this initial binding.
 
-The `engine/actors_test.rs` stories run with
+```python
+session = ActionSession(input_json, actor, original_ids)
+try:
+    batch = session.start()
+    while not isinstance(batch, Finished):
+        batch = session.advance(decide(batch))
+    rollouts = json.loads(batch.rollouts_json)
+finally:
+    session.close()
+```
+
+Close releases retained input/books if a Python policy raises. The spending-only
+prototype and configured full-run interfaces remain separate migration work;
+new actor consumers use this session, not those controls.
+
+The `engine/actors_test.rs` stories drive the same steps in a test-only harness and run with
 `bbr test //finance/augur/rust:simulator_test`. They include contribution → bill →
 chosen sale → explicit payment, canonical synthetic-tax assessment/payment, mixed
 buy/transfer/buy ordering, prefix preservation, distinct unpaid-claim stops,
 batch-native versus scalar-adapted selected replay and invalid response routing.
 Their supplied paths and flat tax brackets are deterministic controls, not market
 forecasts or claims of statutory tax coverage.
+`bbr test //finance/augur/rust:action_test` exercises the real Python boundary,
+including receipt-aware memory, complete-batch routing, selected replay and closure.
 
 ## Covered behavior
 

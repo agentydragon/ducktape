@@ -4,6 +4,8 @@ The extension has no Python source for mypy to read, so this stub is the contrac
 must be edited in lockstep with the `#[pymodule]` block in `python.rs`.
 """
 
+from typing import Literal
+
 class ProductMetrics:
     """The seven base product metric series for one population."""
 
@@ -26,6 +28,167 @@ def simulate_product_metrics(fixture_json: str, primary_agent_id: str) -> Produc
 def simulate_dense_json(fixture_json: str) -> str: ...
 def simulate_forensic_json(fixture_json: str) -> str: ...
 def simulate_summaries_json(fixture_json: str) -> str: ...
+
+class HoldingPool:
+    @property
+    def account_id(self) -> str: ...
+    @property
+    def asset_id(self) -> str: ...
+    @property
+    def quantity_scale(self) -> int: ...
+    @property
+    def price(self) -> int: ...
+
+class PublicPosition:
+    @property
+    def account_id(self) -> str: ...
+    @property
+    def asset_id(self) -> str: ...
+    @property
+    def lot_id(self) -> str: ...
+    @property
+    def purchase_month(self) -> int: ...
+    @property
+    def units(self) -> int: ...
+    @property
+    def quantity_scale(self) -> int: ...
+    @property
+    def book_basis(self) -> int: ...
+    @property
+    def price(self) -> int: ...
+    @property
+    def value(self) -> int: ...
+
+class Claim:
+    """An opaque occurrence handle with copied current claim facts; not a future bill."""
+
+    @property
+    def cause_id(self) -> str: ...
+    @property
+    def obligation_type(self) -> str: ...
+    @property
+    def from_account(self) -> tuple[str, str]: ...
+    @property
+    def to_account(self) -> tuple[str, str]: ...
+    @property
+    def amount_due(self) -> int: ...
+    @property
+    def due_month(self) -> int: ...
+
+class Observation:
+    """Copied actor facts after scheduled events and due-claim assembly.
+
+    Money uses input currency quanta; positions use their declared pool's scale.
+    No future paths or other actors' books cross this boundary. Prior action receipts
+    retain their canonical JSON representation and cover only the previous month.
+    """
+
+    @property
+    def agent_id(self) -> str: ...
+    @property
+    def month(self) -> int: ...
+    @property
+    def cash(self) -> int: ...
+    @property
+    def public_holdings(self) -> int: ...
+    @property
+    def accounts(self) -> list[tuple[str, int]]:
+        """Declared cash account ID and available quanta, scoped to this actor."""
+
+    @property
+    def holding_pools(self) -> list[HoldingPool]: ...
+    @property
+    def public_positions(self) -> list[PublicPosition]: ...
+    @property
+    def claims(self) -> list[Claim]: ...
+    @property
+    def previous_receipts_json(self) -> str: ...
+
+class Decision:
+    @property
+    def rollout_id(self) -> int: ...
+    @property
+    def observation(self) -> Observation: ...
+
+class Action:
+    """Immutable exact request; execution, not construction, checks affordability/ownership.
+
+    Account pairs are (agent ID, account ID). Values are integer currency quanta;
+    quantities are integer counts in the declared holding pool's quantity scale.
+    """
+
+    @staticmethod
+    def sell(
+        cause_id: str,
+        agent_id: str,
+        proceeds_account_id: str,
+        asset_id: str,
+        lots: list[tuple[str, str, int]],
+    ) -> Action:
+        """Lots are (holding account ID, exact lot ID, quantity counts), in sale order."""
+
+    @staticmethod
+    def buy(
+        cause_id: str,
+        from_account: tuple[str, str],
+        holding_account_id: str,
+        asset_id: str,
+        lot_id: str,
+        units: int,
+        quantity_scale: int,
+    ) -> Action: ...
+    @staticmethod
+    def transfer(cause_id: str, from_account: tuple[str, str], to_account: tuple[str, str], amount: int) -> Action: ...
+    @staticmethod
+    def pay_claim(
+        request_id: int, cause_id: str, claim: Claim, from_account: tuple[str, str], amount: int
+    ) -> Action: ...
+    @staticmethod
+    def consume(
+        request_id: int,
+        cause_id: str,
+        component_id: str,
+        from_account: tuple[str, str],
+        to_account: tuple[str, str],
+        amount: int,
+    ) -> Action: ...
+    def to_json(self) -> str: ...
+
+class DecisionActions:
+    def __init__(self, rollout_id: int, month: int, actions: list[Action]) -> None: ...
+    @property
+    def rollout_id(self) -> int: ...
+    @property
+    def month(self) -> int: ...
+    @property
+    def actions(self) -> list[Action]: ...
+
+class Finished:
+    @property
+    def rollouts_json(self) -> str:
+        """Terminal summaries and optional traces in the original selection order."""
+
+class ActionSession:
+    """One household's retained monthly action session; the caller owns the Python loop.
+
+    Start once. Submit exactly one response for every current decision, preserving
+    action order. Invalid routing/input aborts this session; a rejected action stops
+    only its path, retaining successful earlier actions. Finished consumes the session.
+    Close in finally if policy code raises. Supports the current immediate-cash public
+    security/claim slice, not configured allocators, housing or private-equity policies.
+    """
+
+    def __init__(
+        self,
+        input_json: str,
+        actor: str,
+        rollout_ids: list[int],
+        *,
+        capture: Literal["summary", "dense", "forensic"] = "forensic",
+    ) -> None: ...
+    def start(self) -> list[Decision] | Finished: ...
+    def advance(self, responses: list[DecisionActions]) -> list[Decision] | Finished: ...
+    def close(self) -> None: ...
 
 class SpendingObservationBatch:
     """Copied opening-month columns. Money is integer currency quanta; CPI is a ratio.

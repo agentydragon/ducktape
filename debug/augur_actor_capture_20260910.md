@@ -2,8 +2,9 @@
 
 Measured source: `8325c94bfbfc903a542f74a7a492521f8db7b074`. These measurements
 precede the holding-pool declaration rebase and the Python-owned action session.
-They measure the native batch actor consumer at that source, not the future
-session boundary or an executor-language comparison. Reproduce the workload with
+They measure the native batch actor consumer at that source, not the Python-owned
+session now used by the example or an executor-language comparison. The current
+entrypoint reproduces the workload, not this historical execution boundary:
 <../finance/augur/x/monthly_actions/README.md#population-capture-and-profiling>.
 
 ## Matched workload

@@ -16,7 +16,7 @@ income, with no deductions or capital-loss offset. No prior-year tax means no
 estimated payments; the month-11 assessment becomes a month-12 due claim. This is
 not a statutory tax model or a personal planning recommendation.
 
-`policy.rs` directly authors the single batch callback: observe current cash, lots
+`policy.py` directly authors the single batch function: observe current cash, lots
 and due claims; if cash cannot cover the claims, request liquidation of every
 public lot; then request each claim payment. This deliberately blunt rule does
 not calculate a minimal sale or retry an unaffordable bill. Empty intervening
@@ -41,10 +41,12 @@ The tests invoke the documented CLI and check its emitted financial outcomes,
 then compare reordered and selected replay through the same authoring function.
 All inputs are generated locally; the tests need no live service or evidence data.
 
-Input/output transport uses the shared
-[native invocation helpers](../../rust/docs/execution_boundary.md#native-experiment-invocation).
-This is a compiled Rust batch-policy consumer, not a Python callback bridge or a
-new experiment framework.
+`run.py` owns the Python monthly loop over the in-process
+[action session](../../rust/README.md#scoped-household-action-batches).
+Policies are ordinary Python functions; editing one requires no Rust rebuild.
+Prepared input is written once for reproduction, while current observations and
+ordered actions cross the existing extension in memory. There is no native
+example binary, per-month subprocess or second financial implementation.
 
 ## Cash-only opening
 
@@ -54,7 +56,9 @@ bb run //finance/augur/x/monthly_actions:run_bin -- --output-dir /tmp/augur-cash
 
 This variation starts with $200 cash, no lots and an explicitly declared empty
 brokerage pool. The same authored policy invests the opening cash using the pool's
-current observed price. No allocation policy or dummy holding declares the asset.
+current observed price and the exact quantity helper in `sim/fixed_point.py`.
+It floors fractional quantity to the declared scale within the cash budget.
+No allocation policy or dummy holding declares the asset.
 The bill arrives in month 1; the two stipulated prices rise from $100/$50 to
 $120/$60 then remain fixed. This is a synthetic control, not a market forecast.
 
@@ -88,10 +92,11 @@ bbr run -c opt //finance/augur/x/monthly_actions:profile_bin -- --rollouts 1000 
 
 Repeat with `--capture dense` or `forensic` and a new output directory. `report.json`
 records input and compact-result hashes, observed (not padded) path-months, wire
-bytes and separate process RSS high-water marks. `execution.prof` is a real
-cProfile recording; its scope includes native process startup/work/output I/O and
-Python JSON decoding, not isolated native evaluation. Path preparation is excluded
-from the profile but included in process RSS. The native child may inherit the
-parent's address space; maxima are not additive simultaneous peaks. No performance
+bytes and one process RSS high-water mark. `execution.prof` is a real
+cProfile recording of the same Python-owned session loop: prepared-input reading,
+monthly policy/binding/native work, terminal JSON decoding and output writing,
+not isolated native evaluation. Path preparation is excluded from the profile but
+included in process RSS, alongside Python and retained native allocations. There
+is no native child executor. No performance
 threshold or executor-language comparison is implied. The CI tests execute both
 documented entrypoints with small generated inputs and check capture/replay parity.

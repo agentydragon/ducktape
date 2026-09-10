@@ -97,7 +97,10 @@ rust_test(
 # final file stem, or the interpreter refuses the module on import.
 rust_shared_library(
     name = "simulator_pyo3",
-    srcs = ["python.rs"],
+    srcs = [
+        "action_bindings.rs",
+        "python.rs",
+    ],
     crate_name = "simulator",
     crate_root = "python.rs",
     edition = "2024",
@@ -243,6 +246,21 @@ py_test(
         "//finance/augur/sim:scenario",
         "//util/bazel:runfiles",
         "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "action_test",
+    srcs = ["action_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

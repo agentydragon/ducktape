@@ -36,7 +36,6 @@ def main() -> None:
     profiler.dump_stats(args.output_dir / "execution.prof")
     # Record high-water marks before verification/hash construction adds allocations.
     self_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    child_rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
     seconds = sum(entry.inlinetime for entry in profiler.getstats())
     observed_months = sum(rollout["summary"]["ending_book"]["month"] for rollout in output["rollouts"])
     compact_hash = hashlib.sha256()
@@ -52,7 +51,6 @@ def main() -> None:
         "profiled_seconds": seconds,
         "profiled_path_months_per_second": observed_months / seconds,
         "peak_self_rss_kib": self_rss,
-        "peak_child_rss_kib": child_rss,
         "input_sha256": input_digest,
         "input_bytes": input_path.stat().st_size,
         "output_bytes": output_path.stat().st_size,
@@ -61,8 +59,8 @@ def main() -> None:
         "rayon_num_threads": args.native_threads,
         "paths": "alternating fixed $100/$50 quotes; repeated paths, not probability samples",
         "financial_scope": "two-share liquidation, one $150 bill, synthetic 10% LTCG tax; poor-price paths stop month 0; surviving paths pay tax month 12; subsequent decisions are empty",
-        "timing_scope": "cProfile-instrumented native invocation through decoded output; includes process startup, all native work, output file I/O and Python JSON decoding; excludes input compilation and file creation",
-        "memory_scope": "separate process high-water marks including input preparation; child can inherit parent image at fork; not additive simultaneous peaks or isolated Rust heap",
+        "timing_scope": "cProfile-instrumented Python-owned action session; includes prepared input reading/parsing, monthly Python policy/binding/native work, terminal JSON decoding and output file writing; excludes input compilation and file creation, not isolated native evaluation",
+        "memory_scope": "one process high-water mark includes input preparation, Python policy/observations/results and retained native state; no child executor, not isolated Rust heap",
     }
     (args.output_dir / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, sort_keys=True))
