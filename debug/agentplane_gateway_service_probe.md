@@ -1,6 +1,29 @@
 # Agentplane Gateway Service experiment
 
-Status: prerequisite policy proposal; no DNS change or demonstrated fix.
+## Actions follow-up, 2026-09-10
+
+The policy audit reproduced the same failure from Actions Pod
+`agentplane-actions-6669c695b6-pqp8m` (`10.244.4.48`, Cilium endpoint 3578)
+on `ovh-ns102453`. Credential-free discovery probes around 04:07 UTC retained
+the canonical Host/SNI and TLS verification: remote node `147.135.39.176:443`
+returned 200, Gateway Service `10.106.122.5:443` returned 403, and the local
+node `147.135.37.175:443` reset TLS (errno 104).
+
+The app's #6007 rule selects only the app. Actions also needs the narrowly
+selected Authentik-server TCP 9000 rule with canonical SNI for Gateway Service
+access. This does not change DNS or repair the node-IP TLS path.
+
+After #6007 rolled out, app discovery/JWKS returned 200 through the Service,
+wrong-SNI requests returned 403, and direct plaintext backend access reset.
+Five alternating app TLS rounds yielded five Service successes, five remote
+node successes and five local node resets. This supports the analogous Actions
+rule, but the Actions post-rollout controls remain required: canonical discovery
+and `/application/o/agentplane-actions/jwks/` success, wrong-SNI and direct
+plaintext rejection. Do not change DNS before those controls pass.
+
+## Initial app investigation (before #6007 rollout)
+
+Status at the time: prerequisite policy proposal; no DNS change or demonstrated fix.
 
 ## Read-only observations, 2026-09-10 03:41–03:45 UTC
 
