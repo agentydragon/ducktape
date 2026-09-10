@@ -140,7 +140,7 @@ def _pe_external_with_channel_value(
         horizon_months=horizon_months,
     )
     patched = valid.frame.with_columns(
-        pl.when((pl.col("rollout_id") == 0) & (pl.col("month_index") == month))
+        pl.when((pl.col("rollout_index") == 0) & (pl.col("month_index") == month))
         .then(pl.lit(value, dtype=pl.Float64))
         .otherwise(pl.col(channel))
         .alias(channel)
