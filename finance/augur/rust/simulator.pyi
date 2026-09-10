@@ -59,12 +59,24 @@ class PublicPosition:
     @property
     def value(self) -> int: ...
 
+class FixedCoupon:
+    """Known nominal payment in currency quanta, including zero."""
+
+    @property
+    def amount(self) -> int: ...
+
+class IndexedCoupon:
+    """Rate applied to indexed principal; no future CPI or payment amount."""
+
+    @property
+    def annual_rate_ppb(self) -> int: ...
+
 class HeldBond:
     """Owned unredeemed contract; principal is par/indexed carrying value, not sale proceeds.
 
-    Money is currency quanta; the annual coupon rate uses parts per billion.
+    Money is currency quanta; indexed annual rates use parts per billion.
     Coupons/redemption due this month already reached observed cash. Terms may name
-    future dates, but no future CPI, coupon amounts or market paths are exposed.
+    future dates and fixed payments, but no future CPI or indexed payments.
     """
 
     @property
@@ -78,15 +90,13 @@ class HeldBond:
     @property
     def purchase_price(self) -> int: ...
     @property
-    def annual_coupon_rate_ppb(self) -> int: ...
+    def coupon(self) -> FixedCoupon | IndexedCoupon: ...
     @property
     def coupon_period_months(self) -> int: ...
     @property
     def purchase_month(self) -> int: ...
     @property
     def maturity_month(self) -> int: ...
-    @property
-    def inflation_indexed(self) -> bool: ...
     @property
     def principal(self) -> int: ...
 

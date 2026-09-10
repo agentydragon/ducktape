@@ -366,10 +366,14 @@ pieces consumes exactly what it held -- no divisibility precondition, and no
 remainder stranded in an emptied lot. What money is and why it is not a decimal
 crate: <docs/money_representation.md>.
 
-Bond coupon rates use the same parts-per-billion contract and must round-trip
-exactly through the `float64` boundary. Nominal coupons round the full
-`face × annual rate × period / 12` rational once; TIPS carry an indexed
-principal and a fixed-point period rate. Government
+Nominal bonds carry one fixed coupon amount compiled by `sim/bonds.py`, rounding
+the full `face × annual PPB rate × period / 12` rational once to currency quanta.
+The executor pays that amount on each contractual coupon date. Indexed bonds
+instead carry an annual PPB rate and retain their dynamic principal/period-rate
+calculation. The input and owned `HeldBond.coupon` observation distinguish fixed
+amounts from indexed rates; no nominal annual rate or indexing flag duplicates
+the payment term. Indexed rates still require the existing exact `float64`
+round trip. Government
 issuer levels come from one scenario-level jurisdiction identity registry,
 rather than duplicated caller-supplied metadata on each bond.
 

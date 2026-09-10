@@ -9,7 +9,7 @@ use crate::{
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const INPUT_SCHEMA_VERSION: u32 = 13;
+pub const INPUT_SCHEMA_VERSION: u32 = 14;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -313,6 +313,14 @@ pub struct InitialLotSpec {
     pub basis: Money,
 }
 
+/// Fixed payments are compiled once; indexed payments depend on current principal.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BondCoupon {
+    Fixed { amount: Money },
+    Indexed { annual_rate_ppb: i64 },
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BondSpec {
@@ -323,13 +331,17 @@ pub struct BondSpec {
     pub issuer_jurisdiction_id: Option<String>,
     pub face_value: Money,
     pub purchase_price: Money,
-    pub annual_coupon_rate_ppb: i64,
+    pub coupon: BondCoupon,
     #[serde(default = "default_coupon_period_months")]
     pub coupon_period_months: u32,
-    #[serde(default)]
-    pub inflation_indexed: bool,
     pub purchase_month_index: i32,
     pub maturity_month_index: i32,
+}
+
+impl BondSpec {
+    pub fn inflation_indexed(&self) -> bool {
+        matches!(self.coupon, BondCoupon::Indexed { .. })
+    }
 }
 
 fn default_coupon_period_months() -> u32 {

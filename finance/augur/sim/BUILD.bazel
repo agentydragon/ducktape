@@ -146,6 +146,7 @@ py_test(
 py_library(
     name = "bonds",
     srcs = ["bonds.py"],
+    deps = [":fixed_point"],
 )
 
 py_test(

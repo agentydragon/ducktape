@@ -47,8 +47,12 @@ def test_coupon_schedule_survives_a_purchase_before_the_horizon() -> None:
 
 
 def test_coupon_is_the_periodic_fraction_of_the_annual_rate() -> None:
-    semiannual = coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate=0.04, coupon_period_months=6)
-    quarterly = coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate=0.04, coupon_period_months=3)
+    semiannual = coupon_amount_quanta(
+        face_quanta=_FACE_QUANTA, annual_coupon_rate_ppb=40_000_000, coupon_period_months=6
+    )
+    quarterly = coupon_amount_quanta(
+        face_quanta=_FACE_QUANTA, annual_coupon_rate_ppb=40_000_000, coupon_period_months=3
+    )
 
     assert semiannual == 200_000  # $2,000.00
     assert quarterly == 100_000  # $1,000.00
@@ -61,7 +65,10 @@ def test_coupon_arithmetic_is_exact_at_a_scale_that_breaks_float64() -> None:
 
     face_quanta = 1_000_000_000_000_000_001  # ~$10 quadrillion, and odd
 
-    assert coupon_amount_quanta(face_quanta=face_quanta, annual_coupon_rate=1.0, coupon_period_months=12) == face_quanta
+    assert (
+        coupon_amount_quanta(face_quanta=face_quanta, annual_coupon_rate_ppb=1_000_000_000, coupon_period_months=12)
+        == face_quanta
+    )
 
 
 @pytest.mark.parametrize(("coupon_period_months", "periods_per_year"), [(1, 12), (3, 4), (6, 2), (12, 1)])
@@ -78,14 +85,35 @@ def test_a_years_coupons_land_within_rounding_of_the_annual_rate(
     """
 
     coupon = coupon_amount_quanta(
-        face_quanta=25_000_000, annual_coupon_rate=0.037, coupon_period_months=coupon_period_months
+        face_quanta=25_000_000, annual_coupon_rate_ppb=37_000_000, coupon_period_months=coupon_period_months
     )
 
     assert abs(coupon * periods_per_year - 925_000) * 2 <= periods_per_year
 
 
 def test_zero_coupon_pays_nothing_until_maturity() -> None:
-    assert coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate=0.0, coupon_period_months=6) == 0
+    assert coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate_ppb=0, coupon_period_months=6) == 0
+
+
+@pytest.mark.parametrize(
+    ("face", "rate", "period", "expected"),
+    [(600, 10_000_000, 1, 1), (180, 33_333_333, 1, 0), (1_250_627, 37_000_000, 5, 19_280)],
+)
+def test_nominal_coupon_rounds_the_full_rational_once(face: int, rate: int, period: int, expected: int) -> None:
+    # Half a quantum rounds up; just below half does not. Five months need not
+    # divide a year, so quantizing a periodic rate first is not equivalent.
+    assert coupon_amount_quanta(face_quanta=face, annual_coupon_rate_ppb=rate, coupon_period_months=period) == expected
+
+
+@pytest.mark.parametrize(("face", "rate", "period"), [(-1, 1, 1), (1, -1, 1), (1, 1, 0)])
+def test_coupon_rejects_invalid_exact_terms(face: int, rate: int, period: int) -> None:
+    with pytest.raises(ValueError, match="face/rate must be nonnegative and coupon period positive"):
+        coupon_amount_quanta(face_quanta=face, annual_coupon_rate_ppb=rate, coupon_period_months=period)
+
+
+def test_coupon_rejects_overflow_without_float_conversion() -> None:
+    with pytest.raises(OverflowError, match="coupon does not fit"):
+        coupon_amount_quanta(face_quanta=(1 << 63) - 1, annual_coupon_rate_ppb=2_000_000_000, coupon_period_months=12)
 
 
 def test_the_bond_is_off_the_books_by_the_end_of_its_maturity_month() -> None:

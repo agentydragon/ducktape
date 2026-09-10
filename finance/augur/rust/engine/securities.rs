@@ -230,7 +230,7 @@ fn bond_principal(
     bond: &BondSpec,
     snapshot_month: u32,
 ) -> Result<Money, SimulationError> {
-    if !bond.inflation_indexed {
+    if !bond.inflation_indexed() {
         return Ok(bond.face_value);
     }
     let base_month = bond.purchase_month_index.max(0) as u32;
@@ -241,10 +241,13 @@ fn bond_principal(
         .scaled_by(Factor::new(level, base_level), "bond indexed principal")?)
 }
 
-pub(super) fn bond_period_rate_ppb(bond: &BondSpec) -> Result<i64, SimulationError> {
+pub(super) fn bond_period_rate_ppb(
+    annual_rate_ppb: i64,
+    period_months: u32,
+) -> Result<i64, SimulationError> {
     mul_div_round_half_up(
-        bond.annual_coupon_rate_ppb,
-        i64::from(bond.coupon_period_months),
+        annual_rate_ppb,
+        i64::from(period_months),
         12,
         "bond period rate",
     )
@@ -252,31 +255,15 @@ pub(super) fn bond_period_rate_ppb(bond: &BondSpec) -> Result<i64, SimulationErr
 }
 
 pub(super) fn bond_coupon(principal: Money, bond: &BondSpec) -> Result<Money, SimulationError> {
-    let coupon = if bond.inflation_indexed {
-        i128::from(mul_div_round_half_up(
+    match bond.coupon {
+        BondCoupon::Fixed { amount } => Ok(amount),
+        BondCoupon::Indexed { annual_rate_ppb } => Ok(Money(mul_div_round_half_up(
             principal.0,
-            bond_period_rate_ppb(bond)?,
+            bond_period_rate_ppb(annual_rate_ppb, bond.coupon_period_months)?,
             WIRE_RATE_SCALE,
             "indexed bond coupon",
-        )?)
-    } else {
-        let rate_times_period = i128::from(bond.annual_coupon_rate_ppb)
-            .checked_mul(i128::from(bond.coupon_period_months))
-            .ok_or(ArithmeticError::Overflow {
-                operation: "nominal bond coupon rate",
-            })?;
-        mul_div_i128_round_half_up(
-            i128::from(principal.0),
-            rate_times_period,
-            i128::from(WIRE_RATE_SCALE) * 12,
-            "nominal bond coupon",
-        )?
-    };
-    Ok(Money(i64::try_from(coupon).map_err(|_| {
-        ArithmeticError::Overflow {
-            operation: "bond coupon",
-        }
-    })?))
+        )?)),
+    }
 }
 
 pub(super) fn bond_states(
@@ -337,7 +324,7 @@ pub(super) fn execute_bonds(
             Money(0)
         };
         let redemption = if i64::from(month) == i64::from(bond.maturity_month_index) {
-            if bond.inflation_indexed {
+            if bond.inflation_indexed() {
                 Money(principal.0.max(bond.face_value.0))
             } else {
                 bond.face_value
@@ -345,7 +332,7 @@ pub(super) fn execute_bonds(
         } else {
             Money(0)
         };
-        let accretion = if bond.inflation_indexed && month > 0 && bond_is_active(bond, month) {
+        let accretion = if bond.inflation_indexed() && month > 0 && bond_is_active(bond, month) {
             principal.checked_sub(bond_principal(fixture, rollout_id, bond, month - 1)?)?
         } else {
             Money(0)

@@ -25,6 +25,7 @@ from finance.augur.model.series import (
     SecurityDistributionKey,
     SecurityKey,
 )
+from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.compiler.helpers import StringTable
 from finance.augur.sim.compiler.private_equity import PEChannels, compile_pe_channels
 from finance.augur.sim.compiler.series import (
@@ -64,7 +65,7 @@ from finance.augur.sim.scenario import (
 
 # Mirrors `INPUT_SCHEMA_VERSION` in `execution.rs`; the simulator rejects any other value, so a
 # schema bump fails loudly here rather than encoding a document the engine will not read.
-INPUT_SCHEMA_VERSION = 13
+INPUT_SCHEMA_VERSION = 14
 
 _BASIS_POINT_SCALE = 10_000
 _MONEY_SERIES_KINDS = (SecurityKey, SecurityDistributionKey, HomeValueKey)
@@ -406,17 +407,29 @@ def _initial_bonds(scenario: Scenario, *, quantum: Decimal) -> list[dict[str, An
     bonds: list[dict[str, Any]] = []
     for bond in scenario.initial_bonds:
         rate_ppb = _ppb(bond.annual_coupon_rate)
+        face = int(currency_amount_to_quanta(bond.face_value, quantum=quantum))
+        coupon = (
+            {"kind": "indexed", "annual_rate_ppb": rate_ppb}
+            if bond.inflation_indexed
+            else {
+                "kind": "fixed",
+                "amount": coupon_amount_quanta(
+                    face_quanta=face,
+                    annual_coupon_rate_ppb=rate_ppb,
+                    coupon_period_months=int(bond.coupon_period_months),
+                ),
+            }
+        )
         bonds.append(
             {
                 "bond_id": bond.bond_id,
                 "agent_id": bond.agent_id,
                 "account_id": bond.account_id,
                 "issuer_jurisdiction_id": bond.issuer_jurisdiction_id,
-                "face_value": int(currency_amount_to_quanta(bond.face_value, quantum=quantum)),
+                "face_value": face,
                 "purchase_price": int(currency_amount_to_quanta(bond.purchase_price, quantum=quantum)),
-                "annual_coupon_rate_ppb": rate_ppb,
+                "coupon": coupon,
                 "coupon_period_months": int(bond.coupon_period_months),
-                "inflation_indexed": bond.inflation_indexed,
                 "purchase_month_index": int(bond.purchase_month_index),
                 "maturity_month_index": int(bond.maturity_month_index),
             }

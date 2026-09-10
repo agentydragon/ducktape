@@ -10,8 +10,17 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
-from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions, Finished
-from finance.augur.sim.scenario import BondHolding
+from finance.augur.rust.simulator import (
+    Action,
+    ActionSession,
+    Decision,
+    DecisionActions,
+    Finished,
+    FixedCoupon,
+    IndexedCoupon,
+    simulate_dense_json,
+)
+from finance.augur.sim.scenario import BondHolding, Currency
 from finance.augur.sim.testing.bonds import CORPORATE, MUNI, TREASURY, bond_case
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -78,8 +87,10 @@ def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
                 [bond] = observation.held_bonds
                 assert (bond.bond_id, bond.account_id, bond.issuer_jurisdiction_id) == ("alice-bond", "checking", None)
                 assert (bond.face_value, bond.purchase_price, bond.principal) == (10_000, 10_000, 10_000)
-                assert (bond.annual_coupon_rate_ppb, bond.coupon_period_months) == (120_000_000, 1)
-                assert (bond.purchase_month, bond.maturity_month, bond.inflation_indexed) == (-1, 2, False)
+                coupon = bond.coupon
+                assert isinstance(coupon, FixedCoupon)
+                assert (coupon.amount, bond.coupon_period_months) == (100, 1)
+                assert (bond.purchase_month, bond.maturity_month) == (-1, 2)
             else:
                 assert observation.held_bonds == []
             observed.append((observation.month, observation.cash))
@@ -109,6 +120,9 @@ def test_indexed_principal_stopped_marks_and_replay_exclude_unobserved_cpi() -> 
             observation = decision.observation
             if observation.month < 2:
                 [bond] = observation.held_bonds
+                coupon = bond.coupon
+                assert isinstance(coupon, IndexedCoupon)
+                assert coupon.annual_rate_ppb == 120_000_000
                 assert bond.principal == (10_000 if observation.month == 0 else 20_000)
                 assert observation.cash == (100 if observation.month == 0 else 300)
             else:
@@ -163,6 +177,59 @@ def test_existing_issuer_exemptions_survive_actor_capture(issuer: str | None, fe
     taxes = {row["jurisdiction_id"]: row["total_tax"] for row in result["summary"]["tax_accruals"]}
     assert (taxes["federal_us"] > 0) == federal
     assert (taxes["california"] > 0) == state
+    # One $20,000 first-year coupon less the supplied $14,600 deduction, at 10%.
+    assert taxes["federal_us"] == (54_000 if federal else 0)
+
+
+@pytest.mark.parametrize(
+    ("face", "rate", "period", "coupon"),
+    [(600, 0.01, 1, 1), (180, 0.033333333, 1, 0), (1_250_627, 0.037, 5, 19_280), (600, 0.0, 1, 0)],
+)
+@pytest.mark.parametrize("quantum", [Decimal("0.01"), Decimal(1)])
+def test_compiled_fixed_coupon_funds_both_controls(
+    face: int, rate: float, period: int, coupon: int, quantum: Decimal
+) -> None:
+    case = Case(
+        scenario(
+            checking(("alice", Decimal(0)), ("world", Decimal(0))),
+            horizon_months=2 * period + 1,
+            currency=Currency(quantum=quantum),
+            initial_bonds=[
+                BondHolding(
+                    bond_id="fixed-test",
+                    agent_id="alice",
+                    account_id="checking",
+                    face_value=face * quantum,
+                    purchase_price=face * quantum,
+                    annual_coupon_rate=rate,
+                    coupon_period_months=period,
+                    purchase_month_index=0,
+                    maturity_month_index=2 * period,
+                )
+            ],
+            tax_profiles=[],
+        ),
+        rollout_count=1,
+    )
+
+    def spend(batch: list[Decision]) -> list[DecisionActions]:
+        return [
+            DecisionActions(
+                row.rollout_id, row.observation.month, [consume(row.observation.cash)] if row.observation.cash else []
+            )
+            for row in batch
+        ]
+
+    [actor] = execute(case, spend, "dense")
+    [configured] = json.loads(simulate_dense_json(json.dumps(case.compiled_run.execution_input)))["rollouts"]
+    expected = [(period, coupon, 0), (2 * period, coupon, face)] if coupon else [(2 * period, 0, face)]
+    for cashflows in (actor["trace"]["financial"]["bond_cashflows"], configured["bond_cashflows"]):
+        assert [(row["month"], row["coupon"], row["redemption"]) for row in cashflows] == expected
+        assert all(row["accretion"] == 0 for row in cashflows)
+    assert actor["stop"] is None
+    assert sum(row["receipt"]["amount_requested"] for row in actor["summary"]["payments"]) == face + 2 * coupon
+    assert actor["summary"]["cash"][0]["values"] == [0] * (2 * period + 2)
+    assert actor["summary"]["bond_principal"][0]["values"][-1] == 0
 
 
 def test_indexed_accretion_income_is_preserved_without_claiming_final_period_coverage() -> None:

@@ -1056,9 +1056,8 @@ pub(super) fn stopped_book_fixture(
         issuer_jurisdiction_id: None,
         face_value: Money(1_000),
         purchase_price: Money(1_000),
-        annual_coupon_rate_ppb: 0,
+        coupon: BondCoupon::Indexed { annual_rate_ppb: 0 },
         coupon_period_months: 6,
-        inflation_indexed: true,
         purchase_month_index: -5,
         maturity_month_index: 13,
     });
@@ -1685,9 +1684,8 @@ fn bond_principal_remains_until_redemption_event() {
                 issuer_jurisdiction_id: None,
                 face_value: Money(100),
                 purchase_price: Money(100),
-                annual_coupon_rate_ppb: 0,
+                coupon: BondCoupon::Fixed { amount: Money(0) },
                 coupon_period_months: 1,
-                inflation_indexed: false,
                 purchase_month_index: -1,
                 maturity_month_index: maturity as i32,
             });
@@ -1745,9 +1743,10 @@ fn nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts() 
             issuer_jurisdiction_id: Some("federal_us".into()),
             face_value: Money(100_000_000),
             purchase_price: Money(100_000_000),
-            annual_coupon_rate_ppb: 50_000_000,
+            coupon: BondCoupon::Fixed {
+                amount: Money(2_500_000),
+            },
             coupon_period_months: 6,
-            inflation_indexed: false,
             purchase_month_index: -1,
             maturity_month_index: 11,
         },
@@ -1758,9 +1757,10 @@ fn nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts() 
             issuer_jurisdiction_id: Some("federal_us".into()),
             face_value: Money(100_000_000),
             purchase_price: Money(100_000_000),
-            annual_coupon_rate_ppb: 40_000_000,
+            coupon: BondCoupon::Indexed {
+                annual_rate_ppb: 40_000_000,
+            },
             coupon_period_months: 6,
-            inflation_indexed: true,
             purchase_month_index: -1,
             maturity_month_index: 11,
         },
@@ -1771,9 +1771,10 @@ fn nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts() 
             issuer_jurisdiction_id: Some("federal_us".into()),
             face_value: Money(100_000_000),
             purchase_price: Money(100_000_000),
-            annual_coupon_rate_ppb: 50_000_000,
+            coupon: BondCoupon::Fixed {
+                amount: Money(2_500_000),
+            },
             coupon_period_months: 6,
-            inflation_indexed: false,
             purchase_month_index: -13,
             maturity_month_index: -1,
         },
@@ -1864,9 +1865,8 @@ fn bond_validation_rejects_non_par_and_missing_index_paths() {
         issuer_jurisdiction_id: None,
         face_value: Money(100),
         purchase_price: Money(99),
-        annual_coupon_rate_ppb: 50_000_000,
+        coupon: BondCoupon::Fixed { amount: Money(3) },
         coupon_period_months: 6,
-        inflation_indexed: false,
         purchase_month_index: -6,
         maturity_month_index: 6,
     }];
@@ -1876,48 +1876,25 @@ fn bond_validation_rejects_non_par_and_missing_index_paths() {
     ));
 
     fixture.scenario.initial_bonds[0].purchase_price = Money(100);
-    fixture.scenario.initial_bonds[0].inflation_indexed = true;
+    fixture.scenario.initial_bonds[0].coupon = BondCoupon::Fixed { amount: Money(-1) };
+    assert!(matches!(
+        simulate(&fixture),
+        Err(SimulationError::InvalidBondTerms { .. })
+    ));
+    fixture.scenario.initial_bonds[0].coupon = BondCoupon::Indexed {
+        annual_rate_ppb: 50_000_000,
+    };
     assert!(matches!(
         simulate(&fixture),
         Err(SimulationError::MissingBondInflationSeries { .. })
     ));
 
-    fixture.scenario.initial_bonds[0].inflation_indexed = false;
+    fixture.scenario.initial_bonds[0].coupon = BondCoupon::Fixed { amount: Money(3) };
     fixture.scenario.initial_bonds[0].issuer_jurisdiction_id = Some("federal_us".into());
     assert!(matches!(
         simulate(&fixture),
         Err(SimulationError::UnknownBondIssuer { .. })
     ));
-}
-
-#[test]
-fn nominal_bond_coupon_rounds_the_full_rational_once() {
-    let mut bond = BondSpec {
-        bond_id: "rounding".into(),
-        agent_id: "alice".into(),
-        account_id: "checking".into(),
-        issuer_jurisdiction_id: None,
-        face_value: Money(600),
-        purchase_price: Money(600),
-        annual_coupon_rate_ppb: 10_000_000,
-        coupon_period_months: 1,
-        inflation_indexed: false,
-        purchase_month_index: 0,
-        maturity_month_index: 12,
-    };
-    assert_eq!(bond_coupon(bond.face_value, &bond).unwrap(), Money(1));
-
-    bond.face_value = Money(180);
-    bond.purchase_price = Money(180);
-    bond.annual_coupon_rate_ppb = 33_333_333;
-    assert_eq!(bond_coupon(bond.face_value, &bond).unwrap(), Money(0));
-
-    bond.face_value = Money(1_250_627);
-    bond.purchase_price = Money(1_250_627);
-    bond.annual_coupon_rate_ppb = 37_000_000;
-    bond.coupon_period_months = 5;
-    bond.maturity_month_index = 60;
-    assert_eq!(bond_coupon(bond.face_value, &bond).unwrap(), Money(19_280));
 }
 
 #[test]

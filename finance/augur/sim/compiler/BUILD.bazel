@@ -127,6 +127,7 @@ py_library(
         "//finance/augur/model:asset_key",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
+        "//finance/augur/sim:bonds",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:jurisdictions",

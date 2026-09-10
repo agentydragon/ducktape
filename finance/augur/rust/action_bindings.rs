@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 
 use augur_rust_simulator::engine::{CaptureMode, actors, claims, payments, trades, transfers};
+use augur_rust_simulator::execution::BondCoupon;
 use augur_rust_simulator::ledger::AccountRef;
 use augur_rust_simulator::money::{Money, Quantity};
 
@@ -36,18 +37,51 @@ struct PublicPosition {
 
 #[derive(Clone)]
 #[pyclass(frozen, get_all, module = "finance.augur.rust.simulator")]
+struct FixedCoupon {
+    amount: i64,
+}
+
+#[derive(Clone)]
+#[pyclass(frozen, get_all, module = "finance.augur.rust.simulator")]
+struct IndexedCoupon {
+    annual_rate_ppb: i64,
+}
+
+#[derive(Clone)]
+#[pyclass(frozen, module = "finance.augur.rust.simulator")]
 struct HeldBond {
+    #[pyo3(get)]
     bond_id: String,
+    #[pyo3(get)]
     account_id: String,
+    #[pyo3(get)]
     issuer_jurisdiction_id: Option<String>,
+    #[pyo3(get)]
     face_value: i64,
+    #[pyo3(get)]
     purchase_price: i64,
-    annual_coupon_rate_ppb: i64,
+    coupon: BondCoupon,
+    #[pyo3(get)]
     coupon_period_months: u32,
+    #[pyo3(get)]
     purchase_month: i32,
+    #[pyo3(get)]
     maturity_month: i32,
-    inflation_indexed: bool,
+    #[pyo3(get)]
     principal: i64,
+}
+
+#[pymethods]
+impl HeldBond {
+    #[getter]
+    fn coupon(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        match self.coupon {
+            BondCoupon::Fixed { amount } => FixedCoupon { amount: amount.0 }.into_py_any(py),
+            BondCoupon::Indexed { annual_rate_ppb } => {
+                IndexedCoupon { annual_rate_ppb }.into_py_any(py)
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -402,11 +436,10 @@ impl ActionSession {
                                     issuer_jurisdiction_id: terms.issuer_jurisdiction_id.clone(),
                                     face_value: terms.face_value.0,
                                     purchase_price: terms.purchase_price.0,
-                                    annual_coupon_rate_ppb: terms.annual_coupon_rate_ppb,
+                                    coupon: terms.coupon,
                                     coupon_period_months: terms.coupon_period_months,
                                     purchase_month: terms.purchase_month_index,
                                     maturity_month: terms.maturity_month_index,
-                                    inflation_indexed: terms.inflation_indexed,
                                     principal: position.principal.0,
                                 })
                             })
@@ -452,6 +485,8 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<HoldingPool>()?;
     module.add_class::<PublicPosition>()?;
     module.add_class::<HeldBond>()?;
+    module.add_class::<FixedCoupon>()?;
+    module.add_class::<IndexedCoupon>()?;
     module.add_class::<Observation>()?;
     module.add_class::<Decision>()?;
     module.add_class::<DecisionActions>()?;

@@ -402,7 +402,10 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
         };
         if bond.face_value.0 <= 0
             || bond.purchase_price != bond.face_value
-            || bond.annual_coupon_rate_ppb < 0
+            || match bond.coupon {
+                BondCoupon::Fixed { amount } => amount.0 < 0,
+                BondCoupon::Indexed { annual_rate_ppb } => annual_rate_ppb < 0,
+            }
             || bond.coupon_period_months == 0
             || term_months <= 0
             || i64::from(term_months) % i64::from(bond.coupon_period_months) != 0
@@ -411,21 +414,19 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 bond_id: bond.bond_id.clone(),
             });
         }
-        let reconstructed_rate = ((bond.annual_coupon_rate_ppb as f64 / WIRE_RATE_SCALE as f64)
-            * WIRE_RATE_SCALE as f64)
-            .round() as i64;
-        if bond.annual_coupon_rate_ppb > MAX_EXACT_F64_INTEGER
-            || reconstructed_rate != bond.annual_coupon_rate_ppb
-        {
-            return Err(SimulationError::InexactBondCouponRate {
-                bond_id: bond.bond_id.clone(),
-                rate_ppb: bond.annual_coupon_rate_ppb,
-            });
-        }
-        if bond.inflation_indexed {
-            let exact_period_rate = bond_period_rate_ppb(bond)?;
-            let legacy_period_rate = (((bond.annual_coupon_rate_ppb as f64
-                / WIRE_RATE_SCALE as f64)
+        if let BondCoupon::Indexed { annual_rate_ppb } = bond.coupon {
+            let reconstructed_rate = ((annual_rate_ppb as f64 / WIRE_RATE_SCALE as f64)
+                * WIRE_RATE_SCALE as f64)
+                .round() as i64;
+            if annual_rate_ppb > MAX_EXACT_F64_INTEGER || reconstructed_rate != annual_rate_ppb {
+                return Err(SimulationError::InexactBondCouponRate {
+                    bond_id: bond.bond_id.clone(),
+                    rate_ppb: annual_rate_ppb,
+                });
+            }
+            let exact_period_rate =
+                bond_period_rate_ppb(annual_rate_ppb, bond.coupon_period_months)?;
+            let legacy_period_rate = (((annual_rate_ppb as f64 / WIRE_RATE_SCALE as f64)
                 * f64::from(bond.coupon_period_months)
                 / 12.0
                 * WIRE_RATE_SCALE as f64)
