@@ -104,13 +104,13 @@ def test_imported_basis_is_exact_through_sales(
                                 agent_id="test-owner",
                                 proceeds_account_id="checking",
                                 asset_id="test-security",
-                                lots=[
+                                lots=(
                                     LotSale(
                                         account_id="checking",
                                         lot_id="test-lot",
                                         units=sales[observation.month] * lot.quantity_scale,
-                                    )
-                                ],
+                                    ),
+                                ),
                             )
                         ],
                     )

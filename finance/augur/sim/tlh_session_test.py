@@ -214,7 +214,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
-        assert batch[0].observation.tlh_portfolios == []
+        assert batch[0].observation.tlh_portfolios == ()
         result = session.advance(
             [
                 DecisionActions(

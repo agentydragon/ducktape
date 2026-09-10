@@ -80,7 +80,7 @@ def run(prepared: CompiledRun, ids: list[int]) -> tuple[list[Rollout], dict[int,
                 assert all(isinstance(receipt.outcome, Executed) for receipt in receipts)
                 memory[decision.rollout_id] += sum(isinstance(receipt.action, Consume) for receipt in receipts)
                 assert memory[decision.rollout_id] == observation.month
-                assert observation.accounts == [("checking", observation.cash)]
+                assert observation.accounts == (("checking", observation.cash),)
                 assert observation.agent_id == "alice"
                 assert observation.cpi is None  # This nominal-only experiment supplied no CPI model.
                 assert not observation.public_positions
@@ -260,7 +260,7 @@ def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
         ]
     )
     assert not isinstance(batch, Finished)
-    assert batch[0].observation.accounts == [("checking", 6)]
+    assert batch[0].observation.accounts == (("checking", 6),)
     session.close()
 
 

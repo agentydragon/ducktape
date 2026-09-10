@@ -35,7 +35,7 @@ class Sell(Record):
     agent_id: str
     proceeds_account_id: str
     asset_id: str
-    lots: list[LotSale]
+    lots: tuple[LotSale, ...]
 
 
 class Buy(Record):
