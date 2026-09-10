@@ -55,7 +55,7 @@ class _Session:
     def __init__(
         self,
         run: CompiledRun,
-        actor: str,
+        actor: str | None,
         rollout_ids: list[int],
         *,
         capture: Capture,
@@ -138,9 +138,9 @@ class _Session:
 
     def opening(self) -> None:
         """The manager advances before any investor operation, including configured sales."""
-        for decision in self.native.observations():
-            rollout_id = decision.rollout_id
-            month = decision.observation.month
+        for status in self.native.current_paths():
+            rollout_id = status.rollout_id
+            month = status.month
             for spec in self.specs.values():
                 current = self.portfolios[rollout_id][spec.portfolio_id]
                 for index, distribution in enumerate(self.run.scenario.distributions):

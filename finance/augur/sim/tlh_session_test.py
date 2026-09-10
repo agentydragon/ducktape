@@ -1,5 +1,6 @@
 """The real session posts opaque component effects without owning its model state."""
 
+import json
 from dataclasses import replace
 from decimal import Decimal
 
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.books import TlhPortfolioState
+from finance.augur.sim.configured import simulate_dense_json
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction
 from finance.augur.sim.scenario import (
     Currency,
@@ -294,6 +296,13 @@ def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None
     [portfolio] = case.scenario.tlh_portfolios
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         TlhPortfolioSpec.model_validate({**portfolio.model_dump(), "cumulative_harvest": 1})
+
+
+def test_configured_clock_needs_no_placeholder_economic_actor() -> None:
+    case = Case(scenario=Scenario(agents=[], initial_cash=[], tax_profiles=[], horizon_months=1), rollout_count=1)
+    document = json.loads(simulate_dense_json(case.compiled_run))
+    [rollout] = document["rollouts"]
+    assert [(book["month"], book["balances"]) for book in rollout["months"]] == [(0, []), (1, [])]
 
 
 if __name__ == "__main__":

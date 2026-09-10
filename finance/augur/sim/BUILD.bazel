@@ -379,6 +379,7 @@ py_test(
     srcs = ["tlh_session_test.py"],
     deps = [
         ":books",
+        ":configured",
         ":results",
         ":scenario",
         ":session",

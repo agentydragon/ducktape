@@ -15,23 +15,24 @@ from finance.augur.sim.session import Capture, DecisionActions, _Session
 def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> _Session:
     if not isinstance(run, CompiledRun):
         raise TypeError("execution requires a CompiledRun, not serialized input")
-    # This selects an observation scope for month/path routing, not a policy actor.
-    actor = product_actor or run.scenario.accounts[0].account.agent_id
     session = _Session(
-        run, actor, list(range(run.rollout_count)), capture=capture, configured=True, product_actor=product_actor
+        run,
+        product_actor,
+        list(range(run.rollout_count)),
+        capture=capture,
+        configured=True,
+        product_actor=product_actor,
     )
     try:
         session.start()
         while not session.native.is_finished():
-            decisions = session.native.observations()
-            session.native.begin_actions(
-                [DecisionActions(decision.rollout_id, decision.observation.month, []) for decision in decisions]
-            )
+            paths = session.native.current_paths()
+            session.native.begin_actions([DecisionActions(path.rollout_id, path.month, []) for path in paths])
             pending: list[tuple[int, PendingBuy]] = []
-            for decision in decisions:
-                rollout_id = decision.rollout_id
+            for path in paths:
+                rollout_id = path.rollout_id
                 for index, sale in enumerate(run.scenario._scheduled_sales):
-                    if sale.month != decision.observation.month:
+                    if sale.month != path.month:
                         continue
                     spec = next(
                         (
@@ -54,6 +55,7 @@ def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -
                         session.effects(
                             spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
                         ),
+                        operation="Redemption",
                     )
                     session.portfolios[rollout_id][spec.portfolio_id] = candidate
                 for index, _ in enumerate(run.scenario._target_allocation_policies):
