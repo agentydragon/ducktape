@@ -68,6 +68,12 @@ those cubes are built and serialized, not the numeric storage layout.
 
 Each phase must land green on its own, with no permanent dual API.
 
+The roadmap's OBSINPUT slice owns remaining artifact/conditioning-observation
+producers and readers; its deletion criteria are in
+[the input cleanup plan](cleanup_migration.md). It does not wait for model
+selection or BIND's price/payout work. DOCS reconciles already-completed entries
+below; the roadmap, not this older phase list, owns current dispatch order.
+
 1. **Config typed.** Most clean config surfaces have landed. The remaining
    config-like surfaces are tied to trained artifact factor names and move with
    Phase 3.

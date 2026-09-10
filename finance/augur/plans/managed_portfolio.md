@@ -63,7 +63,9 @@ service's supported prices/payouts; the household never sees future paths.
 - **Scenario declarations:** account ownership, opening positions, selected
   service/model and concrete funding/settlement terms. Reuse account/asset IDs,
   money precision and opening lot types. A definition is shared configuration;
-  state is isolated per account and rollout. An empty account can receive a first
+  state is isolated per account and rollout. MA1 consumes BASIS's shared exact
+  total-opening-basis contract; no managed-only divide-and-round workaround.
+  An empty account can receive a first
   contribution without exposing a fictitious initial lot.
 - **Approximation:** reuse the formula in `sim/tlh_harvest.py` as the initial
   Python batch calculation. Its input is current market information plus the

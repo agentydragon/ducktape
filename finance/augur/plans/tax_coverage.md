@@ -50,6 +50,13 @@ statutory variations are covered. Source paths below are relative to Augur.
 | Direct bonds                      | Existing nominal/TIPS slice is initial, par-held and nontradable, with coupon/redemption and indexed-principal processing.                                                                                                                              | Retain its controls. Before tradable/off-par arms: coupon dates, clean/dirty price, accrued interest, premium/discount/OID, basis and tax character at sale/redemption. Do not infer full TIPS coverage from indexed principal alone.            |
 | Other accounts/residencies        | No general retirement-account withdrawal/tax regime or cross-border residency transition contract.                                                                                                                                                      | Explicitly exclude irrelevant cases; add an independent branch when required. Changing a currency label or jurisdiction list is not a residency model.                                                                                           |
 
+### Existing indexed-bond coverage check
+
+- [ ] Independently reconcile maturity-period CPI changes, indexed redemption
+      and final taxable accretion in the currently supported TIPS slice. This is
+      an unverified coverage question, not a diagnosed tax bug. Keep it under
+      GT/TAX's existing-bond controls, separate from new trading/off-par features.
+
 ### Housing basis reconciliation
 
 `rust/engine/property.rs` adds `buyer_closing_cost` to the purchase's recorded

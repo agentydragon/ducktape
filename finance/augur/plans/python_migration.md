@@ -5,16 +5,7 @@ performance. Prefer Python where it makes financial entities, steps and policies
 clearer to compose and inspect. This is not a rewrite benchmark contest. The
 [roadmap](roadmap.md) owns dispatch and dependencies; remove completed work here.
 
-## Fix the public result boundary first
-
-**IDENT** makes `rollout_id` stable identity throughout execution results.
-Selection `[42, 7]` means original paths 42 and 7 occupy local columns 0 and 1;
-positions are internal, not a second caller-supplied identity. Metrics own their
-ordered ID axis, and a projection selects by ID without independently supplied
-column/ID arguments. Event frames currently call the original ID `rollout_index`;
-rename that field and every caller atomically. Retain source identity even for a
-trace whose event frames are empty. Compiler/market-array positions remain local
-indices, not a reason to rename unrelated sampling algorithms.
+## Type the public result boundary
 
 **RESULT** replaces public `Finished.rollouts_json` with typed rollouts, compact
 summaries, books, receipts and explicit stop variants. Decode once at the boundary
@@ -24,34 +15,11 @@ all event rows into a second record hierarchy. Preserve dense/forensic books and
 journals where real consumers need them. Ordinary mappings remain mappings;
 record/variant structure does not remain `dict[str, Any]`.
 
-All existing result consumers, including actual CLI paths, migrate in these PRs.
+All common-session result consumers, including actual CLI paths, migrate atomically.
 No alias shim, raw-dictionary alternative, cast-only typing or new evaluator.
 Reordered/subselected IDs, eventless paths, early stops, exact money, optional
 capture and selected replay are acceptance cases. Private transport serialization
 is allowed; it must not leak into domain code or be mistaken for financial logic.
-
-## NOMCOUPON: bounded contractual-term cleanup already dispatched
-
-Nominal coupons on the currently supported fixed-rate, fixed-principal contracts
-are invariant across paths and coupon dates. Reuse the existing Python
-`sim/bonds.py::coupon_amount_quanta` calculation during compilation, make its
-rounding agree with the canonical PPB/face-quantum terms, and lower one
-authoritative fixed coupon payment term. Both configured execution and the common
-action session consume it. Delete the corresponding native nominal calculation
-in `engine/securities.rs::bond_coupon`, updating all builders, bindings and
-observations atomically. Do not keep two independently editable amounts/rates
-that can disagree about the payable amount.
-
-Acceptance includes independent exact rounding/nondivisible-period cases,
-zero-coupon contracts, actual coupon cash/tax outcomes and maturity timing in
-both consumers. Preserve observable contract terms intentionally. TIPS remains
-separate: its changing principal and period-rate rounding are not the same
-calculation. Do not fold an unverified TIPS correction into this migration.
-
-This slice is justified by one clear contractual payment term and removal of a
-duplicate calculation, not a performance target. It needs no benchmark gate,
-new callback or deferred housing/PE migration. It must not set the agenda for
-subsequent work merely because other small numerical functions are easy to port.
 
 ## Choose subsequent moves by domain value
 
@@ -73,11 +41,16 @@ studies to expose needed boundaries:
   allocation and managed-account examples exercise this composition; they need
   neither the app nor a universal experiment framework.
 
-RESULT does not finish typing the world: `CompiledRun.execution_input` still
-exposes the lowered transport dictionary. Subsequent domain work should keep
-typed declarations/financial state authoritative and move serialization to its
-boundary, not make every consumer inspect nested wire keys or mirror every native
-type just to preserve the current encoding.
+RESULT does not finish typing the world. The concrete
+[input/reader cleanup slices](cleanup_migration.md) cover INPUT's public
+`CompiledRun.execution_input` leak, TAXINPUT's padded preparation, BASIS's exact
+opening lots, OBSINPUT's conditioning records, and the remaining P12 readers.
+TAXINPUT supplies INPUT's record contract; BASIS supplies MA1's shared opening
+basis. The other slices need not wait for a wholesale Python executor rewrite.
+
+The `product/` shell is not a new-feature priority. Its changes should correct
+existing behavior or retire legacy interfaces; experiments remain the primary
+consumers driving new domain capabilities.
 
 Move the definitions and financial steps to Python where that makes this object
 model clearer, easier to inspect and less dependent on duplicated binding/schema
