@@ -1,7 +1,7 @@
 # Actor-facing policy interfaces
 
 Target design for the remaining migration and gates GP/GL/GE in [the roadmap](roadmap.md).
-The common action session is implemented in `rust/simulator.pyi`; module names and
+Reuse the common `ActionSession` and its single batch contract; module names and
 richer types below are sketches, not additional API declarations. Reuse existing
 domain types and introduce fields only for a supported consumer.
 
@@ -130,8 +130,9 @@ and decide once, execute the ordered actions, then stop if any due claim remains
 unpaid. Its supported trades retain their explicitly declared immediate-cash
 control; this is not a promise about real products' settlement delays.
 Ordering between additional decision-making actors and expanded product/housing
-timing remain GP choices, not an accident of batch row order. Books and paths
-stay in the existing executor. Native unit tests may drive the step primitives;
+timing remain GP choices, not an accident of batch row order. The executor keeps
+ordinary books and prepared paths; the opaque Python TLH component owns its
+private holdings and supplies settled effects/statements. Native unit tests may drive the step primitives;
 production consumers converge on the Python loop, not two supported drivers.
 
 Future PE support distinguishes mandatory issuer events from holder decisions.
@@ -200,17 +201,24 @@ explicit standing instruction with modeled terms. Non-mutating tax/trade preview
 reuse canonical calculations with observable inputs and explicit assumptions,
 never the future realized path.
 
-## Managed-account composition
+## Opaque TLH portfolio composition
 
-A household-owned managed portfolio attaches a modeled investment service to an
-account. The policy requests contributions/withdrawals and reads current account
-facts; it does not manufacture tax losses or trigger the service's internal
-harvesting each month. Typed model consequences enter canonical execution through
-a separate, narrowly scoped financial-step boundary, not the investor action API.
-The [managed-portfolio plan](managed_portfolio.md) gives the Python composition
-sketch, phase/interface decisions and passive-account → investor-actions → runnable
-comparison slices. These are proposed extensions to the same batch session, not
-implemented APIs or a general entity/plugin framework.
+The approved concrete `TlhPortfolio` is Python-owned and described in the
+[TLH contract](../docs/tlh.md). Its investor view contains value and reported tax
+basis, not private cohorts/harvesting memory. Contributions, gross withdrawals
+and liquidation use the common ordered-action contract. The policy does not
+manufacture losses or trigger monthly harvesting.
+
+The Python session advances each component once before investor operations,
+including scheduled/configured redemptions, then settles its financial effects
+through private engine phases. Candidate state is adopted only with accepted
+cash/tax settlement. Native code may retain immutable reporting statements, never
+a mirrored mutable position/basis book. No custom exception taxonomy, model
+callback handoff or generic managed-account API is needed.
+
+The [TLH migration plan](managed_portfolio.md) retains component, all-driver/native
+deletion and runnable-comparison acceptance. Representation and timing are agreed;
+the integrations are not declared complete by this target document.
 
 ## Acceptance and remaining choices
 

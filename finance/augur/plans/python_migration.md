@@ -8,7 +8,7 @@ clearer to compose and inspect. This is not a rewrite benchmark contest. The
 ## Choose subsequent moves by domain value
 
 The next priority is a coherent model that experiments can compose, not a sequence
-of the easiest arithmetic kernels to port. Use managed-TLH accounts and FIRE
+of the easiest arithmetic kernels to port. Use the opaque TLH portfolio and FIRE
 studies to expose needed boundaries:
 
 - World definitions declare actors, accounts, instruments, contractual terms and
@@ -17,12 +17,14 @@ studies to expose needed boundaries:
 - Per-rollout books hold current financial state. Observations expose what the
   actor can know; actions express decisions the actor can make. Environment/product
   processes apply their own modeled consequences through canonical accounting.
-- A managed account encapsulates an approximate investment service, including
-  linked realized losses and basis. It is not an ordinary index security plus an
-  unrelated policy-controlled stream of tax credits.
+- The Python TLH component owns its private exposure, adjusted basis, ages and
+  rounding cash. The investor reads value/basis and chooses contributions,
+  withdrawals or liquidation; no cohort mirror lives in native books. Canonical
+  financial execution settles cash/tax effects and retains read-only statements.
+  This is a concrete reduced-form model, not a generic managed-account container.
 - Study authors load/sample paths, supply ordinary Python batch policies, advance
   the common session and inspect typed outcomes. Trinity, flexible-spending,
-  allocation and managed-account examples exercise this composition; they need
+  allocation and TLH examples exercise this composition; they need
   neither the app nor a universal experiment framework.
 
 Typed common outputs do not finish typing the world. The concrete
@@ -34,6 +36,12 @@ observations. These slices need not wait for a wholesale Python executor rewrite
 The `product/` shell is not a new-feature priority. Its changes should correct
 existing behavior or retire legacy interfaces; experiments remain the primary
 consumers driving new domain capabilities.
+
+The [TLH migration](managed_portfolio.md) includes every driver and native reader,
+not only a new Python example. Advance once before investor operations, including
+scheduled/configured redemptions, regardless of a later funding failure. Remove
+the old native formula, give-back state and replaced Python curve; no callback
+handoff or parallel TLH implementation waits for the app's housing/PE migration.
 
 Move the definitions and financial steps to Python where that makes this object
 model clearer, easier to inspect and less dependent on duplicated binding/schema
@@ -67,7 +75,7 @@ calculation kernels or result reductions where their dimensions genuinely agree.
 ## Performance later
 
 GL and RUNTIME/GE are parked optimization work, with no outgoing prerequisite to
-near-term domain/API changes, Python ports, managed portfolios or FIRE studies.
+near-term domain/API changes, Python ports, TLH portfolios or FIRE studies.
 Correctness tests remain mandatory; representative large-N throughput and memory
 budgets do not gate this phase. Avoid unnecessary work, but do not grow an elaborate
 transport/object model to save hypothetical future allocations.

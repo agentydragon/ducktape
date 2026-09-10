@@ -35,10 +35,11 @@ assumptions remain downstream.
   not merely a prefix spelling change. Preserve existing typed keys; do not make
   a global serialization/ID sweep a prerequisite for INPUT or BIND.
 
-## Managed portfolios and harvesting
+## Reduced-form TLH portfolios
 
-**GH / MA1–MA3** own the account/service boundary and the initial approximation;
-see [the managed-account plan](managed_portfolio.md).
+**MA1–MA3** implement the approved opaque Python component and migrate all drivers;
+see [the TLH migration plan](managed_portfolio.md). Representation and the common
+pre-investor monthly phase are settled, not a gate to reopen here.
 
 - Check modeled realized losses and subsequent gain/basis consequences against
   named real-account evidence. Refit decay as longitudinal evidence becomes
@@ -50,9 +51,9 @@ see [the managed-account plan](managed_portfolio.md).
   a prerequisite or a permanent prohibition. Reconsider it only if discrepancies
   with reality affect a decision worth modeling. It belongs to the investment
   service model, not a new household policy discriminator.
-- Report losses, gains and adjusted cohort basis from canonical account facts.
-  Do not expose the legacy mutable cumulative-harvest scalar as a second basis
-  authority or assume mixed-cohort sales allocate it correctly.
+- Report realized effects and aggregate value/basis from the component's financial
+  statements. Keep cohort state private to the Python component; neither policy
+  observations nor native capture owns a second mutable basis/deferral authority.
 
 ## Taxes and financial contracts
 
