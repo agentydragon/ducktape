@@ -1,10 +1,10 @@
 """Compare a whole augur model's rollouts against prediction markets.
 
-``run_calibration`` is a pure library function over a pre-sampled rollout: the caller
+``run_calibration`` scores pre-sampled paths: the caller
 passes the sampled PE ``bundle`` (covering the catalog's referenced issuers) and the
 anchored ``level_paths``; it slices per-issuer trajectories, resolves every ``exact``
 catalog market apples-to-apples against its own channel (a PE issuer or a level series)
-— ``p_model`` + Wilson CI + unresolved share vs the LIVE market price — surfaces the
+— ``p_model`` + Wilson CI + unresolved share vs the supplied market quote — surfaces the
 rest, and scores ``bucket_families`` as multinomials. It returns a typed
 :class:`CalibrationResult` and does NOT print -- a CLI or backend renders it.
 
@@ -12,9 +12,8 @@ The catalog self-describes its targets (each PE market names its issuer, each ma
 market its series); a market on a channel the preset doesn't emit surfaces as
 ``unmodeled`` rather than failing.
 
-``p_market`` ALWAYS comes from a live prediction-market client injected as a
-``Mapping[Platform, PriceClient]`` (one client per platform). Tests inject
-hermetic mock clients.
+``p_market`` comes from injected platform clients. Production uses mirrored
+evidence-checkout readers; tests use hermetic clients. See finance/augur/docs/calibration.md.
 """
 
 from __future__ import annotations
@@ -868,9 +867,8 @@ async def run_calibration(
     macro market its level series. `bundle` is the sampled PE bundle (covering the catalog's
     referenced issuers) and `level_paths` the anchored `(rollout, month)` level matrices (from
     `build_anchored_level_paths`); a market whose issuer/series the active preset doesn't emit
-    surfaces as `unmodeled` rather than failing. Each market's `p_market` is fetched LIVE per
-    market via the platform-appropriate client from `price_clients` (a real client by default,
-    whose TTL cache absorbs rapid auto-refreshes; tests inject hermetic clients).
+    surfaces as `unmodeled` rather than failing. Each market's `p_market` is read through
+    the corresponding injected client; production reads mirrored evidence snapshots.
 
     `inflation_history` is the real CPI-U for the months before month 0, anchoring the
     denominator of near-term `inflation_yoy` markets (see `macro_anchors.resolve_anchors`).

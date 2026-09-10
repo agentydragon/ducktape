@@ -12,8 +12,8 @@ implemented (loom's "WorldSet M0" / "Augur bridge M4" milestones).
 Companion reading:
 
 - `loom/PLAN.md` — how this framing is being built as a WorldSet-producing program (defines the plan-stage `WorldSet` artifact; states no implementation exists yet).
-- [Prediction-market calibration](prediction_market_calibration.md) — calibration and PE-channel
-  fit notes; [the capability backlog](future_work.md) retains unresolved calibration questions.
+- [Prediction-market calibration](../docs/calibration.md) — current calibration and PE-channel
+  behavior; [the capability backlog](future_work.md) retains unresolved calibration questions.
 
 ## Position
 

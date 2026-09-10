@@ -96,6 +96,7 @@ Quote staleness is bounded by the scraper cadence, and the last synced state
 survives upstream outages. Workstation runs (dev server, `calibration_report`)
 auto-clone the checkout via `ensure_checkout()` with the
 `AUGUR_EVIDENCE_GIT_USERNAME`/`AUGUR_EVIDENCE_GIT_PASSWORD` read credentials.
+Resolution, missing-data and model-interpretation boundaries: <docs/calibration.md>.
 
 Property media stays outside the generic frontend bundle. Deployments publish
 images through their own static host or CDN, then declare stable

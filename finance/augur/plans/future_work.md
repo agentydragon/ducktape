@@ -157,8 +157,8 @@ model families are candidates, not mandatory implementation projects.
   secondary event treatment, discrete issuance, posterior-predictive deployment,
   and population-informed failure/no-liquidity tails. A population fit must
   account for failed/non-exited companies; do not tune a hazard solely to one
-  anecdote or market quote. More detail remains in
-  [the calibration plan](prediction_market_calibration.md).
+  anecdote or market quote. Existing behavior is described in
+  [the calibration contract](../docs/calibration.md), not a pending implementation plan.
 
 ## Deferred evidence operations and app work
 

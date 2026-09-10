@@ -265,9 +265,8 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
             "makes V(t) a genuine SDE (drift depends on the realized level), so the sampler integrates it "
             "month by month. It is data-driven (the boom is tamed because the company is observably large "
             "NOW, not by a calendar prior) and self-correcting per rollout. `None` => constant drift, "
-            "byte-identical to the legacy single-drift path. See augur/plans/prediction_market_calibration.md "
-            "(M2.2-D) for the empirical grounding (firm-growth scaling laws; conservative mu_mature ~ "
-            "S&P 100-yr CAGR)."
+            "byte-identical to the constant-drift path. This is a model assumption, not a guarantee "
+            "of forecast quality; see finance/augur/docs/calibration.md."
         ),
     )
     valuation_monthly_log_return_sigma: float = Field(

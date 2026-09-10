@@ -70,8 +70,7 @@ _MONTHS_PER_YEAR = 12.0
 
 @dataclass(frozen=True)
 class BayesianDilutionPriors:
-    """Hyperparameters of the informative priors (M2.2-D; see
-    augur/plans/prediction_market_calibration.md).
+    """Hyperparameters of the informative priors (see finance/augur/docs/calibration.md).
 
     Governing philosophy -- every default below is a FORWARD belief about a high-growth private
     company maturing toward a mega-cap, NOT an in-sample fit to the observed boom. The handful of

@@ -8,7 +8,7 @@ Companion reading:
 - `augur/plans/interpolating_prediction_markets.md` — the position: the exogenous `model` is an
   **interpolator** of prediction-market marginals into a sampleable joint over trajectories.
 - `augur/x/pm_reifier/README.md` — the throwaway spike (8 findings) this note distills.
-- [Prediction-market calibration](prediction_market_calibration.md) — PM-fit and calibration notes;
+- [Prediction-market calibration](../docs/calibration.md) — current calibration behavior;
   [the capability backlog](future_work.md) retains unresolved calibration questions.
 
 ## The goal (restated)
@@ -239,4 +239,4 @@ model starts getting surprised (its realized PITs drift).
 
 - Spike + findings: `augur/x/pm_reifier/README.md`.
 - Position: `augur/plans/interpolating_prediction_markets.md`.
-- PE-channel and calibration notes: [prediction-market calibration](prediction_market_calibration.md).
+- PE-channel and calibration behavior: [prediction-market calibration](../docs/calibration.md).

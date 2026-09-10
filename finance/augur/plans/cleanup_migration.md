@@ -101,10 +101,10 @@ data-driven liquidity programs, second mutable TLH basis accumulator, cached
 rollouts or completed implementation items.
 
 Reconcile the remaining interface sketches and older model/actor plans with the
-executable-policy/common-session contract. Review the prediction-market calibration,
-interpolator and exogenous-rollout notes: separate implemented calibration contracts
-(which belong in durable docs) from optional model proposals and deferred evidence
-operations. Remove code-to-plan citations as those contracts graduate. These notes
+executable-policy/common-session contract. Review the interpolator, exogenous-rollout
+and mint-stream notes: separate implemented contracts from optional model proposals
+and deferred evidence operations. Current calibration behavior is documented in
+<../docs/calibration.md>. Remove code-to-plan citations as contracts graduate. These notes
 must not introduce an alternative model-adoption gate beside SCORE/GM/READY.
 
 Audit the still-open planning/sketch PRs #5859, #4440, #4624, #4427, #4251 and #3748
