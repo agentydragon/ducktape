@@ -1,15 +1,15 @@
-# ESO needs only the SOPS-owned GHCR PAT, then renders the Docker pull Secret
-# which Reflector distributes to the three gaffer-private consumer namespaces.
+# ESO first renders a pull Secret from the SOPS-owned PAT, then distributes only
+# that rendered Secret to the gaffer-private consumer namespaces.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: gaffer-ghcr-pull-reader
+  name: gaffer-ghcr-pat-reader
   namespace: flux-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: gaffer-ghcr-pull-reader
+  name: gaffer-ghcr-pat-reader
   namespace: flux-system
 rules:
   - apiGroups: [""]
@@ -20,15 +20,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: gaffer-ghcr-pull-reader
+  name: gaffer-ghcr-pat-reader
   namespace: flux-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: gaffer-ghcr-pull-reader
+  name: gaffer-ghcr-pat-reader
 subjects:
   - kind: ServiceAccount
-    name: gaffer-ghcr-pull-reader
+    name: gaffer-ghcr-pat-reader
     namespace: flux-system
 ---
 apiVersion: external-secrets.io/v1
@@ -46,7 +46,7 @@ spec:
           key: ca.crt
       auth:
         serviceAccount:
-          name: gaffer-ghcr-pull-reader
+          name: gaffer-ghcr-pat-reader
           namespace: flux-system
       remoteNamespace: flux-system
 ---
@@ -67,11 +67,7 @@ spec:
       type: kubernetes.io/dockerconfigjson
       metadata:
         annotations:
-          description: Read-only GHCR pull credential for gaffer-private private images. Used directly by Flux ImageRepository scanning; reflected by Reflector into each consumer namespace as gaffer-ghcr-pull for kubelet image pulls.
-          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur,listing-monitor,thrive-scraper
-          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: augur,listing-monitor,thrive-scraper
+          description: Read-only GHCR pull credential for gaffer-private private images. Used directly by Flux ImageRepository scanning and distributed to consumer namespaces by ESO.
       data:
         .dockerconfigjson: |
           {"auths":{"ghcr.io":{"auth":"{{ printf "agentydragon:%s" .token | b64enc }}"}}}
@@ -80,3 +76,83 @@ spec:
       remoteRef:
         key: github-pat-ghcr-read
         property: token
+---
+# This identity cannot read the PAT. It can expose only the rendered pull
+# Secret through the ClusterSecretStore below.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gaffer-ghcr-pull-reader
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gaffer-ghcr-pull-reader
+  namespace: flux-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["gaffer-ghcr-pull"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gaffer-ghcr-pull-reader
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gaffer-ghcr-pull-reader
+subjects:
+  - kind: ServiceAccount
+    name: gaffer-ghcr-pull-reader
+    namespace: flux-system
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-gaffer-ghcr-pull-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - augur
+        - listing-monitor
+        - thrive-scraper
+  provider:
+    kubernetes:
+      server:
+        caProvider:
+          type: ConfigMap
+          name: kube-root-ca.crt
+          key: ca.crt
+          namespace: default
+      auth:
+        serviceAccount:
+          name: gaffer-ghcr-pull-reader
+          namespace: flux-system
+      remoteNamespace: flux-system
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: gaffer-ghcr-pull
+spec:
+  namespaces:
+    - augur
+    - listing-monitor
+    - thrive-scraper
+  externalSecretSpec:
+    refreshInterval: 1h
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: kubernetes-gaffer-ghcr-pull-secret-store
+    target:
+      name: gaffer-ghcr-pull
+      creationPolicy: Owner
+      template:
+        type: kubernetes.io/dockerconfigjson
+    dataFrom:
+      - extract:
+          key: gaffer-ghcr-pull

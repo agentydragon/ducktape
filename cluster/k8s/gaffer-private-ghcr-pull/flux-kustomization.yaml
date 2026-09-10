@@ -17,9 +17,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: gaffer-private
-    - name: reflector
+    - name: external-secrets-config
       namespace: ducktape-flux
+    - name: gaffer-private
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
