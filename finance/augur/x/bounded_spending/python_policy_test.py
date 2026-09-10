@@ -157,6 +157,7 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
             ],
         ),
         rollout_count=1,
+        series={InflationKey(): np.ones((1, 2))},
     )
     result = run(
         json.dumps(case.compiled_run.execution_input), SpendingPolicy(BatchPolicy(Parameters(10_000, 0, 0), 1), {}), [0]
@@ -183,6 +184,19 @@ def test_current_cpi_is_routed_without_future_values() -> None:
     assert not isinstance(batch, Finished)
     assert [row.observation.cpi for row in batch] == [(5_000_000_000, 4_000_000_000), (3_000_000_000, 2_000_000_000)]
     session.close()
+
+
+def test_cpi_dependent_rule_does_not_invent_a_flat_missing_index() -> None:
+    case = Case(
+        scenario(checking(("retiree", Decimal(100)), ("world", Decimal(0))), horizon_months=1, tax_profiles=[]),
+        rollout_count=1,
+    )
+    with pytest.raises(ValueError, match="requires a supplied CPI"):
+        run(
+            json.dumps(case.compiled_run.execution_input),
+            SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 1), {}),
+            [0],
+        )
 
 
 def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> None:
@@ -221,7 +235,7 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
         ),
         rollout_count=1,
         external_series=ExternalSeriesContext.from_level_blocks(
-            [(stock, np.full((1, 14), 100.0))], rollout_count=1, horizon_months=13
+            [(stock, np.full((1, 14), 100.0)), (InflationKey(), np.ones((1, 14)))], rollout_count=1, horizon_months=13
         ),
         jurisdictions={rules.jurisdiction_id: rules},
         locations={},

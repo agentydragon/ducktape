@@ -53,12 +53,18 @@ class Observations:
 
     @classmethod
     def from_native(cls, batch: list[Decision]) -> "Observations":
+        cpi = []
+        for row in batch:
+            level = row.observation.cpi
+            if level is None:
+                raise ValueError("bounded spending requires a supplied CPI path")
+            cpi.append(level[0])
         return cls(
             np.asarray([row.rollout_id for row in batch], dtype=np.int64),
             np.asarray([row.observation.month for row in batch], dtype=np.int64),
             np.asarray([row.observation.cash for row in batch], dtype=object),
             np.asarray([row.observation.public_holdings for row in batch], dtype=object),
-            np.asarray([row.observation.cpi[0] for row in batch], dtype=object),
+            np.asarray(cpi, dtype=object),
         )
 
     def select(self, rows: slice) -> "Observations":

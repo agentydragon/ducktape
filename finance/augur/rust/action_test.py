@@ -71,6 +71,7 @@ def run(input_json: str, ids: list[int]) -> tuple[list[Any], dict[int, list[tupl
                 assert memory[decision.rollout_id] == observation.month
                 assert observation.accounts == [("checking", observation.cash)]
                 assert observation.agent_id == "alice"
+                assert observation.cpi is None  # This nominal-only experiment supplied no CPI model.
                 assert not observation.public_positions
                 actions = [
                     Action.pay_claim(i, "pay-bill", claim, claim.from_account, claim.amount_due)

@@ -88,8 +88,8 @@ class Observation:
     @property
     def month(self) -> int: ...
     @property
-    def cpi(self) -> tuple[int, int]:
-        """Current/origin CPI as an exact numerator/denominator; no future index values."""
+    def cpi(self) -> tuple[int, int] | None:
+        """Exact current/origin CPI, or None when unmodeled; never an assumed flat index."""
     @property
     def cash(self) -> int: ...
     @property

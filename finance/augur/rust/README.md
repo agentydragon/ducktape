@@ -176,7 +176,8 @@ The scoped action control instead follows the ordered execution described below.
 financial books in process. Python calls `start()`, then submits one batch to
 `advance()` until it receives `Finished`. `Decision` rows carry original rollout
 IDs and copied actor-scoped cash accounts, public positions, declared pools/quotes,
-current claims, current/origin CPI and previous-month receipts. The caller keeps policy memory and
+current claims, current/origin CPI and previous-month receipts. CPI is explicitly
+absent when no index was supplied; it is not assumed flat. The caller keeps policy memory and
 owns the outer loop; `engine::actors::Session` owns financial stepping, not callbacks.
 `DecisionActions` returns
 one ordered list for each active `(rollout_id, month)`; response order is immaterial.

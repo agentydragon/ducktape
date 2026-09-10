@@ -75,7 +75,7 @@ batch interface, not a second engine interface.
 Python owns its outer monthly loop, submitting actions through one in-process
 start/advance session. Financial state and prepared paths stay in the executor;
 Python receives copied current facts, including the exact current/origin CPI
-ratio, and cannot mutate the books. This action
+ratio when modeled (explicitly absent otherwise), and cannot mutate the books. This action
 session has no alternative native policy-loop entrypoint.
 
 Its monthly decision occurs after scheduled cashflows and due-claim assembly.

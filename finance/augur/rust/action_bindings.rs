@@ -59,7 +59,7 @@ struct Claim {
 struct Observation {
     agent_id: String,
     month: u32,
-    cpi: (i64, i64),
+    cpi: Option<(i64, i64)>,
     cash: i64,
     public_holdings: i64,
     accounts: Vec<(String, i64)>,
@@ -333,7 +333,7 @@ impl ActionSession {
                     observation: Observation {
                         agent_id: books.agent_id().into(),
                         month: books.month(),
-                        cpi: (cpi.numerator(), cpi.denominator()),
+                        cpi: cpi.map(|level| (level.numerator(), level.denominator())),
                         cash: books.cash().map_err(to_py_err)?.0,
                         public_holdings: books.public_value().map_err(to_py_err)?.0,
                         accounts: books

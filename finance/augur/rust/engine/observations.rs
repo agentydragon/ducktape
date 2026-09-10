@@ -37,8 +37,16 @@ impl ActorBooks<'_> {
         self.month
     }
 
-    /// Observed CPI relative to this path's origin, retaining the exact index ratio.
-    pub fn cpi(&self) -> Result<Factor, SimulationError> {
+    /// Observed CPI relative to origin, or absent when the experiment models no CPI.
+    pub fn cpi(&self) -> Result<Option<Factor>, SimulationError> {
+        if !self
+            .input
+            .series
+            .iter()
+            .any(|series| series.series_id == "inflation")
+        {
+            return Ok(None);
+        }
         let current = series_value(self.input, "inflation", self.rollout, self.month)?;
         let origin = series_value(self.input, "inflation", self.rollout, 0)?;
         validate_amount_index_level(
@@ -49,7 +57,7 @@ impl ActorBooks<'_> {
             current,
         )?;
         validate_amount_index_level("actor observation", "inflation", self.rollout, 0, origin)?;
-        Ok(Factor::new(current, origin))
+        Ok(Some(Factor::new(current, origin)))
     }
 
     /// Declared cash accounts only, not internal equity, tax or asset-basis postings.
