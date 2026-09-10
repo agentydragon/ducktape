@@ -6,7 +6,7 @@ and examines distributions and individual timelines. The primary acceptance
 case is joint spending-flexibility × allocation planning with supported taxes.
 Housing remains a capability; the house-buying web app does not define the library.
 
-Grounded at `devel` `b980b6efde` (2026-09-09). The
+Grounded at `devel` `003a9bee96` (2026-09-09). The
 [experiment/interface sketches, PR #5859](https://github.com/agentydragon/ducktape/pull/5859)
 remain a proposal, not an API to implement wholesale. This plan owns sequencing;
 [allocation experiments](allocation_program.md) owns the remaining experiment
@@ -112,6 +112,11 @@ integer-rounded funding and full exits, including rounded-zero lot dust. An
 all-zero target vector remains invalid; product-shell exclusion is still distinct
 from a selected core zero target.
 
+Strategy-independent account/asset pool declarations are now explicit in
+`ExecutionInput`; `ActorBooks` exposes these pools and current public prices even
+before the first purchase. The cash-only purchase example and tests are present.
+P9 therefore has no remaining declaration prerequisite.
+
 The runnable `x/monthly_actions` CLI and its synthetic financial assertions run in
 CI. It is a consumer to migrate to Python in P9, not another permanent native runner.
 
@@ -204,7 +209,7 @@ flowchart TB
 
     subgraph policy_migration["Actor-facing policy migration: PR-sized nodes"]
 
-        P8["P8: declarations and policy-callable helpers"] -->|pool declarations only| P9["P9: one Python action session and loop"]
+        P9["P9: one Python action session and loop"] --> P8["P8: Python-callable policy helpers and first consumers"]
         P10["P10: compact session outcomes"]
         P9 --> P11["P11: migrate experiments; delete specialized APIs"]
         P8 --> P11
@@ -254,14 +259,16 @@ acceptance work alongside migration, not a prerequisite research program. A fail
 cost check blocks only the affected workload's cutover until bounded revision;
 correctness failures always block the affected change.
 
-P9 consumes only P8's strategy-independent declarations: policies can submit exact
-actions without waiting for every portfolio helper or P10's compact output. P11
-and P12 consume the helpers and compact capture, and proceed independently of each
+P9's strategy-independent declarations have landed. Policies can submit exact
+actions without waiting for portfolio helpers or P10's compact output. Remaining
+P8 follows P9 so each shared helper lands with a real Python action consumer, not
+another Rust-only intermediate API. P11 and P12 consume the helpers and compact capture, and proceed independently of each
 other. GP gates only P12's additional product/multi-actor cases. Port the already
 supported public case first; explicitly scope missing existing capabilities before
 migrating housing/private-equity consumers. New adaptive HOUSE/BOND capabilities
-are not prerequisites for preserving existing behavior. P8 and P10 proceed without
-P9. Stack work as soon as its required content is available; overlap is not a gate.
+are not prerequisites for preserving existing behavior. P10 proceeds without P9.
+P8 can be scoped/stacked once P9's observation/action contract is specified; do not
+wait just for a merge. Overlap is not a gate.
 
 OUT and CAP's existing-native-output improvements can
 proceed separately; only CAP's labeled contract/tax or actor-session capture arms
@@ -369,28 +376,58 @@ Policy-prefixed names are task IDs, not GitHub PR numbers or a demand to seriali
 Each row is one independently reviewable change. Split again if a row proves too
 large, preserving the named completion condition and atomic caller updates.
 The **Needs** column names immediate prerequisites; inherited prerequisites still
-apply. P9 needs P8's declaration slice, not the optional strategy helpers; P11/P12
-consume those helpers explicitly. No convergence node waits for RUNTIME/GE.
+apply. P9 is ready on landed declarations; P8 consumes its Python action contract,
+then P11/P12 consume the helpers. No convergence node waits for RUNTIME/GE.
 
-| Unit                                                    | Independently reviewable change                                                                                                                                                                                                                                                                                                                                    | Needs                             | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P8 — policy-callable portfolio helpers                  | Move cash-band, withdrawal, rebalance and lot-selection strategy into ordinary optional helpers. Prefer Python for notebook-editable strategy/calculators; retain native kernels where measured cost warrants them. Migrate callers with each extracted/moved operation.                                                                                           | —                                 | Policies compose or omit helpers without extra engine trades. Reuse one implementation of each calculation; move a native helper into Python with its actual consumer, not as an unused duplicate. Financial settlement stays canonical. Preserve the landed zero-target/full-exit arithmetic.                                                                       |
-| P9 — one Python action session                          | Expose the existing actor mechanics as a batch `start/advance` session through the existing extension. Python owns the loop and optional `run(...)`. Port `monthly_actions` and its actual CLI tests; replace its native callback runner rather than keeping both. No new engine policy shape.                                                                     | P8 declarations                   | Ordered-action, fatal-stop, tax/basis, exact-cash and selected/reordered replay tests exercise the Python loop. Native tests may call the same step primitives, not maintain another production driver. Keep financial state/paths in the step executor; no per-month subprocess. The spending-only prototype has a named P11 retirement, not another adoption path. |
-| P10 — compact session outcomes                          | Provide population-scale consumption, taxes, holdings and failure results without every trace; retain selected detailed replay. Reuse canonical payment receipts/claim identities for actor and configured reporting. This is the bounded session slice, not all of CAP.                                                                                           | —                                 | Compact and forensic modes share execution; request/result identity, actor/account/component scope, explicit validity and compact/trace agreement hold. Stop books remain intact; post-stop padding is not observed data. Profile selected capture and transfer.                                                                                                     |
-| P11 — migrate experiments and delete specialized APIs   | Move bounded-spending and allocation-glide to Python batch actions/helpers, in independently landable caller migrations. Replace the spending-only Python prototype and delete the native amount/weight callbacks, obsolete policy binaries and their plumbing as their last callers migrate. Then demonstrate joint spending-flex × allocation on shared paths.   | P8, P9, P10                       | Runnable synthetic CLI tests report distributions and selected traces; rules vary without engine edits. Preserve declared study conventions or explicitly test/document timing changes. No specialized session/callback callers remain. Rule implementations used only for active benchmarking are isolated controls, not alternate library APIs.                    |
-| P12 — migrate configured consumers and delete old loops | Move Trinity, bond examples, benchmarks and the app to the same Python session and explicit policies. Land supported public-consumer slices first; extend the common action path only for capabilities existing housing/PE/multi-actor callers require. Remove old full-run entrypoints, allocator orchestration and policy schema fields with their last callers. | P8, P9, P10; GP for expanded arms | All actual simulation outer loops are Python-controlled, including app/high-N runs. Rust retains step mechanics/kernels, not a parallel driver. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied.  |
+| Unit                                                    | Independently reviewable change                                                                                                                                                                                                                                                                                                                                                          | Needs                             | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P8 — Python-callable policy helpers                     | Shared cash-band, sleeve withdrawal/deposit/rebalance and lot-selection functions are ordinary Python-callable library helpers, implemented in Python by default. Split by calculation and land each with a real Python action consumer on P9; no Rust-only helper extraction prerequisite.                                                                                              | P9                                | Notebook policy code imports and calls helpers without rebuilding Rust. Proposals do not execute; the caller can compose or ignore them. Exact rounding, zero targets/full exits, invalid bounds and quantity-scale tests remain. Run actual consumer CLI tests with synthetic inputs. A native kernel needs measured justification and the same Python-facing contract. |
+| P9 — one Python action session                          | Expose the existing actor mechanics as a batch `start/advance` session through the existing extension. Python owns the loop and optional `run(...)`. Port `monthly_actions` and its actual CLI tests; replace its native callback runner rather than keeping both. Expose the current lot, price, quantity-scale and cash facts needed by Python helpers, not native policy calculators. | —                                 | Ordered-action, fatal-stop, tax/basis, exact-cash and selected/reordered replay tests exercise the Python loop. Native tests may call the same step primitives, not maintain another production driver. Keep financial state/paths in the step executor; no per-month subprocess. The spending-only prototype has a named P11 retirement, not another adoption path.     |
+| P10 — compact session outcomes                          | Provide population-scale consumption, taxes, holdings and failure results without every trace; retain selected detailed replay. Reuse canonical payment receipts/claim identities for actor and configured reporting. This is the bounded session slice, not all of CAP.                                                                                                                 | —                                 | Compact and forensic modes share execution; request/result identity, actor/account/component scope, explicit validity and compact/trace agreement hold. Stop books remain intact; post-stop padding is not observed data. Profile selected capture and transfer.                                                                                                         |
+| P11 — migrate experiments and delete specialized APIs   | Move bounded-spending and allocation-glide to Python batch actions/helpers, in independently landable caller migrations. Replace the spending-only Python prototype and delete the native amount/weight callbacks, obsolete policy binaries and their plumbing as their last callers migrate. Then demonstrate joint spending-flex × allocation on shared paths.                         | P8, P9, P10                       | Runnable synthetic CLI tests report distributions and selected traces; rules vary without engine edits. Preserve declared study conventions or explicitly test/document timing changes. No specialized session/callback callers remain. Rule implementations used only for active benchmarking are isolated controls, not alternate library APIs.                        |
+| P12 — migrate configured consumers and delete old loops | Move Trinity, bond examples, benchmarks and the app to the same Python session and explicit policies. Land supported public-consumer slices first; extend the common action path only for capabilities existing housing/PE/multi-actor callers require. Remove old full-run entrypoints, allocator orchestration and policy schema fields with their last callers.                       | P8, P9, P10; GP for expanded arms | All actual simulation outer loops are Python-controlled, including app/high-N runs. Rust retains step mechanics/kernels, not a parallel driver. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied.      |
 
-The landed native actor control trades only public pools declared by initial lots; it must
-not add dummy allocation policies to declare a purchasable asset. P8 must separate
-cash-account, holding-pool and observable-price declarations from strategy, with a
-cash-only opening followed by a purchase of a previously unheld asset as acceptance
-evidence. P9 consumes this first declaration slice; it does not wait for all P8 helpers. BIND extends these declarations
-with product/payout compatibility; its broader payout work need not block P8.
+### Shared helpers: Python first, with consumers
 
-P8's native extraction/declaration slices can proceed now with existing callers.
-Moving these helpers into Python with real consumers belongs alongside P11/P12,
-after P9 exists; it is not a prerequisite for P9 or permission for an unused Python
-copy. Split by calculation and update all callers of each moved implementation.
+P8's first slice ports the small cash-band proposal and its boundary tests into
+Python and uses it in P9's Python monthly-actions example. The Rust-only proposal
+extraction in [#6002](https://github.com/agentydragon/ducktape/pull/6002) is superseded,
+not a dependency or a reason to add a binding for a few comparisons/subtractions.
+
+Then port sleeve withdrawal/deposit/rebalance and scoped lot-selection calculations
+with their first consuming policies. A new helper must be importable from Python
+and used by a runnable/tested experiment in the same slice; tests alone or a Rust
+example about to be removed are not the consumer. Scope lot selection by account,
+asset and economic units: do not expose the existing mixed-scale raw-quantity PE
+behavior as a generic helper contract. Correct wrong math with independent checks.
+
+These are policy calculations, not Python reimplementations of tax or settlement.
+Use exact money/quantity semantics; preserve financial-step admission and posting
+in the canonical executor. Only retain/add native calculation kernels after a
+representative profile establishes a need, behind the same Python-callable surface.
+RUNTIME is not required to move these small policy calculations to Python.
+
+P11/P12 replace remaining callers of the corresponding old Rust calculations and
+delete each when its last legacy caller migrates. If a Python port temporarily
+coexists with a calculation needed by the old configured runner, name those exact
+remaining callers and its P11/P12 deletion slice in the migration PR; do not add
+new callers, a second supported helper API, or reverse Python callbacks from that
+runner just to bridge the transition. The end state has one maintained helper
+implementation, not Python/Rust twins. BIND's broader product/payout work remains
+separate from the already-landed pool declarations.
+
+Current legacy readers make that retirement concrete:
+
+- `engine/target_allocation.rs` owns inline cash-band strategy and calls sleeve
+  withdrawal/deposit/rebalance calculations: P12 removes those configured callers.
+- `trades::select_fifo` serves target allocation, `engine/securities.rs` scheduled
+  sales and `engine/private_equity.rs` recovery/forced/tender flows: their respective
+  P12 public/expanded-product migrations remove the legacy selection strategy.
+- `allocation::quantity_for_value` serves target allocation and the cash-only
+  monthly-actions example. P9 must bring the minimal exact Python-callable quantity
+  calculation with that first consumer (reuse existing fixed-point code where
+  applicable), without waiting for broader P8. P12 removes its remaining configured
+  Rust reader. This is not a reason to bind the whole native policy module.
 
 P12 must also preserve the product shell's explicit exclusion authority: its current
 zero weight means "do not sell this holding", whereas a zero target in a selected
@@ -408,8 +445,8 @@ when migrating that shell; do not silently turn an excluded holding into a sale.
   callers move. This includes `x/bounded_spending/profile.py`,
   `rust/test_invocation.py` and their BUILD/runfiles references, not just study CLIs;
   these consumers do not wait under P12's general benchmark migration.
-  Move policy calculations with the consuming Python experiments;
-  do not keep Rust/Python helper copies. Benchmark-only variants survive only with
+  Use P8's Python-callable calculations; remove old Rust versions as their named
+  remaining callers migrate. No permanent Rust/Python helper copies. Benchmark-only variants survive only with
   a named active comparison and parity tests, and leave when that comparison ends.
   This exception permits calculator controls, not retired full-run/prototype drivers.
 - **P12:** remove configured full-run Rust/Python entrypoints and the old implicit
@@ -494,10 +531,12 @@ all the others to be solved first.
 
 ## What to dispatch first
 
-1. **P8** and **P10** are dispatched. Start **P9** as soon as P8's pool declarations
-   are specified; stack on that slice rather than wait for the remaining helpers.
-   Port the monthly-actions CLI to the Python loop and retire its native runner.
-2. Dispatch **P11** and **P12's public-consumer slices** as soon as their required
+1. **P9** and **P10** are dispatched; the declaration slice is merged. P9 ports the
+   monthly-actions CLI to the Python loop and retires its native runner.
+2. Scope/stack **P8's Python helpers** on that observation/action contract, beginning
+   with cash-band proposals and the Python monthly-actions consumer. Do not resume
+   #6002 or expand the native policy-helper surface. Dispatch **P11** and
+   **P12's public-consumer slices** as soon as their required
    helpers/session/capture contracts are specified. Migrate callers and delete old
    interfaces together. Scope **GP** for remaining existing housing/PE/multi-actor
    consumers without holding public convergence behind those cases.

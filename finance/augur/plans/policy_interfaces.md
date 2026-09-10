@@ -169,10 +169,16 @@ def rebalance(
 ) -> tuple[Buy | Sell, ...]: ...
 ```
 
-Withdrawal allocation, cash bands, lot selection and guardrails are optional
-ordinary helpers a policy can compose or ignore. Prefer Python for notebook-editable
-strategy and calculators; retain native kernels where measured cost warrants them.
-Move implementations with their consumers instead of maintaining Python/Rust copies.
+Withdrawal/deposit allocation, cash bands, rebalancing, lot selection and guardrails
+are ordinary **Python-callable** helpers a policy can compose or ignore. Implement
+them in Python by default so notebook authors can inspect, edit and replace them
+without rebuilding Rust. A measured hot calculation may use a native kernel behind
+that same Python surface; its current Rust location alone is not justification.
+Port each helper with a real Python action consumer and exact rounding/scale tests,
+then delete the old Rust calculation as its remaining legacy callers migrate.
+Do not grow a native-only helper API first or maintain Python/Rust twins as supported
+alternatives. Helpers use scoped observed lots, cash, prices and product terms; they
+do not duplicate the executor's tax, accounting or settlement machinery.
 A policy can ask a helper how to satisfy its needs under the products' settlement
 rules, inspect or compose the returned operations, and submit them in its one
 response. The helper proposes; the executor validates and settles. It must not
@@ -207,8 +213,9 @@ integration. No retry/default/recovery mechanism is part of this interface.
 The existing opening-month/all-or-none cases are spending-probe controls, not
 the destination contract. Migrated consumers must explicitly test and explain
 timing/funding differences rather than hide them in a compatibility runner.
-P9 consumes P8's declaration slice and replaces the native actor driver with the
-general Python session. P11 uses helpers and compact capture to migrate experiments
+P9 uses the landed declarations and replaces the native actor driver with the
+general Python session. Remaining P8 follows that contract with Python-callable
+helpers and first consumers. P11 uses those helpers and compact capture to migrate experiments
 and retire the scalar amount/weight callbacks plus spending-only Python prototype.
 P12 migrates configured consumers and removes old full-run loops and implicit
 public-portfolio strategy, preserving required existing housing/PE capabilities.
