@@ -4,6 +4,15 @@ use super::*;
 
 fn input_with_lots(count: usize) -> (ExecutionInput, Vec<LotState>) {
     let mut input = crate::engine::tests::minimal_fixture();
+    input
+        .scenario
+        .holding_pools
+        .push(crate::execution::HoldingPoolSpec {
+            agent_id: "alice".into(),
+            account_id: "checking".into(),
+            asset_id: "fund".into(),
+            quantity_scale: 1,
+        });
     input.scenario.initial_lots = (0..count)
         .map(|index| InitialLotSpec {
             lot_id: format!("lot-{index}"),

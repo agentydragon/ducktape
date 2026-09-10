@@ -835,8 +835,12 @@ fn spending_scope_rejects_unpriced_public_positions_before_policy_construction()
             |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
                 panic!("unpriced holdings must reject before constructing a policy")
             }),
-        Err(SimulationError::Holdings(HoldingsError::MissingSeries { series_id }))
+        Err(SimulationError::MissingSeries { series_id })
             if series_id == "security:second"
+    ));
+    assert!(matches!(
+        AgentHoldings::resolve(&input, "alice"),
+        Err(HoldingsError::MissingSeries { series_id }) if series_id == "security:second"
     ));
     assert!(matches!(
         AgentHoldings::resolve(&input, "absent-actor"),
