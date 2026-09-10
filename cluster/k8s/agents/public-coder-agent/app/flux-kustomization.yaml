@@ -23,10 +23,6 @@ spec:
     # The proxy layer owns the trust Bundle this pod mounts, so it must land first.
     - name: public-coder-agent-proxy
       namespace: ducktape-flux
-    # Reflects the BuildBuddy API key consumed directly by the agent. It cannot
-    # remain proxy-only while `bb remote` forwards the key to a hosted runner.
-    - name: agent-shared-secrets
-      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: external-creds

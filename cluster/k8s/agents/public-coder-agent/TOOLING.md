@@ -37,7 +37,7 @@ Do not rely indefinitely on a remembered tool list or policy summary.
 
 Inspect the checkout and environment directly:
 
-- use `git`, file reads, `rg`, tests, pre-commit, Bazel, and BuildBuddy locally;
+- use `git`, file reads, `rg`, and pre-commit locally;
 - use the task's dedicated Git worktree rather than a shared checkout;
 - source `.openclaw/ducktape-env.sh` before Ducktape validation; and
 - install the workspace-managed hooks in every new Ducktape worktree.

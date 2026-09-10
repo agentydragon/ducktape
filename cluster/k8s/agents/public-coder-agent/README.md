@@ -125,15 +125,6 @@ Agent bearer cannot approve requests. Ordinary public GitHub writes should inste
 proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md> for the operational
 playbook.
 
-BuildBuddy is the deliberate exception. The agent receives the real shared API
-key from the reflected `buildbuddy-api-key` Secret. A local Bazel client or the
-local `bb remote` control channel could each use proxy substitution alone, but
-their combination cannot: `bb remote` embeds the key in the Bazel command sent
-to its hosted runner, and that nested process uses BuildBuddy BES, cache, and
-RBE outside this proxy. A placeholder therefore fails on the runner. This is an
-accepted credential-exposure tradeoff for remote Bazel plus remote execution;
-revisit it if the agent later uses only one of those layers.
-
 The Matrix bot password is generated and retained by the existing Matrix user
 provisioner. It is stored in the Matrix namespace as a SOPS-managed Secret and
 reflected into `public-coder-agent`, where only iron-proxy consumes it. The
@@ -193,13 +184,9 @@ proxy environment handling.
   OpenEBS LVM provisioner to OVH workers and migrating this claim to a
   size-enforcing LVM-backed StorageClass (or another quota-enforcing design).
 - **Runtime image closure.** Profile and reduce the OpenClaw image before its
-  next substantial expansion. It intentionally includes the gateway and Matrix
-  plugin, but also the broad `devtools` and git-hook closures (Bazel/`bbr`,
-  Ansible, AWS CLI, Checkov, Rust tooling, and formatter/pre-commit tooling).
-  `devbox/` now gives the agent a reachable devbox again through `ssh devbox`, but nothing has
-  moved to it yet:
-  identify the actual runtime-required subset of the image and move the rest
-  there without breaking agent workflows. The devbox's own root disk is an
+  next substantial expansion. It includes the gateway, Matrix plugin, and
+  formatter/pre-commit tooling. `devbox/` gives the agent a reachable dedicated
+  build environment through `ssh devbox`. The devbox's own root disk is an
   ephemeral KubeVirt `containerDisk`, published automatically by
   `.github/workflows/public-coder-devbox-image.yml` and kept current by Flux
   image automation — no manual republish step, but also no persistent local

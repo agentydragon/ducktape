@@ -524,9 +524,6 @@
               nix-openclaw
               pkgs
               ;
-            # Reuse the existing development profile rather than maintaining
-            # an image-specific duplicate of its tool list.
-            devtools = self.packages.${system}.devtools;
           };
           # Haku's Claude-backed OpenClaw spike. Same Nix build mechanism as
           # openclaw-image; the gateway is nix-openclaw's npm-package build pinned

@@ -1,5 +1,4 @@
 {
-  devtools,
   pkgs,
   nix-openclaw,
   ducktapePkgs,
@@ -14,33 +13,6 @@ let
   # Brave is an official external runtime plugin. Bundle its pinned Nix artifact
   # with the gateway rather than installing it mutably in the state PVC.
   bravePlugin = openclawPackages.openclawRuntimePlugins.brave;
-  repoBazelVersion = pkgs.lib.removeSuffix "\n" (builtins.readFile ../.bazelversion);
-  # The primary nixpkgs pin still has Bazel 8.4.2. Override it with the
-  # repository's 8.6.0 pin and the corresponding upstream dist hash rather
-  # than weakening the version invariant or moving the whole package set.
-  bazelPkg = (pkgs.bazel_8.override { version = repoBazelVersion; }).overrideAttrs {
-    src = pkgs.fetchzip {
-      url = "https://github.com/bazelbuild/bazel/releases/download/${repoBazelVersion}/bazel-${repoBazelVersion}-dist.zip";
-      hash = "sha256-W22eB0IzHNZe3xaF8AZOkUTDCic3NXkypdqSDY61Su0=";
-      stripRoot = false;
-    };
-  };
-  # wrapProgram keeps the patched executable behind this shell wrapper. Bazelisk
-  # symlinks local binaries into its cache and preserves that symlink as argv[0];
-  # the shell wrapper's exec -a then makes Bazel resolve itself from the cache
-  # path and fail with LOCAL_ENVIRONMENTAL_ERROR. Point Bazelisk at the wrapped
-  # ELF itself instead.
-  bazelExecutable = "${bazelPkg}/bin/.bazel-${repoBazelVersion}-linux-x86_64-wrapped";
-
-  # Bazelisk's own Go binary works in the minimal Nix image, but the upstream
-  # Bazel ELF it downloads does not: it requests the absent FHS loader at
-  # /lib64/ld-linux-x86-64.so.2. Install nixpkgs' patched Bazel as `bazel`.
-  # BuildBuddy's CLI embeds Bazelisk for local argument canonicalization; the
-  # BB_USE_BAZEL_VERSION environment variable below makes that embedded
-  # Bazelisk use the actual wrapped ELF rather than downloading another one.
-  # Neither nixpkgs' `bin/bazel` version selector nor the versioned makeWrapper
-  # script is safe to invoke through Bazelisk's local-binary cache symlink.
-
   # Matrix uses the plugin-state store for sync and encryption state. OpenClaw
   # grants that capability only to trusted plugins, and an arbitrary
   # plugins.load.paths entry is intentionally untrusted even when it points at
@@ -87,7 +59,6 @@ let
     [
       bashInteractive
       busybox
-      bazelPkg
       buildifier
       cacert
       coreutils
@@ -96,7 +67,6 @@ let
       git
       ghWithProxyToken
       jq
-      jdk_headless
       kubeconform
       kubectl
       kubernetes-helm
@@ -118,12 +88,6 @@ let
       tini
     ]
     ++ [
-      # The agent does its work in this container, so give it the existing
-      # declaratively-built `.#devtools` toolchain. In
-      # particular bbr and its pygit2 extension stay in the Nix closure that
-      # matches this image's Python, rather than relying on a persisted pip
-      # installation from a previous image.
-      devtools
       # Local pre-commit hooks call these entry points. The package wraps its own compatible
       # Python + pygit2 closure, rather than depending on a persisted pip venv from an older image.
       ducktapePkgs.ducktape-git-hooks
@@ -143,7 +107,6 @@ let
 
   path = pkgs.lib.makeBinPath ([ gatewayWithRuntimePlugins ] ++ tools);
 in
-assert bazelPkg.version == repoBazelVersion;
 pkgs.dockerTools.buildLayeredImage {
   name = "ghcr.io/agentydragon/openclaw";
   # CI supplies the sortable devel-* tag selected by Flux.
@@ -191,10 +154,6 @@ pkgs.dockerTools.buildLayeredImage {
       "PATH=${path}"
       "HOME=/home/openclaw"
       "USER=openclaw"
-      # BuildBuddy invokes Bazel with --ignore_all_rc_files while loading flag
-      # metadata, bypassing nixpkgs' system bazelrc and its --server_javabase.
-      # Keep the matching Nix JDK explicit so the wrapped Bazel ELF can start.
-      "JAVA_HOME=${pkgs.jdk_headless}"
       "NODE_ENV=production"
       # --report-on-signal makes a wedged gateway diagnosable: `kill -USR2 1` writes
       # a diagnostic report (JS stack, native stack per thread, libuv handles) to
@@ -210,7 +169,6 @@ pkgs.dockerTools.buildLayeredImage {
       "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
-      "BB_USE_BAZEL_VERSION=${bazelExecutable}"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
     ];
     Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";

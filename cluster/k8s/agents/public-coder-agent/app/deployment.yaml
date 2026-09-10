@@ -147,23 +147,6 @@ spec:
             # X-Subscription-Token requests to api.search.brave.com.
             - name: BRAVE_API_KEY
               value: "proxy-brave-search-api-key-placeholder"
-            # Unlike the GitHub PAT above, this must be the real credential.
-            # Either half of the BuildBuddy setup can use proxy substitution on
-            # its own: a local Bazel client sends its authenticated gRPC traffic
-            # through iron-proxy, and `bb remote` authenticates its local control
-            # channel through the same path. Combining them is different:
-            # `bb remote` serializes the key into the command executed on its
-            # hosted runner as `--remote_header=x-buildbuddy-api-key=...`, where
-            # the nested Bazel process uses BuildBuddy BES, cache, and RBE. That
-            # runner is outside this pod's proxy, so a placeholder reaches
-            # BuildBuddy unchanged and is rejected. Giving the agent the real
-            # key is the accepted cost of supporting remote Bazel together with
-            # remote execution; revisit this if either layer is removed.
-            - name: BUILDBUDDY_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: buildbuddy-api-key
-                  key: api-key
             - name: OPENCLAW_LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -254,14 +237,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /home/openclaw/.openclaw
-            # Bazel's output base and disk cache, kept off the state PVC. The rc
-            # file below is what points Bazel here; see ./bazelrc.
-            - name: bazel-cache
-              mountPath: /bazel-cache
-            - name: bazelrc
-              mountPath: /home/openclaw/.bazelrc
-              subPath: bazelrc
-              readOnly: true
             # Kubeconfig with a non-secret placeholder. iron-proxy substitutes the Agent's Haku
             # bearer only for haku-kubeapi.allegedly.works; no Kubernetes credential is mounted.
             - name: kubeconfig
@@ -303,15 +278,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: public-coder-agent-state-v2
-        # Regenerable Bazel state. emptyDir, so it is re-fetched per pod start
-        # rather than accumulating on the claim; sizeLimit bounds it so a runaway
-        # build evicts the pod instead of filling the node disk.
-        - name: bazel-cache
-          emptyDir:
-            sizeLimit: 30Gi
-        - name: bazelrc
-          configMap:
-            name: public-coder-agent-bazelrc
         - name: kubeconfig
           configMap:
             name: public-coder-agent-kubeconfig

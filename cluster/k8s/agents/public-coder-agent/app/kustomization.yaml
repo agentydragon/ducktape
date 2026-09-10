@@ -29,10 +29,6 @@ configMapGenerator:
     namespace: public-coder-agent
     files:
       - config=agent-kubeconfig.yaml
-  - name: public-coder-agent-bazelrc
-    namespace: public-coder-agent
-    files:
-      - bazelrc
   - name: public-coder-agent-ssh
     namespace: public-coder-agent
     files:
