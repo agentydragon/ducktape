@@ -261,3 +261,20 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "bond_test",
+    srcs = ["bond_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim/testing:bonds",
+        "//finance/augur/sim/testing:case",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

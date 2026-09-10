@@ -266,7 +266,15 @@ including receipt-aware memory, complete-batch routing, selected replay and clos
 
 ## Covered behavior
 
-The acceptance suites in `sim/testing/` assert exact integer answers for:
+`bbr test //finance/augur/rust:bond_test` runs the nominal/indexed coupon,
+income-character and redemption acceptance cases through the Python action session
+and typed books/receipts. Its policy pays observed claims in order; the unfunded
+accretion-tax case retains received coupon cash and stops without rescue. Shared
+bond-case construction stays in `sim/testing/bonds.py`. The product bond carrying-value
+regression remains in `backend_test.py` until product action projection supports that
+history; it is not replaced with a narrower principal-only assertion.
+
+The remaining legacy acceptance suites in `sim/testing/` assert integer answers for:
 
 - opening balances and opening equity;
 - scheduled and recurring transfers;

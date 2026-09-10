@@ -31,14 +31,12 @@ RATE_SCALE_PPB = 1_000_000_000
 class RustResult(SimulationResult):
     """The canonical channels plus the ones only Rust keeps.
 
-    The journal is not part of the canonical shape by design, and the TLH ledger and bond
-    principal are engine state no canonical channel carries.
+    The journal is not part of the canonical shape by design, and the TLH ledger
+    is engine state no canonical channel carries.
     """
 
     journal: pl.DataFrame
     tlh_ledger: pl.DataFrame
-    bonds: pl.DataFrame
-    bond_cashflows: pl.DataFrame
     distributions: pl.DataFrame
     # The accrual fields recorded beyond the canonical `tax_breakdowns` frame: §1250 tax and
     # the shared capital-loss carryforward, neither of which the canonical frame carries.
@@ -259,28 +257,6 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         },
         ["rollout_id", "month_index", "policy_index"],
     )
-    bonds = _sorted(
-        [
-            {
-                "rollout_id": rollout,
-                "month_index": month,
-                "bond_id": record["bond_id"],
-                "agent_id": record["agent_id"],
-                "principal_quanta": record["principal"],
-                "active": record["active"],
-            }
-            for rollout, month, record in _rust_rows(rust, "bonds")
-        ],
-        {
-            "rollout_id": pl.Int64,
-            "month_index": pl.Int64,
-            "bond_id": pl.String,
-            "agent_id": pl.String,
-            "principal_quanta": pl.Int64,
-            "active": pl.Boolean,
-        },
-        ["rollout_id", "month_index", "bond_id"],
-    )
 
     def detail_frame(channel: str, keys: dict[str, Any], money: tuple[str, ...], sort_by: list[str]) -> pl.DataFrame:
         """One of Rust's own record streams, typed. `keys` maps column name to record field."""
@@ -305,12 +281,6 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
             sort_by,
         )
 
-    bond_cashflows = detail_frame(
-        "bond_cashflows",
-        {"bond_id": "bond_id", "issuer_jurisdiction_id": "issuer_jurisdiction_id"},
-        ("coupon", "accretion", "redemption"),
-        ["rollout_id", "month_index", "bond_id"],
-    )
     distributions = detail_frame(
         "distributions",
         {"asset_id": "asset_id", "issuer_jurisdiction_id": "issuer_jurisdiction_id"},
@@ -390,8 +360,6 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         rollout_status=status,
         journal=journal,
         tlh_ledger=tlh_ledger,
-        bonds=bonds,
-        bond_cashflows=bond_cashflows,
         distributions=distributions,
         tax_accrual_details=tax_accrual_details,
         property_sale_details=property_sale_details,

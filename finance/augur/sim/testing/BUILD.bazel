@@ -144,12 +144,8 @@ py_library(
     deps = [
         ":case",
         ":fixtures",
-        ":simulation_result",
         "//finance/augur/model:series",
-        "//finance/augur/sim:backend",
         "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
     ],
 )
 

@@ -25,7 +25,7 @@ from finance.augur.sim.testing.behaviour import (
     TransferAcceptance,
     YearEndTaxAcceptance,
 )
-from finance.augur.sim.testing.bonds import BondAcceptance, BondValueAcceptance
+from finance.augur.sim.testing.bonds import CPI_DOUBLING, bond_case
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.deductions import DeductionAcceptance
@@ -97,16 +97,20 @@ class TestRustCashConservation(CashConservationAcceptance):
         return run_rust
 
 
-class TestRustBonds(BondAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
-
-
-class TestRustBondValue(BondValueAcceptance):
-    @pytest.fixture
-    def engine(self) -> Engine:
-        return RustEngine()
+def test_product_net_worth_carries_indexed_bonds_at_indexed_principal() -> None:
+    # Product action projection does not yet support held-bond histories. Keep this
+    # actual product regression until that reader migrates under P12.
+    indexed = bond_case(indexed=True, cpi=CPI_DOUBLING, is_taxed=False).compiled_run
+    nominal = bond_case(indexed=False, cpi=CPI_DOUBLING, is_taxed=False).compiled_run
+    engine = RustEngine()
+    assert (
+        engine.product_metrics(indexed, primary_agent_id="alice").metric_arrays()["bond_value_quanta"][-1, 0]
+        == 200_000_000
+    )
+    assert (
+        engine.product_metrics(nominal, primary_agent_id="alice").metric_arrays()["bond_value_quanta"][-1, 0]
+        == 100_000_000
+    )
 
 
 class TestRustFrozenRollout(FrozenRolloutAcceptance):
