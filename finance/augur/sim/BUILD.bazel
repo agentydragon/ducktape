@@ -462,6 +462,8 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
+        "//finance/augur/policy:configured_allocation",
+        "//finance/augur/rust:prepared",
         "//finance/augur/rust:result",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
