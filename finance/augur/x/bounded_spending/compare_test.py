@@ -2,7 +2,9 @@
 
 import json
 import subprocess
+from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -10,10 +12,78 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.scenario import InitialLot, ObligationType, ScheduledObligation
+from finance.augur.sim.testing.case import Case, scenario
+from finance.augur.sim.testing.fixtures import checking
 from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS
-from finance.augur.x.bounded_spending.compare import compare
-from finance.augur.x.bounded_spending.python_policy import consumption
+from finance.augur.x.bounded_spending.compare import _write_consumption_distribution, compare
+from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
 from util.bazel.runfiles import get_required_path
+
+
+@pytest.fixture
+def early_claim_failure() -> dict[str, Any]:
+    stock = SecurityKey(symbol="test-bill-funding")
+    case = Case(
+        scenario(
+            checking(("retiree", Decimal(0)), ("world", Decimal(0))),
+            horizon_months=2,
+            tax_profiles=[],
+            initial_lots=[
+                InitialLot(
+                    lot_id="test-bill-lot",
+                    agent_id="retiree",
+                    account_id="brokerage",
+                    asset=stock,
+                    purchase_month_index=-24,
+                    quantity=1,
+                    cost_basis_per_unit=Decimal(100),
+                )
+            ],
+            scheduled_obligations=[
+                ScheduledObligation(
+                    month=0,
+                    obligation_id="test-large-bill",
+                    obligation_type=ObligationType.OUTSIDE_RENT,
+                    agent_id="retiree",
+                    from_account_id="checking",
+                    to_agent_id="world",
+                    to_account_id="checking",
+                    amount_due=Decimal(200),
+                )
+            ],
+        ),
+        rollout_count=2,
+        series={stock: np.array([[100.0] * 3, [300.0] * 3]), InflationKey(): np.ones((2, 3))},
+    )
+    return run(
+        json.dumps(case.compiled_run.execution_input),
+        SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 2), {("brokerage", str(stock.symbol)): 1}),
+        [0, 1],
+    )
+
+
+def test_unattempted_consumption_has_known_zero_paid_on_observed_stop(early_claim_failure: dict[str, Any]) -> None:
+    stopped = early_claim_failure["rollouts"][0]
+    assert stopped["stop"] == {"RejectedAction": {"month": 0, "action_index": 1}}
+    assert [next(iter(row["action"])) for row in stopped["summary"]["last_receipts"]] == ["Sell", "PayClaim"]
+    assert consumption(early_claim_failure) == ([[None], [1_200, 0]], [[0], [1_200, 0]])
+
+
+def test_paid_distribution_keeps_zero_when_request_is_unattempted(
+    early_claim_failure: dict[str, Any], tmp_path: Path
+) -> None:
+    path = tmp_path / "consumption.json"
+    _write_consumption_distribution(
+        early_claim_failure, path, horizon_months=2, currency_code="USD", currency_quantum="0.01"
+    )
+    months = json.loads(path.read_text())["months"]
+    assert months[0]["observed_path_count"] == 2
+    assert months[0]["consumption_requested_path_count"] == 1
+    assert months[0]["consumption_requested"] == [1_200] * 3
+    assert months[0]["consumption_paid"] == [60, 600, 1_140]
+    assert months[1]["observed_path_count"] == 1
+    assert months[1]["consumption_paid"] == [0] * 3
 
 
 @pytest.mark.parametrize("equity_share", [-0.2, 1.2, float("nan"), float("inf")])

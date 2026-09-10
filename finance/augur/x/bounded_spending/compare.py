@@ -107,22 +107,22 @@ def _write_consumption_distribution(
     requested, paid = consumption(summary)
     months = []
     for month in range(horizon_months):
-        observed = [path for path, values in enumerate(requested) if month < len(values)]
+        observed = [path for path, values in enumerate(paid) if month < len(values)]
         known = [path for path in observed if requested[path][month] is not None]
         months.append(
             {
                 "event_month": month,
                 "observed_path_count": len(observed),
-                "consumption_observed_path_count": len(known),
+                "consumption_requested_path_count": len(known),
                 "consumption_requested": currency_quantiles(
                     np.asarray([requested[path][month] for path in known], dtype=np.int64), percentiles
                 )
                 if known
                 else None,
                 "consumption_paid": currency_quantiles(
-                    np.asarray([paid[path][month] for path in known], dtype=np.int64), percentiles
+                    np.asarray([paid[path][month] for path in observed], dtype=np.int64), percentiles
                 )
-                if known
+                if observed
                 else None,
             }
         )
@@ -133,7 +133,7 @@ def _write_consumption_distribution(
                 "currency_code": currency_code,
                 "currency_quantum": currency_quantum,
                 "amount_basis": "nominal currency quanta",
-                "conditioning": "known component amounts on observed paths, including attempted consumption in a failure month",
+                "conditioning": "requested: known requests on observed paths; paid: all observed paths, including zero when an earlier rejection prevents consumption",
                 "percentiles": percentiles,
                 "failed_month": [
                     row["summary"]["ending_mark_month"] if row["stop"] is not None else None

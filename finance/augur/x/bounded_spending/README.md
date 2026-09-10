@@ -50,11 +50,11 @@ padding is financial data. Detailed capture adds `trace` without changing the su
 
 `*.consumption.json` reports nominal currency-quantum percentiles for the
 `annual_consumption` component. It excludes taxes and other claims. Live omitted
-zero requests are zero; post-stop months are absent. A stopped month with no
-attempted consumption receipt is unknown, not zero: an earlier failed action
-could have prevented it. Reports separate observed financial-path counts from
-known component counts. Percentiles condition on those known observations,
-including attempted requests that fail; no observations yields null.
+zero requests are zero; post-stop months are absent. If an earlier rejection
+prevents consumption, the unattempted request is absent but actual paid consumption
+is zero for that observed month. Requested percentiles use known requests
+(`consumption_requested_path_count`); paid percentiles use every observed path
+(`observed_path_count`), including these zeros. No supporting observations yields null.
 Overlapping historical windows have no independent-sampling error bars.
 
 ## Editable Python policy

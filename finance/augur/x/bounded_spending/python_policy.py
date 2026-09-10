@@ -252,18 +252,19 @@ def run(
         session.close()
 
 
-def consumption(output: dict[str, Any]) -> tuple[list[list[int | None]], list[list[int | None]]]:
-    """Project this component's attempted requests; an unattempted action is absent."""
+def consumption(output: dict[str, Any]) -> tuple[list[list[int | None]], list[list[int]]]:
+    """Project attempted requests and actual payments over each path's observed months."""
     requested = []
     paid = []
     for rollout in output["rollouts"]:
         summary = rollout["summary"]
         amounts: list[int | None] = [0] * summary["ending_book"]["month"]
-        receipts: list[int | None] = [0] * len(amounts)
+        receipts = [0] * len(amounts)
         # This policy omits live zero requests. On a stopped month, absence can also
-        # mean an earlier action prevented consumption; do not turn that into zero.
+        # mean an earlier action prevented consumption; the request is absent,
+        # but the complete execution prefix proves actual payment is zero.
         if rollout["stop"] is not None:
-            amounts[-1] = receipts[-1] = None
+            amounts[-1] = None
         for payment in summary["payments"]:
             receipt = payment["receipt"]
             if receipt["target"] == {"Consumption": {"component_id": "annual_consumption"}}:
