@@ -1,11 +1,13 @@
+# Retained only for the state-transfer gate. Deletion after activation must not
+# destroy SSH keys that the replacement root adopts from transferred state.
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
   name: forgejo-agentydragon
-  namespace: forgejo
+  namespace: flux-system
 spec:
-  # Staged while the prior CR is suspended and its state is transferred.
   suspend: true
+  destroyResourcesOnDeletion: false
   interval: 15m
   refreshBeforeApply: true
   path: ./tf/gitops/forgejo-agentydragon
@@ -13,14 +15,12 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
-
-  serviceAccountName: tf-runner-forgejo-agentydragon
+  serviceAccountName: tf-runner
   approvePlan: "auto"
-
   backendConfig:
     customConfiguration: |
       backend "pg" {
-        conn_str    = "postgres://tfstate_forgejo_agentydragon@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate_forgejo_agentydragon?sslmode=require"
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "forgejo_agentydragon"
       }
   runnerPodTemplate:
@@ -29,5 +29,5 @@ spec:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-forgejo-agentydragon-credentials
+              name: tofu-state-db-credentials
               key: password

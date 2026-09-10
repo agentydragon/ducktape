@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tf-runner-forgejo-agentydragon
+  namespace: forgejo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tf-runner-forgejo-agentydragon
+  namespace: forgejo
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["forgejo-admin-password"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tf-runner-forgejo-agentydragon
+  namespace: forgejo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tf-runner-forgejo-agentydragon
+subjects:
+  - kind: ServiceAccount
+    name: tf-runner-forgejo-agentydragon
+    namespace: forgejo
