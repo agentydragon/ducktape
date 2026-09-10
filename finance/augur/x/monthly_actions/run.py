@@ -14,7 +14,7 @@ import numpy as np
 
 from finance.augur.model.series import SecurityKey
 from finance.augur.rust.invocation import invoke, write_prepared_input
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.backend import CompiledRun, compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.scenario import (
@@ -31,13 +31,10 @@ from finance.augur.sim.scenario import (
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
-def run_example(
-    output_dir: Path,
-    rollout_ids: Sequence[int] = (0, 1),
-    capture: Literal["summary", "dense", "forensic"] = "forensic",
-    *,
-    cash_only_start: bool = False,
-) -> dict[str, Any]:
+def prepare(rollout_count: int = 2, horizon_months: int = 13, *, cash_only_start: bool = False) -> CompiledRun:
+    """Repeat the two stipulated price paths; this is not independent market sampling."""
+    if rollout_count <= 0 or horizon_months < 13:
+        raise ValueError("use positive rollouts and at least 13 months to include tax payment")
     stock = SecurityKey(symbol="example-stock")
     scenario = Scenario(
         agents=[Agent(agent_id=name) for name in ("example-household", "example-creditor", "example-tax")],
@@ -85,7 +82,7 @@ def run_example(
                 prior_year_tax=Decimal(0),
             )
         ],
-        horizon_months=13,
+        horizon_months=horizon_months,
     )
     jurisdiction = Jurisdiction(
         jurisdiction_id="example-flat-tax",
@@ -95,32 +92,49 @@ def run_example(
         standard_deduction={FilingStatus.SINGLE: Decimal(0)},
         max_capital_loss_ordinary_offset={FilingStatus.SINGLE: Decimal(0)},
     )
-    prices = np.repeat(np.array([[100.0], [50.0]]), 14, axis=1)
+    prices = np.repeat(np.resize(np.array([100.0, 50.0]), rollout_count)[:, None], horizon_months + 1, axis=1)
     if cash_only_start:
         prices[:, 1:] *= 1.2
-    compiled = compile_run(
+    return compile_run(
         scenario,
-        rollout_count=2,
-        external_series=ExternalSeriesContext.from_level_blocks([(stock, prices)], rollout_count=2, horizon_months=13),
+        rollout_count=rollout_count,
+        external_series=ExternalSeriesContext.from_level_blocks(
+            [(stock, prices)], rollout_count=rollout_count, horizon_months=horizon_months
+        ),
         jurisdictions={jurisdiction.jurisdiction_id: jurisdiction},
         locations={},
     )
+
+
+def execute(
+    input_path: Path, output_path: Path, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"]
+) -> dict[str, Any]:
+    """Run and decode selected paths from an already prepared document."""
+    return invoke(
+        binary=get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/runner")),
+        input_path=input_path,
+        output_path=output_path,
+        arguments=[capture, *(str(rollout_id) for rollout_id in rollout_ids)],
+    )
+
+
+def run_example(
+    output_dir: Path,
+    rollout_ids: Sequence[int] | None = None,
+    capture: Literal["summary", "dense", "forensic"] = "forensic",
+    *,
+    rollout_count: int = 2,
+    horizon_months: int = 13,
+    cash_only_start: bool = False,
+) -> dict[str, Any]:
+    compiled = prepare(rollout_count, horizon_months, cash_only_start=cash_only_start)
     output_dir.mkdir(parents=True, exist_ok=False)
     input_path = output_dir / "execution-input.json"
     write_prepared_input(compiled, input_path)
-    output = invoke(
-        binary=get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/runner")),
-        input_path=input_path,
-        output_path=output_dir / "outcomes.json",
-        arguments=[capture, *(str(rollout_id) for rollout_id in rollout_ids)],
-    )
-    for rollout in output["rollouts"]:
-        payments = rollout["summary"]["payments"]
-        paid = sum(row["receipt"]["amount_requested"] for row in payments if row["receipt"]["outcome"] == "Paid")
-        print(
-            f"path={rollout['rollout_id']}: paid=${paid / 100:.2f}; "
-            f"payment_requests={len(payments)}; stop={rollout['stop']}"
-        )
+    ids = range(rollout_count) if rollout_ids is None else rollout_ids
+    output = execute(input_path, output_dir / "outcomes.json", ids, capture)
+    stopped = sum(rollout["stop"] is not None for rollout in output["rollouts"])
+    print(f"paths={len(output['rollouts'])}; stopped={stopped}; capture={capture}")
     return output
 
 
@@ -132,12 +146,16 @@ def main() -> None:
         "--cash-only-start", action="store_true", help="Buy an unheld declared asset before the bill arrives."
     )
     parser.add_argument("--capture", choices=("summary", "dense", "forensic"), default="forensic")
+    parser.add_argument("--rollouts", type=int, default=2)
+    parser.add_argument("--horizon-months", type=int, default=13)
     args = parser.parse_args()
     run_example(
         args.output_dir,
-        (0, 1) if args.rollout is None else args.rollout,
+        args.rollout,
         args.capture,
         cash_only_start=args.cash_only_start,
+        rollout_count=args.rollouts,
+        horizon_months=args.horizon_months,
     )
 
 

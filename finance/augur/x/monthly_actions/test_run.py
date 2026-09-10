@@ -184,5 +184,59 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
         assert holding["values"][:3] == [0, 24_000, 0]
 
 
+def test_profile_entrypoint_compares_matching_capture_workloads(tmp_path: Path) -> None:
+    reports = []
+    for capture in ("summary", "forensic"):
+        output = tmp_path / capture
+        subprocess.run(
+            [
+                get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/profile_bin")),
+                "--output-dir",
+                output,
+                "--rollouts",
+                "4",
+                "--horizon-months",
+                "13",
+                "--native-threads",
+                "1",
+                "--capture",
+                capture,
+            ],
+            check=True,
+        )
+        reports.append(json.loads((output / "report.json").read_text()))
+        assert (output / "execution.prof").stat().st_size > 0
+    compact, detailed = reports
+    assert compact["input_sha256"] == detailed["input_sha256"]
+    assert compact["compact_sha256"] == detailed["compact_sha256"]
+    assert compact["observed_path_months"] == detailed["observed_path_months"] == 28
+    assert compact["output_bytes"] < detailed["output_bytes"]
+
+
+def test_population_cli_keeps_original_ids_for_selected_replay(tmp_path: Path) -> None:
+    output = tmp_path / "population"
+    subprocess.run(
+        [
+            get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/run_bin")),
+            "--output-dir",
+            output,
+            "--rollouts",
+            "6",
+            "--horizon-months",
+            "24",
+            "--capture",
+            "summary",
+        ],
+        check=True,
+    )
+    population = json.loads((output / "outcomes.json").read_text())["rollouts"]
+    replay = run_example(tmp_path / "replay", (5, 2), rollout_count=6, horizon_months=24)["rollouts"]
+    assert [row["rollout_id"] for row in population] == list(range(6))
+    for result in replay:
+        original = population[result["rollout_id"]]
+        assert result["summary"] == original["summary"]
+        assert result["stop"] == original["stop"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -63,3 +63,34 @@ produce $240 and $40 short-term gain. After the $150 bill and the synthetic 20%
 short-term tax ($8), each retains $82. The offline CLI test verifies these actual
 purchase, sale and payment effects; native tests also show that omitting the buy
 leaves an empty pool and unchanged cash.
+## Population capture and profiling
+
+`--rollouts N --horizon-months H` repeats the same two stipulated paths over the
+chosen horizon (at least 13 months). This tests population handling, not a sampling
+model or success-probability estimate. Odd original IDs fail in month 0; even IDs
+continue. After the bill and month-12 tax payment, the authored rule has no further
+spending. With a larger horizon, later tax assessments still follow engine rules.
+
+```bash
+bb run //finance/augur/x/monthly_actions:run_bin -- --output-dir /tmp/augur-action-population --rollouts 1000 --horizon-months 60 --capture summary
+bb run //finance/augur/x/monthly_actions:run_bin -- --output-dir /tmp/augur-action-replay --rollouts 1000 --horizon-months 60 --rollout 999 --rollout 12 --capture forensic
+```
+
+The complete generated execution input is identical for population and selected
+replay with the same `--rollouts`/`--horizon-months`; selection never renumbers it.
+
+Profile one capture choice per fresh process, keeping all other arguments equal:
+
+```bash
+bbr run -c opt //finance/augur/x/monthly_actions:profile_bin -- --rollouts 1000 --horizon-months 60 --native-threads 4 --capture summary --output-dir /home/buildbuddy/workspace/artifacts/command-0/actor-summary
+```
+
+Repeat with `--capture dense` or `forensic` and a new output directory. `report.json`
+records input and compact-result hashes, observed (not padded) path-months, wire
+bytes and separate process RSS high-water marks. `execution.prof` is a real
+cProfile recording; its scope includes native process startup/work/output I/O and
+Python JSON decoding, not isolated native evaluation. Path preparation is excluded
+from the profile but included in process RSS. The native child may inherit the
+parent's address space; maxima are not additive simultaneous peaks. No performance
+threshold or executor-language comparison is implied. The CI tests execute both
+documented entrypoints with small generated inputs and check capture/replay parity.
