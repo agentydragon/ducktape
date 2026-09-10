@@ -1,0 +1,74 @@
+//! An authored batch rule: liquidate public lots if due claims exceed cash, then pay.
+//! The example has one household cash account; execution owns prices, basis and taxes.
+
+use augur_native_invocation::{run, write_output};
+use augur_rust_simulator::{
+    engine::{
+        SimulationError,
+        actors::{self, Action, Decision, DecisionActions},
+        payments::PayClaim,
+        trades::{LotSale, SaleRequest},
+    },
+    money::Money,
+};
+use serde::Serialize;
+
+fn decide(batch: Vec<Decision<'_>>) -> Result<Vec<DecisionActions>, SimulationError> {
+    batch
+        .into_iter()
+        .map(|decision| {
+            let observation = decision.observation;
+            let claims: Vec<_> = observation.claims().collect();
+            let due = claims
+                .iter()
+                .try_fold(Money(0), |total, claim| total.checked_add(claim.amount_due))?;
+            let mut actions = Vec::new();
+            if observation.books.cash()? < due {
+                for position in observation.books.public_positions() {
+                    let position = position?;
+                    actions.push(Action::Sell(SaleRequest {
+                        cause_id: format!("fund-{}", position.lot_id()),
+                        agent_id: observation.books.agent_id().into(),
+                        proceeds_account_id: "checking".into(),
+                        asset_id: position.asset_id().into(),
+                        lots: vec![LotSale {
+                            account_id: position.account_id().into(),
+                            lot_id: position.lot_id().into(),
+                            units: position.units().quantity(),
+                        }],
+                    }));
+                }
+            }
+            for (request_id, claim) in claims.into_iter().enumerate() {
+                actions.push(Action::PayClaim(PayClaim {
+                    request_id: request_id as u64,
+                    cause_id: format!("pay-{}", claim.cause_id),
+                    claim: claim.id,
+                    from: claim.from.clone(),
+                    amount: claim.amount_due,
+                }));
+            }
+            Ok(DecisionActions {
+                rollout_id: decision.rollout_id,
+                month: observation.books.month(),
+                actions,
+            })
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+struct Output {
+    rollouts: Vec<actors::Rollout>,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    run(|input, output, parameters| {
+        let ids = parameters
+            .iter()
+            .map(|value| value.parse())
+            .collect::<Result<Vec<u32>, _>>()?;
+        let rollouts = actors::simulate(input, "example-household", &ids, decide)?;
+        write_output(output, &Output { rollouts })
+    })
+}

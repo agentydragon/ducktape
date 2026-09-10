@@ -1,0 +1,51 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "runner",
+    srcs = ["policy.rs"],
+    edition = "2024",
+    deps = [
+        "//finance/augur/rust:native_invocation",
+        "//finance/augur/rust:simulator",
+        "@crates//:serde",
+    ],
+)
+
+py_binary(
+    name = "run_bin",
+    main_module = "finance.augur.x.monthly_actions.run",
+    deps = [":run"],
+)
+
+py_library(
+    name = "run",
+    srcs = ["run.py"],
+    data = [":runner"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:scenario",
+        "//util/bazel:runfiles",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "test_run",
+    srcs = ["test_run.py"],
+    data = [":run_bin"],
+    deps = [
+        ":run",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

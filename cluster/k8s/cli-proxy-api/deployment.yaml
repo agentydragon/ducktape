@@ -24,6 +24,8 @@ spec:
         app.kubernetes.io/name: cli-proxy-api
     spec:
       automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # No explicit zone nodeSelector: the PVC's seaweedfs-ovh StorageClass already
       # pins scheduling to topology.kubernetes.io/zone=hil-ovh via WaitForFirstConsumer
       # + allowedTopologies (cluster/k8s/seaweedfs-csi/sc-seaweedfs-ovh.yaml), and the
@@ -48,17 +50,7 @@ spec:
               mountPath: /data
       containers:
         - name: cli-proxy-api
-          # Pinned by digest (eceasy/cli-proxy-api is a third-party Docker Hub image with
-          # no version-tag discipline). Bump by repulling :latest and re-pinning.
-          # Bumped 2026-09-09: the prior pin (BuiltAt 2026-08-17, v7.2.135) predates
-          # this image's management API/UI (/v0/management/*, /management.html) --
-          # cli-proxy-api-admin.allegedly.works 404'd on /management.html and only
-          # answered the plain /v1 banner. This digest is :latest as pushed 2026-09-08.
-          image: eceasy/cli-proxy-api@sha256:3990e4de484ac5caac80164ee3a60d0ba521320dcda193a2ef71a5ad2e2c768b
-          workingDir: /CLIProxyAPI
-          # The image has CMD [./CLIProxyAPI] but no ENTRYPOINT, so k8s `args` alone would
-          # replace the binary. Set `command` explicitly and pass -config via args.
-          command: ["./CLIProxyAPI"]
+          image: git.allegedly.works/ducktape-ci/cli-proxy-api:devel-20260909225434-a464157 # {"$imagepolicy": "flux-system:cli-proxy-api"}
           args: [-config, /config/config.yaml]
           env:
             - name: MANAGEMENT_PASSWORD
@@ -66,13 +58,31 @@ spec:
                 secretKeyRef:
                   name: cli-proxy-api-management
                   key: management-password
-            # Startup log showed: "failed to prepare static directory for management
-            # asset error=mkdir /config/static: read-only file system" -- by default the
-            # app downloads its management.html UI asset into a `static/` dir next to the
-            # config file, but /config is a read-only Secret mount here. Point it at the
-            # writable data PVC instead so the download (and the UI it serves) succeeds.
-            - name: MANAGEMENT_STATIC_PATH
-              value: /data/management-static/management.html
+            - name: MANAGEMENT_OIDC_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: cli-proxy-api-admin-oidc
+                  key: MANAGEMENT_OIDC_ISSUER
+            - name: MANAGEMENT_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cli-proxy-api-admin-oidc
+                  key: MANAGEMENT_OIDC_CLIENT_ID
+            - name: MANAGEMENT_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cli-proxy-api-admin-oidc
+                  key: MANAGEMENT_OIDC_CLIENT_SECRET
+            - name: MANAGEMENT_OIDC_REDIRECT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cli-proxy-api-admin-oidc
+                  key: MANAGEMENT_OIDC_REDIRECT_URL
+            - name: MANAGEMENT_OIDC_ALLOWED_SUBJECTS
+              valueFrom:
+                secretKeyRef:
+                  name: cli-proxy-api-admin-oidc
+                  key: MANAGEMENT_OIDC_ALLOWED_SUBJECTS
           ports:
             - name: http
               containerPort: 8317

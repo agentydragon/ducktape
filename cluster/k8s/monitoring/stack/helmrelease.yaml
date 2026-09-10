@@ -333,6 +333,14 @@ spec:
     # Node exporter configuration
     prometheus-node-exporter:
       fullnameOverride: prometheus-node-exporter
+      # Must match ducktape.raplMetrics.gid on Rugged. The host grants this
+      # group read access only to root-owned Intel RAPL energy_uj files; the
+      # exporter remains UID 65534 and has no added capabilities.
+      securityContext:
+        fsGroup: 45321
+        runAsGroup: 45321
+        runAsNonRoot: true
+        runAsUser: 65534
     nodeExporter:
       enabled: true
       resources:

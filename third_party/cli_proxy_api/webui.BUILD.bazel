@@ -1,0 +1,104 @@
+"""Bazel build overlay for the pinned management frontend."""
+
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary", "js_test")
+load("@npm_cli_proxy_webui//:defs.bzl", "npm_link_all_packages")
+load("@npm_cli_proxy_webui//:typescript/package_json.bzl", tsc_bin = "bin")
+load("@npm_cli_proxy_webui//:vite/package_json.bzl", vite_bin = "bin")
+
+exports_files(["package.json"])
+
+npm_link_all_packages(name = "node_modules")
+
+vite_bin.vite_binary(
+    name = "vite",
+    node_toolchain = "@nodejs_linux_amd64//:toolchain",
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "index.html",
+        "package.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        ":node_modules/@codemirror/lang-yaml",
+        ":node_modules/@codemirror/merge",
+        ":node_modules/@codemirror/search",
+        ":node_modules/@codemirror/state",
+        ":node_modules/@codemirror/view",
+        ":node_modules/@types/react",
+        ":node_modules/@types/react-dom",
+        ":node_modules/@uiw/react-codemirror",
+        ":node_modules/@vitejs/plugin-react",
+        ":node_modules/axios",
+        ":node_modules/i18next",
+        ":node_modules/motion",
+        ":node_modules/motion-dom",
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        ":node_modules/react-i18next",
+        ":node_modules/react-router",
+        ":node_modules/react-router-dom",
+        ":node_modules/sass",
+        ":node_modules/vite",
+        ":node_modules/vite-plugin-singlefile",
+        ":node_modules/yaml",
+        ":node_modules/zustand",
+    ] + glob(["src/**"]),
+)
+
+tsc_bin.tsc_test(
+    name = "typecheck",
+    data = [
+        "tsconfig.json",
+        ":sources",
+    ],
+    fixed_args = [
+        "--noEmit",
+        "--project",
+        "$(rootpath tsconfig.json)",
+    ],
+    node_toolchain = "@nodejs_linux_amd64//:toolchain",
+    visibility = ["//visibility:public"],
+)
+
+js_run_binary(
+    name = "dist",
+    srcs = [":sources"],
+    args = ["build"],
+    chdir = ".",
+    env = {
+        "NODE_ENV": "production",
+        "VERSION": "ed5f1c48e11ba7335f1e8f676f228c280196af85+oidc",
+    },
+    out_dirs = ["dist"],
+    tool = ":vite",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "management_html",
+    srcs = [":dist"],
+    outs = ["management.html"],
+    cmd = "cp $(location :dist)/index.html $@",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "session_tests",
+    data = ["src/services/api/managementSession.ts"],
+    entry_point = "tests/managementSession.test.ts",
+    node_options = ["--experimental-strip-types"],
+    node_toolchain = "@nodejs_linux_amd64//:toolchain",
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":session_tests",
+        ":typecheck",
+    ],
+    visibility = ["//visibility:public"],
+)

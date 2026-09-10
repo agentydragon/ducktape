@@ -13,7 +13,25 @@ Internally, `RolloutState` initializes opening books once and advances one month
 a time. The full-horizon drivers loop over that same advancement. Completed or
 failed states do not advance or invoke policies; an execution error consumes the
 state, preventing continuation from a partly applied month. This is not a public
-actor-session API: native callbacks still review opening-month holdings.
+actor-session API. Existing spending/allocation controls review opening-month
+holdings; the separate scoped action control below reviews assembled monthly claims.
+
+The existing extension also exposes `PrototypeSpendingSession`: an experimental
+Python-controlled `observe()` → decision → `advance(requests)` monthly handoff.
+It owns one compiled input and retained books, releases the GIL for native work,
+and uses the same evaluator as the full-horizon spending driver. Its copied integer
+observation columns contain original path IDs, month, actor cash/public value and
+current/origin CPI, not future paths. Requests carry `(path ID, observed month,
+nominal currency quanta)` and may be reordered or chunked. Policy memory belongs
+to the experiment and must follow original IDs, never temporary batch positions.
+Stopped paths disappear from observations; compact result columns follow the
+constructor's selection order, while forensic replay retains original path IDs.
+`finish_json()` consumes terminal results. Invalid requests or native errors close
+the entire prototype session; insufficient funding retains the current per-path
+stop behavior. Call `close()` if a Python policy raises. There is no resubmission
+or within-month policy callback, and this is not the supported actor-action API.
+This first transport boxes/copies integer lists and serializes final output as JSON;
+it makes no zero-copy or high-N throughput claim.
 
 ## Invariants
 
@@ -26,8 +44,9 @@ actor-session API: native callbacks still review opening-month holdings.
   integer fixture. Rust does not resample paths.
 - Independent rollouts execute in parallel with Rayon and are collected by
   deterministic rollout index.
-- Obligations sharing one payer/source account settle all-or-none: a funding
-  group is a hard demand, so a shortfall fails the whole group.
+- The configured runner groups claims and chosen consumption by payer/source
+  account and settles each group all-or-none. This is an explicit control, not a
+  restriction imposed by individual payment execution.
 - Failed rollouts stop executing future actions and preserve the actual stopped
   book and causal trace. No later forensic snapshots or events are emitted.
 - Full forensic output and compact population output use the same state-machine
@@ -69,10 +88,59 @@ cloned or mutated to change a target. See <../x/allocation_glide/README.md> for
 the constant-versus-glide call site and funded-consumption/holdings example.
 
 This entrypoint does not yet compose callable spending with allocation or expose
-compact allocation capture. Weights must currently be positive; zero-target
-arithmetic and full exits remain unsupported. Missing sleeve prices reject, not
-zero-fill. A new target still follows the configured cash-band and quiet-band
+compact allocation capture. Weights may be zero, but not all zero. A zero-target
+sleeve remains in the sellable scope, is drained first for cash raises and receives
+no deposits. In a quiet drift-rebalancing month it exits completely, including
+fractional units whose marks round to zero; a later positive target permits re-entry.
+Missing sleeve prices reject, not zero-fill. A new target follows the cash-band and quiet-band
 drift conventions below, rather than forcing an immediate full rebalance.
+
+## Exact trades
+
+`engine::trades` defines `SaleRequest` (explicit lot/account/unit selections) and
+`PurchaseRequest` (exact units, holding pool, cash account and new lot identity).
+The month loop supplies execution prices; requests cannot choose a price or mutate
+the book. Scheduled sales, allocation funding/rebalance sales and PE protocol sales
+select FIFO explicitly, then use one sale operation. A caller can instead select a
+newer lot without changing its proceeds, basis or tax-accounting implementation.
+
+Execution terms distinguish per-unit quotes from a stated total recovery cashout.
+Total cashouts are apportioned by selected economic units (including scale differences
+between accounts), flooring each share then assigning leftover currency quanta by largest
+fractional remainder, with request-order ties. PE recovery selects its remaining lots in
+FIFO order. The total survives unchanged in cash and dispositions; each fully disposed
+lot consumes its exact remaining basis. This convention does not promise that splitting
+a lot preserves its tax attribution.
+
+Sale preparation checks the whole request and stages only affected lot balances,
+capital-gain rows and TLH entries. Journal and receipt counters are checked before
+posting. Rejection therefore changes none of those books or records. This guarantee
+is per trade, not a rollback of prior monthly actions or a batch of trades.
+
+Purchases use already declared holding pools and exact quantity scales. Allocation
+still chooses/clamps its order after funding; the exact executor rejects insufficient
+cash. Cash accounts and holding pools have different declarations: a lot's holding
+account need not also be a cash account. New actor invocation, transfer admission,
+settlement delays and alternative funding/rebalance strategies are not provided by
+this module.
+
+## Transfer accounting
+
+`engine::transfers::TransferRequest` names the cause, source, destination and exact
+amount. The execution operation has two engine-controlled admission contexts:
+an actor ID requires owned, declared, funded cash; no actor ID denotes an already
+scheduled cashflow. All scheduled/recurring transfers and property-gated cashflows
+use this same operation after resolving their current amount.
+
+Actor requests cannot supply tax labels. Scheduled contracts retain the existing
+income-source and ordinary-deduction rules, and can debit their source below zero;
+this preserves exogenous cashflows without giving actors implicit credit. The shared
+posting routine stages only the affected income rows and validates the journal
+counter before posting cash. Overlapping income/deduction rows use the pending value,
+not the original value twice. A failed request preserves cash, tax rows and receipts.
+
+This is a transaction primitive, not an actor invocation loop or claim-payment API.
+No policy selection, automatic funding, delayed settlement or batch rollback is added.
 
 ## Scoped holdings
 
@@ -103,9 +171,60 @@ the current review order or grouped settlement behavior.
 
 `engine/claims.rs` assembles configured demands from the current month's terms,
 live mortgages and assessed tax liabilities. It does not move money or decide
-funding. `engine/obligations.rs` executes their attached payment effects and the
-configured all-or-none funding-group control. The spending callback's chosen
-consumption remains a separate input to that control.
+funding. Each occurrence has a rollout-local month/index handle independent of
+its cause label; paid claims no longer appear in the due-claim view.
+
+`engine/payments.rs` executes `PayClaim` and `Consume` requests using the same
+canonical transfer, deduction, mortgage and tax effects. A claim payment names
+the occurrence, exact full amount and an owned, declared funding account; the
+claim fixes its recipient and effect. Consumption names a separate component,
+another actor's recipient account and positive amount, without becoming a contract
+claim. Transfers between one's own accounts are not consumption. Receipts retain
+the caller's request ID, target, requested amount and paid/rejected outcome.
+Invalid ownership, account, handle, amount, duplicate payment or insufficient
+cash rejects before changing books or capture. Unexpected arithmetic/accounting
+errors remain explicit simulator errors, not financial-failure receipts.
+
+`engine/obligations.rs` retains the configured all-or-none funding-group control
+and its existing demand/failure event projection, over that same executor.
+Allocation reserves both configured claims and the separate consumption request.
+The scoped action control instead follows the ordered execution described below.
+
+## Scoped household action batches
+
+`engine::actors::simulate(input, actor, rollout_ids, decide)` calls one ordinary
+batch function after the shared monthly preparation phase. `Decision` rows carry
+original rollout IDs plus actor-scoped books, current due claims and the previous
+decision's receipts. The caller keeps policy memory. `DecisionActions` returns
+one ordered list for each active `(rollout_id, month)`; response order is immaterial.
+Missing, duplicate, stale or unknown keys are simulator errors. A caller may adapt
+scalar authoring over these rows; there is no scalar actor-engine entry point.
+
+Each list uses exact `Sell`, `Buy`, `Transfer`, `PayClaim` and `Consume` requests.
+Canonical trade/payment/transfer operations own admission, atomic effects, lot
+basis and taxes. Receipts retain executed or rejected requests, but not an
+unattempted suffix. `Rollout::stop` distinguishes a rejected action (identified by
+its month/index receipt) from unpaid due claims. Both preserve the stopped book
+and exclude that path from later batches while other paths continue. Unexpected
+accounting/arithmetic failures return a simulator error, not an action rejection.
+Preparation and closing share the configured runner's financial implementations;
+actor execution has no implicit pre/post allocation, harvesting, sale or payment.
+
+This native forensic control supports one decision-making household and scripted
+counterparties. It rejects configured allocation/harvesting/tender policies and
+scheduled sales rather than silently bypassing them. Housing and private-equity
+lifecycle inputs are not supported. Public trades require asset/pool declarations
+from initial lots: an all-cash start cannot yet buy a previously unheld asset.
+Policy-independent market/pool declarations and the Python action session are
+later work, not dummy allocation configurations or a second evaluator here.
+
+The `engine/actors_test.rs` stories run with
+`bbr test //finance/augur/rust:simulator_test`. They include contribution → bill →
+chosen sale → explicit payment, canonical synthetic-tax assessment/payment, mixed
+buy/transfer/buy ordering, prefix preservation, distinct unpaid-claim stops,
+batch-native versus scalar-adapted selected replay and invalid response routing.
+Their supplied paths and flat tax brackets are deterministic controls, not market
+forecasts or claims of statutory tax coverage.
 
 ## Covered behavior
 
@@ -201,12 +320,21 @@ are 0/1. The Python adapter reconstructs the typed `PrivateEquityBundle` only wh
 sampled model hands one over; Rust never routes PE marks through ordinary
 security-price series.
 
-TLH policies encode every heuristic parameter as integer PPB. The engine
-evaluates the calibrated float64 maturity/drawdown curve, quantizes the
-resulting monthly factor back to PPB before applying it to integer money, and
-keeps the give-back ledger entirely in currency quanta. The acceptance cases
-cover drawdown versus flat paths, year-end tax facts, two-stage partial
-liquidation, and target-allocation sale give-back.
+TLH policies encode every heuristic parameter as integer PPB. The maturity/drawdown
+curve and give-back ledger use integer arithmetic. A sale allocates each lot the
+difference between rounded cumulative proportions before and after that lot's
+units: `round(H * sold_after / U) - round(H * sold_before / U)`. This conserves the
+rounded total and assigns residual quanta in execution/lot order, with the receiving
+lot's short-/long-term gain character.
+
+Scheduled sales hold `H` and `U` at the month's opening sale phase and advance a
+sold-unit cursor only after successful execution. Splitting the same ordered lot
+sequence into requests therefore leaves its total and per-lot attribution unchanged.
+Dynamic pool sales take a new `H/U` anchor for each trade; fragmentation can shift
+a quantum between lots, but full liquidation still leaves exactly zero deferral.
+These are reduced-form proportional rules, not statutory per-lot TLH. Acceptance
+cases include odd-quantum partial/full liquidation, scheduled fragmentation,
+mixed gain character and rejected-trade cursor preservation.
 
 Initial lots store total basis and never a per-unit figure. A sale apportions
 the basis a lot still holds by the units leaving it, so selling a lot down in
@@ -314,7 +442,7 @@ Scenario features the fixture cannot express are refused rather than encoded wit
 `engine.rs` is the orchestrator: the rollout month loop, the public entry points, and the
 shared per-rollout state. Each policy family it drives lives in `engine/` beside it —
 `validation`, `property`, `claims`, `obligations`, `taxes`, `securities`, `target_allocation`,
-`private_equity`, `tlh`, `cashflows`, `recorder`, `accounts`, `errors`. Submodules reach
+`private_equity`, `tlh`, `trades`, `cashflows`, `transfers`, `recorder`, `accounts`, `errors`. Submodules reach
 the shared state through `use super::*`, and expose to the root only what it calls;
 anything a module uses alone stays private to it, which the single 7.5k-line file could
 not express.

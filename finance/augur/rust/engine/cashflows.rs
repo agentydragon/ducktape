@@ -18,17 +18,23 @@ pub(super) fn execute_cashflows(
         .iter()
         .filter(|cashflow| cashflow.month == month)
     {
-        apply_cashflow(
+        execute_transfer(
+            fixture,
             ledger,
             recorder,
             tax,
             month,
-            &cashflow.cause_id,
-            &cashflow.from,
-            &cashflow.to,
-            amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-            cashflow.income_category.as_ref(),
-            cashflow.deduction_category.as_deref(),
+            &TransferRequest {
+                cause_id: cashflow.cause_id.clone(),
+                from: cashflow.from.clone(),
+                to: cashflow.to.clone(),
+                amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
+            },
+            TransferContext {
+                actor_id: None,
+                income_category: cashflow.income_category.as_ref(),
+                deduction_category: cashflow.deduction_category.as_deref(),
+            },
         )?;
     }
     for cashflow in fixture
@@ -39,17 +45,23 @@ pub(super) fn execute_cashflows(
             cashflow.start_month <= month && cashflow.end_month.is_none_or(|end| month <= end)
         })
     {
-        apply_cashflow(
+        execute_transfer(
+            fixture,
             ledger,
             recorder,
             tax,
             month,
-            &cashflow.cause_id,
-            &cashflow.from,
-            &cashflow.to,
-            amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-            cashflow.income_category.as_ref(),
-            cashflow.deduction_category.as_deref(),
+            &TransferRequest {
+                cause_id: cashflow.cause_id.clone(),
+                from: cashflow.from.clone(),
+                to: cashflow.to.clone(),
+                amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
+            },
+            TransferContext {
+                actor_id: None,
+                income_category: cashflow.income_category.as_ref(),
+                deduction_category: cashflow.deduction_category.as_deref(),
+            },
         )?;
     }
     for cashflow in fixture
@@ -62,17 +74,23 @@ pub(super) fn execute_cashflows(
             .iter()
             .any(|property| property.property_id == cashflow.property_id && property.active)
         {
-            apply_cashflow(
+            execute_transfer(
+                fixture,
                 ledger,
                 recorder,
                 tax,
                 month,
-                &cashflow.cause_id,
-                &cashflow.from,
-                &cashflow.to,
-                amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-                cashflow.income_category.as_ref(),
-                cashflow.deduction_category.as_deref(),
+                &TransferRequest {
+                    cause_id: cashflow.cause_id.clone(),
+                    from: cashflow.from.clone(),
+                    to: cashflow.to.clone(),
+                    amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
+                },
+                TransferContext {
+                    actor_id: None,
+                    income_category: cashflow.income_category.as_ref(),
+                    deduction_category: cashflow.deduction_category.as_deref(),
+                },
             )?;
         }
     }
@@ -88,56 +106,27 @@ pub(super) fn execute_cashflows(
             .iter()
             .any(|property| property.property_id == cashflow.property_id && property.active)
         {
-            apply_cashflow(
+            execute_transfer(
+                fixture,
                 ledger,
                 recorder,
                 tax,
                 month,
-                &cashflow.cause_id,
-                &cashflow.from,
-                &cashflow.to,
-                amount_value(fixture, rollout_id, month, &cashflow.amount)?,
-                cashflow.income_category.as_ref(),
-                cashflow.deduction_category.as_deref(),
+                &TransferRequest {
+                    cause_id: cashflow.cause_id.clone(),
+                    from: cashflow.from.clone(),
+                    to: cashflow.to.clone(),
+                    amount: amount_value(fixture, rollout_id, month, &cashflow.amount)?,
+                },
+                TransferContext {
+                    actor_id: None,
+                    income_category: cashflow.income_category.as_ref(),
+                    deduction_category: cashflow.deduction_category.as_deref(),
+                },
             )?;
         }
     }
     Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn apply_cashflow(
-    ledger: &mut Ledger,
-    recorder: &mut Recorder,
-    tax: &mut TaxState,
-    month: u32,
-    cause_id: &str,
-    from: &AccountRef,
-    to: &AccountRef,
-    amount: Money,
-    income_category: Option<&IncomeSource>,
-    deduction_category: Option<&str>,
-) -> Result<(), SimulationError> {
-    transfer_money(ledger, recorder, month, cause_id, from, to, amount)?;
-    // What the frame reports is the source the money landed in, and only when it landed
-    // anywhere: an untaxed recipient has no income ledger for it to reach.
-    let recorded_income_category = income_category
-        .filter(|_| {
-            tax.facts
-                .keys()
-                .any(|(agent_id, _)| agent_id == &to.agent_id)
-        })
-        .map(|source| String::from(source.clone()));
-    recorder.record_transfer(TransferOutcome {
-        month,
-        cause_id: cause_id.into(),
-        from: from.clone(),
-        to: to.clone(),
-        amount,
-        income_category: recorded_income_category,
-    });
-    record_transfer_income(tax, &to.agent_id, income_category, amount)?;
-    record_transfer_deduction(tax, &from.agent_id, deduction_category, amount)
 }
 
 pub(super) fn transfer_money(

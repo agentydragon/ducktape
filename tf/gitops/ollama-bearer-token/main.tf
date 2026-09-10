@@ -12,10 +12,7 @@ terraform {
     }
   }
 
-  backend "kubernetes" {
-    secret_suffix = "ollama-bearer-token"
-    namespace     = "flux-system"
-  }
+  backend "pg" {}
 }
 
 # Bearer token for direct Ollama API access (bypassing LiteLLM).
@@ -30,17 +27,16 @@ resource "random_password" "bearer_token" {
   }
 }
 
-resource "kubernetes_secret" "ollama_bearer_token" {
+resource "kubernetes_secret_v1_data" "ollama_bearer_token" {
   metadata {
     name      = "ollama-bearer-token"
     namespace = "ollama"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "claude-sandbox"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "claude-sandbox"
-    }
   }
+
+  # Adopt the existing Secret's token in place when starting with fresh state.
+  # Flux creates the object and manages its metadata, including on cold bootstrap.
+  field_manager = "ollama-bearer-token"
+  force         = true
 
   data = {
     token = random_password.bearer_token.result

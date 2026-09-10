@@ -71,9 +71,9 @@ class SleeveWeight(ApiModel):
     Only RATIOS matter, so `(3, 1)` and `(30, 10)` are the same target. Weight 0 means the
     holding is OUTSIDE the target: never sold to fund the band, and not counted when measuring
     what is overweight. That is how a position you intend to keep — private equity before
-    liquidity, a bond held to maturity — is expressed, and it is why zero is allowed here while
-    the sim's `SleeveTarget` requires a positive weight: this is the UI's way of saying "not in
-    the target", and the lowering drops it rather than passing a meaningless zero down.
+    liquidity, a bond held to maturity — is expressed. The product adapter drops these entries;
+    unlike this UI exclusion, a sim `SleeveTarget` with zero weight stays sellable and targets
+    a full exit when rebalancing.
     """
 
     symbol: SecuritySymbol

@@ -13,3 +13,6 @@ rules:
       - configmaps
       - events
     verbs: ["get", "list", "watch", "create"]
+  - apiGroups: ["infra.contrib.fluxcd.io"]
+    resources: ["terraforms"]
+    verbs: ["get", "list", "watch"]

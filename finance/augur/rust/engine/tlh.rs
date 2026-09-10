@@ -3,11 +3,65 @@
 
 use super::*;
 
+#[cfg(test)]
+#[path = "tlh_test.rs"]
+mod tests;
+
 #[derive(Clone, Debug)]
 pub(super) struct ScheduledTlhGiveBack {
     cumulative_start: Vec<Money>,
     pre_sale_units: Vec<i64>,
-    allocated: Vec<Money>,
+    sold_units: Vec<Quantity>,
+}
+
+/// Sale-local changes only; preparing a rejected trade cannot consume deferral.
+pub(super) struct TlhGiveBack {
+    pub(super) by_lot: Vec<Money>,
+    updates: GiveBackUpdates,
+}
+
+enum GiveBackUpdates {
+    Pool(Vec<(usize, Money)>),
+    Scheduled(Vec<(usize, Quantity)>),
+}
+
+pub(super) enum SaleTlh<'a> {
+    Scheduled(&'a mut ScheduledTlhGiveBack),
+    Pool(&'a mut [Money]),
+}
+
+impl SaleTlh<'_> {
+    pub(super) fn prepare(
+        &self,
+        fixture: &ExecutionInput,
+        lots: &[LotState],
+        planned: &[PlannedDisposition],
+    ) -> Result<TlhGiveBack, SimulationError> {
+        match self {
+            Self::Scheduled(state) => {
+                tlh_give_back_for_scheduled_sale(fixture, lots, planned, state)
+            }
+            Self::Pool(cumulative) => {
+                tlh_give_back_for_pool_sale(fixture, lots, planned, cumulative)
+            }
+        }
+    }
+
+    pub(super) fn commit(self, prepared: TlhGiveBack) {
+        match (self, prepared.updates) {
+            (Self::Scheduled(state), GiveBackUpdates::Scheduled(updates)) => {
+                for (index, units) in updates {
+                    state.sold_units[index] = units;
+                }
+            }
+            (Self::Pool(cumulative), GiveBackUpdates::Pool(updates)) => {
+                for (index, value) in updates {
+                    cumulative[index] = value;
+                }
+            }
+            _ => unreachable!("TLH changes must commit to the context that prepared them"),
+        }
+    }
 }
 
 pub(super) fn execute_tlh_harvest(
@@ -172,13 +226,33 @@ fn harvest_fraction_ppb(
     mul_ppb(base_monthly, kicker, "TLH harvest fraction")
 }
 
-pub(super) fn tlh_give_back_for_pool_sale(
+/// Differences of rounded cumulative entitlements telescope to the rounded total.
+/// Residual quanta follow execution/lot order, including that lot's gain character.
+/// This is proportional reduced-form deferral, not statutory per-lot harvesting.
+fn give_back_increment(
+    deferred: Money,
+    total_units: Quantity,
+    sold_before: Quantity,
+    units: Quantity,
+) -> Result<(Quantity, Money), SimulationError> {
+    let sold_after = Quantity(sold_before.0.checked_add(units.0).ok_or(
+        ArithmeticError::Overflow {
+            operation: "TLH sold units",
+        },
+    )?);
+    let before = deferred.apportion(sold_before, total_units, "TLH cumulative give-back")?;
+    let after = deferred.apportion(sold_after, total_units, "TLH cumulative give-back")?;
+    Ok((sold_after, after.checked_sub(before)?))
+}
+
+fn tlh_give_back_for_pool_sale(
     fixture: &ExecutionInput,
     lots: &[LotState],
     planned: &[PlannedDisposition],
-    cumulative_harvest: &mut [Money],
-) -> Result<Vec<Money>, SimulationError> {
+    cumulative_harvest: &[Money],
+) -> Result<TlhGiveBack, SimulationError> {
     let mut give_back = vec![Money(0); planned.len()];
+    let mut updates = Vec::new();
     for (policy_index, policy) in fixture.scenario.harvest_policies.iter().enumerate() {
         let matching: Vec<(usize, &PlannedDisposition)> = planned
             .iter()
@@ -207,35 +281,31 @@ pub(super) fn tlh_give_back_for_pool_sale(
                         operation: "TLH pre-sale units",
                     })
             })?;
-        let sold_units = matching.iter().try_fold(0_i64, |total, (_, item)| {
-            total
-                .checked_add(item.units.0)
-                .ok_or(ArithmeticError::Overflow {
-                    operation: "TLH sold units",
-                })
-        })?;
-        if pre_sale_units <= 0 || sold_units <= 0 {
+        if pre_sale_units <= 0 {
             continue;
         }
-        let total_give_back = cumulative_harvest[policy_index].apportion(
-            Quantity(sold_units),
-            Quantity(pre_sale_units),
-            "TLH sale give-back",
-        )?;
+        let mut sold_units = Quantity(0);
         let mut allocated = Money(0);
         for (planned_index, item) in matching {
-            let amount = total_give_back.apportion(
+            let (next_units, amount) = give_back_increment(
+                cumulative_harvest[policy_index],
+                Quantity(pre_sale_units),
+                sold_units,
                 item.units,
-                Quantity(sold_units),
-                "TLH per-lot give-back",
             )?;
+            sold_units = next_units;
             give_back[planned_index] = give_back[planned_index].checked_add(amount)?;
             allocated = allocated.checked_add(amount)?;
         }
-        cumulative_harvest[policy_index] =
-            cumulative_harvest[policy_index].checked_sub(allocated)?;
+        updates.push((
+            policy_index,
+            cumulative_harvest[policy_index].checked_sub(allocated)?,
+        ));
     }
-    Ok(give_back)
+    Ok(TlhGiveBack {
+        by_lot: give_back,
+        updates: GiveBackUpdates::Pool(updates),
+    })
 }
 
 pub(super) fn scheduled_tlh_give_back_state(
@@ -266,23 +336,25 @@ pub(super) fn scheduled_tlh_give_back_state(
     Ok(ScheduledTlhGiveBack {
         cumulative_start: cumulative_harvest.to_vec(),
         pre_sale_units,
-        allocated: vec![Money(0); cumulative_harvest.len()],
+        sold_units: vec![Quantity(0); cumulative_harvest.len()],
     })
 }
 
-pub(super) fn tlh_give_back_for_scheduled_sale(
+fn tlh_give_back_for_scheduled_sale(
     fixture: &ExecutionInput,
     lots: &[LotState],
     planned: &[PlannedDisposition],
-    state: &mut ScheduledTlhGiveBack,
-) -> Result<Vec<Money>, SimulationError> {
+    state: &ScheduledTlhGiveBack,
+) -> Result<TlhGiveBack, SimulationError> {
     let mut give_back = vec![Money(0); planned.len()];
+    let mut updates = Vec::new();
     for (policy_index, policy) in fixture.scenario.harvest_policies.iter().enumerate() {
         if state.cumulative_start[policy_index] == Money(0)
             || state.pre_sale_units[policy_index] <= 0
         {
             continue;
         }
+        let mut sold_units = state.sold_units[policy_index];
         for (planned_index, item) in planned.iter().enumerate() {
             let lot = &lots[item.lot_index];
             if lot.spec.agent_id != policy.owner_agent_id
@@ -291,24 +363,43 @@ pub(super) fn tlh_give_back_for_scheduled_sale(
             {
                 continue;
             }
-            let amount = state.cumulative_start[policy_index].apportion(
-                item.units,
+            let (next_units, amount) = give_back_increment(
+                state.cumulative_start[policy_index],
                 Quantity(state.pre_sale_units[policy_index]),
-                "TLH scheduled-sale give-back",
+                sold_units,
+                item.units,
             )?;
+            sold_units = next_units;
             give_back[planned_index] = give_back[planned_index].checked_add(amount)?;
-            state.allocated[policy_index] = state.allocated[policy_index].checked_add(amount)?;
         }
+        updates.push((policy_index, sold_units));
     }
-    Ok(give_back)
+    Ok(TlhGiveBack {
+        by_lot: give_back,
+        updates: GiveBackUpdates::Scheduled(updates),
+    })
 }
 
 pub(super) fn apply_scheduled_tlh_give_back(
     state: &ScheduledTlhGiveBack,
     cumulative_harvest: &mut [Money],
 ) -> Result<(), SimulationError> {
-    for (cumulative, allocated) in cumulative_harvest.iter_mut().zip(&state.allocated) {
-        *cumulative = cumulative.checked_sub(*allocated)?;
-    }
+    let remaining = cumulative_harvest
+        .iter()
+        .enumerate()
+        .map(|(index, cumulative)| {
+            let allocated = if state.sold_units[index] == Quantity(0) {
+                Money(0)
+            } else {
+                state.cumulative_start[index].apportion(
+                    state.sold_units[index],
+                    Quantity(state.pre_sale_units[index]),
+                    "TLH scheduled-sale give-back",
+                )?
+            };
+            cumulative.checked_sub(allocated)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    cumulative_harvest.copy_from_slice(&remaining);
     Ok(())
 }

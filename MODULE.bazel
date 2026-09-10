@@ -36,6 +36,7 @@ bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "package_metadata", version = "0.0.6")  # Required by image_pins extension (oci_pull repos reference it)
 
 bazel_dep(name = "ducktape_activitywatch", version = "0.1.0", dev_dependency = True)
+bazel_dep(name = "ducktape_cli_proxy_api", version = "0.1.0", dev_dependency = True)
 
 bazel_dep(name = "ducktape_haku", version = "0.1.0")
 
@@ -117,6 +118,11 @@ local_path_override(
 local_path_override(
     module_name = "ducktape_activitywatch",
     path = "third_party/activitywatch",
+)
+
+local_path_override(
+    module_name = "ducktape_cli_proxy_api",
+    path = "third_party/cli_proxy_api",
 )
 
 local_path_override(

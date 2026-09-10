@@ -1,0 +1,43 @@
+# Monthly actor actions
+
+```bash
+bb run //finance/augur/x/monthly_actions:run_bin -- --output-dir /tmp/augur-monthly-actions
+bbr test //finance/augur/x/monthly_actions:test_run
+```
+
+One household has no cash, two public-security shares with $40/unit basis, and a
+$150 bill due in month 0. Two stipulated paths keep the price at $100 or $50 for
+13 months. These are not sampled forecasts or probability estimates. The shares
+were acquired 24 months before the opening; there are no payouts, fees, inflation,
+housing contracts or borrowing. The creditor and tax authority are scripted sinks.
+
+The synthetic jurisdiction charges 10% on long-term gains and 20% on ordinary
+income, with no deductions or capital-loss offset. No prior-year tax means no
+estimated payments; the month-11 assessment becomes a month-12 due claim. This is
+not a statutory tax model or a personal planning recommendation.
+
+`policy.rs` directly authors the single batch callback: observe current cash, lots
+and due claims; if cash cannot cover the claims, request liquidation of every
+public lot; then request each claim payment. This deliberately blunt rule does
+not calculate a minimal sale or retry an unaffordable bill. Empty intervening
+months still receive a batch decision with no actions. The engine supplies current
+prices and applies the shared lot, payment, tax and stopping operations.
+
+At $100, the sale realizes $200 proceeds and $120 long-term gain. The bill uses
+$150, and the later $12 tax claim leaves $38. At $50, the sale realizes $100; the
+bill payment rejects and stops that path. Its sale receipt, realized gain and
+$100 cash remain. The other path continues; no callback runs again for the stopped
+path. No action sorting or automatic funding occurs in execution.
+
+The new output directory retains `execution-input.json` with all assumptions and
+`outcomes.json` with each original path's ordered action receipts, stop reason and
+canonical forensic financial output. Amounts are USD cents. Add `--rollout 1`
+for selected replay, or `--rollout 1 --rollout 0` to reorder the same paths.
+The tests invoke the documented CLI and check its emitted financial outcomes,
+then compare reordered and selected replay through the same authoring function.
+All inputs are generated locally; the tests need no live service or evidence data.
+
+Input/output transport uses the shared
+[native invocation helpers](../../rust/docs/execution_boundary.md#native-experiment-invocation).
+This is a compiled Rust batch-policy consumer, not a Python callback bridge or a
+new experiment framework.

@@ -38,7 +38,7 @@ spec:
         - name: migrate
           # This must remain image-coupled with the API Deployment. A versioned Job name
           # would instead bind rollout state to repository HEAD and duplicate alembic_version.
-          image: git.allegedly.works/ducktape-ci/haku-console:devel-20260907104527-b22e467 # {"$imagepolicy": "flux-system:haku-console"}
+          image: git.allegedly.works/ducktape-ci/haku-console:devel-20260909230407-a464157 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           args: ["migrate"]
           terminationMessagePolicy: FallbackToLogsOnError

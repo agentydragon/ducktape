@@ -5,11 +5,13 @@
 //! remain engine responsibilities. This is a native Rust seam, not a Python callback API.
 
 use super::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-/// Where consumption is paid, with an experiment-chosen prefix for its event IDs.
+pub mod batch;
+
+/// Where consumption is paid to another actor, with an experiment-chosen event prefix.
 /// Requests add to (never replace) the input's obligations.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Spending {
     pub from: AccountRef,
     pub to: AccountRef,
@@ -36,7 +38,7 @@ pub struct Observation<'a> {
 ///
 /// `make_policy(rollout_id)` returns a stateful function of [`Observation`], whose result
 /// is this month's requested nominal spending in input currency quanta. Zero requests
-/// create no obligation. Negative requests and decision errors abort the simulation;
+/// create no action. Negative requests and decision errors abort the simulation;
 /// insufficient funds instead follow the existing per-rollout failure semantics.
 ///
 /// Spending shares the all-or-none funding group of other obligations from its source
@@ -207,7 +209,38 @@ fn validate(input: &ExecutionInput, spending: &Spending) -> Result<AgentHoldings
 pub(super) struct Policy<'a> {
     spending: &'a Spending,
     holdings: &'a AgentHoldings,
-    decide: &'a mut dyn FnMut(Observation) -> Result<Money, SimulationError>,
+    request: Request<'a>,
+}
+
+enum Request<'a> {
+    Decide(&'a mut dyn FnMut(Observation) -> Result<Money, SimulationError>),
+    Supplied(Money),
+}
+
+fn observe<'a>(
+    holdings: &'a AgentHoldings,
+    input: &'a ExecutionInput,
+    rollout: u32,
+    month: u32,
+    books: observations::Books<'a>,
+) -> Result<Observation<'a>, SimulationError> {
+    let books = observations::ActorBooks {
+        scope: holdings,
+        books,
+        input,
+        rollout,
+        month,
+    };
+    Ok(Observation {
+        month,
+        cash: books.cash()?,
+        public_holdings: books.public_value()?,
+        price_level: Factor::new(
+            series_value(input, "inflation", rollout, month)?,
+            series_value(input, "inflation", rollout, 0)?,
+        ),
+        books,
+    })
 }
 
 impl<'a> Policy<'a> {
@@ -219,34 +252,23 @@ impl<'a> Policy<'a> {
         Self {
             spending,
             holdings,
-            decide,
+            request: Request::Decide(decide),
         }
     }
 
-    pub(super) fn obligation(
+    pub(super) fn consumption(
         &mut self,
         input: &ExecutionInput,
         rollout: u32,
         month: u32,
         books: observations::Books<'_>,
-    ) -> Result<Option<ActiveObligation>, SimulationError> {
-        let books = observations::ActorBooks {
-            scope: self.holdings,
-            books,
-            input,
-            rollout,
-            month,
+    ) -> Result<Option<payments::Consume>, SimulationError> {
+        let amount_due = match &mut self.request {
+            Request::Decide(decide) => {
+                decide(observe(self.holdings, input, rollout, month, books)?)?
+            }
+            Request::Supplied(amount) => *amount,
         };
-        let amount_due = (self.decide)(Observation {
-            month,
-            cash: books.cash()?,
-            public_holdings: books.public_value()?,
-            price_level: Factor::new(
-                series_value(input, "inflation", rollout, month)?,
-                series_value(input, "inflation", rollout, 0)?,
-            ),
-            books,
-        })?;
         let cause_id = format!("{}_m{month}", self.spending.cause_id);
         if amount_due.0 < 0 {
             return Err(SimulationError::InvalidAmount {
@@ -255,13 +277,13 @@ impl<'a> Policy<'a> {
                 amount: amount_due.0,
             });
         }
-        Ok((amount_due.0 > 0).then(|| ActiveObligation {
+        Ok((amount_due.0 > 0).then(|| payments::Consume {
+            request_id: 0,
             cause_id,
-            obligation_type: "cash_spend".into(),
+            component_id: self.spending.cause_id.clone(),
             from: self.spending.from.clone(),
             to: self.spending.to.clone(),
-            amount_due,
-            effect: ObligationEffect::None,
+            amount: amount_due,
         }))
     }
 }

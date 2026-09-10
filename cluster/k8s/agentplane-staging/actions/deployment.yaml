@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260909111746-27f0b66 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260909230413-a464157 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
           imagePullPolicy: Always
           env: &database-env
             - name: AGENTPLANE_ACTIONS_OAUTH
@@ -87,7 +87,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: actions
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260909111750-27f0b66 # {"$imagepolicy": "flux-system:agentplane-action-service"}
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260909225838-a464157 # {"$imagepolicy": "flux-system:agentplane-action-service"}
           imagePullPolicy: Always
           args:
             - --host=0.0.0.0

@@ -38,6 +38,3 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, fava]]
         # haku-console and the Agentplane app own their own OAuth; haku-ui stays proxied.
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-ui]]
-        # Terraform-managed (tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf), not
-        # a blueprint entry here — see that file's header for why.
-        - !Find [authentik_providers_proxy.proxyprovider, [name, cli-proxy-api-admin]]

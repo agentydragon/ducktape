@@ -31,9 +31,8 @@ The glide changes **targets**, not holdings directly. Cash-band raising or
 investment suppresses drift rebalancing in that month. Cashflow-only execution
 would move toward the target only as cash moves; a target update is not a promise
 to rebalance immediately. Consumption and tax demands are funded before any
-surplus purchase. Positive-only weights currently exclude zero-target/full-exit
-strategies; that is an arithmetic limitation, not a requirement of executable
-policy design.
+surplus purchase. Zero targets keep the sleeve sellable, receive no deposits and
+permit full exits under the quiet-band rule; at least one target must be positive.
 
 The output directory contains `execution-input.json`, `experiment.json` and both
 forensic populations (`constant.json`, `glide.json`). Consumption comes from actual

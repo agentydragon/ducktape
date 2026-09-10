@@ -227,6 +227,10 @@
     "haku-runner": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/haku-runner-6c0dd0015070/runner_bin",
       "sha256": "bA3QAVBwhnO544MjxVOpwrbe3BKPkuqYnKj769QUrek="
+    },
+    "skill-ci_latency": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-ce26d1bf34db/ci_latency.skill",
+      "sha256": "zibRvzTbRUZ0hhXNOu5pC5TcnnZIvzkFFxCYVCpIHQo="
     }
   }
 }

@@ -68,12 +68,8 @@ port-forward delivers that callback to the process in the pod. CLIProxyAPI
 writes the Claude auth file, including its refresh token, under `/data/auth`.
 The normal server process watches that directory and then owns future refreshes.
 
-Verify only the file names, never the credential contents:
-
-```bash
-kubectl -n cli-proxy-api exec deploy/cli-proxy-api -- \
-  sh -c 'find /data/auth -maxdepth 1 -type f -printf "%f\\n"'
-```
+Verify the new account appears in the management UI's auth-file list. The packaged
+image is distroless, so shell commands such as `sh` and `find` are unavailable.
 
 The existing SOPS-managed Claude setup token and its egress proxy remain in
 place for the existing Haku Claude runner. AIQuota has no fallback token path;
@@ -95,19 +91,38 @@ plus a `state`; `GET /v0/management/get-auth-status?state=...` polls it; `GET`/`
 provider's redirect). The rest of the management API and the bundled web UI it serves at
 `/management.html` on the same port ride along.
 
-`https://cli-proxy-api-admin.allegedly.works` exposes this — Gateway → Authentik embedded
-outpost (SSO, `agentydragon` only, `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`)
-→ this Service. Authentik does not replace the app's own auth: every management endpoint
-still requires the `cli-proxy-api-management` key (`Authorization: Bearer <key>` or
-`X-Management-Key: <key>`, config `remote-management.secret-key`, wired here via the
-`MANAGEMENT_PASSWORD` env var) underneath. Enabled via `remote-management.allow-remote:
-true` in `config-eso.yaml` — CLIProxyAPI's config format has no narrower scoping for
-remote endpoints, so this lifts the localhost restriction for the whole management
-surface (account pool included), not just the OAuth-login endpoints; the SSO gate in
-front, scoped to the account owner, is the accepted mitigation.
+Open [the management UI](https://cli-proxy-api-admin.allegedly.works/management.html)
+and choose **Sign in with SSO**. The Gateway routes directly to CLIProxyAPI, which
+uses Authentik OIDC and a secure browser session cookie. Both the Authentik
+application policy and the backend subject allowlist restrict access to
+`agentydragon`. No management key needs to be copied into the browser.
 
-The existing `cli-proxy-api.allegedly.works` hostname is unrelated and unchanged — it only
-ever routes unauthenticated `/v1` model traffic.
+The confidential provider and reflected `cli-proxy-api-admin-oidc` Secret are owned
+by `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`. The provider uses
+`sub_mode = "user_id"`, so the backend allowlist contains the owner's numeric
+Authentik ID. Its strict callback is
+`https://cli-proxy-api-admin.allegedly.works/v0/management/callback`.
+
+Sessions last at most one hour or the ID token's remaining lifetime. Restarting the
+single replica revokes them. Logout clears the local session; it does not log the
+browser out of Authentik. Expired sessions offer login again.
+
+`MANAGEMENT_PASSWORD` remains enabled for AIQuota's direct management-key access.
+The existing client key protects model requests, including direct LiteLLM traffic.
+The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
+
+## Patched image
+
+`@ducktape_cli_proxy_api//:image` builds the backend and bundled management UI;
+`//third_party/cli_proxy_api_tests:tests` checks the patches and boots the packaged
+container. Patches live in `third_party/cli_proxy_api/` for eventual upstream
+submission. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks
+its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
+upstream panel updater.
+
+The namespace's `forgejo-images-creds` pull Secret belongs to
+`aiquota/forgejo-images-creds-eso.yaml`. A Forgejo outage prevents uncached replacement
+image pulls but does not interrupt a running process.
 
 ## Secrets
 

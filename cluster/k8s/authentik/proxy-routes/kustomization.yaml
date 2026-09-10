@@ -16,7 +16,6 @@ resources:
   - sdr-httproute.yaml
   - adsb-httproute.yaml
   - fava-httproute.yaml
-  - cli-proxy-api-admin-httproute.yaml
   # haku-console and the Agentplane app own their OAuth and use direct HTTPRoutes in their own
   # namespaces; haku-ui stays proxied.
   - haku-ui-httproute.yaml

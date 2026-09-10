@@ -3,30 +3,6 @@
 
 use super::*;
 
-pub(super) fn record_transfer_income(
-    tax: &mut TaxState,
-    recipient_agent_id: &str,
-    income_category: Option<&IncomeSource>,
-    amount: Money,
-) -> Result<(), SimulationError> {
-    let Some(source) = income_category else {
-        return Ok(());
-    };
-    Ok(tax.income.accrue(recipient_agent_id, source, amount)?)
-}
-
-pub(super) fn record_transfer_deduction(
-    tax: &mut TaxState,
-    payer_agent_id: &str,
-    deduction_category: Option<&str>,
-    amount: Money,
-) -> Result<(), SimulationError> {
-    if deduction_category != Some("ordinary") {
-        return Ok(());
-    }
-    record_ordinary_deduction(tax, payer_agent_id, amount, WIRE_RATE_SCALE)
-}
-
 pub(super) fn record_ordinary_deduction(
     tax: &mut TaxState,
     payer_agent_id: &str,
@@ -40,22 +16,53 @@ pub(super) fn record_ordinary_deduction(
     Ok(tax.income.deduct_from_ordinary(payer_agent_id, deduction)?)
 }
 
+/// Stage only the selected taxpayer's gain fields. Callers can validate a compound
+/// transaction before committing; ordinary accrual uses the same update rule.
+pub(super) struct CapitalGainUpdates<'a> {
+    rows: Vec<(&'a mut TaxFacts, Money, Money)>,
+}
+
+impl<'a> CapitalGainUpdates<'a> {
+    pub(super) fn new(tax: &'a mut TaxState, agent_id: &str) -> Self {
+        Self {
+            rows: tax
+                .facts
+                .iter_mut()
+                .filter(|((taxpayer, _), _)| taxpayer == agent_id)
+                .map(|(_, facts)| {
+                    let short = facts.short_term_gain;
+                    let long = facts.long_term_gain;
+                    (facts, short, long)
+                })
+                .collect(),
+        }
+    }
+
+    pub(super) fn accrue(&mut self, gain: Money, long_term: bool) -> Result<(), SimulationError> {
+        for (_, short, long) in &mut self.rows {
+            let target = if long_term { long } else { short };
+            *target = target.checked_add(gain)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn commit(self) {
+        for (facts, short, long) in self.rows {
+            facts.short_term_gain = short;
+            facts.long_term_gain = long;
+        }
+    }
+}
+
 pub(super) fn record_capital_gain(
     tax: &mut TaxState,
     agent_id: &str,
     gain: Money,
     long_term: bool,
 ) -> Result<(), SimulationError> {
-    for ((taxpayer, _), facts) in &mut tax.facts {
-        if taxpayer != agent_id {
-            continue;
-        }
-        if long_term {
-            facts.long_term_gain = facts.long_term_gain.checked_add(gain)?;
-        } else {
-            facts.short_term_gain = facts.short_term_gain.checked_add(gain)?;
-        }
-    }
+    let mut updates = CapitalGainUpdates::new(tax, agent_id);
+    updates.accrue(gain, long_term)?;
+    updates.commit();
     Ok(())
 }
 
@@ -401,18 +408,17 @@ fn salt_cap_for(policy: &crate::execution::FederalSaltDeductionSpec, year_index:
 }
 
 pub(super) fn book_tax_payment(
-    fixture: &ExecutionInput,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     month: u32,
     cause_id: &str,
-    profile_index: usize,
+    profile: &crate::execution::TaxProfileSpec,
+    from: &AccountRef,
     amount: Money,
 ) -> Result<(), SimulationError> {
     if amount == Money(0) {
         return Ok(());
     }
-    let profile = &fixture.scenario.tax_profiles[profile_index];
     recorder.apply_entry(
         ledger,
         JournalEntry {
@@ -420,7 +426,7 @@ pub(super) fn book_tax_payment(
             cause_id: cause_id.into(),
             postings: vec![
                 Posting {
-                    account: AccountRef::new(&profile.agent_id, &profile.payment_account_id),
+                    account: from.clone(),
                     amount: amount.checked_neg()?,
                 },
                 Posting {

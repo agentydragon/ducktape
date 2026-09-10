@@ -54,6 +54,34 @@ Planned purchases do not create observable loan contracts before origination,
 and future tax assessments do not appear as current liabilities. This review
 still precedes the month's cashflows and claim assembly.
 
+Chosen consumption is distinct from paying a configured claim. Claim payment
+uses the canonical recipient, financial effect and full due amount, with an
+actor-selected declared funding account. Receipts identify the request and its
+claim occurrence or consumption component; duplicate labels do not alias claims.
+Consumption must leave the actor's accounts; own-account transfers are not paid consumption.
+Expected action rejection leaves books unchanged. The current runner retains
+its explicit all-or-none funding-group control; individual payment execution
+does not select an alternative funding strategy or retry a policy.
+
+The scoped household action control accepts one policy function shape: a batch of
+active actor/path observations returns a keyed batch of ordered action lists.
+Original path identities survive selection, reordering and replay; policy memory
+belongs to the caller. A scalar-authored policy can be adapted over this same
+batch interface, not a second engine interface.
+
+Its monthly decision occurs after scheduled cashflows and due-claim assembly.
+Each active path receives exactly one decision per month. Exact sales, purchases,
+transfers, claim payments and chosen consumption execute in the supplied order,
+without automatic funding, allocation, spending cuts or another policy call.
+A rejected action changes none of that action's financial state; successful
+earlier actions remain. Its rollout stops, skipping the remaining actions and
+future decisions. Any still-unpaid due claim is a distinct stop cause after
+execution. Independent paths continue. Invalid batch routing or scenario input
+and unexpected arithmetic/accounting defects are simulator errors, not modeled
+financial rejections. This control is limited to a single decision-making
+household with scripted counterparties and explicitly immediate cash execution;
+it does not establish a general multi-agent scheduler or settlement-delay model.
+
 Native experiments can separately choose monthly allocation targets through a
 rollout-local function for one declared cash-account component. It observes
 opening funding-account cash and sleeve values at current prices, before this
@@ -63,11 +91,16 @@ settlement mechanics execute the target; a function cannot mutate books.
 Selected input rows retain their identities and receive fresh decision state,
 including individual replay. Failed paths receive no further decisions.
 
-Current allocation arithmetic accepts positive relative weights, excluding
-zero-target/full-exit strategies. Cash-band activity suppresses simultaneous
+Allocation accepts nonnegative relative weights with at least one positive target.
+A zero target keeps the sleeve in the sale universe, receives no deposits and
+exits fully on quiet-band rebalancing; omitted sleeves and untargeted accounts
+remain untouched. Cash-band activity suppresses simultaneous
 quiet-band drift rebalancing; changing targets does not guarantee immediate
 realization. This convention is explicit policy behavior, not a correctness
 requirement on future rebalancing strategies.
+
+The house-app funding wire retains its distinct zero-weight exclusion: those
+holdings are omitted from the simulator's selected portfolio, never liquidated.
 
 Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire
@@ -163,9 +196,14 @@ much is sellable. Forced sale and forced-recovery cashout channels
 bypass the voluntary floor and apply directly to the remaining
 position.
 
+A forced-recovery cashout is an exact total for that remaining position, not a
+per-unit quote. Cash received and lot-disposition proceeds conserve that total;
+full liquidation consumes every selected lot's remaining units and basis.
+
 ### Policy types
 
-Policies are first-class typed objects. The current policy vocabulary:
+The configured runner uses typed policy objects. Its current control vocabulary
+is separate from the callable batch action interface described above:
 
 | Policy                    | Inputs                                                       | Action(s) emitted                                                                                          |
 | ------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -192,25 +230,58 @@ reported, and the stopped book is not horizon-terminal wealth. It does not model
 partial payments, grace periods,
 delinquency balances, recovery/cure, or underpayment penalties.
 
+### Cash Transfers
+
+An explicit transfer moves an exact positive amount from the actor's own declared
+cash account to another declared cash account, provided the source already has the
+funds. It does not trigger a sale, loan, partial fill or claim payment. The current
+operation is immediate; it does not introduce delayed settlement or credit terms.
+
+Bare transfer requests cannot assign tax character. Scheduled contract cashflows
+retain their declared income/deduction treatment and use the same cash, income-ledger
+and receipt accounting. Their existing unconditional source-debit convention can
+produce a negative exogenous counterparty balance; it grants no overdraft authority
+to explicit actor requests.
+
+A rejected transfer changes neither cash nor income/deduction rows nor transaction
+records. This is a per-transfer guarantee, not a rollback of earlier successful
+transfers or other monthly events.
+
 ### Asset Acquisition
 
-An agent can buy a dollar amount of a priced asset, creating a tax lot mid-horizon. The
-promises below are about the acquisition itself and hold however the order is raised.
-Target-allocation policies explicitly enable or disable purchases. Each settled purchase
-creates a lot; callers do not budget lot capacity. Policy decisions choose the month and
-amount, while the engine owns lot creation, basis, rounding, and balanced accounting.
-FIFO sales order lots by acquisition month, with lot identity breaking same-month ties.
+Trade execution accepts exact lot sales and exact-quantity purchases in declared holding
+pools. It validates ownership, account/asset identity and available units; it never
+substitutes a different lot. FIFO is the configured callers' selection rule, ordered by
+acquisition month and then lot identity, not an accounting requirement.
+
+Each rejected trade leaves cash, lots, gain facts, harvested-loss deferral and transaction
+records unchanged. Successful sales consume the selected lots' actual remaining basis,
+including every remaining basis quantum when a lot is emptied. Execution owns the balanced
+journal and tax attribution, independent of the rule that selected the trade.
+
+Reduced-form harvested-loss deferral is conserved when lots are sold: realized
+give-back plus remaining deferral equals the opening amount, the remainder is
+nonnegative, and full liquidation clears it exactly. Rounding residuals follow
+the selected lot order and that lot's short-/long-term gain classification. This
+is proportional reduced-form accounting, not statutory per-lot harvesting.
+Splitting the same ordered scheduled-sale sequence within a month preserves its
+give-back and classification; dynamic pool sales retain per-trade proportional
+anchors and can allocate a rounding quantum differently when split.
+
+Target-allocation policies explicitly enable or disable purchases and choose a dollar
+amount to invest. Each settled purchase creates a lot; callers do not budget lot capacity.
+The configured policy chooses units and lot identity while execution owns acquisition
+month, basis, rounding and balanced accounting.
 
 The lot's cost basis is **per-rollout** — it is the price that rollout paid — so gains on
 a purchased lot are measured against what was actually spent rather than against any
 configured constant. Purchases take whole quantity quanta and leave the sub-quantum
 remainder as cash.
 
-Two ordering promises: a purchase settles **after** the month's obligations, so buying
-can never starve an obligation into a failure; and a purchase whose account holds less
-than the ordered amount **buys what the cash covers** rather than failing the rollout,
-with the executed quantity and basis visible on the lot. Cash spent on a purchase is
-credited to the external `rest_of_world` account, so the ledger stays balanced.
+Configured allocation purchases settle **after** the month's obligations and clamp their
+requested units to what the remaining cash covers. The exact-quantity executor itself
+rejects an unaffordable request rather than silently changing it. Cash is credited and
+the acquired asset's basis debited in the same balanced entry.
 
 Private equity cannot be purchased this way: it is marked rather than priced, so there
 is no per-month price to size an order against. Scenarios model PE acquisition as an
@@ -295,7 +366,8 @@ conditioning past values on eventual completion.
 - It is not a portfolio optimizer. Policies are user-specified rules; augur
   reports their consequences, not what optimal policies would be.
 - It does not model agent learning or strategic interaction (game-theoretic
-  best response). Each agent's policy is fixed by scenario configuration.
+  best response). Configured-control parameters are fixed by the scenario;
+  callable batch policies keep experiment-owned memory and decision logic.
 - It currently assumes FIFO lot selection for sale-basis accounting where a
   simulator slice needs concrete cost-basis math. HIFO, specific-identification,
   and average-cost lot selection are future extensions.

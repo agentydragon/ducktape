@@ -94,13 +94,13 @@ def test_a_policy_with_no_sleeves_is_rejected() -> None:
         _policy(sleeves=[])
 
 
-def test_a_zero_weight_is_rejected() -> None:
-    """Weight zero means "in the universe but targeted at nothing", which is not a target —
-    it is the sleeve being absent, and absence is expressed by not naming it. Allowing zero
-    would also put a zero in the water-filling divisor."""
-
+def test_zero_target_remains_in_scope_but_all_zero_targets_are_rejected() -> None:
+    policy = _policy(sleeves=[SleeveTarget(asset=_VTI, weight=0), SleeveTarget(asset=_BND, weight=1)])
+    assert [sleeve.asset for sleeve in policy.sleeves] == [_VTI, _BND]
+    with pytest.raises(ValidationError, match="at least one positive"):
+        _policy(sleeves=[SleeveTarget(asset=_VTI, weight=0), SleeveTarget(asset=_BND, weight=0)])
     with pytest.raises(ValidationError):
-        SleeveTarget(asset=_VTI, weight=0)
+        SleeveTarget(asset=_VTI, weight=-1)
 
 
 def test_a_policy_must_say_how_it_rebalances() -> None:

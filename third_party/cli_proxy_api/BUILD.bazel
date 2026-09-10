@@ -1,0 +1,79 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+alias(
+    name = "server",
+    actual = "@com_github_router_for_me_cliproxyapi_v7//cmd/server",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "management_html",
+    actual = "@cli_proxy_webui//:management_html",
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "frontend_tests",
+    tests = [
+        "@cli_proxy_webui//:session_tests",
+        "@cli_proxy_webui//:typecheck",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":frontend_tests",
+        "@com_github_router_for_me_cliproxyapi_v7//internal/api/handlers/management:oidc_test",
+        "@com_github_router_for_me_cliproxyapi_v7//internal/managementasset:managementasset_test",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "server_files",
+    srcs = [":server"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/CLIProxyAPI",
+    renames = {":server": "CLIProxyAPI"},
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "webui_files",
+    srcs = [":management_html"],
+    prefix = "/CLIProxyAPI/static",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "app_layer",
+    srcs = [
+        ":server_files",
+        ":webui_files",
+    ],
+)
+
+oci_image(
+    name = "image",
+    base = "@cli_proxy_distroless_cc_linux_amd64",
+    entrypoint = ["/CLIProxyAPI/CLIProxyAPI"],
+    env = {
+        "MANAGEMENT_STATIC_PATH": "/CLIProxyAPI/static/management.html",
+        "MANAGEMENT_STATIC_READONLY": "true",
+    },
+    exposed_ports = ["8317/tcp"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":app_layer"],
+    visibility = ["//visibility:public"],
+    workdir = "/CLIProxyAPI",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["cli-proxy-api:local"],
+)
