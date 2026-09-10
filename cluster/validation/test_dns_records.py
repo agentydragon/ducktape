@@ -86,7 +86,6 @@ def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
     ingress_yaml = get_required_path("_main/cluster/k8s/haku/mailbox/app/smtp-ingress.yaml")
     ingress_config = get_required_path("_main/cluster/k8s/haku/mailbox/app/nginx.conf").read_text()
     namespace_yaml = get_required_path("_main/cluster/k8s/haku/mailbox-namespace/namespace.yaml")
-    cilium_values = yaml.safe_load(get_required_path("_main/cluster/terraform/main/cilium-values.yaml").read_text())
 
     expected = _public_kubernetes_node_ips(hosts)
     assert expected, "nebula-mesh.json should contain at least one public Kubernetes node"
@@ -96,8 +95,8 @@ def test_mailbox_smtp_ingress_covers_public_kubernetes_nodes() -> None:
 
     daemonset = _resource(ingress_yaml, "DaemonSet", "haku-mailbox-smtp-ingress")
     pod_spec = daemonset["spec"]["template"]["spec"]
-    gateway_selector = cilium_values["gatewayAPI"]["hostNetwork"]["nodes"]["matchLabels"]
-    assert pod_spec["nodeSelector"] == gateway_selector
+    # SMTP serves the public MX nodes; Gateway also runs on internal clients.
+    assert pod_spec["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
     smtp_container = one(container for container in pod_spec["containers"] if container["name"] == "nginx")
     smtp_port = one(port for port in smtp_container["ports"] if port["name"] == "smtp")
     assert smtp_service_port["targetPort"] == smtp_port["name"]

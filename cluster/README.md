@@ -4,7 +4,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 
 - Deploy: `bazel run //cluster:bootstrap` (single command, automated layered deployment)
 - Machines: Talos on OVH Kimsufi bare metal plus NixOS/Proxmox workers, configured with OpenTofu
-- Ingress: Cilium Gateway API (Envoy hostNetwork on OVH)
+- Ingress: Cilium Gateway API (Envoy hostNetwork on every Cilium node; public DNS points to OVH)
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
 - Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes
   provider mirrors a few secrets cross-namespace. Vault was decommissioned 2026-04-19

@@ -44,8 +44,9 @@ gatewayAPI:
   hostNetwork:
     enabled: true
     nodes:
-      matchLabels:
-        topology.kubernetes.io/region: hil
+      # The Gateway Service needs a local proxy backend on every client node,
+      # including roaming workers when connected. Public DNS remains OVH-only.
+      matchLabels: {}
 
 # Standalone Envoy DaemonSet (separate from cilium-agent) for cleaner lifecycle.
 # NET_ADMIN + SYS_ADMIN required for Cilium datapath integration (BPF).
