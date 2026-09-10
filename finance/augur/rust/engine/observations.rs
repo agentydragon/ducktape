@@ -14,7 +14,7 @@ pub(super) struct Books<'a> {
     pub mortgages: &'a [MortgageState],
     pub tax: &'a TaxState,
     pub tax_liabilities: &'a [TaxLiabilityState],
-    pub tlh_cumulative_harvest: &'a [Money],
+    pub tlh_portfolios: &'a [TlhPortfolioObservation],
 }
 
 /// Information for one actor at the supplied observation/mark month. Only the engine
@@ -152,20 +152,12 @@ impl ActorBooks<'_> {
         })
     }
 
-    /// Reduced-form harvesting keeps basis reductions at account/asset-pool scope,
-    /// separately from individual lot basis. These amounts are not per-lot tax basis.
-    pub fn harvest_adjustments(&self) -> impl Iterator<Item = HarvestAdjustment<'_>> {
-        self.input
-            .scenario
-            .harvest_policies
+    /// Reported managed-portfolio facts; Python owns the underlying cohorts.
+    pub fn tlh_portfolios(&self) -> impl Iterator<Item = &TlhPortfolioObservation> {
+        self.books
+            .tlh_portfolios
             .iter()
-            .zip(self.books.tlh_cumulative_harvest)
-            .filter(|(policy, _)| policy.owner_agent_id == self.agent_id())
-            .map(|(policy, amount)| HarvestAdjustment {
-                account_id: &policy.account_id,
-                asset_id: &policy.asset_id,
-                cumulative_harvest: *amount,
-            })
+            .filter(|portfolio| portfolio.owner_agent_id == self.agent_id())
     }
 }
 
@@ -205,7 +197,7 @@ impl PublicPosition<'_> {
         self.lot.spec.quantity_scale
     }
 
-    /// Remaining lot-book basis, before the pool-level `harvest_adjustments`.
+    /// Remaining exact tax basis of this ordinary holding.
     pub fn book_basis(&self) -> Money {
         self.lot.basis_remaining
     }
@@ -213,12 +205,6 @@ impl PublicPosition<'_> {
     pub fn value(&self) -> Result<Money, ArithmeticError> {
         self.lot.view().value(self.price)
     }
-}
-
-pub struct HarvestAdjustment<'a> {
-    pub account_id: &'a str,
-    pub asset_id: &'a str,
-    pub cumulative_harvest: Money,
 }
 
 /// An assembled, unpaid demand. `due_month` is the current monthly settlement deadline,

@@ -405,7 +405,7 @@ pub(super) fn month_output(
     mortgages: &[MortgageState],
     tax_liabilities: &[TaxLiabilityState],
     tax: &TaxState,
-    tlh_cumulative_harvest: &[Money],
+    tlh_portfolios: &[TlhPortfolioObservation],
     failed: bool,
 ) -> Result<MonthOutput, SimulationError> {
     Ok(MonthOutput {
@@ -423,7 +423,7 @@ pub(super) fn month_output(
         mortgages: mortgages.to_vec(),
         tax_liabilities: tax_liabilities.to_vec(),
         capital_gains: capital_gain_states(fixture, &tax.facts),
-        tlh_cumulative_harvest: tlh_cumulative_harvest.to_vec(),
+        tlh_portfolios: tlh_portfolios.to_vec(),
         failed,
     })
 }

@@ -9,7 +9,6 @@ struct Books {
     recorder: Recorder,
     lots: Vec<LotState>,
     tax: TaxState,
-    deferred: Vec<Money>,
 }
 
 impl Books {
@@ -37,16 +36,6 @@ impl Books {
             series_id: "security:fund".into(),
             snapshots: 2,
             values: vec![10, 10],
-        });
-        input.scenario.harvest_policies.push(HarvestPolicySpec {
-            owner_agent_id: "alice".into(),
-            account_id: "brokerage".into(),
-            asset_id: "fund".into(),
-            peak_annual_yield_ppb: WIRE_RATE_SCALE / 100,
-            floor_annual_yield_ppb: 0,
-            maturity_decay_exponent_ppb: WIRE_RATE_SCALE,
-            drawdown_sensitivity_ppb: 0,
-            short_term_fraction_ppb: WIRE_RATE_SCALE,
         });
         ValidatedInput::new(&input).unwrap();
         let lots = input
@@ -103,7 +92,6 @@ impl Books {
             recorder: Recorder::new(CaptureMode::Forensic),
             lots,
             tax,
-            deferred: vec![Money(0)],
         }
     }
 
@@ -122,7 +110,6 @@ impl Books {
             &mut self.recorder,
             &mut self.lots,
             &mut self.tax,
-            SaleTlh::Pool(&mut self.deferred),
             0,
             proceeds,
             request,
@@ -169,143 +156,6 @@ fn purchase() -> PurchaseRequest {
     }
 }
 
-fn scheduled_sell(
-    books: &mut Books,
-    state: &mut ScheduledTlhGiveBack,
-    units: i64,
-) -> Result<(), SimulationError> {
-    execute_sale(
-        &books.input,
-        0,
-        &mut books.ledger,
-        &mut books.recorder,
-        &mut books.lots,
-        &mut books.tax,
-        state,
-        &ScheduledSaleSpec {
-            month: 0,
-            cause_id: "scheduled-sale".into(),
-            agent_id: "alice".into(),
-            account_id: "brokerage".into(),
-            asset_id: "fund".into(),
-            units: Quantity(units),
-            proceeds_account_id: "checking".into(),
-        },
-    )
-}
-
-#[test]
-fn odd_tlh_quantum_follows_exact_lot_order_and_its_gain_character() {
-    for (first, second, short_term, long_term) in [("old", "new", -22, -6), ("new", "old", -21, -7)]
-    {
-        let mut books = Books::new();
-        books.deferred[0] = Money(1);
-        let request = SaleRequest {
-            lots: vec![
-                sale(first, 10).lots.remove(0),
-                sale(second, 10).lots.remove(0),
-            ],
-            ..sale(first, 10)
-        };
-        books.sell(&request, 10).unwrap();
-        // Economic gains are -7 long / -22 short. Half-up allocates the sole
-        // deferral quantum to the first of the two equal-sized selected lots.
-        for facts in books.tax.facts.values() {
-            assert_eq!(facts.short_term_gain, Money(short_term));
-            assert_eq!(facts.long_term_gain, Money(long_term));
-            assert_eq!(facts.short_term_gain.0 + facts.long_term_gain.0, -28);
-        }
-        assert_eq!(books.deferred, [Money(0)]);
-        assert!(
-            books
-                .lots
-                .iter()
-                .all(|lot| lot.units_remaining == Quantity(0))
-        );
-        assert!(books.lots.iter().all(|lot| lot.basis_remaining == Money(0)));
-        assert_eq!(books.recorder.dispositions[0].lot_id, first);
-        assert_eq!(
-            books
-                .ledger
-                .balance(&AccountRef::new("alice", "checking"))
-                .unwrap(),
-            Money(120)
-        );
-    }
-}
-
-#[test]
-fn splitting_scheduled_sales_preserves_tlh_character_and_full_liquidation() {
-    for chunks in [vec![20], vec![10, 10], vec![5, 5, 10], vec![3, 4, 6, 7]] {
-        let mut books = Books::new();
-        books.deferred[0] = Money(1);
-        let mut state =
-            scheduled_tlh_give_back_state(&books.input, &books.lots, &books.deferred).unwrap();
-        for units in chunks {
-            scheduled_sell(&mut books, &mut state, units).unwrap();
-        }
-        apply_scheduled_tlh_give_back(&state, &mut books.deferred).unwrap();
-        for facts in books.tax.facts.values() {
-            assert_eq!(facts.short_term_gain, Money(-22));
-            assert_eq!(facts.long_term_gain, Money(-6));
-        }
-        assert_eq!(books.deferred, [Money(0)]);
-        assert!(books.lots.iter().all(|lot| lot.basis_remaining == Money(0)));
-        assert_eq!(
-            books
-                .recorder
-                .dispositions
-                .iter()
-                .map(|item| item.proceeds.0)
-                .sum::<i64>(),
-            20
-        );
-        assert_eq!(
-            books
-                .recorder
-                .dispositions
-                .iter()
-                .map(|item| item.basis.0)
-                .sum::<i64>(),
-            49
-        );
-    }
-}
-
-#[test]
-fn dynamic_pool_fragments_keep_their_per_trade_anchor_but_clear_all_deferral() {
-    let mut books = Books::new();
-    books.deferred[0] = Money(1);
-    for (lot, units) in [("old", 5), ("old", 5), ("new", 10)] {
-        books.sell(&sale(lot, units), 10).unwrap();
-        assert!(books.deferred[0].0 >= 0);
-    }
-    // 1/4 and then 1/3 round to zero, leaving the final whole quantum for the
-    // short-term lot. Scheduled sales instead retain the month-opening 1/20 anchor.
-    for facts in books.tax.facts.values() {
-        assert_eq!(facts.short_term_gain, Money(-21));
-        assert_eq!(facts.long_term_gain, Money(-7));
-    }
-    assert_eq!(books.deferred, [Money(0)]);
-}
-
-#[test]
-fn rejected_scheduled_fragment_preserves_successful_prefix_and_rounding_cursor() {
-    let mut books = Books::new();
-    books.deferred[0] = Money(1);
-    let mut state =
-        scheduled_tlh_give_back_state(&books.input, &books.lots, &books.deferred).unwrap();
-    scheduled_sell(&mut books, &mut state, 5).unwrap();
-    assert_eq!(books.recorder.dispositions.len(), 1);
-    books.recorder.journal_entry_count = u64::MAX;
-    let before = format!("{books:?}{state:?}");
-    // This next fragment would cross the half-quantum threshold, but cannot post.
-    assert!(scheduled_sell(&mut books, &mut state, 5).is_err());
-    assert_eq!(format!("{books:?}{state:?}"), before);
-    apply_scheduled_tlh_give_back(&state, &mut books.deferred).unwrap();
-    assert_eq!(books.deferred, [Money(1)]);
-}
-
 #[test]
 fn exact_selection_is_not_fifo_and_full_lot_basis_reconciles() {
     let mut books = Books::new();
@@ -340,9 +190,8 @@ fn exact_selection_is_not_fifo_and_full_lot_basis_reconciles() {
 }
 
 #[test]
-fn total_proceeds_use_the_same_basis_tax_and_tlh_commit() {
+fn total_proceeds_use_the_same_basis_and_tax_commit() {
     let mut books = Books::new();
-    books.deferred[0] = Money(20);
     let request = SaleRequest {
         lots: vec![
             sale("old", 10).lots.remove(0),
@@ -360,7 +209,6 @@ fn total_proceeds_use_the_same_basis_tax_and_tlh_commit() {
             .unwrap(),
         Money(102)
     );
-    assert_eq!(books.deferred[0], Money(0));
     assert!(
         books
             .lots
@@ -379,20 +227,17 @@ fn total_proceeds_use_the_same_basis_tax_and_tlh_commit() {
             (Money(32), Money(1), Money(-31))
         ]
     );
-    // The 20 deferred quanta are given back as 10 per equally sized lot; the booked
-    // gains include give-back while disposition gains retain actual proceeds minus basis.
     for facts in books.tax.facts.values() {
-        assert_eq!(facts.long_term_gain, Money(-6));
-        assert_eq!(facts.short_term_gain, Money(-21));
+        assert_eq!(facts.long_term_gain, Money(-16));
+        assert_eq!(facts.short_term_gain, Money(-31));
     }
     assert_eq!(books.ledger.trial_balance(), 0);
 }
 
 #[test]
-fn rejected_total_cashouts_leave_lots_cash_tax_tlh_and_capture_unchanged() {
+fn rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged() {
     for case in 0..8 {
         let mut books = Books::new();
-        books.deferred[0] = Money(20);
         let mut request = SaleRequest {
             lots: vec![
                 sale("old", 10).lots.remove(0),
@@ -439,13 +284,8 @@ fn fifo_scheduled_sale_matches_the_same_explicit_selection() {
         lots: selected,
         ..sale("old", 13)
     };
-    explicit.deferred[0] = Money(20);
     explicit.sell(&request, 10).unwrap();
     let mut scheduled = Books::new();
-    scheduled.deferred[0] = Money(20);
-    let mut tlh =
-        scheduled_tlh_give_back_state(&scheduled.input, &scheduled.lots, &scheduled.deferred)
-            .unwrap();
     execute_sale(
         &scheduled.input,
         0,
@@ -453,7 +293,6 @@ fn fifo_scheduled_sale_matches_the_same_explicit_selection() {
         &mut scheduled.recorder,
         &mut scheduled.lots,
         &mut scheduled.tax,
-        &mut tlh,
         &ScheduledSaleSpec {
             month: 0,
             cause_id: "sale".into(),
@@ -465,7 +304,6 @@ fn fifo_scheduled_sale_matches_the_same_explicit_selection() {
         },
     )
     .unwrap();
-    apply_scheduled_tlh_give_back(&tlh, &mut scheduled.deferred).unwrap();
     assert_eq!(format!("{scheduled:?}"), format!("{explicit:?}"));
 }
 
@@ -473,7 +311,6 @@ fn fifo_scheduled_sale_matches_the_same_explicit_selection() {
 fn invalid_exact_lot_requests_leave_every_book_unchanged() {
     for case in 0..10 {
         let mut books = Books::new();
-        books.deferred[0] = Money(20);
         let mut request = sale("old", 3);
         match case {
             0 => request.lots[0].lot_id = "absent".into(),
@@ -498,7 +335,6 @@ fn invalid_exact_lot_requests_leave_every_book_unchanged() {
 fn overflow_after_first_lot_or_jurisdiction_cannot_partially_commit() {
     for case in 0..5 {
         let mut books = Books::new();
-        books.deferred[0] = Money(20);
         let mut request = sale("old", 10);
         request.lots.push(sale("new", 10).lots.remove(0));
         match case {
@@ -545,13 +381,10 @@ fn overflow_after_first_lot_or_jurisdiction_cannot_partially_commit() {
 }
 
 #[test]
-fn rejected_scheduled_sale_does_not_consume_its_tlh_allowance() {
+fn rejected_scheduled_sale_preserves_every_book() {
     let mut books = Books::new();
-    books.deferred[0] = Money(20);
     books.recorder.journal_entry_count = u64::MAX;
-    let mut tlh =
-        scheduled_tlh_give_back_state(&books.input, &books.lots, &books.deferred).unwrap();
-    let before = format!("{books:?}{tlh:?}");
+    let before = format!("{books:?}");
     let result = execute_sale(
         &books.input,
         0,
@@ -559,7 +392,6 @@ fn rejected_scheduled_sale_does_not_consume_its_tlh_allowance() {
         &mut books.recorder,
         &mut books.lots,
         &mut books.tax,
-        &mut tlh,
         &ScheduledSaleSpec {
             month: 0,
             cause_id: "sale".into(),
@@ -571,7 +403,7 @@ fn rejected_scheduled_sale_does_not_consume_its_tlh_allowance() {
         },
     );
     assert!(result.is_err());
-    assert_eq!(format!("{books:?}{tlh:?}"), before);
+    assert_eq!(format!("{books:?}"), before);
 }
 
 #[test]

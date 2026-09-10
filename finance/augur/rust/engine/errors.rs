@@ -341,8 +341,8 @@ pub enum SimulationError {
     },
     #[error("private-equity issuer {issuer_id:?} is held by multiple agents")]
     MixedPrivateEquityOwners { issuer_id: String },
-    #[error("harvest policy {policy_index} has invalid configuration")]
-    InvalidHarvestPolicy { policy_index: usize },
+    #[error("invalid component financial effects: {reason}")]
+    InvalidComponentEffect { reason: String },
     #[error(transparent)]
     Allocation(#[from] AllocationError),
     #[error(transparent)]

@@ -29,6 +29,16 @@ pub(super) fn canonical_lot_asset_id(asset_id: &str) -> String {
     }
 }
 
+pub(super) fn distribution_slice(
+    total: Money,
+    fraction_ppb: i64,
+) -> Result<Money, ArithmeticError> {
+    total.scaled_by(
+        Factor::parts_per_billion(fraction_ppb),
+        "security distribution tax slice",
+    )
+}
+
 pub(super) fn execute_distributions(
     fixture: &ExecutionInput,
     rollout_id: u32,
@@ -39,6 +49,13 @@ pub(super) fn execute_distributions(
     month: u32,
 ) -> Result<(), SimulationError> {
     for distribution in &fixture.scenario.distributions {
+        if fixture.scenario.tlh_portfolios.iter().any(|portfolio| {
+            portfolio.owner_agent_id == distribution.agent_id
+                && portfolio.account_id == distribution.holding_account_id
+                && portfolio.asset_id == distribution.asset_id
+        }) {
+            continue; // Python-owned exposure supplies the payout through component_distribution.
+        }
         let pool_lots: Vec<_> = lots
             .iter()
             .filter(|lot| {
@@ -68,10 +85,7 @@ pub(super) fn execute_distributions(
         let total_amount = PerUnitRate(per_unit)
             .times(Units::new(Quantity(units), scale), "security distribution")?;
         for (slice_index, slice) in distribution.tax_character.iter().enumerate() {
-            let amount = total_amount.scaled_by(
-                Factor::parts_per_billion(slice.fraction_ppb),
-                "security distribution tax slice",
-            )?;
+            let amount = distribution_slice(total_amount, slice.fraction_ppb)?;
             let cause_id = format!(
                 "distribution:{}:{}:s{slice_index}:m{month}",
                 distribution.agent_id, distribution.asset_id
@@ -101,7 +115,7 @@ pub(super) fn execute_distributions(
                 })?,
                 fraction_ppb: slice.fraction_ppb,
                 issuer_jurisdiction_id: slice.issuer_jurisdiction_id.clone(),
-                units: Quantity(units),
+                units: Some(Quantity(units)),
                 amount,
             })?;
         }
@@ -118,7 +132,6 @@ pub(super) fn execute_sale(
     recorder: &mut Recorder,
     lots: &mut [LotState],
     tax: &mut TaxState,
-    scheduled_tlh: &mut ScheduledTlhGiveBack,
     sale: &crate::execution::ScheduledSaleSpec,
 ) -> Result<(), SimulationError> {
     let candidates: Vec<usize> = lots
@@ -159,7 +172,6 @@ pub(super) fn execute_sale(
         recorder,
         lots,
         tax,
-        SaleTlh::Scheduled(scheduled_tlh),
         sale.month,
         SaleProceeds::Quoted(price),
         &request,

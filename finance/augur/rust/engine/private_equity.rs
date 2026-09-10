@@ -21,7 +21,7 @@ pub(super) fn execute_private_equity(
     recorder: &mut Recorder,
     lots: &mut [LotState],
     tax: &mut TaxState,
-    tlh_cumulative_harvest: &mut [Money],
+    tlh_portfolios: &[TlhPortfolioObservation],
     month: u32,
 ) -> Result<(), SimulationError> {
     let issuers: BTreeSet<String> = lots
@@ -123,7 +123,6 @@ pub(super) fn execute_private_equity(
                 recorder,
                 lots,
                 tax,
-                SaleTlh::Pool(tlh_cumulative_harvest),
                 month,
                 SaleProceeds::Total(Money(forced_recovery)),
                 &request,
@@ -153,7 +152,6 @@ pub(super) fn execute_private_equity(
                     recorder,
                     lots,
                     tax,
-                    SaleTlh::Pool(tlh_cumulative_harvest),
                     month,
                     SaleProceeds::Quoted(PerUnit(mark)),
                     &request,
@@ -167,6 +165,7 @@ pub(super) fn execute_private_equity(
             rollout_id,
             ledger,
             lots,
+            tlh_portfolios,
             &owner_agent_id,
             month,
         )?;
@@ -246,7 +245,6 @@ pub(super) fn execute_private_equity(
                 recorder,
                 lots,
                 tax,
-                SaleTlh::Pool(tlh_cumulative_harvest),
                 month,
                 SaleProceeds::Quoted(PerUnit(mark)),
                 &request,
@@ -327,6 +325,7 @@ fn private_equity_liquid_net_worth(
     rollout_id: u32,
     ledger: &Ledger,
     lots: &[LotState],
+    tlh_portfolios: &[TlhPortfolioObservation],
     owner_agent_id: &str,
     month: u32,
 ) -> Result<Money, SimulationError> {
@@ -357,6 +356,12 @@ fn private_equity_liquid_net_worth(
             Units::new(lot.units_remaining, lot.spec.quantity_scale),
             "private-equity liquid lot value",
         )?)?;
+    }
+    for portfolio in tlh_portfolios
+        .iter()
+        .filter(|item| item.owner_agent_id == owner_agent_id)
+    {
+        total = total.checked_add(portfolio.value)?;
     }
     Ok(total)
 }

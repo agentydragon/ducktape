@@ -9,7 +9,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::execution::{BondState, ExecutionInput, MortgageState, PropertyState};
+use crate::execution::{
+    BondState, ExecutionInput, MortgageState, PropertyState, TlhPortfolioObservation,
+};
 use crate::holdings::{AgentHoldings, HoldingsError, LotView};
 use crate::ledger::{Ledger, LedgerError};
 use crate::money::{Money, PerUnit};
@@ -148,6 +150,7 @@ fn series_at(
 pub struct SnapshotState<'a> {
     pub ledger: &'a Ledger,
     pub lots: &'a [LotView<'a>],
+    pub tlh_portfolios: &'a [TlhPortfolioObservation],
     pub properties: &'a [PropertyState],
     pub mortgages: &'a [MortgageState],
     /// This snapshot's bond states, already CPI-indexed and zeroed for matured bonds
@@ -175,6 +178,14 @@ pub fn snapshot_metrics(
         .holdings
         .public_value(fixture, state.lots.iter().copied(), rollout, snapshot)?
         .0;
+
+    for portfolio in state
+        .tlh_portfolios
+        .iter()
+        .filter(|portfolio| portfolio.owner_agent_id == inputs.primary_agent_id())
+    {
+        metrics[HOLDING] = Money(metrics[HOLDING]).checked_add(portfolio.value)?.0;
+    }
 
     for lot in state.lots {
         if lot.agent_id != inputs.primary_agent_id() || lot.units_remaining == 0 {

@@ -5,6 +5,9 @@ use super::*;
 use serde::Serialize;
 
 pub mod outcomes;
+mod phases;
+pub use super::target_allocation::{AllocationPlan, PendingAllocationBuy};
+pub use phases::PathStatus;
 
 /// Exact immediate-cash requests in declared public pools/assets, including empty pools.
 /// Sequence order is execution order, not priority by type.
@@ -16,6 +19,9 @@ pub enum Action {
     Transfer(transfers::TransferRequest),
     PayClaim(payments::PayClaim),
     Consume(payments::Consume),
+    Contribute(components::CashRequest),
+    Withdraw(components::CashRequest),
+    Liquidate(components::LiquidateRequest),
 }
 
 impl Action {
@@ -26,6 +32,8 @@ impl Action {
             Self::Transfer(request) => &request.cause_id,
             Self::PayClaim(request) => &request.cause_id,
             Self::Consume(request) => &request.cause_id,
+            Self::Contribute(request) | Self::Withdraw(request) => &request.cause_id,
+            Self::Liquidate(request) => &request.cause_id,
         }
     }
 }
@@ -178,8 +186,9 @@ struct Path {
     state: RolloutState,
     previous_receipts: Vec<Receipt>,
     trace_receipts: Option<Vec<Receipt>>,
-    capture: outcomes::Capture,
+    capture: Option<outcomes::Capture>,
     stop: Option<Stop>,
+    product_shortfall: Money,
 }
 
 enum Phase {
@@ -196,8 +205,12 @@ enum Phase {
 /// Routing/programming errors abort the session; a financial rejection stops its path.
 pub struct Session {
     input: ExecutionInput,
-    holdings: AgentHoldings,
+    holdings: Option<AgentHoldings>,
     phase: Phase,
+    configured: bool,
+    product: Option<ProductInputs>,
+    scopes: BTreeMap<String, AgentHoldings>,
+    action_phase: phases::ActionPhase,
 }
 
 impl Session {
@@ -207,8 +220,57 @@ impl Session {
         rollout_ids: &[u32],
         capture_mode: CaptureMode,
     ) -> Result<Self, SimulationError> {
-        validate(&input, actor)?;
-        let holdings = AgentHoldings::resolve(&input, actor)?;
+        Self::with_options(
+            input,
+            actor,
+            rollout_ids,
+            capture_mode,
+            false,
+            None,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_options(
+        input: ExecutionInput,
+        actor: &str,
+        rollout_ids: &[u32],
+        capture_mode: CaptureMode,
+        configured: bool,
+        product_actor: Option<&str>,
+        component_observations: Vec<(u32, Vec<TlhPortfolioObservation>)>,
+    ) -> Result<Self, SimulationError> {
+        if configured {
+            ValidatedInput::new(&input)?;
+        } else {
+            validate(&input, actor)?;
+        }
+        let holdings = if configured {
+            None
+        } else {
+            Some(AgentHoldings::resolve(&input, actor)?)
+        };
+        let product = product_actor
+            .map(|actor| ProductInputs::resolve(&input, actor))
+            .transpose()?;
+        let scopes = input
+            .scenario
+            .accounts
+            .iter()
+            .map(|account| &account.account.agent_id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|actor| Ok((actor.clone(), AgentHoldings::resolve(&input, actor)?)))
+            .collect::<Result<BTreeMap<_, _>, SimulationError>>()?;
+        let component_ids: BTreeSet<_> = component_observations.iter().map(|(id, _)| *id).collect();
+        if component_ids.len() != component_observations.len()
+            || (!component_observations.is_empty()
+                && component_ids != rollout_ids.iter().copied().collect())
+        {
+            return Err(SimulationError::InvalidRolloutSelection);
+        }
+        let component_observations: BTreeMap<_, _> = component_observations.into_iter().collect();
         let selected: BTreeSet<_> = rollout_ids.iter().copied().collect();
         if selected.is_empty()
             || selected.len() != rollout_ids.len()
@@ -219,16 +281,31 @@ impl Session {
         let paths = rollout_ids
             .par_iter()
             .map(|&rollout_id| {
-                let mut state = RolloutState::new(&input, rollout_id, capture_mode, None)?;
-                state.recorder.capture_taxes = true;
-                let mut capture = outcomes::Capture::new(&input, &holdings);
-                capture.snapshot(&input, &holdings, &state)?;
+                let mut state =
+                    RolloutState::new(&input, rollout_id, capture_mode, product.as_ref())?;
+                components::initialize(
+                    &input,
+                    &mut state,
+                    component_observations
+                        .get(&rollout_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    product.as_ref(),
+                )?;
+                state.recorder.capture_taxes = !configured;
+                let mut capture = (!configured).then(|| {
+                    outcomes::Capture::new(&input, holdings.as_ref().expect("actor scope"))
+                });
+                if let Some(capture) = &mut capture {
+                    capture.snapshot(&input, holdings.as_ref().expect("actor scope"), &state)?;
+                }
                 Ok(Path {
                     state,
                     previous_receipts: Vec::new(),
-                    trace_receipts: capture_mode.captures_output().then(Vec::new),
+                    trace_receipts: (!configured && capture_mode.captures_output()).then(Vec::new),
                     capture,
                     stop: None,
+                    product_shortfall: Money(0),
                 })
             })
             .collect::<Result<_, SimulationError>>()?;
@@ -236,6 +313,10 @@ impl Session {
             input,
             holdings,
             phase: Phase::New(paths),
+            configured,
+            product,
+            scopes,
+            action_phase: phases::ActionPhase::Awaiting,
         })
     }
 
@@ -258,16 +339,56 @@ impl Session {
                 if path.state.is_finished(&self.input) {
                     Ok(None)
                 } else {
-                    path.state.prepare_month(&self.input).map(Some)
+                    if self.configured {
+                        path.state.prepare_month_events(&self.input)?;
+                        claims::assemble(
+                            &self.input,
+                            path.state.rollout_id,
+                            path.state.month,
+                            &path.state.properties,
+                            &path.state.mortgages,
+                            &path.state.tax_liabilities,
+                        )
+                        .map(Some)
+                    } else {
+                        path.state.prepare_month(&self.input).map(Some)
+                    }
                 }
             })
             .collect::<Result<Vec<_>, SimulationError>>()?;
         self.phase = Phase::Pending { paths, claims };
+        self.action_phase = phases::ActionPhase::Awaiting;
         Ok(())
     }
 
     /// Borrow only current, scoped facts. Reads never reapply scheduled cashflows.
     pub fn decisions(&self) -> Result<Vec<Decision<'_>>, SimulationError> {
+        self.decisions_for(
+            self.holdings
+                .as_ref()
+                .ok_or(SimulationError::InvalidActorSessionState)?
+                .agent_id(),
+        )
+    }
+
+    pub fn decisions_for(&self, actor: &str) -> Result<Vec<Decision<'_>>, SimulationError> {
+        if matches!(self.phase, Phase::Finished(_)) {
+            return Ok(Vec::new());
+        }
+        if !self.configured
+            && actor
+                != self
+                    .holdings
+                    .as_ref()
+                    .ok_or(SimulationError::InvalidActorSessionState)?
+                    .agent_id()
+        {
+            return Err(SimulationError::InvalidActorSessionState);
+        }
+        let scope = self
+            .scopes
+            .get(actor)
+            .ok_or(SimulationError::InvalidActorSessionState)?;
         let Phase::Pending { paths, claims } = &self.phase else {
             return Err(SimulationError::InvalidActorSessionState);
         };
@@ -279,14 +400,14 @@ impl Session {
                     rollout_id: path.state.rollout_id,
                     observation: Observation {
                         books: observations::ActorBooks {
-                            scope: &self.holdings,
+                            scope,
                             books: observations::Books {
                                 ledger: &path.state.ledger,
                                 lots: &path.state.lots,
                                 mortgages: &path.state.mortgages,
                                 tax: &path.state.tax,
                                 tax_liabilities: &path.state.tax_liabilities,
-                                tlh_cumulative_harvest: &path.state.tlh_cumulative_harvest,
+                                tlh_portfolios: &path.state.tlh_portfolios,
                             },
                             input: &self.input,
                             rollout: path.state.rollout_id,
@@ -300,45 +421,25 @@ impl Session {
             .collect())
     }
 
-    /// Execute the complete pending batch in caller action order, then prepare next month.
-    /// Validate every routing key before executing any path; no corrected resubmission.
+    /// Test harness only; production month ownership is Python.
+    #[cfg(test)]
     pub fn advance(&mut self, responses: Vec<DecisionActions>) -> Result<(), SimulationError> {
-        let Phase::Pending { mut paths, claims } =
-            std::mem::replace(&mut self.phase, Phase::Closed)
-        else {
-            return Err(SimulationError::InvalidActorSessionState);
-        };
-        let expected: BTreeSet<_> = paths
-            .iter()
-            .zip(&claims)
-            .filter(|(_, claims)| claims.is_some())
-            .map(|(path, _)| (path.state.rollout_id, path.state.month))
-            .collect();
-        let actual: BTreeSet<_> = responses
-            .iter()
-            .map(|response| (response.rollout_id, response.month))
-            .collect();
-        if actual != expected || responses.len() != expected.len() {
-            return Err(SimulationError::InvalidActorResponses);
-        }
-        let mut by_id: BTreeMap<_, _> = responses
-            .into_iter()
-            .map(|response| (response.rollout_id, response.actions))
-            .collect();
-        let routed: Vec<_> = paths
-            .iter()
-            .map(|path| by_id.remove(&path.state.rollout_id))
-            .collect();
-        paths.par_iter_mut().zip(claims).zip(routed).try_for_each(
-            |((path, claims), actions)| match (claims, actions) {
-                (Some(claims), Some(actions)) => {
-                    advance(path, &self.input, &self.holdings, claims, actions)
-                }
-                (None, None) => Ok(()),
-                _ => unreachable!("validated active decision routing"),
-            },
+        self.begin_actions(
+            responses
+                .iter()
+                .map(|response| (response.rollout_id, response.month))
+                .collect(),
         )?;
-        self.prepare(paths)
+        for response in responses {
+            for action in response.actions {
+                let receipt = self.apply(response.rollout_id, action)?;
+                if matches!(receipt.outcome, Outcome::Rejected(_)) {
+                    break;
+                }
+            }
+        }
+        self.end_actions()?;
+        self.close_month()
     }
 
     pub fn is_finished(&self) -> bool {
@@ -353,12 +454,18 @@ impl Session {
         paths
             .into_iter()
             .map(|mut path| {
-                let summary = path.capture.finish(
-                    &self.input,
-                    self.holdings.agent_id(),
-                    &mut path.state,
-                    path.previous_receipts,
-                )?;
+                let summary = path
+                    .capture
+                    .ok_or(SimulationError::InvalidActorSessionState)?
+                    .finish(
+                        &self.input,
+                        self.holdings
+                            .as_ref()
+                            .ok_or(SimulationError::InvalidActorSessionState)?
+                            .agent_id(),
+                        &mut path.state,
+                        path.previous_receipts,
+                    )?;
                 let computation = path.state.finish(&self.input)?;
                 Ok(Rollout {
                     rollout_id: computation.rollout_id,
@@ -380,45 +487,13 @@ impl Session {
     }
 }
 
-fn advance(
-    path: &mut Path,
-    input: &ExecutionInput,
-    holdings: &AgentHoldings,
-    mut claims: claims::Claims,
-    actions: Vec<Action>,
-) -> Result<(), SimulationError> {
+fn finish_actions(path: &mut Path, holdings: &AgentHoldings, claims: &claims::Claims) {
     let month = path.state.month;
-    path.previous_receipts.clear();
-    for (action_index, action) in actions.into_iter().enumerate() {
-        let (outcome, payment) = execute(&mut path.state, input, holdings, &mut claims, &action)?;
-        if let Some((request, receipt)) = payment {
-            path.capture.payments.push(outcomes::Payment::new(
-                month,
-                action_index,
-                &request,
-                &claims,
-                receipt,
-            ));
-        }
-        let failed = matches!(outcome, Outcome::Rejected(_));
-        path.previous_receipts.push(Receipt {
-            month,
-            action_index,
-            action,
-            outcome,
-        });
-        if failed {
-            path.stop = Some(Stop::RejectedAction {
-                month,
-                action_index,
-            });
-            break;
-        }
-    }
     if let Some(receipts) = &mut path.trace_receipts {
         receipts.extend(path.previous_receipts.iter().cloned());
     }
-    path.capture.unpaid_claims = observations::due_claims(&claims, holdings.agent_id())
+    let capture = path.capture.as_mut().expect("actor capture");
+    capture.unpaid_claims = observations::due_claims(&claims, holdings.agent_id())
         .filter(|claim| claim.amount_due.0 > 0)
         .map(|claim| outcomes::UnpaidClaim {
             id: claim.id,
@@ -429,12 +504,7 @@ fn advance(
             amount_due: claim.amount_due,
         })
         .collect();
-    let unpaid: Vec<_> = path
-        .capture
-        .unpaid_claims
-        .iter()
-        .map(|claim| claim.id)
-        .collect();
+    let unpaid: Vec<_> = capture.unpaid_claims.iter().map(|claim| claim.id).collect();
     if path.stop.is_none() && !unpaid.is_empty() {
         path.stop = Some(Stop::UnpaidClaims {
             month,
@@ -445,20 +515,19 @@ fn advance(
         path.state.failed_month = Some(month);
     }
     record_claims(&mut path.state.recorder, &claims);
-    path.state.close_month(input, None, Money(0))?;
-    path.capture.snapshot(input, holdings, &path.state)
 }
 
 fn validate(input: &ExecutionInput, actor: &str) -> Result<(), SimulationError> {
     ValidatedInput::new(input)?;
     let scenario = &input.scenario;
     if !scenario.target_allocation_policies.is_empty()
-        || !scenario.harvest_policies.is_empty()
         || !scenario.private_equity_tender_policies.is_empty()
         || !scenario.scheduled_sales.is_empty()
     {
         return Err(SimulationError::UnsupportedActorInput {
-            reason: "configured allocation, harvesting, tender policies and scheduled sales overlap actor decisions".into(),
+            reason:
+                "configured allocation, tender policies and scheduled sales overlap actor decisions"
+                    .into(),
         });
     }
     if !scenario.scheduled_property_purchases.is_empty()
@@ -501,7 +570,7 @@ fn validate(input: &ExecutionInput, actor: &str) -> Result<(), SimulationError> 
     Ok(())
 }
 
-fn execute(
+pub(super) fn execute(
     state: &mut RolloutState,
     input: &ExecutionInput,
     holdings: &AgentHoldings,
@@ -559,6 +628,9 @@ fn execute(
         return Ok((outcome, Some((request, receipt))));
     }
     let result = match action {
+        Action::Contribute(_) | Action::Withdraw(_) | Action::Liquidate(_) => {
+            return Err(SimulationError::InvalidActorSessionState);
+        }
         Action::Sell(request) => price(
             input,
             holdings,
@@ -574,7 +646,6 @@ fn execute(
                 &mut state.recorder,
                 &mut state.lots,
                 &mut state.tax,
-                SaleTlh::Pool(&mut state.tlh_cumulative_harvest),
                 state.month,
                 trades::SaleProceeds::Quoted(price),
                 request,

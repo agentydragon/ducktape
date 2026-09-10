@@ -348,27 +348,34 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
     for issuer_id in private_equity_issuers.keys() {
         validate_private_equity_channels(fixture, issuer_id)?;
     }
-    for (policy_index, policy) in fixture.scenario.harvest_policies.iter().enumerate() {
-        let valid = agents.contains(&policy.owner_agent_id)
-            && policy.peak_annual_yield_ppb > 0
-            && policy.floor_annual_yield_ppb >= 0
-            && policy.floor_annual_yield_ppb <= policy.peak_annual_yield_ppb
-            && policy.maturity_decay_exponent_ppb > 0
-            && policy.maturity_decay_exponent_ppb % (WIRE_RATE_SCALE / 2) == 0
-            && policy.drawdown_sensitivity_ppb >= 0
-            && (0..=WIRE_RATE_SCALE).contains(&policy.short_term_fraction_ppb)
-            && private_equity_issuer(&policy.asset_id).is_none()
-            && fixture
-                .series
-                .iter()
-                .any(|series| series.series_id == format!("security:{}", policy.asset_id));
-        if !valid {
-            return Err(SimulationError::InvalidHarvestPolicy { policy_index });
+    let mut portfolio_ids = BTreeSet::new();
+    let mut portfolio_pools = BTreeSet::new();
+    for portfolio in &fixture.scenario.tlh_portfolios {
+        validate_identifier("TLH portfolio", &portfolio.portfolio_id)?;
+        if !portfolio_pools.insert((
+            &portfolio.owner_agent_id,
+            &portfolio.account_id,
+            &portfolio.asset_id,
+        )) || fixture.scenario.initial_lots.iter().any(|lot| {
+            lot.agent_id == portfolio.owner_agent_id
+                && lot.account_id == portfolio.account_id
+                && lot.asset_id == portfolio.asset_id
+        }) || !portfolio_ids.insert(&portfolio.portfolio_id)
+            || !agents.contains(&portfolio.owner_agent_id)
+            || private_equity_issuer(&portfolio.asset_id).is_some()
+        {
+            return Err(SimulationError::InvalidComponentEffect {
+                reason: "managed portfolio has duplicate identity or invalid owner/asset".into(),
+            });
+        }
+        let series_id = format!("security:{}", portfolio.asset_id);
+        if !series_ids.contains(&series_id) {
+            return Err(SimulationError::MissingSeries { series_id });
         }
         validate_account(
             &accounts,
-            &AccountRef::new(&policy.owner_agent_id, &policy.account_id),
-            "harvest policy",
+            &AccountRef::new(&portfolio.owner_agent_id, &portfolio.account_id),
+            "managed portfolio",
         )?;
     }
     let mut bonds = BTreeSet::new();
@@ -495,7 +502,11 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
             sale.agent_id.clone(),
             sale.account_id.clone(),
             sale.asset_id.clone(),
-        )) {
+        )) && !fixture.scenario.tlh_portfolios.iter().any(|item| {
+            item.owner_agent_id == sale.agent_id
+                && item.account_id == sale.account_id
+                && item.asset_id == sale.asset_id
+        }) {
             return Err(SimulationError::MissingSalePool {
                 cause_id: sale.cause_id.clone(),
                 agent_id: sale.agent_id.clone(),
@@ -523,7 +534,13 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 asset_id: pool.2,
             });
         }
-        if !pool_scales.contains_key(&pool) {
+        if !pool_scales.contains_key(&pool)
+            && !fixture.scenario.tlh_portfolios.iter().any(|item| {
+                item.owner_agent_id == pool.0
+                    && item.account_id == pool.1
+                    && item.asset_id == pool.2
+            })
+        {
             return Err(SimulationError::MissingDistributionPool {
                 agent_id: pool.0,
                 account_id: pool.1,
@@ -689,7 +706,11 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                     policy.agent_id.clone(),
                     sources[0].to_owned(),
                     sleeve.asset_id.clone(),
-                )) {
+                )) && !fixture.scenario.tlh_portfolios.iter().any(|item| {
+                    item.owner_agent_id == policy.agent_id
+                        && item.account_id == sources[0]
+                        && item.asset_id == sleeve.asset_id
+                }) {
                     return Err(SimulationError::InvalidHoldingPool {
                         agent_id: policy.agent_id.clone(),
                         account_id: sources[0].to_owned(),

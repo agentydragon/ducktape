@@ -11,13 +11,13 @@ use crate::{
     execution::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondCoupon, BondSpec, BondState,
         CapitalGainState, CapitalImprovementOutcome, DistributionOutcome, ExecutionInput,
-        HarvestPolicySpec, INPUT_SCHEMA_VERSION, IncomeState, InitialLotSpec, LotDisposition,
-        MonthOutput, MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState,
-        ObligationOutcome, PopulationOutput, PrimaryResidenceOutcome,
-        PrivateEquityOpportunityOutcome, PrivateEquityProtocolOutcome, PropertyPurchaseOutcome,
-        PropertyRentedFractionOutcome, PropertySaleOutcome, PropertySaleSpec, PropertyState,
-        RolloutFailureOutcome, RolloutOutput, RolloutSummary, SecurityLotState, SeriesSpec,
-        SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome,
+        INPUT_SCHEMA_VERSION, IncomeState, InitialLotSpec, LotDisposition, MonthOutput,
+        MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState, ObligationOutcome,
+        PopulationOutput, PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome,
+        PrivateEquityProtocolOutcome, PropertyPurchaseOutcome, PropertyRentedFractionOutcome,
+        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput,
+        RolloutSummary, SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual,
+        TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome, TlhPortfolioObservation,
         TransferOutcome,
     },
     holdings::{AgentHoldings, HoldingsError, LotView},
@@ -40,6 +40,7 @@ mod accounts;
 pub mod actors;
 mod cashflows;
 pub mod claims;
+pub mod components;
 mod errors;
 mod obligations;
 pub mod observations;
@@ -54,7 +55,6 @@ mod target_allocation;
 mod taxes;
 #[cfg(test)]
 mod tests;
-mod tlh;
 pub mod trades;
 pub mod transfers;
 mod validation;
@@ -72,7 +72,7 @@ use recorder::*;
 use securities::*;
 use target_allocation::*;
 use taxes::*;
-use tlh::*;
+
 use trades::*;
 use transfers::*;
 use validation::*;
@@ -94,7 +94,7 @@ struct RolloutComputation {
     ending_properties: Vec<PropertyState>,
     ending_mortgages: Vec<MortgageState>,
     ending_tax_liabilities: Vec<TaxLiabilityState>,
-    ending_tlh_cumulative_harvest: Vec<Money>,
+    ending_tlh_portfolios: Vec<TlhPortfolioObservation>,
     recorder: Recorder,
     failed_month: Option<u32>,
     /// Observed snapshots only, empty when no product agent was selected.
@@ -137,7 +137,7 @@ impl RolloutComputation {
             ending_properties: self.ending_properties,
             ending_mortgages: self.ending_mortgages,
             ending_tax_liabilities: self.ending_tax_liabilities,
-            ending_tlh_cumulative_harvest: self.ending_tlh_cumulative_harvest,
+            ending_tlh_portfolios: self.ending_tlh_portfolios,
             journal_entry_count: self.recorder.journal_entry_count,
             disposition_count: self.recorder.disposition_count,
             private_equity_event_count: self.recorder.private_equity_event_count,
@@ -172,10 +172,12 @@ impl<'a> ValidatedInput<'a> {
     }
 }
 
+#[cfg(test)]
 pub fn simulate(fixture: &ExecutionInput) -> Result<SimulationOutput, SimulationError> {
     simulate_validated(ValidatedInput::new(fixture)?)
 }
 
+#[cfg(test)]
 pub fn simulate_validated(
     fixture: ValidatedInput<'_>,
 ) -> Result<SimulationOutput, SimulationError> {
@@ -187,16 +189,19 @@ pub fn simulate_validated(
 /// Unlike [`simulate`], this omits the balanced journal because the Python
 /// compatibility output has no corresponding channel. This is the apples-to-apples dense
 /// benchmark and backend handoff path; all canonical event inputs remain present.
+#[cfg(test)]
 pub fn simulate_dense(fixture: &ExecutionInput) -> Result<SimulationOutput, SimulationError> {
     simulate_dense_validated(ValidatedInput::new(fixture)?)
 }
 
+#[cfg(test)]
 pub fn simulate_dense_validated(
     fixture: ValidatedInput<'_>,
 ) -> Result<SimulationOutput, SimulationError> {
     simulate_with_capture(fixture, CaptureMode::Dense)
 }
 
+#[cfg(test)]
 fn simulate_with_capture(
     fixture: ValidatedInput<'_>,
     capture_mode: CaptureMode,
@@ -219,10 +224,12 @@ fn simulate_with_capture(
 /// This is the population/benchmark path. It executes the same state machine
 /// as [`simulate`] without allocating monthly snapshots, journals, or event
 /// traces for every rollout.
+#[cfg(test)]
 pub fn simulate_summaries(fixture: &ExecutionInput) -> Result<PopulationOutput, SimulationError> {
     simulate_summaries_validated(ValidatedInput::new(fixture)?)
 }
 
+#[cfg(test)]
 pub fn simulate_summaries_validated(
     fixture: ValidatedInput<'_>,
 ) -> Result<PopulationOutput, SimulationError> {
@@ -244,6 +251,7 @@ pub fn simulate_summaries_validated(
 /// This is the percentile-fan workload: it allocates no monthly snapshot, journal, or
 /// event trace, so a 100,000-rollout population costs `snapshots × rollouts` integers per
 /// metric rather than a dense output tree.
+#[cfg(test)]
 pub fn simulate_product_metrics(
     fixture: &ExecutionInput,
     primary_agent_id: &str,
@@ -251,6 +259,7 @@ pub fn simulate_product_metrics(
     simulate_product_metrics_validated(ValidatedInput::new(fixture)?, primary_agent_id)
 }
 
+#[cfg(test)]
 pub fn simulate_product_metrics_validated(
     fixture: ValidatedInput<'_>,
     primary_agent_id: &str,
@@ -287,7 +296,7 @@ struct RolloutState {
     mortgages: Vec<MortgageState>,
     tax: TaxState,
     tax_liabilities: Vec<TaxLiabilityState>,
-    tlh_cumulative_harvest: Vec<Money>,
+    tlh_portfolios: Vec<TlhPortfolioObservation>,
     target_allocation_buy_count: Vec<Vec<u32>>,
     primary_residence_by_agent: BTreeMap<String, Option<String>>,
     recorder: Recorder,
@@ -295,6 +304,7 @@ struct RolloutState {
     product_metrics: Vec<BaseMetrics>,
 }
 
+#[cfg(test)]
 fn simulate_rollout(
     fixture: &ExecutionInput,
     rollout_id: u32,
@@ -328,6 +338,13 @@ impl RolloutState {
                 &pool.asset_id,
             ));
             accounts.push(realized_gain_account(&pool.agent_id));
+        }
+        for portfolio in &fixture.scenario.tlh_portfolios {
+            accounts.push(AccountRef::new(
+                &portfolio.owner_agent_id,
+                format!("asset:managed-portfolio:{}", portfolio.portfolio_id),
+            ));
+            accounts.push(realized_gain_account(&portfolio.owner_agent_id));
         }
         for profile in &fixture.scenario.tax_profiles {
             accounts.push(tax_prepayment_account(&profile.agent_id));
@@ -409,7 +426,7 @@ impl RolloutState {
                 })
                 .collect(),
         };
-        let tlh_cumulative_harvest = vec![Money(0); fixture.scenario.harvest_policies.len()];
+        let tlh_portfolios = Vec::new();
 
         for spec in &fixture.scenario.accounts {
             if spec.opening_balance != Money(0) {
@@ -500,7 +517,7 @@ impl RolloutState {
                 &mortgages,
                 &tax_liabilities,
                 &tax,
-                &tlh_cumulative_harvest,
+                &tlh_portfolios,
                 false,
             )?);
         }
@@ -512,6 +529,7 @@ impl RolloutState {
                 0,
                 &ledger,
                 &lots,
+                &tlh_portfolios,
                 &properties,
                 &mortgages,
                 Money(0),
@@ -527,7 +545,7 @@ impl RolloutState {
             mortgages,
             tax,
             tax_liabilities,
-            tlh_cumulative_harvest,
+            tlh_portfolios,
             target_allocation_buy_count,
             primary_residence_by_agent,
             recorder,
@@ -540,6 +558,7 @@ impl RolloutState {
         self.failed_month.is_some() || self.month == fixture.scenario.horizon_months
     }
 
+    #[cfg(test)]
     fn run(
         mut self,
         fixture: &ExecutionInput,
@@ -554,6 +573,7 @@ impl RolloutState {
     /// Execute one configured month. Terminal states are unchanged.
     /// Consuming the state makes any execution
     /// error fatal: a caller cannot resume a month whose books may be partly updated.
+    #[cfg(test)]
     fn advance_month(
         mut self,
         fixture: &ExecutionInput,
@@ -565,17 +585,16 @@ impl RolloutState {
         let rollout_id = self.rollout_id;
         let month = self.month;
         let mut claims = self.prepare_month(fixture)?;
-        let target_allocation_buys = execute_target_allocation_sales(
-            fixture,
-            rollout_id,
-            &mut self.ledger,
-            &mut self.recorder,
-            &mut self.lots,
-            &mut self.tax,
-            &mut self.tlh_cumulative_harvest,
-            month,
-            &claims,
-        )?;
+        let mut target_allocation_buys = Vec::new();
+        for index in 0..fixture.scenario.target_allocation_policies.len() {
+            let plan = allocation_plan(fixture, &self, &claims, index)?;
+            for action in plan.sales {
+                let actor = &fixture.scenario.target_allocation_policies[index].agent_id;
+                let holdings = AgentHoldings::resolve(fixture, actor)?;
+                actors::execute(&mut self, fixture, &holdings, &mut claims, &action)?;
+            }
+            target_allocation_buys.extend(plan.buys);
+        }
         let settlement = settle_grouped(
             &mut payments::Context {
                 fixture,
@@ -593,23 +612,15 @@ impl RolloutState {
         if settlement.failed {
             self.failed_month = Some(month);
         } else {
-            execute_target_allocation_buys(
-                fixture,
-                &mut self.ledger,
-                &mut self.recorder,
-                &mut self.lots,
-                &mut self.target_allocation_buy_count,
-                month,
-                &target_allocation_buys,
-            )?;
-            execute_tlh_harvest(
-                fixture,
-                rollout_id,
-                &self.lots,
-                &mut self.tax,
-                &mut self.tlh_cumulative_harvest,
-                month,
-            )?;
+            for order in &target_allocation_buys {
+                if let Some(action) = allocation_buy(fixture, &mut self, order)? {
+                    let holdings = AgentHoldings::resolve(
+                        fixture,
+                        &fixture.scenario.target_allocation_policies[order.policy_index].agent_id,
+                    )?;
+                    actors::execute(&mut self, fixture, &holdings, &mut claims, &action)?;
+                }
+            }
             execute_private_equity(
                 fixture,
                 rollout_id,
@@ -617,7 +628,7 @@ impl RolloutState {
                 &mut self.recorder,
                 &mut self.lots,
                 &mut self.tax,
-                &mut self.tlh_cumulative_harvest,
+                &self.tlh_portfolios,
                 month,
             )?;
         }
@@ -631,6 +642,36 @@ impl RolloutState {
         &mut self,
         fixture: &ExecutionInput,
     ) -> Result<claims::Claims, SimulationError> {
+        self.prepare_month_events(fixture)?;
+        let rollout_id = self.rollout_id;
+        let month = self.month;
+        for sale in fixture
+            .scenario
+            .scheduled_sales
+            .iter()
+            .filter(|sale| sale.month == month)
+        {
+            execute_sale(
+                fixture,
+                rollout_id,
+                &mut self.ledger,
+                &mut self.recorder,
+                &mut self.lots,
+                &mut self.tax,
+                sale,
+            )?;
+        }
+        claims::assemble(
+            fixture,
+            rollout_id,
+            month,
+            &self.properties,
+            &self.mortgages,
+            &self.tax_liabilities,
+        )
+    }
+
+    fn prepare_month_events(&mut self, fixture: &ExecutionInput) -> Result<(), SimulationError> {
         let rollout_id = self.rollout_id;
         let month = self.month;
         execute_primary_residence_events(
@@ -684,34 +725,7 @@ impl RolloutState {
             &self.properties,
             month,
         )?;
-        let mut scheduled_tlh =
-            scheduled_tlh_give_back_state(fixture, &self.lots, &self.tlh_cumulative_harvest)?;
-        for sale in fixture
-            .scenario
-            .scheduled_sales
-            .iter()
-            .filter(|sale| sale.month == month)
-        {
-            execute_sale(
-                fixture,
-                rollout_id,
-                &mut self.ledger,
-                &mut self.recorder,
-                &mut self.lots,
-                &mut self.tax,
-                &mut scheduled_tlh,
-                sale,
-            )?;
-        }
-        apply_scheduled_tlh_give_back(&scheduled_tlh, &mut self.tlh_cumulative_harvest)?;
-        claims::assemble(
-            fixture,
-            rollout_id,
-            month,
-            &self.properties,
-            &self.mortgages,
-            &self.tax_liabilities,
-        )
+        Ok(())
     }
 
     /// Accrue and capture the completed month. Failed books use the observed stop marks
@@ -755,7 +769,7 @@ impl RolloutState {
                 &self.mortgages,
                 &self.tax_liabilities,
                 &self.tax,
-                &self.tlh_cumulative_harvest,
+                &self.tlh_portfolios,
                 self.failed_month.is_some(),
             )?);
         }
@@ -767,6 +781,7 @@ impl RolloutState {
                 month + 1,
                 &self.ledger,
                 &self.lots,
+                &self.tlh_portfolios,
                 &self.properties,
                 &self.mortgages,
                 product_shortfall,
@@ -796,7 +811,7 @@ impl RolloutState {
             ending_properties: self.properties,
             ending_mortgages: self.mortgages,
             ending_tax_liabilities: self.tax_liabilities,
-            ending_tlh_cumulative_harvest: self.tlh_cumulative_harvest,
+            ending_tlh_portfolios: self.tlh_portfolios,
             recorder: self.recorder,
             failed_month: self.failed_month,
             product_metrics: self.product_metrics,
@@ -815,6 +830,7 @@ fn product_snapshot(
     snapshot: u32,
     ledger: &Ledger,
     lots: &[LotState],
+    tlh_portfolios: &[TlhPortfolioObservation],
     properties: &[PropertyState],
     mortgages: &[MortgageState],
     shortfall: Money,
@@ -826,6 +842,7 @@ fn product_snapshot(
     let state = SnapshotState {
         ledger,
         lots: &lot_views,
+        tlh_portfolios,
         properties,
         mortgages,
         bonds: &bonds,

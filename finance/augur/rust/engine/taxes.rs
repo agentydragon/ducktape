@@ -24,9 +24,15 @@ pub(super) struct CapitalGainUpdates<'a> {
 
 impl<'a> CapitalGainUpdates<'a> {
     pub(super) fn new(tax: &'a mut TaxState, agent_id: &str) -> Self {
+        Self::for_facts(&mut tax.facts, agent_id)
+    }
+
+    pub(super) fn for_facts(
+        facts: &'a mut BTreeMap<(String, String), TaxFacts>,
+        agent_id: &str,
+    ) -> Self {
         Self {
-            rows: tax
-                .facts
+            rows: facts
                 .iter_mut()
                 .filter(|((taxpayer, _), _)| taxpayer == agent_id)
                 .map(|(_, facts)| {

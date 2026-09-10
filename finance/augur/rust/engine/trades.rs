@@ -211,7 +211,7 @@ pub(super) fn select_fifo(
 }
 
 /// Prepare every fallible lot, tax and output change before posting the journal.
-/// Only touched gain rows and TLH entries are staged; no complete book is cloned.
+/// Only touched gain rows and lots are staged; no complete book is cloned.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_lot_sale(
     input: &ExecutionInput,
@@ -219,7 +219,6 @@ pub(super) fn execute_lot_sale(
     recorder: &mut Recorder,
     lots: &mut [LotState],
     tax: &mut TaxState,
-    tlh: SaleTlh<'_>,
     month: u32,
     proceeds: SaleProceeds,
     request: &SaleRequest,
@@ -302,7 +301,6 @@ pub(super) fn execute_lot_sale(
             realized_gain,
         });
     }
-    let give_back = tlh.prepare(input, lots, &planned)?;
     let mut gain_updates = CapitalGainUpdates::new(tax, &request.agent_id);
     let mut replacements = Vec::with_capacity(planned.len());
     let mut dispositions = Vec::with_capacity(planned.len());
@@ -310,11 +308,10 @@ pub(super) fn execute_lot_sale(
         account: proceeds_account,
         amount: total_proceeds,
     }];
-    for (item, give_back) in planned.iter().zip(&give_back.by_lot) {
+    for item in &planned {
         let lot = &lots[item.lot_index];
-        let gain = item.realized_gain.checked_add(*give_back)?;
         let long_term = i64::from(month) - i64::from(lot.spec.purchase_month) >= 12;
-        gain_updates.accrue(gain, long_term)?;
+        gain_updates.accrue(item.realized_gain, long_term)?;
         replacements.push((
             item.lot_index,
             Quantity(lot.units_remaining.0 - item.units.0),
@@ -363,7 +360,6 @@ pub(super) fn execute_lot_sale(
         lots[index].basis_remaining = basis;
     }
     gain_updates.commit();
-    tlh.commit(give_back);
     Ok(())
 }
 
@@ -408,6 +404,16 @@ pub(super) fn execute_purchase(
         return Err(invalid(
             &request.cause_id,
             "holding pool, asset and quantity scale must be declared by the input",
+        ));
+    }
+    if input.scenario.tlh_portfolios.iter().any(|item| {
+        item.owner_agent_id == request.agent_id
+            && item.account_id == request.holding_account_id
+            && item.asset_id == request.asset_id
+    }) {
+        return Err(invalid(
+            &request.cause_id,
+            "managed portfolio contributions are not ordinary lot purchases",
         ));
     }
     let spent = price.times(

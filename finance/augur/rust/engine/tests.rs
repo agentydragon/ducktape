@@ -60,7 +60,7 @@ pub(super) fn minimal_fixture() -> ExecutionInput {
             distributions: vec![],
             target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -104,7 +104,7 @@ fn inspect_opening_books(
                     mortgages: &state.mortgages,
                     tax: &state.tax,
                     tax_liabilities: &state.tax_liabilities,
-                    tlh_cumulative_harvest: &state.tlh_cumulative_harvest,
+                    tlh_portfolios: &state.tlh_portfolios,
                 },
                 input,
                 rollout,
@@ -1346,50 +1346,6 @@ fn actor_books_expose_only_originated_contracts_and_recorded_tax() {
 }
 
 #[test]
-fn actor_books_keep_pool_harvest_adjustments_separate_from_lot_basis() {
-    let (mut input, component) = stopped_book_fixture(15, 2);
-    input.scenario.harvest_policies.push(HarvestPolicySpec {
-        owner_agent_id: "alice".into(),
-        account_id: "checking".into(),
-        asset_id: "stock".into(),
-        peak_annual_yield_ppb: 120_000_000,
-        floor_annual_yield_ppb: 120_000_000,
-        maturity_decay_exponent_ppb: WIRE_RATE_SCALE,
-        drawdown_sensitivity_ppb: 0,
-        short_term_fraction_ppb: WIRE_RATE_SCALE,
-    });
-    input.scenario.obligations.push(ObligationSpec {
-        month: 1,
-        obligation_id: component.cause_id.clone(),
-        obligation_type: "cash_spend".into(),
-        from: component.from.clone(),
-        to: component.to.clone(),
-        amount_due: Money(1_000_000).into(),
-        property_id: None,
-        deduction_category: None,
-        deductible_fraction_ppb: WIRE_RATE_SCALE,
-    });
-    inspect_opening_books(&input, "alice", |books| {
-        let adjustments = books.harvest_adjustments().collect::<Vec<_>>();
-        assert_eq!(adjustments.len(), 1);
-        assert_eq!(adjustments[0].account_id, "checking");
-        assert_eq!(adjustments[0].asset_id, "stock");
-        assert_eq!(
-            adjustments[0].cumulative_harvest,
-            Money(if books.month() == 0 { 0 } else { 990 })
-        );
-        let lot = books.public_positions().next().unwrap()?;
-        assert_eq!(
-            lot.book_basis(),
-            Money(if books.month() == 0 { 50_000 } else { 49_500 })
-        );
-        // Stop in m1, after observing one month's harvest of 1% of 99,000.
-        Ok(())
-    })
-    .unwrap();
-}
-
-#[test]
 fn configured_claims_use_current_contracts_and_assessments_without_settling() {
     for future_multiplier in [2, 9] {
         let (input, _) = stopped_book_fixture(15, future_multiplier);
@@ -2180,7 +2136,7 @@ fn transfer_and_fifo_sale_remain_balanced() {
             distributions: vec![],
             target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2568,7 +2524,7 @@ fn oversell_is_rejected_before_any_disposition() {
             distributions: vec![],
             target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2651,7 +2607,7 @@ fn failure_stops_future_actions_and_preserves_the_observed_book() {
             distributions: vec![],
             target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2746,7 +2702,7 @@ fn same_source_recurring_obligations_settle_all_or_none() {
             distributions: vec![],
             target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2856,8 +2812,8 @@ fn empty_buyable_pool_distributes_zero_until_its_first_purchase_settles() {
             .map(|row| (row.month, row.units, row.amount))
             .collect::<Vec<_>>(),
         vec![
-            (0, Quantity(0), Money(0)),
-            (1, Quantity(2_000_000), Money(200))
+            (0, Some(Quantity(0)), Money(0)),
+            (1, Some(Quantity(2_000_000)), Money(200))
         ]
     );
 }

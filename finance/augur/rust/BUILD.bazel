@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_shared_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_shared_library", "rust_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -32,9 +32,11 @@ rust_library(
         "engine/accounts.rs",
         "engine/actors.rs",
         "engine/actors/outcomes.rs",
+        "engine/actors/phases.rs",
         "engine/actors_test.rs",
         "engine/cashflows.rs",
         "engine/claims.rs",
+        "engine/components.rs",
         "engine/errors.rs",
         "engine/obligations.rs",
         "engine/observations.rs",
@@ -48,8 +50,6 @@ rust_library(
         "engine/target_allocation.rs",
         "engine/taxes.rs",
         "engine/tests.rs",
-        "engine/tlh.rs",
-        "engine/tlh_test.rs",
         "engine/trades.rs",
         "engine/trades_test.rs",
         "engine/transfers.rs",
@@ -73,16 +73,6 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:thiserror",
-    ],
-)
-
-rust_binary(
-    name = "simulator_cli",
-    srcs = ["main.rs"],
-    edition = "2024",
-    deps = [
-        ":simulator",
-        "@crates//:serde_json",
     ],
 )
 

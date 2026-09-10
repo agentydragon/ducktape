@@ -9,7 +9,7 @@ use crate::{
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const INPUT_SCHEMA_VERSION: u32 = 14;
+pub const INPUT_SCHEMA_VERSION: u32 = 15;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -61,7 +61,7 @@ pub struct ScenarioSpec {
     #[serde(default)]
     pub private_equity_tender_policies: Vec<PrivateEquityTenderPolicySpec>,
     #[serde(default)]
-    pub harvest_policies: Vec<HarvestPolicySpec>,
+    pub tlh_portfolios: Vec<TlhPortfolioSpec>,
     #[serde(default)]
     pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
     #[serde(default)]
@@ -431,17 +431,23 @@ pub struct PrivateEquityTenderPolicySpec {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct HarvestPolicySpec {
+pub struct TlhPortfolioSpec {
+    pub portfolio_id: String,
     pub owner_agent_id: String,
-    #[serde(default = "default_account_id")]
     pub account_id: String,
     pub asset_id: String,
-    pub peak_annual_yield_ppb: i64,
-    pub floor_annual_yield_ppb: i64,
-    pub maturity_decay_exponent_ppb: i64,
-    pub drawdown_sensitivity_ppb: i64,
-    #[serde(default = "default_rate_scale")]
-    pub short_term_fraction_ppb: i64,
+}
+
+/// A Python-owned component's reported financial facts, not its cohort state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TlhPortfolioObservation {
+    pub portfolio_id: String,
+    pub owner_agent_id: String,
+    pub account_id: String,
+    pub asset_id: String,
+    pub value: Money,
+    pub reported_tax_basis: Money,
 }
 
 const fn default_rate_scale() -> i64 {
@@ -642,7 +648,7 @@ pub struct MonthOutput {
     pub mortgages: Vec<MortgageState>,
     pub tax_liabilities: Vec<TaxLiabilityState>,
     pub capital_gains: Vec<CapitalGainState>,
-    pub tlh_cumulative_harvest: Vec<Money>,
+    pub tlh_portfolios: Vec<TlhPortfolioObservation>,
     pub failed: bool,
 }
 
@@ -878,7 +884,7 @@ pub struct DistributionOutcome {
     pub slice_index: u32,
     pub fraction_ppb: i64,
     pub issuer_jurisdiction_id: Option<String>,
-    pub units: Quantity,
+    pub units: Option<Quantity>,
     pub amount: Money,
 }
 
@@ -1017,7 +1023,7 @@ pub struct RolloutSummary {
     pub ending_properties: Vec<PropertyState>,
     pub ending_mortgages: Vec<MortgageState>,
     pub ending_tax_liabilities: Vec<TaxLiabilityState>,
-    pub ending_tlh_cumulative_harvest: Vec<Money>,
+    pub ending_tlh_portfolios: Vec<TlhPortfolioObservation>,
     pub journal_entry_count: u64,
     pub disposition_count: u64,
     pub private_equity_event_count: u64,
