@@ -212,7 +212,7 @@ spec:
         bypassrls: false
         inRoles: []
         passwordSecret:
-          name: tofu-state-forgejo-agentydragon-credentials
+          name: tofu-state-forgejo-agentydragon-v2-credentials
       - name: tfstate_forgejo_agentydragon_repos
         ensure: present
         login: true

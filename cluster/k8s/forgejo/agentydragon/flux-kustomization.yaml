@@ -15,16 +15,14 @@ spec:
     name: ducktape
 
     namespace: ducktape-flux
-  # The replacement remains suspended through the state transfer and therefore
-  # has no Ready condition yet. The old CR was suspended only after its last
-  # successful reconciliation, so it is the temporary health gate. Activation
-  # switches this back to the replacement before deleting the old CR.
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
       name: forgejo-agentydragon
-      namespace: flux-system
+      namespace: forgejo
   dependsOn:
+    - name: forgejo
+      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db

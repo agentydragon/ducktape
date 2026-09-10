@@ -4,8 +4,7 @@ metadata:
   name: forgejo-agentydragon
   namespace: forgejo
 spec:
-  # Staged while the prior CR is suspended and its state is transferred.
-  suspend: true
+  suspend: false
   interval: 15m
   refreshBeforeApply: true
   path: ./tf/gitops/forgejo-agentydragon
@@ -29,5 +28,5 @@ spec:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-forgejo-agentydragon-credentials
+              name: tofu-state-forgejo-agentydragon-v2-credentials
               key: password
