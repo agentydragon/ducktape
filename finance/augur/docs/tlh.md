@@ -94,6 +94,10 @@ Basis conservation and exact requested gross-cash delivery are separate controls
 Zero-amount requests are no-ops; disposing of zero-value exposure requires
 explicit liquidation.
 
+The session admits zero prices for series used exclusively by TLH portfolios.
+A series also used by ordinary security holdings or trading pools retains their
+positive-price requirement. Negative prices are invalid in either case.
+
 `sim/tlh_test.py` pins loss/basis conservation, imported adjusted basis,
 contribution isolation, partial and final redemption, zero-value liquidation,
 per-fill rounding, invalid requests and candidate-state isolation. These are

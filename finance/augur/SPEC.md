@@ -22,8 +22,10 @@ self-contained typed value of exact monetary terms, resolved tax rules and paths
 Sessions and reports consume these facts directly; file/native serialization is
 private, not a parallel mutable domain API. Execution does not reread the original
 scenario or load evidence/tax configuration. Missing or non-finite required paths reject;
-they are not synthesized as zero observations. Public security and home-value
-prices are positive; per-unit security distributions may explicitly be zero.
+they are not synthesized as zero observations. Ordinary public-security and
+home-value prices are positive. Prices used exclusively by reduced-form TLH
+portfolios may be zero, allowing worthless exposure to be liquidated; negative
+prices are invalid. Per-unit security distributions may explicitly be zero.
 
 A supplied return series must be interpreted according to its product
 construction. The existing total-return equity proxy is not a taxable
