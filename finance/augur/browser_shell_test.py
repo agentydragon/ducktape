@@ -48,7 +48,10 @@ _PROPERTY_LIFECYCLE_SCENARIOS = {
     },
     "variants": [],
 }
-_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode({"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240"})
+# Exercise real trajectories without making browser interaction checks a throughput gate.
+_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode(
+    {"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240", "n": "32"}
+)
 
 
 @pytest.fixture
@@ -142,7 +145,7 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
 def test_product_shell_renders_metric_fan_charts(page: Page, page_errors: list[str], augur_server: str) -> None:
     """Smoke-test the product surface end-to-end: load `/product`, select a few metrics,
     confirm the matching fan chart renders for each."""
-    page.goto(f"{augur_server}/product", wait_until="domcontentloaded")
+    page.goto(f"{augur_server}/product?n=32", wait_until="domcontentloaded")
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
     assert not page_errors
     page.locator("[data-product-results-ready]").wait_for(state="visible", timeout=30_000)

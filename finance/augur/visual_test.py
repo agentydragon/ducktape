@@ -288,7 +288,10 @@ _PROPERTY_LIFECYCLE_SCENARIOS = {
     },
     "variants": [],
 }
-_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode({"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240"})
+# Rendering controls use a bounded real population, independent of the UI's sampling default.
+_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode(
+    {"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240", "n": "32"}
+)
 
 # Three-scenario "rent vs. buy A vs. buy B" comparison in the base+overrides codec (v2). The Base
 # scenario "Rent" sets only the fields that differ from the product defaults (the codec merges the
@@ -321,7 +324,7 @@ _COMPARISON_SCENARIOS = {
         },
     ],
 }
-_COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_SCENARIOS), "h": "240"})
+_COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_SCENARIOS), "h": "240", "n": "32"})
 
 # A single Base scenario engineered to bust a chunk of its rollouts: a high monthly spend against the
 # fixture portfolio so weaker-market paths exhaust cash and holdings before the 10y horizon, while
@@ -335,7 +338,7 @@ _FAILURE_SCENARIOS = {
     "base": {"label": "Aggressive drawdown", "input": {"monthlySpend": 9000, "cashCeiling": 40000}},
     "variants": [],
 }
-_FAILURE_URL = "/product?" + urlencode({"scenarios": json.dumps(_FAILURE_SCENARIOS), "h": "120"})
+_FAILURE_URL = "/product?" + urlencode({"scenarios": json.dumps(_FAILURE_SCENARIOS), "h": "120", "n": "32"})
 
 
 def _wait_for_scenario_comparison(page: Page) -> None:
@@ -401,7 +404,10 @@ def _focus_active_scenario(page: Page) -> None:
 
 VISUAL_CASES = (
     VisualCase(
-        name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
+        name="product_cash_runway",
+        path="/product?n=32",
+        wait_ready=_wait_for_product_page,
+        interact=_select_first_rollout,
     ),
     VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
     VisualCase(name="product_scenario_comparison", path=_COMPARISON_URL, wait_ready=_wait_for_scenario_comparison),
