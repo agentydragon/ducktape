@@ -2,6 +2,20 @@
 
 ## Actions follow-up, 2026-09-10
 
+Post-rollout verification at 04:21:14 UTC: #6012 merged as
+`ddc21cab93a4d51f5cae4a9c18e0272941051825`. Flux Actions reached Ready at
+`c1352813058857705807474061dcf7c69c93a8f8`, and live policy generation 4
+contains the scoped backend rule. From Actions' unchanged `10.244.4.48`
+network namespace through Gateway Service `10.106.122.5:443`:
+
+- Canonical SNI: Actions discovery and Actions JWKS both HTTP 200.
+- Wrong SNI with canonical Host: both HTTP 403.
+- Direct plaintext to Authentik `10.244.4.24:9000`: reset, no HTTP response.
+
+TLS verification remained enabled. These were credential-free read-only
+connectivity probes, not application acceptance or a BuildBuddy test run.
+DNS remains unchanged.
+
 The policy audit reproduced the same failure from Actions Pod
 `agentplane-actions-6669c695b6-pqp8m` (`10.244.4.48`, Cilium endpoint 3578)
 on `ovh-ns102453`. Credential-free discovery probes around 04:07 UTC retained
@@ -20,6 +34,33 @@ node successes and five local node resets. This supports the analogous Actions
 rule, but the Actions post-rollout controls remain required: canonical discovery
 and `/application/o/agentplane-actions/jwks/` success, wrong-SNI and direct
 plaintext rejection. Do not change DNS before those controls pass.
+
+## Post-merge results, 2026-09-10 03:54–03:56 UTC
+
+PR #6007 merged as `b11b4a837aef2f984a3123bbde54b588636f5663`.
+The live CNP reached generation 10 with the exact Authentik:9000 SNI rule.
+Flux applied resources but app health remained failed; do not confuse this
+with a missing policy rollout.
+
+From the same Pod network namespace:
+
+- Canonical SNI through `10.106.122.5:443`: discovery and JWKS HTTP 200.
+- Wrong SNI, canonical HTTP Host: both endpoints HTTP 403.
+- Plain HTTP directly to `10.244.4.24:9000`: connection reset, no HTTP response.
+- Five alternating TLS rounds: local public IP reset 5/5; remote public IP
+  verified 5/5; Service verified 5/5.
+
+Payload-free veth capture `/tmp/agentplane_service_49261.pcap` at
+03:56:21.276553 UTC shows one SYN/SYN-ACK/ACK sequence, then orderly FINs,
+with no competing SYN-ACK or reset. The filter excluded all TCP payload at
+collection. An earlier capture on port 49260 was empty and is not evidence.
+
+These observations support the Service path and retained SNI enforcement,
+not long-term reliability or browser/OAuth acceptance. The app remains
+CrashLoopBackOff. No live configuration was manually changed and no new
+BuildBuddy invocation was needed for these read-only probes. Prior manifest
+validation passed at
+https://app.buildbuddy.io/invocation/55e6491d-2b25-449c-b71f-f4276880138a.
 
 ## Initial app investigation (before #6007 rollout)
 
