@@ -149,5 +149,6 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     assert settings.config_file == config_path
     assert settings.max_wait_for_result_ms == int(max_wait_for_result_ms)
 
+
 if __name__ == "__main__":
     pytest_bazel.main()
