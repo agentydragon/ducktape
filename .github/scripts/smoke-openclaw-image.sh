@@ -3,30 +3,12 @@ set -eu
 
 /usr/bin/env bash -c "true"
 pre-commit --version
-for command in bazel bb bbapi bbr buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
+for command in buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
   command -v "$command"
 done
-bazel --version
-test -x "$JAVA_HOME/bin/java"
-java -version
-test -x "$BB_USE_BAZEL_VERSION"
-file "$BB_USE_BAZEL_VERSION" | grep -q 'ELF .* executable'
-test "$(bazel --version)" = "$("$BB_USE_BAZEL_VERSION" --version)"
-# `bb remote` embeds Bazelisk and invokes Bazel locally to canonicalize flags.
-# Exercise Bazel with the same arguments first so a failure preserves Bazel's
-# own diagnostics rather than BuildBuddy's intentionally compact error.
-bazel_help_tmp="$(mktemp -d)"
-"$BB_USE_BAZEL_VERSION" \
-  --quiet \
-  --ignore_all_rc_files \
-  --output_base="$bazel_help_tmp/output_base" \
-  --max_idle_secs=10 \
-  help flags-as-proto >/dev/null
-rm -rf "$bazel_help_tmp"
-# BuildBuddy's help path then exercises its embedded Bazelisk lookup without
-# scheduling a remote action.
-bb help remote >/dev/null
-bbr --help >/dev/null
+for command in bazel bazelisk; do
+  ! command -v "$command"
+done
 
 # Execute a real Ducktape hook, rather than only checking that its wrapper is
 # on PATH. This proves the Nix package carries its Python dependencies and
