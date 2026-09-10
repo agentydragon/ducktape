@@ -1,7 +1,8 @@
 """Optional sales-only funding of claims from one cash account; surplus cash stays idle."""
 
 from finance.augur.policy.sleeves import withdraw
-from finance.augur.sim.session import Action, Decision, DecisionActions
+from finance.augur.sim.actions import DecisionActions, PayClaim
+from finance.augur.sim.observations import Decision
 
 
 def fund_claims(
@@ -25,7 +26,7 @@ def fund_claims(
             cause_id=f"withdrawal-funding-{observation.month}",
         )
         actions.extend(
-            Action.pay_claim(
+            PayClaim(
                 request_id=index + 1,
                 cause_id=claim.cause_id,
                 claim=claim,

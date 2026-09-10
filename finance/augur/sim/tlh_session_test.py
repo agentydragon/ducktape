@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
+from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.books import TlhPortfolioState
 from finance.augur.sim.configured import simulate_dense_json
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction
@@ -22,7 +23,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
     TlhPortfolioSpec,
 )
-from finance.augur.sim.session import Action, ActionSession, Capture, DecisionActions
+from finance.augur.sim.session import ActionSession, Capture
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhPortfolio
@@ -78,10 +79,18 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
         batch = session.start()
         assert not isinstance(batch, Finished)
         [decision] = batch
-        assert decision.observation.public_positions == []
+        assert decision.observation.public_positions == ()
         [portfolio] = decision.observation.tlh_portfolios
         assert (portfolio.value, portfolio.reported_tax_basis) == (100, 99)
-        result = session.advance([DecisionActions(0, 0, [Action.liquidate("sell", "owner", "managed", "checking")])])
+        result = session.advance(
+            [
+                DecisionActions(
+                    0,
+                    0,
+                    [Liquidate(cause_id="sell", agent_id="owner", portfolio_id="managed", cash_account_id="checking")],
+                )
+            ]
+        )
         assert isinstance(result, Finished)
     finally:
         session.close()
@@ -117,9 +126,23 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
                     0,
                     0,
                     [
-                        Action.withdraw("cash", "owner", "managed", "checking", 10),
-                        Action.contribute("too-much", "owner", "managed", "checking", 11),
-                        Action.liquidate("never", "owner", "managed", "checking"),
+                        Withdraw(
+                            cause_id="cash",
+                            agent_id="owner",
+                            portfolio_id="managed",
+                            cash_account_id="checking",
+                            amount=10,
+                        ),
+                        Contribute(
+                            cause_id="too-much",
+                            agent_id="owner",
+                            portfolio_id="managed",
+                            cash_account_id="checking",
+                            amount=11,
+                        ),
+                        Liquidate(
+                            cause_id="never", agent_id="owner", portfolio_id="managed", cash_account_id="checking"
+                        ),
                     ],
                 ),
                 DecisionActions(1, 0, []),
@@ -149,7 +172,21 @@ def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
     try:
         session.start()
         result = session.advance(
-            [DecisionActions(0, 0, [Action.withdraw("invalid", "owner", "managed", "checking", amount)])]
+            [
+                DecisionActions(
+                    0,
+                    0,
+                    [
+                        Withdraw(
+                            cause_id="invalid",
+                            agent_id="owner",
+                            portfolio_id="managed",
+                            cash_account_id="checking",
+                            amount=amount,
+                        )
+                    ],
+                )
+            ]
         )
         assert isinstance(result, Finished)
     finally:
@@ -178,7 +215,15 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
         batch = session.start()
         assert not isinstance(batch, Finished)
         assert batch[0].observation.tlh_portfolios == []
-        result = session.advance([DecisionActions(0, 0, [Action.liquidate("steal", "owner", "managed", "checking")])])
+        result = session.advance(
+            [
+                DecisionActions(
+                    0,
+                    0,
+                    [Liquidate(cause_id="steal", agent_id="owner", portfolio_id="managed", cash_account_id="checking")],
+                )
+            ]
+        )
         assert isinstance(result, Finished)
     finally:
         session.close()
@@ -209,7 +254,19 @@ def test_closing_marks_and_product_projection_do_not_advance_the_model_early(cap
     session = ActionSession(case.compiled_run, "owner", [0], capture=capture)
     try:
         session.start()
-        actions = [Action.withdraw("unfundable", "owner", "managed", "checking", 101)] if reject else []
+        actions: list[Action] = (
+            [
+                Withdraw(
+                    cause_id="unfundable",
+                    agent_id="owner",
+                    portfolio_id="managed",
+                    cash_account_id="checking",
+                    amount=101,
+                )
+            ]
+            if reject
+            else []
+        )
         result = session.advance([DecisionActions(0, 0, actions)])
         assert isinstance(result, Finished)
     finally:
@@ -275,7 +332,21 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
         assert not isinstance(first, Finished)
         assert first[0].observation.tlh_portfolios[0].reported_tax_basis == 99
         second = session.advance(
-            [DecisionActions(0, 0, [Action.contribute("new", "owner", "managed", "checking", 100)])]
+            [
+                DecisionActions(
+                    0,
+                    0,
+                    [
+                        Contribute(
+                            cause_id="new",
+                            agent_id="owner",
+                            portfolio_id="managed",
+                            cash_account_id="checking",
+                            amount=100,
+                        )
+                    ],
+                )
+            ]
         )
         assert not isinstance(second, Finished)
         assert second[0].observation.tlh_portfolios[0].reported_tax_basis == 197

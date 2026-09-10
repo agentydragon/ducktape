@@ -379,6 +379,7 @@ py_test(
     name = "tlh_session_test",
     srcs = ["tlh_session_test.py"],
     deps = [
+        ":actions",
         ":books",
         ":configured",
         ":results",
@@ -414,5 +415,18 @@ py_library(
         ":books",
         ":results",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_actions",
+    srcs = ["test_actions.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":observations",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
     ],
 )

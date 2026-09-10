@@ -10,18 +10,13 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
+from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.configured import simulate_dense_json
+from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.scenario import BondHolding, Currency
-from finance.augur.sim.session import (
-    Action,
-    ActionSession,
-    Decision,
-    DecisionActions,
-    FixedCoupon,
-    IndexedCoupon,
-    simulate_dense_json,
-)
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import CORPORATE, MUNI, TREASURY, bond_case
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -71,7 +66,14 @@ def held_case(*, indexed: bool = False, future_cpi: float = 2.0, rollout_count: 
 
 
 def consume(amount: int) -> Action:
-    return Action.consume(0, "bond-funded-spend", "consumption", ("alice", "checking"), ("world", "checking"), amount)
+    return Consume(
+        request_id=0,
+        cause_id="bond-funded-spend",
+        component_id="consumption",
+        from_account=AccountRef(agent_id="alice", account_id="checking"),
+        to_account=AccountRef(agent_id="world", account_id="checking"),
+        amount=amount,
+    )
 
 
 def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
@@ -82,7 +84,7 @@ def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
         for decision in batch:
             observation = decision.observation
             assert observation.public_holdings == 0
-            assert observation.public_positions == []
+            assert observation.public_positions == ()
             if observation.month < 2:
                 [bond] = observation.held_bonds
                 assert (bond.bond_id, bond.account_id, bond.issuer_jurisdiction_id) == ("alice-bond", "checking", None)
@@ -92,7 +94,7 @@ def test_owned_terms_coupon_before_spending_and_maturity_removal() -> None:
                 assert (coupon.amount, bond.coupon_period_months) == (100, 1)
                 assert (bond.purchase_month, bond.maturity_month) == (-1, 2)
             else:
-                assert observation.held_bonds == []
+                assert observation.held_bonds == ()
             observed.append((observation.month, observation.cash))
             responses.append(DecisionActions(decision.rollout_id, observation.month, [consume(observation.cash)]))
         return responses
@@ -127,7 +129,7 @@ def test_indexed_principal_stopped_marks_and_replay_exclude_unobserved_cpi() -> 
                 assert observation.cash == (100 if observation.month == 0 else 300)
             else:
                 assert decision.rollout_id == 1
-                assert observation.held_bonds == []
+                assert observation.held_bonds == ()
             actions = [consume(301), consume(1)] if decision.rollout_id == 0 and observation.month == 1 else []
             responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
         return responses
@@ -160,7 +162,13 @@ def pay_claims(batch: list[Decision]) -> list[DecisionActions]:
             row.rollout_id,
             row.observation.month,
             [
-                Action.pay_claim(index, claim.cause_id, claim, claim.from_account, claim.amount_due)
+                PayClaim(
+                    request_id=index,
+                    cause_id=claim.cause_id,
+                    claim=claim,
+                    from_account=claim.from_account,
+                    amount=claim.amount_due,
+                )
                 for index, claim in enumerate(row.observation.claims)
             ],
         )

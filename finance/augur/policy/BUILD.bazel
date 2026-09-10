@@ -38,6 +38,8 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
@@ -54,7 +56,8 @@ py_library(
     srcs = ["funding.py"],
     deps = [
         ":sleeves",
-        "//finance/augur/sim:session",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:observations",
     ],
 )
 

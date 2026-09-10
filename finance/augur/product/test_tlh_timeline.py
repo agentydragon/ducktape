@@ -14,10 +14,11 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, TlhFinancialEffectEvent
+from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import Currency, InitialLot, TaxProfile, TlhPortfolioSpec
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
 from finance.augur.sim.tlh import TlhAssumptions
@@ -77,8 +78,20 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(
                     0,
                     0,
                     [
-                        Action.contribute("deposit", "owner", "managed", "checking", 10),
-                        Action.withdraw("withdraw", "owner", "managed", "checking", 100),
+                        Contribute(
+                            cause_id="deposit",
+                            agent_id="owner",
+                            portfolio_id="managed",
+                            cash_account_id="checking",
+                            amount=10,
+                        ),
+                        Withdraw(
+                            cause_id="withdraw",
+                            agent_id="owner",
+                            portfolio_id="managed",
+                            cash_account_id="checking",
+                            amount=100,
+                        ),
                     ],
                 )
             ]
@@ -136,7 +149,20 @@ def test_zero_cash_liquidation_is_still_a_redemption(case: Case) -> None:
     try:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
-            [DecisionActions(0, 0, [Action.liquidate("close-worthless", "owner", "managed", "checking")])]
+            [
+                DecisionActions(
+                    0,
+                    0,
+                    [
+                        Liquidate(
+                            cause_id="close-worthless",
+                            agent_id="owner",
+                            portfolio_id="managed",
+                            cash_account_id="checking",
+                        )
+                    ],
+                )
+            ]
         )
     finally:
         session.close()

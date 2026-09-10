@@ -11,9 +11,10 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
+from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import IncomeState
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import (
     CORPORATE,
     CPI_DEFLATING,
@@ -41,7 +42,13 @@ def execute(case: Case) -> Rollout:
                         decision.rollout_id,
                         decision.observation.month,
                         [
-                            Action.pay_claim(index, claim.cause_id, claim, claim.from_account, claim.amount_due)
+                            PayClaim(
+                                request_id=index,
+                                cause_id=claim.cause_id,
+                                claim=claim,
+                                from_account=claim.from_account,
+                                amount=claim.amount_due,
+                            )
                             for index, claim in enumerate(decision.observation.claims)
                         ],
                     )

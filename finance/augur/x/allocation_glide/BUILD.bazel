@@ -47,6 +47,7 @@ py_library(
     deps = [
         "//finance/augur/policy:cash_band",
         "//finance/augur/policy:sleeves",
-        "//finance/augur/sim:session",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:observations",
     ],
 )

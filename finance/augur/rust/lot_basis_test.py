@@ -14,8 +14,9 @@ from finance.augur.api.portfolio import (
 )
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import product_portfolio_response
+from finance.augur.sim.actions import DecisionActions, LotSale, Sell
 from finance.augur.sim.results import Finished
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
 
@@ -98,12 +99,18 @@ def test_imported_basis_is_exact_through_sales(
                         decision.rollout_id,
                         observation.month,
                         [
-                            Action.sell(
+                            Sell(
                                 cause_id=f"test-sale-{observation.month}",
                                 agent_id="test-owner",
                                 proceeds_account_id="checking",
                                 asset_id="test-security",
-                                lots=[("checking", "test-lot", sales[observation.month] * lot.quantity_scale)],
+                                lots=[
+                                    LotSale(
+                                        account_id="checking",
+                                        lot_id="test-lot",
+                                        units=sales[observation.month] * lot.quantity_scale,
+                                    )
+                                ],
                             )
                         ],
                     )
