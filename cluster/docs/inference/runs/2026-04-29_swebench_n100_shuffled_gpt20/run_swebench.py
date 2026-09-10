@@ -69,7 +69,7 @@ DEFAULT_SANDBOX = "docker"
 DEFAULT_MAX_WORKERS = 2  # avoid Docker subnet exhaustion at higher concurrency
 BASE_URL = "https://ollama.allegedly.works/v1"
 SECRET_NAMESPACE = "ollama"
-SECRET_NAME = "ollama-bearer-token"
+SECRET_NAME = "ollama-direct-token"
 GHCR_USERNAME = "agentydragon"
 
 DATASET_HF_IDS = {"lite": "princeton-nlp/SWE-bench_Lite", "verified": "princeton-nlp/SWE-bench_Verified"}

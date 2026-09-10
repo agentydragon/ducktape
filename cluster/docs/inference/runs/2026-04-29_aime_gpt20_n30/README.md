@@ -173,7 +173,7 @@ cd cluster/docs/inference/runs/2026-04-29_aime_gpt20_n30
 ./run_aime.py --efforts medium --limit 5 # quick partial repro
 ```
 
-Requires: `kubectl` (for fetching `ollama-bearer-token` Secret) and
+Requires: `kubectl` (for fetching `ollama-direct-token` Secret) and
 `uv` on PATH. Driven from any host that can reach
 `ollama.allegedly.works/v1` over HTTPS.
 

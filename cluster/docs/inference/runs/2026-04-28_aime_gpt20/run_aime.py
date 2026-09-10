@@ -42,7 +42,7 @@ DEFAULT_EFFORTS = "low,medium,high"
 DEFAULT_LIMIT = 10
 BASE_URL = "https://ollama.allegedly.works/v1"
 SECRET_NAMESPACE = "ollama"
-SECRET_NAME = "ollama-bearer-token"
+SECRET_NAME = "ollama-direct-token"
 
 
 def get_bearer_token() -> str:

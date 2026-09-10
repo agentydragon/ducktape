@@ -7,5 +7,5 @@ rules:
     resources: ["secrets"]
     resourceNames:
       - litellm-master-key
-      - ollama-bearer-token
+      - ollama-direct-token
     verbs: ["get"]

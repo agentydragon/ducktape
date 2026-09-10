@@ -125,7 +125,7 @@ cd cluster/docs/inference/runs/2026-04-29_humaneval_gpt20
 ./run_humaneval.py --efforts medium --limit 5 # quick partial repro
 ```
 
-Requires: `kubectl` (for fetching the `ollama-bearer-token` Secret),
+Requires: `kubectl` (for fetching the `ollama-direct-token` Secret),
 `uv` on PATH, and **Docker on the host** (for the sandbox). Driven from
 any host that can reach `ollama.allegedly.works/v1` over HTTPS.
 
