@@ -289,14 +289,8 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     app_container = one(app_deployment["spec"]["template"]["spec"]["containers"])
     app_env = {entry["name"]: entry for entry in app_container["env"]}
     assert "HAKU_GITHUB_TOKEN" not in app_env
-    assert app_env["GITHUB_TOKEN"] == {
-        "name": "GITHUB_TOKEN",
-        "value": "proxy-github-placeholder",
-    }
-    assert app_env["GH_PAT"] == {
-        "name": "GH_PAT",
-        "value": "proxy-github-placeholder",
-    }
+    assert app_env["GITHUB_TOKEN"] == {"name": "GITHUB_TOKEN", "value": "proxy-github-placeholder"}
+    assert app_env["GH_PAT"] == {"name": "GH_PAT", "value": "proxy-github-placeholder"}
     assert app_env["AIQUOTA_API_BEARER_TOKEN"] == {
         "name": "AIQUOTA_API_BEARER_TOKEN",
         "value": "proxy-aiquota-api-bearer-placeholder",
