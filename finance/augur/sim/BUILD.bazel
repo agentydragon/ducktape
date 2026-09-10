@@ -467,3 +467,25 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "mortgage",
+    srcs = ["mortgage.py"],
+    deps = [
+        ":books",
+        ":fixed_point",
+    ],
+)
+
+py_test(
+    name = "test_mortgage",
+    srcs = ["test_mortgage.py"],
+    deps = [
+        ":books",
+        ":mortgage",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
