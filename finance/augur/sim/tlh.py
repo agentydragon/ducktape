@@ -222,52 +222,32 @@ class TlhPortfolio:
         _nonnegative(gross_amount=gross_amount)
         if gross_amount == 0:
             return WithdrawalResult(0, ModeledRealizations())
-        if gross_amount > self.observe().value:
+        value = self.observe().value
+        if gross_amount > value:
             raise ValueError("gross withdrawal exceeds portfolio value")
-        if gross_amount == self.observe().value:
+        if gross_amount == value:
             return self.liquidate()
         cash = self._cash
-        updated = []
-        short_term = 0
-        long_term = 0
+        units_to_sell = 0
         for cohort in self._cohorts:
-            if cash >= gross_amount or self._price == 0:
-                updated.append(cohort)
-                continue
+            if cash >= gross_amount:
+                break
             units = min(
                 cohort.units, quantity_for_value(gross_amount - cash, self._price, self._quantity_scale, round_up=True)
             )
-            proceeds = self._value(units)
-            basis = _round_ratio(cohort.basis * units, cohort.units)
-            gain = proceeds - basis
-            if self._month - cohort.purchase_month >= 12:
-                long_term += gain
-            else:
-                short_term += gain
-            cash += proceeds
-            if units < cohort.units:
-                updated.append(replace(cohort, units=cohort.units - units, basis=cohort.basis - basis))
+            units_to_sell += units
+            cash += self._value(units)
         if cash < gross_amount:
             raise ValueError("share-grid rounding cannot fund the requested withdrawal")
-        self._cash = cash - gross_amount
-        self._cohorts = updated
-        return WithdrawalResult(gross_amount, ModeledRealizations(short_term, long_term))
+        redeemed = self._redeem(units_to_sell)
+        self._cash += redeemed.cash_received - gross_amount
+        return WithdrawalResult(gross_amount, redeemed.realizations)
 
     def liquidate(self) -> WithdrawalResult:
-        cash = self._cash
-        short_term = 0
-        long_term = 0
-        for cohort in self._cohorts:
-            proceeds = self._value(cohort.units)
-            cash += proceeds
-            gain = proceeds - cohort.basis
-            if self._month - cohort.purchase_month >= 12:
-                long_term += gain
-            else:
-                short_term += gain
+        redeemed = self._redeem(sum(cohort.units for cohort in self._cohorts))
+        cash = self._cash + redeemed.cash_received
         self._cash = 0
-        self._cohorts = []
-        return WithdrawalResult(cash, ModeledRealizations(short_term, long_term))
+        return WithdrawalResult(cash, redeemed.realizations)
 
     def _withdraw_units(self, units: int) -> WithdrawalResult:
         """Configured fixed-unit schedules redeem exposure without exposing cohort state."""
@@ -280,6 +260,9 @@ class TlhPortfolio:
             raise ValueError("scheduled redemption exceeds portfolio exposure")
         if units == total_units:
             return self.liquidate()
+        return self._redeem(units)
+
+    def _redeem(self, units: int) -> WithdrawalResult:
         remaining = units
         updated = []
         cash = 0

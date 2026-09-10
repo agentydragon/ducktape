@@ -109,9 +109,16 @@ deriving and re-quantizing a per-unit basis; sales apportion it and full
 liquidation consumes the remainder.
 
 The configured runner retains all-or-none funding groups and automatic allocation
-controls. Those are not common-session settlement requirements. It also retains
-reduced-form harvesting: give-back plus remaining deferral is conserved on sale,
-but the pool approximation is not constituent-level statutory TLH accounting.
+controls. Those are not common-session settlement requirements.
+
+A reduced-form TLH portfolio owns its internal holdings and adjusted basis in
+Python. The household observes its value and reported tax basis, and chooses
+contributions, gross-cash withdrawals or liquidation. Modeled losses reduce the
+same basis later consumed by redemptions; new contributions do not inherit prior
+loss adjustments. Component value is counted once in household wealth.
+Canonical accounting settles its financial effects and determines household tax.
+The approximation does not reconstruct constituent trades or establish statutory
+TLH fidelity. See <docs/tlh.md> for model and numerical conventions.
 
 ## Preserved configured capabilities and limits
 
