@@ -9,6 +9,8 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 
+from pydantic import JsonValue
+
 from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan
 from finance.augur.sim import _native, results
 from finance.augur.sim.actions import Buy, DecisionActions
@@ -116,12 +118,12 @@ def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -
                 if path.failed:
                     continue
                 key = (rollout_id, pending_buy.policy_index, pending_buy.sleeve_index)
-                action = materialize_buy(
+                buy_action = materialize_buy(
                     session.observe(rollout_id, pending_buy.agent_id), pending_buy, lot_sequence=lot_sequences[key]
                 )
-                if action is not None:
-                    session.apply(rollout_id, action)
-                    if isinstance(action, Buy):
+                if buy_action is not None:
+                    session.apply(rollout_id, buy_action)
+                    if isinstance(buy_action, Buy):
                         lot_sequences[key] += 1
             for path in paths.values():
                 if not path.failed:
@@ -136,6 +138,7 @@ def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -
 def _export(run: CompiledRun, capture: Capture) -> str:
     session = _run(run, capture)
     rollouts = []
+    frames: dict[str, list[dict[str, JsonValue]]] = {}
     for path in session.paths.values():
         if path.result is None:
             raise RuntimeError("configured export requires finished rollouts")
@@ -145,9 +148,15 @@ def _export(run: CompiledRun, capture: Capture) -> str:
             rollouts.append(path.result.configured_summary.model_dump(mode="json", by_alias=True))
         elif path.result.financial is not None:
             rollouts.append(path.result.financial.model_dump(mode="json", by_alias=True))
+            if path.result.event_frames is None:
+                raise RuntimeError("dense export requires event frames")
+            for name, rows in path.result.event_frames.items():
+                frames.setdefault(name, []).extend(rows)
         else:
             raise RuntimeError("dense export requires financial capture")
-    return json.dumps({"schema_version": run._schema_version, "rollouts": rollouts})
+    if capture == "summary":
+        return json.dumps({"schema_version": run._schema_version, "rollouts": rollouts})
+    return json.dumps({"schema_version": run._schema_version, "rollouts": rollouts, "event_frames": frames})
 
 
 def simulate_dense_json(run: CompiledRun) -> str:

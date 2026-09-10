@@ -20,7 +20,9 @@ class ComponentEffects(Record):
 
 
 MARKS = TypeAdapter(list[TlhPortfolioObservation])
-OUTCOME = TypeAdapter(Annotated[results.Executed | results.Rejected, Field(discriminator="kind")])
+OUTCOME: TypeAdapter[results.Executed | results.Rejected] = TypeAdapter(
+    Annotated[results.Executed | results.Rejected, Field(discriminator="kind")]
+)
 UNPAID = TypeAdapter(list[results.UnpaidClaim])
 
 
@@ -82,7 +84,20 @@ class WorldResult(Record):
             )
         return results.Rollout(
             rollout_id=self.rollout_id,
-            summary=self.summary.model_copy(update={"last_receipts": last_receipts}),
+            summary=results.Summary(
+                actor_id=self.summary.actor_id,
+                cash=self.summary.cash,
+                public_holdings=self.summary.public_holdings,
+                bond_principal=self.summary.bond_principal,
+                payments=self.summary.payments,
+                unpaid_claims=self.summary.unpaid_claims,
+                tax_accruals=self.summary.tax_accruals,
+                tax_payments=self.summary.tax_payments,
+                tax_settlements=self.summary.tax_settlements,
+                ending_book=self.summary.ending_book,
+                ending_mark_month=self.summary.ending_mark_month,
+                last_receipts=last_receipts,
+            ),
             trace=trace,
             stop=stop,
         )

@@ -364,6 +364,7 @@ py_library(
         ":results",
         ":session",
         "//finance/augur/policy:configured_allocation",
+        "@pypi//pydantic",
     ],
 )
 

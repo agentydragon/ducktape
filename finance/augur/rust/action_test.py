@@ -246,10 +246,11 @@ def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
     batch = session.start()
     assert not isinstance(batch, Finished)
     observation = batch[0].observation
-    copied_accounts = observation.accounts
-    copied_accounts[0] = ("invented", 999)
+    copied_accounts: Any = observation.accounts
+    with pytest.raises(TypeError, match="does not support item assignment"):
+        copied_accounts[0] = ("invented", 999)
     writable: Any = observation
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValueError, match="frozen"):
         writable.cash = 999
     claim = observation.claims[0]
     batch = session.advance(
