@@ -4,3 +4,4 @@ resources:
   - terraform.yaml
   - old-terraform.yaml
   - rbac.yaml
+  - state-migration.yaml
