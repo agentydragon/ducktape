@@ -1002,6 +1002,8 @@ class PrivateEquityTenderPolicy(BaseModel):
 class TlhPortfolioSpec(BaseModel):
     """A separately owned reduced-form portfolio, not an ordinary holding plus a policy."""
 
+    model_config = ConfigDict(extra="forbid")
+
     portfolio_id: str = Field(min_length=1)
     owner_agent_id: str
     account_id: str
@@ -1061,6 +1063,8 @@ class Scenario(BaseModel):
     a multi-rollout simulation over a fixed horizon with both
     scheduled and recurring transfers, plus tax lots and asset
     sales."""
+
+    model_config = ConfigDict(extra="forbid")
 
     currency: Currency = Field(default_factory=Currency)
     agents: list[Agent]

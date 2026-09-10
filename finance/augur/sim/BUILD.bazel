@@ -412,6 +412,7 @@ py_test(
         "//finance/augur/product:action_projection",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

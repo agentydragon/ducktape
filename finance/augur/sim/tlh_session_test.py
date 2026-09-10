@@ -5,14 +5,17 @@ from decimal import Decimal
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.books import TlhPortfolioState
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction
 from finance.augur.sim.scenario import (
+    Currency,
     DistributionTaxSlice,
     InitialLot,
+    Scenario,
     SecurityDistribution,
     TaxProfile,
     TlhPortfolioSpec,
@@ -31,7 +34,7 @@ def _case(*, cash: int = 0, horizon: int = 2, rollouts: int = 1, harvest: bool =
             checking(("owner", Decimal(cash)), ("irs", Decimal(0))),
             tax_profiles=[TaxProfile(agent_id="owner", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")],
             horizon_months=horizon,
-            currency_quantum="1",
+            currency=Currency(quantum=Decimal(1)),
             tlh_portfolios=[
                 TlhPortfolioSpec(
                     portfolio_id="managed",
@@ -66,6 +69,7 @@ def _case(*, cash: int = 0, horizon: int = 2, rollouts: int = 1, harvest: bool =
 
 def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss() -> None:
     case = _case(horizon=1)
+    assert case.compiled_run.currency_quantum == "1"
     assert case.compiled_run.scenario.initial_lots == ()
     session = ActionSession(case.compiled_run, "owner", [0])
     try:
@@ -163,7 +167,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
             checking(("owner", Decimal(0)), ("other", Decimal(0))),
             tax_profiles=[],
             horizon_months=1,
-            currency_quantum="1",
+            currency=Currency(quantum=Decimal(1)),
             tlh_portfolios=case.scenario.tlh_portfolios,
         ),
     )
@@ -280,6 +284,16 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
     assert rollout.trace is not None
     assert rollout.trace.books[1].tlh_portfolios[0].reported_tax_basis == 199
     assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -3
+
+
+def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None:
+    case = _case()
+    for name, value in (("harvest_policies", []), ("currency_quantum", "1")):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            Scenario.model_validate({**case.scenario.model_dump(), name: value})
+    [portfolio] = case.scenario.tlh_portfolios
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TlhPortfolioSpec.model_validate({**portfolio.model_dump(), "cumulative_harvest": 1})
 
 
 if __name__ == "__main__":
