@@ -4,7 +4,23 @@ Planning only: proposed names below are not current APIs. The
 [roadmap](roadmap.md) owns dependencies and dispatch. This plan supplies GH and
 the MA1–MA3 acceptance cases; remove completed work as it lands.
 
-## Destination
+## Representation decision before implementation
+
+The household owns the investment and chooses contributions/withdrawals; that does
+not settle whether this approximation should be represented as a generic managed
+account. The current reduced-form TLH model synthesizes realized losses without
+modeling the constituent trades that produce them. Linking losses to adjusted
+basis can ensure accounting reconciliation but does not establish economic or
+tax-law fidelity of the harvesting process.
+
+GH must resolve whether a distinct reduced-form TLH portfolio/model is the clearer
+domain object, its name, and how it composes with ownership, positions and canonical
+tax facts. The managed-account container and service vocabulary below are proposals,
+not an approved abstraction or a prerequisite for every future investment service.
+Retain MA1–MA3 as task IDs while their concrete representation is decided. Do not
+expand to constituent simulation merely to make the approximation's name fit.
+
+## Proposed destination
 
 A managed portfolio is an account owned by the household, with a declared
 investment service. It is not necessarily another deciding agent, an ordinary ETF
@@ -63,8 +79,8 @@ service's supported prices/payouts; the household never sees future paths.
 - **Scenario declarations:** account ownership, opening positions, selected
   service/model and concrete funding/settlement terms. Reuse account/asset IDs,
   money precision and opening lot types. A definition is shared configuration;
-  state is isolated per account and rollout. MA1 consumes BASIS's shared exact
-  total-opening-basis contract; no managed-only divide-and-round workaround.
+  state is isolated per account and rollout. MA1 reuses the shared exact total
+  opening basis in `InitialLot.cost_basis`; no managed-only divide-and-round workaround.
   An empty account can receive a first
   contribution without exposing a fictitious initial lot.
 - **Approximation:** reuse the formula in `sim/tlh_harvest.py` as the initial

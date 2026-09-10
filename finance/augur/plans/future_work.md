@@ -8,8 +8,8 @@ assumptions remain downstream.
 
 ## Domain/API cleanup
 
-- **INPUT / OBSINPUT / BIND:** finish typed prepared facts, conditioning/artifact
-  observations and explicit financial-product bindings. Distinguish configured
+- **INPUT / BIND:** finish typed prepared facts and explicit financial-product
+  bindings, reusing typed conditioning/artifact observations. Distinguish configured
   opening levels, relative path anchors and fixed contractual amounts. Keep their
   anchoring conventions explicit at composition, not inferred from source names.
 - **P12 / ACCEPT / CAP:** retire configured drivers and test adapters while
@@ -33,7 +33,7 @@ assumptions remain downstream.
 - **IDTYPES, deferred:** use distinct strongly typed entity IDs so security and
   property identities cannot be interchanged at domain/API boundaries. This is
   not merely a prefix spelling change. Preserve existing typed keys; do not make
-  a global serialization/ID sweep a prerequisite for OBSINPUT or INPUT.
+  a global serialization/ID sweep a prerequisite for INPUT or BIND.
 
 ## Managed portfolios and harvesting
 

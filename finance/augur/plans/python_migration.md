@@ -27,10 +27,9 @@ studies to expose needed boundaries:
 
 Typed common outputs do not finish typing the world. The concrete
 [input/reader cleanup slices](cleanup_migration.md) cover INPUT's public
-`CompiledRun.execution_input` leak, TAXINPUT's padded preparation, BASIS's exact
-opening lots, OBSINPUT's conditioning records, and the remaining P12 readers.
-TAXINPUT supplies INPUT's record contract; BASIS supplies MA1's shared opening
-basis. The other slices need not wait for a wholesale Python executor rewrite.
+`CompiledRun.execution_input` leak and the remaining P12 readers. Reuse typed
+prepared tax records, exact total opening lot basis and typed conditioning
+observations. These slices need not wait for a wholesale Python executor rewrite.
 
 The `product/` shell is not a new-feature priority. Its changes should correct
 existing behavior or retire legacy interfaces; experiments remain the primary

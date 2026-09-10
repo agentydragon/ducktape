@@ -18,29 +18,6 @@ common outputs rather than introducing another representation.
 INPUT need not wait for P12: still-live configured strategies can lower privately
 until their last consumers move, but must not dictate the public domain objects.
 
-**BASIS — exact opening lot basis.** `api/portfolio.py::to_initial_lots` divides
-total basis into per-unit basis; `sim/compiler/execution.py::_initial_lots` demands
-a representable per-unit amount, and `product/portfolio.py::_holding_position`
-repeats the conversion for display. Make exact remaining total basis authoritative
-through generic imports, scenario authoring, compilation and display. Preserve
-quantity precision without requiring total basis to divide into a money quantum:
-include a total basis of $1 over three units, partial sales and full liquidation.
-Migrate all readers together, without retaining two mutable basis authorities.
-This is a correction/cleanup of existing input and display, not a product feature.
-It is independent of INPUT and GT. MA1 consumes this generic opening-basis
-contract instead of adding a managed-account-only workaround.
-
-**OBSINPUT — typed market observations.** Replace `VecmProviderConfig.latest_observations`
-and source-specific fallback extraction in `model/vecm.py` with typed factor
-observations carrying the value and required provenance. Update fit/artifact/config
-producers, runtime conditioning and `fit/state_space.py` readers together; reject
-incompatible/missing observations at the boundary. Retain actual observable units
-and conditioning values; no alternate dict format or duplicate extractor remains.
-This is independently landable: no MODEL/GM statistical-adoption gate and no
-prerequisite edge to BIND's price/payout validation slice. Retain current factor
-encoding; the deferred IDTYPES work in [the entity-ID note](typed_series_config.md)
-does not gate typed observation records or require an artifact/frontend ID sweep.
-
 ## P12 reader retirement
 
 Remaining TLH/feature-rich/native-test consumers still use scheduled public sales.
@@ -84,34 +61,19 @@ last configured allocator consumers. Declarations, not a strategy configuration,
 must determine available accounts/instruments. APP owns the existing app's final
 cutover; do not add new endpoints or financial features there.
 
-## DOCS — reconcile the remaining trackers
-
-The [capability backlog](future_work.md) owns the remaining questions from the old
-project/simulator TODOs; the roadmap alone owns sequencing. Do not restore their
-data-driven liquidity programs, second mutable TLH basis accumulator, cached
-rollouts or completed implementation items.
-
-Reconcile the remaining interface sketches and older model/actor plans with the
-executable-policy/common-session contract. Review the interpolator, exogenous-rollout
-and mint-stream notes: separate implemented contracts from optional model proposals
-and deferred evidence operations. Current calibration behavior is documented in
-<../docs/calibration.md>. Remove code-to-plan citations as contracts graduate. These notes
-must not introduce an alternative model-adoption gate beside SCORE/GM/READY.
-
-### Older PR disposition
+## Older PR disposition
 
 These are proposed dispositions, not claims that the PRs have been closed. Remove
 each row when the disposition is resolved; do not preserve another history ledger.
 
 | PR                                                          | Disposition and surviving requirement                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [#4624](https://github.com/agentydragon/ducktape/pull/4624) | Supersede with the current SPEC/requirements reconciliation. Preserve accountable financial histories and independent controls; drop its mandatory 100,000-path latency/memory gate.                                                                                         |
+| [#4624](https://github.com/agentydragon/ducktape/pull/4624) | The current SPEC/requirements reconciliation supersedes this proposal; closure remains an owner action. Preserve accountable financial histories and independent controls; drop its mandatory 100,000-path latency/memory gate.                                              |
 | [#5859](https://github.com/agentydragon/ducktape/pull/5859) | Keep as review-only study input, not another supported interface package. Consume its studies through STUDY/RUN/HOUSE/SCORE/ROBUST; inner-forecast continuation remains future scope. Replace sketches with runnable consumers rather than implementing every proposed stub. |
 
-The reviewed heads retain useful questions but do not establish financial fidelity
-or current interfaces. Ask the owner about unresolved intent after inspecting code
-and history. Closure is a separate explicit action, not a reason to delay DOCS.
-
-DOCS has no implementation prerequisite and does not gate other work. Each code
-migration still updates its own affected README/SPEC and removes its completed
-plan entries; DOCS is not permission to postpone those changes.
+The remaining PR dispositions do not gate implementation or create another DOCS
+project. Each migration updates its own affected README/SPEC and removes its
+completed plan entries. Optional model research lives in
+[the research note](market_model_research.md); implemented behavior lives in
+[calibration](../docs/calibration.md) and [PE model](../docs/private_equity_model.md)
+documentation.

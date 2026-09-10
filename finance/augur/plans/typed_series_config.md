@@ -5,7 +5,7 @@ a security identity must not be usable where a property identity is required.
 Changing string prefixes alone does not provide that guarantee.
 
 The [roadmap](roadmap.md) tracks this as IDTYPES, deferred. It is not a prerequisite
-for OBSINPUT's typed conditioning records, INPUT's private lowering, or studies.
+for INPUT's private lowering, product bindings, or studies.
 Existing typed keys and per-kind sampled frames should be reused rather than
 replaced by another representation.
 
@@ -20,6 +20,5 @@ When a consumer makes this worthwhile:
 - Keep downstream private artifact/config updates explicit. No new code needs
   a second supported format merely to keep an old deployment working.
 
-OBSINPUT owns actual conditioning/provenance records and fallback-extractor
-deletion. It may retain current factor encoding while removing raw-record
-ambiguity; a global artifact/API/frontend ID migration is separate.
+Reuse the existing typed conditioning/provenance records and current factor
+encoding; a global artifact/API/frontend ID migration is separate.
