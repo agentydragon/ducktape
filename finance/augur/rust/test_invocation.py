@@ -1,6 +1,7 @@
 """Prepared file transport into a Python policy and the canonical action session."""
 
 import json
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from finance.augur.rust.invocation import read_prepared_input, write_prepared_in
 from finance.augur.rust.simulator import ActionSession, simulate_forensic_json
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
 from finance.augur.x.monthly_actions.run import prepare
@@ -93,6 +95,23 @@ def test_session_does_not_accept_a_parallel_raw_input_surface(tmp_path: Path) ->
     for raw in invalid_inputs:
         with pytest.raises(TypeError, match="CompiledRun"):
             ActionSession(raw, "example-household", [0])
+
+
+def test_experiment_defined_claim_label_reaches_the_policy_after_file_loading(tmp_path: Path) -> None:
+    original = prepare()
+    claim = replace(original.scenario.obligations[0], obligation_type="experiment:annual-outflow")
+    prepared = replace(original, scenario=replace(original.scenario, obligations=(claim,)))
+    path = tmp_path / "custom-claim.json"
+    write_prepared_input(prepared, path)
+    session = ActionSession(read_prepared_input(path), "example-household", [0])
+    try:
+        batch = session.start()
+        assert not isinstance(batch, Finished)
+        [observed] = batch[0].observation.claims
+        assert observed.obligation_type == "experiment:annual-outflow"
+        assert observed.amount_due == 15_000
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":
