@@ -17,6 +17,8 @@ from finance.augur.sim.actions import (
     Transfer,
     Withdraw,
 )
+from finance.augur.sim.books import AccountRef, MortgageState
+from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.observations import Decision, Observation, TlhPortfolioObservation, observation_from_json
 from finance.augur.sim.prepared import CompiledRun, PreparedTlhPortfolio
 from finance.augur.sim.tlh import (
@@ -37,6 +39,8 @@ _NO_REALIZATIONS = ModeledRealizations()
 class _Path:
     world: native._World
     portfolios: dict[str, TlhPortfolio]
+    mortgages: dict[str, Mortgage] = field(default_factory=dict)
+    mortgage_payments: dict[str, MortgagePayment] = field(default_factory=dict)
     previous_receipts: list[results.Receipt] = field(default_factory=list)
     receipts: list[results.Receipt] = field(default_factory=list)
     stop: results.Stop | None = None
@@ -197,7 +201,7 @@ class _Session:
     def opening(self) -> None:
         """The manager advances before any investor operation, including configured sales."""
         for rollout_id, path in self.active().items():
-            path.world.prepare_month(self.month)
+            self.open_mortgages(path)
             for spec in self.specs.values():
                 current = path.portfolios[spec.portfolio_id]
                 for index, distribution in enumerate(self.run.scenario.distributions):
@@ -219,6 +223,77 @@ class _Session:
                     self.effects(spec, candidate, None, 0, realized).model_dump_json(),
                 )
                 path.portfolios[spec.portfolio_id] = candidate
+
+    def open_mortgages(self, path: _Path) -> None:
+        """Originate/pay off configured contracts, then quote this month's installments."""
+        candidates = {}
+        for purchase in self.run.scenario._scheduled_property_purchases:
+            financing = purchase.mortgage
+            if purchase.month != self.month or financing is None:
+                continue
+            candidates[financing.liability_id] = Mortgage(
+                MortgageTerms(
+                    liability_id=financing.liability_id,
+                    property_id=purchase.property_id,
+                    borrower=AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
+                    lender=AccountRef(agent_id=financing.lender_agent_id, account_id=financing.lender_account_id),
+                    origination_month=purchase.month,
+                    origination_principal=financing.principal,
+                    annual_interest_rate_ppb=financing.annual_interest_rate_ppb,
+                    term_months=financing.term_months,
+                )
+            )
+        sales = {sale.property_id for sale in self.run.scenario._property_sales if sale.month == self.month}
+        opening = _native.MortgageOpening.model_validate_json(
+            path.world.prepare_month(
+                self.month,
+                _native.MORTGAGE_ORIGINATIONS.dump_json(
+                    [
+                        _native.MortgageOrigination(liability_id=id_, monthly_payment=loan.monthly_payment)
+                        for id_, loan in candidates.items()
+                    ]
+                ).decode(),
+                _native.MORTGAGE_PAYOFFS.dump_json(
+                    [
+                        _native.MortgagePayoff(liability_id=id_, principal=path.world.mortgage_principal(id_))
+                        for id_, loan in path.mortgages.items()
+                        if loan.active and loan.terms.property_id in sales
+                    ]
+                ).decode(),
+            )
+        )
+        for id_ in opening.paid_off:
+            path.mortgages[id_].payoff()
+        for id_ in opening.originated:
+            path.mortgages[id_] = candidates[id_]
+        path.mortgage_payments = {}
+        for id_, loan in path.mortgages.items():
+            if not loan.active:
+                continue
+            payment = loan.payment(
+                self.month,
+                path.world.mortgage_principal(id_),
+                path.world.property_rented_fraction(loan.terms.property_id),
+            )
+            if payment is not None:
+                path.mortgage_payments[id_] = payment
+        path.world.assemble_claims(
+            _native.MORTGAGE_INSTALLMENTS.dump_json(
+                [
+                    _native.MortgageInstallment(
+                        liability_id=id_,
+                        interest=payment.interest,
+                        principal=payment.principal,
+                        rental_interest=payment.rental_interest,
+                    )
+                    for id_, payment in path.mortgage_payments.items()
+                ]
+            ).decode()
+        )
+
+    @staticmethod
+    def mortgage_snapshots(path: _Path) -> list[MortgageState]:
+        return [loan.observe(path.world.mortgage_principal(id_)) for id_, loan in path.mortgages.items()]
 
     def observe(self, rollout_id: int, actor: str) -> Observation:
         path = self.paths[rollout_id]
@@ -331,9 +406,36 @@ class _Session:
                 for spec in self.specs.values()
             ]
             path.world.set_component_marks_json(_native.MARKS.dump_json(marks).decode())
-            path.world.close_month(failed=path.failed, shortfall=path.shortfall)
+            for id_ in _native.PAID_MORTGAGES.validate_json(path.world.paid_mortgages_json()):
+                path.mortgages[id_].record_payment(path.mortgage_payments[id_], path.world.mortgage_principal(id_))
+            interest = [
+                _native.MortgageInterest(
+                    liability_id=id_,
+                    owner_interest_paid_ytd=loan.interest_paid_ytd - loan.rental_interest_paid_ytd,
+                    origination_principal=loan.terms.origination_principal,
+                )
+                for id_, loan in path.mortgages.items()
+            ]
+            reset_year = not path.failed and (self.month + 1) % 12 == 0
+            snapshots = self.mortgage_snapshots(path)
+            if reset_year:
+                snapshots = [
+                    snapshot.model_copy(update={"interest_paid_ytd": 0, "rental_interest_paid_ytd": 0})
+                    for snapshot in snapshots
+                ]
+            path.world.close_month(
+                failed=path.failed,
+                shortfall=path.shortfall,
+                mortgage_interest_json=_native.MORTGAGE_INTEREST.dump_json(interest).decode(),
+                mortgage_snapshots_json=_native.MORTGAGE_SNAPSHOTS.dump_json(snapshots).decode(),
+            )
+            if reset_year:
+                for loan in path.mortgages.values():
+                    loan.reset_year()
             if path.failed or self.month + 1 == self.run.scenario.horizon_months:
-                path.result = _native.WorldResult.model_validate_json(path.world.finish_json())
+                path.result = _native.WorldResult.model_validate_json(
+                    path.world.finish_json(_native.MORTGAGE_SNAPSHOTS.dump_json(snapshots).decode())
+                )
         self.month += 1
         if not self.is_finished():
             self.opening()

@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import ConfigDict, Field, JsonValue, TypeAdapter
 
 from finance.augur.sim import results
-from finance.augur.sim.books import BondCashflowOutcome, Book, DistributionOutcome, JournalEntry, Record
+from finance.augur.sim.books import BondCashflowOutcome, Book, DistributionOutcome, JournalEntry, MortgageState, Record
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.observations import TlhPortfolioObservation
 
@@ -24,6 +24,44 @@ OUTCOME: TypeAdapter[results.Executed | results.Rejected] = TypeAdapter(
     Annotated[results.Executed | results.Rejected, Field(discriminator="kind")]
 )
 UNPAID = TypeAdapter(list[results.UnpaidClaim])
+
+
+class MortgageOrigination(Record):
+    liability_id: str
+    monthly_payment: int
+
+
+class MortgagePayoff(Record):
+    liability_id: str
+    principal: int
+
+
+class MortgageInstallment(Record):
+    liability_id: str
+    interest: int
+    principal: int
+    rental_interest: int
+
+
+class MortgageInterest(Record):
+    """Paid-interest facts for native tax assessment, before the Python year reset."""
+
+    liability_id: str
+    owner_interest_paid_ytd: int
+    origination_principal: int
+
+
+class MortgageOpening(Record):
+    originated: list[str]
+    paid_off: list[str]
+
+
+MORTGAGE_ORIGINATIONS = TypeAdapter(list[MortgageOrigination])
+MORTGAGE_PAYOFFS = TypeAdapter(list[MortgagePayoff])
+MORTGAGE_INSTALLMENTS = TypeAdapter(list[MortgageInstallment])
+MORTGAGE_INTEREST = TypeAdapter(list[MortgageInterest])
+MORTGAGE_SNAPSHOTS = TypeAdapter(list[MortgageState])
+PAID_MORTGAGES = TypeAdapter(list[str])
 
 
 class Settlement(Record):
