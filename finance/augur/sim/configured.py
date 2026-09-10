@@ -74,9 +74,9 @@ def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -
             for rollout_id, pending_buy in pending:
                 if rollout_id not in live:
                     continue
-                action = session.native.allocation_buy(rollout_id, pending_buy)
-                if action is not None:
-                    receipt = session.apply(rollout_id, action)
+                buy_action = session.native.allocation_buy(rollout_id, pending_buy)
+                if buy_action is not None:
+                    receipt = session.apply(rollout_id, buy_action)
                     if isinstance(receipt.outcome, results.Rejected):
                         live.remove(rollout_id)
             session.native.run_private_equity()

@@ -125,10 +125,10 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
                 label=group.account_label,
             )
         )
-        holding = _sp500_proxy_holding(group, group_holdings)
-        holdings.append(holding)
+        proxy_holding = _sp500_proxy_holding(group, group_holdings)
+        holdings.append(proxy_holding)
         if group.tlh_assumptions is not None:
-            opening = PortfolioConfig(accounts=(accounts[-1],), holdings=(holding,))
+            opening = PortfolioConfig(accounts=(accounts[-1],), holdings=(proxy_holding,))
             tlh_portfolios.append(
                 TlhPortfolioSpec(
                     portfolio_id=group.position_id,
