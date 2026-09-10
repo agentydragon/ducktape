@@ -1,42 +1,30 @@
-"""Offline path-selection checks through the actual Trinity compiler and Rust engine."""
+"""Offline path selection through the actual Trinity compiler and Python action loop."""
 
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
-import polars as pl
 import pytest
 import pytest_bazel
-from polars.testing import assert_frame_equal
 
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
-from finance.augur.rust.backend import RustEngine
 from finance.augur.sim.backend import CompiledRun, compile_run
-from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.study.trinity.replay import (
     BOND_SPEC,
     EQUITY_SPEC,
     HORIZON_MONTHS,
-    RETIREE,
     build_scenario,
+    execute,
     sample_replay,
+    sleeve_targets,
 )
+from finance.augur.study.trinity.synthetic import synthetic_history
 
 
 @pytest.fixture
 def history() -> MacroHistory:
-    index = np.arange(HORIZON_MONTHS + 4)
-    return MacroHistory(
-        months=tuple(date(1930 + int(i) // 12, int(i) % 12 + 1, 1) for i in index),
-        short_rate=0.01 + index * 0.0001,
-        term_spread=np.full(len(index), 0.02),
-        corporate_aaa_yield=0.04 + index * 0.0001,
-        corporate_baa_yield=0.05 + index * 0.0001,
-        equity_level=100.0 * np.exp(np.cumsum(0.001 + index * 0.00001)),
-        cpi_level=100.0 * np.exp(np.cumsum(0.001 + index * 0.000003)),
-    )
+    return synthetic_history(HORIZON_MONTHS)
 
 
 def _compile(model: HistoricalWindowsModel, dates: tuple[date, ...]) -> CompiledRun:
@@ -73,22 +61,19 @@ def test_selected_trace_and_metrics_match_the_same_date_in_a_population(history:
     dates = (history.months[2], history.months[0], history.months[3])
     population = _compile(model, dates)
     selected = _compile(model, (dates[2],))
-    engine = RustEngine()
-    all_metrics = engine.product_metrics(population, primary_agent_id=RETIREE)
-    one_metrics = engine.product_metrics(selected, primary_agent_id=RETIREE)
-    assert len(set(all_metrics.metric_arrays()["net_worth_quanta"][-1])) == len(dates)
-    np.testing.assert_array_equal(one_metrics.failed_month, all_metrics.failed_month[2:3])
-    for all_values, one_values in zip(all_metrics.base_series, one_metrics.base_series, strict=True):
-        np.testing.assert_array_equal(one_values, all_values[:, 2:3])
-    all_events = engine.events(population)
-    one_events = engine.events(selected)
-    assert not one_events.obligation_settlements.is_empty()
-    assert not one_events.lot_dispositions.is_empty()
-    for spec in EVENT_FRAME_SPECS:
-        assert_frame_equal(
-            one_events.frame(spec).drop("rollout_index"),
-            all_events.frame(spec).filter(pl.col("rollout_index") == 2).drop("rollout_index"),
-        )
+    targets = sleeve_targets(0.6)
+    summaries = execute(population, targets=targets, rollout_ids=[0, 1, 2])
+    traces = execute(population, targets=targets, rollout_ids=[2, 0], capture="forensic")
+    separate = execute(selected, targets=targets, rollout_ids=[0], capture="forensic")[0]
+    assert [row["rollout_id"] for row in traces] == [2, 0]
+    for trace in traces:
+        assert trace["summary"] == summaries[trace["rollout_id"]]["summary"]
+        assert trace["stop"] == summaries[trace["rollout_id"]]["stop"]
+    assert separate["summary"] == traces[0]["summary"]
+    assert separate["trace"] == traces[0]["trace"]
+    assert traces[0]["trace"]["financial"]["obligations"]
+    assert traces[0]["trace"]["financial"]["dispositions"]
+    assert len({row["summary"]["cash"][0]["values"][-1] for row in summaries}) > 1
 
 
 if __name__ == "__main__":

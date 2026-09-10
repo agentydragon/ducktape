@@ -26,7 +26,7 @@ def sample(*, rollout_count: int, horizon_months: int) -> ExternalSeriesContext:
 def prepare(*, rollout_count: int, horizon_months: int) -> CompiledRun:
     """A tax-free equity portfolio; the Python policy supplies sales and consumption."""
     scenario = build_scenario(equity_share=1.0, withdrawal_rate=0.04).model_copy(
-        update={"scheduled_obligations": [], "target_allocation_policies": [], "horizon_months": horizon_months}
+        update={"scheduled_obligations": [], "horizon_months": horizon_months}
     )
     paths = sample(rollout_count=rollout_count, horizon_months=horizon_months)
     return compile_run(scenario, rollout_count=rollout_count, external_series=paths, jurisdictions={}, locations={})

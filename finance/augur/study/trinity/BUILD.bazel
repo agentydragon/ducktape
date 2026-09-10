@@ -16,14 +16,15 @@ py_library(
     srcs = ["replay.py"],
     deps = [
         ":evidence_snapshot",
+        ":policy",
+        ":synthetic",
         "//finance/augur/model:bond_fund",
         "//finance/augur/model:equity",
         "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
-        "//finance/augur/rust:backend",
+        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
-        "//finance/augur/sim:runtime",
         "//finance/augur/sim:scenario",
         "@pypi//numpy",
     ],
@@ -39,9 +40,7 @@ py_test(
     name = "replay_test",
     # Fetches the record from the public upstreams and runs ~55 474-rollout simulations, so it
     # is excluded from CI's default filter: an upstream outage must not redden an unrelated PR.
-    # See the package README for how to run it. Measured at ~180s on an RBE worker: ~55
-    # 474-rollout simulations plus a whole-record sample, so "medium" would leave under 2x
-    # headroom for a network fetch and RBE's own I/O latency.
+    # See the package README; throughput of the Python migration has not been measured here.
     size = "large",
     srcs = ["replay_test.py"],
     tags = ["manual"],
@@ -56,20 +55,54 @@ py_test(
 )
 
 py_test(
-    name = "test_path_identity",
-    srcs = ["test_path_identity.py"],
+    name = "test_actions",
+    srcs = ["test_actions.py"],
+    data = [":replay_bin"],
     deps = [
         ":replay",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/model:historical_windows",
-        "//finance/augur/rust:backend",
+        "//finance/augur/model:series",
         "//finance/augur/sim:backend",
-        "//finance/augur/sim:events",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:scenario",
+        "//util/bazel:runfiles",
         "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_path_identity",
+    srcs = ["test_path_identity.py"],
+    deps = [
+        ":replay",
+        ":synthetic",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "policy",
+    srcs = ["policy.py"],
+    deps = [
+        "//finance/augur/policy:sleeves",
+        "//finance/augur/rust:simulator_ext",
+    ],
+)
+
+py_library(
+    name = "synthetic",
+    srcs = ["synthetic.py"],
+    deps = [
+        "//finance/augur/model:historical_windows",
+        "@pypi//numpy",
     ],
 )

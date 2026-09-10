@@ -4,6 +4,10 @@ Philip L. Cooley, Carl M. Hubbard and Daniel T. Walz, "Retirement Savings: Choos
 Withdrawal Rate That Is Sustainable", *AAII Journal* XX(2), February 1998, pp. 16-21.
 Their Table 3 — inflation-adjusted withdrawals, 1926 to 1995 — is the target.
 
+The numerical attribution below records the earlier configured-runner investigation,
+not a fresh measurement of the Python action-session migration. It is not exact paper
+reproduction; the manual sourced tests retain their existing tolerances.
+
 **Why reproduce a 1998 paper at all.** Every other check on augur is internal: the engines
 agree with each other, the money math is exact, the fitted model scores well on its own
 holdout. None of that can catch a portfolio simulator that is self-consistently wrong. The
@@ -76,8 +80,8 @@ attribution:
   observations**. Neither table is a probability; both are elaborate readings of roughly two
   non-overlapping experiments, which is also why the test's tolerances here are loose on
   purpose and should not be tightened toward the published digits.
-- *Coupons sit in cash until the next withdrawal.* augur's allocation policy refills a cash
-  band but never invests a surplus, so a bond sleeve yielding more than the withdrawal rate
+- *Coupons sit in cash until the next withdrawal.* The Python funding policy sells only
+  enough to pay due claims and never invests a surplus, so a bond sleeve yielding more than the withdrawal rate
   accumulates idle cash that Trinity would have reinvested.
 - *Withdrawals are taken at the start of each year*, which is the more demanding convention:
   the money leaves before that year's return is earned on it. The paper does not say which end
@@ -108,13 +112,17 @@ method rather than a difference.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
+import json
 import logging
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 
@@ -132,13 +140,11 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
-from finance.augur.rust.backend import RustEngine
-from finance.augur.sim.backend import compile_run
+from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.sim.backend import CompiledRun, compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
-from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     Agent,
-    CashflowOnly,
     DistributionTaxSlice,
     InitialAccountBalance,
     InitialLot,
@@ -147,10 +153,10 @@ from finance.augur.sim.scenario import (
     ScheduledObligation,
     SecurityDistribution,
     SeriesIndexedAmount,
-    SleeveTarget,
-    TargetAllocationPolicy,
 )
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
+from finance.augur.study.trinity.policy import fund_claims
+from finance.augur.study.trinity.synthetic import synthetic_history
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +246,18 @@ only as an unattributable disagreement in the output.
 """
 
 
+def sleeve_targets(equity_share: float) -> dict[tuple[str, str], int]:
+    """Study sales weights: whole percentage points, with absent sleeves excluded."""
+    if not 0 <= equity_share <= 1:
+        raise ValueError("equity_share must be finite and in [0, 1]")
+    equity_points = round(equity_share * 100)
+    return {
+        (BROKERAGE, str(symbol)): points
+        for symbol, points in ((EQUITY, equity_points), (BONDS, 100 - equity_points))
+        if points > 0
+    }
+
+
 def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
     """One Trinity cell: `equity_share` of a $1M portfolio, drawn down at `withdrawal_rate`.
 
@@ -247,17 +265,15 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
     of the 30 years and indexed to CPI thereafter — the paper's inflation-adjusted Table 3
     rather than its constant-dollar Table 1.
 
-    Success is "the portfolio supported every withdrawal". augur records the first month an
-    obligation could not be met, which is the same event: the paper's ending value can only
-    reach $0 by way of a withdrawal it could not fund.
+    Fixed indexed withdrawals are genuine scheduled claims; their funding is chosen by
+    the Python policy. Exact exhaustion after the final paid withdrawal is a success.
     """
 
     annual_withdrawal = INITIAL_PORTFOLIO * Decimal(str(withdrawal_rate))
     sleeve_shares = ((EQUITY, equity_share), (BONDS, 1.0 - equity_share))
     holds_bonds = equity_share < 1.0
-    # Integer weights, and a zero-weight sleeve omitted rather than passed as 0: an asset the
-    # policy does not name is outside the target denominator, which is what "no bonds" means.
-    equity_points = round(equity_share * 100)
+    if not 0 <= equity_share <= 1:
+        raise ValueError("equity_share must be finite and in [0, 1]")
 
     return Scenario(
         agents=[Agent(agent_id=RETIREE), Agent(agent_id=WORLD)],
@@ -293,8 +309,7 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
             )
             for year in range(PAYOUT_YEARS)
         ],
-        # Declared only when the sleeve exists: the compiler rejects a payout on a pool holding
-        # no lots, on the grounds that it would be silently zero for the whole horizon.
+        # The all-stock cell excludes the bond product, including its payout declaration.
         security_distributions=[
             SecurityDistribution(
                 asset=SecurityKey(symbol=BONDS),
@@ -309,28 +324,28 @@ def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
         ]
         if holds_bonds
         else [],
-        target_allocation_policies=[
-            TargetAllocationPolicy(
-                allow_purchases=False,
-                rebalancing=CashflowOnly(),
-                agent_id=RETIREE,
-                account_id=CHECKING,
-                source_account_ids=(BROKERAGE,),
-                sleeves=[
-                    SleeveTarget(asset=SecurityKey(symbol=symbol), weight=points)
-                    for symbol, points in ((EQUITY, equity_points), (BONDS, 100 - equity_points))
-                    if points > 0
-                ],
-                # No buffer at either end: the portfolio holds no idle cash, and each
-                # withdrawal is funded by selling exactly what it costs, from whichever sleeve
-                # is most overweight. This sales-only study convention does not rebalance by buying.
-                cash_floor=Decimal(0),
-                cash_ceiling=Decimal(0),
-            )
-        ],
         tax_profiles=[],
         horizon_months=HORIZON_MONTHS,
     )
+
+
+def execute(
+    run: CompiledRun,
+    *,
+    targets: dict[tuple[str, str], int],
+    rollout_ids: Sequence[int],
+    capture: Literal["summary", "dense", "forensic"] = "summary",
+) -> list[dict[str, Any]]:
+    """Python owns the monthly batch loop; native execution owns all financial effects."""
+    session = ActionSession(json.dumps(run.execution_input), RETIREE, list(rollout_ids), capture=capture)
+    try:
+        batch = session.start()
+        while not isinstance(batch, Finished):
+            batch = session.advance(fund_claims(batch, targets=targets, cash_account_id=CHECKING))
+        results: list[dict[str, Any]] = json.loads(batch.rollouts_json)
+        return results
+    finally:
+        session.close()
 
 
 @dataclass(frozen=True)
@@ -353,20 +368,34 @@ class Replay:
     def window_count(self) -> int:
         return len(self.window_starts)
 
-    def success_rate(self, *, equity_share: float, withdrawal_rate: float) -> float:
-        """Fraction of historical windows in which every scheduled withdrawal was paid."""
-
+    def run(
+        self,
+        *,
+        equity_share: float,
+        withdrawal_rate: float,
+        rollout_ids: Sequence[int] | None = None,
+        capture: Literal["summary", "dense", "forensic"] = "summary",
+    ) -> list[dict[str, Any]]:
+        """Run a cell or selected original window IDs on the same supplied population."""
         scenario = build_scenario(equity_share=equity_share, withdrawal_rate=withdrawal_rate)
-        jurisdictions = load_jurisdictions_for(scenario)
         run = compile_run(
             scenario,
             rollout_count=self.window_count,
             external_series=self.external_series,
-            jurisdictions=jurisdictions,
+            jurisdictions={},
             locations={},
         )
-        metrics = RustEngine().product_metrics(run, primary_agent_id=RETIREE)
-        return float(np.mean(np.asarray(metrics.failed_month) < 0))
+        return execute(
+            run,
+            targets=sleeve_targets(equity_share),
+            rollout_ids=range(self.window_count) if rollout_ids is None else rollout_ids,
+            capture=capture,
+        )
+
+    def success_rate(self, *, equity_share: float, withdrawal_rate: float) -> float:
+        """Fraction of windows completing all scheduled withdrawals, including exact depletion."""
+        results = self.run(equity_share=equity_share, withdrawal_rate=withdrawal_rate)
+        return sum(row["stop"] is None for row in results) / len(results)
 
     def safemax(self, *, equity_share: float, grid: tuple[float, ...]) -> float | None:
         """Highest rate in `grid` that every window survived, or `None` if even the lowest fails.
@@ -429,7 +458,11 @@ def sample_replay(evidence_dir: Path) -> Replay:
         equity=EQUITY_SPEC,
         instruments=(BOND_SPEC,),
     ).realize_model()
-    # Every window, not a thinned subset: dropping periods changes the study denominator.
+    return replay_model(model)
+
+
+def replay_model(model: HistoricalWindowsModel) -> Replay:
+    """Materialize every eligible window once, retaining its start-date identity."""
     window_starts = model.window_starts(HORIZON_MONTHS)
     bundle = model.materialize(window_starts=window_starts, horizon_months=HORIZON_MONTHS)
     return Replay(
@@ -447,35 +480,85 @@ SAFEMAX no better than "somewhere in [3%, 4%)" for every allocation."""
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Trinity-style historical replay through Python batch actions")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--evidence-dir", type=Path)
+    source.add_argument("--synthetic", action="store_true", help="Generated placeholder history, not paper evidence")
+    parser.add_argument("--equity-share", type=float)
+    parser.add_argument("--withdrawal-rate", type=float)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--trace-rollout", type=int, action="append", default=[])
+    args = parser.parse_args()
+    cell = args.equity_share is not None or args.withdrawal_rate is not None
+    if cell and (args.equity_share is None or args.withdrawal_rate is None or args.output_dir is None):
+        parser.error("a selected cell requires --equity-share, --withdrawal-rate and --output-dir")
+    if not cell and (args.synthetic or args.output_dir is not None or args.trace_rollout):
+        parser.error("synthetic history and output/trace options require a selected cell")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    with tempfile.TemporaryDirectory() as raw:
-        directory = Path(raw)
-        asyncio.run(snapshot_evidence(directory, EVIDENCE))
-        replay = sample_replay(directory)
-
-        print(
-            f"\nrecord {replay.record_start}..{replay.record_end}, "
-            f"{replay.window_count} overlapping {PAYOUT_YEARS}-year windows"
-        )
-        print("compound annual total return over the whole record (paper's 1926-1995 figure):")
-        for symbol, paper in PAPER_COMPOUND_RETURN_PERCENT.items():
-            print(f"  {symbol:>8}: {replay.compound_return_percent[symbol]:5.1f}%   (paper {paper:.1f}%)")
-
-        print(f"\nsuccess rate, augur vs Table 3, {PAYOUT_YEARS}-year payout")
-        print("  equity  " + "  ".join(f"{rate:>9.0%}" for rate in PUBLISHED_RATES))
-        for equity_share, published in TABLE_3_SUCCESS_PERCENT.items():
-            cells = [
-                f"{100 * replay.success_rate(equity_share=equity_share, withdrawal_rate=rate):3.0f}/{paper:<3d}"
-                for rate, paper in zip(PUBLISHED_RATES, published, strict=True)
-            ]
-            print(f"  {equity_share:>5.0%}   " + "  ".join(f"{cell:>9}" for cell in cells))
-
-        print("\nSAFEMAX — highest rate every window survived")
-        for equity_share in TABLE_3_SUCCESS_PERCENT:
-            safe = replay.safemax(equity_share=equity_share, grid=SAFEMAX_GRID)
-            print(
-                f"  {equity_share:>5.0%}   " + (f"{safe:.1%}" if safe is not None else f"below {SAFEMAX_GRID[0]:.1%}")
+    if args.synthetic:
+        replay = replay_model(
+            HistoricalWindowsModel(
+                history=synthetic_history(HORIZON_MONTHS), equity=EQUITY_SPEC, instruments=(BOND_SPEC,)
             )
+        )
+    elif args.evidence_dir is not None:
+        replay = sample_replay(args.evidence_dir)
+    else:
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            asyncio.run(snapshot_evidence(directory, EVIDENCE))
+            replay = sample_replay(directory)
+    if cell:
+        outcomes = replay.run(equity_share=args.equity_share, withdrawal_rate=args.withdrawal_rate)
+        args.output_dir.mkdir(parents=True, exist_ok=False)
+        (args.output_dir / "outcomes.json").write_text(json.dumps(outcomes))
+        (args.output_dir / "study.json").write_text(
+            json.dumps(
+                {
+                    "source": "synthetic placeholder history" if args.synthetic else "historical evidence",
+                    "window_starts": [start.isoformat() for start in replay.window_starts],
+                    "equity_share": args.equity_share,
+                    "withdrawal_rate": args.withdrawal_rate,
+                    "success_rate": sum(row["stop"] is None for row in outcomes) / len(outcomes),
+                }
+            )
+        )
+        if args.trace_rollout:
+            traces = replay.run(
+                equity_share=args.equity_share,
+                withdrawal_rate=args.withdrawal_rate,
+                rollout_ids=args.trace_rollout,
+                capture="forensic",
+            )
+            (args.output_dir / "traces.json").write_text(json.dumps(traces))
+        print(f"Saved {len(outcomes)} overlapping windows to {args.output_dir}; not independent probability samples.")
+        return
+    print_table(replay)
+
+
+def print_table(replay: Replay) -> None:
+    """Compare the sourced record against published cells without changing either input."""
+    print(
+        f"\nrecord {replay.record_start}..{replay.record_end}, "
+        f"{replay.window_count} overlapping {PAYOUT_YEARS}-year windows"
+    )
+    print("compound annual total return over the whole record (paper's 1926-1995 figure):")
+    for symbol, paper in PAPER_COMPOUND_RETURN_PERCENT.items():
+        print(f"  {symbol:>8}: {replay.compound_return_percent[symbol]:5.1f}%   (paper {paper:.1f}%)")
+
+    print(f"\nsuccess rate, augur vs Table 3, {PAYOUT_YEARS}-year payout")
+    print("  equity  " + "  ".join(f"{rate:>9.0%}" for rate in PUBLISHED_RATES))
+    for equity_share, published in TABLE_3_SUCCESS_PERCENT.items():
+        cells = [
+            f"{100 * replay.success_rate(equity_share=equity_share, withdrawal_rate=rate):3.0f}/{paper:<3d}"
+            for rate, paper in zip(PUBLISHED_RATES, published, strict=True)
+        ]
+        print(f"  {equity_share:>5.0%}   " + "  ".join(f"{cell:>9}" for cell in cells))
+
+    print("\nSAFEMAX — highest rate every window survived")
+    for equity_share in TABLE_3_SUCCESS_PERCENT:
+        safe = replay.safemax(equity_share=equity_share, grid=SAFEMAX_GRID)
+        print(f"  {equity_share:>5.0%}   " + (f"{safe:.1%}" if safe is not None else f"below {SAFEMAX_GRID[0]:.1%}"))
 
 
 if __name__ == "__main__":

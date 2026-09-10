@@ -13,12 +13,11 @@ from typing import Any
 
 import numpy as np
 
-from finance.augur.model.series import SecurityKey
 from finance.augur.rust.invocation import write_prepared_input
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.study.trinity.replay import HORIZON_MONTHS, build_scenario, sample_replay
+from finance.augur.study.trinity.replay import HORIZON_MONTHS, build_scenario, sample_replay, sleeve_targets
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
 from finance.augur.x.bounded_spending.stress_paths import sample
 
@@ -42,13 +41,8 @@ def compare(
     if any(rollout < 0 or rollout >= rollout_count for rollout in trace_rollouts):
         raise ValueError("trace rollout must identify an original path in the population")
     scenario = build_scenario(equity_share=equity_share, withdrawal_rate=rate_bps / 10_000)
-    allocation = scenario.target_allocation_policies[0]
-    targets = {}
-    for sleeve in allocation.sleeves:
-        if not isinstance(sleeve.asset, SecurityKey):
-            raise ValueError("bounded spending declares public-security sleeves")
-        targets[allocation.source_account_ids[0], str(sleeve.asset.symbol)] = sleeve.weight
-    scenario = scenario.model_copy(update={"scheduled_obligations": [], "target_allocation_policies": []})
+    targets = sleeve_targets(equity_share)
+    scenario = scenario.model_copy(update={"scheduled_obligations": []})
     prepared = compile_run(
         scenario, rollout_count=rollout_count, external_series=external_series, jurisdictions={}, locations={}
     )

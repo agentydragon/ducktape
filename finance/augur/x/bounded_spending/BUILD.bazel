@@ -70,7 +70,6 @@ py_library(
     deps = [
         ":python_policy",
         ":stress_paths",
-        "//finance/augur/model:series",
         "//finance/augur/rust:invocation",
         "//finance/augur/sim:backend",
         "//finance/augur/sim:external_series",
