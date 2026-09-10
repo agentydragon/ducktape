@@ -44,7 +44,7 @@ spec:
               containerPort: 5556
           readinessProbe:
             httpGet:
-              path: /healthz/ready
+              path: /healthz
               port: http
             periodSeconds: 5
           livenessProbe:
