@@ -22,6 +22,12 @@ These are evidence and composition tests, not a promise to reproduce every
 published number. Paper-specific financial simplifications belong in each
 experiment's configuration and documentation, never in a new competing engine.
 
+The [Guyton–Klinger source contract](../docs/guyton_klinger.md) distinguishes
+the 2004 historical experiment, a historical replay of the 2006 policy, and the
+2006 Monte Carlo comparisons. It records the verified rules and outstanding GS
+choices. The [implementation plan](guyton_klinger.md) sketches a shell using the
+current session; it is not an implemented reproduction.
+
 ## Broader experiments, selected by the next missing capability
 
 - **Income floor plus flexible upside:**

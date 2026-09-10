@@ -532,6 +532,12 @@ migrations, without reopening the settled ordered-action/no-retry contract:
 | GL — future batch tuning (parked)                  | When an actual workload needs optimization, measure representation/transfer/capture and consider bounded changes.                                                                                                                                                                                                                                                                                                                            | Domain/API work, Python migrations and studies proceed without performance budgets. Keep one batch interface; correctness is not deferred.                                                                                          |
 | GE — future optimization choice (parked)           | Use actual bottleneck evidence to choose Python/vectorized/native implementation details later.                                                                                                                                                                                                                                                                                                                                              | No near-term Python switch needs speedup evidence. Preserve the domain model and one canonical implementation regardless of optimization choice.                                                                                    |
 
+The [Guyton–Klinger source contract](../docs/guyton_klinger.md) grounds GS for
+that consumer: source versions and portfolio/spending rules, data access and
+remaining convention choices. Its [implementation plan](guyton_klinger.md) maps
+small STUDY slices onto the current session. Historical application of the 2006
+policy is distinct from its Monte Carlo table results.
+
 Market research candidates already tracked include
 [joint equity/macro #5487](https://github.com/agentydragon/ducktape/issues/5487),
 [regimes #5488](https://github.com/agentydragon/ducktape/issues/5488),
