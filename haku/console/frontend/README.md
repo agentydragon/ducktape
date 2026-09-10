@@ -49,22 +49,17 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped
   `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
 - `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the `/api/events/ws`
-  WebSocket) carrying tool-call, operator-link and conversation changes. The server broadcasts typed
-  invalidations to every connected tab, so panels, the history view and the conversation inventory
+  WebSocket) carrying tool-call and operator-link changes. The server broadcasts typed
+  invalidations to every connected tab, so panels and the history view
   stay live without a reload and without client-side cross-tab plumbing. It auto-reconnects with backoff,
   refetches on reconnect to catch up, and returns a `LiveStatus` (`connecting`/`live`/`offline`)
-  the shell uses to warn when the channel is down. Every consumer sees every event, so
-  `changedConversationId(event)` is how the tool-call surfaces skip conversation invalidations,
-  which a streaming turn emits every coalescing window.
+  the shell uses to warn when the channel is down.
 - `coalesced_refresh.ts` — `useCoalescedRefresh(read)`: at most one refetch in flight, with a burst
   of live events collapsing into a single catch-up afterwards, since overlapping fetches buy answers
-  the next one discards. Used by the history page and the conversation inventory; a transcript
-  follows its conversation's socket instead.
+  the next one discards. Used by the history page.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
-  the Pydantic models are the single source of truth for the wire contract — including
-  `ConversationFollowMessage`, which the exporter publishes as a component because the socket
-  carrying it has no route for FastAPI to document. Includes the
+  the Pydantic models are the single source of truth for the wire contract. Includes the
   launch-routine helper, MCP approval queue helpers (`pending`, approve, deny), and
   MCP operator-account association helpers.
 - `confirm_dialog.tsx` — trusted top-layer confirmations for Agent UI bridge launches, geolocation

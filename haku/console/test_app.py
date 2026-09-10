@@ -6,15 +6,12 @@ test_capabilities.py). There is no git-write path left to exercise here.
 
 from __future__ import annotations
 
-import copy
 from pathlib import Path
-from typing import Any
 
 import pytest
 import pytest_bazel
 
 from haku.console import app
-from haku.console.conftest import write_config
 
 
 def test_healthz(client) -> None:
@@ -57,148 +54,6 @@ def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_operator_cli
         # Geolocation and screen capture are scoped to the shell origin — never delegated to the
         # framed haku-ui.
         assert resp.headers["permissions-policy"] == "geolocation=(self), display-capture=(self)"
-
-
-def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isolation(
-    make_operator_client, tmp_path: Path
-) -> None:
-    haku_id = "00000000-0000-4000-8000-000000000001"
-    coder_id = "00000000-0000-4000-8000-000000000002"
-    claude_prompt = tmp_path / "claude.md.j2"
-    coder_prompt = tmp_path / "coder.md.j2"
-    claude_prompt.write_text("Haku session {{ session_id }} in {{ workspace }}", encoding="utf-8")
-    coder_prompt.write_text("Public coder session {{ session_id }} in {{ workspace }}", encoding="utf-8")
-    codex_runtime = {
-        "agent_id": coder_id,
-        "namespace": "codex",
-        "warm_pool": "codex",
-        "claim_prefix": "codex",
-        "harness_label": "codex",
-        "cwd": "/test/workspace",
-        "session_ttl_seconds": 300,
-        "https_proxy": "http://coder-proxy.test:8080",
-        "ca_bundle": "/coder-ca.pem",
-        "no_proxy": "localhost",
-        "mcp_url": "https://console.test/mcp",
-        "implementation": {
-            "kind": "codex_app_server",
-            "model": "codex-test",
-            "provider_id": "test-provider",
-            "provider_name": "Test OpenAI-compatible provider",
-            "api_base_url": "http://litellm.test/v1",
-            "api_key_env_var": "OPENAI_API_KEY",
-            "github_token_placeholder": "proxy-placeholder",
-        },
-    }
-    shared_config: dict[str, Any] = {
-        "harnesses": {
-            "claude_code": {
-                "agent_id": haku_id,
-                "namespace": "claude",
-                "warm_pool": "claude",
-                "claim_prefix": "claude",
-                "harness_label": "claude",
-                "cwd": "/test/workspace",
-                "session_ttl_seconds": 300,
-                "https_proxy": "http://claude-proxy.test:8080",
-                "ca_bundle": "/claude-ca.pem",
-                "no_proxy": "localhost",
-                "mcp_url": "https://console.test/mcp",
-                "implementation": {
-                    "kind": "claude_code",
-                    "api_base_url": "http://litellm.test:4000",
-                    "model": "anthropic-max20/ant-messages/claude-sonnet-5",
-                    "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
-                    "auth_token_placeholder": "placeholder",
-                },
-            },
-            "codex_app_server": codex_runtime,
-        },
-        "auto_approval_policies": [{"id": "manual", "type": "never"}],
-        "access_profiles": [
-            {"id": "haku", "auto_approval_policy": "manual", "allowed_harnesses": ["claude_code"]},
-            {"id": "public-coder", "auto_approval_policy": "manual", "allowed_harnesses": ["codex_app_server"]},
-        ],
-        "default_access_profile_id": "haku",
-        "static_agents": {
-            "haku": {
-                "agent_id": haku_id,
-                "display_name": "Haku",
-                "token": "haku-token",
-                "operator_subject": "operator-sub",
-                "access_profile_id": "haku",
-            },
-            "public_coder": {
-                "agent_id": coder_id,
-                "display_name": "public-coder-agent",
-                "token": "coder-token",
-                "operator_subject": "operator-sub",
-                "access_profile_id": "public-coder",
-            },
-        },
-        "launchable_agents": [
-            {"agent_id": haku_id, "system_prompt_template": str(claude_prompt)},
-            {"agent_id": coder_id, "system_prompt_template": str(coder_prompt)},
-        ],
-    }
-    config_file = write_config(tmp_path / "console.yaml", shared_config)
-
-    with make_operator_client(config_file=config_file) as client:
-        options = client.get("/api/config").json()["launch_options"]
-        assert [(option["agent_id"], option["harness_kind"]) for option in options] == [
-            (haku_id, "claude_code"),
-            (coder_id, "codex_app_server"),
-        ]
-        assert all(
-            set(option) == {"agent_id", "agent_display_name", "harness_kind", "harness_display_name"}
-            for option in options
-        )
-        assert [(option["agent_display_name"], option["harness_display_name"]) for option in options] == [
-            ("Haku", "Claude"),
-            ("public-coder-agent", "Codex"),
-        ]
-
-        codex = client.post("/api/conversations", json={"agent_id": coder_id, "harness_kind": "codex_app_server"})
-        assert codex.status_code == 201
-        assert codex.json()["agent_id"] == coder_id
-        assert codex.json()["harness_kind"] == "codex_app_server"
-
-        forbidden = client.post("/api/conversations", json={"agent_id": coder_id, "harness_kind": "claude_code"})
-        assert forbidden.status_code == 403
-
-        assert client.post("/api/conversations").status_code == 422
-        assert client.post("/api/conversations", json={"agent_id": haku_id}).status_code == 422
-        assert client.post("/api/conversations", json={"harness_kind": "claude_code"}).status_code == 422
-
-    wrong_codex_slot = copy.deepcopy(shared_config)
-    wrong_codex_slot["harnesses"]["codex_app_server"]["implementation"] = {
-        "kind": "claude_code",
-        "api_base_url": "http://litellm.test:4000",
-        "model": "anthropic-max20/ant-messages/claude-sonnet-5",
-        "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
-        "auth_token_placeholder": "placeholder",
-    }
-    wrong_codex_file = write_config(tmp_path / "console-wrong-codex-slot.yaml", wrong_codex_slot)
-    with (
-        pytest.raises(ValueError, match="codex_app_server must select the codex_app_server implementation"),
-        make_operator_client(config_file=wrong_codex_file),
-    ):
-        pass
-
-    shared_profile_config = copy.deepcopy(shared_config)
-    shared_profile_config["static_agents"]["other"] = {
-        "agent_id": "00000000-0000-4000-8000-000000000003",
-        "display_name": "other-public-coder-shell",
-        "token": "other-token",
-        "operator_subject": "operator-sub",
-        "access_profile_id": "public-coder",
-    }
-    shared_profile_file = write_config(tmp_path / "console-shared-codex-profile.yaml", shared_profile_config)
-    with (
-        pytest.raises(ValueError, match="dedicated access profile"),
-        make_operator_client(config_file=shared_profile_file),
-    ):
-        pass
 
 
 def test_deployment_metadata_comes_from_runtime_image_tags(make_operator_client, monkeypatch) -> None:

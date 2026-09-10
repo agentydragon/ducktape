@@ -2,7 +2,7 @@ import { Badge, Group, Loader, Stack, Text } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import { makeRecentToolCall, toolApprovalQueueId, type RecentToolCall } from "./approval_state";
-import { changedConversationId, useConsoleEvents } from "./console_events";
+import { useConsoleEvents } from "./console_events";
 import { displayableError, fetchPendingApprovals, type ToolCallRecord } from "./client";
 import { ApprovalsTab, type ShellChromeProps } from "./shell_chrome";
 import { useToolCallDecision } from "./tool_call_decision";
@@ -45,9 +45,7 @@ export function ApprovalsEmbedPage(): JSX.Element {
   }
 
   const toolDecisions = useToolCallDecision({ onSuccess: finishToolDecision, onSettled: refresh });
-  const liveStatus = useConsoleEvents((event) => {
-    if (changedConversationId(event) === null) refresh();
-  });
+  const liveStatus = useConsoleEvents(() => refresh());
 
   useEffect(() => {
     document.title = `Approvals (${pendingApprovals.length}) · Haku`;

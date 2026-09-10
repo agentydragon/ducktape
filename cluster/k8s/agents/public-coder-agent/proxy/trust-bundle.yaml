@@ -1,5 +1,5 @@
 # Public roots + cluster root + this proxy's interception root, published into
-# both the agent and runtime namespaces so their TLS clients accept intercepted connections.
+# the agent namespace so its TLS clients accept intercepted connections.
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
@@ -25,4 +25,3 @@ spec:
           operator: In
           values:
             - public-coder-agent
-            - haku-runtime-sandbox

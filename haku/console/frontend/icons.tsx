@@ -12,12 +12,10 @@ import IconCircleCheck from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconHome from "@tabler/icons-react/dist/esm/icons/IconHome.mjs";
-import IconInfoCircle from "@tabler/icons-react/dist/esm/icons/IconInfoCircle.mjs";
 import IconList from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
 import IconListDetails from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
 import IconMail from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
 import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
-import IconMessagePlus from "@tabler/icons-react/dist/esm/icons/IconMessagePlus.mjs";
 import IconRepeat from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconUnlink from "@tabler/icons-react/dist/esm/icons/IconUnlink.mjs";
@@ -72,21 +70,6 @@ export function SettingsIcon(props: TablerIconProps): JSX.Element {
 /** Unlink — disconnects an operator account from an MCP server. */
 export function DisconnectIcon(props: TablerIconProps): JSX.Element {
   return <IconUnlink size={20} {...props} />;
-}
-
-/** List with detail — opens the operator's conversation inventory. */
-export function ConversationsIcon(props: TablerIconProps): JSX.Element {
-  return <IconListDetails size={20} {...props} />;
-}
-
-/** Message with plus — starts a new conversation from the conversation inventory. */
-export function NewConversationIcon(props: TablerIconProps): JSX.Element {
-  return <IconMessagePlus size={20} {...props} />;
-}
-
-/** Info circle — opens a compact conversation's details and actions. */
-export function InfoCircleIcon(props: TablerIconProps): JSX.Element {
-  return <IconInfoCircle size={20} {...props} />;
 }
 
 /** Map pin — the shell's location-sharing control, and a preview's location field. */

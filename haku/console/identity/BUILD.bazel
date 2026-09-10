@@ -78,18 +78,6 @@ py_library(
 )
 
 py_library(
-    name = "launch_authority",
-    srcs = ["launch_authority.py"],
-    deps = [
-        ":agent",
-        ":operator_identity",
-        "//haku/console:database_schema",
-        "//haku/console/session:launch_identity",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "operator_agents",
     srcs = ["operator_agents.py"],
     deps = [
@@ -122,7 +110,6 @@ py_library(
         ":agent",
         ":enrollment",
         ":fastmcp_adapter",
-        ":launch_authority",
         ":naming",
         ":operator_identity",
         ":operator_identity_store",
@@ -139,11 +126,7 @@ py_library(
     deps = [
         ":authorization",
         ":fastmcp_adapter",
-        "//haku/console:database_schema",
         "//haku/console:tool_call_actor",
-        "//haku/console/session:launch_identity",
-        "//haku/console/session:status",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -162,7 +145,6 @@ py_library(
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:provider",
         "@pypi//fastmcp_slim",
-        "@pypi//sqlalchemy",
         "@pypi//starlette",
     ],
 )
@@ -224,17 +206,14 @@ py_test(
         ":authorization",
         ":enrollment",
         ":fastmcp_adapter",
-        ":launch_authority",
         ":operator_identity",
         ":operator_identity_store",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:database_migrate",
         "//haku/console:database_schema",
-        "//haku/console/harnesses:kind",
+        "//haku/console:tool_call_actor",
         "//haku/console/mcp:approval",
-        "//haku/console/session:launch_identity",
-        "//haku/console/x:runtime",
         "//mcp_infra/authentik_auth:oidc_principal",
         "//third_party/containers:rlocations",
         "//util/testing:postgres",
@@ -337,23 +316,18 @@ py_test(
         ":agent_bearer_authority",
         ":authorization",
         ":fastmcp_adapter",
-        ":launch_authority",
         ":mcp_agent_auth",
-        ":operator_identity",
         ":operator_identity_store",
         "//:conftest",
         "//haku/console:config",
         "//haku/console:conftest",
-        "//haku/console:database_schema",
         "//haku/console:settings",
         "//haku/console:tool_call_actor",
-        "//haku/console/harnesses:kind",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:provider",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

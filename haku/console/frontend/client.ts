@@ -20,7 +20,6 @@ api.use({
 });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
-export type LaunchOption = components["schemas"]["LaunchOption"];
 export type OperatorResponse = components["schemas"]["OperatorResponse"];
 export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
@@ -35,23 +34,6 @@ export type OAuthConnectionResult =
   | components["schemas"]["ConnectionSucceeded"]
   | components["schemas"]["ConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
-// The one conversation item-read vocabulary, shared with the MCP conversation reads: one item per
-// row, keyed by the position it opened at, its lifecycle carried as `status`.
-export type Item = components["schemas"]["Item"];
-export type QueuedPrompt = components["schemas"]["QueuedPrompt"];
-export type ToolCallItem = components["schemas"]["ToolCallItem"];
-export type ConversationSummary = components["schemas"]["ConversationSummary"];
-export type ConversationPage = components["schemas"]["ConversationPage"];
-export type ConversationCursor = components["schemas"]["ConversationCursor"];
-export type Conversation = components["schemas"]["ConversationView"];
-export type Session = components["schemas"]["SessionView"];
-// What `WS /api/conversations/{id}/follow` sends. Generated like every type above: the schema
-// carries these components because the exporter publishes them (//haku/console:export_schema),
-// a WebSocket having no route for FastAPI to document.
-export type ConversationFollowMessage = components["schemas"]["ConversationFollowMessage"];
-export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
-export type SessionFrame = components["schemas"]["SessionFrameView"];
-export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type Grant = components["schemas"]["Grant"];
 export type GrantPrincipal = Grant["subject"];
@@ -103,90 +85,6 @@ export async function fetchOperator(): Promise<OperatorResponse> {
   const { data, error } = await api.GET("/auth/me");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load the operator session"));
   return data;
-}
-
-/** Mint a Web conversation with its explicit deploy-authorized Agent/harness pair. */
-export async function createConversation(selection: LaunchOption): Promise<Conversation> {
-  const response = await api.POST("/api/conversations", {
-    body: { agent_id: selection.agent_id, harness_kind: selection.harness_kind },
-  });
-  const { data, error } = response;
-  if (error || !data) throw new Error(errorDetail(error, "Failed to start a conversation"));
-  return data;
-}
-
-/** One page of conversations, newest activity first.
- *
- * `cursor` is a previous page's `next_cursor`; omitting it opens on the newest. Keyset rather than
- * an offset because a conversation never ends, so this list only grows and only at its top.
- */
-export async function fetchConversations(cursor?: ConversationCursor, limit = 25): Promise<ConversationPage> {
-  const { data, error } = await api.GET("/api/conversations", {
-    params: {
-      query: { limit, before_activity: cursor?.last_activity_at, before_conversation: cursor?.conversation_id },
-    },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load conversations"));
-  return data;
-}
-
-/** One page of a conversation's raw protocol frames, in wire order.
- *
- * Omitting `beforeSeq` reads the *tail* of the log; the response's `next_before_seq` walks back
- * from there. Every native frame is returned verbatim without a generic discriminator or filter.
- */
-export async function fetchSessionFrames(
-  sessionId: string,
-  limit: number,
-  beforeSeq?: number
-): Promise<SessionFramePage> {
-  const { data, error } = await api.GET("/api/sessions/{session_id}/frames", {
-    params: { path: { session_id: sessionId }, query: { limit, before_seq: beforeSeq } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load session frames"));
-  return data;
-}
-
-/** The console would not take the prompt, and recorded nothing.
- *
- * `SessionStore.enqueue_prompt` refuses a session that is not `ready`, one whose turn is still in
- * flight, and one that already has a prompt queued; it holds none of them. Distinct from a
- * transport failure because the operator's text still exists only in their composer — a caller
- * that catches this must keep it.
- */
-export class PromptRefused extends Error {}
-
-export async function sendChatPrompt(conversationId: string, text: string): Promise<void> {
-  const { data, error, response } = await api.POST("/api/conversations/{conversation_id}/messages", {
-    params: { path: { conversation_id: conversationId } },
-    body: { text },
-  });
-  if (response.status === 409) throw new PromptRefused(errorDetail(error, "The session would not take that prompt"));
-  if (error || !data) throw new Error(errorDetail(error, "Failed to send the prompt"));
-  // The prompt's own rows arrive over the conversation's follow socket, where every other surface's
-  // prompts arrive too, so there is nothing to hand back that is not already on its way.
-}
-
-/** Interrupt the running turn; false when the console found none open.
- *
- * Not an error: the turn can end between the operator seeing the button and pressing it, and
- * "there was nothing left to stop" is the outcome they wanted either way.
- */
-export async function abortSessionTurn(sessionId: string): Promise<string | false> {
-  const { data, error, response } = await api.POST("/api/sessions/{session_id}/abort", {
-    params: { path: { session_id: sessionId } },
-  });
-  if (response.status === 409) return false;
-  if (error || !data) throw new Error(errorDetail(error, "Failed to abort the turn"));
-  return data.status;
-}
-
-/** End this session and release its sandbox. The conversation it ran outlives it. */
-export async function closeSession(sessionId: string): Promise<void> {
-  const { error } = await api.DELETE("/api/sessions/{session_id}", {
-    params: { path: { session_id: sessionId } },
-  });
-  if (error) throw new Error(errorDetail(error, "Failed to close the session"));
 }
 
 export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {

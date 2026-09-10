@@ -67,31 +67,7 @@ class ToolCallsChangedEvent(BaseModel):
     tool_call_id: str
 
 
-class ConversationChangedEvent(BaseModel):
-    """A conversation's record changed; a surface showing it should re-read.
-
-    An invalidation, not a payload: the record stays a REST read, so a tab that missed events
-    entirely still lands correct by refetching, and no consumer has to decide whether the socket
-    or the API is the truth. Carrying the change itself would make this a second source of one.
-    """
-
-    event_type: Literal["conversation_changed"] = "conversation_changed"
-    conversation_id: UUID
-
-
-class SandboxSessionsChangedEvent(BaseModel):
-    """The active sandbox inventory changed; clients re-read it through MCP."""
-
-    event_type: Literal["sandbox_sessions_changed"] = "sandbox_sessions_changed"
-
-
-type ConsoleEvent = (
-    ToolCallsChangedEvent
-    | ConversationChangedEvent
-    | SandboxSessionsChangedEvent
-    | McpOperatorAuthChangedEvent
-    | OperatorConnectionChangedEvent
-)
+type ConsoleEvent = ToolCallsChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
 type ConsoleEventListener = Callable[[UUID, ConsoleEvent], None]
 
 

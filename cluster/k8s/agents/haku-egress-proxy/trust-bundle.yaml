@@ -28,7 +28,6 @@ spec:
           operator: In
           values:
             - haku-sandbox
-            - haku-runtime-sandbox
             - haku-openclaw-spike
             - haku-ci
             - public-coder-agent

@@ -27,16 +27,6 @@
       "target": "//finance/scraper:image",
       "test": "//finance/scraper/..."
     },
-    "haku-harness-runner": {
-      "target": "//haku/runner:runner_image",
-      "test": "//haku/runner/...",
-      "registry": "forgejo"
-    },
-    "haku-egress-proxy": {
-      "target": "//haku/egress:proxy_image",
-      "test": "//haku/egress/...",
-      "registry": "forgejo"
-    },
     "haku-kube-api-proxy": {
       "target": "//haku/kube_api_proxy:image",
       "test": "//haku/kube_api_proxy/...",
@@ -128,11 +118,6 @@
     },
     "haku-indexer": {
       "target": "//haku/console:indexer_image",
-      "test": "//haku/console/...",
-      "registry": "forgejo"
-    },
-    "haku-matrix-adapter": {
-      "target": "//haku/console/channels/matrix:adapter_image",
       "test": "//haku/console/...",
       "registry": "forgejo"
     },

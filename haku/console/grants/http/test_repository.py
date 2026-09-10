@@ -17,22 +17,12 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conftest import (
-    DEFAULT_ACCESS_PROFILE_ID,
-    default_agent_binding,
-    insert_approved_tool_call,
-    insert_live_session,
-)
+from haku.console.conftest import DEFAULT_ACCESS_PROFILE_ID, default_agent_binding, insert_approved_tool_call
 from haku.console.database_schema import HttpGrantRow
 from haku.console.grants.envelope import GrantSourceError, GrantStatus
 from haku.console.grants.http.models import GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.http.repository import PostgresGrantRepository
-from haku.console.grants.principal import (
-    AccessProfileGrantPrincipal,
-    AgentGrantPrincipal,
-    RequestPrincipal,
-    SessionGrantPrincipal,
-)
+from haku.console.grants.principal import AccessProfileGrantPrincipal, AgentGrantPrincipal, RequestPrincipal
 
 # Relative: Grant.status is computed against the live clock, so windows anchor to it.
 _NOW = datetime.now(UTC)
@@ -90,10 +80,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(repository_client: 
         assert grant.spec == _SPEC
         assert (await repository.get(owner_agent_id=repository_client.agent_id, grant_id=grant.grant_id)) == grant
         assert await repository.active_for_request_principal(
-            request_principal=RequestPrincipal(
-                agent_id=repository_client.agent_id, session_id=None, access_profile_id=None
-            ),
-            now=_NOW,
+            request_principal=RequestPrincipal(agent_id=repository_client.agent_id, access_profile_id=None), now=_NOW
         ) == (grant,)
 
         ended = await repository.end(
@@ -106,9 +93,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(repository_client: 
         assert ended.ended_at == _NOW + timedelta(minutes=1)
         assert (
             await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(
-                    agent_id=repository_client.agent_id, session_id=None, access_profile_id=None
-                ),
+                request_principal=RequestPrincipal(agent_id=repository_client.agent_id, access_profile_id=None),
                 now=_NOW + timedelta(minutes=2),
             )
             == ()
@@ -132,7 +117,7 @@ def test_repository_persists_permanent_grants(repository_client: _RepositoryClie
             created_at=_NOW,
             expires_at=None,
         )
-        principal = RequestPrincipal(agent_id=repository_client.agent_id, session_id=None, access_profile_id=None)
+        principal = RequestPrincipal(agent_id=repository_client.agent_id, access_profile_id=None)
         assert grant.expires_at is None
         assert await repository.active_for_request_principal(
             request_principal=principal, now=_NOW + timedelta(days=365)
@@ -163,10 +148,7 @@ def test_repository_persists_an_access_profile_principal(repository_client: _Rep
         )
         assert grant.principal == AccessProfileGrantPrincipal(access_profile_id=DEFAULT_ACCESS_PROFILE_ID)
         assert await repository.active_for_request_principal(
-            request_principal=RequestPrincipal(
-                agent_id=uuid4(), session_id=None, access_profile_id=DEFAULT_ACCESS_PROFILE_ID
-            ),
-            now=_NOW,
+            request_principal=RequestPrincipal(agent_id=uuid4(), access_profile_id=DEFAULT_ACCESS_PROFILE_ID), now=_NOW
         ) == (grant,)
 
     repository_client.call(exercise)
@@ -236,8 +218,7 @@ def test_expiry_is_derived_and_ending_an_expired_grant_records_nothing(make_clie
             assert expired.end_reason is None
             assert (
                 await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None),
-                    now=past_expiry,
+                    request_principal=RequestPrincipal(agent_id=agent_id, access_profile_id=None), now=past_expiry
                 )
                 == ()
             )
@@ -308,89 +289,6 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                     )
                 ).all()
             assert len(rows) == 2
-
-        client.portal.call(exercise)
-
-
-def test_repository_matches_agent_and_exact_session_principals(make_client: Any) -> None:
-    with make_client() as client:
-        app = cast(FastAPI, client.app)
-        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
-        assert client.portal is not None
-        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
-        session_id = client.portal.call(partial(insert_live_session, sessions, binding_id=binding_id, now=_NOW))
-        agent_source = client.portal.call(partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW))
-        # The source Agent may request a grant for another live session; the operator approval
-        # on the source ToolCall, not source-session identity equality, authorizes that choice.
-        session_source = client.portal.call(partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW))
-        repository = PostgresGrantRepository(sessions)
-
-        async def exercise() -> None:
-            (agent_grant,) = await repository.create_many(
-                owner_agent_id=agent_id,
-                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
-                source_tool_call_id=agent_source,
-                grants=(_SPEC,),
-                created_at=_NOW,
-                expires_at=_NOW + timedelta(minutes=5),
-            )
-            (session_grant,) = await repository.create_many(
-                owner_agent_id=agent_id,
-                grant_principal=SessionGrantPrincipal(session_id=session_id),
-                source_tool_call_id=session_source,
-                grants=(_SPEC,),
-                created_at=_NOW,
-                expires_at=_NOW + timedelta(minutes=5),
-            )
-
-            assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None), now=_NOW
-            ) == (agent_grant,)
-            assert set(
-                await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(
-                        agent_id=agent_id, session_id=session_id, access_profile_id=None
-                    ),
-                    now=_NOW,
-                )
-            ) == {agent_grant, session_grant}
-            assert set(
-                await repository.list_for_request_principal(
-                    request_principal=RequestPrincipal(
-                        agent_id=agent_id, session_id=session_id, access_profile_id=None
-                    ),
-                    now=_NOW,
-                )
-            ) == {agent_grant, session_grant}
-            assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id, session_id=uuid4(), access_profile_id=None),
-                now=_NOW,
-            ) == (agent_grant,)
-            assert (
-                await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=uuid4(), session_id=session_id, access_profile_id=None),
-                    now=_NOW,
-                )
-                == ()
-            )
-
-            async with sessions.begin() as session:
-                await session.execute(
-                    text(
-                        "UPDATE sessions SET ended_at = now(), error = 'runner failed' WHERE session_id = :session_id"
-                    ),
-                    {"session_id": session_id},
-                )
-            ended_source = await _insert_http_source(sessions, binding_id=binding_id, now=_NOW, session_id=session_id)
-            with pytest.raises(GrantSourceError, match="live session"):
-                await repository.create_many(
-                    owner_agent_id=agent_id,
-                    grant_principal=SessionGrantPrincipal(session_id=session_id),
-                    source_tool_call_id=ended_source,
-                    grants=(_SPEC,),
-                    created_at=_NOW,
-                    expires_at=_NOW + timedelta(minutes=5),
-                )
 
         client.portal.call(exercise)
 

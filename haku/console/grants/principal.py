@@ -4,9 +4,8 @@ A grant principal answers only who receives and may exercise a permission. Sourc
 ToolCall provenance, requester identity, and lifecycle ownership remain separate.
 
 Callers construct :class:`RequestPrincipal` only from authenticated runtime identity.
-A session ID is usable only after the authentication boundary has confirmed that the
-live session belongs to the named Agent; request payloads may select a distinct
-:class:`GrantPrincipal` explicitly, but never the caller's trusted identity.
+Request payloads may select a distinct :class:`GrantPrincipal` explicitly, but never the
+caller's trusted identity.
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ type AccessProfileId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-
 
 class GrantPrincipalKind(StrEnum):
     AGENT = "agent"
-    SESSION = "session"
     ACCESS_PROFILE = "access_profile"
 
 
@@ -37,19 +35,6 @@ class AgentGrantPrincipal(BaseModel):
     agent_id: UUID
 
 
-class SessionGrantPrincipal(BaseModel):
-    """Only one exact authenticated live session receives the grant.
-
-    A Console session is already pinned to one Agent, so the globally unique session
-    ID is the complete narrow principal. Creation provenance validates that relationship.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal[GrantPrincipalKind.SESSION] = GrantPrincipalKind.SESSION
-    session_id: UUID
-
-
 class AccessProfileGrantPrincipal(BaseModel):
     """Every authenticated Agent assigned to one configured access profile."""
 
@@ -59,9 +44,7 @@ class AccessProfileGrantPrincipal(BaseModel):
     access_profile_id: AccessProfileId
 
 
-type GrantPrincipal = Annotated[
-    AgentGrantPrincipal | SessionGrantPrincipal | AccessProfileGrantPrincipal, Field(discriminator="kind")
-]
+type GrantPrincipal = Annotated[AgentGrantPrincipal | AccessProfileGrantPrincipal, Field(discriminator="kind")]
 type GrantPrincipalInput = Literal["self"] | GrantPrincipal
 
 # Configuration has no authenticated-session lifecycle to bind, so it may name only principals
@@ -72,16 +55,14 @@ type ConfigGrantPrincipal = Annotated[AgentGrantPrincipal | AccessProfileGrantPr
 class RequestPrincipal(BaseModel):
     """Complete trusted authenticated identity attempting to exercise a grant or SAR.
 
-    When ``session_id`` is present, the authentication boundary must already have
-    verified that the globally unique session belongs to ``agent_id``. The access
-    profile is also a grant-principal dimension. An Agent may request a grant for any valid
-    principal; the manually approved ToolCall decides whether that request creates a grant.
+    The access profile is also a grant-principal dimension. An Agent may request a grant for
+    any valid principal; the manually approved ToolCall decides whether that request creates a
+    grant.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     agent_id: UUID
-    session_id: UUID | None
     access_profile_id: AccessProfileId | None
 
     @classmethod
@@ -89,7 +70,7 @@ class RequestPrincipal(BaseModel):
         """Project the bearer-authenticated Agent identity into the request-principal vocabulary,
         dropping the operator and credential-binding identity that applicability must not read."""
 
-        return cls(agent_id=source.agent_id, session_id=source.session_id, access_profile_id=source.access_profile_id)
+        return cls(agent_id=source.agent_id, access_profile_id=source.access_profile_id)
 
 
 def resolve_grant_principal_input(
@@ -97,23 +78,17 @@ def resolve_grant_principal_input(
 ) -> GrantPrincipal:
     """Resolve the ``self`` shorthand or preserve an explicitly requested principal.
 
-    Explicit principals may name any valid Agent, live session, or access profile. The manually
-    approved ToolCall is the Operator's decision point for whether that request creates a grant.
+    Explicit principals may name any valid Agent or access profile. The manually approved
+    ToolCall is the Operator's decision point for whether that request creates a grant.
     """
 
     if requested_principal == "self":
-        if request_principal.session_id is not None:
-            return SessionGrantPrincipal(session_id=request_principal.session_id)
         return AgentGrantPrincipal(agent_id=request_principal.agent_id)
     return requested_principal
 
 
 def grant_principal_from_columns(
-    kind: GrantPrincipalKind,
-    *,
-    agent_id: UUID | None,
-    session_id: UUID | None,
-    access_profile_id: AccessProfileId | None,
+    kind: GrantPrincipalKind, *, agent_id: UUID | None, access_profile_id: AccessProfileId | None
 ) -> GrantPrincipal:
     """Reconstruct a grant principal from the relational principal columns."""
 
@@ -122,42 +97,28 @@ def grant_principal_from_columns(
             if agent_id is None:
                 raise RuntimeError("Agent-principal grant row is missing its Agent")
             return AgentGrantPrincipal(agent_id=agent_id)
-        case GrantPrincipalKind.SESSION:
-            if session_id is None:
-                raise RuntimeError("session-principal grant row is missing its session")
-            return SessionGrantPrincipal(session_id=session_id)
         case GrantPrincipalKind.ACCESS_PROFILE:
             if access_profile_id is None:
                 raise RuntimeError("access-profile-principal grant row is missing its access profile")
             return AccessProfileGrantPrincipal(access_profile_id=access_profile_id)
 
 
-def grant_principal_column_values(
-    grant_principal: GrantPrincipal,
-) -> tuple[UUID | None, UUID | None, AccessProfileId | None]:
+def grant_principal_column_values(grant_principal: GrantPrincipal) -> tuple[UUID | None, AccessProfileId | None]:
     """Project a grant principal onto the relational principal columns."""
 
     match grant_principal:
         case AgentGrantPrincipal(agent_id=agent_id):
-            return agent_id, None, None
-        case SessionGrantPrincipal(session_id=session_id):
-            return None, session_id, None
+            return agent_id, None
         case AccessProfileGrantPrincipal(access_profile_id=access_profile_id):
-            return None, None, access_profile_id
+            return None, access_profile_id
 
 
 def grant_principal_applies_to(grant_principal: GrantPrincipal, request_principal: RequestPrincipal) -> bool:
-    """Return whether ``grant_principal`` covers ``request_principal``.
-
-    A session request principal inherits its Agent's grants. Static credentials have no
-    session identity and therefore cannot exercise exact-session grants.
-    """
+    """Return whether ``grant_principal`` covers ``request_principal``."""
 
     match grant_principal:
         case AgentGrantPrincipal(agent_id=agent_id):
             return request_principal.agent_id == agent_id
-        case SessionGrantPrincipal(session_id=session_id):
-            return request_principal.session_id == session_id
         case AccessProfileGrantPrincipal(access_profile_id=access_profile_id):
             return request_principal.access_profile_id == access_profile_id
     assert_never(grant_principal)

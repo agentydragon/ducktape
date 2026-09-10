@@ -74,7 +74,6 @@ from haku.console.identity.fastmcp_adapter import (
     GrantRejectedError,
     TokenFamilyEvidence,
 )
-from haku.console.identity.launch_authority import StaticAgentAuthorization, StaticLaunchAuthority
 from haku.console.identity.naming import InvalidAgentNameError, NormalizedAgentName, normalize_agent_name
 from haku.console.identity.operator_identity import (
     InactiveOperatorError,
@@ -134,6 +133,16 @@ class StaticAgentDefinitionError(ValueError):
 
 class StaticAgentRejectedError(Exception):
     """A static binding or fingerprint is not currently authorized."""
+
+
+@dataclass(frozen=True, slots=True)
+class StaticAgentAuthorization:
+    """Canonical runtime identity of one currently authorized static binding."""
+
+    agent_id: UUID
+    binding_id: UUID
+    operator_id: UUID
+    access_profile_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,7 +273,6 @@ class PostgresAgentAuthority:
         if default_access_profile_id not in self._access_profiles:
             raise ValueError("default access profile must be configured")
         self._default_access_profile_id = default_access_profile_id
-        self._launch_authority = StaticLaunchAuthority()
 
     def available_access_profiles(self) -> tuple[str, ...]:
         return self._access_profiles
@@ -661,19 +669,6 @@ class PostgresAgentAuthority:
 
     async def static_authorization_for_binding(self, *, binding_id: UUID) -> StaticAgentAuthorization:
         return await self._database_call(lambda: self._static_authorization(binding_id=binding_id, fingerprint=None))
-
-    async def launch_authorization(
-        self,
-        db: AsyncSession,
-        *,
-        operator_id: UUID,
-        agent_id: UUID,
-        access_profile_id: str | None = None,
-        binding_id: UUID | None = None,
-    ) -> StaticAgentAuthorization:
-        return await self._launch_authority.launch_authorization(
-            db, operator_id=operator_id, agent_id=agent_id, access_profile_id=access_profile_id, binding_id=binding_id
-        )
 
     async def static_authorization_for_fingerprint(
         self, *, fingerprint: bytes, record_seen: bool = False

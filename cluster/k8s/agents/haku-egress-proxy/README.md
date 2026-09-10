@@ -24,7 +24,7 @@ manifests depend on.
 - Reflector mirrors the Secret into `cert-manager`, which is trust-manager's
   source namespace in this cluster.
 - trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`,
-  `haku-runtime-sandbox`, `haku-openclaw-spike`, **and `haku-ci`** (the `Bundle`
+  `haku-openclaw-spike`, `public-coder-agent`, **and `haku-ci`** (the `Bundle`
   `namespaceSelector` in `trust-bundle.yaml`).
 - Kyverno mounts that ConfigMap into haku sandbox pods and points common TLS
   clients at `/egress-proxy-ca/ca-certificates.crt`; `haku-ci` mounts it via its

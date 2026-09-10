@@ -5,21 +5,18 @@ index and the Console resolves the caller's durable Agent identity before this s
 Only deployment-configured grants can make an index searchable or visible in status output.
 
 Search returns indexed chunk content by default, plus source pointers. Callers that only need
-provenance can suppress the content payload. A Git hit names its indexed commit and blob; a chat
-hit names its session and messages.
+provenance can suppress the content payload. A Git hit names its indexed commit and blob.
 """
 
 from __future__ import annotations
 
 import datetime
 from typing import Annotated, Literal, Protocol
-from uuid import UUID
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
-from haku.console.conversation_read_access import ConversationReadAccessPolicy, ConversationReadScope
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 
@@ -40,26 +37,11 @@ class GitSource(BaseModel):
     byte_end: int
 
 
-class ChatSource(BaseModel):
-    """Where a hit sits in a configured console-chat index."""
-
-    kind: Literal["chat"] = "chat"
-    index_id: str
-    session_id: UUID = Field(description="Pass to `haku_conversations` to read the session around this.")
-    conversation_id: UUID = Field(
-        description="The thread the window's session ran — `read_conversation_items` takes it directly."
-    )
-    room_id: str | None = Field(description="The Matrix room this session served, if it served one.")
-    message_ids: list[UUID] = Field(description="The messages this window holds, in order.")
-    first_message_at: datetime.datetime
-    last_message_at: datetime.datetime
-
-
 class SearchHit(BaseModel):
     """One match and a source-specific pointer to its authoritative bytes."""
 
     score: float
-    source: GitSource | ChatSource = Field(discriminator="kind")
+    source: GitSource = Field(discriminator="kind")
     content: str | None = Field(
         default=None,
         description="The matching indexed chunk text, omitted when `include_content` is false.",
@@ -82,24 +64,10 @@ class GitIndexStatus(BaseModel):
     superseded_chunks: int = 0
 
 
-class ChatIndexStatus(BaseModel):
-    index_type: Literal["chat"] = "chat"
-    index_id: str
-    sessions: int
-    chunks: int
-    embedded_chunks: int
-    pending_chunks: int
-    stale_sessions: int
-    unindexed_messages: int
-    lag_seconds: float | None
-    last_indexed_at: datetime.datetime | None
-    superseded_chunks: int
-
-
 class IndexStatus(BaseModel):
     """Status for every configured logical index, not a fixed pair of special sources."""
 
-    indexes: list[Annotated[GitIndexStatus | ChatIndexStatus, Field(discriminator="index_type")]]
+    indexes: list[Annotated[GitIndexStatus, Field(discriminator="index_type")]]
 
 
 class SearchResults(BaseModel):
@@ -116,16 +84,12 @@ class SearchResults(BaseModel):
 
 
 class IndexSearcher(Protocol):
-    async def search(
-        self, query: str, *, index_id: str, limit: int, session_id: UUID | None, scope: ConversationReadScope
-    ) -> SearchResults: ...
+    async def search(self, query: str, *, index_id: str, limit: int) -> SearchResults: ...
 
     async def status(self, *, index_ids: tuple[str, ...]) -> IndexStatus: ...
 
 
-def build_mcp(
-    searcher: IndexSearcher, *, access: RecallIndexAccessPolicy, conversation_reads: ConversationReadAccessPolicy
-) -> FastMCP:
+def build_mcp(searcher: IndexSearcher, *, access: RecallIndexAccessPolicy) -> FastMCP:
     mcp: FastMCP = FastMCP(name=HAKU_INDEX_SERVER_ID, instructions="Semantic recall over configured logical indexes.")
 
     @mcp.tool
@@ -135,9 +99,6 @@ def build_mcp(
             str, Field(description="One configured logical index that this caller is allowed to read.")
         ],
         limit: Annotated[int, Field(default=DEFAULT_RESULTS, ge=1, le=MAX_RESULTS)] = DEFAULT_RESULTS,
-        session_id: Annotated[
-            UUID | None, Field(default=None, description="Restrict matching windows in selected chat indexes.")
-        ] = None,
         include_content: Annotated[
             bool,
             Field(
@@ -155,16 +116,7 @@ def build_mcp(
         """
         if not access.allows(execution.caller, index_id):
             raise ToolError("recall index access denied")
-        # Chat hits are additionally fenced by the caller's profile-DAG read scope — the same
-        # authorizer `haku_conversations` applies to direct reads, so ranked retrieval cannot
-        # surface a conversation the drilldown would refuse.
-        results = await searcher.search(
-            query,
-            index_id=index_id,
-            limit=limit,
-            session_id=session_id,
-            scope=conversation_reads.scope_for(execution.caller),
-        )
+        results = await searcher.search(query, index_id=index_id, limit=limit)
         return results if include_content else results.without_content()
 
     @mcp.tool

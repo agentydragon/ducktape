@@ -17,8 +17,6 @@ This README is the component map, not a second copy of every contract:
 - <docs/containment.md> — iframe isolation, trusted chrome, Agent UI bridge actions, consent, and browser-side
   exfiltration bounds.
 - <docs/oauth_browser_surfaces.md> — account-link and Agent-enrollment browser boundaries.
-- <docs/conversation_layers.md>, <docs/conversation_schema.md>, and <x/README.md> — the experimental conversation
-  runtime, its durable records, and channel/harness boundaries.
 - <../docs/security.md> — threat model and security invariants.
 - <../../cluster/k8s/haku/console/README.md> — deployment topology, migration release work, routing,
   credentials, and one-time connection bootstrap.
@@ -132,7 +130,7 @@ The canonical contract is <docs/agent_authority.md>. In short: `Operator`, `Agen
 bindings, grants, names, profiles, and tool-call principals are durable local identities; every
 Agent call records exact binding provenance; and browser enrollment must converge with the MCP-side
 principal before a binding becomes active. Access profiles independently own auto-approval,
-Recall-index, in-process-server, and harness launch grants; missing assignments fail closed.
+Recall-index, and in-process-server grants; missing assignments fail closed.
 Agents submit/read only their own calls and never approve themselves.
 
 ### In-process MCP servers — no second deployment
@@ -156,16 +154,8 @@ Built-ins are assembled in `mcp/in_process_servers.py`:
   mounting only its own index's config slice, plus one shared embed Deployment. Among the indexer
   roles only the `haku-state` chunk pod holds the `haku-state` Git credential (Haku's Forgejo
   account, capable of writes but used read-only for indexing; public Ducktape is anonymous), the
-  embed role the batch embedder endpoint. The API pod holds that same Forgejo credential
-  (`haku-forgejo-git`) too, but for egress substitution rather than indexing: the colocated egress
-  decide endpoint substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent
-  uses its full Forgejo user (read/write/push) through the fence — deliberate and accepted, the
-  write exposure bounded by `haku-state` `main` branch protection (force-push/delete blocked). This
-  sharing is temporary: once the indexer gains its own read-only Forgejo credential the API pod need
-  not hold `haku-forgejo-git` (TODO in `test_haku_indexer_worker_contract`).
+  embed role the batch embedder endpoint. The API pod holds no Git credential of its own.
   <../recall_index/README.md> owns the index design.
-- `haku_conversations` exposes actor-scoped reads over the console's conversation records; the runtime and
-  record vocabulary are documented under <x/README.md>.
 - `haku_routine` launches the reviewed routine through ordinary approval.
 - `hostexec` exchanges the acting Operator's login authority only during approved execution; its
   host-side trust boundary is documented in <../hostexec/README.md>.
@@ -234,21 +224,21 @@ constraint fixes the second.
 
 **Readers tolerate narration and cross-replica payloads produced by a newer replica.** Those values
 must not raise merely because an older reader has no word for them. They decode to a named
-unknown—such as `util.sqlalchemy_types.UnknownValue` or `conversation/conversation_event.UnknownEventBody`—never
-`None` or a nearby member, so each consumer must handle the uncertainty explicitly. Cross-replica
-payload models do not reject unknown fields.
+unknown—such as `util.sqlalchemy_types.UnknownValue`—never `None` or a nearby member, so each
+consumer must handle the uncertainty explicitly. Cross-replica payload models do not reject unknown
+fields.
 
 **Writer rollout depends on the vocabulary:**
 
-- **Narration** is append-only information a reader may correctly skip, such as session events,
-  notification kinds, and `ConsoleEvent.event_type`. A new value may ship with its writer in one
-  release; the skipped narration is the named compatibility cost.
-- **Decision** values drive behavior, such as session, turn, tool-call, provenance, or rejection
-  statuses. No old-reader guess is safe, so a reader that knows the new concrete member ships one
-  release ahead of the writer and the writer waits for convergence. Decision columns are currently
-  strict—they do not decode unknown values to `UnknownValue`. Tolerant decoding could keep an
-  unrelated inventory read alive, but it would not remove the two-release rule because no consumer
-  may guess what the value means.
+- **Narration** is append-only information a reader may correctly skip, such as notification kinds
+  and `ConsoleEvent.event_type`. A new value may ship with its writer in one release; the skipped
+  narration is the named compatibility cost.
+- **Decision** values drive behavior, such as tool-call, provenance, or rejection statuses. No
+  old-reader guess is safe, so a reader that knows the new concrete member ships one release ahead
+  of the writer and the writer waits for convergence. Decision columns are currently strict—they do
+  not decode unknown values to `UnknownValue`. Tolerant decoding could keep an unrelated inventory
+  read alive, but it would not remove the two-release rule because no consumer may guess what the
+  value means.
 - **A required field added to an existing shape** is a narrowing, not a vocabulary extension. Use
   expand/contract plus a constraint that makes the old writer fail instead of silently creating a
   permanently misread row.
@@ -256,8 +246,8 @@ payload models do not reject unknown fields.
 The deciding question is: could this value have been produced by a newer commit than the reader?
 If no—a request body, config file, MCP argument, or pinned third-party vocabulary—an unknown value
 is a bug or attack and root <../../STYLE.md> strict mapping applies. If yes, unknown data is expected
-and raising is the defect. A version-negotiated seam, such as <../runner/protocol.py>, may
-reject unknown kinds after its handshake; storage has no handshake.
+and raising is the defect. A version-negotiated seam may reject unknown kinds after its handshake;
+storage has no handshake.
 
 ## Test
 

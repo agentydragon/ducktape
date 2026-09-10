@@ -118,14 +118,6 @@ ts_library(
 )
 
 ts_library(
-    name = "conversation_launch",
-    srcs = ["conversation_launch.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [":client"],
-)
-
-ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     isolated_typecheck = True,
@@ -156,17 +148,6 @@ ts_library(
 ts_library(
     name = "mcp_status_client",
     srcs = ["mcp_status_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_client",
-        ":mcp_tool_result_schema",
-    ],
-)
-
-ts_library(
-    name = "session_sandboxes_client",
-    srcs = ["session_sandboxes_client.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -774,7 +755,6 @@ ts_library(
         ":mcp_status_client",
         ":open_external",
         ":push_subscription",
-        ":session_sandboxes_client",
         ":time",
         ":toast",
         "//:node_modules/@mantine/core",
@@ -826,8 +806,6 @@ ts_library(
         "//:node_modules/@haku/console-bridge",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend/x:conversations_page",
-        "//haku/console/frontend/x:session_frames_page",
     ],
 )
 
@@ -953,7 +931,6 @@ filegroup(
         "tool_result_field.tsx",
         "variant_control.tsx",
         "//haku/console/frontend/tool_rendering:tailwind_srcs",
-        "//haku/console/frontend/x:tailwind_content_srcs",
     ],
 )
 
@@ -1203,18 +1180,6 @@ ts_library(
 )
 
 ts_library(
-    name = "conversation_launch_test",
-    srcs = ["conversation_launch.test.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":conversation_launch",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
     name = "code_block_test",
     srcs = ["code_block.test.ts"],
     isolated_typecheck = True,
@@ -1300,17 +1265,6 @@ ts_library(
 )
 
 ts_library(
-    name = "console_events_test",
-    srcs = ["console_events.test.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":console_events",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
     name = "operator_login_test",
     srcs = ["operator_login.test.ts"],
     isolated_typecheck = True,
@@ -1365,7 +1319,6 @@ ts_library(
         ":async_resource",
         ":client",
         ":mcp_status_client",
-        ":session_sandboxes_client",
         ":settings_panel",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -1443,8 +1396,6 @@ vitest_bin.vitest_test(
         ":calendar_client_test",
         ":client_test",
         ":code_block_test",
-        ":console_events_test",
-        ":conversation_launch_test",
         ":geolocation_test",
         ":gmail_client_test",
         ":haku_ui_embed_test",
@@ -1486,10 +1437,5 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/hostexec:responses_test",
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
-        "//haku/console/frontend/x:bootstrap_narration_test",
-        "//haku/console/frontend/x:chat_scroll_test",
-        "//haku/console/frontend/x:conversation_follow_test",
-        "//haku/console/frontend/x:frame_log_test",
-        "//haku/console/frontend/x:markdown_test",
     ],
 )

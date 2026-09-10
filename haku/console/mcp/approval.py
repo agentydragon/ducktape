@@ -32,12 +32,10 @@ from sqlalchemy.sql import Select
 from haku.console.database_schema import (
     Agent,
     AgentNameReservation,
-    Conversation,
     CredentialBinding,
     McpToolCall,
     McpToolCallPrincipal,
     Operator,
-    Session,
 )
 from haku.console.identity.agent import CredentialBindingStatus
 from haku.console.identity.authorization import lock_active_agent_binding
@@ -70,7 +68,6 @@ from haku.console.mcp_config import (
     _server_catalog_refresh_interval,
     _transport,
 )
-from haku.console.session.status import SessionStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     AgentToolCallCaller,
@@ -259,16 +256,12 @@ class PostgresToolCallLedger:
             tool_call_id = f"tc_{secrets.token_hex(12)}"
             match actor:
                 case AgentActor():
-                    await self._require_live_session_actor(session, actor)
                     display_name, _ = await self._require_active_agent_binding(session, actor)
                     caller: ToolCallCaller = AgentToolCallCaller(
-                        agent_id=actor.agent_id, display_name=display_name, session_id=actor.session_id
+                        agent_id=actor.agent_id, display_name=display_name, session_id=None
                     )
                     principal = McpToolCallPrincipal(
-                        tool_call_id=tool_call_id,
-                        operator_id=None,
-                        binding_id=actor.binding_id,
-                        session_id=actor.session_id,
+                        tool_call_id=tool_call_id, operator_id=None, binding_id=actor.binding_id
                     )
                 case OperatorActor():
                     await self._require_active_operator(session, actor.operator_id)
@@ -436,22 +429,14 @@ class PostgresToolCallLedger:
                 case AgentActor():
                     if not isinstance(principal, _AgentToolCallPrincipal) or principal.binding_id != actor.binding_id:
                         raise ToolCallStateConflictError("tool call was not submitted by this credential binding")
-                    submitted = AgentActor(
-                        agent_id=actor.agent_id,
-                        operator_id=actor.operator_id,
-                        binding_id=actor.binding_id,
-                        session_id=principal.session_id,
-                    )
-                    await self._require_live_session_actor(session, submitted)
-                    _, access_profile_id = await self._require_active_agent_binding(session, submitted)
+                    _, access_profile_id = await self._require_active_agent_binding(session, actor)
                     return ToolCallExecutionAuthorization(
                         operator_id=actor.operator_id,
                         caller=AgentActor(
-                            agent_id=submitted.agent_id,
-                            operator_id=submitted.operator_id,
-                            binding_id=submitted.binding_id,
+                            agent_id=actor.agent_id,
+                            operator_id=actor.operator_id,
+                            binding_id=actor.binding_id,
                             access_profile_id=access_profile_id,
-                            session_id=submitted.session_id,
                         ),
                     )
                 case OperatorActor():
@@ -733,32 +718,6 @@ class PostgresToolCallLedger:
         )
 
     @staticmethod
-    async def _require_live_session_actor(session: AsyncSession, actor: AgentActor) -> None:
-        if actor.session_id is None:
-            return
-        now = datetime.datetime.now(datetime.UTC)
-        identity_predicates = [Conversation.agent_id == actor.agent_id]
-        if actor.access_profile_id is not None:
-            identity_predicates.append(Conversation.access_profile_id == actor.access_profile_id)
-        found = await session.scalar(
-            select(Session.session_id)
-            .join(Conversation, Conversation.conversation_id == Session.conversation_id)
-            .where(
-                Session.session_id == actor.session_id,
-                Session.operator_id == actor.operator_id,
-                Session.agent_binding_id == actor.binding_id,
-                Session.status.in_((SessionStatus.READY, SessionStatus.RESPONDING)),
-                Session.bridge_connected_at.is_not(None),
-                Session.lease_expires_at.is_not(None),
-                Session.lease_expires_at > now,
-                *identity_predicates,
-            )
-            .with_for_update(of=Session)
-        )
-        if found is None:
-            raise ToolCallStateConflictError("chat session is not active")
-
-    @staticmethod
     async def _require_active_operator(session: AsyncSession, operator_id: UUID) -> None:
         found = await session.scalar(
             select(Operator.operator_id)
@@ -775,25 +734,7 @@ class PostgresToolCallLedger:
         )
         if active is None or active.binding.status is not CredentialBindingStatus.ACTIVE:
             raise ToolCallStateConflictError("agent credential binding is not active")
-        display_name = active.display_name
-        current_profile_id = active.agent.access_profile_id
-        if actor.session_id is None:
-            return display_name, current_profile_id
-        pinned_profile_id = await session.scalar(
-            select(Conversation.access_profile_id)
-            .join(Session, Session.conversation_id == Conversation.conversation_id)
-            .where(
-                Session.session_id == actor.session_id,
-                Session.operator_id == actor.operator_id,
-                Session.agent_binding_id == actor.binding_id,
-                Conversation.agent_id == actor.agent_id,
-            )
-        )
-        if pinned_profile_id is None or (
-            actor.access_profile_id is not None and actor.access_profile_id != pinned_profile_id
-        ):
-            raise ToolCallStateConflictError("session Agent identity is not active")
-        return display_name, pinned_profile_id
+        return active.display_name, active.agent.access_profile_id
 
     async def _require_executable_principal(
         self, session: AsyncSession, principal: _ResolvedToolCallPrincipal, operator_id: UUID
@@ -808,19 +749,14 @@ class PostgresToolCallLedger:
         if principal.operator_id != operator_id:
             raise ToolCallNotFoundError("tool call not found")
         caller = AgentActor(
-            agent_id=principal.agent_id,
-            operator_id=principal.operator_id,
-            binding_id=principal.binding_id,
-            session_id=principal.session_id,
+            agent_id=principal.agent_id, operator_id=principal.operator_id, binding_id=principal.binding_id
         )
-        await self._require_live_session_actor(session, caller)
         _, access_profile_id = await self._require_active_agent_binding(session, caller)
         caller = AgentActor(
             agent_id=caller.agent_id,
             operator_id=caller.operator_id,
             binding_id=caller.binding_id,
             access_profile_id=access_profile_id,
-            session_id=caller.session_id,
         )
         return ToolCallExecutionAuthorization(operator_id=operator_id, caller=caller)
 

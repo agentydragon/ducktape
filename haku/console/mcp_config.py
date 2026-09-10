@@ -21,10 +21,7 @@ from fastmcp import FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from haku.console.channels.matrix.config import MatrixLaunchConfig
-from haku.console.config import HarnessesConfig, HostexecConfig, KubernetesAuthorizationConfig, NodeDaemonsConfig
-from haku.console.grants.http.decide_config import EgressDecideConfig
-from haku.console.harnesses.kind import HarnessKind
+from haku.console.config import HostexecConfig, KubernetesAuthorizationConfig, NodeDaemonsConfig
 from haku.console.identity.naming import normalize_agent_name
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
@@ -401,29 +398,6 @@ class AccessProfile(BaseModel):
     # This is independent from auto-approval (whether a call skips review) and Recall access
     # (whether a particular index can be searched).
     in_process_server_ids: set[InProcessServerId] = Field(default_factory=set)
-    # Harness launch authority is configuration-owned.  The durable Agent row supplies the
-    # selected profile; callers never get to supply this field.
-    allowed_harnesses: set[HarnessKind] = Field(default_factory=set)
-    # Conversation-history visibility: which other profiles' conversations this one may read,
-    # acyclic and transitive with self-read implicit. `conversation_read_access` derives the one
-    # read scope both `haku_conversations` drilldowns and `haku_index` chat search enforce. The
-    # graph grants information visibility only — never tool authority, approvals, credentials, or
-    # harness grants.
-    can_read_profiles: set[str] = Field(default_factory=set)
-
-
-class LaunchableAgent(BaseModel):
-    """A deploy-allowlisted durable Agent that may start a chat conversation."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    agent_id: UUID
-    system_prompt_template: Path = Field(
-        description="This Agent's identity template. Prompts belong to Agents, not harnesses: a "
-        "harness is how a session executes, while who the session is speaking as is the launched "
-        "Agent's. Templates may `{% include %}` siblings from their own directory — the shared "
-        "attached-chat fragment rides in that way rather than through a config key."
-    )
 
 
 class StaticAgentEntry(BaseModel):
@@ -469,19 +443,12 @@ class ConsoleConfigFile(BaseModel):
     # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
     # trust store explicitly before any HTTPS recall source is cloned or fetched.
     git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
-    # Closed implementation kinds, not deploy-chosen harness instance ids. Absent config preserves
-    # the existing console-without-conversation mode. Real provider credentials remain outside sandboxes.
-    harnesses: HarnessesConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: dict[str, StaticAgentEntry] = Field(default_factory=dict)
-    matrix_launch: MatrixLaunchConfig | None = None
-    # Only these durable identities may be selected by the launch API.  Keeping this separate from
-    # static_agents makes the launch boundary explicit and leaves room for OAuth Agents later.
-    launchable_agents: list[LaunchableAgent] = Field(default_factory=list)
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
     # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
     # → the server is not offered, no offline_access is requested at operator login, and no operator
@@ -495,8 +462,6 @@ class ConsoleConfigFile(BaseModel):
     # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
     # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
     kubernetes_authorization: KubernetesAuthorizationConfig | None = None
-    # The internal HTTP egress decide endpoint's credentials (#4670). Unset keeps it fail-closed.
-    egress_decide: EgressDecideConfig | None = None
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
     # remain useful client guidance, but these server-side settings are authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
@@ -520,6 +485,12 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError("chat_runtimes was renamed to harnesses")
             if "default_chat_agent_id" in value:
                 raise ValueError("default_chat_agent_id was renamed to default_agent_id")
+            if "harnesses" in value:
+                raise ValueError("harnesses (hosted-agent sessions) was removed")
+            if "matrix_launch" in value:
+                raise ValueError("matrix_launch (the Matrix channel) was removed")
+            if "launchable_agents" in value:
+                raise ValueError("launchable_agents (hosted-agent sessions) was removed")
         return value
 
     @model_validator(mode="after")
@@ -678,57 +649,6 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(
                     f"static Agent {agent.agent_id} references unknown access profile {agent.access_profile_id!r}"
                 )
-        configured_launchable_ids = {entry.agent_id for entry in self.launchable_agents}
-        if len(configured_launchable_ids) != len(self.launchable_agents):
-            raise ValueError("duplicate launchable Agent id")
-        launchable_ids = frozenset(entry.agent_id for entry in self.launchable_agents)
-        static_ids = {agent.agent_id for agent in self.static_agents.values()}
-        unknown_launchable = launchable_ids - static_ids
-        if unknown_launchable:
-            raise ValueError(f"launchable Agents are not configured static Agents: {sorted(unknown_launchable)!r}")
-        if self.harnesses is not None:
-            static_by_id = {agent.agent_id: agent for agent in self.static_agents.values()}
-            configured_identities = {(harness.agent_id, harness.kind) for harness in self.harnesses.registrations}
-            runtime_agent_ids = {agent_id for agent_id, _kind in configured_identities}
-            unknown_runtime_agents = runtime_agent_ids - static_ids
-            if unknown_runtime_agents:
-                raise ValueError(
-                    f"harnesses reference Agents that are not configured: {sorted(unknown_runtime_agents)!r}"
-                )
-            unlaunchable_runtime_agents = runtime_agent_ids - launchable_ids
-            if unlaunchable_runtime_agents:
-                raise ValueError(f"harness Agents are not launchable: {sorted(unlaunchable_runtime_agents)!r}")
-            for harness in self.harnesses.registrations:
-                profile = profiles[static_by_id[harness.agent_id].access_profile_id]
-                if harness.kind not in profile.allowed_harnesses:
-                    raise ValueError(f"harness Agent {harness.agent_id} profile disallows {harness.kind.value}")
-            for agent_id in launchable_ids:
-                if not any(identity_agent_id == agent_id for identity_agent_id, _kind in configured_identities):
-                    raise ValueError(f"launchable Agent {agent_id} has no configured harness registration")
-        for profile in profiles.values():
-            unknown_read_profiles = profile.can_read_profiles - profiles.keys()
-            if unknown_read_profiles:
-                raise ValueError(
-                    f"access profile {profile.id!r} references unknown readable profiles "
-                    f"{sorted(unknown_read_profiles)!r}"
-                )
-
-        reading: set[str] = set()
-        visited_reading: set[str] = set()
-
-        def visit_read_profile(profile_id: str) -> None:
-            if profile_id in reading:
-                raise ValueError(f"access-profile read graph contains a cycle at {profile_id!r}")
-            if profile_id in visited_reading:
-                return
-            reading.add(profile_id)
-            for readable in profiles[profile_id].can_read_profiles:
-                visit_read_profile(readable)
-            reading.remove(profile_id)
-            visited_reading.add(profile_id)
-
-        for profile_id in profiles:
-            visit_read_profile(profile_id)
         if self.hostexec is not None:
             if self.node_daemons is None:
                 raise ValueError("hostexec requires node_daemons configuration")

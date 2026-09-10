@@ -104,16 +104,14 @@ policy execute immediately, while all others become operator approval requests. 
 the same: exact call reviewed, trusted console approval, console-owned audit/result state, and
 credentials scoped or proxied rather than trusted to Haku's restraint.
 
-## A conversational interface with Haku (operator, 2026-07-06) — answered by Matrix
+## A conversational interface with Haku (operator, 2026-07-06)
 
 The ask was a chat-like surface instead of only the console's fire-and-forget launch dialog:
-quick dispatch, follow-ups without re-stating context, and separate threads per topic. Matrix
-answers all three — a message in Element drives a real turn and the answer comes back into the
-room, one long-running session per room, with the console still owning the session and the
-approval gate, and the Matrix credential held by the channel's own `haku-matrix-adapter`
-worker. What the channel guarantees:
-<console/channels/matrix/SPEC.md>; what is still owed:
-<console/plans/conversation_layers.md>. The notification half was answered separately and differently:
+quick dispatch, follow-ups without re-stating context, and separate threads per topic. A Matrix
+channel answered this for a time — a message in Element drove a real turn in a console-hosted
+session, with the console owning the session and the approval gate — but the console's whole
+hosted-session runtime (and the Matrix channel that rode on it) has since been retired, so this is
+open again. The notification half was answered separately and differently:
 Web Push from the console's own origin (`console/notifications/push.py`), with Approve/Deny rendered by
 the OS from console-authored content, because a third-party service with action buttons would
 have to carry a deciding credential outside the trust boundary (`docs/security.md` invariant #4).

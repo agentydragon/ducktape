@@ -163,8 +163,7 @@ grants no authority beyond what the Haku agent already holds: the sandbox pod ru
 Haku's own `haku` ServiceAccount in `haku-sandbox`, so `exec_sandbox` ≈ a `kubectl exec`
 Haku can already run, and every pod there is egress-fenced by the
 `haku-sandbox-force-proxy` CCNP + baseline PodSecurity (no `host*`), both outside Haku's
-RBAC. A prompt-injected Haku (or a kubeconfig-less harness driving its console bearer)
-therefore gains only the removal of the per-call operator tap within its existing
+RBAC. A prompt-injected Haku therefore gains only the removal of the per-call operator tap within its existing
 `haku-sandbox` blast radius; the box builds a git-synced haku-state checkout locally (no
 RBE — source never leaves the cluster). The server itself is credential-free: Console's
 own ServiceAccount holds the claim/exec RBAC (client in `haku/sandbox`, tools in

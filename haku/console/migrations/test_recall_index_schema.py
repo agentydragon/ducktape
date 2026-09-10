@@ -44,16 +44,13 @@ def test_head_schema_matches_the_recall_index_orm(db_url: str) -> None:
 
 
 def test_startup_refuses_a_database_whose_stamped_schema_drifted(db_url: str) -> None:
-    """The guard that should have caught the 2026-08-15 rename, on the schema it did not cover.
-
-    An edited revision is a no-op against a database that already recorded it, so the only thing
-    standing between that and a pod serving queries for absent columns is this read.
-    """
+    """An edited revision is a no-op against a database that already recorded it, so the only thing
+    standing between that and a pod serving queries for absent columns is this read."""
     apply_migrations(db_url)
     engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
     try:
         with engine.begin() as connection:
-            connection.execute(text(f"ALTER TABLE {SCHEMA}.chat_chunks RENAME COLUMN window_no TO chunk_no"))
+            connection.execute(text(f"ALTER TABLE {SCHEMA}.git_chunks RENAME COLUMN byte_start TO byte_offset"))
 
         with pytest.raises(ProgrammingError):
             apply_migrations(db_url)

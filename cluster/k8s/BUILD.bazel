@@ -122,8 +122,6 @@ filegroup(
         "clickhouse/cluster/agent-diagnostics-rbac.yaml",
         "clickhouse/cluster/kustomization.yaml",
         "ducktape-flux/ducktape-flux-reader.yaml",
-        "flux-image-automation-forgejo/haku-harness-runner-image.yaml",
-        "flux-image-automation-forgejo/haku-matrix-adapter-image.yaml",
         "flux-image-automation-forgejo/kustomization.yaml",
         "flux-image-automation-ghcr/kustomization.yaml",
         "flux-system/kustomization.yaml",
@@ -136,20 +134,14 @@ filegroup(
         "haku/console-namespace/forgejo-images-creds-eso.yaml",
         "haku/console/agent-diagnostics-rbac.yaml",
         "haku/console/config.yaml",
-        "haku/console/conversation_prompt_fragment.md.j2",
         "haku/console/db/indexer-role-secret.yaml",
-        "haku/console/db/matrix-adapter-role-secret.yaml",
         "haku/console/db/postgres-cluster.yaml",
         "haku/console/deployment.yaml",
-        "haku/console/egress-proxy-service.yaml",
         "haku/console/flux-kustomization.yaml",
         "haku/console/haku-console-github-mcp-client-credentials.sops.yaml",
-        "haku/console/haku_system_prompt.md.j2",
         "haku/console/httproute.yaml",
         "haku/console/indexer-chunk-ducktape-public-config.yaml",
         "haku/console/indexer-chunk-ducktape-public-deployment.yaml",
-        "haku/console/indexer-chunk-haku-conversations-config.yaml",
-        "haku/console/indexer-chunk-haku-conversations-deployment.yaml",
         "haku/console/indexer-chunk-haku-state-config.yaml",
         "haku/console/indexer-chunk-haku-state-deployment.yaml",
         "haku/console/indexer-embed-deployment.yaml",
@@ -157,13 +149,10 @@ filegroup(
         "haku/console/kube-api-proxy.yaml",
         "haku/console/kubernetes-authorization-rbac.yaml",
         "haku/console/kustomization.yaml",
-        "haku/console/matrix-adapter-deployment.yaml",
-        "haku/console/matrix-adapter-role.sql",
         "haku/console/migration/flux-kustomization.yaml",
         "haku/console/migration/job.yaml",
         "haku/console/migration/kustomization.yaml",
         "haku/console/migration/serviceaccount.yaml",
-        "haku/console/public_coder_system_prompt.md.j2",
         "haku/console/service.yaml",
         "haku/console/static-deployment.yaml",
         "haku/console/static-metadata.yaml",
@@ -171,24 +160,13 @@ filegroup(
         "haku/managed-agent/haku-forgejo-tea.sops.yaml",
         "haku/rbac/role.yaml",
         "haku/rbac/rolebinding-haku.yaml",
-        "haku/runtime-namespace/limitrange.yaml",
-        "haku/runtime-namespace/namespace.yaml",
-        "haku/runtime-namespace/networkpolicy.yaml",
-        "haku/runtime-namespace/resourcequota.yaml",
         "haku/workspaces/app/flux-kustomization.yaml",
-        "haku/workspaces/app/haku-console-runtime-claim-role.yaml",
-        "haku/workspaces/app/haku-console-runtime-claim-rolebinding.yaml",
         "haku/workspaces/app/sandboxtemplate-haku.yaml",
-        "haku/workspaces/app/sandboxtemplate-haku-claude.yaml",
-        "haku/workspaces/app/sandboxtemplate-haku-public-coder-codex.yaml",
-        "haku/workspaces/app/sandboxwarmpool-haku-claude.yaml",
-        "haku/workspaces/app/sandboxwarmpool-haku-public-coder-codex.yaml",
         "haku/workspaces/image/haku-sandbox-setup.sh",
         "keda/helmrelease.yaml",
         "kustomization.yaml",
         "kyverno/policies/inject-haku-egress-proxy.yaml",
         "matrix/namespace/namespace.yaml",
-        "matrix/secrets/haku-matrix-bot-password.sops.yaml",
         "monitoring/loki/namespace.yaml",
         "monitoring/namespace/namespace.yaml",
         "nix-cache/namespace/namespace.yaml",
@@ -269,8 +247,8 @@ filegroup(
     visibility = ["//loom/gym:__pkg__"],
 )
 
-# Haku's attached-chat system prompt, so the test that renders it exercises the file the
-# console actually mounts rather than a fixture that can drift from it.
+# The deployed console config, so contract tests exercise the file the console actually
+# mounts rather than a fixture that can drift from it.
 filegroup(
     name = "haku_console_config",
     srcs = ["haku/console/config.yaml"],
@@ -293,7 +271,6 @@ filegroup(
     name = "haku_indexer_deployments",
     srcs = [
         "haku/console/indexer-chunk-ducktape-public-deployment.yaml",
-        "haku/console/indexer-chunk-haku-conversations-deployment.yaml",
         "haku/console/indexer-chunk-haku-state-deployment.yaml",
         "haku/console/indexer-embed-deployment.yaml",
     ],
@@ -306,39 +283,9 @@ filegroup(
     name = "haku_indexer_chunk_configs",
     srcs = [
         "haku/console/indexer-chunk-ducktape-public-config.yaml",
-        "haku/console/indexer-chunk-haku-conversations-config.yaml",
         "haku/console/indexer-chunk-haku-state-config.yaml",
     ],
     visibility = ["//haku/console:__pkg__"],
-)
-
-filegroup(
-    name = "haku_matrix_adapter_deployment",
-    srcs = ["haku/console/matrix-adapter-deployment.yaml"],
-    visibility = ["//haku/console:__pkg__"],
-)
-
-filegroup(
-    name = "haku_console_system_prompt",
-    srcs = [
-        "haku/console/conversation_prompt_fragment.md.j2",
-        "haku/console/haku_system_prompt.md.j2",
-        "haku/console/public_coder_system_prompt.md.j2",
-    ],
-    # Rendered by the session runtime (`//haku/console/session`) and read back by the Matrix
-    # channel's full-stack test (`channels/`).
-    visibility = [
-        "//haku/console/channels:__subpackages__",
-        "//haku/console/session:__pkg__",
-    ],
-)
-
-# The per-claim sandbox bootstrap, shared with the Console-owned Claude runner image so the
-# two boxes get the same git credentials and checkouts from one reviewed script.
-filegroup(
-    name = "haku_sandbox_setup",
-    srcs = ["haku/workspaces/image/haku-sandbox-setup.sh"],
-    visibility = ["//haku/runner:__pkg__"],
 )
 
 exports_files(

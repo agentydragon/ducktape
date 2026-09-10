@@ -12,8 +12,6 @@ import {
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
-import { ConversationsPage } from "./x/conversations_page";
-import { SessionFramesPage } from "./x/session_frames_page";
 import {
   displayableError,
   fetchAiquotaQuotas,
@@ -43,7 +41,7 @@ import { SettingsPanel } from "./settings_panel";
 import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_panel";
 import { toastError, toastSuccess } from "./toast";
 import { useToolCallDecision } from "./tool_call_decision";
-import { changedConversationId, useConsoleEvents } from "./console_events";
+import { useConsoleEvents } from "./console_events";
 import { redirectToOperatorLogin } from "./operator_login";
 import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session";
 import { ToolCallsPage } from "./tool_calls_page";
@@ -101,8 +99,6 @@ export function HakuUiEmbed({
   agentEnrollmentId,
   agentEnrollmentInitialChoice,
   toolCallId,
-  conversationId,
-  sessionFramesId,
   onNavigate,
 }: {
   uiUrl: string;
@@ -111,8 +107,6 @@ export function HakuUiEmbed({
   agentEnrollmentId: string | null;
   agentEnrollmentInitialChoice?: EnrollmentChoice;
   toolCallId?: string | null;
-  conversationId?: string | null;
-  sessionFramesId?: string | null;
   onNavigate: (view: ConsoleNavigationView) => void;
 }): JSX.Element {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -406,12 +400,8 @@ export function HakuUiEmbed({
 
   // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
   // (which the server also broadcasts to every other tab, so they refresh too). Its status
-  // drives the shell's live-channel warning when the socket is down. Conversation invalidations
-  // are skipped: they say nothing about the approval queue, and a streaming turn emits one of
-  // them every coalescing window.
-  const liveStatus = useConsoleEvents((event) => {
-    if (changedConversationId(event) === null) refreshToolApprovals();
-  });
+  // drives the shell's live-channel warning when the socket is down.
+  const liveStatus = useConsoleEvents(() => refreshToolApprovals());
 
   const pendingApprovalCount = toolApprovals.length + geolocationApprovals.length + screenshotApprovals.length;
   useEffect(() => {
@@ -440,11 +430,7 @@ export function HakuUiEmbed({
           ? "Settings · Haku"
           : view === "toolCalls"
             ? "Past tool calls · Haku"
-            : view === "conversations"
-              ? "Conversations · Haku"
-              : view === "sessionFrames"
-                ? "Raw frames · Haku"
-                : "Not found · Haku";
+            : "Not found · Haku";
   }, [view]);
 
   // The Agent UI bridge listener stays registered for the tab's whole life, reached through a ref rather
@@ -714,8 +700,6 @@ export function HakuUiEmbed({
           />
         )}
         {view === "toolCalls" && <ToolCallsPage />}
-        {view === "conversations" && <ConversationsPage conversationId={conversationId ?? null} />}
-        {view === "sessionFrames" && sessionFramesId != null && <SessionFramesPage sessionId={sessionFramesId} />}
         {view === "notFound" && (
           <section className="haku-page" aria-label="Not found">
             <div className="haku-page-list">

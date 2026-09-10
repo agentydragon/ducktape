@@ -22,19 +22,8 @@ const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};
 
 const ENROLLMENT_ID = "10000000-0000-4000-8000-000000000001";
-const CONVERSATION_ID = "70000000-0000-4000-8000-000000000001";
 
-function ConsoleScene({
-  view,
-  reconnect = false,
-  conversationId = null,
-  sessionFramesId = null,
-}: {
-  view: ConsoleView;
-  reconnect?: boolean;
-  conversationId?: string | null;
-  sessionFramesId?: string | null;
-}) {
+function ConsoleScene({ view, reconnect = false }: { view: ConsoleView; reconnect?: boolean }) {
   return (
     <AgentNamesProvider>
       <HakuUiEmbed
@@ -43,8 +32,6 @@ function ConsoleScene({
         view={view}
         agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
         agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
-        conversationId={conversationId}
-        sessionFramesId={sessionFramesId}
         onNavigate={noopNavigate}
       />
     </AgentNamesProvider>
@@ -145,33 +132,11 @@ function sceneElement(scene: string) {
     case "settings-grants":
     case "settings-grants-history":
     case "settings-grants-revoke":
-    case "settings-sessions":
-    case "settings-sessions-mobile":
-    case "settings-sessions-terminate":
-    case "settings-sessions-terminate-mobile":
     case "settings-notifications":
     case "settings-nodes":
     case "settings-nodes-mobile":
     case "settings-system":
       return <ConsoleScene view="settings" />;
-    case "conversations":
-    case "conversations-mobile":
-      return <ConsoleScene view="conversations" />;
-    case "conversation-detail":
-    case "conversation-detail-mobile":
-    case "conversation-bootstrap":
-    case "conversation-bootstrap-mobile":
-    case "conversation-narration-collapsed":
-    case "conversation-prompt-refused":
-    case "conversation-provisioning":
-    case "conversation-provisioning-mobile":
-    case "conversation-overflow":
-    case "conversation-tool-use":
-    case "conversation-tool-use-mobile":
-      return <ConsoleScene view="conversations" conversationId={CONVERSATION_ID} />;
-    case "session-frames":
-    case "session-frames-mobile":
-      return <ConsoleScene view="sessionFrames" sessionFramesId={CONVERSATION_ID} />;
     case "settings-oauth-success":
       return <OAuthSettingsResultScene status="success" />;
     case "settings-oauth-error":

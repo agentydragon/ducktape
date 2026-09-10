@@ -6,20 +6,13 @@ export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH: string = `${CONSOLE_ROOT_PATH}/settings`;
 export const APPROVALS_EMBED_PATH: string = `${CONSOLE_ROOT_PATH}/approvals-embed`;
 export const TOOL_CALLS_PATH: string = `${CONSOLE_ROOT_PATH}/tool-calls`;
-export const CONVERSATIONS_PATH: string = `${CONSOLE_ROOT_PATH}/conversations`;
 export const OAUTH_RESULT_PATH_PREFIX: string = `${CONSOLE_ROOT_PATH}/oauth-result`;
 export const AGENT_ENROLLMENT_PATH_PREFIX: string = `${SETTINGS_PATH}/agents/enroll`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
-export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "conversations";
-export type ConsoleView =
-  | ConsoleNavigationView
-  | "agentEnrollment"
-  | "approvalsEmbed"
-  | "oauthResult"
-  | "sessionFrames"
-  | "notFound";
+export type ConsoleNavigationView = "embed" | "settings" | "toolCalls";
+export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "approvalsEmbed" | "oauthResult" | "notFound";
 
 // Every id-bearing console route carries a canonical UUIDv4.
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
@@ -33,22 +26,9 @@ const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i")
 
 const OAUTH_RESULT_PATH = new RegExp(`^${OAUTH_RESULT_PATH_PREFIX}/(${UUID})$`, "i");
 const AGENT_ENROLLMENT_PATH = new RegExp(`^${AGENT_ENROLLMENT_PATH_PREFIX}/(${UUID})$`, "i");
-const CONVERSATION_PATH = new RegExp(`^${CONVERSATIONS_PATH}/(${UUID})$`, "i");
-// The raw frame log of one session. Under `/sessions/` rather than under its conversation, because
-// a conversation outlives its sessions and has several: the frames belong to exactly one of them.
-// Deep-linkable so "look at frame 412" can be a link rather than a set of directions.
-const SESSION_FRAMES_PATH = new RegExp(`^${CONSOLE_ROOT_PATH}/sessions/(${UUID})/frames$`, "i");
-
-export function conversationPath(conversationId: string): string {
-  return `${CONVERSATIONS_PATH}/${conversationId}`;
-}
 
 export function toolCallPath(toolCallId: string): string {
   return `${TOOL_CALLS_PATH}/${toolCallId}`;
-}
-
-export function sessionFramesPath(sessionId: string): string {
-  return `${CONSOLE_ROOT_PATH}/sessions/${sessionId}/frames`;
 }
 
 /** Move the console to one of its own paths. The shell reads the view off `window.location` and
@@ -70,22 +50,12 @@ export function agentEnrollmentIdForPathname(pathname: string): string | null {
   return AGENT_ENROLLMENT_PATH.exec(pathname)?.[1] ?? null;
 }
 
-export function conversationIdForPathname(pathname: string): string | null {
-  return CONVERSATION_PATH.exec(pathname)?.[1] ?? null;
-}
-
-export function sessionFramesIdForPathname(pathname: string): string | null {
-  return SESSION_FRAMES_PATH.exec(pathname)?.[1] ?? null;
-}
-
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === CONSOLE_ROOT_PATH || pathname === `${CONSOLE_ROOT_PATH}/`) return "embed";
   if (pathname === APPROVALS_EMBED_PATH) return "approvalsEmbed";
   if (pathname === SETTINGS_PATH) return "settings";
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
-  if (sessionFramesIdForPathname(pathname) !== null) return "sessionFrames";
-  if (pathname === CONVERSATIONS_PATH || conversationIdForPathname(pathname) !== null) return "conversations";
   if (toolCallIdForPathname(pathname) !== null) return "embed";
   if (oauthResultIdForPathname(pathname) !== null) return "oauthResult";
   if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
@@ -122,7 +92,6 @@ export function rememberEmbedPath(path: string): void {
 function pathForView(view: ConsoleNavigationView): string {
   if (view === "settings") return SETTINGS_PATH;
   if (view === "toolCalls") return TOOL_CALLS_PATH;
-  if (view === "conversations") return CONVERSATIONS_PATH;
   return rememberedEmbedPath();
 }
 
@@ -131,8 +100,6 @@ export function useConsoleView(): {
   agentEnrollmentId: string | null;
   oauthResultId: string | null;
   toolCallId: string | null;
-  conversationId: string | null;
-  sessionFramesId: string | null;
   navigate: (view: ConsoleNavigationView) => void;
 } {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -166,8 +133,6 @@ export function useConsoleView(): {
     agentEnrollmentId: agentEnrollmentIdForPathname(pathname),
     oauthResultId: oauthResultIdForPathname(pathname),
     toolCallId: toolCallIdForPathname(pathname),
-    conversationId: conversationIdForPathname(pathname),
-    sessionFramesId: sessionFramesIdForPathname(pathname),
     navigate,
   };
 }

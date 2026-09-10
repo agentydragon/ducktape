@@ -34,7 +34,6 @@ from haku.console.conftest import (
     DEFAULT_ACCESS_PROFILE_ID,
     default_agent_binding,
     insert_approved_tool_call,
-    insert_live_session,
 )
 from haku.console.database_schema import Agent
 from haku.console.grants.catalog import ConfigFileGrantSource, DatabaseGrantSource, GrantCatalog
@@ -48,7 +47,6 @@ from haku.console.grants.principal import (
     AgentGrantPrincipal,
     GrantPrincipalInput,
     RequestPrincipal,
-    SessionGrantPrincipal,
 )
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.console.identity.enrollment import AgentEnrollmentService
@@ -135,23 +133,14 @@ class _Console:
         assert self.client.portal is not None
         return self.client.portal.call(func, *args)
 
-    def agent_context(self, *, session_id: UUID | None = None) -> McpExecutionContext:
+    def agent_context(self) -> McpExecutionContext:
         """A trusted Agent execution whose fresh ToolCall satisfies grant source provenance."""
         tool_call_id = self.call(
-            partial(
-                insert_approved_tool_call,
-                self.sessions,
-                binding_id=self.binding_id,
-                now=_NOW,
-                server_id="grants",
-                session_id=session_id,
-            )
+            partial(insert_approved_tool_call, self.sessions, binding_id=self.binding_id, now=_NOW, server_id="grants")
         )
         return McpExecutionContext(
             caller=AgentMcpExecutionCaller(
-                principal=RequestPrincipal(
-                    agent_id=self.agent_id, session_id=session_id, access_profile_id=DEFAULT_ACCESS_PROFILE_ID
-                )
+                principal=RequestPrincipal(agent_id=self.agent_id, access_profile_id=DEFAULT_ACCESS_PROFILE_ID)
             ),
             tool_call_id=tool_call_id,
             approving_operator_id=None,
@@ -175,9 +164,6 @@ class _Console:
             approving_operator_id=None,
             approval_policy_id=None,
         )
-
-    def live_session(self) -> UUID:
-        return self.call(partial(insert_live_session, self.sessions, binding_id=self.binding_id, now=_NOW))
 
 
 def _foreign_operator_context() -> McpExecutionContext:
@@ -362,11 +348,10 @@ def test_kubernetes_can_i_rides_the_grants_server(console: _Console) -> None:
 
 def test_whoami_returns_the_callers_resolved_console_identity(console: _Console) -> None:
     """whoami echoes the trusted execution caller Console resolved: an Agent's request principal
-    (agent_id + the live session_id + access profile) or a direct Operator's operator_id. It takes no
-    arguments and reads identity only from trusted request metadata, so the value round-trips through
-    the MCP wire back to exactly the caller the execution context carried."""
-    session_id = console.live_session()
-    agent_context = console.agent_context(session_id=session_id)
+    (agent_id + access profile) or a direct Operator's operator_id. It takes no arguments and reads
+    identity only from trusted request metadata, so the value round-trips through the MCP wire back
+    to exactly the caller the execution context carried."""
+    agent_context = console.agent_context()
     operator_context = console.operator_context()
 
     async def exercise() -> None:
@@ -555,53 +540,6 @@ def test_operator_cannot_mint_or_inspect_agent_grants(
 ) -> None:
     with pytest.raises(PermissionError):
         console.call(partial(operation, console.service))
-
-
-def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Console) -> None:
-    session_id = console.live_session()
-    session_context = console.agent_context(session_id=session_id)
-    static_context = console.agent_context()
-
-    async def exercise() -> None:
-        (session_view,) = await console.service.create_grants(
-            context=session_context, requests=[_http(_HTTP_SPEC)], duration_seconds=600, principal="self"
-        )
-        assert session_view.grant.principal == SessionGrantPrincipal(session_id=session_id)
-        (agent_view,) = await console.service.create_grants(
-            context=static_context, requests=[_http(_HTTP_SPEC)], duration_seconds=600, principal="self"
-        )
-        # `self` resolves the trusted request principal; omission lists every catalog grant.
-        assert {
-            view.source.id
-            for view in await console.service.list_grants(context=session_context, principal="self")
-            if isinstance(view.source, DatabaseGrantSource)
-        } == {session_view.grant.grant_id, agent_view.grant.grant_id}
-        assert {
-            view.source.id
-            for view in await console.service.list_grants(context=static_context, principal="self")
-            if isinstance(view.source, DatabaseGrantSource)
-        } == {agent_view.grant.grant_id}
-        assert {
-            view.source.id
-            for view in await console.service.list_grants(context=static_context)
-            if isinstance(view.source, DatabaseGrantSource)
-        } == {session_view.grant.grant_id, agent_view.grant.grant_id}
-        assert [
-            view.source.id
-            for view in await console.service.list_grants(
-                context=session_context, principal=SessionGrantPrincipal(session_id=session_id)
-            )
-            if isinstance(view.source, DatabaseGrantSource)
-        ] == [session_view.grant.grant_id]
-        assert [
-            view.source.id
-            for view in await console.service.list_grants(
-                context=session_context, principal=AgentGrantPrincipal(agent_id=console.agent_id)
-            )
-            if isinstance(view.source, DatabaseGrantSource)
-        ] == [agent_view.grant.grant_id]
-
-    console.call(exercise)
 
 
 if __name__ == "__main__":

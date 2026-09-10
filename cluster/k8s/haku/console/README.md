@@ -84,8 +84,8 @@ runs the two maintenance stages of `haku/console/recall_index_sync.py` as one bi
 role-flagged Deployments. The chunk role is one Deployment per logical index of the
 `recall_indexes` registry: `indexer-chunk-<index>-deployment.yaml` runs `--role=chunk` mounting
 only its own index's config slice (`indexer-chunk-<index>-config.yaml`, its own generated
-ConfigMap), so `haku-indexer-chunk-haku-state`, `-haku-conversations`, and `-ducktape-public` each
-sweep exactly their one index — the mounted config is the selection, with no selector env, and one
+ConfigMap), so `haku-indexer-chunk-haku-state` and `-ducktape-public` each sweep exactly their one
+index — the mounted config is the selection, with no selector env, and one
 index's config change or parse breakage never touches another's pod. Each slice is the projection
 of the registry in `config.yaml` (which the console still reads whole); the derivation tests
 (`//cluster/validation:test_haku_deployment_config_contract`)
@@ -108,14 +108,13 @@ per index: each pod's config surface mirrors its credential mounts. No pod mount
 token or any of the console's operator/agent auth, approval-ledger, connector, or Web Push
 credentials, and no chunk pod holds an embedder endpoint or another index's definition. Only the
 `haku-state` chunk pod carries a Git credential — the `haku-forgejo-git` read slots its registry
-entry names; the `haku-conversations` (chat) and `ducktape-public` (anonymous HTTPS) chunk pods
-carry none. The embed pod holds the embedder endpoint and mounts nothing at all — not even a
-config slice. Every pod shares exactly the `haku_indexer` database role. The role is declared
-on the CNPG Cluster (`db/postgres-cluster.yaml` `managed.roles`; password from the ESO-generated
+entry names; the `ducktape-public` (anonymous HTTPS) chunk pod carries none. The embed pod holds
+the embedder endpoint and mounts nothing at all — not even a config slice. Every pod shares
+exactly the `haku_indexer` database role. The role is declared on the CNPG Cluster
+(`db/postgres-cluster.yaml` `managed.roles`; password from the ESO-generated
 `haku-console-db-indexer` Secret). Its object grants are `indexer-role.sql` — recall-index tables
-read/write plus `SELECT` on `conversation_item`, nothing else — applied by the
-`haku-console-db-indexer-provisioner` Job in this app layer rather than `db/`, because the
-`recall_index` schema exists only after the migration Job.
+read/write, nothing else — applied by the `haku-console-db-indexer-provisioner` Job in this app
+layer rather than `db/`, because the `recall_index` schema exists only after the migration Job.
 
 Schema compatibility follows the API's pattern at the worker's scope: startup does zero-row reads
 of exactly the tables the role may touch and exits on failure, so an incompatible indexer image
@@ -239,100 +238,3 @@ enforcement-inventory entry.
 server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
 only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
 The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.
-
-## Colocated egress proxy (#4942, #4670)
-
-The Console-authorized HTTP egress fence's proxy runs as the `egress-proxy` **sidecar** in this
-Deployment (embedded mitmproxy adapter `haku/egress`, image `git.allegedly.works/ducktape-ci/haku-egress-proxy`),
-gating every fenced-workload request against Console's decision endpoint. Colocation is #4670's ruled
-topology; two guarantees are structural:
-
-- **The oracle is loopback-bound (acceptance criterion 14).** `POST /api/internal/http/decide` serves
-  on `127.0.0.1:8079` (`app._serve` / `build_internal_decide_app`), **not** on the network app
-  `create_app` builds. No Service targets `:8079`, so only the in-pod sidecar reaches it over loopback
-  — no sandbox has a route. This is load-bearing: the force-proxy CCNP admits `toEntities: cluster`, so
-  a sandbox _can_ reach this pod's Service; the loopback bind, **not** a NetworkPolicy, is what keeps
-  the oracle unreachable. The proxy-identity bearer authenticates every call (defense in depth).
-- **Proxy and Console roll as one release unit.** One image commit ships both, so the decide call is an
-  internal same-release contract needing no versioning. A Console roll severs in-flight tunnels — the
-  accepted trade for not running a separately-versioned, separately-fenced proxy Deployment.
-
-The fenced-workload-facing listener is `:8888` (`egress-proxy-service.yaml`,
-`haku-egress-proxy.haku-console.svc`).
-
-### Secret wiring
-
-`config.yaml`'s `egress_decide` section names env vars the server resolves at startup
-(`load_egress_decide`); absent, the endpoint stays `503` and the proxy fails closed.
-
-- **`haku-egress-proxy-identity`** (`haku-egress-proxy-identity-eso.yaml`, one ESO Password generator
-  into one Secret) — `fence-credential`, an opaque bearer **shared** by server and sidecar. The
-  sidecar presents it in the `Authorization` header; the server authenticates only the shared fence,
-  while the live session token identifies the sandbox Agent. It is compared in-memory and registered
-  nowhere DB-side, so ESO regenerating it is safe — the Secret's Reloader annotation restarts the pod
-  so both containers reload together. It is generated once (`refreshInterval: 8760h`).
-- **Session token** — the Console writes `HAKU_SESSION_TOKEN` into each runtime
-  `SandboxClaim.spec.env` (with the pre-rename `HAKU_RUNNER_TOKEN` riding along until every deployed
-  runner image reads the new name). The runner uses that one token for the runner protocol, Console
-  MCP, and any HTTP
-  proxy selected in its launch environment, so HTTP egress and MCP resolve to the same live session
-  Agent/profile/binding. This literal claim field is temporary: upstream Agent Sandbox does not yet
-  support Secret-backed env injection. It is load-bearing that runtime `SandboxClaims` are not broadly
-  readable and are not readable by agents; keep `get`/`list`/`watch` out of agent RBAC and review any
-  new claim reader as access to a live bearer. The deferred Secret binding is tracked in
-  `haku/sandbox/TODO.md`.
-- **`haku-egress-github-token`** (ESO) — the `github-bot` registry credential (#4951). The Console holds
-  the real value and substitutes it into decide responses; the sandbox only ever holds
-  `github-token-placeholder`. Synced from the same `github-agentydragon-agent` remote the retiring iron fence reads,
-  via the dedicated `github-agentydragon-agent` SecretStore. Optional: an unset value is
-  skipped with a warning (#4970), so a not-yet-synced Secret degrades the `github-bot` handle rather
-  than crash-looping — the endpoint still serves reachability verdicts.
-- **`activitywatch-read-token`** (reflector) — the read-only ActivityWatch bearer for Haku's
-  `activitywatch-read-token` registry handle. The source Secret remains owned by the `activitywatch`
-  namespace and is reflected into `haku-console` (and the legacy `haku-egress-proxy` namespace). The
-  runner receives only `AW_READ_TOKEN=activitywatch-read-token-placeholder`; Console substitutes the
-  real value at `activitywatch-read.allegedly.works` only for GETs and POSTs under `/api/0/query/`.
-  The optional server reference lets a reflected-secret lag degrade this handle to upstream 401
-  without taking the Console down; the route's own bearer proxy remains read-only.
-- **Shared interception CA** — the sidecar reuses `haku-egress-proxy-ca` (reflected into this
-  namespace); an init container assembles it into `confdir/mitmproxy-ca.pem` so fenced sandboxes trust
-  its leaves. A missing reflected Secret fails the init container and the pod never starts.
-
-### The Cilium ceiling — ruled Option A
-
-The sidecar shares the _trusted_ Console pod's netns, and Console needs broad cluster-internal egress,
-so #4670's "public-only, deny private/cluster" network ceiling can't apply to this pod without breaking
-it. The operator ruled **A — app-layer boundary**: no restrictive egress CCNP on the Console pod; the
-destination boundary is the decide service's resolved-address-class validation (#4954
-`_prohibited_address_class` + `egress_decide.prohibited_cidrs`), which rejects
-loopback/link-local/multicast/private/RFC1918/ULA/configured-CIDR answers _before_ consulting grants. So
-under colocation the app layer, not Cilium, denies private/cluster/metadata.
-
-Recorded rejected alternatives: **B** (separate proxy Deployment with its own tight network ceiling)
-reintroduces exactly what the ruling rejected — endpoint auth, an oracle NetworkPolicy, a versioned
-contract — kept only as the fallback if data-plane load dominates. **C** (colocation plus an enumerated
-Console egress CCNP) is the "true" ceiling but flips the trusted pod to default-deny egress and must
-enumerate every Console destination; deferred until that set is pinned.
-
-### Adoption, rollout, recovery
-
-- **Repointed:** the force-proxy CCNP (`ccnp-haku-proxy-egress.yaml`) names the colocated listener, so
-  fenced sandboxes can _reach_ `haku-console:8888`.
-- **Rollout:** `push-images` builds `haku-egress-proxy` on the first `devel` merge; its ImagePolicy
-  rewrites the placeholder tag. The Console rolls with the sidecar under `maxUnavailable: 0`.
-- **Recovery:** the fence is fail-closed by construction — any decision-path error (server
-  `503`/unreachable, timeout, malformed response, denied destination, address-class rejection) makes the
-  proxy refuse, never forward. Recover by fixing the server (its logs show a `load_egress_decide` error
-  or `HttpDecideUnavailableError`; the sidecar logs per-request `deny …: <reason>`, values never
-  logged), not by bypassing it. A full-fidelity audit stream is a separate #4670 item.
-
-### Deferred
-
-The first GitHub egress validation passed in [PR #5223](https://github.com/agentydragon/ducktape/pull/5223), merged
-August 30, 2026. The detailed spike runbook is retired.
-
-The remaining cutover work stays deferred: adopting a live session token for every colocated caller,
-Secret-backed binding for that token (tracked in `haku/sandbox/TODO.md`), and broad-body/h2/gRPC
-handling. Retiring the iron fence—which carries the shared CA out of
-`cluster/k8s/agents/haku-egress-proxy/`—now waits on the adapter and topology reconsideration in
-[#5306](https://github.com/agentydragon/ducktape/issues/5306); the other items remain #4670 work.

@@ -31,23 +31,3 @@ the way of a new migration, deleting it is the expected move, not a last resort.
 
 What is worth testing instead is the _current_ schema: that a fresh database migrated to head
 matches the ORM, and that head re-applies idempotently. Those stay true as the chain grows.
-
-## Conversation data may be dropped; tool-call data may not
-
-**A standing operator allowance, revocable at any time.** Nothing in the prod database's
-conversation tables is worth keeping — the console is still in development and what is there is
-test traffic. A migration that would otherwise need expand/contract, a backfill, or a read-only
-compatibility variant to keep stored conversation rows readable may **delete the rows instead**,
-and should: take the simpler schema.
-
-`conversation` is the root, and every conversation-scoped table cascades from it —
-`channel_attachment`, `sessions`, `conversation_event`, `conversation_item`, `conversation_turn`,
-`conversation_prompt`, `session_frames`, and the per-attachment channel state — so deleting there
-is the whole of it.
-
-**Nothing else is covered.** `mcp_tool_calls` and `mcp_tool_call_principals` are the audit record
-for privileged execution and are kept; so are identity, credentials, grants, and OAuth state. A
-migration touching any of those gets the full expand/contract treatment.
-
-Say in the PR that a migration drops conversation rows, so a reviewer sees it was chosen rather
-than overlooked. When the allowance is withdrawn this section goes, and the exemption with it.

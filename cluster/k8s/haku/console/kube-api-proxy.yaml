@@ -203,16 +203,8 @@ spec:
     # In-cluster kubeconfig callers use the TLS listener only: their kubeconfigs authenticate,
     # and client-go attaches those credentials only to an https server. The haku-sandbox exec
     # pool mounts no ServiceAccount token (sandboxtemplate-haku.yaml), so this admission is its
-    # only kubectl path — sandbox-MCP boxes get the runner treatment (operator ruling, #4710).
+    # only kubectl path.
     - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
-            k8s:app.kubernetes.io/name: haku-harness-runner
-            k8s:haku.allegedly.works/access-profile-id: haku
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
-            k8s:app.kubernetes.io/name: haku-harness-runner
-            k8s:haku.allegedly.works/access-profile-id: public-coder
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-sandbox
             k8s:app.kubernetes.io/name: haku-sandbox

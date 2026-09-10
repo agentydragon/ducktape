@@ -2,24 +2,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - forgejo-images-creds-eso.yaml
-  - forgejo-images-creds-haku-runtime-sandbox-eso.yaml
   - activitywatch-read-token-eso.yaml
   - sandboxtemplate-haku.yaml
   - sandboxwarmpool-haku.yaml
-  - sandboxtemplate-haku-claude.yaml
-  - sandboxwarmpool-haku-claude.yaml
-  - sandboxtemplate-haku-public-coder-codex.yaml
-  - sandboxwarmpool-haku-public-coder-codex.yaml
   - cleanuppolicy-haku-janitor.yaml
-  # No janitor for Console-launched CLI sandboxes. The console slides each live session's
-  # SandboxClaim shutdownTime on its lease heartbeat (haku/console/session/sandbox_claims.py renew) and
-  # deletes the claim on a clean end, so the Agent Sandbox controller's own deadline is the reaper;
-  # a creation-age CleanupPolicy would only cap a tended session short of its deadline. Accepted
-  # trade-off (operator, 2026-08-15): no backstop if the controller itself stays broken.
   # Cross-namespace RBAC lives here rather than under a namespace-transforming
-  # workload kustomization. Console's exec-target sandbox bindings live in haku-sandbox;
-  # Console's launched-runtime claim-only binding lives in haku-runtime-sandbox.
+  # workload kustomization. Console's exec-target sandbox bindings live in haku-sandbox.
   - haku-console-sandbox-role.yaml
   - haku-console-sandbox-rolebinding.yaml
-  - haku-console-runtime-claim-role.yaml
-  - haku-console-runtime-claim-rolebinding.yaml

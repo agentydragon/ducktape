@@ -18,12 +18,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conftest import (
-    DEFAULT_ACCESS_PROFILE_ID,
-    default_agent_binding,
-    insert_approved_tool_call,
-    insert_live_session,
-)
+from haku.console.conftest import DEFAULT_ACCESS_PROFILE_ID, default_agent_binding, insert_approved_tool_call
 from haku.console.database_schema import KubernetesGrantRow
 from haku.console.grants.envelope import GrantOwnershipError, GrantSourceError, GrantStatus
 from haku.console.grants.kubernetes.models import (
@@ -40,7 +35,6 @@ from haku.console.grants.principal import (
     AgentGrantPrincipal,
     GrantPrincipalKind,
     RequestPrincipal,
-    SessionGrantPrincipal,
 )
 
 # Relative: Grant.status is computed against the live clock, so windows anchor to it.
@@ -52,10 +46,10 @@ _NON_RESOURCE_RULE = Rule(non_resource_urls=("/version",), verbs=("get",))
 _RAW_GRANT_INSERT = text(
     """
     INSERT INTO kubernetes_grants (
-        grant_id, owner_agent_id, principal_kind, principal_agent_id, principal_session_id,
+        grant_id, owner_agent_id, principal_kind, principal_agent_id,
         source_tool_call_id, scope, rules, created_at, expires_at
     ) VALUES (
-        :grant_id, :owner_agent_id, :principal_kind, :principal_agent_id, :principal_session_id,
+        :grant_id, :owner_agent_id, :principal_kind, :principal_agent_id,
         :source_tool_call_id, CAST(:scope AS jsonb), CAST(:rules AS jsonb),
         :created_at, :expires_at
     )
@@ -94,7 +88,6 @@ async def _insert_raw_grant(
     rule: Rule,
     principal_kind: GrantPrincipalKind = GrantPrincipalKind.AGENT,
     principal_agent_id: UUID | None = None,
-    principal_session_id: UUID | None = None,
 ) -> None:
     async with sessions.begin() as session:
         await session.execute(
@@ -108,7 +101,6 @@ async def _insert_raw_grant(
                     if principal_kind is GrantPrincipalKind.AGENT and principal_agent_id is None
                     else principal_agent_id
                 ),
-                "principal_session_id": principal_session_id,
                 "source_tool_call_id": source_tool_call_id,
                 "scope": json.dumps(scope),
                 "rules": json.dumps([rule.model_dump(mode="json")]),
@@ -139,10 +131,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(repository_client: 
         assert grant.status is GrantStatus.ACTIVE
         assert (await repository.get(owner_agent_id=repository_client.agent_id, grant_id=grant.grant_id)) == grant
         assert await repository.active_for_request_principal(
-            request_principal=RequestPrincipal(
-                agent_id=repository_client.agent_id, session_id=None, access_profile_id=None
-            ),
-            now=_NOW,
+            request_principal=RequestPrincipal(agent_id=repository_client.agent_id, access_profile_id=None), now=_NOW
         ) == (grant,)
 
         ended = await repository.end(
@@ -154,9 +143,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(repository_client: 
         assert ended.status is GrantStatus.ENDED
         assert (
             await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(
-                    agent_id=repository_client.agent_id, session_id=None, access_profile_id=None
-                ),
+                request_principal=RequestPrincipal(agent_id=repository_client.agent_id, access_profile_id=None),
                 now=_NOW,
             )
             == ()
@@ -183,7 +170,7 @@ def test_repository_persists_permanent_grants(repository_client: _RepositoryClie
             created_at=_NOW,
             expires_at=None,
         )
-        principal = RequestPrincipal(agent_id=repository_client.agent_id, session_id=None, access_profile_id=None)
+        principal = RequestPrincipal(agent_id=repository_client.agent_id, access_profile_id=None)
         assert grant.expires_at is None
         assert await repository.active_for_request_principal(
             request_principal=principal, now=_NOW + timedelta(days=365)
@@ -217,10 +204,7 @@ def test_repository_persists_an_access_profile_principal(repository_client: _Rep
         )
         assert grant.principal == AccessProfileGrantPrincipal(access_profile_id=DEFAULT_ACCESS_PROFILE_ID)
         assert await repository.active_for_request_principal(
-            request_principal=RequestPrincipal(
-                agent_id=uuid4(), session_id=None, access_profile_id=DEFAULT_ACCESS_PROFILE_ID
-            ),
-            now=_NOW,
+            request_principal=RequestPrincipal(agent_id=uuid4(), access_profile_id=DEFAULT_ACCESS_PROFILE_ID), now=_NOW
         ) == (grant,)
 
     repository_client.call(exercise)
@@ -280,8 +264,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert (
                 len(
                     await repository.active_for_request_principal(
-                        request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None),
-                        now=_NOW,
+                        request_principal=RequestPrincipal(agent_id=agent_id, access_profile_id=None), now=_NOW
                     )
                 )
                 == 2
@@ -331,96 +314,6 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                     )
                 ).all()
             assert len(rows) == 2
-
-        client.portal.call(exercise)
-
-
-def test_repository_matches_agent_and_exact_session_principals(make_client: Any) -> None:
-    with make_client() as client:
-        app = cast(FastAPI, client.app)
-        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
-        assert client.portal is not None
-        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
-        session_id = client.portal.call(partial(insert_live_session, sessions, binding_id=binding_id, now=_NOW))
-        agent_source = client.portal.call(partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW))
-        # The source Agent may request a grant for another live session; the operator approval
-        # on the source ToolCall, not source-session identity equality, authorizes that choice.
-        session_source = client.portal.call(
-            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
-        )
-        repository = PostgresGrantRepository(sessions)
-
-        async def exercise() -> None:
-            agent_grant = await repository.create(
-                owner_agent_id=agent_id,
-                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
-                source_tool_call_id=agent_source,
-                scope=_SCOPE,
-                rules=(_RULE,),
-                created_at=_NOW,
-                expires_at=_NOW + timedelta(minutes=5),
-            )
-            session_grant = await repository.create(
-                owner_agent_id=agent_id,
-                grant_principal=SessionGrantPrincipal(session_id=session_id),
-                source_tool_call_id=session_source,
-                scope=_SCOPE,
-                rules=(_RULE,),
-                created_at=_NOW,
-                expires_at=_NOW + timedelta(minutes=5),
-            )
-
-            assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None), now=_NOW
-            ) == (agent_grant,)
-            assert set(
-                await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(
-                        agent_id=agent_id, session_id=session_id, access_profile_id=None
-                    ),
-                    now=_NOW,
-                )
-            ) == {agent_grant, session_grant}
-            assert set(
-                await repository.list_for_request_principal(
-                    request_principal=RequestPrincipal(
-                        agent_id=agent_id, session_id=session_id, access_profile_id=None
-                    ),
-                    now=_NOW,
-                )
-            ) == {agent_grant, session_grant}
-            assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id, session_id=uuid4(), access_profile_id=None),
-                now=_NOW,
-            ) == (agent_grant,)
-            assert (
-                await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=uuid4(), session_id=session_id, access_profile_id=None),
-                    now=_NOW,
-                )
-                == ()
-            )
-
-            async with sessions.begin() as session:
-                await session.execute(
-                    text(
-                        "UPDATE sessions SET ended_at = now(), error = 'runner failed' WHERE session_id = :session_id"
-                    ),
-                    {"session_id": session_id},
-                )
-            ended_source = await insert_approved_tool_call(
-                sessions, binding_id=binding_id, now=_NOW, session_id=session_id
-            )
-            with pytest.raises(GrantSourceError, match="live session"):
-                await repository.create(
-                    owner_agent_id=agent_id,
-                    grant_principal=SessionGrantPrincipal(session_id=session_id),
-                    source_tool_call_id=ended_source,
-                    scope=_SCOPE,
-                    rules=(_RULE,),
-                    created_at=_NOW,
-                    expires_at=_NOW + timedelta(minutes=5),
-                )
 
         client.portal.call(exercise)
 
@@ -516,7 +409,6 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
                             owner_agent_id=agent_id,
                             principal_kind=GrantPrincipalKind.AGENT,
                             principal_agent_id=agent_id,
-                            principal_session_id=None,
                             source_tool_call_id=wrong_tool,
                             scope=_SCOPE,
                             rules=[_RULE],

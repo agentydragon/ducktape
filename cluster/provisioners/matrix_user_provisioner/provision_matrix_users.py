@@ -3,11 +3,11 @@
 Idempotent. The password is set only on initial creation: setting it on an existing user
 deletes every device and access token, which would break the bot's live session.
 
-Mints no access token — haku-console logs in for itself, so it can replace its own token
-without waiting for this Job.
+Mints no access token — each bot's own consumer logs in for itself, so it can replace its
+own token without waiting for this Job.
 
-Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, BOT_PASSWORD, and one password environment
-variable per bot in BOT_SPECS.
+Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, and one password environment variable per
+bot in BOT_SPECS.
 """
 
 import hashlib
@@ -24,16 +24,11 @@ logger = logging.getLogger(__name__)
 SYNAPSE_URL = "http://matrix-synapse.matrix.svc.cluster.local:8008"
 ADMIN_USERNAME = "provisioner"
 ADMIN_DEVICE_ID = "matrix-user-provisioner"
-BOT_USERNAME = "haku"
-BOT_DISPLAYNAME = "Haku"
 PUBLIC_CODER_AGENT_BOT_USERNAME = "public-coder-agent"
 PUBLIC_CODER_AGENT_BOT_DISPLAYNAME = "Public Coder Agent"
 SERVER_NAME = "allegedly.works"
 
-BOT_SPECS = (
-    (BOT_USERNAME, BOT_DISPLAYNAME, "BOT_PASSWORD"),
-    (PUBLIC_CODER_AGENT_BOT_USERNAME, PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "PUBLIC_CODER_AGENT_BOT_PASSWORD"),
-)
+BOT_SPECS = ((PUBLIC_CODER_AGENT_BOT_USERNAME, PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "PUBLIC_CODER_AGENT_BOT_PASSWORD"),)
 
 
 class SynapseClient(Protocol):
@@ -101,12 +96,7 @@ def _bot_exists(client: SynapseClient, access_token: str, encoded_mxid: str) -> 
 
 
 def upsert_bot(
-    client: SynapseClient,
-    admin_token: str,
-    bot_password: str,
-    *,
-    bot_username: str = BOT_USERNAME,
-    bot_displayname: str = BOT_DISPLAYNAME,
+    client: SynapseClient, admin_token: str, bot_password: str, *, bot_username: str, bot_displayname: str
 ) -> None:
     """Phase 2: Ensure the bot user exists via the admin API."""
     bot_mxid = f"@{bot_username}:{SERVER_NAME}"
@@ -118,7 +108,7 @@ def upsert_bot(
         # User exists — update displayname only. Do NOT include password:
         # Synapse invalidates all access tokens on password change, even if
         # the value is identical (bcrypt rehash triggers device purge), which
-        # would log haku-console out on every reconcile.
+        # would log the bot's own consumer out on every reconcile.
         resp = client.put(url, json={"displayname": bot_displayname, "admin": False}, headers=auth)
         resp.raise_for_status()
         logger.info("Phase 2: Updated %s (displayname: %s)", bot_mxid, resp.json().get("displayname", "n/a"))

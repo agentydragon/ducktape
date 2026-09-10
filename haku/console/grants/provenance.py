@@ -1,8 +1,8 @@
 """The manual-approval provenance invariant every grant domain enforces at creation.
 
 A grant's ``source_tool_call_id`` must identify a manually approved ToolCall authenticated
-by the lifecycle owner. The requested principal must identify an eligible Agent, live session,
-or access profile; it may differ from the requester because the Operator's approval of the source
+by the lifecycle owner. The requested principal must identify an eligible Agent or access
+profile; it may differ from the requester because the Operator's approval of the source
 ToolCall is the decision point. Split from :mod:`haku.console.grants.envelope` because these checks read
 ``database_schema`` rows, which ``database_schema`` itself imports the envelope's column
 mixin from.
@@ -10,18 +10,16 @@ mixin from.
 
 from __future__ import annotations
 
-import datetime
 from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, Session
+from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal
 from haku.console.grants.envelope import GrantNotFoundError, GrantOwnershipError, GrantSourceError
 from haku.console.grants.principal import AccessProfileGrantPrincipal, AgentGrantPrincipal, GrantPrincipal
 from haku.console.identity.agent import AgentStatus
-from haku.console.session.status import SessionStatus
 from haku.console.tool_calls import ToolCallStatus
 
 
@@ -44,9 +42,7 @@ async def assert_owner_principal_and_source(
     """Validate owner eligibility, source-ToolCall provenance, and principal compatibility.
 
     Locks the source ToolCall row, serializing grant-set creation against concurrent
-    replays and revocations of the same source. An exact-session principal additionally
-    requires the named session to be live, bound to the source call's credential binding,
-    and within its lease.
+    replays and revocations of the same source.
     """
 
     agent = await session.scalar(select(Agent).where(Agent.agent_id == owner_agent_id))
@@ -85,22 +81,10 @@ async def assert_owner_principal_and_source(
             AgentStatus.ABANDONED,
             AgentStatus.DELETED,
         )
-    elif isinstance(grant_principal, AccessProfileGrantPrincipal):
-        valid_principal = True
     else:
-        live_session = await session.scalar(
-            select(Session)
-            .where(
-                Session.session_id == grant_principal.session_id,
-                Session.agent_binding_id.is_not(None),
-                Session.status == SessionStatus.READY,
-                Session.lease_expires_at > datetime.datetime.now(datetime.UTC),
-            )
-            .with_for_update()
-        )
-        valid_principal = live_session is not None
+        valid_principal = isinstance(grant_principal, AccessProfileGrantPrincipal)
     if not valid_principal:
-        raise GrantSourceError("grant principal must identify an eligible Agent, live session, or access profile")
+        raise GrantSourceError("grant principal must identify an eligible Agent or access profile")
 
 
 async def lock_owned_source(session: AsyncSession, *, owner_agent_id: UUID, source_tool_call_id: str) -> None:

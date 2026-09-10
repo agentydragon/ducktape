@@ -12,7 +12,6 @@ wires that router and serves the config endpoint. It can also mount the built SP
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import datetime
 import logging
 import os
@@ -35,20 +34,10 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import aiquota_proxy, capabilities
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH
-
-# Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
-from haku.console.conversation import follow as conversation_follow, reader, runtime as conversation_runtime
-from haku.console.conversation.history import ConversationHistory
-from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.grants import routes as grant_routes
 from haku.console.grants.catalog import GrantCatalog
-
-# The two grant domains both name their router module `routes`; alias at this one seam.
-from haku.console.grants.http import decide_routes
-from haku.console.grants.http.decide_config import load_egress_decide
-from haku.console.grants.http.decide_service import HttpDecideService
 
 # Both grant domains now define `GrantService`/`PostgresGrantRepository` (§4.1 entity-prefix drop);
 # alias per domain at this one import seam to keep the two straight (STYLE permits collision aliases).
@@ -88,16 +77,10 @@ from haku.console.mcp_config import (
     load_static_agents,
     validate_in_process_server_bindings,
 )
-from haku.console.models import ConfigResponse, LaunchOption
+from haku.console.models import ConfigResponse
 from haku.console.notifications import connection_metrics, console_events, push, push_routes
-from haku.console.notifications.conversation_wakes import ConversationWakes
-from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims, sandbox_observer
-from haku.console.session.launch_identity import HarnessLaunchAuthorizer
-from haku.console.session.store import Store
-from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.settings import Settings
 from haku.console.tools import (
     gmail as gmail_tools,
@@ -105,14 +88,10 @@ from haku.console.tools import (
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
-    session_sandboxes as session_sandboxes_tools,
-    workers as workers_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import runtime as console_runtime, runtime_catalog
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
-from haku.runner.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from haku.sandbox.kubernetes_client import InClusterSandboxClient
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -214,21 +193,6 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    claude_harness = console_config.harnesses.claude_code if console_config.harnesses is not None else None
-    codex_harness = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
-    static_by_id = {agent.agent_id: agent for agent in console_config.static_agents.values()}
-    profile_harness_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
-    launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
-    # Each layer owns its own LISTEN connection on its own channel: a session and a conversation
-    # are different layers, so their wakes share no wire, no connection, and no module. Two
-    # connections is the accepted cost of that separation.
-    session_wakes = SessionWakes(database_url)
-    conversation_wakes = ConversationWakes(database_url)
-    # Conversation changes reach open tabs over the console socket the shell already holds,
-    # coalesced per conversation. Constructed unconditionally: it listens on the conversation
-    # channel and sends on the console one, neither of which depends on this replica running a
-    # Claude harness.
-    conversation_live_updates = ConversationLiveUpdates(conversation_wakes, console_event_hub, db_sessions)
     tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -302,99 +266,6 @@ def create_app(
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
 
-    harness_registry: console_runtime.HarnessRegistry
-    registrations: list[runtime_catalog.HarnessRegistration] = []
-    session_claims: list[sandbox_claims.SandboxClaims] = []
-    runner_environment = (
-        {}
-        if settings.runner_kubernetes_proxy_url is None
-        else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
-    )
-    # Prompts belong to launchable Agents: each harness registration loads its Agent's identity
-    # template, whose own `{% include %}` pulls in the shared attached-chat fragment. Rendered here
-    # at startup for every launchable Agent, so a broken include or name prevents readiness rather
-    # than failing the first attached chat session hours later.
-    launchable_by_id = {entry.agent_id: entry for entry in console_config.launchable_agents}
-
-    def agent_system_prompt(agent_id: UUID) -> SystemPromptTemplate:
-        template = SystemPromptTemplate.from_path(launchable_by_id[agent_id].system_prompt_template)
-        template.verify_renders()
-        return template
-
-    if claude_harness is not None:
-        try:
-            claude_profile_id = static_by_id[claude_harness.agent_id].access_profile_id
-        except KeyError as error:
-            raise ValueError("configured Claude Agent must be a static Agent") from error
-        claude_claims = sandbox_claims.KubernetesSandboxClaims(
-            sandbox_claims.SandboxClaimSpec(
-                namespace=claude_harness.namespace,
-                warm_pool=claude_harness.warm_pool,
-                claim_prefix=claude_harness.claim_prefix,
-                harness_label=claude_harness.harness_label,
-                runner_environment={},
-            )
-        )
-        session_claims.append(claude_claims)
-        registrations.append(
-            runtime_catalog.harness_registration(
-                claude_harness,
-                claude_claims,
-                system_prompt=agent_system_prompt(claude_harness.agent_id),
-                access_profile_id=claude_profile_id,
-                execution_environment={
-                    **runner_environment,
-                    **(
-                        {}
-                        if settings.haku_agent_workspace_setup is None
-                        else {RUNNER_SETUP_ENV: str(settings.haku_agent_workspace_setup)}
-                    ),
-                },
-            )
-        )
-    if codex_harness is not None:
-        try:
-            codex_profile_id = static_by_id[codex_harness.agent_id].access_profile_id
-        except KeyError as error:
-            raise ValueError("configured Codex Agent must be a static Agent") from error
-        codex_claims = sandbox_claims.KubernetesSandboxClaims(
-            sandbox_claims.SandboxClaimSpec(
-                namespace=codex_harness.namespace,
-                warm_pool=codex_harness.warm_pool,
-                claim_prefix=codex_harness.claim_prefix,
-                harness_label=codex_harness.harness_label,
-                runner_environment={},
-            )
-        )
-        session_claims.append(codex_claims)
-        registrations.append(
-            runtime_catalog.harness_registration(
-                codex_harness,
-                codex_claims,
-                system_prompt=agent_system_prompt(codex_harness.agent_id),
-                access_profile_id=codex_profile_id,
-                # The public-coder SandboxTemplate already owns the explicit empty-workspace
-                # setup policy. Registration contributes only Console-selected shared topology.
-                execution_environment=runner_environment,
-            )
-        )
-    if registrations:
-        harness_registry = runtime_catalog.execution_registry(*registrations)
-    else:
-        # Harness-disabled replicas can still inspect every linked durable harness kind. This
-        # registry has projection only: no claims, credentials, or launcher.
-        harness_registry = runtime_catalog.projection_registry()
-    if codex_harness is not None:
-        codex_profile_id = static_by_id[codex_harness.agent_id].access_profile_id
-        profile_agents = {
-            agent_id for agent_id, agent in static_by_id.items() if agent.access_profile_id == codex_profile_id
-        }
-        if profile_agents != {codex_harness.agent_id}:
-            raise ValueError("configured Codex Agent must have a dedicated access profile")
-    # Projection-only composition may link dormant adapters, while launch-capable production
-    # composition includes only deliberately supported adapters and resources.
-    session_store = Store(db_sessions)
-
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
         assert loaded_static_agents is not None
 
@@ -412,43 +283,6 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
-    # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
-    # the same registry in their store above but expose no session-creation harness service.
-    if harness_registry.configured_kinds:
-        authorize_harness_launch = HarnessLaunchAuthorizer(
-            agent_authority,
-            launchable_agent_ids=launchable_agent_ids,
-            registered_harness_identities=harness_registry.configured_identities,
-            profile_harness_kinds=profile_harness_kinds,
-        )
-
-        session_service = session_runtime.SessionService(
-            harness_registry,
-            session_store,
-            session_wakes,
-            conversation_history=ConversationHistory(db_sessions),
-            launch_authorizer=authorize_harness_launch,
-        )
-    else:
-        session_service = None
-    sandbox_allocator = (
-        sandbox_allocation.SandboxAllocator(session_service, session_store, session_wakes, db_engine)
-        if session_service is not None
-        else None
-    )
-    runtime_supervisor = (
-        conversation_runtime.Runtime(session_service, session_store, conversation_wakes, db_engine)
-        if session_service is not None
-        else None
-    )
-    # A followed conversation's own socket. Keep it behind executable harness composition because
-    # a follower opens on the same read `GET /api/conversations/{id}` serves; a projection-only
-    # replica answers neither.
-    follow = (
-        None
-        if session_service is None
-        else conversation_follow.ConversationFollow(session_store, session_service, conversation_wakes)
-    )
     if static_agent_definitions is not None:
         static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)
     else:
@@ -460,7 +294,7 @@ def create_app(
         fingerprints=static_agent_fingerprints
     )
     bearer_authority = agent_bearer_authority.build_agent_bearer_authority(
-        agent_authority=agent_authority, static_credentials=static_credential_registry, session_tokens=db_sessions
+        agent_authority=agent_authority, static_credentials=static_credential_registry
     )
 
     mcp_auth = mcp_agent_auth.build_auth(
@@ -480,7 +314,6 @@ def create_app(
         PostgresHttpGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
     )
-    loaded_egress_decide = load_egress_decide(console_config.egress_decide) if console_config.egress_decide else None
     grant_catalog = GrantCatalog(
         kubernetes_grants=kubernetes_grants,
         http_grants=http_grants,
@@ -488,18 +321,7 @@ def create_app(
         sar_client=(
             KubernetesSubjectAccessReviewClient() if console_config.kubernetes_authorization is not None else None
         ),
-        http_config_grants=tuple(loaded_egress_decide.grants) if loaded_egress_decide else (),
     )
-    if loaded_egress_decide is None:
-        http_decide = None
-    else:
-        assert console_config.egress_decide is not None
-        http_decide = HttpDecideService(
-            catalog=grant_catalog,
-            credentials=loaded_egress_decide,
-            prohibited_cidrs=console_config.egress_decide.prohibited_cidrs,
-            agent_bearer_authority=bearer_authority,
-        )
     kubernetes_authorization = (
         KubernetesAuthorizationService(agent_bearer_authority=bearer_authority, catalog=grant_catalog)
         if console_config.kubernetes_authorization is not None
@@ -528,7 +350,6 @@ def create_app(
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     sandbox_server: SandboxServerConfig | None = None
-    sandbox_session_observer: sandbox_observer.SandboxSessionObserver | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -579,24 +400,7 @@ def create_app(
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes.values()),
-                # Only with an executable harness: otherwise nothing writes sessions, so the read
-                # tools would reflect an always-empty corpus.
-                conversations=(reader.ConversationReads(session_store) if harness_registry.configured_kinds else None),
                 sandbox=sandbox_server,
-                # The `workers` server dispatches hosted worker sessions through the same launch
-                # path the console's own createConversation uses, so it needs the executable
-                # SessionService — present only with a launch-capable runtime — and its config entry.
-                sessions=(
-                    session_service
-                    if session_service is not None and workers_tools.WORKERS_SERVER_ID in configured_server_ids
-                    else None
-                ),
-                session_sandboxes=(
-                    session_service
-                    if session_service is not None
-                    and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids
-                    else None
-                ),
                 # One `grants` server fronts both grant domains plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
                 # registers only when that is configured (as it always is in the deployed config).
@@ -613,13 +417,6 @@ def create_app(
                 ),
             )
         )
-        if (
-            session_service is not None
-            and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids
-        ):
-            sandbox_session_observer = sandbox_observer.SandboxSessionObserver(
-                session_service, session_claims, db_engine, console_event_hub, operator_identity_store.list_active_ids
-            )
     validate_in_process_server_bindings(console_config, in_process_servers)
     # The console's one path out to its configured MCP servers. Executing a tool and reflecting a
     # catalog are the same dispatch over the same transports, so they are one object: executing and
@@ -683,27 +480,15 @@ def create_app(
         )
         await agent_authority.reconcile_static_agents(static_definitions)
         await mcp_operator_oauth_store.forget_unconfigured_servers(list(console_config.mcp.servers.values()))
-        if session_service is not None:
-            await session_service.reconcile_terminal_claims()
-        # Conversation demand owns session creation and replacement. It is a sibling of every
-        # channel and of sandbox allocation, so browser-only and unattached conversations receive
-        # the same maintenance as Matrix-bound ones.
-        supervising = runtime_supervisor.run() if runtime_supervisor is not None else contextlib.nullcontext()
-        # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
-        # the notification listener is live; the first sweep is also the restart backstop.
-        allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
-        observing = sandbox_session_observer.run() if sandbox_session_observer is not None else contextlib.nullcontext()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
             await console_event_hub.start()
-            await session_wakes.start()
-            await conversation_wakes.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
                 # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with conversation_live_updates.run(), supervising, allocating, observing, mcp_asgi.lifespan(app):
+                async with mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
@@ -714,10 +499,6 @@ def create_app(
                 if sandbox_server is not None:
                     await sandbox_server.client.aclose()
                 await github_repository_visibility.aclose()
-                if session_service is not None:
-                    await session_service.aclose()
-                await session_wakes.aclose()
-                await conversation_wakes.aclose()
                 await console_event_hub.aclose()
                 await approval_notifier.aclose()
 
@@ -745,10 +526,6 @@ def create_app(
     app.state.oauth_connection_result_store = oauth_connection_result_store
     app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
-    app.state.session_store = session_store
-    app.state.session_wakes = session_wakes
-    app.state.conversation_follow = follow
-    app.state.session_service = session_service
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
     app.state.mcp_catalogs = catalogs
@@ -759,7 +536,6 @@ def create_app(
     app.state.grant_catalog = grant_catalog
     app.state.kubernetes_grants = kubernetes_grants
     app.state.http_grants = http_grants
-    app.state.http_decide = http_decide
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -802,8 +578,6 @@ def create_app(
     # access to any /api/* route. The same endpoint separately recognizes the Operator session.
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
-    app.include_router(session_runtime.router, dependencies=operator_only)
-    app.include_router(conversation_follow.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
     app.include_router(grant_routes.router, dependencies=operator_only)
@@ -821,16 +595,9 @@ def create_app(
     # browser session.
     app.include_router(service.machine_router)
     app.include_router(enrollment_routes.entry_router)
-    app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless configured SAR authorization is present.
     app.include_router(proxy_authorization.router)
-    # The colocated egress proxy's decision endpoint is deliberately NOT on this network app.
-    # It is the oracle that turns placeholders into real credentials, so it must never be routable
-    # from a sandbox workload — and every sandbox can reach this app through the haku-console
-    # Service (the force-proxy CCNP admits `toEntities: cluster`). `main()` serves it instead on a
-    # loopback-only listener (`build_internal_decide_app`) that no Service exposes, so sandbox
-    # unreachability is structural, not a NetworkPolicy (#4670 § Topology, acceptance criterion 14).
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:
@@ -845,25 +612,9 @@ def create_app(
 
     @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:
-        """Static config for the SPA, including deploy-authorized Web launch pairs."""
+        """Static config for the SPA."""
         launch = settings.launch_routine
-        launch_options = [
-            LaunchOption(
-                agent_id=identity.agent_id,
-                agent_display_name=static_by_id[identity.agent_id].display_name,
-                harness_kind=identity.harness_kind,
-                harness_display_name=harness_registry[identity.harness_kind].display_name,
-            )
-            for identity in harness_registry.configured_identities
-            if identity.agent_id in launchable_agent_ids
-            and identity.harness_kind in profile_harness_kinds[static_by_id[identity.agent_id].access_profile_id]
-        ]
-        launch_options.sort(key=lambda option: (option.agent_display_name, option.harness_kind.value))
-        return ConfigResponse(
-            launch_routine_url=launch.page_url if launch else None,
-            haku_ui_url=settings.haku_ui_url,
-            launch_options=launch_options,
-        )
+        return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.
@@ -904,81 +655,18 @@ def create_app(
     return app
 
 
-# The colocated egress proxy reaches the decision oracle here (#4942). Loopback and a fixed port,
-# matching the sidecar's HAKU_EGRESS_DECIDE_URL: no Service targets it, so it is unreachable from
-# any other pod — the structural half of acceptance criterion 14 (the proxy-identity bearer is the
-# other). Keep both in step with the console deployment's proxy sidecar env.
-INTERNAL_DECIDE_HOST = "127.0.0.1"
-INTERNAL_DECIDE_PORT = 8079
-
-
-class _SecondaryServer(uvicorn.Server):
-    """A uvicorn server sharing the process with the network server, which owns the signals.
-
-    The network server installs the SIGTERM/SIGINT handlers that reach the lifespan shutdown; a
-    second installer would overwrite them in the loop's signal registry, so this one installs none
-    and is asked to exit once the network server has.
-    """
-
-    def install_signal_handlers(self) -> None:
-        return None
-
-
-def build_internal_decide_app(http_decide: HttpDecideService) -> FastAPI:
-    """Loopback-only ASGI app carrying just the egress decision endpoint (#4942).
-
-    Colocation binds the oracle here rather than on the network app ``create_app`` builds: the
-    colocated proxy sidecar reaches it over the shared pod loopback, while a sandbox — which can
-    reach Console only through its Service — has no route to this listener at all (#4670 §
-    Topology). The proxy-identity bearer still authenticates every call; the localhost bind is
-    defense in depth, not a replacement for authentication.
-    """
-    internal = FastAPI(title="Haku console egress oracle")
-    internal.state.http_decide = http_decide
-    internal.include_router(decide_routes.router)
-    return internal
-
-
 async def _serve(app: FastAPI) -> None:
-    """Serve the network app, plus the loopback decision oracle when ``egress_decide`` is wired.
-
-    Both run in this one process and event loop so they share the single ``HttpDecideService`` and
-    its Postgres-backed grant lookups. The network server owns the process signal handlers and the
-    graceful-shutdown bound; the oracle installs none of its own and is asked to exit once the
-    network server has.
-    """
+    """Serve the network app."""
     # Host/port are intentionally fixed process topology, not deploy settings. Ordinary Console
     # settings use the collision-resistant HAKU_CONSOLE__ nested prefix.
     #
-    # `timeout_graceful_shutdown` is load-bearing, not tuning. A Claude runner websocket stays
-    # open for the life of a chat session, so with the default (None) uvicorn waits *forever* on
-    # SIGTERM for it to drain, never cancels the handler, never runs the lifespan shutdown, and is
-    # SIGKILLed at the pod's grace deadline — running no finalizer, so the session's lease is never
-    # handed back and the sweep fails it.
-    # Bounding the wait makes uvicorn cancel the handlers and reach the lifespan, where the chat
-    # service hands its leases back. Keep it below the deployment's terminationGracePeriodSeconds.
+    # `timeout_graceful_shutdown` bounds how long uvicorn waits on SIGTERM for in-flight requests
+    # to drain before cancelling handlers and running the lifespan shutdown. Keep it below the
+    # deployment's terminationGracePeriodSeconds.
     network = uvicorn.Server(
         uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="info", timeout_graceful_shutdown=10)
     )
-    http_decide = app.state.http_decide
-    if http_decide is None:
-        await network.serve()
-        return
-    oracle = _SecondaryServer(
-        uvicorn.Config(
-            build_internal_decide_app(http_decide),
-            host=INTERNAL_DECIDE_HOST,
-            port=INTERNAL_DECIDE_PORT,
-            log_level="warning",
-            timeout_graceful_shutdown=10,
-        )
-    )
-    oracle_task = asyncio.create_task(oracle.serve())
-    try:
-        await network.serve()
-    finally:
-        oracle.should_exit = True
-        await oracle_task
+    await network.serve()
 
 
 def main() -> None:

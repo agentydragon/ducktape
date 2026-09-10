@@ -20,8 +20,6 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: public-coder-agent-namespace
-    - name: haku-runtime-namespace
-      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: cert-manager-trust

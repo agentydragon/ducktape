@@ -4,7 +4,7 @@ metadata:
   name: haku-workspaces
   namespace: ducktape-flux
   annotations:
-    description: General Haku workspaces in haku-sandbox plus Console-owned harness runners in haku-runtime-sandbox.
+    description: General Haku workspaces in haku-sandbox.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -20,10 +20,6 @@ spec:
     - name: agent-sandbox-controller # shared CRDs + controller
       namespace: ducktape-flux
     - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
-      namespace: ducktape-flux
-    - name: haku-runtime-namespace # isolated namespace for all Console-launched CLI runners
-      namespace: ducktape-flux
-    - name: litellm-keys-tf # public-coder provider key consumed only by its trusted proxy
       namespace: ducktape-flux
     - name: haku-egress-proxy # the fence haku-sandbox is opted into
       namespace: ducktape-flux

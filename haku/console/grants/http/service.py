@@ -194,8 +194,8 @@ class GrantService:
         """Match one request against active grants and return the earliest expiry bound.
 
         ``require_prohibited_address_allowance`` is a grant-selection constraint, not an address
-        check: this domain resolves nothing. The decide oracle owns the resolved answer and sets it
-        when that answer is entirely prohibited (`decide_service`), so only grants whose spec carries
+        check: this domain resolves nothing. A caller that has itself resolved the destination to an
+        entirely prohibited address passes this true, so only grants whose spec carries
         ``allow_prohibited_address`` are eligible — an unflagged grant cannot admit an internal
         destination.
         """
@@ -227,7 +227,7 @@ class GrantService:
         :meth:`match_request` instead (#4884's CONNECT scoping ruling).
 
         ``require_prohibited_address_allowance`` filters to ``allow_prohibited_address`` grants, as
-        :meth:`match_request` documents — the decide oracle sets it for a fully-internal resolution.
+        :meth:`match_request` documents — a caller sets it for a fully-internal resolution.
         """
 
         matching = [

@@ -11,21 +11,16 @@ import datetime
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from itertools import batched
-from uuid import UUID
 
 from sqlalchemy import delete, func, insert, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from haku.recall_index.chat_corpus import MessageChunk, chat_chunker_key
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, git_chunker_key
 from haku.recall_index.git_tree import TipEntry
 from haku.recall_index.schema import (
     SCHEMA,
     Base,
-    ChatChunk,
-    ChatChunkMessage,
-    ChatSessionState,
     Content,
     ContentEmbedding,
     GitChunk,
@@ -58,46 +53,6 @@ _GIT_SEARCH_SQL = text(f"""
     LIMIT :limit
 """)
 
-# The candidate set joins each window's conversation and applies the caller's readable-profile
-# filter **before** the distance operator ranks anything: an unauthorized window must lose by
-# exclusion, never by rank. A NULL :readable_profiles skips the profile predicate (the browser
-# Operator); a conversation row that is gone, or one predating pinned identity
-# (`access_profile_id IS NULL`), never matches a profile list.
-_CHAT_SEARCH_SQL = text(f"""
-    WITH candidates AS MATERIALIZED (
-        SELECT w.index_id, w.session_id, w.window_no, w.conversation_id,
-               w.first_message_at, w.last_message_at,
-               c.content AS text, e.embedding
-        FROM {SCHEMA}.chat_chunks w
-        JOIN {SCHEMA}.chat_sessions s ON s.index_id = w.index_id AND s.session_id = w.session_id
-        JOIN public.conversation cv ON cv.conversation_id = w.conversation_id
-        JOIN {SCHEMA}.contents c ON c.content_sha = w.content_sha
-        JOIN {SCHEMA}.content_embeddings e ON e.content_sha = c.content_sha
-        WHERE w.index_id = :index_id
-          AND s.chunker_key = :chunker_key
-          AND e.model_key = :model_key
-          AND (CAST(:session_id AS uuid) IS NULL OR w.session_id = CAST(:session_id AS uuid))
-          AND (CAST(:readable_profiles AS text[]) IS NULL
-               OR cv.access_profile_id = ANY(CAST(:readable_profiles AS text[])))
-    ), ranked AS (
-        SELECT index_id, session_id, window_no, conversation_id, first_message_at, last_message_at, text,
-               1 - (embedding <=> CAST(:query AS halfvec)) AS score
-        FROM candidates
-        ORDER BY embedding <=> CAST(:query AS halfvec)
-        LIMIT :limit
-    )
-    SELECT ranked.session_id, ranked.window_no, ranked.conversation_id,
-           ranked.first_message_at, ranked.last_message_at, ranked.text,
-           ranked.score, ARRAY(
-               SELECT m.message_id FROM {SCHEMA}.chat_chunk_messages m
-               WHERE m.index_id = ranked.index_id
-                 AND m.session_id = ranked.session_id AND m.window_no = ranked.window_no
-               ORDER BY m.ordinal
-           ) AS message_ids
-    FROM ranked
-    ORDER BY score DESC
-""")
-
 
 @dataclass(frozen=True, slots=True)
 class GitSearchHit:
@@ -105,18 +60,6 @@ class GitSearchHit:
     blob_sha: str
     byte_start: int
     byte_end: int
-    text: str
-    score: float
-
-
-@dataclass(frozen=True, slots=True)
-class ChatSearchHit:
-    session_id: UUID
-    window_no: int
-    conversation_id: UUID
-    message_ids: list[UUID]
-    first_message_at: datetime.datetime
-    last_message_at: datetime.datetime
     text: str
     score: float
 
@@ -132,13 +75,6 @@ class ChunkCounts:
     current: int
     pending: int
     superseded: int
-
-
-@dataclass(frozen=True, slots=True)
-class ChatIndexSummary:
-    sessions: int
-    chunks: int
-    last_indexed_at: datetime.datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,8 +112,6 @@ def chunker_key_for(index_type: IndexType, budget: ChunkBudget = DEFAULT_CHUNK_B
     match index_type:
         case IndexType.GIT:
             return git_chunker_key(budget)
-        case IndexType.CHAT:
-            return chat_chunker_key(budget)
 
 
 async def ensure_schema(engine: AsyncEngine) -> None:
@@ -408,116 +342,6 @@ async def read_indexed_text(
     return "".join(chunks) if chunks else None
 
 
-async def chat_session_states(session: AsyncSession, index_id: str) -> dict[UUID, ChatSessionState]:
-    result = await session.execute(select(ChatSessionState).where(ChatSessionState.index_id == index_id))
-    return {state.session_id: state for state in result.scalars()}
-
-
-async def replace_chat_session(
-    session: AsyncSession,
-    session_id: UUID,
-    chunks: Sequence[MessageChunk],
-    *,
-    index_id: str,
-    conversation_id: UUID,
-    message_count: int,
-    last_message_at: datetime.datetime,
-    chunker_key: str,
-    now: datetime.datetime,
-) -> None:
-    """Replace one session's source windows after their global content has been materialized."""
-    await session.execute(delete(ChatChunk).where(ChatChunk.index_id == index_id, ChatChunk.session_id == session_id))
-    if chunks:
-        await session.execute(
-            insert(ChatChunk),
-            [
-                {
-                    "index_id": index_id,
-                    "session_id": session_id,
-                    "window_no": chunk.window_no,
-                    "conversation_id": conversation_id,
-                    "content_sha": chunk.content_sha,
-                    "first_message_at": chunk.first_message_at,
-                    "last_message_at": chunk.last_message_at,
-                }
-                for chunk in chunks
-            ],
-        )
-        await session.execute(
-            insert(ChatChunkMessage),
-            [
-                {
-                    "index_id": index_id,
-                    "session_id": session_id,
-                    "window_no": chunk.window_no,
-                    "ordinal": ordinal,
-                    "message_id": message_id,
-                }
-                for chunk in chunks
-                for ordinal, message_id in enumerate(chunk.message_ids)
-            ],
-        )
-    state = {
-        "index_id": index_id,
-        "session_id": session_id,
-        "message_count": message_count,
-        "last_message_at": last_message_at,
-        "chunker_key": chunker_key,
-        "indexed_at": now,
-    }
-    await session.execute(
-        pg_insert(ChatSessionState)
-        .values(**state)
-        .on_conflict_do_update(index_elements=["index_id", "session_id"], set_=state)
-    )
-
-
-async def forget_chat_sessions(session: AsyncSession, session_ids: Sequence[UUID], *, index_id: str) -> None:
-    if not session_ids:
-        return
-    await session.execute(
-        delete(ChatChunk).where(ChatChunk.index_id == index_id, ChatChunk.session_id.in_(session_ids))
-    )
-    await session.execute(
-        delete(ChatSessionState).where(
-            ChatSessionState.index_id == index_id, ChatSessionState.session_id.in_(session_ids)
-        )
-    )
-
-
-async def search_chat(
-    session: AsyncSession,
-    embedding: Sequence[float],
-    *,
-    index_id: str,
-    model_key: str,
-    limit: int,
-    readable_profiles: Sequence[str] | None,
-    session_id: UUID | None = None,
-    budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
-) -> list[ChatSearchHit]:
-    """Rank one chat index's windows, excluding unauthorized conversations before ranking.
-
-    *readable_profiles* is required so every caller decides its fence: ``None`` applies no profile
-    predicate (the browser Operator's whole-corpus scope), a sequence admits only windows whose
-    conversation pins one of the named `access_profile_id` values — an empty sequence therefore
-    matches nothing.
-    """
-    result = await session.execute(
-        _CHAT_SEARCH_SQL,
-        {
-            "index_id": index_id,
-            "chunker_key": chunker_key_for(IndexType.CHAT, budget),
-            "model_key": model_key,
-            "session_id": session_id,
-            "readable_profiles": None if readable_profiles is None else list(readable_profiles),
-            "query": f"[{','.join(map(str, embedding))}]",
-            "limit": limit,
-        },
-    )
-    return [ChatSearchHit(**row) for row in result.mappings()]
-
-
 async def git_index_summary(
     session: AsyncSession, *, index_id: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
 ) -> GitIndexSummary:
@@ -580,55 +404,4 @@ async def chunk_counts(
                     )
                 )
             ).scalar_one()
-        case IndexType.CHAT:
-            total = (
-                await session.execute(select(func.count()).select_from(ChatChunk).where(ChatChunk.index_id == index_id))
-            ).scalar_one()
-            source_current = (
-                await session.execute(
-                    select(func.count())
-                    .select_from(ChatChunk)
-                    .join(
-                        ChatSessionState,
-                        (ChatSessionState.index_id == ChatChunk.index_id)
-                        & (ChatSessionState.session_id == ChatChunk.session_id),
-                    )
-                    .where(
-                        ChatChunk.index_id == index_id,
-                        ChatSessionState.chunker_key == chunker_key_for(IndexType.CHAT, budget),
-                    )
-                )
-            ).scalar_one()
-            current = (
-                await session.execute(
-                    select(func.count())
-                    .select_from(ChatChunk)
-                    .join(
-                        ChatSessionState,
-                        (ChatSessionState.index_id == ChatChunk.index_id)
-                        & (ChatSessionState.session_id == ChatChunk.session_id),
-                    )
-                    .join(
-                        ContentEmbedding,
-                        (ContentEmbedding.content_sha == ChatChunk.content_sha)
-                        & (ContentEmbedding.model_key == model_key),
-                    )
-                    .where(
-                        ChatChunk.index_id == index_id,
-                        ChatSessionState.chunker_key == chunker_key_for(IndexType.CHAT, budget),
-                    )
-                )
-            ).scalar_one()
     return ChunkCounts(current=current, pending=source_current - current, superseded=total - source_current)
-
-
-async def chat_index_summary(session: AsyncSession, index_id: str) -> ChatIndexSummary:
-    sessions, last_indexed_at = (
-        await session.execute(
-            select(func.count(), func.max(ChatSessionState.indexed_at)).where(ChatSessionState.index_id == index_id)
-        )
-    ).one()
-    chunks = (
-        await session.execute(select(func.count()).select_from(ChatChunk).where(ChatChunk.index_id == index_id))
-    ).scalar_one()
-    return ChatIndexSummary(sessions=sessions, chunks=chunks, last_indexed_at=last_indexed_at)

@@ -5,13 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { useAsyncResource, type AsyncResource } from "./async_resource";
 import type { DeploymentInfo } from "./client";
 import type { IndexState } from "./mcp_status_client";
-import {
-  activeSandboxStatusDisplay,
-  deploymentVersions,
-  indexStatusDisplay,
-  provisioningStepLabel,
-  settingsTabFromSearch,
-} from "./settings_panel";
+import { deploymentVersions, indexStatusDisplay, settingsTabFromSearch } from "./settings_panel";
 
 function deployment(server: string | null, frontend: string | null): DeploymentInfo {
   const image = (commit: string | null) => ({
@@ -29,15 +23,6 @@ describe("settingsTabFromSearch", () => {
 
   it("falls back safely for unknown tabs", () => {
     expect(settingsTabFromSearch("?tab=obsolete")).toBe("mcp");
-  });
-});
-
-describe("active sandbox display", () => {
-  it("keeps lifecycle state distinct from provisioning detail", () => {
-    expect(activeSandboxStatusDisplay("provisioning")).toMatchObject({ label: "Provisioning", color: "blue" });
-    expect(activeSandboxStatusDisplay("responding")).toMatchObject({ label: "Responding", color: "blue" });
-    expect(activeSandboxStatusDisplay("closing")).toMatchObject({ label: "Closing", color: "orange" });
-    expect(provisioningStepLabel("waiting_for_pod_ready")).toBe("Waiting for Pod readiness");
   });
 });
 
@@ -109,23 +94,5 @@ describe("indexStatusDisplay", () => {
     expect(indexStatusDisplay(git("abc", "abc")).label).toBe("Current");
     expect(indexStatusDisplay(git("abc", "def")).label).toBe("Behind");
     expect(indexStatusDisplay(git(null, "def")).label).toBe("Not indexed");
-  });
-
-  it("reports pending chat work", () => {
-    expect(
-      indexStatusDisplay({
-        index_type: "chat",
-        index_id: "console-chats",
-        sessions: 12,
-        chunks: 30,
-        stale_sessions: 1,
-        unindexed_messages: 3,
-        lag_seconds: 42,
-        last_indexed_at: null,
-        embedded_chunks: 27,
-        pending_chunks: 3,
-        superseded_chunks: 0,
-      }).label
-    ).toBe("Catching up");
   });
 });

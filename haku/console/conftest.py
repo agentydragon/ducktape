@@ -21,7 +21,7 @@ import textwrap
 import time
 from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
@@ -32,7 +32,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
@@ -247,7 +247,6 @@ async def insert_approved_tool_call(
     server_id: str = "grants",
     tool_name: str = "create_grant",
     approval_policy_id: str | None = None,
-    session_id: UUID | None = None,
 ) -> str:
     """Insert one approved, running ToolCall with its durable principal and return its id.
 
@@ -277,55 +276,8 @@ async def insert_approved_tool_call(
                 approved_at=now,
             )
         )
-        session.add(
-            McpToolCallPrincipal(
-                tool_call_id=tool_call_id, operator_id=None, binding_id=binding_id, session_id=session_id
-            )
-        )
+        session.add(McpToolCallPrincipal(tool_call_id=tool_call_id, operator_id=None, binding_id=binding_id))
     return tool_call_id
-
-
-async def insert_live_session(sessions: async_sessionmaker[AsyncSession], *, binding_id: UUID, now: datetime) -> UUID:
-    """Insert a ready conversation + session bound to ``binding_id`` and return the session id."""
-    session_id, conversation_id = uuid4(), uuid4()
-    async with sessions.begin() as session:
-        operator_id = await session.scalar(
-            select(Agent.owner_operator_id)
-            .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-            .where(CredentialBinding.binding_id == binding_id)
-        )
-        assert operator_id is not None
-        await session.execute(
-            text(
-                "INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at) "
-                "VALUES (:conversation_id, :operator_id, 'claude_code', :n)"
-            ),
-            {"conversation_id": conversation_id, "operator_id": operator_id, "n": now},
-        )
-        # `ready` is these facts: an allocated credential, an attached runner, a live lease.
-        await session.execute(
-            text(
-                """
-                INSERT INTO sessions (
-                    session_id, operator_id, conversation_id, agent_binding_id,
-                    bridge_token_fingerprint, bridge_connected_at, lease_expires_at, created_at, updated_at
-                ) VALUES (
-                    :session_id, :operator_id, :conversation_id, :binding_id,
-                    :fingerprint, :n, :lease, :n, :n
-                )
-                """
-            ),
-            {
-                "session_id": session_id,
-                "operator_id": operator_id,
-                "conversation_id": conversation_id,
-                "binding_id": binding_id,
-                "fingerprint": session_id.bytes,
-                "lease": datetime(2999, 1, 1, tzinfo=UTC),
-                "n": now,
-            },
-        )
-    return session_id
 
 
 @pytest.fixture(scope="session")

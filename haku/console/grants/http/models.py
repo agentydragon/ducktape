@@ -6,7 +6,7 @@ hostname resolves to a permitted public address is the proxy adapter's SSRF/DNS-
 connect time, never a property of the stored grant: this domain answers only who may send which
 requests to which origin. A grant may additionally name the Console-owned credential it redeems
 at that origin by inert config-registry handle (#4885); credential values live in deployment env
-references (`decide_config`), never in this domain or in Postgres.
+references, never in this domain or in Postgres.
 
 The grant's envelope — owner, principal, provenance, validity window — is the shared
 `haku.console.grants.envelope`. Lifecycle status is derived, never stored (root STYLE.md
@@ -29,8 +29,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerialize
 
 from haku.console.grants.envelope import NON_EMPTY, GrantEnvelope, GrantStatus, derive_status
 
-# One spelling for the inert credential-handle slug, shared with the deploy-config registry
-# (`decide_config.EgressCredentialEntry.handle`) that grants redeem from.
+# One spelling for the inert credential-handle slug, shared with the deploy-config credential
+# registry entries that grants redeem from.
 CREDENTIAL_HANDLE_PATTERN = r"^[a-z][a-z0-9-]*$"
 
 
@@ -105,9 +105,7 @@ class HttpOrigin(BaseModel):
 
 class HttpRequestCoverage(BaseModel):
     """The request-matching half of an allowance at an already-matched origin: a method set plus
-    an optional path pin. Held as a field by database grants (`GrantSpec`) and configuration
-    grants (`decide_config.EgressConfigGrantEntry`) so both speak one
-    matcher vocabulary."""
+    an optional path pin. Held as a field by database grants (`GrantSpec`)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -155,21 +153,21 @@ class GrantSpec(BaseModel):
         pattern=CREDENTIAL_HANDLE_PATTERN,
         description=(
             "Console-owned egress credential this grant redeems at its origin, named by its "
-            "deploy-config handle (`egress_decide.credentials`). The sandbox holds only the "
-            "credential's inert placeholder; the real value is substituted at the egress proxy "
-            "and never reaches the Agent. Absent, the grant is pure reachability."
+            "deploy-config handle. The Agent never receives the credential's real value; a "
+            "downstream consumer substitutes it for the credential's inert placeholder. Absent, "
+            "the grant is pure reachability."
         ),
     )
     allow_prohibited_address: bool = Field(
         default=False,
         description=(
             "Capability: when set, requests this grant admits may reach its origin even when the "
-            "host resolves entirely into otherwise-prohibited address space — the decide oracle's "
-            "always-prohibited classes or a deploy `prohibited_cidrs` entry (`decide_service`). "
-            "Scoped to this grant's own origin, never a global private-address allow; a mixed "
-            "public+internal answer stays denied as a rebinding signature. Default False keeps the "
-            "private-address boundary. This is the reusable primitive for reaching one exact "
-            "cluster-internal destination; set it only on operator-approved grants."
+            "host resolves entirely into otherwise-prohibited address space — the always-prohibited "
+            "classes or a deploy-configured prohibited range. Scoped to this grant's own origin, "
+            "never a global private-address allow; a mixed public+internal answer stays denied as a "
+            "rebinding signature. Default False keeps the private-address boundary. This is the "
+            "reusable primitive for reaching one exact cluster-internal destination; set it only on "
+            "operator-approved grants."
         ),
     )
 
@@ -199,8 +197,8 @@ class HttpRequestAllowed(BaseModel):
 
     ``credential_handles`` carries every credential named by a matching grant — handles are
     inert config-registry names, never values. Whether a handle actually redeems into a
-    substitution is the decide layer's separate credential-authority evaluation
-    (`decide_service`), so this decision alone never moves a secret.
+    substitution is a separate downstream credential-authority evaluation, so this decision
+    alone never moves a secret.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

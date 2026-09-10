@@ -233,7 +233,6 @@ resources:
   # --- haku (personal background agent; see haku/PLAN.md) ---
   - haku/namespace/flux-kustomization.yaml
   - haku/rbac/flux-kustomization.yaml
-  - haku/runtime-namespace/flux-kustomization.yaml # Console-owned harness runners; isolated from Haku's general sandbox authority
   - haku/console-namespace/flux-kustomization.yaml # the console's own trusted namespace
   - haku/console/db/flux-kustomization.yaml # CNPG approval ledger for console-approved tool calls
   - haku/console/migration/flux-kustomization.yaml # image-coupled Alembic release gate

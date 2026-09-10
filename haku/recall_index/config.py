@@ -83,12 +83,4 @@ class GitRecallIndexDefinition(RecallIndexDefinition):
     mirror_path: Path = Path("/tmp/haku-recall-index/mirror.git")
 
 
-class ChatRecallIndexDefinition(RecallIndexDefinition):
-    """A logical index over this console's completed chat-message source."""
-
-    index_type: Literal["chat"] = "chat"
-
-
-type ConfiguredRecallIndex = Annotated[
-    GitRecallIndexDefinition | ChatRecallIndexDefinition, Field(discriminator="index_type")
-]
+type ConfiguredRecallIndex = Annotated[GitRecallIndexDefinition, Field(discriminator="index_type")]

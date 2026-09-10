@@ -19,8 +19,6 @@ spec:
       namespace: ducktape-flux
     - name: haku-rbac # haku-sandbox namespace
       namespace: ducktape-flux
-    - name: haku-runtime-namespace
-      namespace: ducktape-flux
   timeout: 2m
   decryption:
     provider: sops

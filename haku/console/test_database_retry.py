@@ -19,8 +19,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_retry import retry_transient_db, transient_database_error
-from haku.console.database_schema import Conversation
-from haku.console.harnesses.kind import HarnessKind
+from haku.console.database_schema import PushSubscription
 
 
 async def test_a_real_postgres_deadlock_is_transient(migrated_sessions: async_sessionmaker[AsyncSession]) -> None:
@@ -44,10 +43,11 @@ async def test_an_integrity_violation_is_not_transient(migrated_sessions: async_
     with pytest.raises(IntegrityError) as excinfo:
         async with migrated_sessions.begin() as db:
             db.add(
-                Conversation(
-                    conversation_id=uuid4(),
+                PushSubscription(
+                    endpoint="https://push.example/subscription/1",
                     operator_id=uuid4(),  # references no operator row, so the INSERT is a foreign-key violation
-                    harness_kind=HarnessKind.CLAUDE_CODE,
+                    p256dh="p256dh-key",
+                    auth="auth-secret",
                     created_at=datetime.now(UTC),
                 )
             )

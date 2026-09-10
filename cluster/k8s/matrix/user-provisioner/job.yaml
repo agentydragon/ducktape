@@ -30,11 +30,6 @@ spec:
                 secretKeyRef:
                   name: synapse-admin-credentials
                   key: password
-            - name: BOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: haku-matrix-bot-password
-                  key: password
             - name: PUBLIC_CODER_AGENT_BOT_PASSWORD
               valueFrom:
                 secretKeyRef:

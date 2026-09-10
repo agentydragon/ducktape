@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Self
 from urllib.parse import urlsplit
-from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from haku.console.harnesses.environment import EnvironmentPassthrough
-from haku.console.harnesses.kind import HarnessKind
-from haku.console.http_url import UncredentialedHttpUrl
-from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.recall_index.config import EmbedderConfig, RecallIndexSettings
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
@@ -242,122 +237,6 @@ class ProviderOAuthClientConfig(BaseModel):
     client_secret: SecretStr
 
 
-class HarnessExecutionConfig(BaseModel):
-    """Provider-neutral placement, session, and network wiring.
-
-    Deliberately no prompt here: prompts belong to launchable Agents
-    (`launchable_agents[].system_prompt_template`).
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    namespace: str
-    warm_pool: str
-    cwd: str
-    session_ttl_seconds: int = Field(ge=300, le=86400)
-    https_proxy: str
-    ca_bundle: str
-    no_proxy: str
-    mcp_url: UncredentialedHttpUrl
-
-    def proxy_environment(self, *, pip: bool = False) -> dict[str, str]:
-        return _proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=pip)
-
-
-class ClaudeCodeImplementationConfig(EnvironmentPassthrough):
-    """The settings that belong specifically to the Claude CLI implementation."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    kind: Literal[HarnessKind.CLAUDE_CODE] = HarnessKind.CLAUDE_CODE
-    # Claude Code runs against an Anthropic-shaped gateway (in-cluster LiteLLM -> CLIProxyAPI),
-    # never api.anthropic.com directly: ANTHROPIC_BASE_URL + a fence-substituted ANTHROPIC_AUTH_TOKEN
-    # (a LiteLLM virtual key) + ANTHROPIC_MODEL, the same gateway pattern as the codex-claude/
-    # tana-claude wrappers (nix/home/claude_code/gateway.nix). The Console runner spends the flat-rate
-    # Claude subscription via CLIProxyAPI's Claude OAuth session, so `model`/`haiku_model` are
-    # `anthropic-max20/ant-messages/*` slugs (#5086); the value is deploy config, not fixed here.
-    api_base_url: UncredentialedHttpUrl
-    model: str = Field(min_length=1)
-    haiku_model: str = Field(min_length=1)
-    auth_token_placeholder: str = Field(min_length=1)
-    gateway_discovery: bool = True
-
-
-type HarnessImplementationConfig = Annotated[
-    ClaudeCodeImplementationConfig | CodexAppServerImplementationConfig, Field(discriminator="kind")
-]
-
-
-class HarnessRegistrationConfig(HarnessExecutionConfig):
-    """One Agent's shared execution wiring plus its native harness implementation."""
-
-    agent_id: UUID
-    claim_prefix: str = Field(min_length=1)
-    harness_label: str = Field(min_length=1)
-    implementation: HarnessImplementationConfig
-
-    @property
-    def kind(self) -> HarnessKind:
-        return HarnessKind(self.implementation.kind)
-
-    def environment(self) -> dict[str, str]:
-        implementation = self.implementation
-        if isinstance(implementation, ClaudeCodeImplementationConfig):
-            provider_environment = {
-                "ANTHROPIC_BASE_URL": implementation.api_base_url,
-                "ANTHROPIC_AUTH_TOKEN": implementation.auth_token_placeholder,
-                "ANTHROPIC_MODEL": implementation.model,
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": implementation.haiku_model,
-            }
-            if implementation.gateway_discovery:
-                provider_environment["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
-        else:
-            provider_environment = {
-                "GH_PAT": implementation.github_token_placeholder,
-                "GITHUB_TOKEN": implementation.github_token_placeholder,
-            }
-        return {
-            **self.proxy_environment(pip=isinstance(implementation, CodexAppServerImplementationConfig)),
-            **provider_environment,
-            **implementation.environment,
-        }
-
-
-class HarnessesConfig(BaseModel):
-    """The closed catalog of harness implementations this deployment can launch.
-
-    A field is an implementation kind, not an arbitrary harness-instance id. There is exactly one
-    configuration per implementation until a concrete need for several instances of one kind
-    exists; adding another implementation therefore extends this model with another named field.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    claude_code: HarnessRegistrationConfig
-    codex_app_server: HarnessRegistrationConfig | None = None
-
-    @field_validator("claude_code")
-    @classmethod
-    def _claude_slot_accepts_only_claude(cls, value: HarnessRegistrationConfig) -> HarnessRegistrationConfig:
-        if value.kind is not HarnessKind.CLAUDE_CODE:
-            raise ValueError("harnesses.claude_code must select the claude_code implementation")
-        return value
-
-    @field_validator("codex_app_server")
-    @classmethod
-    def _codex_slot_accepts_only_codex(
-        cls, value: HarnessRegistrationConfig | None
-    ) -> HarnessRegistrationConfig | None:
-        if value is not None and value.kind is not HarnessKind.CODEX_APP_SERVER:
-            raise ValueError("harnesses.codex_app_server must select the codex_app_server implementation")
-        return value
-
-    @property
-    def registrations(self) -> tuple[HarnessRegistrationConfig, ...]:
-        """Agent/harness registrations represented by this closed deploy catalog."""
-        return tuple(harness for harness in (self.claude_code, self.codex_app_server) if harness is not None)
-
-
 class WebPushConfig(BaseModel):
     """VAPID identity for Web Push notifications of pending approvals (RFC 8292).
 
@@ -477,12 +356,6 @@ class ConsoleProcessConfig(BaseModel):
     # Bootstrap path for the YAML settings source. It deliberately retains its established
     # single-underscore environment name while ordinary settings use HAKU_CONSOLE__*.
     config_file: Path = Field(validation_alias=AliasChoices("config_file", "HAKU_CONSOLE_CONFIG_FILE"))
-
-    # Non-secret runner topology selected by Console for every launched Agent. The runner turns
-    # this into an ephemeral tokenFile kubeconfig backed by the exact-session bearer.
-    runner_kubernetes_proxy_url: str | None = None
-    # Haku's Agent-owned workspace bootstrap inside the shared runner image.
-    haku_agent_workspace_setup: Path | None = None
 
     # Optional operator-only proxy to the internal aiquota service. The browser never sees this
     # bearer token; the console fetches quota snapshots server-side.

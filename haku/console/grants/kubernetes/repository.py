@@ -56,10 +56,7 @@ class PostgresGrantRepository:
             grant_id=row.grant_id,
             owner_agent_id=row.owner_agent_id,
             principal=grant_principal_from_columns(
-                row.principal_kind,
-                agent_id=row.principal_agent_id,
-                session_id=row.principal_session_id,
-                access_profile_id=row.principal_access_profile_id,
+                row.principal_kind, agent_id=row.principal_agent_id, access_profile_id=row.principal_access_profile_id
             ),
             source_tool_call_id=row.source_tool_call_id,
             scope=row.scope,
@@ -130,16 +127,13 @@ class PostgresGrantRepository:
                     row_spec=_row_spec,
                 )
                 return tuple(self._row_to_model(row) for row in replayed)
-            principal_agent_id, principal_session_id, principal_access_profile_id = grant_principal_column_values(
-                grant_principal
-            )
+            principal_agent_id, principal_access_profile_id = grant_principal_column_values(grant_principal)
             rows = [
                 KubernetesGrantRow(
                     grant_id=uuid4(),
                     owner_agent_id=owner_agent_id,
                     principal_kind=grant_principal.kind,
                     principal_agent_id=principal_agent_id,
-                    principal_session_id=principal_session_id,
                     principal_access_profile_id=principal_access_profile_id,
                     source_tool_call_id=source_tool_call_id,
                     scope=grant.scope,

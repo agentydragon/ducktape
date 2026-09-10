@@ -35,39 +35,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "decide_config",
-    srcs = ["decide_config.py"],
-    deps = [
-        ":models",
-        "//haku/console/grants:principal",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "decide_service",
-    srcs = ["decide_service.py"],
-    deps = [
-        ":decide_config",
-        ":models",
-        "//haku/console/grants:catalog",
-        "//haku/console/grants:principal",
-        "//haku/console/identity:agent_bearer_authority",
-        "//haku/egress:decision",
-    ],
-)
-
-py_library(
-    name = "decide_routes",
-    srcs = ["decide_routes.py"],
-    deps = [
-        ":decide_service",
-        "//haku/egress:decision",
-        "@pypi//fastapi",
-    ],
-)
-
 py_test(
     name = "test_service",
     srcs = ["test_service.py"],
@@ -105,70 +72,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_decide_config",
-    srcs = ["test_decide_config.py"],
-    deps = [
-        ":decide_config",
-        ":models",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/grants:principal",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_decide_service",
-    size = "medium",
-    srcs = ["test_decide_service.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":decide_config",
-        ":decide_service",
-        ":models",
-        ":repository",
-        ":service",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:tool_call_actor",
-        "//haku/console/grants:catalog",
-        "//haku/console/grants:principal",
-        "//haku/console/identity:agent_bearer_authority",
-        "//haku/egress:decision",
-        "//haku/grants:authorization",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_decide_routes",
-    srcs = ["test_decide_routes.py"],
-    deps = [
-        ":decide_routes",
-        ":decide_service",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/egress:decision",
-        "//haku/grants:authorization",
-        "@pypi//fastapi",
-        "@pypi//httpx",  # keep: starlette.testclient runtime requirement, not a direct import
-        "@pypi//pytest_bazel",
     ],
 )
 

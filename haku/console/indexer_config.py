@@ -4,7 +4,7 @@ Each chunk pod mounts its own per-index slice of the deploy-owned registry, deri
 against the `recall_indexes` the console reads, so a slice carries exactly these keys. The
 console-only vocabularies (MCP catalog, agents, policies) stay deliberately unmodeled and
 unvalidated here: the worker must not fail when they move ahead of this image (one binary, one
-config — <docs/naming_and_layout.md> §5).
+config).
 """
 
 from __future__ import annotations

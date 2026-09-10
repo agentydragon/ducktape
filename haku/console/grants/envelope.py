@@ -144,9 +144,6 @@ class GrantEnvelopeColumns:
     principal_agent_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
     )
-    principal_session_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="RESTRICT"), nullable=True
-    )
     principal_access_profile_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_tool_call_id: Mapped[str] = mapped_column(
         Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
@@ -166,12 +163,9 @@ def grant_envelope_table_args(table: str) -> tuple[CheckConstraint | Index, ...]
         CheckConstraint("btrim(source_tool_call_id) <> ''", name=f"ck_{table}_source_tool_call_nonempty"),
         CheckConstraint(
             "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
-            "AND principal_session_id IS NULL "
             "AND principal_access_profile_id IS NULL) OR "
-            "(principal_kind = 'session' AND principal_agent_id IS NULL "
-            "AND principal_session_id IS NOT NULL AND principal_access_profile_id IS NULL) OR "
             "(principal_kind = 'access_profile' AND principal_agent_id IS NULL "
-            "AND principal_session_id IS NULL AND principal_access_profile_id IS NOT NULL)",
+            "AND principal_access_profile_id IS NOT NULL)",
             name=f"ck_{table}_principal_shape",
         ),
         CheckConstraint("expires_at IS NULL OR expires_at > created_at", name=f"ck_{table}_expiration_after_creation"),
@@ -189,23 +183,13 @@ def request_principal_clause(
 ) -> ColumnElement[bool]:
     """Filter ``row``'s table to the grants this authenticated request principal may exercise.
 
-    A session request principal inherits its Agent's grants; a static credential has no session
-    identity, so exact-session grants never match it. Access-profile principals match the trusted
-    access profile carried by the request (`grant_principal_applies_to`'s contract, as one SQL
-    clause).
+    Access-profile principals match the trusted access profile carried by the request
+    (`grant_principal_applies_to`'s contract, as one SQL clause).
     """
 
     grant_principals = [
         and_(row.principal_kind == GrantPrincipalKind.AGENT, row.principal_agent_id == request_principal.agent_id)
     ]
-    if request_principal.session_id is not None:
-        grant_principals.append(
-            and_(
-                row.owner_agent_id == request_principal.agent_id,
-                row.principal_kind == GrantPrincipalKind.SESSION,
-                row.principal_session_id == request_principal.session_id,
-            )
-        )
     if request_principal.access_profile_id is not None:
         grant_principals.append(
             and_(
@@ -219,11 +203,10 @@ def request_principal_clause(
 def grant_principal_clause(row: type[GrantEnvelopeColumns], grant_principal: GrantPrincipal) -> ColumnElement[bool]:
     """Filter ``row`` to grants whose declared subject is exactly ``grant_principal``."""
 
-    agent_id, session_id, access_profile_id = grant_principal_column_values(grant_principal)
+    agent_id, access_profile_id = grant_principal_column_values(grant_principal)
     return and_(
         row.principal_kind == grant_principal.kind,
         row.principal_agent_id == agent_id if agent_id is not None else row.principal_agent_id.is_(None),
-        row.principal_session_id == session_id if session_id is not None else row.principal_session_id.is_(None),
         (
             row.principal_access_profile_id == access_profile_id
             if access_profile_id is not None
@@ -245,10 +228,7 @@ def match_replayed_grant_set[RowT: GrantEnvelopeColumns](
 
     if any(
         grant_principal_from_columns(
-            row.principal_kind,
-            agent_id=row.principal_agent_id,
-            session_id=row.principal_session_id,
-            access_profile_id=row.principal_access_profile_id,
+            row.principal_kind, agent_id=row.principal_agent_id, access_profile_id=row.principal_access_profile_id
         )
         != grant_principal
         for row in existing

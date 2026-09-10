@@ -108,8 +108,6 @@ function principalLabel(principal: GrantPrincipal, agentNames: ReadonlyMap<strin
   switch (principal.kind) {
     case "agent":
       return `Agent ${agentNames.get(principal.agent_id) ?? "Unknown agent"}`;
-    case "session":
-      return `Session ${principal.session_id}`;
     case "access_profile":
       return `Access profile ${principal.access_profile_id}`;
   }

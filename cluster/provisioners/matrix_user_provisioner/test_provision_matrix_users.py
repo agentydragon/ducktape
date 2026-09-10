@@ -11,8 +11,6 @@ import pytest_bazel
 from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import (
     ADMIN_DEVICE_ID,
     ADMIN_USERNAME,
-    BOT_DISPLAYNAME,
-    BOT_USERNAME,
     PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
     PUBLIC_CODER_AGENT_BOT_USERNAME,
     SERVER_NAME,
@@ -92,7 +90,7 @@ def test_register_admin_raises_on_unexpected_error():
 
 
 def test_bot_exists_true_when_response_has_name():
-    client = _FakeClient([_response(200, {"name": f"@{BOT_USERNAME}:{SERVER_NAME}"})])
+    client = _FakeClient([_response(200, {"name": f"@{PUBLIC_CODER_AGENT_BOT_USERNAME}:{SERVER_NAME}"})])
     assert _bot_exists(client, "token", "encoded-mxid") is True
 
 
@@ -116,36 +114,6 @@ def test_upsert_bot_creates_with_password_when_absent():
     client = _FakeClient(
         [
             _response(200, {}),  # bot does not exist yet
-            _response(200, {"displayname": BOT_DISPLAYNAME}),  # PUT
-        ]
-    )
-
-    upsert_bot(client, "admin-token", "botpw")
-
-    [(_, _, put_body)] = [c for c in client.calls if c[0] == "PUT"]
-    assert put_body == {"password": "botpw", "displayname": BOT_DISPLAYNAME, "admin": False}
-
-
-def test_upsert_bot_updates_without_password_when_present():
-    """Re-running must not resend the password: Synapse purges every device and
-    access token on a password set, even to an identical value."""
-    client = _FakeClient(
-        [
-            _response(200, {"name": f"@{BOT_USERNAME}:{SERVER_NAME}"}),  # bot exists
-            _response(200, {"displayname": BOT_DISPLAYNAME}),  # PUT
-        ]
-    )
-
-    upsert_bot(client, "admin-token", "botpw")
-
-    [(_, _, put_body)] = [c for c in client.calls if c[0] == "PUT"]
-    assert put_body == {"displayname": BOT_DISPLAYNAME, "admin": False}
-
-
-def test_upsert_bot_supports_a_second_named_bot():
-    client = _FakeClient(
-        [
-            _response(200, {}),  # bot does not exist yet
             _response(200, {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME}),  # PUT
         ]
     )
@@ -161,6 +129,28 @@ def test_upsert_bot_supports_a_second_named_bot():
     [(_, url, put_body)] = [c for c in client.calls if c[0] == "PUT"]
     assert url.endswith(f"%40{PUBLIC_CODER_AGENT_BOT_USERNAME}%3A{SERVER_NAME}")
     assert put_body == {"password": "botpw", "displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
+
+
+def test_upsert_bot_updates_without_password_when_present():
+    """Re-running must not resend the password: Synapse purges every device and
+    access token on a password set, even to an identical value."""
+    client = _FakeClient(
+        [
+            _response(200, {"name": f"@{PUBLIC_CODER_AGENT_BOT_USERNAME}:{SERVER_NAME}"}),  # bot exists
+            _response(200, {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME}),  # PUT
+        ]
+    )
+
+    upsert_bot(
+        client,
+        "admin-token",
+        "botpw",
+        bot_username=PUBLIC_CODER_AGENT_BOT_USERNAME,
+        bot_displayname=PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
+    )
+
+    [(_, _, put_body)] = [c for c in client.calls if c[0] == "PUT"]
+    assert put_body == {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
 
 
 def test_admin_login_pins_the_device_id():

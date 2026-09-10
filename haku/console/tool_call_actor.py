@@ -8,8 +8,8 @@ against; tool-call principal rows are the durable submitter provenance both are 
 The five roles, at their definitions:
 
 - **Authentication context** — `RuntimeActor` (`OperatorActor | AgentActor`), this module: the actor.
-- **Request principal** — `RequestPrincipal` (`grants/principal.py`): the `agent_id`/`session_id`
-  atom the actor projects to, dropping the accountability identities applicability must not read.
+- **Request principal** — `RequestPrincipal` (`grants/principal.py`): the `agent_id` atom the
+  actor projects to, dropping the accountability identities applicability must not read.
 - **Grant principal** — `GrantPrincipal` (`grants/principal.py`): the durable stored selector a
   request principal is tested against.
 - **Submitter provenance** — `McpToolCallPrincipal` (`database_schema.py`; wire in
@@ -36,9 +36,6 @@ class AgentActor:
     binding_id: UUID
     # Persisted config-profile reference. ``None`` is the migration-safe, fail-closed default.
     access_profile_id: str | None = None
-    # Present for a Console-launched sandbox. The session bearer then scopes reads/withdrawals to
-    # this session and leaves an audit link on every tool call; external Agent credentials omit it.
-    session_id: UUID | None = None
 
 
 type RuntimeActor = OperatorActor | AgentActor

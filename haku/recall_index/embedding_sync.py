@@ -1,9 +1,9 @@
 """Fill model-specific Recall vectors from the shared content queue.
 
-Git and chat syncs materialize source occurrences plus their exact content. This module is their
-only document-embedding consumer: it drains globally de-duplicated ``contents`` rows that lack a
-vector for its configured model. A model change therefore needs no source re-sync; it simply
-creates a new queue view over the same durable content.
+Git syncs materialize source occurrences plus their exact content. This module is their only
+document-embedding consumer: it drains globally de-duplicated ``contents`` rows that lack a vector
+for its configured model. A model change therefore needs no source re-sync; it simply creates a new
+queue view over the same durable content.
 """
 
 from __future__ import annotations

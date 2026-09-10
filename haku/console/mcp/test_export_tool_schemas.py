@@ -61,20 +61,11 @@ _EXPECTED_TOOLS = {
     ),
     "haku_index": ("index_status", "search"),
     "haku_routine": ("launch_routine",),
-    "haku_session_sandboxes": ("list_active", "terminate"),
     "hostexec": ("bash",),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = (
-    "google_calendar",
-    "grants",
-    "grocy-sf",
-    "haku_index",
-    "haku_routine",
-    "hostexec",
-    "haku_session_sandboxes",
-)
+_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grants", "grocy-sf", "haku_index", "haku_routine", "hostexec")
 
 
 def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:
@@ -186,7 +177,7 @@ async def test_hostexec_schemas_validate() -> None:
     )
 
 
-async def test_index_status_schema_validates_each_index_kind() -> None:
+async def test_index_status_schema_validates_a_git_index() -> None:
     schema = (await build_mcp_tool_results_schema())["properties"]["haku_index"]["properties"]["index_status"]
     Draft202012Validator(schema).validate(
         {
@@ -204,20 +195,7 @@ async def test_index_status_schema_validates_each_index_kind() -> None:
                     "embedded_chunks": 200,
                     "pending_chunks": 0,
                     "superseded_chunks": 3,
-                },
-                {
-                    "index_type": "chat",
-                    "index_id": "haku-conversations",
-                    "sessions": 12,
-                    "chunks": 34,
-                    "stale_sessions": 1,
-                    "unindexed_messages": 2,
-                    "lag_seconds": 10.5,
-                    "last_indexed_at": "2026-08-19T09:59:30Z",
-                    "embedded_chunks": 30,
-                    "pending_chunks": 4,
-                    "superseded_chunks": 4,
-                },
+                }
             ]
         }
     )

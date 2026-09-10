@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, event, func, select, text
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -29,13 +29,11 @@ from haku.console.database_schema import (
     AgentNameReservation,
     AuthorizationGrant,
     ClientSoftware,
-    Conversation,
     CredentialBinding,
     EnrollmentInteraction,
     Operator,
     StaticCredential,
 )
-from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
 from haku.console.identity.authorization import (
     PostgresAgentAuthority,
@@ -62,7 +60,6 @@ from haku.console.identity.fastmcp_adapter import (
     GrantRejectedError,
     TokenFamilyEvidence,
 )
-from haku.console.identity.launch_authority import StaticAgentAuthorization
 from haku.console.identity.operator_identity import (
     OperatorIdentityTrust,
     OperatorStatus,
@@ -71,9 +68,7 @@ from haku.console.identity.operator_identity import (
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp.approval import PostgresToolCallLedger
-from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.tool_call_actor import AgentActor
-from haku.console.x.runtime import HarnessKey
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
@@ -798,233 +793,6 @@ async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url
         assert revoked.interaction.browser_binding_digest is None
         assert revoked.binding.status is CredentialBindingStatus.FAILED
         assert revoked.agent.status is AgentStatus.ABANDONED
-
-
-async def _launch_definition(harness: Harness, *, access_profile_id: str = "no_auto_approval") -> StaticAgentDefinition:
-    definition = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Launch Test Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:LAUNCH_TEST_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token(f"launch-token-{uuid4()}"),
-        access_profile_id=access_profile_id,
-    )
-    await harness.authority.reconcile_static_agents([definition])
-    return definition
-
-
-def _launch_authorizer(
-    harness: Harness,
-    agent_id: UUID,
-    *,
-    launchable: bool = True,
-    registered: tuple[HarnessKind, ...] = (HarnessKind.CLAUDE_CODE,),
-    profile_harness_kinds: dict[str, tuple[HarnessKind, ...]] | None = None,
-) -> HarnessLaunchAuthorizer:
-    return HarnessLaunchAuthorizer(
-        harness.authority,
-        launchable_agent_ids={agent_id} if launchable else set(),
-        registered_harness_identities={HarnessKey(agent_id, kind) for kind in registered},
-        profile_harness_kinds=profile_harness_kinds
-        or {
-            "no_auto_approval": (HarnessKind.CLAUDE_CODE,),
-            "chat": (HarnessKind.CLAUDE_CODE,),
-            "review": (HarnessKind.CLAUDE_CODE,),
-            "disallowed": (),
-        },
-    )
-
-
-async def _authorize_launch(harness: Harness, authorizer: HarnessLaunchAuthorizer, agent_id: UUID) -> LaunchIdentity:
-    async with harness.sessions.begin() as db:
-        return await authorizer(db, harness.browser.operator_id, agent_id, HarnessKind.CLAUDE_CODE)
-
-
-async def test_chat_launch_authorizer_derives_current_profile_for_new_launch(
-    db_url: str, harness_factory: HarnessFactory
-) -> None:
-    harness = await harness_factory(access_profiles=("chat", "review"))
-    definition = await _launch_definition(harness, access_profile_id="chat")
-    authorizer = _launch_authorizer(harness, definition.agent_id)
-
-    first = await _authorize_launch(harness, authorizer, definition.agent_id)
-    assert first.access_profile_id == "chat"
-
-    with _orm_session(db_url) as session:
-        agent = session.get(Agent, definition.agent_id)
-        assert agent is not None
-        agent.access_profile_id = "review"
-        session.commit()
-
-    second = await _authorize_launch(harness, authorizer, definition.agent_id)
-    assert first.access_profile_id == "chat"
-    assert second.agent_id == definition.agent_id
-    assert second.access_profile_id == "review"
-    assert second.harness_kind is HarnessKind.CLAUDE_CODE
-
-
-async def test_launch_authorization_requires_caller_owned_transaction(harness: Harness) -> None:
-    definition = await _launch_definition(harness)
-    async with harness.sessions() as db:
-        with pytest.raises(RuntimeError, match="active caller transaction"):
-            await harness.authority.launch_authorization(
-                db, operator_id=harness.browser.operator_id, agent_id=definition.agent_id
-            )
-
-
-async def test_launch_authorization_commits_against_a_concurrent_operator_referencing_write(harness: Harness) -> None:
-    """``launch_authorization``'s guard locks coexist with a concurrent write referencing the
-    operator.
-
-    Regression for the production deadlock (haku-console-db, SQLSTATE 40P01). Two ordinary
-    same-operator transactions used to lock ``operators`` and ``agents`` in opposite orders:
-    ``launch_authorization`` took ``operators`` then ``agents``, both FOR UPDATE, while a concurrent
-    path held the ``agents`` row (activation, ``record_seen``, revocation) and then INSERTed a row
-    referencing the operator — a session or conversation — whose foreign-key check takes an implicit
-    FOR KEY SHARE on ``operators``. FOR KEY SHARE conflicts with FOR UPDATE, so the two formed a
-    cycle and Postgres killed one. The guard locks are now FOR NO KEY UPDATE, which still serializes
-    against a disable/rotation (a non-key UPDATE) but not against foreign-key checks.
-
-    Deterministic on both sides of the fix: the writer takes ``agents`` first, then waits until the
-    launcher — the real ``launch_authorization`` — holds its ``operators`` guard lock and is blocked
-    on ``agents``, and only then performs the operator-referencing INSERT. Under FOR UPDATE guards
-    that interleaving is a guaranteed lock cycle the detector breaks within ``deadlock_timeout``;
-    under FOR NO KEY UPDATE guards both transactions must commit.
-    """
-    definition = await _launch_definition(harness)
-    operator_id = harness.browser.operator_id
-    agent_id = definition.agent_id
-    agents_locked = asyncio.Event()
-
-    async def launcher_blocked_on_a_lock() -> bool:
-        # The launcher is this test database's only possible lock waiter: the writer holds its locks
-        # without waiting, and this poll's own connection only reads a system view.
-        async with harness.sessions() as db:
-            return bool(
-                await db.scalar(
-                    text(
-                        "SELECT count(*) FROM pg_stat_activity"
-                        " WHERE datname = current_database() AND wait_event_type = 'Lock'"
-                    )
-                )
-            )
-
-    async def operator_referencing_writer() -> None:
-        # Holds ``agents`` first, as activation/record_seen/revocation do, then INSERTs a row whose
-        # ``operator_id`` foreign key takes FOR KEY SHARE on ``operators``.
-        async with harness.sessions.begin() as db:
-            await db.execute(select(Agent).where(Agent.agent_id == agent_id).with_for_update())
-            agents_locked.set()
-            for _ in range(500):
-                if await launcher_blocked_on_a_lock():
-                    break
-                await asyncio.sleep(0.01)
-            else:
-                pytest.fail("the launcher never blocked on the agents lock")
-            db.add(
-                Conversation(
-                    conversation_id=uuid4(),
-                    operator_id=operator_id,
-                    harness_kind=HarnessKind.CLAUDE_CODE,
-                    created_at=harness.clock.now,
-                )
-            )
-
-    async def launcher() -> StaticAgentAuthorization:
-        await agents_locked.wait()
-        async with harness.sessions.begin() as db:
-            return await harness.authority.launch_authorization(db, operator_id=operator_id, agent_id=agent_id)
-
-    _, authorization = await asyncio.gather(operator_referencing_writer(), launcher())
-    assert authorization.agent_id == agent_id
-    assert authorization.operator_id == operator_id
-
-
-async def test_chat_launch_authorizer_fails_closed_for_missing_agent(harness: Harness) -> None:
-    missing_agent_id = uuid4()
-    authorizer = _launch_authorizer(harness, missing_agent_id)
-    with pytest.raises(LaunchAgentRejectedError):
-        await _authorize_launch(harness, authorizer, missing_agent_id)
-
-
-async def test_chat_launch_authorizer_fails_closed_for_inactive_operator(db_url: str, harness: Harness) -> None:
-    definition = await _launch_definition(harness)
-    with _orm_session(db_url) as session:
-        operator = session.get(Operator, harness.browser.operator_id)
-        assert operator is not None
-        operator.status = OperatorStatus.DISABLED
-        session.commit()
-
-    with pytest.raises(LaunchAgentRejectedError):
-        await _authorize_launch(harness, _launch_authorizer(harness, definition.agent_id), definition.agent_id)
-
-
-async def test_chat_launch_authorizer_fails_closed_for_inactive_agent(harness: Harness) -> None:
-    definition = await _launch_definition(harness)
-    await harness.authority.reconcile_static_agents([])
-
-    with pytest.raises(LaunchAgentRejectedError):
-        await _authorize_launch(harness, _launch_authorizer(harness, definition.agent_id), definition.agent_id)
-
-
-async def test_chat_launch_authorizer_fails_closed_for_unprofiled_agent(db_url: str, harness: Harness) -> None:
-    definition = await _launch_definition(harness)
-    with _orm_session(db_url) as session:
-        agent = session.get(Agent, definition.agent_id)
-        assert agent is not None
-        agent.access_profile_id = None
-        session.commit()
-
-    with pytest.raises(LaunchAgentRejectedError):
-        await _authorize_launch(harness, _launch_authorizer(harness, definition.agent_id), definition.agent_id)
-
-
-async def test_chat_launch_authorizer_fails_closed_for_unlaunchable_agent(harness: Harness) -> None:
-    definition = await _launch_definition(harness)
-    with pytest.raises(LaunchAgentRejectedError):
-        await _authorize_launch(
-            harness, _launch_authorizer(harness, definition.agent_id, launchable=False), definition.agent_id
-        )
-
-
-async def test_chat_launch_authorizer_fails_closed_for_disallowed_profile(
-    db_url: str, harness_factory: HarnessFactory
-) -> None:
-    harness = await harness_factory(access_profiles=("chat", "disallowed"))
-    definition = await _launch_definition(harness, access_profile_id="disallowed")
-    with pytest.raises(LaunchAgentRejectedError):
-        await _authorize_launch(harness, _launch_authorizer(harness, definition.agent_id), definition.agent_id)
-
-
-async def test_chat_launch_authorizer_fails_closed_for_unregistered_runtime(harness: Harness) -> None:
-    definition = await _launch_definition(harness)
-    with pytest.raises(LaunchAgentRejectedError):
-        await _authorize_launch(
-            harness, _launch_authorizer(harness, definition.agent_id, registered=()), definition.agent_id
-        )
-
-
-async def test_chat_launch_authorizer_rejects_an_unregistered_agent_runtime_pair(harness: Harness) -> None:
-    first = await _launch_definition(harness)
-    second = StaticAgentDefinition(
-        agent_id=uuid4(),
-        display_name="Second Launch Test Agent",
-        operator_id=harness.browser.operator_id,
-        secret_reference="env:SECOND_LAUNCH_TEST_AGENT_TOKEN",
-        token_fingerprint=fingerprint_static_token(f"launch-token-{uuid4()}"),
-        access_profile_id="no_auto_approval",
-    )
-    await harness.authority.reconcile_static_agents([first, second])
-    authorizer = HarnessLaunchAuthorizer(
-        harness.authority,
-        launchable_agent_ids={first.agent_id, second.agent_id},
-        registered_harness_identities={HarnessKey(first.agent_id, HarnessKind.CLAUDE_CODE)},
-        profile_harness_kinds={"no_auto_approval": {HarnessKind.CLAUDE_CODE}},
-    )
-
-    assert (await _authorize_launch(harness, authorizer, first.agent_id)).agent_id == first.agent_id
-    with pytest.raises(LaunchAgentRejectedError, match="pair is not registered"):
-        await _authorize_launch(harness, authorizer, second.agent_id)
 
 
 async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: str, harness: Harness) -> None:

@@ -15,20 +15,6 @@ export type LiveStatus = "connecting" | "live" | "offline";
 
 export type ConsoleEvent = { event_type: string };
 
-/** The conversation a `conversation_changed` event invalidates, or null for every other event.
- *
- * Mirrors `ConversationChangedEvent` in ../notifications/console_events.py, which carries no more than this: the
- * socket says a conversation changed and REST stays the source of what it changed to.
- *
- * Every consumer sees *every* event, and a streaming turn emits one of these per coalescing
- * window, so anything not about conversations should skip an event this returns an id for.
- */
-export function changedConversationId(event: ConsoleEvent): string | null {
-  if (event.event_type !== "conversation_changed") return null;
-  const { conversation_id: conversationId } = event as ConsoleEvent & { conversation_id?: unknown };
-  return typeof conversationId === "string" ? conversationId : null;
-}
-
 // The authoritative server-pushed event signal shared by console surfaces. `/api/events/ws`
 // carries tool-call and operator-link changes across replicas via Postgres LISTEN/NOTIFY.
 // `onEvent` fires once on mount (initial read), on every event, and again on reconnect (to

@@ -18,7 +18,7 @@ failing or rolling leaves search on the last committed index state, with stalene
 `index_status`.
 
 Each role's settings model requires only that role's configuration — a chunk pod holds its own
-index's config slice and Git credential (none for the chat or anonymous-Git index) and no embedder
+index's config slice and Git credential (none for an anonymous-Git index) and no embedder
 endpoint, the embed pod holds the embedder endpoint and no Git credential or config file — so a pod
 cannot start with the other role's secrets missing *or* present-but-unused.
 """
@@ -40,7 +40,6 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from sqlalchemy import create_engine, make_url, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.database_schema import ConversationItem
 from haku.console.indexer_config import IndexerConfigFile
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.recall_index.config import EmbedderConfig, GitRecallIndexDefinition, RecallIndexSettings
@@ -86,7 +85,7 @@ class ChunkSettings(IndexerConfigFile, _WorkerSettings):
 
     One instance, one config slice (#4886): each per-index Deployment mounts only its own index's
     definition, so the mounted config is the selection — no selector setting — and a pod carries
-    only that index's credential (the chat and anonymous-Git indexes carry no Git slot). Overlap
+    only that index's credential (an anonymous-Git index carries no Git slot). Overlap
     between the per-index pods, and with a rolling old whole-registry release, stays safe under the
     per-logical-index advisory lock.
     """
@@ -133,7 +132,7 @@ def _sync_database_url(database_url: str) -> str:
     """Render the async application URL for the synchronous psycopg schema probe.
 
     Deliberately duplicates ``database_migrate.sync_database_url`` rather than importing it: the
-    import would carry the whole console ORM into the worker (<docs/naming_and_layout.md> §5).
+    import would carry the whole console ORM into the worker.
     """
     return make_url(database_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
 
@@ -142,17 +141,16 @@ def verify_worker_schema(database_url: str) -> None:
     """Fail startup if this image cannot read the tables its role may touch. Never applies DDL.
 
     Narrower than the console's whole-metadata check on purpose: both process roles run as the
-    one `haku_indexer` database role, which holds only recall-index read/write plus read-only
-    chat-source access, so probing any other console table would fail on permissions rather than
-    on schema compatibility. An incompatible image therefore crash-loops here and the previous
-    ReplicaSet keeps maintaining the index.
+    one `haku_indexer` database role, which holds only recall-index read/write, so probing any
+    other console table would fail on permissions rather than on schema compatibility. An
+    incompatible image therefore crash-loops here and the previous ReplicaSet keeps maintaining
+    the index.
     """
     engine = create_engine(_sync_database_url(database_url))
     try:
         with engine.connect() as conn:
             for table in RecallIndexBase.metadata.tables.values():
                 conn.execute(select(table).limit(0))
-            conn.execute(select(ConversationItem.__table__).limit(0))
     finally:
         engine.dispose()
 

@@ -1,13 +1,4 @@
 # Non-secret haku-console config. Secret values stay in env/Kubernetes Secrets.
-#
-# Console-owned Agent Sandbox runtimes. Every value is explicit deployment
-# wiring; the application deliberately has no topology/path/proxy defaults. The
-# placeholders are non-secret—the real bearers stay in the trusted Console/egress path.
-# https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
-# plain-http proxy URL makes every sandbox kubectl request unauthenticated (401).
-runner_kubernetes_proxy_url: https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443
-haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
-
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:
   # `index_id` is the durable search/grant boundary. Source and remote configuration belong in
@@ -22,9 +13,6 @@ recall_indexes:
     repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
     branch: main
     mirror_path: /tmp/haku-recall-index/haku-state.git
-  haku_conversations:
-    index_id: haku-conversations
-    index_type: chat
   # Public upstream source for code and deployment-context recall. It intentionally has no
   # credential references: the console clones the canonical public repository over HTTPS.
   # The Git reducer skips binary blobs and blobs larger than 1 MiB.
@@ -34,100 +22,6 @@ recall_indexes:
     repo_url: https://github.com/agentydragon/ducktape.git
     branch: devel
     mirror_path: /tmp/haku-recall-index/ducktape.git
-
-harnesses:
-  claude_code:
-    agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-    namespace: haku-runtime-sandbox
-    warm_pool: haku-claude
-    claim_prefix: claude
-    harness_label: claude
-    cwd: /workspace
-    session_ttl_seconds: 7200
-    # Colocated Console egress fence (#4670): replaces the dedicated haku-claude-oauth-proxy iron
-    # proxy. Claude Code's inference now goes to the in-cluster LiteLLM gateway (-> CLIProxyAPI) as a
-    # FENCED destination — the `claude-litellm` credential + its allow_prohibited_address configuration grant
-    # policy below admit and substitute it; the real bearers stay in Console.
-    https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
-    # The sidecar mints leaves with the shared haku-egress-proxy CA, which the mounted
-    # haku-egress-proxy-ca-cert bundle already carries, so the runner trusts the fence with no CA
-    # change. Retiring that external CA for a console-minted one is a separate follow-up.
-    ca_bundle: /egress-proxy-ca/ca-certificates.crt
-    # Only cluster-internal control-plane hosts stay direct. LiteLLM is deliberately NOT here: its
-    # traffic goes through the fence for key substitution, admitted despite its internal ClusterIP by
-    # the LiteLLM configuration grant's allow_prohibited_address flag (#5073). Forgejo is deliberately
-    # NOT here either (#4710): the CLI's runtime git/REST traffic to both Forgejo origins traverses
-    # the fence, admitted by the haku-forgejo configuration grant (allow_prohibited_address for the
-    # internal service). The shared bootstrap derives the same bearer-userinfo proxy from the
-    # claim-owned session token before its haku-state checkout, because it runs before this
-    # launch-selected environment is handed to the harness.
-    no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
-    # Claude connects directly to Console's existing streamable-HTTP MCP endpoint with the
-    # per-session bearer injected into this sandbox through SandboxClaim.spec.env. Its MCP variable
-    # is an alias of the runner bearer, not a second credential. Console resolves it to the session's
-    # immutable Agent/profile identity, so the runtime is not bound to one static Agent and the Agent
-    # may use the same token through curl or another MCP client.
-    mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
-    implementation:
-      kind: claude_code
-      # Claude Code -> in-cluster LiteLLM (Anthropic Messages surface) -> CLIProxyAPI, running the
-      # agent on the flat-rate Claude subscription models (anthropic-max20/ant-messages/*, #5086) served by
-      # CLIProxyAPI's Claude OAuth session — not the ChatGPT/Codex lane the codex runner uses. Never
-      # api.anthropic.com — the subscription OAuth stays in CLIProxyAPI. ANTHROPIC_BASE_URL is the
-      # internal LiteLLM host, reached through the fence (see the no_proxy + claude-litellm credential
-      # above/below). sonnet-5 is Haku's standing primary (haku/base/agent_shared.yaml); haiku is the
-      # cheap background tier. The haku-console-claude key allowlist (tf/gitops/litellm-keys) admits
-      # exactly this anthropic-max20/ant-messages/* lane.
-      api_base_url: http://litellm.litellm.svc.cluster.local:4000
-      model: anthropic-max20/ant-messages/claude-sonnet-5
-      haiku_model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
-      # Inert placeholder the fence swaps for the real haku-console-claude LiteLLM virtual key on the
-      # LiteLLM origin only (the `claude-litellm` credential below); the sandbox never holds the key.
-      auth_token_placeholder: proxy-litellm-haku-console-claude-placeholder
-      environment:
-        # Assert to the CLI that the LiteLLM lane passes the tool-search betas through, so
-        # the ~150 console MCP schemas defer instead of inlining ~273k tokens per session
-        # (#5155). The CLI never probes the gateway for this.
-        ENABLE_TOOL_SEARCH: "true"
-  codex_app_server:
-    agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
-    namespace: haku-runtime-sandbox
-    warm_pool: haku-public-coder-codex
-    claim_prefix: codex
-    harness_label: codex
-    cwd: /workspace
-    session_ttl_seconds: 7200
-    # Colocated Console egress fence (#4670): Codex's two credentialed hosts — the internal LiteLLM
-    # model gateway and GitHub — are registered in `egress_decide` below with matching configuration
-    # grants. LiteLLM's grant carries `allow_prohibited_address` because it resolves into the cluster
-    # service CIDR, the boundary the fence otherwise denies.
-    https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
-    # The Codex sandbox now mounts the fence's trust bundle (haku-egress-proxy-ca-cert — full
-    # public + cluster + interception roots) at this path in place of the former dedicated runner
-    # proxy's CA
-    # (sandboxtemplate-haku-public-coder-codex.yaml), so every TLS client — GnuTLS git included —
-    # trusts the fence.
-    ca_bundle: /etc/ssl/certs/ca-certificates.crt
-    # Control-plane traffic (Console bridge/MCP, the Kubernetes auth proxy) stays direct. LiteLLM is
-    # deliberately NOT in no_proxy: its model traffic must traverse the fence for the virtual-key
-    # substitution, and the fence admits its cluster-internal resolution through the configuration
-    # policy's allow_prohibited_address. Other cluster-internal hosts stay direct.
-    no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
-    mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
-    implementation:
-      kind: codex_app_server
-      # The runner pins wire_api=responses, so this must be a `chatgpt/oai-responses/*`
-      # LiteLLM entry, never `chatgpt/ant-messages/*` (the Messages lane, which fails every
-      # turn at /v1/responses) — cross-checked by cluster/k8s/litellm/app/test_litellm_config.py.
-      model: chatgpt/oai-responses/gpt-5.6-luna
-      reasoning_effort: low
-      provider_id: haku
-      provider_name: Haku OpenAI-compatible
-      # The sandbox has no direct LiteLLM egress. Its inert OPENAI_API_KEY placeholder reaches this
-      # endpoint only through the runner-specific proxy, which substitutes the real virtual key.
-      api_base_url: http://litellm.litellm.svc.cluster.local:4000/v1
-      api_key_env_var: OPENAI_API_KEY
-      github_token_placeholder: proxy-github-placeholder
 
 # Auto-approval is an explicit per-Agent policy graph. Exact-tool atoms grant standing authority
 # only to the named tools; newly reflected tools remain manual-approval by default. Conditional
@@ -354,8 +248,7 @@ auto_approval_policies:
   # public-coder's profile already declares recall_index_ids: [ducktape-public] below, but that
   # grant was dead without server access — haku_index wasn't in its in_process_server_ids. This is
   # narrower than haku_recall_reads: haku_index enforces per-call index scoping against the caller's
-  # granted recall_index_ids server-side, so this can never reach haku-state/haku-conversations; it
-  # deliberately omits haku_conversations, which reads Haku's own session transcripts.
+  # granted recall_index_ids server-side, so this can never reach haku-state.
   - id: public_coder_recall_reads
     type: exact_tools
     tools:
@@ -465,28 +358,10 @@ auto_approval_policies:
     type: gmail_label_namespace
     server: gmail
     label_prefix: haku/
-  # Reading back what happened and what is written down: the frames of a past session, the real
-  # session outcome and sandbox provisioning state of a worker Haku dispatched (#5193), and semantic search over
-  # the same sessions plus haku-state.
-  # One atom because they are one authority — every tool here reads a corpus Haku can already reach
-  # (it has a haku-state clone, and `read_session_frames`/`session_outcome`/`get_worker_provisioning`
-  # span the sessions in its
-  # read scope), so this adds discoverability rather than reachability. `session_outcome` is a
-  # side-effect-free read of the worker session Haku already opened through `dispatch_worker`, so it
-  # is pass-through here exactly like the other conversation reads. Both cross rooms and sessions but
-  # are fenced identically per conversation by the profile-DAG read scope over `can_read_profiles`
-  # (haku/recall_index/README.md § Read scoping).
+  # Semantic search over haku-state and Ducktape (#5193).
   - id: haku_recall_reads
     type: exact_tools
     tools:
-      haku_conversations:
-        - list_sessions
-        - list_turns
-        - read_conversation_items
-        - read_session_frames
-        - session_outcome
-      workers:
-        - get_worker_provisioning
       haku_index:
         - search
         - index_status
@@ -515,39 +390,23 @@ auto_approval_policies:
 access_profiles:
   - id: haku
     auto_approval_policy: haku_v1
-    allowed_harnesses:
-      - claude_code
-    can_read_profiles:
-      - public-coder
     recall_index_ids:
       - haku-state
-      - haku-conversations
       - ducktape-public
     # This is server authorization, not a Recall-index grant and not an auto-approval rule.
     # The configured Claude runtime's static Haku Agent is assigned this profile.
     in_process_server_ids:
-      - haku_conversations
       - grants
       - sandbox
-      # Haku is the orchestrator that fans subtasks onto workers (#5193). `dispatch_worker` stays
-      # operator-approved per call; this only lets Haku reach the server to ask.
-      - workers
-      - haku_session_sandboxes
   - id: public-coder
     auto_approval_policy: public_coder_v1
-    allowed_harnesses:
-      - codex_app_server
-    can_read_profiles: []
     recall_index_ids:
       - ducktape-public
     in_process_server_ids:
       - grants
       - haku_index
-      - haku_session_sandboxes
   - id: manual-review
     auto_approval_policy: manual_review
-    allowed_harnesses: []
-    can_read_profiles: []
     # Even the fallback profile may ASK for a grant: every `grants` call queues for the operator,
     # and create_grant is never auto-approvable (operator ruling on #4986; pinned in
     # //cluster/validation:test_haku_deployment_config_contract). Consolidating onto one `grants` server (#4918) means
@@ -576,334 +435,6 @@ kubernetes_authorization:
 # in that call shares one start and expiry. This deploy-owned bound is authoritative even if a
 # client constructs a wider duration than the tool schema recommends.
 kubernetes_grant_max_lifetime_seconds: 3600
-# The colocated egress fence's decision endpoint (#4670, #4942). Absent keeps it fail-closed (503)
-# and the proxy denying; wiring it here turns on Console-authorized egress. Secret values stay in
-# env references (haku/console/deployment.yaml); handles, placeholders, match headers and
-# prohibited CIDRs are inert and committable by design.
-egress_decide:
-  # The shared-fence bearer the colocated sidecar presents in Authorization on every localhost
-  # decide call. It authenticates the sidecar only and carries no Agent identity. Every data-plane
-  # request must also present a live per-session bridge bearer, which is the sole source of
-  # Agent/session attribution.
-  # Console-owned egress credential registry (#4951): a grant redeems a credential by naming its
-  # handle, and the endpoint returns the placeholder->value substitution only for its `principal`
-  # at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring
-  # iron fence's substitution). The sandbox only ever holds `github-token-placeholder`.
-  credentials:
-    github_bot:
-      handle: github-bot
-      placeholder: github-token-placeholder
-      match_headers: [authorization]
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: api.github.com
-          port: 443
-        - scheme: https
-          host: github.com
-          port: 443
-        - scheme: https
-          host: codeload.github.com
-          port: 443
-    # The Console-launched Claude runner's LiteLLM virtual key: Claude Code's inference reaches the
-    # in-cluster LiteLLM gateway (-> CLIProxyAPI, anthropic-max20/ant-messages/* Claude-subscription models)
-    # through the fence, which swaps this placeholder for the real haku-console-claude key on the
-    # LiteLLM origin only. The runner holds only the inert placeholder. Value reflected from the
-    # litellm-keys-tf Terraform mint (deployment.yaml env). Origin is plain http:4000, internal.
-    claude_litellm:
-      handle: claude-litellm
-      placeholder: proxy-litellm-haku-console-claude-placeholder
-      match_headers: [authorization]
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: http
-          host: litellm.litellm.svc.cluster.local
-          port: 4000
-    # End-to-end substitution smoke test (haku/egress/docs/test_substitution.md): both sides of
-    # this swap are committed EXAMPLE- literals — the placeholder here and the deployment's
-    # literal HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE value — so watching the swap arrive at
-    # the public echo host exercises the whole decide→substitute path with no secret anywhere.
-    substitution_smoke:
-      handle: substitution-smoke
-      placeholder: EXAMPLE-EGRESS-SMOKE-PLACEHOLDER
-      match_headers: [authorization]
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: postman-echo.com
-          port: 443
-    # The Console-launched Codex runner's egress credentials are held by this colocated fence
-    # (#4670), authored against the public-coder Agent. The live bridge bearer selects that Agent
-    # at request time; the sidecar's shared-fence credential authenticates the fence only. The
-    # sandbox only ever holds the inert placeholder plus its session bearer.
-    #   The public-coder LiteLLM virtual key, substituted only on the internal LiteLLM model gateway;
-    #   its configuration grant carries allow_prohibited_address because the gateway is a cluster ClusterIP.
-    codex_litellm:
-      handle: codex-litellm
-      placeholder: proxy-litellm-public-coder-placeholder
-      match_headers: [authorization]
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origins:
-        - scheme: http
-          host: litellm.litellm.svc.cluster.local
-          port: 4000
-    #   Codex's GitHub access is the same agentydragon-agent PAT as `github-bot`, presented under a
-    #   different inert placeholder (the Codex sandbox holds proxy-github-placeholder). A second
-    #   presentation of one credential is a second entry whose nested `value` setting receives the
-    #   same Secret under its own handle and placeholder (decide_config.EgressCredentialEntry).
-    codex_github_bot:
-      handle: codex-github-bot
-      placeholder: proxy-github-placeholder
-      match_headers: [authorization]
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origins:
-        - scheme: https
-          host: api.github.com
-          port: 443
-        - scheme: https
-          host: github.com
-          port: 443
-        - scheme: https
-          host: codeload.github.com
-          port: 443
-    # The haku Forgejo credential (the existing haku-forgejo-git Secret — the full haku Forgejo user)
-    # substituted into the haku Agent's Forgejo egress (git-over-HTTP + REST API), reachable at the
-    # internal forgejo-http.forgejo service and the public git.allegedly.works. The sandbox only ever
-    # holds `haku-forgejo-token-placeholder`.
-    haku_forgejo_token:
-      handle: haku-forgejo-token
-      placeholder: haku-forgejo-token-placeholder
-      match_headers: [authorization]
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: http
-          host: forgejo-http.forgejo
-          port: 3000
-        - scheme: http
-          host: forgejo-http.forgejo.svc.cluster.local
-          port: 3000
-        - scheme: https
-          host: git.allegedly.works
-          port: 443
-    # Read-only ActivityWatch access for Haku's time-use queries. The sandbox carries only this
-    # inert bearer placeholder in AW_READ_TOKEN; the Console resolves the reflected Secret and
-    # substitutes it only at the exact read origin. The route itself enforces the same GET plus
-    # query-POST read-only boundary, so this credential cannot be used for writes.
-    activitywatch_read_token:
-      handle: activitywatch-read-token
-      placeholder: activitywatch-read-token-placeholder
-      match_headers: [authorization]
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: activitywatch-read.allegedly.works
-          port: 443
-  # Configuration-file HTTP grants (#4941), evaluated before database grants; admissions carry
-  # `config_file:<id>` provenance.
-  grants:
-    # The reachability half of the substitution smoke test — exactly GET /headers at the public
-    # echo host, redeeming the inert credential above.
-    - id: substitution-smoke
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: postman-echo.com
-          port: 443
-      coverage:
-        methods: [GET]
-        path_regex: /headers
-      credential_handle: substitution-smoke
-    # The GitHub egress path was validated in PR #5223, merged August 30, 2026. These haku-scoped
-    # entries remain for the separate iron-proxy exercise; moving that workload onto this colocated
-    # fence still requires a live bridge bearer for the intended Agent.
-    # Coverage: the GitHub API and git-over-HTTPS smart-HTTP endpoints, redeeming the bot
-    # credential at both — Bearer on the API, Basic (decoded/swapped/re-encoded proxy-side) on
-    # github.com. No path pin: git smart HTTP needs /info/refs?service=git-upload-pack through to
-    # the pack endpoints. codeload.github.com is deliberately not configured — the registry can
-    # redeem there, but reaching it takes a temporary grant.
-    - id: haku-github-api
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: api.github.com
-          port: 443
-      coverage:
-        methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
-      credential_handle: github-bot
-    - id: haku-github-git
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: github.com
-          port: 443
-      coverage:
-        methods: [GET, POST]
-      credential_handle: github-bot
-    # The Console-launched Claude runner's model access: its inference reaches the in-cluster LiteLLM
-    # gateway (-> CLIProxyAPI). LiteLLM resolves to a ClusterIP, so this entry carries
-    # allow_prohibited_address (#5073) to lift the decide oracle's private-address denial for THIS
-    # origin only — exactly as codex-litellm below does for the Codex runner. GET+POST: Claude Code
-    # POSTs /v1/messages and (with gateway discovery) GETs /v1/models. Redeems the LiteLLM key.
-    - id: haku-claude-litellm
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: http
-          host: litellm.litellm.svc.cluster.local
-          port: 4000
-      coverage:
-        methods: [GET, POST]
-      credential_handle: claude-litellm
-      allow_prohibited_address: true
-    # The Console-launched Claude runner reached these under the iron fence; keep them configured so it
-    # keeps the same reach (archive/tarball downloads via codeload; git clone / raw-file / release
-    # redirects on the githubusercontent CDN, which serve pre-signed URLs and carry NO credential).
-    # Distinct from the codex- GitHub entries below only in credential (github-bot vs codex-github-bot):
-    # each runtime's live bridge bearer resolves to its own Agent, so the proxy is handed only the
-    # credentials for that Agent.
-    - id: haku-github-codeload
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: codeload.github.com
-          port: 443
-      coverage:
-        methods: [GET, HEAD]
-      credential_handle: github-bot
-    - id: haku-githubusercontent
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: objects.githubusercontent.com
-          port: 443
-        - scheme: https
-          host: raw.githubusercontent.com
-          port: 443
-        - scheme: https
-          host: release-assets.githubusercontent.com
-          port: 443
-      coverage:
-        methods: [GET, HEAD]
-    # The Console-launched Codex runner's configured reachability. codex- ids keep these distinct
-    # from the haku- GitHub entries above: each live bridge bearer resolves to one Agent, so a
-    # request matches only that Agent's entries and receives only those credentials.
-    #   The internal LiteLLM model gateway is Codex's model access. allow_prohibited_address admits
-    #   its cluster-internal resolution (litellm.litellm.svc → a ClusterIP inside prohibited_cidrs),
-    #   scoped to this exact origin — unrestricted methods, matching the host-only substitution
-    #   contract so a denied method is never a broken model turn.
-    - id: codex-litellm
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origins:
-        - scheme: http
-          host: litellm.litellm.svc.cluster.local
-          port: 4000
-      coverage:
-        methods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
-      credential_handle: codex-litellm
-      allow_prohibited_address: true
-    - id: codex-github-api
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origins:
-        - scheme: https
-          host: api.github.com
-          port: 443
-      coverage:
-        methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
-      credential_handle: codex-github-bot
-    - id: codex-github-git
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origins:
-        - scheme: https
-          host: github.com
-          port: 443
-      coverage:
-        methods: [GET, POST]
-      credential_handle: codex-github-bot
-    #   Archive/tarball downloads a git clone redirects to; reached freely under iron, so configured.
-    - id: codex-github-codeload
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origins:
-        - scheme: https
-          host: codeload.github.com
-          port: 443
-      coverage:
-        methods: [GET, HEAD]
-      credential_handle: codex-github-bot
-    #   githubusercontent CDN (pre-signed URLs) — pure reachability, no credential, matching iron.
-    - id: codex-githubusercontent
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origins:
-        - scheme: https
-          host: objects.githubusercontent.com
-          port: 443
-        - scheme: https
-          host: raw.githubusercontent.com
-          port: 443
-        - scheme: https
-          host: release-assets.githubusercontent.com
-          port: 443
-      coverage:
-        methods: [GET, HEAD]
-    # GitHub Actions job-log and artifact downloads: the api.github.com log/artifact endpoints 302
-    # to a numbered fleet of GitHub-owned Azure storage accounts with a SAS token in the URL, so
-    # this is pure reachability — no credential redeems here. The fleet hostname is not constant,
-    # hence the host-pattern origin (a configuration-only capability; Agent-requestable grants stay
-    # exact-origin). Pattern deliberately pins the full account-name shape, never a bare
-    # blob.core.windows.net suffix any Azure tenant can register under.
-    - id: codex-actions-results
-      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
-      origin_patterns:
-        - scheme: https
-          host_pattern: productionresults[a-z0-9]*\.blob\.core\.windows\.net
-          port: 443
-      coverage:
-        methods: [GET]
-        path_regex: /actions-results/.*
-    # The haku Agent's in-cluster + public Forgejo egress (git-over-HTTP + the REST API), redeeming
-    # the `haku-forgejo-token` credential. allow_prohibited_address lifts the private-address denial
-    # for the internal http origins (#5073, as the *-litellm entries do); it is a no-op for the
-    # public host.
-    - id: haku-forgejo
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: http
-          host: forgejo-http.forgejo
-          port: 3000
-        - scheme: http
-          host: forgejo-http.forgejo.svc.cluster.local
-          port: 3000
-        - scheme: https
-          host: git.allegedly.works
-          port: 443
-      coverage:
-        methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
-      credential_handle: haku-forgejo-token
-      allow_prohibited_address: true
-    # ActivityWatch's bearer-proxy allows all GET reads, plus POST only for the large query body.
-    # Keep those as separate grants so the POST path can never widen to another write endpoint.
-    - id: haku-activitywatch-read
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: activitywatch-read.allegedly.works
-          port: 443
-      coverage:
-        methods: [GET]
-      credential_handle: activitywatch-read-token
-    - id: haku-activitywatch-query
-      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
-      origins:
-        - scheme: https
-          host: activitywatch-read.allegedly.works
-          port: 443
-      coverage:
-        methods: [POST]
-        path_regex: /api/0/query/.*
-      credential_handle: activitywatch-read-token
-  # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
-  # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
-  # field's contract so the internal boundary is legible and survives a re-IP off 10/8.
-  prohibited_cidrs: [10.42.0.0/16, 10.244.0.0/16]
-#
 # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool in
 # cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. Each claim records the
 # pod-describing fields it was created for, so editing one of those leaves live claims usable and
@@ -952,21 +483,6 @@ static_agents:
     # the Operator. Everything else remains approval-wrapped, and Coder cannot approve its own
     # requests.
     access_profile_id: public-coder
-# Prompts belong to Agents (#4431 stage 6): each launchable Agent names its identity template,
-# mounted from this same ConfigMap. A template `{% include %}`s siblings from the same directory —
-# that is how the shared conversation_prompt_fragment.md.j2 rides along without being a config key. Haku's
-# identity and what only Haku is told stay in its template; the craft it authors for itself lives
-# in haku-state, which it can write and these it cannot.
-launchable_agents:
-  - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-    system_prompt_template: /etc/haku-console/config/haku_system_prompt.md.j2
-  - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
-    system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
-# Matrix invites/messages have no harness selector. This explicit route applies only when the
-# adapter creates a conversation for a new room; existing conversations retain their own kind.
-matrix_launch:
-  default_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-  default_harness_kind: claude_code
 operator_connection_providers:
   google_mail:
     kind: google
@@ -1055,28 +571,6 @@ mcp:
     # `in_process_server_ids` on the profile is what grants access to the server at all.
     sandbox:
       id: sandbox
-      backend:
-        kind: in_process
-        credential:
-          kind: none
-    # Multi-agent v0 (#5193/#5194): `dispatch_worker` opens a hosted worker session for a launchable
-    # Agent on a harness — reusing the same createConversation launch + session/sandbox allocation the
-    # operator-initiated flow uses — seeds the opening prompt, and returns its session id immediately.
-    # The worker runs under its OWN Agent perimeter (its grants + fence identity), not the caller's;
-    # dispatch never widens its reach. Credential-free (Console's own session runtime). `dispatch_worker`
-    # is in NO auto-approval policy, so every spawn queues for the operator, exactly like `create_grant`.
-    # Granted to the `haku` orchestrator profile below; the intended first worker is public-coder/codex.
-    workers:
-      id: workers
-      backend:
-        kind: in_process
-        credential:
-          kind: none
-    # The Console-launched session inventory is a separate lifecycle from the Agent Sandbox
-    # workbox server above. Its terminate tool remains explicitly approval-gated: no
-    # auto-approval policy names this server.
-    haku_session_sandboxes:
-      id: haku_session_sandboxes
       backend:
         kind: in_process
         credential:
@@ -1208,29 +702,18 @@ mcp:
         credential:
           kind: operator_connection
           connection: google_calendar
-    # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state,
-    # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
-    # the searcher, and the
-    # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE__EMBEDDER__*`,
-    # Ollama) — search embeds its query. Keeping the corpora current is the role-flagged
-    # haku-indexer Deployments (haku/console/indexer.py): one chunk Deployment per index below,
-    # plus the shared embed drain. Each chunk pod mounts only its own index's slice of the
-    # recall_indexes registry above (indexer-chunk-<index>-config.yaml, derivation-tested against
-    # these entries) — the conversations corpus from the console's tables, haku-state through a
-    # read-only mirror whose typed Git credentials are supplied to its dedicated chunk worker, and Ducktape from GitHub
-    # without a credential. The embed role fills the shared vector queue those chunks land in.
+    # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state and
+    # public Ducktape source. Listing it here is what builds the searcher, and the console refuses
+    # to start unless an embedder is configured too (`HAKU_CONSOLE__EMBEDDER__*`, Ollama) — search
+    # embeds its query. Keeping the corpora current is the role-flagged haku-indexer Deployments
+    # (haku/console/indexer.py): one chunk Deployment per index below, plus the shared embed drain.
+    # Each chunk pod mounts only its own index's slice of the recall_indexes registry above
+    # (indexer-chunk-<index>-config.yaml, derivation-tested against these entries) — haku-state
+    # through a read-only mirror whose typed Git credentials are supplied to its dedicated chunk
+    # worker, and Ducktape from GitHub without a credential. The embed role fills the shared vector
+    # queue those chunks land in.
     haku_index:
       id: haku_index
-      backend:
-        kind: in_process
-        credential:
-          kind: none
-    # `haku_conversations` (haku/console/tools/conversations.py): read Haku's own past sessions
-    # out of the console's rollout store, so a replacement session can consult what its
-    # predecessor actually did instead of only the last few room messages. Read-only, and
-    # credential-free — the corpus is the console's own database.
-    haku_conversations:
-      id: haku_conversations
       backend:
         kind: in_process
         credential:

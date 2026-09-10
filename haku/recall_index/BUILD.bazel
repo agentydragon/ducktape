@@ -36,28 +36,6 @@ py_library(
 )
 
 py_library(
-    name = "chat_corpus",
-    srcs = ["chat_corpus.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":chunking",
-        ":content",
-    ],
-)
-
-py_library(
-    name = "chat_source",
-    srcs = ["chat_source.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":chat_corpus",
-        "//haku/console:database_schema",
-        "//haku/console/conversation:item_vocabulary",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "fake_embedder",
     testonly = True,
     srcs = ["fake_embedder.py"],
@@ -93,7 +71,6 @@ py_library(
     srcs = ["store.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":chat_corpus",
         ":chunking",
         ":git_tree",
         ":schema",
@@ -124,20 +101,6 @@ py_library(
         ":schema",
         ":store",
         "@pypi//pygit2",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "chat_sync",
-    srcs = ["chat_sync.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":chat_corpus",
-        ":chat_source",
-        ":chunking",
-        ":schema",
-        ":store",
         "@pypi//sqlalchemy",
     ],
 )
@@ -191,46 +154,6 @@ py_test(
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_chat_corpus",
-    srcs = ["test_chat_corpus.py"],
-    deps = [
-        ":chat_corpus",
-        ":chunking",
-        ":conftest",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_chat_sync",
-    size = "medium",
-    srcs = ["test_chat_sync.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":chat_sync",
-        ":conftest",
-        ":embedding_sync",
-        ":fake_embedder",
-        ":query",
-        ":schema",
-        ":store",
-        "//:conftest",
-        "//haku/console:database_schema",
-        "//haku/console/conversation:item_vocabulary",
-        "//haku/console/harnesses:kind",
-        "//haku/console/identity:operator_identity",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 

@@ -34,7 +34,6 @@ import {
   type McpServerProbe,
 } from "./mcp_status_client";
 import { openExternal, POPUP_HINT } from "./open_external";
-import { listActiveSandboxes, terminateSandbox, type ActiveSandbox } from "./session_sandboxes_client";
 import { toastError, toastSuccess } from "./toast";
 
 type DeploymentVersion = {
@@ -533,171 +532,7 @@ function PushNotificationTable() {
   );
 }
 
-type SessionStatusDisplay = { label: string; color: string; description: string };
-
-export function activeSandboxStatusDisplay(status: ActiveSandbox["status"]): SessionStatusDisplay {
-  switch (status) {
-    case "provisioning":
-      return { label: "Provisioning", color: "blue", description: "The sandbox claim is being handed to a runner." };
-    case "ready":
-      return { label: "Ready", color: "teal", description: "The sandbox is ready for the next turn." };
-    case "responding":
-      return { label: "Responding", color: "blue", description: "The runner is handling an open turn." };
-    case "closing":
-      return { label: "Closing", color: "orange", description: "Termination is deleting the sandbox claim." };
-    case "idle":
-      return { label: "Idle", color: "gray", description: "The session has not allocated a sandbox yet." };
-    case "closed":
-      return { label: "Closed", color: "gray", description: "The session is closed." };
-    case "failed":
-      return { label: "Failed", color: "red", description: "The session ended with an error." };
-  }
-}
-
-export function provisioningStepLabel(step: ActiveSandbox["sandbox"]["step"]): string {
-  switch (step) {
-    case "claim_created":
-      return "Claim created";
-    case "waiting_for_sandbox":
-      return "Waiting for Sandbox";
-    case "waiting_for_pod":
-      return "Waiting for Pod";
-    case "waiting_for_pod_ready":
-      return "Waiting for Pod readiness";
-    case "waiting_for_runner":
-      return "Waiting for runner";
-    case "claim_absent":
-      return "Claim absent";
-  }
-}
-
-function SandboxSessionRow({
-  session,
-  terminationPending,
-  onRequestTerminate,
-  onCancelTerminate,
-  onConfirmTerminate,
-}: {
-  session: ActiveSandbox;
-  terminationPending: boolean;
-  onRequestTerminate: () => void;
-  onCancelTerminate: () => void;
-  onConfirmTerminate: () => void;
-}) {
-  const display = activeSandboxStatusDisplay(session.status);
-  const closing = session.status === "closing";
-  return (
-    <Table.Tr className={terminationPending ? "haku-session-row-termination-pending" : undefined}>
-      <Table.Td data-slot="primary" className="haku-dense-primary">
-        <Text fw={600} size="sm">
-          {session.harness_kind.replaceAll("_", " ")}
-        </Text>
-        <Text size="xs" c="dimmed" ff="monospace" className="break-all">
-          {session.session_id}
-        </Text>
-      </Table.Td>
-      <Table.Td data-slot="status" className="haku-dense-status">
-        <Badge color={display.color} variant="light" title={display.description}>
-          {display.label}
-        </Badge>
-      </Table.Td>
-      <Table.Td data-slot="secondary" className="haku-dense-secondary">
-        <Text size="sm">{provisioningStepLabel(session.sandbox.step)}</Text>
-        <Text size="xs">started {shortDate(session.created_at) ?? "unknown"}</Text>
-      </Table.Td>
-      <Table.Td data-slot="action" className="haku-dense-action">
-        {closing ? (
-          <Button size="compact-sm" color="red" variant="light" disabled>
-            Closing…
-          </Button>
-        ) : terminationPending ? (
-          <Group gap="xs" wrap="nowrap">
-            <Button size="compact-sm" color="red" onClick={onConfirmTerminate}>
-              Yes, terminate
-            </Button>
-            <Button size="compact-sm" color="gray" variant="subtle" onClick={onCancelTerminate}>
-              Cancel
-            </Button>
-          </Group>
-        ) : (
-          <Button size="compact-sm" color="red" variant="light" onClick={onRequestTerminate}>
-            Terminate
-          </Button>
-        )}
-      </Table.Td>
-    </Table.Tr>
-  );
-}
-
-function SessionsPanel({ resource }: { resource: AsyncResource<ActiveSandbox[]> }) {
-  const [pendingTermination, setPendingTermination] = useState<ActiveSandbox | null>(null);
-
-  function requestTermination(session: ActiveSandbox) {
-    if (session.status === "closing") return;
-    setPendingTermination(session);
-  }
-
-  function approveTermination() {
-    const session = pendingTermination;
-    setPendingTermination(null);
-    if (!session) return;
-    resource.update(
-      (current) =>
-        current?.map((item) =>
-          item.session_id === session.session_id ? { ...item, status: "closing" as const } : item
-        ) ?? null
-    );
-    void terminateSandbox(session.session_id).then(
-      () => {
-        toastSuccess("Sandbox termination started", "The active session will disappear when its claim is gone.");
-        resource.refresh();
-      },
-      (error: unknown) => {
-        toastError("Couldn't terminate sandbox", error);
-        resource.refresh();
-      }
-    );
-  }
-
-  return (
-    <Stack gap="xs" className="haku-page-list">
-      <SectionHeading title="Sessions" />
-      <ResourcePanel
-        resource={resource}
-        label="sessions"
-        emptyMessage="No active sandbox sessions."
-        isEmpty={(sessions) => sessions.length === 0}
-      >
-        {(sessions) => (
-          <DenseTable label="Active sessions">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Runtime</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Progress</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {sessions.map((session) => (
-                <SandboxSessionRow
-                  key={session.session_id}
-                  session={session}
-                  terminationPending={pendingTermination?.session_id === session.session_id}
-                  onRequestTerminate={() => requestTermination(session)}
-                  onCancelTerminate={() => setPendingTermination(null)}
-                  onConfirmTerminate={approveTermination}
-                />
-              ))}
-            </Table.Tbody>
-          </DenseTable>
-        )}
-      </ResourcePanel>
-    </Stack>
-  );
-}
-
-const SETTINGS_TABS = ["mcp", "agents", "grants", "sessions", "notifications", "nodes", "system"] as const;
+const SETTINGS_TABS = ["mcp", "agents", "grants", "notifications", "nodes", "system"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function settingsTabFromSearch(search: string): SettingsTab {
@@ -767,22 +602,16 @@ function SystemStatusTable({ deployment }: { deployment: DeploymentInfo }) {
 type IndexDisplay = { label: string; color: string; description: string };
 
 export function indexStatusDisplay(index: IndexState): IndexDisplay {
-  if (index.index_type === "git") {
-    if (index.remote_commit && index.indexed_commit === index.remote_commit) {
-      return { label: "Current", color: "teal", description: "Indexed at the latest remote commit." };
-    }
-    if (!index.indexed_commit && index.remote_commit) {
-      return { label: "Not indexed", color: "orange", description: "The first index build is still pending." };
-    }
-    if (index.indexed_commit && index.remote_commit) {
-      return { label: "Behind", color: "orange", description: "A newer remote commit is waiting to be indexed." };
-    }
-    return { label: "Unknown", color: "gray", description: "The remote revision has not been observed yet." };
+  if (index.remote_commit && index.indexed_commit === index.remote_commit) {
+    return { label: "Current", color: "teal", description: "Indexed at the latest remote commit." };
   }
-  if (index.stale_sessions === 0 && index.unindexed_messages === 0) {
-    return { label: "Current", color: "teal", description: "All completed chat messages are indexed." };
+  if (!index.indexed_commit && index.remote_commit) {
+    return { label: "Not indexed", color: "orange", description: "The first index build is still pending." };
   }
-  return { label: "Catching up", color: "orange", description: "New or changed chat messages are waiting." };
+  if (index.indexed_commit && index.remote_commit) {
+    return { label: "Behind", color: "orange", description: "A newer remote commit is waiting to be indexed." };
+  }
+  return { label: "Unknown", color: "gray", description: "The remote revision has not been observed yet." };
 }
 
 function commitLabel(commit: string | null | undefined): string {
@@ -791,7 +620,7 @@ function commitLabel(commit: string | null | undefined): string {
 
 function IndexStatusRow({ index }: { index: IndexState }) {
   const status = indexStatusDisplay(index);
-  const indexedAt = shortDate((index.index_type === "git" ? index.indexed_at : index.last_indexed_at) ?? null);
+  const indexedAt = shortDate(index.indexed_at ?? null);
   return (
     <Table.Tr>
       <Table.Td data-slot="primary" className="haku-dense-primary">
@@ -808,31 +637,15 @@ function IndexStatusRow({ index }: { index: IndexState }) {
         </Badge>
       </Table.Td>
       <Table.Td data-slot="secondary" className="haku-dense-secondary">
-        {index.index_type === "git" ? (
-          <>
-            <Text size="sm">
-              {index.branch ?? "Git"} · {index.files ?? 0} files · {index.chunks ?? 0} chunks ·{" "}
-              {index.embedded_chunks ?? 0} embedded
-              {(index.pending_chunks ?? 0) > 0 ? ` · ${index.pending_chunks} pending` : ""}
-            </Text>
-            <Text size="xs" ff="monospace">
-              indexed {commitLabel(index.indexed_commit)}
-              {index.remote_commit !== index.indexed_commit ? ` · remote ${commitLabel(index.remote_commit)}` : ""}
-            </Text>
-          </>
-        ) : (
-          <>
-            <Text size="sm">
-              {index.sessions} sessions · {index.chunks} chunks · {index.embedded_chunks} embedded
-              {index.pending_chunks > 0 ? ` · ${index.pending_chunks} pending` : ""}
-            </Text>
-            {(index.stale_sessions > 0 || index.unindexed_messages > 0) && (
-              <Text size="xs">
-                {index.stale_sessions} stale sessions · {index.unindexed_messages} messages pending
-              </Text>
-            )}
-          </>
-        )}
+        <Text size="sm">
+          {index.branch ?? "Git"} · {index.files ?? 0} files · {index.chunks ?? 0} chunks · {index.embedded_chunks ?? 0}{" "}
+          embedded
+          {(index.pending_chunks ?? 0) > 0 ? ` · ${index.pending_chunks} pending` : ""}
+        </Text>
+        <Text size="xs" ff="monospace">
+          indexed {commitLabel(index.indexed_commit)}
+          {index.remote_commit !== index.indexed_commit ? ` · remote ${commitLabel(index.remote_commit)}` : ""}
+        </Text>
         <Text size="xs">
           {indexedAt ? `last indexed ${indexedAt}` : "Not indexed yet"}
           {(index.superseded_chunks ?? 0) > 0 ? ` · ${index.superseded_chunks} superseded chunks` : ""}
@@ -885,24 +698,21 @@ export function SettingsPanel(): JSX.Element {
   const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system"));
   const indexStatusResource = useAsyncResource(getIndexStatus, resourceOptions("system"));
   const daemonsResource = useAsyncResource(listNodeDaemons, resourceOptions("nodes", 10_000));
-  const sessionsResource = useAsyncResource(listActiveSandboxes, resourceOptions("sessions", 10_000));
   const refreshMcp = mcpResource.refresh;
   const refreshAgents = agentsResource.refresh;
   const refreshDeployment = deploymentResource.refresh;
   const refreshIndexStatus = indexStatusResource.refresh;
   const refreshDaemons = daemonsResource.refresh;
-  const refreshSessions = sessionsResource.refresh;
   const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshActiveTab = useCallback(() => {
     if (activeTab === "mcp") return refreshMcp();
     if (activeTab === "agents") return refreshAgents();
     if (activeTab === "nodes") return refreshDaemons();
-    if (activeTab === "sessions") return refreshSessions();
     if (activeTab === "system") {
       refreshDeployment();
       refreshIndexStatus();
     }
-  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshIndexStatus, refreshMcp, refreshSessions]);
+  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshIndexStatus, refreshMcp]);
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
@@ -917,7 +727,6 @@ export function SettingsPanel(): JSX.Element {
       (event.event_type === "mcp_operator_auth_changed" || event.event_type === "operator_connection_changed")
     )
       refreshMcp();
-    if (activeTab === "sessions" && event.event_type === "sandbox_sessions_changed") refreshSessions();
   });
   function selectTab(value: string | null) {
     if (!value || !SETTINGS_TABS.includes(value as SettingsTab)) return;
@@ -1000,13 +809,11 @@ export function SettingsPanel(): JSX.Element {
       ? mcpResource.loading
       : activeTab === "agents"
         ? agentsResource.loading
-        : activeTab === "sessions"
-          ? sessionsResource.loading
-          : activeTab === "nodes"
-            ? daemonsResource.loading
-            : activeTab === "system"
-              ? deploymentResource.loading || indexStatusResource.loading
-              : false;
+        : activeTab === "nodes"
+          ? daemonsResource.loading
+          : activeTab === "system"
+            ? deploymentResource.loading || indexStatusResource.loading
+            : false;
 
   return (
     <Tabs
@@ -1036,7 +843,6 @@ export function SettingsPanel(): JSX.Element {
             <span className="haku-settings-tab-long">Grants</span>
             <span className="haku-settings-tab-short">Grants</span>
           </Tabs.Tab>
-          <Tabs.Tab value="sessions">Sessions</Tabs.Tab>
           <Tabs.Tab value="notifications">
             <span className="haku-settings-tab-long">Notifications</span>
             <span className="haku-settings-tab-short">Alerts</span>
@@ -1113,9 +919,6 @@ export function SettingsPanel(): JSX.Element {
         </Tabs.Panel>
         <Tabs.Panel value="grants">
           <GrantsPanel />
-        </Tabs.Panel>
-        <Tabs.Panel value="sessions">
-          <SessionsPanel resource={sessionsResource} />
         </Tabs.Panel>
         <Tabs.Panel value="notifications">
           <Stack gap="xs" className="haku-page-list">

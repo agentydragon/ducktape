@@ -540,9 +540,6 @@ py_test(
         "//haku/console:indexer_config",
         "//haku/console:mcp_config",
         "//haku/console:settings",
-        "//haku/console/channels/matrix:config",
-        "//haku/console/channels/matrix:worker",
-        "//haku/console/x/codex_app_server:config",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pydantic",
@@ -579,19 +576,6 @@ py_test(
         "//:conftest",
         "//cluster/k8s/x/haku/dispatch/litellm:generate_workers_litellm",
         "//haku/x/dispatch:config",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_haku_prompt_contract",
-    srcs = ["test_haku_prompt_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//haku/console/session:system_prompt",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

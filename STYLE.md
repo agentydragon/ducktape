@@ -137,8 +137,7 @@ bug.
   alias-with-comment; cross-cutting primitives (`HttpMethod`, `RequestAttributes`) live in
   a shared home, they are not domain-specific entities; and a class name that is a
   published schema-component key renames only as a coordinated wire change, never as a
-  package-move rider. Worked example and the console reorg it governs:
-  <haku/console/docs/naming_and_layout.md>.
+  package-move rider.
 - **Identifiers carry their type**: a UUID travels as `UUID` end to end, the
   conversions absorbed by boundary adapters (Pydantic validators, ORM column types) —
   no scattered `UUID(x)`/`str(y)` in code. Where a str-typed library surface can't be

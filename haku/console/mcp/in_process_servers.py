@@ -2,8 +2,8 @@
 
 The registry holds *builders* (`InProcessServers`): the gmail/google_calendar servers are
 built per execution from the acting Operator's Google access token, hostexec from the acting
-Operator's Authentik access token, while routine, conversations and index are credential-free.
-Trusted caller context for the profile-scoped servers travels in MCP request metadata. See
+Operator's Authentik access token, while routine and index are credential-free. Trusted caller
+context for the profile-scoped servers travels in MCP request metadata. See
 `execution.McpExecutionContext`.
 """
 
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import haku.console.tools.conversations as conversations_tools
 import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.grants as grants_tools
@@ -19,10 +18,7 @@ import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
 import haku.console.tools.sandbox as sandbox_tools
-import haku.console.tools.session_sandboxes as session_sandboxes_tools
-import haku.console.tools.workers as workers_tools
 from haku.console.config import HostexecConfig
-from haku.console.conversation_read_access import ConversationReadAccessPolicy
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
     AccessProfile,
@@ -32,7 +28,6 @@ from haku.console.mcp_config import (
     const_in_process_server,
 )
 from haku.console.recall_index_access import RecallIndexAccessPolicy
-from haku.console.session.runtime import SessionService
 from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 from haku.sandbox.config import SandboxEnvironmentConfig
@@ -61,18 +56,13 @@ class InProcessServerDependencies:
     """Runtime collaborators for the in-process servers.
 
     gmail/google_calendar need none (built per call from the acting Operator's token); routine is
-    registered only when its launcher is configured; hostexec only when its config is set; the
-    conversations reader only when the Claude runtime is.
+    registered only when its launcher is configured; hostexec only when its config is set.
     """
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
     hostexec: HostexecServerConfig | None = None
-    # The chat runtime's session store, satisfying `conversations_tools.ConversationReader`
-    # structurally — set only when the Claude runtime is configured, since without it there are
-    # no sessions to read.
-    conversations: conversations_tools.ConversationReader | None = None
-    # The semantic index over haku-state's files and past conversations — set only when
-    # `config.yaml` lists the server, which is also what requires an embedder to be configured.
+    # The semantic index over haku-state's files — set only when `config.yaml` lists the server,
+    # which is also what requires an embedder to be configured.
     index: recall_index_tools.IndexSearcher | None = None
     # The unified grant server fronting every grant domain (kubernetes | http) plus the kubernetes
     # SAR check (`kubernetes_can_i`) — one server, no separate `kubernetes` server (#4918).
@@ -80,13 +70,6 @@ class InProcessServerDependencies:
     # The Agent Sandbox lifecycle client and the environment it hands out — set only when
     # `config.yaml` both lists the server and configures `agent_sandbox`.
     sandbox: SandboxServerConfig | None = None
-    # The session runtime the `workers` server dispatches hosted worker sessions through — set only
-    # when a launch-capable chat runtime is configured, since without it there is nothing to launch.
-    sessions: SessionService | None = None
-    # The Console's own active-session inventory and termination path. It is separate from the
-    # Agent Sandbox lifecycle server above: that server manages named workboxes, while this one
-    # manages claims allocated to Console chat sessions.
-    session_sandboxes: SessionService | None = None
     recall_access_profiles: tuple[AccessProfile, ...] = ()
     configured_recall_index_ids: tuple[str, ...] = ()
 
@@ -98,10 +81,6 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         dependencies.recall_access_profiles, configured_index_ids=dependencies.configured_recall_index_ids
     )
     in_process_access = InProcessServerAccessPolicy(dependencies.recall_access_profiles)
-    # One profile-DAG read authorizer for conversation history: the `haku_conversations` drilldown
-    # and `haku_index`'s chat hits fence rows with the same scope, so ranked retrieval can never
-    # surface a conversation the direct read would refuse.
-    conversation_reads = ConversationReadAccessPolicy(dependencies.recall_access_profiles)
     servers: InProcessServers = {
         gmail_tools.GMAIL_SERVER_ID: InProcessServerRegistration(
             builder=lambda token: gmail_tools.build_mcp(gmail_tools.build_gmail_client_from_token(token)),
@@ -118,19 +97,9 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = const_in_process_server(
             routine_tools.build_mcp(dependencies.routine_launcher)
         )
-    if (conversations := dependencies.conversations) is not None:
-        servers[conversations_tools.HAKU_CONVERSATIONS_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: conversations_tools.build_mcp(
-                conversations, access=in_process_access, conversation_reads=conversation_reads
-            ),
-            credential_kind=InProcessCredentialKind.NONE,
-            authorizer=in_process_access.authorizer_for(conversations_tools.HAKU_CONVERSATIONS_SERVER_ID),
-        )
     if (index := dependencies.index) is not None:
         servers[recall_index_tools.HAKU_INDEX_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: recall_index_tools.build_mcp(
-                index, access=recall_access, conversation_reads=conversation_reads
-            ),
+            builder=lambda _token: recall_index_tools.build_mcp(index, access=recall_access),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=recall_access.authorize_index_tool,
         )
@@ -145,18 +114,6 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: sandbox_tools.build_mcp(sandbox.client, sandbox.environment),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(sandbox_tools.SANDBOX_SERVER_ID),
-        )
-    if (sessions := dependencies.sessions) is not None:
-        servers[workers_tools.WORKERS_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: workers_tools.build_mcp(sessions, conversation_reads=conversation_reads),
-            credential_kind=InProcessCredentialKind.NONE,
-            authorizer=in_process_access.authorizer_for(workers_tools.WORKERS_SERVER_ID),
-        )
-    if (session_sandboxes := dependencies.session_sandboxes) is not None:
-        servers[session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: session_sandboxes_tools.build_mcp(session_sandboxes, access=in_process_access),
-            credential_kind=InProcessCredentialKind.NONE,
-            authorizer=in_process_access.authorizer_for(session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID),
         )
     if (hostexec := dependencies.hostexec) is not None:
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}

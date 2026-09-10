@@ -139,12 +139,10 @@ function formatDuration(seconds: number): string {
 }
 
 function principalLabel(principal: CreateGrantArgs["principal"]): string {
-  if (principal === "self") return "self (current session or Agent)";
+  if (principal === "self") return "self (the current Agent)";
   switch (principal.kind) {
     case "agent":
       return "the Agent";
-    case "session":
-      return `session ${principal.session_id}`;
     case "access_profile":
       return `access profile ${principal.access_profile_id}`;
   }

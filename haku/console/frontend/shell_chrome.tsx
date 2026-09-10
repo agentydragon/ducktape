@@ -22,7 +22,6 @@ import {
   ChecklistIcon,
   ClockIcon,
   CloseIcon,
-  ConversationsIcon,
   HistoryIcon,
   HomeIcon,
   MapPinIcon,
@@ -749,13 +748,6 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
           />
           <RailButton open={props.view === "embed"} label="Haku UI" onClick={() => props.onNavigate("embed")}>
             <HomeIcon />
-          </RailButton>
-          <RailButton
-            open={props.view === "conversations"}
-            label="Conversations"
-            onClick={() => props.onNavigate("conversations")}
-          >
-            <ConversationsIcon />
           </RailButton>
           <RailButton
             open={props.view === "settings" || props.view === "agentEnrollment"}

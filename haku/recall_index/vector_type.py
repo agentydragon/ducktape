@@ -1,7 +1,7 @@
 """Minimal SQLAlchemy binding for pgvector's `halfvec` type.
 
 All this index needs is DDL for the column and a bind format for inserts — the one query using the
-distance operator is raw SQL anyway (`store.search_git`/`search_chat`) — so the upstream `pgvector`
+distance operator is raw SQL anyway (`store.search_git`) — so the upstream `pgvector`
 package is not worth the dependency.
 
 **`halfvec`, not `vector`: half the bytes, and the only one of the two that this corpus could

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, TokenVerifier
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.requests import HTTPConnection
 
 from haku.console.config import MCP_PATH
@@ -96,7 +95,6 @@ def build_auth(
     agent_authority: PostgresAgentAuthority,
     static_credentials: StaticAgentCredentialRegistry,
     operator_identity_store: PostgresOperatorIdentityStore,
-    session_tokens: async_sessionmaker[AsyncSession] | None = None,
     agent_bearer_authority: AgentBearerAuthority | None = None,
 ) -> McpAuth:
     """Compose FastMCP protocol auth with Haku's canonical Agent authority.
@@ -107,7 +105,7 @@ def build_auth(
     """
     ensure_supported_fastmcp_version()
     agent_bearer_authority = agent_bearer_authority or build_agent_bearer_authority(
-        agent_authority=agent_authority, static_credentials=static_credentials, session_tokens=session_tokens
+        agent_authority=agent_authority, static_credentials=static_credentials
     )
     agent_bearer_verifier = _AgentBearerTokenVerifier(agent_bearer_authority)
     has_bearer = agent_bearer_authority.configured

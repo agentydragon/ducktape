@@ -9,14 +9,13 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from haku.console.grants.envelope import GrantNotFoundError, GrantStatus, derive_status
+from haku.console.grants.envelope import GrantStatus, derive_status
 from haku.console.grants.http.models import Grant, GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.http.service import GrantService
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
     GrantPrincipal,
     RequestPrincipal,
-    SessionGrantPrincipal,
     grant_principal_applies_to,
 )
 
@@ -30,8 +29,8 @@ _SPEC = GrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset
 _OTHER_SPEC = GrantSpec(origin=_OTHER_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
 
 
-def _request_principal(agent_id: UUID = _AGENT, session_id: UUID | None = None) -> RequestPrincipal:
-    return RequestPrincipal(agent_id=agent_id, session_id=session_id, access_profile_id=None)
+def _request_principal(agent_id: UUID = _AGENT) -> RequestPrincipal:
+    return RequestPrincipal(agent_id=agent_id, access_profile_id=None)
 
 
 def _grant(
@@ -293,41 +292,6 @@ async def test_match_reports_credential_handles_from_every_matching_grant() -> N
         assert decision.credential_handles == frozenset({"github-bot"})
         assert decision.grant_id == reachability.grant_id
         assert decision.expires_at == reachability.expires_at
-
-
-async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessions() -> None:
-    repo = FakeRepository()
-    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
-    session_a, session_b = uuid4(), uuid4()
-    (agent_grant,) = await service.create_grants(
-        owner_agent_id=_AGENT,
-        grant_principal=AgentGrantPrincipal(agent_id=_AGENT),
-        source_tool_call_id="tool-call-agent",
-        grants=(_SPEC,),
-        expires_at=_NOW + timedelta(minutes=5),
-    )
-    (session_grant,) = await service.create_grants(
-        owner_agent_id=_AGENT,
-        grant_principal=SessionGrantPrincipal(session_id=session_a),
-        source_tool_call_id="tool-call-session",
-        grants=(_SPEC,),
-        expires_at=_NOW + timedelta(minutes=5),
-    )
-
-    request_principal_a = _request_principal(session_id=session_a)
-    assert set(await service.list_applicable_grants(request_principal=request_principal_a)) == {
-        agent_grant,
-        session_grant,
-    }
-    assert (
-        await service.get_applicable_grant(request_principal=request_principal_a, grant_id=session_grant.grant_id)
-        == session_grant
-    )
-
-    request_principal_b = _request_principal(session_id=session_b)
-    assert await service.list_applicable_grants(request_principal=request_principal_b) == (agent_grant,)
-    with pytest.raises(GrantNotFoundError):
-        await service.get_applicable_grant(request_principal=request_principal_b, grant_id=session_grant.grant_id)
 
 
 async def test_create_many_uses_one_source_and_shared_timestamps() -> None:

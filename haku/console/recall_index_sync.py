@@ -26,9 +26,8 @@ import pygit2
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
-from haku.recall_index.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
+from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.recall_index.embedder import Embedder
 from haku.recall_index.embedding_sync import EmbeddingSyncReport, embed_pending
 from haku.recall_index.git_tree import fetch_branch, open_mirror, remote_tip
@@ -38,9 +37,8 @@ from haku.recall_index.sync import AlreadyCurrent, SyncOutcome, is_current, sync
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CHAT_INTERVAL = datetime.timedelta(seconds=60)
-# As short as chat's, because the common tick is one `ls-remote` — refs only, no objects — and
-# fetching happens only when the tip actually moved.
+# The common tick is one `ls-remote` — refs only, no objects — and fetching happens only when the
+# tip actually moved.
 DEFAULT_GIT_INTERVAL = datetime.timedelta(seconds=30)
 DEFAULT_EMBED_INTERVAL = datetime.timedelta(seconds=5)
 
@@ -102,29 +100,13 @@ class RecallIndexMaintenance:
         self._indexes = tuple(indexes)
         self._budget = budget
 
-    async def sync_index_once(self, index: ConfiguredRecallIndex) -> SyncOutcome | ChatSyncReport | None:
+    async def sync_index_once(self, index: ConfiguredRecallIndex) -> SyncOutcome | None:
         """Synchronize one explicitly configured index, if this replica wins its lock."""
         async with _leading(self._engine, f"source:{index.index_id}") as leading:
             if not leading:
                 return None
             async with self._sessions() as session:
                 await register_index(session, index.index_id, index_type=IndexType(index.index_type))
-                if isinstance(index, ChatRecallIndexDefinition):
-                    report = await sync_chat(
-                        session, index_id=index.index_id, now=datetime.datetime.now(datetime.UTC), budget=self._budget
-                    )
-                    await session.commit()
-                    if report.sessions_indexed or report.sessions_forgotten:
-                        logger.info(
-                            "Chat index %s: %d sessions indexed, %d forgotten, %d windows written (%d content values materialized)",
-                            index.index_id,
-                            report.sessions_indexed,
-                            report.sessions_forgotten,
-                            report.windows_written,
-                            report.contents_materialized,
-                        )
-                    return report
-
                 repository, tip = await asyncio.to_thread(_open_and_peek, index)
                 if tip is None:
                     logger.error("Git index %s remote has no branch %r", index.index_id, index.branch)
@@ -172,18 +154,10 @@ class RecallIndexMaintenance:
             await asyncio.sleep(interval.total_seconds())
 
     @asynccontextmanager
-    async def run(
-        self,
-        *,
-        chat_interval: datetime.timedelta = DEFAULT_CHAT_INTERVAL,
-        git_interval: datetime.timedelta = DEFAULT_GIT_INTERVAL,
-    ) -> AsyncIterator[None]:
+    async def run(self, *, git_interval: datetime.timedelta = DEFAULT_GIT_INTERVAL) -> AsyncIterator[None]:
         """Sweep every configured index until application shutdown."""
         sweeps = [
-            asyncio.create_task(
-                self._sweep(index, chat_interval if isinstance(index, ChatRecallIndexDefinition) else git_interval),
-                name=f"recall-index-sync-{index.index_id}",
-            )
+            asyncio.create_task(self._sweep(index, git_interval), name=f"recall-index-sync-{index.index_id}")
             for index in self._indexes
         ]
         try:

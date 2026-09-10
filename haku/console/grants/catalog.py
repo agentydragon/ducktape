@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-from collections.abc import Sequence
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -18,15 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.grants.envelope import GrantNotFoundError, GrantStatus, validated_end_batch
-from haku.console.grants.http.decide_config import EgressConfigGrantEntry
-from haku.console.grants.http.models import (
-    Grant as HttpGrant,
-    HttpMethod,
-    HttpOrigin,
-    HttpRequestAllowed,
-    HttpRequestCoverage,
-    HttpRequestDenied,
-)
+from haku.console.grants.http.models import Grant as HttpGrant, HttpOrigin, HttpRequestCoverage
 from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes.authorization import (
     AuthorizationRequest,
@@ -35,12 +26,7 @@ from haku.console.grants.kubernetes.authorization import (
 )
 from haku.console.grants.kubernetes.models import Grant as KubernetesGrant, GrantScope, Rule
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
-from haku.console.grants.principal import (
-    AccessProfileGrantPrincipal,
-    GrantPrincipal,
-    RequestPrincipal,
-    grant_principal_applies_to,
-)
+from haku.console.grants.principal import AccessProfileGrantPrincipal, GrantPrincipal, RequestPrincipal
 from haku.grants.authorization import AuthorizationAllowed, AuthorizationDecision, AuthorizationDenied, GrantSourceKind
 
 
@@ -128,15 +114,6 @@ class Grant(BaseModel):
     validity: GrantValidity
 
 
-class HttpAccessAllowed(AuthorizationAllowed):
-    """An allowed HTTP decision plus the handles eligible for substitution."""
-
-    credential_handles: frozenset[str]
-
-
-type HttpAccessDecision = HttpAccessAllowed | AuthorizationDenied
-
-
 class GrantCatalog:
     """Compose configuration and database authority for every read/check path."""
 
@@ -147,7 +124,6 @@ class GrantCatalog:
         http_grants: HttpGrantService,
         kubernetes_config: KubernetesAuthorizationConfig | None = None,
         sar_client: SubjectAccessReviewClient | None = None,
-        http_config_grants: tuple[EgressConfigGrantEntry, ...] = (),
     ) -> None:
         if (kubernetes_config is None) != (sar_client is None):
             raise ValueError("Kubernetes authorization config and SAR client must be configured together")
@@ -155,7 +131,6 @@ class GrantCatalog:
         self._http_grants = http_grants
         self._kubernetes_config = kubernetes_config
         self._sar_client = sar_client
-        self._http_config_grants = http_config_grants
 
     async def list_applicable(
         self, *, request_principal: RequestPrincipal, include_inactive: bool = False
@@ -174,7 +149,7 @@ class GrantCatalog:
             *(self._database_kubernetes_grant(grant) for grant in kubernetes),
             *(self._database_http_grant(grant) for grant in http),
         ]
-        entries.extend(self._config_grants(request_principal=request_principal))
+        entries.extend(self._config_kubernetes_grants(request_principal=request_principal))
         return tuple(entries)
 
     async def list(
@@ -239,37 +214,20 @@ class GrantCatalog:
             ]
         )
 
-    def _config_grants(self, *, request_principal: RequestPrincipal) -> tuple[Grant, ...]:
-        return (
-            *self._config_kubernetes_grants(request_principal=request_principal),
-            *self._config_http_grants(request_principal=request_principal),
-        )
-
     def _all_config_grants(self) -> tuple[Grant, ...]:
-        kubernetes = (
-            tuple(
-                grant
-                for access_profile_id in self._kubernetes_config.subjects_by_access_profile
-                for grant in self._config_kubernetes_grants_for_access_profile(access_profile_id=access_profile_id)
-            )
-            if self._kubernetes_config is not None
-            else ()
+        if self._kubernetes_config is None:
+            return ()
+        return tuple(
+            grant
+            for access_profile_id in self._kubernetes_config.subjects_by_access_profile
+            for grant in self._config_kubernetes_grants_for_access_profile(access_profile_id=access_profile_id)
         )
-        return (*kubernetes, *(self._config_http_grant(grant=grant) for grant in self._http_config_grants))
 
     def _config_grants_for_principal(self, *, principal: GrantPrincipal) -> tuple[Grant, ...]:
-        kubernetes = (
+        return (
             self._config_kubernetes_grants_for_access_profile(access_profile_id=principal.access_profile_id)
             if isinstance(principal, AccessProfileGrantPrincipal)
             else ()
-        )
-        return (
-            *kubernetes,
-            *(
-                self._config_http_grant(grant=grant)
-                for grant in self._http_config_grants
-                if grant.principal == principal
-            ),
         )
 
     def _config_kubernetes_grants(self, *, request_principal: RequestPrincipal) -> tuple[Grant, ...]:
@@ -292,27 +250,6 @@ class GrantCatalog:
                 ),
             )
         return ()
-
-    def _config_http_grants(self, *, request_principal: RequestPrincipal) -> tuple[Grant, ...]:
-        return tuple(
-            self._config_http_grant(grant=grant)
-            for grant in self._http_config_grants
-            if grant_principal_applies_to(grant.principal, request_principal)
-        )
-
-    @staticmethod
-    def _config_http_grant(*, grant: EgressConfigGrantEntry) -> Grant:
-        return Grant(
-            subject=grant.principal,
-            coverage=HttpCoverage(
-                origins=grant.origins,
-                coverage=grant.coverage,
-                credential_handles=(frozenset({grant.credential_handle}) if grant.credential_handle else frozenset()),
-                allow_prohibited_address=grant.allow_prohibited_address,
-            ),
-            source=ConfigFileGrantSource(entry_id=grant.id),
-            validity=GrantValidity(ends_at=None, status=GrantStatus.ACTIVE),
-        )
 
     @staticmethod
     def _database_kubernetes_grant(grant: KubernetesGrant) -> Grant:
@@ -393,90 +330,6 @@ class GrantCatalog:
                 valid_until=grant.expires_at,
             )
         return AuthorizationDenied(reason=configuration_decision.reason or "Kubernetes denied the request")
-
-    async def match_http_request(
-        self,
-        *,
-        request_principal: RequestPrincipal,
-        method: HttpMethod,
-        origin: HttpOrigin,
-        path: str,
-        require_prohibited_address_allowance: bool,
-    ) -> HttpAccessDecision:
-        matching = self._matching_http_config_grants(
-            request_principal=request_principal,
-            origin=origin,
-            method=method,
-            path=path,
-            require_prohibited_address_allowance=require_prohibited_address_allowance,
-        )
-        if matching:
-            return HttpAccessAllowed(
-                source=GrantSourceKind.CONFIG_FILE,
-                decision_id=f"config_file:{matching[0].id}",
-                credential_handles=frozenset(grant.credential_handle for grant in matching if grant.credential_handle),
-            )
-        grant = await self._http_grants.match_request(
-            request_principal=request_principal,
-            method=method,
-            origin=origin,
-            path=path,
-            require_prohibited_address_allowance=require_prohibited_address_allowance,
-        )
-        return self._http_decision(grant)
-
-    async def match_http_tunnel(
-        self, *, request_principal: RequestPrincipal, origin: HttpOrigin, require_prohibited_address_allowance: bool
-    ) -> HttpAccessDecision:
-        matching = self._matching_http_config_grants(
-            request_principal=request_principal,
-            origin=origin,
-            method=None,
-            path=None,
-            require_prohibited_address_allowance=require_prohibited_address_allowance,
-        )
-        if matching:
-            return HttpAccessAllowed(
-                source=GrantSourceKind.CONFIG_FILE,
-                decision_id=f"config_file:{matching[0].id}",
-                credential_handles=frozenset(grant.credential_handle for grant in matching if grant.credential_handle),
-            )
-        return self._http_decision(
-            await self._http_grants.match_tunnel(
-                request_principal=request_principal,
-                origin=origin,
-                require_prohibited_address_allowance=require_prohibited_address_allowance,
-            )
-        )
-
-    def _matching_http_config_grants(
-        self,
-        *,
-        request_principal: RequestPrincipal,
-        origin: HttpOrigin,
-        method: HttpMethod | None,
-        path: str | None,
-        require_prohibited_address_allowance: bool,
-    ) -> Sequence[EgressConfigGrantEntry]:
-        return [
-            grant
-            for grant in self._http_config_grants
-            if grant_principal_applies_to(grant.principal, request_principal)
-            and grant.matches_origin(origin)
-            and (method is None or grant.coverage.covers(method=method, path=path or ""))
-            and (not require_prohibited_address_allowance or grant.allow_prohibited_address)
-        ]
-
-    @staticmethod
-    def _http_decision(decision: HttpRequestAllowed | HttpRequestDenied) -> HttpAccessDecision:
-        if isinstance(decision, HttpRequestAllowed):
-            return HttpAccessAllowed(
-                source=GrantSourceKind.DATABASE,
-                decision_id=f"database:{decision.grant_id}",
-                valid_until=decision.expires_at,
-                credential_handles=decision.credential_handles,
-            )
-        return AuthorizationDenied(reason=decision.reason)
 
     async def aclose(self) -> None:
         if self._sar_client is not None:

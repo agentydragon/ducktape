@@ -426,14 +426,6 @@ apt.install(
     manifest = "//loom/wayback/cache:trixie_wayback_cache.yaml",
 )
 
-# Haku harness runner image: git and CA roots on debian:trixie-slim, so a sandbox runner can
-# check out haku-state into /workspace before it launches its selected native harness.
-apt.install(
-    name = "trixie_haku_harness_runner",
-    lock = "//haku/runner:trixie_haku_harness_runner.lock.json",
-    manifest = "//haku/runner:trixie_haku_harness_runner.yaml",
-)
-
 # Agentplane runner image: git, ripgrep, and curl on debian:trixie-slim beside the runner and both
 # native harnesses.
 apt.install(
@@ -441,7 +433,7 @@ apt.install(
     lock = "//x/agentplane/runner:trixie_agentplane_runner.lock.json",
     manifest = "//x/agentplane/runner:trixie_agentplane_runner.yaml",
 )
-use_repo(apt, "gnome_shell_test", "trixie_agentplane_runner", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_haku_harness_runner", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_runner", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

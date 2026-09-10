@@ -16,8 +16,7 @@ import { useConsoleView } from "./routing";
 export default function App(): JSX.Element {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, agentEnrollmentId, oauthResultId, toolCallId, conversationId, sessionFramesId, navigate } =
-    useConsoleView();
+  const { view, agentEnrollmentId, oauthResultId, toolCallId, navigate } = useConsoleView();
   useOAuthResultAnnouncement(view);
 
   useEffect(() => {
@@ -71,8 +70,6 @@ export default function App(): JSX.Element {
         view={view}
         agentEnrollmentId={agentEnrollmentId}
         toolCallId={toolCallId}
-        conversationId={conversationId}
-        sessionFramesId={sessionFramesId}
         onNavigate={navigate}
       />
     </AgentNamesProvider>

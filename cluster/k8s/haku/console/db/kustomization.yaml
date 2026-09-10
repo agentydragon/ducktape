@@ -4,5 +4,4 @@ resources:
   - approval-store-database.yaml
   # Role passwordSecrets before the Cluster that references them.
   - indexer-role-secret.yaml
-  - matrix-adapter-role-secret.yaml
   - postgres-cluster.yaml

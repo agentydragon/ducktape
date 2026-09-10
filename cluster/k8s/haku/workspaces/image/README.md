@@ -108,17 +108,3 @@ it). In order: the egress CA into a JVM truststore for Bazel's downloader, the `
 identity, `http.sslCAInfo` so plain `git` trusts the bumped proxy, a two-machine `.netrc`
 for both Forgejo hostnames, the `haku-state` clone, and a partial `ducktape` clone so the
 run's base-sync step has something to diff against.
-
-## Console harness runner image
-
-The Console sandbox bridge is `//haku/runner:runner_image`, published once as
-`git.allegedly.works/ducktape-ci/haku-harness-runner`. It contains the pinned native Claude and Codex CLIs,
-git, kubectl, and CA roots; the SandboxTemplate still selects Claude explicitly with `--harness`.
-
-The repository rename and the first publication necessarily meet at the merge commit: CI cannot
-publish a deployable `devel-*` tag from a feature branch, while Flux can reconcile Git before that
-devel CI job finishes. The template therefore starts at the canonical repository's `latest` tag,
-which the same image-push job writes together with the first immutable tag. There can be a brief
-post-merge pull gap before that job completes, but there is no permanently unpublished seed tag and
-no second compatibility publication. Once the new ImageRepository observes the immutable tag, the
-ordinary Flux setter replaces `latest` with the normal `devel-YYYYMMDDHHMMSS-sha` pin.

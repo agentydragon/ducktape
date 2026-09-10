@@ -105,9 +105,7 @@ class _Console:
         )
         return McpExecutionContext(
             caller=AgentMcpExecutionCaller(
-                principal=RequestPrincipal(
-                    agent_id=self.agent_id, session_id=None, access_profile_id=DEFAULT_ACCESS_PROFILE_ID
-                )
+                principal=RequestPrincipal(agent_id=self.agent_id, access_profile_id=DEFAULT_ACCESS_PROFILE_ID)
             ),
             tool_call_id=tool_call_id,
             approving_operator_id=None,
