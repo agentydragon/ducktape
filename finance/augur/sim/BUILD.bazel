@@ -357,10 +357,13 @@ py_library(
     name = "configured",
     srcs = ["configured.py"],
     deps = [
+        ":_native",
+        ":actions",
+        ":metric_composition",
         ":prepared",
         ":results",
         ":session",
-        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/policy:configured_allocation",
     ],
 )
 
@@ -368,6 +371,9 @@ py_library(
     name = "session",
     srcs = ["session.py"],
     deps = [
+        ":_native",
+        ":actions",
+        ":observations",
         ":prepared",
         ":results",
         ":tlh",
@@ -428,5 +434,17 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "_native",
+    srcs = ["_native.py"],
+    deps = [
+        ":books",
+        ":events",
+        ":observations",
+        ":results",
+        "@pypi//pydantic",
     ],
 )

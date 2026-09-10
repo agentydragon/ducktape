@@ -20,8 +20,10 @@ def _decode(document: str) -> CompiledRun:
 
 
 def _encode_native(run: CompiledRun) -> str:
-    """Native accounting receives component identity, never its owned model state."""
-    document = _RUN.dump_python(run, mode="json", by_alias=True, warnings="error")
+    """Native accounting receives component identity, not model state or allocation policy."""
+    document = _RUN.dump_python(
+        run, mode="json", by_alias=True, warnings="error", exclude={"scenario": {"_target_allocation_policies"}}
+    )
     document["scenario"]["tlh_portfolios"] = [
         {
             "portfolio_id": portfolio.portfolio_id,
