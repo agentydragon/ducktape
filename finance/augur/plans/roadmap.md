@@ -6,7 +6,7 @@ and examines distributions and individual timelines. The primary acceptance
 case is joint spending-flexibility × allocation planning with supported taxes.
 Housing remains a capability; the house-buying web app does not define the library.
 
-Grounded at `devel` `0dd6c29eef` (2026-09-10 UTC). The
+Grounded at `devel` `82ef99a1d4` (2026-09-10 UTC). The
 [experiment/interface sketches, PR #5859](https://github.com/agentydragon/ducktape/pull/5859)
 remain a proposal, not an API to implement wholesale. This plan owns sequencing;
 [allocation experiments](allocation_program.md) owns the remaining experiment
@@ -96,7 +96,7 @@ consumers; CAP's broader domain selection/app projection work remains separate.
 including withdrawal/deposit/rebalance and scoped FIFO selection; none executes trades.
 Declared account/asset pools expose current prices even before a first purchase.
 
-`x/{bounded_spending,allocation_glide,joint_spending_allocation}` use that same
+`study/trinity` and `x/{bounded_spending,allocation_glide,joint_spending_allocation}` use that same
 Python action session. Bounded spending reads current CPI, and its scalar-adapted
 and batch-authored rule comparison uses one session, including its profiler and
 prepared-file test. The joint example varies both policy dimensions on shared
@@ -196,7 +196,14 @@ flowchart TB
 
     P12["P12: migrate configured consumers; delete old loops"]
 
-    GP -. existing product and multi-actor migration arms .-> P12
+    FUND["FUND: Python product funding policy"] --> APP["APP: remaining product-service cutover"]
+    REPORT["REPORT: common session product projections"] --> APP
+    HELD["HELD: held-bond observations and capture"] --> APP
+    GH{"GH: harvesting ownership and phase"} --> HARVEST["HARVEST: migrate existing harvesting"] --> APP
+    GHOUSE{"GHOUSE: committed purchase timing and failure"} --> HOUSING["HOUSING: preserve scheduled property lifecycle"] --> APP
+    GPE{"GPE: compulsory PE events and tender timing"} --> PE["PE: separate issuer mechanics and tender choice"] --> APP
+    APP --> P12
+    GP -. independently deciding actor consumers only .-> P12
 
     CAP["CAP: remaining selected capture and app adapters"]
     OUT -- validity and receipt identity --> CAP
@@ -233,12 +240,16 @@ acceptance work alongside migration, not a prerequisite research program. A fail
 cost check blocks only the affected workload's cutover until bounded revision;
 correctness failures always block the affected change.
 
-P12's supported public-consumer slices proceed independently using existing Python
-helpers. Add a calculation only when a real policy needs it, not as a library-wide
-prerequisite campaign. GP gates only P12's additional product/multi-actor cases.
-Port already-supported public cases first; scope required missing semantics
-before migrating housing/private-equity consumers. New adaptive HOUSE/BOND
-capabilities are not prerequisites for preserving existing behavior.
+FUND, REPORT and HELD are independent P12/CAP slices, exercised through real
+action-session controls before APP cuts over the existing service. REPORT does
+not wait for OUT's further cause reporting: existing receipt identities and
+stop validity suffice for its supported cases. HELD preserves existing dated-bond
+mechanics; it does not depend on BOND's trading or off-par scope.
+GH, GHOUSE and GPE are narrow product branches of GP, not prerequisites for the
+three ready slices. The current app has one decision-making owner; landlords,
+lenders and other counterparties do not require a general multi-policy scheduler.
+New adaptive HOUSE/BOND capabilities are not prerequisites for preserving existing
+behavior. Benchmarks and the bond example remain independent P12 consumers.
 
 OUT and CAP can proceed separately. Action-session capture and claim/payment
 identities already exist; CAP reuses them and existing actor views for richer
@@ -335,9 +346,33 @@ large, preserving the named completion condition and atomic caller updates.
 The **Needs** column names immediate prerequisites; inherited prerequisites still
 apply only to the consuming slice. No convergence node waits for RUNTIME/GE.
 
-| Unit                                                    | Independently reviewable change                                                                                                                                                                                                                                                                                                                                                                               | Needs                                                    | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P12 — migrate configured consumers and delete old loops | Move Trinity, bond examples, benchmarks and the app to the same Python session and explicit policies. Trinity is the active first slice. Land supported public-consumer slices independently; extend the common action path only for capabilities existing housing/PE/multi-actor callers require. Remove old full-run entrypoints, allocator orchestration and policy schema fields with their last callers. | GP only for affected additional product/multi-actor arms | All actual simulation outer loops are Python-controlled, including app/high-N runs. Rust retains step mechanics/kernels, not a parallel driver. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
+| Unit                                                    | Independently reviewable change                                                                                                                                                                                                                                                                                                     | Needs                                                                       | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P12 — migrate configured consumers and delete old loops | Move bond examples, benchmarks and the app to the same Python session and explicit policies. Land supported consumer slices independently; extend the common action path only for capabilities existing callers require. Remove old full-run entrypoints, allocator orchestration and policy schema fields with their last callers. | APP for product callers; GP only for independently deciding actor consumers | All actual simulation outer loops are Python-controlled, including app/high-N runs. Rust retains step mechanics/kernels, not a parallel driver. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
+
+### Product cutover slices
+
+| Unit    | Change and acceptance                                                                                                                                                                                                                                                                                                                                                                                                                 | Needs                                    |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| FUND    | Python batch funding policy: sales-only symbol weights aggregated across source accounts, scoped FIFO, CPI-indexed cash bands and explicit payment order. Test same-symbol multi-account holdings, exclusions, empty targets, distributions, taxable sales and annual rent resets. Zero product weight excludes a holding; it must not become a core sleeve exit. Explain successful-prefix changes from grouped all-or-none funding. | None                                     |
+| REPORT  | Project events and metrics from one common session result, reusing canonical frames and existing reducers. Compact population output, selected detailed capture, stable path IDs, taxes and stopped-month validity must agree. No accounting reconstruction or duplicate collector.                                                                                                                                                   | None                                     |
+| HELD    | Expose scoped current dated-bond facts and compact historical values from existing coupon/accretion/redemption calculations. Verify opening principal, coupon-before-spending, maturity removal, issuer exemptions and stopped marks. Preserve known valuation limits; do not imply tradability.                                                                                                                                      | None                                     |
+| HARVEST | Move the existing reduced-form harvesting process to the chosen explicit boundary; reuse gain/deferral posting. Preserve sale give-back, mixed holding periods, full liquidation, rejection behavior and year-end tax controls.                                                                                                                                                                                                       | GH                                       |
+| HOUSING | Preserve scheduled purchase, occupancy, rent, improvements, sale and mortgage/tax lifecycle through shared financial steps and capture. Test funding failure, purchase basis, deductions and rental transitions. This is not adaptive purchase policy.                                                                                                                                                                                | GHOUSE                                   |
+| PE      | Separate compulsory issuer state/cash events from Python tender choice. Enforce eligibility, capacity and lockups through canonical execution; preserve collapse/recovery, IPO transition, gains and event outputs.                                                                                                                                                                                                                   | GPE                                      |
+| APP     | Cut over all product endpoints to the Python loop and common outputs; selected detail executes once, fans use compact capture. Preserve configured holdings and supported lifecycle/harvest inputs, then remove replaced methods with their last callers.                                                                                                                                                                             | FUND, REPORT, HELD, HARVEST, HOUSING, PE |
+
+The default API test configuration includes PE and dated bonds. Public-only
+controls must declare a separate synthetic portfolio, not discard those holdings.
+Absent-domain zeros require declared absence; a held but uncaptured domain must
+reject projection rather than fabricate a zero. Do not add permanent
+capability-based routing between two executors to make a partial APP cutover look
+complete. Preparatory policies/projections have real session consumers in tests.
+
+Scheduled public sales are a separate generic scenario/benchmark migration, not
+an input currently constructed by `ProductService`. Move their author-specified
+decisions to explicit actions and remove the legacy scheduled FIFO reader with
+its last consumer; do not gate FUND on that work.
 
 ### P12: retire configured helper readers
 
@@ -422,6 +457,26 @@ actions. There is no within-month retry or policy callback.
 The checklist's [housing-basis mismatch](tax_coverage.md#housing-basis-reconciliation)
 is a GT/TAX slice for affected housing arms, independent of runtime-language research.
 
+The existing app needs these bounded GP decisions before its affected capability
+migrations, without reopening the settled ordered-action/no-retry contract:
+
+- **GH — harvesting:** decide whether the reduced-form harvest process is an
+  actor-requested operation or a declared managed-product service, and its phase.
+  It currently runs after successful grouped payments (`rust/engine.rs`);
+  removing the action-session guard alone would omit it. Pin what occurs on a
+  stopped path and which current facts the policy needs.
+- **GHOUSE — committed purchases:** define the phase and insufficient-funds
+  behavior of the existing scheduled purchase. It currently debits cash during
+  preparation, before policy observation. Exposing an affordable atomic purchase
+  action is a semantic change, not just a binding. Preserve scripted counterparties
+  and lifecycle mechanics; no general multi-agent scheduler is needed.
+- **GPE — compulsory events and voluntary tenders:** decide when forced proceeds
+  become spendable and what compulsory events occur on a failed path. Currently
+  PE processing follows successful payments, and absence of a tender policy also
+  skips forced recovery (`rust/engine/private_equity.rs`). Compulsory issuer events
+  must not depend on opting into a tender strategy. Pin independent failure/timing
+  controls before changing that behavior.
+
 | Gate                                                  | Bounded next step and decision                                                                                                                                                                                                                                                                                                                                                                                                               | What proceeds regardless                                                                                                                                                                                                                                     |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | GP — expanded information and settlement semantics    | The first household example observes after cashflows/claim assembly, executes one ordered list, and stops on an invalid action or a still-unpaid due claim. Pin additional product/housing/PE settlement and deadlines, and ordering between multiple decision-making actors before migrating P12's affected existing consumers or enabling new cases.                                                                                       | P12's supported public-consumer slices proceed. Funding helpers return proposals; no implicit allocator, retry protocol or recovery model. Existing capabilities cannot be dropped to claim convergence.                                                     |
@@ -451,14 +506,14 @@ all the others to be solved first.
 
 ## What to dispatch first
 
-1. **P12's Trinity migration is active:** retain selected historical windows,
-   annual withdrawal cadence, sales-only allocation and explicit paper-adaptation
-   labels while moving its actual loop to Python. Test the documented entrypoint
-   with generated financial data and preserve sourced reproductions separately.
-2. Scope P12's **bond example, benchmark and app migrations** independently.
-   Use existing Python helpers; scope **GP** only for the housing/PE/multi-actor
-   capabilities a consuming slice actually needs. Do not hold supported public
-   cases behind new adaptive housing or native-bond actions.
+1. **FUND, REPORT and HELD are dispatched independently.** Keep real
+   action-session financial controls in each PR; stack integrations when useful.
+   The bond-example migration is separately in review in
+   [PR #6032](https://github.com/agentydragon/ducktape/pull/6032).
+2. Resolve **GH, GHOUSE and GPE** with concrete timing/failure examples before
+   their respective migration slices. Scope benchmarks independently. APP waits
+   for the existing capabilities its inputs require, not new adaptive housing,
+   bond trading or a general multi-agent scheduler.
 3. Agree GL's representative cost budgets and measure along these migrations.
    **RUNTIME/GE** are a separate, currently parked implementation investigation;
    resuming it must not become a prerequisite for the convergence train.

@@ -225,7 +225,9 @@ use this same session, not a second policy interface.
 
 P12 migrates configured consumers and removes old full-run loops and implicit
 public-portfolio strategy, preserving required existing housing/PE capabilities.
-Trinity is the active first slice; bond examples, benchmarks and the app remain.
+Bond examples, benchmarks and the app remain. The roadmap separates Python product
+funding, common session reporting and held-bond capture from the narrow harvesting,
+committed-purchase and private-equity timing gates needed for full app cutover.
 Configured source-account claim grouping is all-or-none; each migration must test
 and explain timing/funding differences rather than hide them in a compatibility
 runner. GP gates only the additional product/multi-actor semantics a slice needs.
