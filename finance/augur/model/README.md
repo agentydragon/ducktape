@@ -36,10 +36,6 @@ State-space conditioning must use the fitted factor's units; an index-point anch
 is not silently replaced by a dollar value. These input records do not change the
 models' statistical dynamics or resolve product price/payout semantics.
 
-The runnable allocation-sensitivity experiment uses this seam to compare bond
-constructions on the same markets. Its tax-free recurrence and uncertainty
-approximations remain limitations; it is not the taxable household experiment.
-
 Offline checks:
 
 ```bash

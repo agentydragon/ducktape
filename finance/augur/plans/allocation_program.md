@@ -75,8 +75,5 @@ experiment's configuration and documentation, never in a new competing engine.
    that no candidate meets the selected constraints. Do not invent a scalar
    utility function or treat a model's winner as an unconditional recommendation.
 
-The existing `x/allocation_sensitivity.py` recurrence remains a deliberately
-simplified tax-free control. Its old rankings and causal interpretations do not
-set the implementation order; comparisons with canonical RUN must hold timing,
-instruments, rebalancing and withdrawal conventions constant before attributing
-differences to taxes or a refactor.
+Comparisons with tax-free controls must hold timing, instruments, rebalancing and
+withdrawal conventions constant before attributing differences to taxes.

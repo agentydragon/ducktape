@@ -20,26 +20,3 @@ py_binary(
     main_module = "finance.augur.x.replay_vs_fitted",
     deps = [":replay_vs_fitted"],
 )
-
-py_library(
-    name = "allocation_sensitivity",
-    srcs = ["allocation_sensitivity.py"],
-    deps = [
-        "//finance/augur/model:bond_fund",
-        "//finance/augur/model:equity",
-        "//finance/augur/model:exogenous",
-        "//finance/augur/model:historical_windows",
-        "//finance/augur/model:market_paths",
-        "//finance/augur/model:product_paths",
-        "//finance/augur/model:series",
-        "//finance/augur/model:structural_macro",
-        "//finance/augur/study/trinity:evidence_snapshot",
-        "@pypi//numpy",
-    ],
-)
-
-py_binary(
-    name = "allocation_sensitivity_bin",
-    main_module = "finance.augur.x.allocation_sensitivity",
-    deps = [":allocation_sensitivity"],
-)
