@@ -111,6 +111,13 @@ Neither scope implies after-tax liquidation proceeds. Callers supply the observe
 mark month; a stopped book uses its failure-event marks, never future prices.
 CPI in the spending observation is current inflation relative to path origin.
 
+Dated bonds carry par or current indexed principal, not a tradable market quote.
+Their position lifetime follows processed events separately from valuation marks:
+a bond redeemed in event month `m` remains principal in snapshot `m`, then cash
+replaces it in snapshot `m + 1`. A horizon ending at `m` has not executed that
+redemption. Failed closings retain the event month's CPI and the actually processed
+redemptions, independent of the later snapshot label.
+
 `engine::observations::ActorBooks` gives spending functions borrowed account,
 remaining public-lot/basis, active borrower-mortgage and recorded tax views at
 their opening review. The view fixes the actor and mark month; it cannot read

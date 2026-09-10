@@ -283,26 +283,42 @@ pub(super) fn bond_states(
     fixture: &ExecutionInput,
     rollout_id: u32,
     snapshot_month: u32,
+    valuation_month: u32,
 ) -> Result<Vec<BondState>, SimulationError> {
     fixture
         .scenario
         .initial_bonds
         .iter()
         .map(|bond| {
-            let active = bond_is_active(bond, snapshot_month);
+            let principal =
+                bond_held_principal(fixture, rollout_id, bond, snapshot_month, valuation_month)?;
             Ok(BondState {
                 bond_id: bond.bond_id.clone(),
                 agent_id: bond.agent_id.clone(),
                 account_id: bond.account_id.clone(),
-                principal: if active {
-                    bond_principal(fixture, rollout_id, bond, snapshot_month)?
-                } else {
-                    Money(0)
-                },
-                active,
+                principal: principal.unwrap_or(Money(0)),
+                active: principal.is_some(),
             })
         })
         .collect()
+}
+
+/// Snapshot s has processed events 0..s-1; event-m redemption removes principal at s=m+1.
+/// Marks have their own clock: a failed closing keeps the failed event's observed CPI.
+pub(super) fn bond_held_principal(
+    fixture: &ExecutionInput,
+    rollout_id: u32,
+    bond: &BondSpec,
+    snapshot_month: u32,
+    valuation_month: u32,
+) -> Result<Option<Money>, SimulationError> {
+    let latest_event = snapshot_month.saturating_sub(1);
+    if i64::from(bond.purchase_month_index) > i64::from(latest_event)
+        || i64::from(bond.maturity_month_index) < i64::from(snapshot_month)
+    {
+        return Ok(None);
+    }
+    bond_principal(fixture, rollout_id, bond, valuation_month).map(Some)
 }
 
 pub(super) fn execute_bonds(

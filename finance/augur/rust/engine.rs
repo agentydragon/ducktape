@@ -789,6 +789,7 @@ impl RolloutState {
             ending_bonds: bond_states(
                 fixture,
                 rollout_id,
+                self.month,
                 self.failed_month.unwrap_or(self.month),
             )?,
             ending_properties: self.properties,
@@ -820,7 +821,7 @@ fn product_snapshot(
 ) -> Result<BaseMetrics, SimulationError> {
     let lot_views: Vec<_> = lots.iter().map(LotState::view).collect();
     let valuation_month = if failed { snapshot - 1 } else { snapshot };
-    let bonds = bond_states(fixture, rollout_id, valuation_month)?;
+    let bonds = bond_states(fixture, rollout_id, snapshot, valuation_month)?;
     let state = SnapshotState {
         ledger,
         lots: &lot_views,

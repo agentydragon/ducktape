@@ -1666,6 +1666,65 @@ fn series_indexed_amount_validation_rejects_invalid_paths() {
 }
 
 #[test]
+fn bond_principal_remains_until_redemption_event() {
+    for maturity in [0, 1] {
+        for horizon in [maturity, maturity + 1]
+            .into_iter()
+            .filter(|horizon| *horizon > 0)
+        {
+            let mut input = minimal_fixture();
+            input
+                .scenario
+                .income_sources
+                .push(IncomeSource::interest(None));
+            input.scenario.horizon_months = horizon;
+            input.scenario.initial_bonds.push(BondSpec {
+                bond_id: "principal".into(),
+                agent_id: "alice".into(),
+                account_id: "checking".into(),
+                issuer_jurisdiction_id: None,
+                face_value: Money(100),
+                purchase_price: Money(100),
+                annual_coupon_rate_ppb: 0,
+                coupon_period_months: 1,
+                inflation_indexed: false,
+                purchase_month_index: -1,
+                maturity_month_index: maturity as i32,
+            });
+            let forensic = simulate(&input).unwrap();
+            let dense = simulate_dense(&input).unwrap();
+            let compact = simulate_summaries(&input).unwrap();
+            let metrics = simulate_product_metrics(&input, "alice").unwrap();
+            for (snapshot, book) in forensic.rollouts[0].months.iter().enumerate() {
+                let principal = if snapshot <= maturity as usize {
+                    100
+                } else {
+                    0
+                };
+                assert_eq!(book.bonds[0].principal, Money(principal));
+                let cash = book
+                    .balances
+                    .iter()
+                    .find(|row| row.account == AccountRef::new("alice", "checking"))
+                    .unwrap()
+                    .balance;
+                assert_eq!(cash.0 + principal, 100);
+                assert_eq!(dense.rollouts[0].months[snapshot].bonds, book.bonds);
+                assert_eq!(metrics.base_series[6][snapshot], principal);
+                assert_eq!(
+                    metrics.base_series[0][snapshot] + metrics.base_series[6][snapshot],
+                    100
+                );
+            }
+            assert_eq!(
+                compact.rollouts[0].ending_bonds,
+                forensic.rollouts[0].months.last().unwrap().bonds
+            );
+        }
+    }
+}
+
+#[test]
 fn nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts() {
     let mut fixture = minimal_fixture();
     fixture

@@ -405,7 +405,12 @@ pub(super) fn month_output(
         balances: account_balances(ledger),
         income: income_states(&tax.income),
         lots: security_lot_states(lots)?,
-        bonds: bond_states(fixture, rollout_id, if failed { month - 1 } else { month })?,
+        bonds: bond_states(
+            fixture,
+            rollout_id,
+            month,
+            if failed { month - 1 } else { month },
+        )?,
         properties: properties.to_vec(),
         mortgages: mortgages.to_vec(),
         tax_liabilities: tax_liabilities.to_vec(),
