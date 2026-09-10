@@ -6,14 +6,21 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import SecurityKey, SecuritySymbol
+from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
+from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.books import TlhPortfolioState
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction
-from finance.augur.sim.scenario import InitialLot, TlhPortfolioSpec
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.scenario import (
+    DistributionTaxSlice,
+    InitialLot,
+    SecurityDistribution,
+    TaxProfile,
+    TlhPortfolioSpec,
+)
+from finance.augur.sim.session import Action, ActionSession, Capture, DecisionActions
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
-from finance.augur.sim.tlh import TlhAssumptions, TlhPortfolio
+from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhPortfolio
 
 ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
 
@@ -21,7 +28,8 @@ ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
 def _case(*, cash: int = 0, horizon: int = 2, rollouts: int = 1, harvest: bool = True) -> Case:
     return Case(
         scenario=scenario(
-            checking(("owner", Decimal(cash))),
+            checking(("owner", Decimal(cash)), ("irs", Decimal(0))),
+            tax_profiles=[TaxProfile(agent_id="owner", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs")],
             horizon_months=horizon,
             currency_quantum="1",
             tlh_portfolios=[
@@ -153,6 +161,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
         case,
         scenario=scenario(
             checking(("owner", Decimal(0)), ("other", Decimal(0))),
+            tax_profiles=[],
             horizon_months=1,
             currency_quantum="1",
             tlh_portfolios=case.scenario.tlh_portfolios,
@@ -175,7 +184,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
 def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monkeypatch: pytest.MonkeyPatch) -> None:
     session = ActionSession(_case().compiled_run, "owner", [0])
 
-    def broken_advance(self, market):
+    def broken_advance(self: TlhPortfolio, market: TlhMarketUpdate) -> None:
         raise ArithmeticError("model defect")
 
     monkeypatch.setattr(TlhPortfolio, "advance", broken_advance)
@@ -184,6 +193,93 @@ def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monke
     with pytest.raises(ValueError, match=r"closed|consumed|finished"):
         session.advance([DecisionActions(0, 0, [])])
     session.close()
+
+
+@pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
+@pytest.mark.parametrize("reject", [False, True])
+def test_closing_marks_and_product_projection_do_not_advance_the_model_early(capture: Capture, reject: bool) -> None:
+    case = _case(horizon=1)
+    case = replace(case, series={ASSET: levels([[Decimal(1), Decimal(2)]])})
+    session = ActionSession(case.compiled_run, "owner", [0], capture=capture)
+    try:
+        session.start()
+        actions = [Action.withdraw("unfundable", "owner", "managed", "checking", 101)] if reject else []
+        result = session.advance([DecisionActions(0, 0, actions)])
+        assert isinstance(result, Finished)
+    finally:
+        session.close()
+    [rollout] = result.rollouts
+    [portfolio] = rollout.summary.ending_book.tlh_portfolios
+    assert portfolio.value == (100 if reject else 200)
+    assert portfolio.reported_tax_basis == 99
+    assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -1
+    metrics = metric_arrays(case.compiled_run, result.rollouts, primary_agent_id="owner")
+    assert metrics.base_series[1][:, 0].tolist() == [100, 100 if reject else 200]
+
+
+def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> None:
+    case = _case(horizon=1, harvest=False)
+    case = replace(
+        case,
+        scenario=case.scenario.model_copy(
+            update={
+                "security_distributions": [
+                    SecurityDistribution(
+                        agent_id="owner",
+                        holding_account_id="checking",
+                        asset=ASSET,
+                        to_account_id="checking",
+                        tax_character=(
+                            DistributionTaxSlice(fraction=0.5, issuer_jurisdiction_id="federal_us"),
+                            DistributionTaxSlice(fraction=0.5, issuer_jurisdiction_id=None),
+                        ),
+                    )
+                ]
+            }
+        ),
+        series={**case.series, SecurityDistributionKey(symbol=ASSET.symbol): levels([[Decimal("0.015"), Decimal(0)]])},
+    )
+    session = ActionSession(case.compiled_run, "owner", [0])
+    try:
+        batch = session.start()
+        assert not isinstance(batch, Finished)
+        assert batch[0].observation.cash == 2  # round(100 × $0.015), then two $1 tax slices
+        result = session.advance([DecisionActions(0, 0, [])])
+        assert isinstance(result, Finished)
+    finally:
+        session.close()
+    [rollout] = result.rollouts
+    assert rollout.trace is not None
+    assert [(row.issuer_jurisdiction_id, row.units, row.amount) for row in rollout.trace.distributions] == [
+        ("federal_us", None, 1),
+        (None, None, 1),
+    ]
+    assert rollout.summary.ending_book.tlh_portfolios[0].value == 100
+    assert {(row.income_source, row.income) for row in rollout.summary.ending_book.income} == {
+        ("interest:federal_us", 1),
+        ("interest:corporate", 1),
+    }
+
+
+def test_contribution_is_first_harvested_in_the_next_month() -> None:
+    session = ActionSession(_case(cash=100).compiled_run, "owner", [0])
+    try:
+        first = session.start()
+        assert not isinstance(first, Finished)
+        assert first[0].observation.tlh_portfolios[0].reported_tax_basis == 99
+        second = session.advance(
+            [DecisionActions(0, 0, [Action.contribute("new", "owner", "managed", "checking", 100)])]
+        )
+        assert not isinstance(second, Finished)
+        assert second[0].observation.tlh_portfolios[0].reported_tax_basis == 197
+        result = session.advance([DecisionActions(0, 1, [])])
+        assert isinstance(result, Finished)
+    finally:
+        session.close()
+    [rollout] = result.rollouts
+    assert rollout.trace is not None
+    assert rollout.trace.books[1].tlh_portfolios[0].reported_tax_basis == 199
+    assert rollout.summary.ending_book.capital_gains[0].short_term_gain == -3
 
 
 if __name__ == "__main__":

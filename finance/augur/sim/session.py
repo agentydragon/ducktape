@@ -175,10 +175,22 @@ class _Session:
             or (not self.configured and request.agent_id != self.actor)
         ):
             return self.native.reject(rollout_id, action, "unknown or unowned TLH portfolio")
+        if not request.cause_id:
+            return self.native.reject(rollout_id, action, "TLH cause identifier must not be empty")
+        observation = next(
+            decision.observation
+            for decision in self.native.observations(request.agent_id)
+            if decision.rollout_id == rollout_id
+        )
+        accounts = dict(observation.accounts)
+        if request.cash_account_id not in accounts:
+            return self.native.reject(rollout_id, action, "unknown TLH cash account")
         current = self.portfolios[rollout_id][spec.portfolio_id]
         if isinstance(request, results.Contribute | results.Withdraw):
             if request.amount < 0:
                 return self.native.reject(rollout_id, action, "TLH amount must be nonnegative")
+            if isinstance(request, results.Contribute) and request.amount > accounts[request.cash_account_id]:
+                return self.native.reject(rollout_id, action, "TLH contribution exceeds available cash")
             if isinstance(request, results.Withdraw) and request.amount > current.observe().value:
                 return self.native.reject(rollout_id, action, "TLH withdrawal exceeds portfolio value")
         candidate = deepcopy(current)

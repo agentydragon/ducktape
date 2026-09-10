@@ -58,10 +58,14 @@ def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -
                     session.portfolios[rollout_id][spec.portfolio_id] = candidate
                 for index, _ in enumerate(run.scenario._target_allocation_policies):
                     plan = session.native.allocation_plan(rollout_id, index)
+                    rejected = False
                     for action in plan.sales:
                         receipt = session.apply(rollout_id, action)
                         if isinstance(receipt.outcome, results.Rejected):
+                            rejected = True
                             break
+                    if rejected:
+                        break
                     pending.extend((rollout_id, buy) for buy in plan.buys)
             statuses = session.native.settle_claims()
             live = {status.rollout_id for status in statuses if not status.stopped}
