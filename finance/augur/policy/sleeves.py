@@ -174,8 +174,57 @@ def withdraw(
     Unselected accounts/assets are never sold, including on exhaustion.
     """
     selected = _pools(observation, targets, cash_account_id)
+    return _withdraw(observation, selected, cash_account_id, amount, cause_id)
+
+
+def withdraw_by_symbol(
+    observation: Observation,
+    *,
+    targets: dict[str, int],
+    source_account_ids: tuple[str, ...],
+    cash_account_id: str,
+    amount: int,
+    cause_id: str,
+) -> list[Action]:
+    """Weight each symbol once across accounts; sell in account order, then scoped FIFO.
+
+    Unlike ``withdraw``'s independent account/asset targets, one symbol's value sums
+    all its selected pools. Source accounts are tried in the supplied order, not
+    global oldest-lot order. Individual lots keep their own price/quantity grids.
+    Core zero targets remain sellable; callers implement exclusions by omitting them.
+    """
+    if not source_account_ids or len(set(source_account_ids)) != len(source_account_ids):
+        raise ValueError("source accounts must be nonempty and distinct")
+    pools = {(pool.account_id, pool.asset_id): pool for pool in observation.holding_pools}
+    pool_targets = {
+        (account, symbol): weight
+        for symbol, weight in targets.items()
+        for account in source_account_ids
+        if (account, symbol) in pools
+    }
+    if set(targets) != {symbol for _, symbol in pool_targets}:
+        raise ValueError("each targeted symbol must have a declared pool in the selected source accounts")
+    selected = _pools(observation, pool_targets, cash_account_id)
+    grouped = [
+        (
+            next(pool for pool, _, _ in selected if pool.asset_id == symbol),
+            [lot for pool, lots, _ in selected if pool.asset_id == symbol for lot in lots],
+            weight,
+        )
+        for symbol, weight in targets.items()
+    ]
+    return _withdraw(observation, grouped, cash_account_id, amount, cause_id)
+
+
+def _withdraw(
+    observation: Observation,
+    selected: list[tuple[HoldingPool, list[PublicPosition], int]],
+    cash_account_id: str,
+    amount: int,
+    cause_id: str,
+) -> list[Action]:
     values = [sum(lot.value for lot in lots) for _, lots, _ in selected]
-    amounts = _allocate(values, list(targets.values()), amount, withdrawing=True)
+    amounts = _allocate(values, [weight for _, _, weight in selected], amount, withdrawing=True)
     actions, _ = _sales(
         observation,
         selected,

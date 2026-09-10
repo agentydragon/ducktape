@@ -133,6 +133,36 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(input_document
     assert lots["test-second"]["units_remaining"] == 10
 
 
+def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(
+    input_document: dict[str, Any],
+) -> None:
+    session = ActionSession(json.dumps(input_document), "test-owner", [0])
+    try:
+        batch = session.start()
+        assert not isinstance(batch, Finished)
+        actions = sleeves.withdraw_by_symbol(
+            batch[0].observation,
+            targets={"test-first": 1, "test-second": 1},
+            source_account_ids=("portfolio", "outside"),
+            cash_account_id="checking",
+            amount=2,
+            cause_id="grouped",
+        )
+        # FIRST is 5 quanta across scales 10 and 1; SECOND is 3 quanta. Withdraw the
+        # two-quanta overweight entirely from FIRST, using portfolio before outside.
+        batch = session.advance([DecisionActions(0, 0, actions)])
+        assert not isinstance(batch, Finished)
+        finished = session.advance([DecisionActions(0, 1, [])])
+        assert isinstance(finished, Finished)
+        result = json.loads(finished.rollouts_json)[0]
+        sales = result["trace"]["financial"]["dispositions"]
+        assert [(sale["lot_id"], sale["proceeds"]) for sale in sales] == [("test-older", 1), ("test-newer", 1)]
+        remaining = {lot["lot_id"]: lot["units_remaining"] for lot in result["summary"]["ending_book"]["lots"]}
+        assert remaining == {"test-newer": 0, "test-older": 0, "test-second": 10, "test-outside": 1}
+    finally:
+        session.close()
+
+
 @pytest.mark.parametrize("dust", [False, True])
 def test_zero_target_full_exit_reentry_and_reserved_cash(input_document: dict[str, Any], dust: bool) -> None:
     if dust:

@@ -256,3 +256,39 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "funding",
+    srcs = ["funding.py"],
+    deps = [
+        ":wire",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:cash_band",
+        "//finance/augur/policy:sleeves",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:scenario",
+    ],
+)
+
+py_test(
+    name = "funding_test",
+    srcs = ["funding_test.py"],
+    deps = [
+        ":conftest",
+        ":funding",
+        ":scenarios",
+        ":wire",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:backend",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:scenario",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
