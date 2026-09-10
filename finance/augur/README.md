@@ -14,6 +14,11 @@ composed in downstream user repos via the `Config` schema in
 
 See <SPEC.md> for current financial, policy, failure and reporting contracts.
 
+`sim/session.py` supplies the Python-controlled batch action loop. Stateful
+reduced-form TLH portfolios are Python components in `sim/tlh.py`; their private
+holdings and basis do not become household policy state. See <docs/tlh.md> for
+ownership, settlement and approximation boundaries.
+
 Runnable composition examples: <x/bounded_spending/README.md> for executable
 spending rules, and <x/bond_policies/README.md> for dated-bond policies on shared
 discount curves with tax-free household withdrawals. <x/allocation_glide/README.md>

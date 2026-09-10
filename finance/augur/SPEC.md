@@ -47,21 +47,23 @@ keyed batch of ordered action lists. The caller owns policy memory and the Pytho
 monthly loop. Scalar authoring adapters use that same interface; there is no
 separate native spending-amount or allocation-weight callback API.
 
-The current action session supports one decision-making household with scripted
-counterparties, public securities, cash, due claims and held dated bonds. It does
-not support configured housing, PE or harvesting controls. The existing app and
-remaining configured consumers still use their separate full-run driver; they
-do not provide an alternative executable policy interface.
+The action session supports one decision-making household with scripted
+counterparties, public securities, reduced-form TLH portfolios, cash, due claims
+and held dated bonds. It does not support household housing or PE actions.
+Configured scenario adapters use Python-controlled financial steps while retaining
+their scripted housing/PE events and funding conventions; they do not provide an
+alternative executable policy interface.
 
 For each active path, the common session:
 
-1. Applies scheduled cashflows and assembles due claims.
+1. Applies scheduled financial events and component market updates, and assembles
+   due claims. TLH advances before investor operations, including scheduled ones.
 2. Exposes current actor-scoped observations, once that month.
 3. Executes the submitted actions in caller order.
 4. Stops on rejection or remaining unpaid claims, otherwise closes the month
    and prepares the next decision.
 
-Observations include current owned accounts, public lots/basis, declared empty
+Observations include current owned accounts, public lots/basis, TLH statements, declared empty
 holding pools and their current prices, due claims, recorded tax facts, held
 dated-bond facts, and current/origin CPI when modeled. Missing CPI is explicit.
 They do not expose another actor's private books, future realized paths or a

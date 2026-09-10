@@ -522,10 +522,9 @@ the shared state through `use super::*`, and expose to the root only what it cal
 anything a module uses alone stays private to it, which the single 7.5k-line file could
 not express.
 
-The Rust half of the throughput benchmark lives in `benchmark/`. The
-feature-rich scenario it measures is not Rust's and lives in
-<../benchmark/scenario.py>; `benchmark/fixture.py` here only writes it out as the integer
-document, which the standalone binary needs on disk and the in-process bindings do not.
+The Python-controlled feature-rich benchmark lives in <../benchmark/README.md>.
+It measures the configured runner, including native financial steps and the
+Python-owned TLH model.
 
 ## Targets
 
@@ -533,13 +532,9 @@ document, which the standalone binary needs on disk and the in-process bindings 
 //finance/augur/rust:simulator_cli
 //finance/augur/rust:simulator_ext
 //finance/augur/rust:simulator_test
-//finance/augur/rust/benchmark:all
-//finance/augur/rust/benchmark:fixture_bin
-//finance/augur/rust/benchmark:driver_bin
+//finance/augur/benchmark:driver_bin
 ```
 
-`simulator_cli FIXTURE.json OUTPUT.json` retains full forensic traces. The Rust
-benchmark driver's default `--output-mode dense` retains monthly state and
-compatibility events; `--output-mode compact` selects the older terminal-summary
-throughput workload. See [benchmark/README.md](benchmark/README.md) for the
-measured baselines and their output-contract caveats.
+The benchmark requires an explicit population size and capture mode. Dense and
+compact exercise the same feature-rich financial workload; historical native-only
+timings are not comparable to the Python driver without matching measurement scope.
