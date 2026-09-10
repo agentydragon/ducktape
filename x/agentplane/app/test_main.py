@@ -9,7 +9,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from x.agentplane.app.main import Settings, SpaFiles
+from x.agentplane.app.main import Settings, SpaFiles, resolved_agent_instructions
 from x.agentplane.app.oidc import load_settings
 
 # gazelle:include_dep @pypi//httpx
@@ -75,6 +75,17 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     )
     # https, so the cookie takes the __Host- prefix that binds it to this exact origin.
     assert oidc.cookie_name.startswith("__Host-")
+
+
+def test_image_owned_agent_instructions_render_deployment_service_urls() -> None:
+    instructions = resolved_agent_instructions(
+        None,
+        egress_rules_url="http://egress.test.invalid/v1/rules",
+        actions_service_url="http://actions.test.invalid:8080",
+    )
+
+    assert "http://egress.test.invalid/v1/rules" in instructions
+    assert "http://actions.test.invalid:8080" in instructions
 
 
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:

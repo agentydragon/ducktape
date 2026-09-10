@@ -97,6 +97,7 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//jinja2",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
