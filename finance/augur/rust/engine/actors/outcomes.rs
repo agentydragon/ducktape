@@ -17,6 +17,14 @@ pub struct HoldingSeries {
     pub values: Vec<Money>,
 }
 
+/// Historical par/indexed carrying principal, not a liquid or market value.
+#[derive(Debug, Serialize)]
+pub struct BondSeries {
+    pub account: AccountRef,
+    pub bond_id: String,
+    pub values: Vec<Money>,
+}
+
 /// A resolved claim's reporting metadata, distinct from its occurrence handle.
 #[derive(Debug, Serialize)]
 pub struct PaymentTarget {
@@ -84,6 +92,7 @@ pub struct Summary {
     pub actor_id: String,
     pub cash: Vec<CashSeries>,
     pub public_holdings: Vec<HoldingSeries>,
+    pub bond_principal: Vec<BondSeries>,
     pub payments: Vec<Payment>,
     pub unpaid_claims: Vec<UnpaidClaim>,
     pub tax_accruals: Vec<TaxAccrual>,
@@ -101,12 +110,13 @@ pub struct Summary {
 pub(super) struct Capture {
     cash: Vec<CashSeries>,
     holdings: BTreeMap<(AccountRef, String), Vec<Money>>,
+    bond_principal: Vec<(usize, BondSeries)>,
     pub payments: Vec<Payment>,
     pub unpaid_claims: Vec<UnpaidClaim>,
 }
 
 impl Capture {
-    pub fn new(holdings: &AgentHoldings) -> Self {
+    pub fn new(input: &ExecutionInput, holdings: &AgentHoldings) -> Self {
         Self {
             cash: holdings
                 .accounts()
@@ -116,6 +126,23 @@ impl Capture {
                 })
                 .collect(),
             holdings: BTreeMap::new(),
+            bond_principal: input
+                .scenario
+                .initial_bonds
+                .iter()
+                .enumerate()
+                .filter(|(_, bond)| bond.agent_id == holdings.agent_id())
+                .map(|(index, bond)| {
+                    (
+                        index,
+                        BondSeries {
+                            account: AccountRef::new(&bond.agent_id, &bond.account_id),
+                            bond_id: bond.bond_id.clone(),
+                            values: Vec::new(),
+                        },
+                    )
+                })
+                .collect(),
             payments: Vec::new(),
             unpaid_claims: Vec::new(),
         }
@@ -129,6 +156,18 @@ impl Capture {
     ) -> Result<(), SimulationError> {
         for cash in &mut self.cash {
             cash.values.push(state.ledger.balance(&cash.account)?);
+        }
+        for (index, series) in &mut self.bond_principal {
+            series.values.push(
+                bond_held_principal(
+                    input,
+                    state.rollout_id,
+                    &input.scenario.initial_bonds[*index],
+                    state.month,
+                    state.failed_month.unwrap_or(state.month),
+                )?
+                .unwrap_or(Money(0)),
+            );
         }
         for lot in state
             .lots
@@ -189,6 +228,11 @@ impl Capture {
         Ok(Summary {
             actor_id: actor.into(),
             cash: self.cash,
+            bond_principal: self
+                .bond_principal
+                .into_iter()
+                .map(|(_, series)| series)
+                .collect(),
             public_holdings: self
                 .holdings
                 .into_iter()

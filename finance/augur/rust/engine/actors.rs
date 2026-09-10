@@ -85,9 +85,42 @@ pub struct Observation<'a> {
     claims: &'a claims::Claims,
 }
 
+/// Already-held, unredeemed contract terms and current par/indexed principal.
+/// This is not a public-security quote or an offer to liquidate the bond.
+pub struct HeldBond<'a> {
+    pub terms: &'a BondSpec,
+    pub principal: Money,
+}
+
 impl Observation<'_> {
     pub fn claims(&self) -> impl Iterator<Item = observations::Claim<'_>> {
         observations::due_claims(self.claims, self.books.agent_id())
+    }
+
+    pub fn held_bonds(&self) -> impl Iterator<Item = Result<HeldBond<'_>, SimulationError>> {
+        self.books
+            .input
+            .scenario
+            .initial_bonds
+            .iter()
+            .filter(|bond| bond.agent_id == self.books.agent_id())
+            .filter_map(|bond| {
+                // Scheduled facts for this event already ran, including redemption.
+                match bond_held_principal(
+                    self.books.input,
+                    self.books.rollout,
+                    bond,
+                    self.books.month + 1,
+                    self.books.month,
+                ) {
+                    Ok(Some(principal)) => Some(Ok(HeldBond {
+                        terms: bond,
+                        principal,
+                    })),
+                    Ok(None) => None,
+                    Err(error) => Some(Err(error)),
+                }
+            })
     }
 }
 
@@ -151,7 +184,7 @@ impl Session {
             .map(|&rollout_id| {
                 let mut state = RolloutState::new(&input, rollout_id, capture_mode, None)?;
                 state.recorder.capture_taxes = true;
-                let mut capture = outcomes::Capture::new(&holdings);
+                let mut capture = outcomes::Capture::new(&input, &holdings);
                 capture.snapshot(&input, &holdings, &state)?;
                 Ok(Path {
                     state,

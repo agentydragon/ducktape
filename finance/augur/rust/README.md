@@ -164,7 +164,7 @@ The scoped action control instead follows the ordered execution described below.
 `simulator.ActionSession(input_json, actor, rollout_ids, capture="forensic")` retains the input and
 financial books in process. Python calls `start()`, then submits one batch to
 `advance()` until it receives `Finished`. `Decision` rows carry original rollout
-IDs and copied actor-scoped cash accounts, public positions, declared pools/quotes,
+IDs and copied actor-scoped cash accounts, public positions, held dated bonds, declared pools/quotes,
 current claims, current/origin CPI and previous-month receipts. CPI is explicitly
 absent when no index was supplied; it is not assumed flat. The caller keeps policy memory and
 owns the outer loop; `engine::actors::Session` owns financial stepping, not callbacks.
@@ -186,7 +186,7 @@ actor execution has no implicit pre/post allocation, harvesting, sale or payment
 
 `capture="summary"` omits detailed trace retention; `"dense"` adds financial event
 tables and monthly books, and `"forensic"` adds the journal. Every mode returns the
-same summary: account cash and public-pool gross marks over observed snapshots,
+same summary: account cash, public-pool gross marks and dated-bond principal over observed snapshots,
 keyed payment outcomes, canonical tax records, unpaid claims, the exact ending
 book and the last month's attempted action prefix. There is no post-stop padding.
 Snapshot 0 is opening; snapshot `m + 1` is after event month `m`. The stopped final
@@ -194,6 +194,22 @@ book uses `ending_mark_month`, not future prices. Summary payment amounts follow
 `payments::Receipt::amount_paid()`; an unfunded request is never partly paid.
 Tax records remain selected canonical events, not preaggregated universal metrics.
 Consumers choose their own account/component reductions and tax treatment.
+
+`Observation.held_bonds` contains only owned, unredeemed dated bonds. Each frozen
+`HeldBond` has its ID/account, issuer jurisdiction, face/purchase amounts, coupon
+rate in parts per billion, coupon period, purchase/maturity months, indexation flag
+and current principal. Known contractual dates are observable; future CPI or future
+indexed payments are not. The observation follows scheduled processing, so a
+redemption due this event has already become cash and that bond is absent.
+Principal is a par/indexed carrying amount, not a tradable quote or liquid balance;
+`public_holdings` still excludes these bonds. No bond trade actions are available.
+
+`summary.bond_principal` carries `{account, bond_id, values}` rows scoped to the
+actor. It uses the same canonical principal calculation as full books, retains
+zero after redemption, and ends at the last observed snapshot without padding.
+Summary mode stores these numeric series, not monthly bond books or cashflow traces.
+Par-only held-to-maturity and existing issuer-exemption mechanics are preserved;
+this interface does not certify full TIPS or off-par tax coverage.
 
 Capture does not change policy observations: only the previous month's receipts
 reach the next decision, even when all historical receipts are retained for replay.

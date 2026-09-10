@@ -59,6 +59,37 @@ class PublicPosition:
     @property
     def value(self) -> int: ...
 
+class HeldBond:
+    """Owned unredeemed contract; principal is par/indexed carrying value, not sale proceeds.
+
+    Money is currency quanta; the annual coupon rate uses parts per billion.
+    Coupons/redemption due this month already reached observed cash. Terms may name
+    future dates, but no future CPI, coupon amounts or market paths are exposed.
+    """
+
+    @property
+    def bond_id(self) -> str: ...
+    @property
+    def account_id(self) -> str: ...
+    @property
+    def issuer_jurisdiction_id(self) -> str | None: ...
+    @property
+    def face_value(self) -> int: ...
+    @property
+    def purchase_price(self) -> int: ...
+    @property
+    def annual_coupon_rate_ppb(self) -> int: ...
+    @property
+    def coupon_period_months(self) -> int: ...
+    @property
+    def purchase_month(self) -> int: ...
+    @property
+    def maturity_month(self) -> int: ...
+    @property
+    def inflation_indexed(self) -> bool: ...
+    @property
+    def principal(self) -> int: ...
+
 class Claim:
     """An opaque occurrence handle with copied current claim facts; not a future bill."""
 
@@ -103,6 +134,8 @@ class Observation:
     @property
     def public_positions(self) -> list[PublicPosition]: ...
     @property
+    def held_bonds(self) -> list[HeldBond]: ...
+    @property
     def claims(self) -> list[Claim]: ...
     @property
     def previous_receipts_json(self) -> str: ...
@@ -122,11 +155,7 @@ class Action:
 
     @staticmethod
     def sell(
-        cause_id: str,
-        agent_id: str,
-        proceeds_account_id: str,
-        asset_id: str,
-        lots: list[tuple[str, str, int]],
+        cause_id: str, agent_id: str, proceeds_account_id: str, asset_id: str, lots: list[tuple[str, str, int]]
     ) -> Action:
         """Lots are (holding account ID, exact lot ID, quantity counts), in sale order."""
 

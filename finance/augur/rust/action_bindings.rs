@@ -35,6 +35,22 @@ struct PublicPosition {
 }
 
 #[derive(Clone)]
+#[pyclass(frozen, get_all, module = "finance.augur.rust.simulator")]
+struct HeldBond {
+    bond_id: String,
+    account_id: String,
+    issuer_jurisdiction_id: Option<String>,
+    face_value: i64,
+    purchase_price: i64,
+    annual_coupon_rate_ppb: i64,
+    coupon_period_months: u32,
+    purchase_month: i32,
+    maturity_month: i32,
+    inflation_indexed: bool,
+    principal: i64,
+}
+
+#[derive(Clone)]
 #[pyclass(frozen, module = "finance.augur.rust.simulator")]
 struct Claim {
     id: claims::ClaimId,
@@ -65,6 +81,7 @@ struct Observation {
     accounts: Vec<(String, i64)>,
     holding_pools: Vec<HoldingPool>,
     public_positions: Vec<PublicPosition>,
+    held_bonds: Vec<HeldBond>,
     claims: Vec<Claim>,
     previous_receipts_json: String,
 }
@@ -374,6 +391,26 @@ impl ActionSession {
                                 })
                             })
                             .collect::<PyResult<_>>()?,
+                        held_bonds: observation
+                            .held_bonds()
+                            .map(|position| {
+                                let position = position.map_err(to_py_err)?;
+                                let terms = position.terms;
+                                Ok(HeldBond {
+                                    bond_id: terms.bond_id.clone(),
+                                    account_id: terms.account_id.clone(),
+                                    issuer_jurisdiction_id: terms.issuer_jurisdiction_id.clone(),
+                                    face_value: terms.face_value.0,
+                                    purchase_price: terms.purchase_price.0,
+                                    annual_coupon_rate_ppb: terms.annual_coupon_rate_ppb,
+                                    coupon_period_months: terms.coupon_period_months,
+                                    purchase_month: terms.purchase_month_index,
+                                    maturity_month: terms.maturity_month_index,
+                                    inflation_indexed: terms.inflation_indexed,
+                                    principal: position.principal.0,
+                                })
+                            })
+                            .collect::<PyResult<_>>()?,
                         claims: observation
                             .claims()
                             .map(|claim| Claim {
@@ -414,6 +451,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Claim>()?;
     module.add_class::<HoldingPool>()?;
     module.add_class::<PublicPosition>()?;
+    module.add_class::<HeldBond>()?;
     module.add_class::<Observation>()?;
     module.add_class::<Decision>()?;
     module.add_class::<DecisionActions>()?;

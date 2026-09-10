@@ -354,6 +354,13 @@ uses the failure month's mark, not an unobserved future price.
 
 ## Outputs
 
+Household observations include owned, unredeemed dated-bond terms and current
+par/indexed principal, separately from liquid public holdings. Coupons and redemption
+cash already processed this month are available for the one policy decision; future
+indexed cashflows are not observable. Compact results retain scoped principal histories
+without requiring detailed traces. These held-to-maturity positions are not tradable
+market quotes, and their presence does not imply off-par or full TIPS tax coverage.
+
 The product API exposes two response shapes against a `ScenarioKey`:
 
 - `MetricFanResponse` — one user-selected metric over the horizon as a

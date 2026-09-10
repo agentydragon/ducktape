@@ -4,6 +4,24 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+py_test(
+    name = "held_bond_test",
+    srcs = ["held_bond_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/testing:bonds",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 rust_library(
     name = "simulator",
     srcs = [
