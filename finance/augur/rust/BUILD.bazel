@@ -40,6 +40,8 @@ rust_library(
         "engine/components.rs",
         "engine/components_test.rs",
         "engine/errors.rs",
+        "engine/mortgages.rs",
+        "engine/mortgages_test.rs",
         "engine/obligations.rs",
         "engine/observations.rs",
         "engine/payments.rs",

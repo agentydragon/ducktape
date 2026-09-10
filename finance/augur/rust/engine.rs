@@ -9,7 +9,7 @@ use crate::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondCoupon, BondSpec, BondState,
         CapitalGainState, CapitalImprovementOutcome, DistributionOutcome, ExecutionInput,
         INPUT_SCHEMA_VERSION, IncomeState, InitialLotSpec, LotDisposition, MonthOutput,
-        MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState, ObligationOutcome,
+        MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageSnapshot, ObligationOutcome,
         PrimaryResidenceOutcome, PrivateEquityOpportunityOutcome, PrivateEquityProtocolOutcome,
         PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
         PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput, RolloutSummary,
@@ -41,6 +41,9 @@ mod cashflows;
 pub mod claims;
 pub mod components;
 mod errors;
+pub mod mortgages;
+#[cfg(test)]
+mod mortgages_test;
 mod obligations;
 pub mod observations;
 pub mod payments;
@@ -78,7 +81,6 @@ use validation::*;
 const EXTERNAL_AGENT: &str = "__external__";
 const OPENING_EQUITY: &str = "equity:opening";
 const MAX_EXACT_F64_INTEGER: i64 = 1_i64 << 53;
-const CONTRACT_SCALE: i128 = 1_000_000_000_000_000_000;
 const SECTION_121_LOOKBACK_MONTHS: usize = 60;
 const SECTION_121_MIN_QUALIFYING_MONTHS: usize = 24;
 const PE_ASSET_PREFIX: &str = "private_equity:";
@@ -89,7 +91,7 @@ struct RolloutComputation {
     ending_balances: Vec<AccountBalance>,
     ending_bonds: Vec<BondState>,
     ending_properties: Vec<PropertyState>,
-    ending_mortgages: Vec<MortgageState>,
+    ending_mortgages: Vec<MortgageSnapshot>,
     ending_tax_liabilities: Vec<TaxLiabilityState>,
     ending_tlh_portfolios: Vec<TlhPortfolioObservation>,
     recorder: Recorder,
@@ -293,7 +295,6 @@ struct RolloutState {
     ledger: Ledger,
     lots: Vec<LotState>,
     properties: Vec<PropertyState>,
-    mortgages: Vec<MortgageState>,
     tax: TaxState,
     tax_liabilities: Vec<TaxLiabilityState>,
     tlh_portfolios: Vec<TlhPortfolioObservation>,
@@ -485,7 +486,6 @@ impl RolloutState {
             });
         }
         let properties = Vec::<PropertyState>::new();
-        let mortgages = Vec::<MortgageState>::new();
         let tax_liabilities = Vec::<TaxLiabilityState>::new();
         let primary_residence_by_agent: BTreeMap<String, Option<String>> = fixture
             .scenario
@@ -508,7 +508,7 @@ impl RolloutState {
                 &ledger,
                 &lots,
                 &properties,
-                &mortgages,
+                &[],
                 &tax_liabilities,
                 &tax,
                 &tlh_portfolios,
@@ -525,7 +525,7 @@ impl RolloutState {
                 &lots,
                 &tlh_portfolios,
                 &properties,
-                &mortgages,
+                &[],
                 Money(0),
                 false,
             )?);
@@ -536,7 +536,6 @@ impl RolloutState {
             ledger,
             lots,
             properties,
-            mortgages,
             tax,
             tax_liabilities,
             tlh_portfolios,
@@ -560,7 +559,7 @@ impl RolloutState {
         while !self.is_finished(fixture) {
             self = self.advance_month(fixture, product)?;
         }
-        self.finish(fixture)
+        self.finish(fixture, &[])
     }
 
     /// Execute one configured month. Terminal states are unchanged.
@@ -584,8 +583,6 @@ impl RolloutState {
                 ledger: &mut self.ledger,
                 recorder: &mut self.recorder,
                 tax: &mut self.tax,
-                properties: &self.properties,
-                mortgages: &mut self.mortgages,
                 tax_liabilities: &mut self.tax_liabilities,
                 month,
             },
@@ -606,7 +603,7 @@ impl RolloutState {
                 month,
             )?;
         }
-        self.close_month(fixture, product, settlement.product_shortfall)?;
+        self.close_month(fixture, product, settlement.product_shortfall, &[], &[])?;
         Ok(self)
     }
 
@@ -617,7 +614,7 @@ impl RolloutState {
         &mut self,
         fixture: &ExecutionInput,
     ) -> Result<claims::Claims, SimulationError> {
-        self.prepare_month_events(fixture)?;
+        self.prepare_month_events(fixture, &[], &[])?;
         let rollout_id = self.rollout_id;
         let month = self.month;
         for sale in fixture
@@ -641,12 +638,18 @@ impl RolloutState {
             rollout_id,
             month,
             &self.properties,
-            &self.mortgages,
+            &[],
             &self.tax_liabilities,
         )
     }
 
-    fn prepare_month_events(&mut self, fixture: &ExecutionInput) -> Result<(), SimulationError> {
+    fn prepare_month_events(
+        &mut self,
+        fixture: &ExecutionInput,
+        originations: &[mortgages::Origination],
+        payoffs: &[mortgages::Payoff],
+    ) -> Result<mortgages::OpeningEvents, SimulationError> {
+        let mut mortgages = mortgages::Opening::new(fixture, self, originations, payoffs)?;
         let rollout_id = self.rollout_id;
         let month = self.month;
         execute_primary_residence_events(
@@ -662,7 +665,7 @@ impl RolloutState {
             &mut self.recorder,
             &mut self.tax,
             &mut self.properties,
-            &mut self.mortgages,
+            &mut mortgages,
             &mut self.primary_residence_by_agent,
             month,
         )?;
@@ -688,7 +691,7 @@ impl RolloutState {
             &mut self.ledger,
             &mut self.recorder,
             &mut self.properties,
-            &mut self.mortgages,
+            &mut mortgages,
             month,
         )?;
         execute_cashflows(
@@ -700,7 +703,7 @@ impl RolloutState {
             &self.properties,
             month,
         )?;
-        Ok(())
+        Ok(mortgages.events)
     }
 
     /// Accrue and capture the completed month. Failed books use the observed stop marks
@@ -710,6 +713,8 @@ impl RolloutState {
         fixture: &ExecutionInput,
         product: Option<&ProductInputs>,
         product_shortfall: Money,
+        mortgage_interest: &[mortgages::Interest],
+        mortgage_snapshots: &[MortgageSnapshot],
     ) -> Result<(), SimulationError> {
         let rollout_id = self.rollout_id;
         let month = self.month;
@@ -728,10 +733,10 @@ impl RolloutState {
                 &mut self.recorder,
                 &mut self.tax,
                 &mut self.tax_liabilities,
-                &self.mortgages,
+                mortgage_interest,
                 month,
             )?;
-            reset_property_tax_year_state(&mut self.properties, &mut self.mortgages);
+            reset_property_tax_year_state(&mut self.properties);
         }
         if self.recorder.capture_mode.captures_output() {
             self.recorder.record_month(month_output(
@@ -741,7 +746,7 @@ impl RolloutState {
                 &self.ledger,
                 &self.lots,
                 &self.properties,
-                &self.mortgages,
+                mortgage_snapshots,
                 &self.tax_liabilities,
                 &self.tax,
                 &self.tlh_portfolios,
@@ -758,7 +763,7 @@ impl RolloutState {
                 &self.lots,
                 &self.tlh_portfolios,
                 &self.properties,
-                &self.mortgages,
+                mortgage_snapshots,
                 product_shortfall,
                 self.failed_month.is_some(),
             )?);
@@ -767,7 +772,11 @@ impl RolloutState {
         Ok(())
     }
 
-    fn finish(self, fixture: &ExecutionInput) -> Result<RolloutComputation, SimulationError> {
+    fn finish(
+        self,
+        fixture: &ExecutionInput,
+        mortgages: &[MortgageSnapshot],
+    ) -> Result<RolloutComputation, SimulationError> {
         assert!(
             self.is_finished(fixture),
             "only terminal rollouts can be finalized"
@@ -784,7 +793,7 @@ impl RolloutState {
                 self.failed_month.unwrap_or(self.month),
             )?,
             ending_properties: self.properties,
-            ending_mortgages: self.mortgages,
+            ending_mortgages: mortgages.to_vec(),
             ending_tax_liabilities: self.tax_liabilities,
             ending_tlh_portfolios: self.tlh_portfolios,
             recorder: self.recorder,
@@ -808,7 +817,7 @@ fn product_snapshot(
     lots: &[LotState],
     tlh_portfolios: &[TlhPortfolioObservation],
     properties: &[PropertyState],
-    mortgages: &[MortgageState],
+    mortgages: &[MortgageSnapshot],
     shortfall: Money,
     failed: bool,
 ) -> Result<BaseMetrics, SimulationError> {

@@ -125,7 +125,7 @@ pub(super) fn record_property_tax_paid(
 
 fn mortgage_interest_deduction_for(
     fixture: &ExecutionInput,
-    mortgages: &[MortgageState],
+    mortgages: &[mortgages::Interest],
     agent_id: &str,
     jurisdiction_id: &str,
 ) -> Result<Money, SimulationError> {
@@ -142,17 +142,8 @@ fn mortgage_interest_deduction_for(
         else {
             continue;
         };
-        let owner_interest = mortgage
-            .interest_paid_ytd
-            .checked_sub(mortgage.rental_interest_paid_ytd)?;
-        let origination_principal = fixture
-            .scenario
-            .scheduled_property_purchases
-            .iter()
-            .filter_map(|purchase| purchase.mortgage.as_ref())
-            .find(|spec| spec.liability_id == policy.liability_id)
-            .expect("validated MID policy has a mortgage")
-            .principal;
+        let owner_interest = mortgage.owner_interest_paid_ytd;
+        let origination_principal = mortgage.origination_principal;
         let factor_ppb = if policy.debt_class == "home_equity" {
             0
         } else {
@@ -199,7 +190,7 @@ pub(super) fn accrue_year_end_taxes(
     recorder: &mut Recorder,
     tax: &mut TaxState,
     tax_liabilities: &mut Vec<TaxLiabilityState>,
-    mortgages: &[MortgageState],
+    mortgages: &[mortgages::Interest],
     month: u32,
 ) -> Result<(), SimulationError> {
     for profile in &fixture.scenario.tax_profiles {

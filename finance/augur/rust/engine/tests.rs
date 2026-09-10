@@ -103,7 +103,6 @@ fn inspect_opening_books(
                 books: observations::Books {
                     ledger: &state.ledger,
                     lots: &state.lots,
-                    mortgages: &state.mortgages,
                     tax: &state.tax,
                     tax_liabilities: &state.tax_liabilities,
                     tlh_portfolios: &state.tlh_portfolios,
@@ -114,7 +113,7 @@ fn inspect_opening_books(
             })?;
             state = state.advance_month(input, None)?;
         }
-        rollouts.push(state.finish(input)?.into_output());
+        rollouts.push(state.finish(input, &[])?.into_output());
     }
     Ok(SimulationOutput {
         schema_version: INPUT_SCHEMA_VERSION,
@@ -483,7 +482,8 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
         (first, 20_000_000, 2_000, 30_000),
     ] {
         for month in 0..13 {
-            world.prepare_month(month).unwrap();
+            world.prepare_month(month, &[], &[]).unwrap();
+            world.assemble_claims(&[]).unwrap();
             if month == 0 {
                 for (index, (asset, lot)) in
                     [("stock", "timing-stock"), ("second", "test-second-lot")]
@@ -514,9 +514,11 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
             }
             let settled = world.settle_claims().unwrap();
             assert!(!settled.failed);
-            world.close_month(false, settled.product_shortfall).unwrap();
+            world
+                .close_month(false, settled.product_shortfall, &[], &[])
+                .unwrap();
         }
-        let output = world.finish().unwrap().financial.unwrap();
+        let output = world.finish(&[]).unwrap().financial.unwrap();
         assert_eq!(output.failed_month, None);
         assert_eq!(output.tax_payments[0].month, 12);
         assert_eq!(output.tax_payments[0].amount_paid, Money(tax_paid));
@@ -591,439 +593,13 @@ fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
             }
             // Neither a completed nor a failed path processes another month's events.
             state = state.advance_month(&input, Some(&product)).unwrap();
-            let stepped = state.finish(&input).unwrap();
+            let stepped = state.finish(&input, &[]).unwrap();
             assert_eq!(stepped.product_metrics, full.product_metrics);
             match capture {
                 CaptureMode::Summary => assert_eq!(stepped.into_summary(), full.into_summary()),
                 _ => assert_eq!(stepped.into_output(), full.into_output()),
             }
         }
-    }
-}
-
-pub(super) fn stopped_book_fixture(
-    horizon: u32,
-    future_multiplier: i64,
-) -> (ExecutionInput, CashRoute) {
-    let (mut input, mut component) = policy_timing_fixture(horizon);
-    input.scenario.accounts[0].opening_balance = Money(2_100);
-    component.from = AccountRef::new("alice", "budget");
-    input.scenario.accounts.push(AccountSpec {
-        account: component.from.clone(),
-        opening_balance: Money(500),
-    });
-    input.scenario.scheduled_sales.push(ScheduledSaleSpec {
-        month: 0,
-        cause_id: "gain-for-tax".into(),
-        agent_id: "alice".into(),
-        account_id: "checking".into(),
-        asset_id: "stock".into(),
-        units: Quantity(1_000_000),
-        proceeds_account_id: "checking".into(),
-    });
-    input.scenario.locations.push(LocationSpec {
-        location_id: "test-place".into(),
-        display_name: "Test place".into(),
-        jurisdiction_ids: vec![],
-        annual_property_tax_rate_ppb: 0,
-        annual_special_assessment: Money(0),
-    });
-    input
-        .scenario
-        .scheduled_property_purchases
-        .push(ScheduledPropertyPurchaseSpec {
-            month: 0,
-            cause_id: "buy-test-home".into(),
-            property_id: "test-home".into(),
-            location_id: "test-place".into(),
-            buyer_agent_id: "alice".into(),
-            buyer_account_id: "checking".into(),
-            seller_agent_id: "world".into(),
-            seller_account_id: "checking".into(),
-            purchase_price: Money(10_000),
-            down_payment: Money(1_000),
-            buyer_closing_cost: Money(0),
-            rented_fraction_ppb: 0,
-            land_value_fraction_ppb: 200_000_000,
-            mortgage: Some(MortgageFinancingSpec {
-                liability_id: "test-loan".into(),
-                lender_agent_id: "world".into(),
-                lender_account_id: "checking".into(),
-                principal: Money(9_000),
-                annual_interest_rate_ppb: 0,
-                term_months: 90,
-            }),
-        });
-    input.scenario.holding_pools.push(holding_pool(
-        "alice",
-        "checking",
-        "private_equity:test-issuer",
-        1_000_000,
-    ));
-    input.scenario.initial_lots.push(InitialLotSpec {
-        lot_id: "private-test-lot".into(),
-        agent_id: "alice".into(),
-        account_id: "checking".into(),
-        asset_id: "private_equity:test-issuer".into(),
-        purchase_month: -24,
-        quantity_scale: 1_000_000,
-        units: Quantity(1_000_000),
-        basis: Money(50),
-    });
-    input.scenario.initial_bonds.push(BondSpec {
-        bond_id: "test-indexed-bond".into(),
-        agent_id: "alice".into(),
-        account_id: "checking".into(),
-        issuer_jurisdiction_id: None,
-        face_value: Money(1_000),
-        purchase_price: Money(1_000),
-        coupon: BondCoupon::Indexed { annual_rate_ppb: 0 },
-        coupon_period_months: 6,
-        purchase_month_index: -5,
-        maturity_month_index: 13,
-    });
-    input
-        .scenario
-        .income_sources
-        .push(IncomeSource::interest(None));
-    input.scenario.tax_profiles.push(TaxProfileSpec {
-        agent_id: "alice".into(),
-        tax_authority_agent_id: "world".into(),
-        payment_account_id: "checking".into(),
-        tax_authority_account_id: "checking".into(),
-        prior_year_tax: Money(0),
-        section_121_exclusion: Money(0),
-        jurisdictions: vec![TaxRules {
-            jurisdiction_id: "test-stop-tax".into(),
-            exempt_interest_from_levels: vec![],
-            exempts_own_issue: false,
-            ordinary_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 200_000_000,
-            }],
-            long_term_capital_gain_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 100_000_000,
-            }],
-            standard_deduction: Money(0),
-            max_capital_loss_ordinary_offset: Money(0),
-            section_1250_rate_ppb: 0,
-        }],
-    });
-    input.scenario.obligations.push(ObligationSpec {
-        month: 12,
-        obligation_id: "unfunded-extra".into(),
-        obligation_type: "cash_spend".into(),
-        from: AccountRef::new("alice", "checking"),
-        to: component.to.clone(),
-        amount_due: Money(950).into(),
-        property_id: None,
-        deduction_category: None,
-        deductible_fraction_ppb: WIRE_RATE_SCALE,
-    });
-    for (series_id, value) in [
-        ("home_value:test-place", 10_000),
-        ("private_equity_mark:test-issuer", 100),
-    ] {
-        input.series.push(SeriesSpec {
-            series_id: series_id.into(),
-            snapshots: horizon + 1,
-            values: vec![value; horizon as usize + 1],
-        });
-    }
-    for series in &mut input.series {
-        for value in &mut series.values[13..] {
-            *value *= future_multiplier;
-        }
-    }
-    for (channel, value) in [
-        ("regime", 1),
-        ("event_kind", 0),
-        ("sale_opportunity", 0),
-        ("sale_capacity", 0),
-        ("eligible", 0),
-        ("forced_sale", 0),
-        ("liquidity_blocked", 0),
-        ("forced_recovery", 0),
-        ("company_valuation", 0),
-    ] {
-        input.series.push(SeriesSpec {
-            series_id: private_equity_series_id(channel, "test-issuer"),
-            snapshots: horizon + 1,
-            values: vec![value; horizon as usize + 1],
-        });
-    }
-    (input, component)
-}
-
-#[test]
-fn stopped_books_preserve_positions_debt_tax_and_other_group_consumption() {
-    // Synthetic integer-money control: sell 1,000 with 500 gain, accrue 50 tax;
-    // pay 1,000 down and eleven 100 principal payments. At m12, cash 1,000 cannot
-    // fund 950 + mortgage 100 + tax 50, while the separate budget can pay 300.
-    for horizon in [13, 15] {
-        let (mut input, component) = stopped_book_fixture(horizon, 2);
-        input.scenario.obligations.push(ObligationSpec {
-            month: 12,
-            obligation_id: component.cause_id.clone(),
-            obligation_type: "cash_spend".into(),
-            from: component.from.clone(),
-            to: component.to.clone(),
-            amount_due: Money(300).into(),
-            property_id: None,
-            deduction_category: None,
-            deductible_fraction_ppb: WIRE_RATE_SCALE,
-        });
-        let forensic = inspect_opening_books(&input, "alice", |books| {
-            assert!(books.month() <= 12);
-            // Private lots, individual bonds and housing are not public securities.
-            assert_eq!(
-                books.public_value()?,
-                Money(if books.month() == 0 { 100_000 } else { 99_000 })
-            );
-            Ok(())
-        })
-        .unwrap();
-        let metrics = simulate_product_metrics(&input, "alice").unwrap();
-        let (mut different_future, _) = stopped_book_fixture(horizon, 9);
-        different_future.scenario.obligations.push(ObligationSpec {
-            month: 12,
-            obligation_id: component.cause_id.clone(),
-            obligation_type: "cash_spend".into(),
-            from: component.from.clone(),
-            to: component.to.clone(),
-            amount_due: Money(300).into(),
-            property_id: None,
-            deduction_category: None,
-            deductible_fraction_ppb: WIRE_RATE_SCALE,
-        });
-        assert_eq!(forensic, simulate(&different_future).unwrap());
-        let rollout = &forensic.rollouts[0];
-        assert_eq!(rollout.failed_month, Some(12));
-        assert_eq!(rollout.months.len(), 14);
-        let stopped = rollout.months.last().unwrap();
-        assert_eq!(stopped.month, 13);
-        let cash = |account: &str| {
-            stopped
-                .balances
-                .iter()
-                .find(|row| row.account == AccountRef::new("alice", account))
-                .unwrap()
-                .balance
-        };
-        assert_eq!(cash("checking"), Money(1_000));
-        assert_eq!(cash("budget"), Money(200));
-        assert_eq!(stopped.lots[0].units_remaining, Quantity(99_000_000));
-        assert_eq!(stopped.lots[0].basis_remaining, Money(49_500));
-        assert_eq!(stopped.properties[0].adjusted_basis, Money(10_000));
-        assert_eq!(stopped.mortgages[0].principal, Money(7_900));
-        assert_eq!(stopped.tax_liabilities[0].amount_owed, Money(50));
-        assert_eq!(stopped.bonds[0].principal, Money(1_000));
-        assert!(stopped.bonds[0].active); // Redemption at m13 has not happened.
-        let consumption = rollout
-            .obligations
-            .iter()
-            .find(|receipt| receipt.cause_id == format!("{}_m12", component.cause_id))
-            .unwrap();
-        assert_eq!(consumption.amount_due, Money(300));
-        assert_eq!(consumption.amount_paid, Money(300));
-        let metrics = &metrics.base_series;
-        for (name, expected) in [
-            ("cash_quanta", 1_200),
-            ("holding_value_quanta", 99_000),
-            ("private_equity_value_quanta", 100),
-            ("property_value_quanta", 10_000),
-            ("mortgage_balance_quanta", 7_900),
-            ("bond_value_quanta", 1_000),
-            ("shortfall_quanta", 1_100),
-        ] {
-            let slot = crate::product::BASE_METRIC_NAMES
-                .iter()
-                .position(|item| *item == name)
-                .unwrap();
-            assert_eq!(metrics[slot][13], expected, "{name}");
-        }
-        assert!(rollout.journal.iter().all(|entry| entry.month <= 12));
-        assert!(
-            rollout
-                .obligations
-                .iter()
-                .all(|receipt| receipt.month <= 12)
-        );
-        assert_eq!(
-            stopped
-                .balances
-                .iter()
-                .map(|row| i128::from(row.balance.0))
-                .sum::<i128>(),
-            0
-        );
-
-        let endings = simulate_summaries(&input).unwrap();
-        let ending = &endings.rollouts[0];
-        assert_eq!(ending.failed_month, rollout.failed_month);
-        assert_eq!(ending.ending_balances, stopped.balances);
-        assert_eq!(ending.ending_properties, stopped.properties);
-        assert_eq!(ending.ending_mortgages, stopped.mortgages);
-        assert_eq!(ending.ending_bonds, stopped.bonds);
-        assert_eq!(ending.ending_tax_liabilities, stopped.tax_liabilities);
-    }
-}
-
-#[test]
-fn actor_books_expose_only_originated_contracts_and_recorded_tax() {
-    for future_multiplier in [2, 9] {
-        let (mut input, component) = stopped_book_fixture(15, future_multiplier);
-        input.scenario.accounts.push(AccountSpec {
-            account: AccountRef::new("bob", "checking"),
-            opening_balance: Money(50_000),
-        });
-        let mut other_taxpayer = input.scenario.tax_profiles[0].clone();
-        other_taxpayer.agent_id = "bob".into();
-        input.scenario.tax_profiles.push(other_taxpayer);
-        let mut other_purchase = input.scenario.scheduled_property_purchases[0].clone();
-        other_purchase.cause_id = "test-other-purchase".into();
-        other_purchase.property_id = "test-other-home".into();
-        other_purchase.buyer_agent_id = "bob".into();
-        other_purchase.mortgage.as_mut().unwrap().liability_id = "test-other-loan".into();
-        input
-            .scenario
-            .scheduled_property_purchases
-            .push(other_purchase);
-        input
-            .scenario
-            .scheduled_transfers
-            .push(ScheduledTransferSpec {
-                month: 0,
-                cause_id: "test-other-taxpayer-income".into(),
-                from: component.to.clone(),
-                to: AccountRef::new("bob", "checking"),
-                amount: Money(1_000).into(),
-                income_category: Some(IncomeSource::Ordinary),
-                deduction_category: None,
-            });
-        input.scenario.obligations.push(ObligationSpec {
-            month: 12,
-            obligation_id: component.cause_id.clone(),
-            obligation_type: "cash_spend".into(),
-            from: component.from.clone(),
-            to: component.to.clone(),
-            amount_due: Money(300).into(),
-            property_id: None,
-            deduction_category: None,
-            deductible_fraction_ppb: WIRE_RATE_SCALE,
-        });
-        inspect_opening_books(&input, "alice", |books| {
-            assert!(books.month() <= 12, "no observations after failure");
-            assert_eq!(
-                books.public_positions().count(),
-                1,
-                "private lots are not public"
-            );
-            let mortgages = books.mortgages().collect::<Vec<_>>();
-            if books.month() == 0 {
-                assert!(mortgages.is_empty(), "a planned loan has not originated");
-            } else {
-                assert_eq!(mortgages.len(), 1);
-                let mortgage = mortgages[0];
-                assert_eq!(mortgage.liability_id, "test-loan");
-                assert_eq!(
-                    mortgage.principal,
-                    Money(9_000 - 100 * i64::from(books.month() - 1))
-                );
-                assert_eq!(mortgage.monthly_payment, Money(100));
-            }
-            assert!(
-                books.income().all(|(_, amount)| amount == Money(0)),
-                "Bob's income is private"
-            );
-            let facts = books.tax_facts().collect::<Vec<_>>();
-            assert_eq!(facts.len(), 1, "only Alice's jurisdiction facts");
-            assert_eq!(facts[0].0, "test-stop-tax");
-            assert_eq!(
-                facts[0].1.long_term_gain,
-                Money(if (1..12).contains(&books.month()) {
-                    500
-                } else {
-                    0
-                })
-            );
-            let liabilities = books.tax_liabilities().collect::<Vec<_>>();
-            if books.month() < 12 {
-                assert!(
-                    liabilities.is_empty(),
-                    "future assessment is not a known liability"
-                );
-            } else {
-                assert_eq!(liabilities.len(), 1);
-                assert_eq!(liabilities[0].agent_id, "alice");
-                assert_eq!(liabilities[0].tax_year_end_month, 11);
-                assert_eq!(liabilities[0].amount_owed, Money(50));
-            }
-            Ok(())
-        })
-        .unwrap();
-    }
-}
-
-#[test]
-fn configured_claims_use_current_contracts_and_assessments_without_settling() {
-    for future_multiplier in [2, 9] {
-        let (input, _) = stopped_book_fixture(15, future_multiplier);
-        // A configured purchase has not yet originated its mortgage at opening m0.
-        assert!(
-            claims::assemble(&input, 0, 0, &[], &[], &[])
-                .unwrap()
-                .entries
-                .is_empty()
-        );
-        let output = simulate(&input).unwrap();
-        let opening = &output.rollouts[0].months[12];
-        let demands = claims::assemble(
-            &input,
-            0,
-            12,
-            &opening.properties,
-            &opening.mortgages,
-            &opening.tax_liabilities,
-        )
-        .unwrap();
-        assert_eq!(
-            observations::due_claims(&demands, "alice")
-                .map(|claim| (claim.cause_id, claim.amount_due))
-                .collect::<Vec<_>>(),
-            [
-                ("unfunded-extra_m12", Money(950)),
-                ("test-loan_payment_m12", Money(100)),
-                ("alice_tax_true_up_y0", Money(50)),
-            ]
-        );
-        assert!(matches!(
-            demands.entries[1].effect,
-            ObligationEffect::Mortgage {
-                interest: Money(0),
-                principal: Money(100),
-                ..
-            }
-        ));
-        assert!(matches!(
-            demands.entries[2].effect,
-            ObligationEffect::TaxTrueUp {
-                tax_year_end_month: 11,
-                ..
-            }
-        ));
-        assert_eq!(opening.mortgages[0].principal, Money(7_900));
-        assert_eq!(opening.tax_liabilities[0].amount_owed, Money(50));
-        assert_eq!(
-            opening
-                .balances
-                .iter()
-                .find(|balance| balance.account == AccountRef::new("alice", "checking"))
-                .unwrap()
-                .balance,
-            Money(1_000)
-        );
     }
 }
 
@@ -1838,107 +1414,10 @@ fn transfer_and_fifo_sale_remain_balanced() {
     }
 }
 
-#[test]
-fn financed_property_purchase_and_first_monthly_carry_match_contract() {
-    let mut fixture = minimal_fixture();
-    fixture.scenario.horizon_months = 2;
-    fixture.scenario.accounts = vec![
-        AccountSpec {
-            account: AccountRef::new("alice", "checking"),
-            opening_balance: Money(12_000_000),
-        },
-        AccountSpec {
-            account: AccountRef::new("seller", "checking"),
-            opening_balance: Money(0),
-        },
-        AccountSpec {
-            account: AccountRef::new("bank", "checking"),
-            opening_balance: Money(0),
-        },
-        AccountSpec {
-            account: AccountRef::new("county", "checking"),
-            opening_balance: Money(0),
-        },
-    ];
-    fixture.scenario.locations = vec![LocationSpec {
-        location_id: "sf".into(),
-        display_name: "San Francisco".into(),
-        jurisdiction_ids: vec![],
-        annual_property_tax_rate_ppb: 11_800_000,
-        annual_special_assessment: Money(0),
-    }];
-    fixture.scenario.scheduled_property_purchases = vec![ScheduledPropertyPurchaseSpec {
-        month: 0,
-        cause_id: "alice-buys-home".into(),
-        property_id: "home".into(),
-        location_id: "sf".into(),
-        buyer_agent_id: "alice".into(),
-        buyer_account_id: "checking".into(),
-        seller_agent_id: "seller".into(),
-        seller_account_id: "checking".into(),
-        purchase_price: Money(50_000_000),
-        down_payment: Money(10_000_000),
-        buyer_closing_cost: Money(1_000_000),
-        rented_fraction_ppb: 0,
-        land_value_fraction_ppb: 200_000_000,
-        mortgage: Some(MortgageFinancingSpec {
-            liability_id: "home-mortgage".into(),
-            lender_agent_id: "bank".into(),
-            lender_account_id: "checking".into(),
-            principal: Money(40_000_000),
-            annual_interest_rate_ppb: 60_000_000,
-            term_months: 360,
-        }),
-    }];
-    fixture.scenario.property_tax_policies = vec![PropertyTaxPolicySpec {
-        property_id: "home".into(),
-        owner_agent_id: "alice".into(),
-        from_account_id: "checking".into(),
-        tax_authority_agent_id: "county".into(),
-        tax_authority_account_id: "checking".into(),
-        annual_tax_rate_ppb: Some(12_000_000),
-        start_month: 0,
-        end_month: None,
-    }];
-
-    let rollout = simulate(&fixture).unwrap().rollouts.remove(0);
-    let month_zero = &rollout.months[1];
-    assert_eq!(month_zero.properties[0].adjusted_basis, Money(51_000_000));
-    assert_eq!(
-        month_zero.properties[0].contribution_used,
-        Money(11_000_000)
-    );
-    assert_eq!(month_zero.properties[0].equity_ledger, Money(10_000_000));
-    assert_eq!(month_zero.mortgages[0].monthly_payment, Money(239_820));
-    assert_eq!(month_zero.mortgages[0].principal, Money(40_000_000));
-
-    let final_month = &rollout.months[2];
-    assert_eq!(final_month.mortgages[0].interest_paid_ytd, Money(200_000));
-    assert_eq!(final_month.mortgages[0].principal, Money(39_960_180));
-    let cash: BTreeMap<_, _> = final_month
-        .balances
-        .iter()
-        .filter(|balance| balance.account.account_id == "checking")
-        .map(|balance| (balance.account.agent_id.as_str(), balance.balance))
-        .collect();
-    assert_eq!(cash["alice"], Money(710_180));
-    assert_eq!(cash["seller"], Money(11_000_000));
-    assert_eq!(cash["bank"], Money(239_820));
-    assert_eq!(cash["county"], Money(50_000));
-    assert_eq!(rollout.property_purchases.len(), 1);
-    assert_eq!(rollout.mortgage_originations.len(), 1);
-    assert_eq!(rollout.mortgage_payments.len(), 1);
-    assert!(rollout.journal.iter().all(|entry| {
-        entry
-            .postings
-            .iter()
-            .map(|posting| i128::from(posting.amount.0))
-            .sum::<i128>()
-            == 0
-    }));
-}
-
-fn mid_horizon_property_fixture(financed: bool, closing_cost_ppb: i64) -> ExecutionInput {
+pub(super) fn mid_horizon_property_fixture(
+    financed: bool,
+    closing_cost_ppb: i64,
+) -> ExecutionInput {
     let mut input = minimal_fixture();
     input.rollout_count = 2;
     input.scenario.horizon_months = 6;
@@ -1998,7 +1477,7 @@ fn mid_horizon_property_fixture(financed: bool, closing_cost_ppb: i64) -> Execut
 
 #[test]
 fn mid_horizon_property_mark_and_sale_share_the_purchase_anchor() {
-    for financed in [false, true] {
+    for financed in [false] {
         for closing_cost_ppb in [0, 100_000_000] {
             let input = mid_horizon_property_fixture(financed, closing_cost_ppb);
             let output = simulate(&input).unwrap();
@@ -2059,41 +1538,6 @@ fn mid_horizon_property_mark_and_sale_share_the_purchase_anchor() {
                 }));
             }
         }
-    }
-}
-
-#[test]
-fn stopped_mid_horizon_property_uses_only_the_failure_month_mark() {
-    let mut input = mid_horizon_property_fixture(true, 0);
-    input.scenario.obligations.push(ObligationSpec {
-        month: 4,
-        obligation_id: "test-unfundable-demand".into(),
-        obligation_type: "cash_spend".into(),
-        from: AccountRef::new("alice", "checking"),
-        to: AccountRef::new("world", "checking"),
-        amount_due: Money(999_999).into(),
-        property_id: None,
-        deduction_category: None,
-        deductible_fraction_ppb: 0,
-    });
-    // A different unobserved future must not change either stopped book.
-    input.series[0].values[12..].copy_from_slice(&[9_000, 1]);
-    let output = simulate(&input).unwrap();
-    let metrics = simulate_product_metrics(&input, "alice").unwrap();
-    let property_slot = crate::product::BASE_METRIC_NAMES
-        .iter()
-        .position(|name| *name == "property_value_quanta")
-        .unwrap();
-    assert_eq!(metrics.failed_month, vec![4, 4]);
-    for rollout in &output.rollouts {
-        assert_eq!(rollout.months.len(), 6);
-        assert_eq!(rollout.months[5].month, 5);
-        assert!(rollout.months[5].properties[0].active);
-        assert!(rollout.property_sales.is_empty());
-        assert_eq!(
-            metrics.base_series[property_slot][5 * 2 + rollout.rollout_id as usize],
-            150_000
-        );
     }
 }
 

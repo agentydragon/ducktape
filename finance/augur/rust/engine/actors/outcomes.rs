@@ -227,6 +227,7 @@ impl Capture {
         input: &ExecutionInput,
         actor: &str,
         state: &mut RolloutState,
+        mortgages: &[MortgageSnapshot],
     ) -> Result<Summary, SimulationError> {
         let recorder = &mut state.recorder;
         // Dense/forensic traces also retain these records; compact capture moves them.
@@ -274,7 +275,7 @@ impl Capture {
                 &state.ledger,
                 &state.lots,
                 &state.properties,
-                &state.mortgages,
+                mortgages,
                 &state.tax_liabilities,
                 &state.tax,
                 &state.tlh_portfolios,

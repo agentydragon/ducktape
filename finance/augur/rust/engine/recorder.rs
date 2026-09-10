@@ -426,7 +426,7 @@ pub(super) fn month_output(
     ledger: &Ledger,
     lots: &[LotState],
     properties: &[PropertyState],
-    mortgages: &[MortgageState],
+    mortgages: &[MortgageSnapshot],
     tax_liabilities: &[TaxLiabilityState],
     tax: &TaxState,
     tlh_portfolios: &[TlhPortfolioObservation],

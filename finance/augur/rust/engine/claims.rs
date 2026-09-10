@@ -24,7 +24,7 @@ pub(super) fn assemble(
     rollout_id: u32,
     month: u32,
     properties: &[PropertyState],
-    mortgages: &[MortgageState],
+    mortgages: &[mortgages::Installment],
     tax_liabilities: &[TaxLiabilityState],
 ) -> Result<Claims, SimulationError> {
     let mut active_obligations = Vec::new();
@@ -102,11 +102,7 @@ pub(super) enum ObligationEffect {
         profile_index: usize,
         tax_year_end_month: u32,
     },
-    Mortgage {
-        mortgage_index: usize,
-        interest: Money,
-        principal: Money,
-    },
+    Mortgage(mortgages::Installment),
     PropertyTax {
         owner_agent_id: String,
         rented_fraction_ppb: i64,
@@ -157,42 +153,20 @@ fn configured_obligation_effect(
 fn property_obligations(
     fixture: &ExecutionInput,
     properties: &[PropertyState],
-    mortgages: &[MortgageState],
+    mortgages: &[mortgages::Installment],
     month: u32,
 ) -> Result<Vec<ActiveObligation>, SimulationError> {
     let mut obligations = Vec::new();
-    for (index, mortgage) in mortgages.iter().enumerate() {
-        if !mortgage.active || mortgage.origination_month >= month || mortgage.principal.0 <= 0 {
-            continue;
-        }
-        let interest = Money(mul_div_round_half_up(
-            mortgage.principal.0,
-            mortgage.annual_interest_rate_ppb,
-            12 * WIRE_RATE_SCALE,
-            "mortgage monthly interest",
-        )?);
-        let due = Money(
-            mortgage
-                .monthly_payment
-                .0
-                .min(mortgage.principal.checked_add(interest)?.0),
-        );
-        let principal = Money((due.0 - interest.0).max(0).min(mortgage.principal.0));
+    for installment in mortgages {
+        let (purchase, loan) = mortgages::terms(fixture, &installment.liability_id)?;
         obligations.push(ActiveObligation {
             paid: false,
-            cause_id: format!("{}_payment_m{month}", mortgage.liability_id),
+            cause_id: format!("{}_payment_m{month}", loan.liability_id),
             obligation_type: "mortgage_payment".into(),
-            from: AccountRef::new(&mortgage.agent_id, &mortgage.payment_account_id),
-            to: AccountRef::new(
-                &mortgage.counterparty_agent_id,
-                &mortgage.counterparty_account_id,
-            ),
-            amount_due: due,
-            effect: ObligationEffect::Mortgage {
-                mortgage_index: index,
-                interest,
-                principal,
-            },
+            from: AccountRef::new(&purchase.buyer_agent_id, &purchase.buyer_account_id),
+            to: AccountRef::new(&loan.lender_agent_id, &loan.lender_account_id),
+            amount_due: installment.interest.checked_add(installment.principal)?,
+            effect: ObligationEffect::Mortgage(installment.clone()),
         });
     }
     for policy in &fixture.scenario.property_tax_policies {

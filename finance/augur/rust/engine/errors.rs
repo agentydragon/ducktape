@@ -8,6 +8,8 @@ use super::*;
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
+    #[error("invalid mortgage settlement: {reason}")]
+    InvalidMortgageEffect { reason: String },
     #[error("financial books are at month {expected}, request names {actual}")]
     InvalidFinancialMonth { expected: u32, actual: u32 },
     #[error("unknown scheduled sale index {index}")]

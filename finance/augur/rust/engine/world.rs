@@ -86,23 +86,81 @@ pub struct Finished {
 }
 
 impl World {
-    pub fn prepare_month(&mut self, month: u32) -> Result<(), SimulationError> {
+    pub fn prepare_month(
+        &mut self,
+        month: u32,
+        originations: &[mortgages::Origination],
+        payoffs: &[mortgages::Payoff],
+    ) -> Result<mortgages::OpeningEvents, SimulationError> {
         if month != self.state.month || month >= self.input.scenario.horizon_months {
             return Err(SimulationError::InvalidFinancialMonth {
                 expected: self.state.month,
                 actual: month,
             });
         }
-        self.state.prepare_month_events(&self.input)?;
+        self.claims = Claims {
+            month,
+            entries: Vec::new(),
+        };
+        self.state
+            .prepare_month_events(&self.input, originations, payoffs)
+    }
+
+    pub fn assemble_claims(
+        &mut self,
+        installments: &[mortgages::Installment],
+    ) -> Result<(), SimulationError> {
+        let mut ids = BTreeSet::new();
+        for installment in installments {
+            let (purchase, _) = mortgages::terms(&self.input, &installment.liability_id)?;
+            let principal = self.mortgage_principal(&installment.liability_id)?;
+            if !ids.insert(&installment.liability_id)
+                || purchase.month >= self.state.month
+                || principal.0 <= 0
+                || installment.principal.0 < 0
+                || installment.principal > principal
+                || installment.interest.0 < 0
+                || installment.rental_interest.0 < 0
+                || installment.rental_interest > installment.interest
+            {
+                return Err(mortgages::invalid("invalid mortgage installment"));
+            }
+        }
         self.claims = claims::assemble(
             &self.input,
             self.state.rollout_id,
-            month,
+            self.state.month,
             &self.state.properties,
-            &self.state.mortgages,
+            installments,
             &self.state.tax_liabilities,
         )?;
         Ok(())
+    }
+
+    pub fn mortgage_principal(&self, liability_id: &str) -> Result<Money, SimulationError> {
+        mortgages::principal(&self.input, &self.state.ledger, liability_id)
+    }
+
+    pub fn property_rented_fraction(&self, property_id: &str) -> Result<i64, SimulationError> {
+        self.state
+            .properties
+            .iter()
+            .find(|property| property.property_id == property_id)
+            .map(|property| property.rented_fraction_ppb)
+            .ok_or_else(|| mortgages::invalid("property has not originated"))
+    }
+
+    pub fn paid_mortgages(&self) -> Vec<&str> {
+        self.claims
+            .entries
+            .iter()
+            .filter_map(|claim| match &claim.effect {
+                ObligationEffect::Mortgage(installment) if claim.paid => {
+                    Some(installment.liability_id.as_str())
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn observe<'a>(&'a self, scope: &'a AgentHoldings) -> actors::Observation<'a> {
@@ -112,7 +170,6 @@ impl World {
                 books: observations::Books {
                     ledger: &self.state.ledger,
                     lots: &self.state.lots,
-                    mortgages: &self.state.mortgages,
                     tax: &self.state.tax,
                     tax_liabilities: &self.state.tax_liabilities,
                     tlh_portfolios: &self.state.tlh_portfolios,
@@ -337,8 +394,6 @@ impl World {
                 ledger: &mut self.state.ledger,
                 recorder: &mut self.state.recorder,
                 tax: &mut self.state.tax,
-                properties: &self.state.properties,
-                mortgages: &mut self.state.mortgages,
                 tax_liabilities: &mut self.state.tax_liabilities,
                 month: self.state.month,
             },
@@ -378,7 +433,29 @@ impl World {
             .collect()
     }
 
-    pub fn close_month(&mut self, failed: bool, shortfall: Money) -> Result<(), SimulationError> {
+    pub fn close_month(
+        &mut self,
+        failed: bool,
+        shortfall: Money,
+        interest: &[mortgages::Interest],
+        snapshots: &[MortgageSnapshot],
+    ) -> Result<(), SimulationError> {
+        mortgages::validate_snapshots(&self.input, &self.state, snapshots)?;
+        let mut interest_ids = BTreeSet::new();
+        for row in interest {
+            mortgages::terms(&self.input, &row.liability_id)?;
+            if !interest_ids.insert(&row.liability_id)
+                || row.owner_interest_paid_ytd.0 < 0
+                || row.origination_principal.0 <= 0
+            {
+                return Err(mortgages::invalid("invalid mortgage tax-year fact"));
+            }
+        }
+        if interest_ids != snapshots.iter().map(|item| &item.liability_id).collect() {
+            return Err(mortgages::invalid(
+                "mortgage tax facts must cover originated loans",
+            ));
+        }
         if let Some(holdings) = &self.holdings {
             let unpaid = self.unpaid_claims(holdings.agent_id());
             self.capture.as_mut().expect("actor capture").unpaid_claims = unpaid;
@@ -387,15 +464,21 @@ impl World {
         if failed {
             self.state.failed_month = Some(self.state.month);
         }
-        self.state
-            .close_month(&self.input, self.product.as_ref(), shortfall)?;
+        self.state.close_month(
+            &self.input,
+            self.product.as_ref(),
+            shortfall,
+            interest,
+            snapshots,
+        )?;
         if let (Some(capture), Some(holdings)) = (&mut self.capture, &self.holdings) {
             capture.snapshot(&self.input, holdings, &self.state)?;
         }
         Ok(())
     }
 
-    pub fn finish(mut self) -> Result<Finished, SimulationError> {
+    pub fn finish(mut self, snapshots: &[MortgageSnapshot]) -> Result<Finished, SimulationError> {
+        mortgages::validate_snapshots(&self.input, &self.state, snapshots)?;
         let summary = self
             .capture
             .take()
@@ -404,12 +487,13 @@ impl World {
                     &self.input,
                     self.holdings.as_ref().expect("actor scope").agent_id(),
                     &mut self.state,
+                    snapshots,
                 )
             })
             .transpose()?;
         let product_metrics = std::mem::take(&mut self.state.product_metrics);
         let captures_output = self.state.recorder.capture_mode.captures_output();
-        let computation = self.state.finish(&self.input)?;
+        let computation = self.state.finish(&self.input, snapshots)?;
         let rollout_id = computation.rollout_id;
         let (financial, configured_summary) = if captures_output {
             (Some(computation.into_output()), None)

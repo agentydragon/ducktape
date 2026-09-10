@@ -85,8 +85,46 @@ impl World {
 
 #[pymethods]
 impl World {
-    fn prepare_month(&mut self, month: u32) -> PyResult<()> {
-        self.get_mut()?.prepare_month(month).map_err(to_py_err)
+    fn prepare_month(
+        &mut self,
+        month: u32,
+        mortgage_originations_json: &str,
+        mortgage_payoffs_json: &str,
+    ) -> PyResult<String> {
+        encode(
+            &self
+                .get_mut()?
+                .prepare_month(
+                    month,
+                    &decode::<Vec<_>>(mortgage_originations_json)?,
+                    &decode::<Vec<_>>(mortgage_payoffs_json)?,
+                )
+                .map_err(to_py_err)?,
+        )
+    }
+
+    fn assemble_claims(&mut self, mortgage_payments_json: &str) -> PyResult<()> {
+        self.get_mut()?
+            .assemble_claims(&decode::<Vec<_>>(mortgage_payments_json)?)
+            .map_err(to_py_err)
+    }
+
+    fn mortgage_principal(&self, liability_id: &str) -> PyResult<i64> {
+        Ok(self
+            .get()?
+            .mortgage_principal(liability_id)
+            .map_err(to_py_err)?
+            .0)
+    }
+
+    fn property_rented_fraction(&self, property_id: &str) -> PyResult<i64> {
+        self.get()?
+            .property_rented_fraction(property_id)
+            .map_err(to_py_err)
+    }
+
+    fn paid_mortgages_json(&self) -> PyResult<String> {
+        encode(&self.get()?.paid_mortgages())
     }
 
     fn observe_json(&self, actor: &str) -> PyResult<String> {
@@ -253,19 +291,34 @@ impl World {
         encode(&self.get()?.unpaid_claims(actor))
     }
 
-    #[pyo3(signature = (*, failed, shortfall))]
-    fn close_month(&mut self, failed: bool, shortfall: i64) -> PyResult<()> {
+    #[pyo3(signature = (*, failed, shortfall, mortgage_interest_json, mortgage_snapshots_json))]
+    fn close_month(
+        &mut self,
+        failed: bool,
+        shortfall: i64,
+        mortgage_interest_json: &str,
+        mortgage_snapshots_json: &str,
+    ) -> PyResult<()> {
         self.get_mut()?
-            .close_month(failed, Money(shortfall))
+            .close_month(
+                failed,
+                Money(shortfall),
+                &decode::<Vec<_>>(mortgage_interest_json)?,
+                &decode::<Vec<_>>(mortgage_snapshots_json)?,
+            )
             .map_err(to_py_err)
     }
 
-    fn finish_json(&mut self) -> PyResult<String> {
+    fn finish_json(&mut self, mortgage_snapshots_json: &str) -> PyResult<String> {
         let world = self
             .world
             .take()
             .ok_or_else(|| PyValueError::new_err("world was consumed"))?;
-        encode(&world.finish().map_err(to_py_err)?)
+        encode(
+            &world
+                .finish(&decode::<Vec<_>>(mortgage_snapshots_json)?)
+                .map_err(to_py_err)?,
+        )
     }
 }
 

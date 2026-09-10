@@ -605,7 +605,7 @@ pub struct MonthOutput {
     pub lots: Vec<SecurityLotState>,
     pub bonds: Vec<BondState>,
     pub properties: Vec<PropertyState>,
-    pub mortgages: Vec<MortgageState>,
+    pub mortgages: Vec<MortgageSnapshot>,
     pub tax_liabilities: Vec<TaxLiabilityState>,
     pub capital_gains: Vec<CapitalGainState>,
     pub tlh_portfolios: Vec<TlhPortfolioObservation>,
@@ -688,7 +688,7 @@ pub struct PropertyState {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct MortgageState {
+pub struct MortgageSnapshot {
     pub liability_id: String,
     pub property_id: String,
     pub agent_id: String,
@@ -1007,7 +1007,7 @@ pub struct RolloutSummary {
     pub ending_balances: Vec<AccountBalance>,
     pub ending_bonds: Vec<BondState>,
     pub ending_properties: Vec<PropertyState>,
-    pub ending_mortgages: Vec<MortgageState>,
+    pub ending_mortgages: Vec<MortgageSnapshot>,
     pub ending_tax_liabilities: Vec<TaxLiabilityState>,
     pub ending_tlh_portfolios: Vec<TlhPortfolioObservation>,
     pub journal_entry_count: u64,

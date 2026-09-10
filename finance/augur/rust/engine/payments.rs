@@ -184,8 +184,6 @@ pub(super) struct Context<'a> {
     pub ledger: &'a mut Ledger,
     pub recorder: &'a mut Recorder,
     pub tax: &'a mut TaxState,
-    pub properties: &'a [PropertyState],
-    pub mortgages: &'a mut [MortgageState],
     pub tax_liabilities: &'a mut [TaxLiabilityState],
     pub month: u32,
 }
@@ -206,8 +204,6 @@ impl Context<'_> {
         let ledger = &mut *self.ledger;
         let recorder = &mut *self.recorder;
         let tax = &mut *self.tax;
-        let mortgages = &mut *self.mortgages;
-        let properties = self.properties;
         let tax_liabilities = &mut *self.tax_liabilities;
         let firing_id = payment.cause_id.to_owned();
         match *payment.effect {
@@ -299,12 +295,14 @@ impl Context<'_> {
                     amount: settled,
                 })?;
             }
-            ObligationEffect::Mortgage {
-                mortgage_index,
-                interest,
-                principal,
-            } => {
-                let mortgage = &mut mortgages[mortgage_index];
+            ObligationEffect::Mortgage(ref installment) => {
+                let (purchase, mortgage) = mortgages::terms(fixture, &installment.liability_id)?;
+                let interest = installment.interest;
+                let principal = installment.principal;
+                let outstanding = mortgages::principal(fixture, ledger, &installment.liability_id)?;
+                if principal > outstanding {
+                    return Err(mortgages::invalid("installment exceeds ledger principal"));
+                }
                 recorder.apply_entry(
                     ledger,
                     JournalEntry {
@@ -321,28 +319,28 @@ impl Context<'_> {
                             },
                             Posting {
                                 account: mortgage_liability_account(
-                                    &mortgage.agent_id,
+                                    &purchase.buyer_agent_id,
                                     &mortgage.liability_id,
                                 ),
                                 amount: principal,
                             },
                             Posting {
                                 account: mortgage_interest_expense_account(
-                                    &mortgage.agent_id,
+                                    &purchase.buyer_agent_id,
                                     &mortgage.liability_id,
                                 ),
                                 amount: interest,
                             },
                             Posting {
                                 account: mortgage_receivable_account(
-                                    &mortgage.counterparty_agent_id,
+                                    &mortgage.lender_agent_id,
                                     &mortgage.liability_id,
                                 ),
                                 amount: principal.checked_neg()?,
                             },
                             Posting {
                                 account: mortgage_interest_income_account(
-                                    &mortgage.counterparty_agent_id,
+                                    &mortgage.lender_agent_id,
                                     &mortgage.liability_id,
                                 ),
                                 amount: interest.checked_neg()?,
@@ -350,32 +348,20 @@ impl Context<'_> {
                         ],
                     },
                 )?;
-                mortgage.principal = mortgage.principal.checked_sub(principal)?;
-                mortgage.interest_paid_ytd = mortgage.interest_paid_ytd.checked_add(interest)?;
-                let rented_fraction_ppb = properties
-                    .iter()
-                    .find(|property| property.property_id == mortgage.property_id)
-                    .map_or(0, |property| property.rented_fraction_ppb);
-                let rental_interest = interest.scaled_by(
-                    Factor::parts_per_billion(rented_fraction_ppb),
-                    "rental mortgage interest",
+                record_rental_interest_deduction(
+                    tax,
+                    &purchase.buyer_agent_id,
+                    installment.rental_interest,
                 )?;
-                mortgage.rental_interest_paid_ytd = mortgage
-                    .rental_interest_paid_ytd
-                    .checked_add(rental_interest)?;
-                record_rental_interest_deduction(tax, &mortgage.agent_id, rental_interest)?;
-                if mortgage.principal == Money(0) {
-                    mortgage.active = false;
-                }
                 recorder.record_mortgage_payment(MortgagePaymentOutcome {
                     month,
                     cause_id: firing_id.clone(),
                     liability_id: mortgage.liability_id.clone(),
-                    agent_id: mortgage.agent_id.clone(),
-                    counterparty_agent_id: mortgage.counterparty_agent_id.clone(),
-                    property_id: mortgage.property_id.clone(),
+                    agent_id: purchase.buyer_agent_id.clone(),
+                    counterparty_agent_id: mortgage.lender_agent_id.clone(),
+                    property_id: purchase.property_id.clone(),
                     from_account_id: payment.from.account_id.clone(),
-                    to_account_id: mortgage.counterparty_account_id.clone(),
+                    to_account_id: mortgage.lender_account_id.clone(),
                     interest,
                     principal,
                     total_payment: payment.amount,

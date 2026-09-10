@@ -15,8 +15,6 @@ fn execute(
         ledger: &mut state.ledger,
         recorder: &mut state.recorder,
         tax: &mut state.tax,
-        properties: &state.properties,
-        mortgages: &mut state.mortgages,
         tax_liabilities: &mut state.tax_liabilities,
         month: state.month,
     }
@@ -227,97 +225,6 @@ fn rejected_payments_change_neither_books_nor_capture() {
     assert!(state.recorder.obligations.is_empty());
     assert!(state.recorder.rollout_failures.is_empty());
     assert_eq!(state.failed_month, None); // The primitive does not own the runner's stop flag.
-}
-
-#[test]
-fn tax_and_mortgage_claims_use_selected_funding_account() {
-    let (mut input, _) = tests::stopped_book_fixture(15, 2);
-    input.scenario.accounts.push(crate::execution::AccountSpec {
-        account: AccountRef::new("alice", "reserve"),
-        opening_balance: Money(1_000),
-    });
-    let output = simulate(&input).unwrap();
-    let opening = &output.rollouts[0].months[12];
-    let mut state = RolloutState::new(&input, 0, CaptureMode::Forensic, None).unwrap();
-    // Restore the observed opening book, including internal liability accounts.
-    state
-        .ledger
-        .apply(&JournalEntry {
-            month: 12,
-            cause_id: "restore-test-opening".into(),
-            postings: opening
-                .balances
-                .iter()
-                .map(|row| Posting {
-                    account: row.account.clone(),
-                    amount: row
-                        .balance
-                        .checked_sub(state.ledger.balance(&row.account).unwrap())
-                        .unwrap(),
-                })
-                .collect(),
-        })
-        .unwrap();
-    state.month = 12;
-    state.properties = opening.properties.clone();
-    state.mortgages = opening.mortgages.clone();
-    state.tax_liabilities = opening.tax_liabilities.clone();
-    let mut claims = claims::assemble(
-        &input,
-        0,
-        12,
-        &state.properties,
-        &state.mortgages,
-        &state.tax_liabilities,
-    )
-    .unwrap();
-    let requests: Vec<_> = observations::due_claims(&claims, "alice")
-        .filter(|claim| claim.obligation_type != "cash_spend")
-        .map(|claim| {
-            Request::PayClaim(PayClaim {
-                request_id: claim.id.index as u64,
-                cause_id: format!("selected-{}", claim.cause_id),
-                claim: claim.id,
-                from: AccountRef::new("alice", "reserve"),
-                amount: claim.amount_due,
-            })
-        })
-        .collect();
-    assert_eq!(requests.len(), 2);
-    for request in &requests {
-        assert_eq!(
-            execute(&input, &mut state, &mut claims, "alice", request).outcome,
-            Outcome::Paid
-        );
-    }
-    assert_eq!(
-        state
-            .ledger
-            .balance(&AccountRef::new("alice", "checking"))
-            .unwrap(),
-        Money(1_000)
-    );
-    assert_eq!(
-        state
-            .ledger
-            .balance(&AccountRef::new("alice", "reserve"))
-            .unwrap(),
-        Money(850)
-    );
-    assert_eq!(state.mortgages[0].principal, Money(7_800));
-    assert_eq!(
-        state.recorder.mortgage_payments[0].from_account_id,
-        "reserve"
-    );
-    assert_eq!(state.recorder.tax_payments[0].amount_paid, Money(50));
-    assert!(
-        state
-            .tax_liabilities
-            .iter()
-            .all(|liability| liability.amount_owed == Money(0))
-    );
-    assert_eq!(state.recorder.tax_settlements[0].amount, Money(50));
-    assert_eq!(state.ledger.trial_balance(), 0);
 }
 
 #[test]

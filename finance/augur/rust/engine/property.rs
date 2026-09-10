@@ -40,7 +40,7 @@ pub(super) fn execute_property_lifecycle_events(
     recorder: &mut Recorder,
     tax: &mut TaxState,
     properties: &mut [PropertyState],
-    mortgages: &mut [MortgageState],
+    mortgages: &mut mortgages::Opening<'_>,
     primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
     month: u32,
 ) -> Result<(), SimulationError> {
@@ -162,7 +162,7 @@ fn execute_property_sales(
     recorder: &mut Recorder,
     tax: &mut TaxState,
     properties: &mut [PropertyState],
-    mortgages: &mut [MortgageState],
+    mortgages: &mut mortgages::Opening<'_>,
     primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
     month: u32,
     property_id: &str,
@@ -199,15 +199,14 @@ fn execute_property_sales(
         let retained = Factor::parts_per_billion(sale.closing_cost_ppb)
             .complement("property sale retained share")?;
         let gross_proceeds = market_value.scaled_by(retained, "property sale proceeds")?;
-        let mortgage_indices: Vec<_> = mortgages
-            .iter()
-            .enumerate()
-            .filter(|(_, mortgage)| mortgage.property_id == sale.property_id && mortgage.active)
-            .map(|(index, _)| index)
-            .collect();
-        let mortgage_payoff = mortgage_indices.iter().try_fold(Money(0), |total, index| {
-            total.checked_add(mortgages[*index].principal)
-        })?;
+        let payoff = purchase.mortgage.as_ref().and_then(|loan| {
+            mortgages
+                .payoffs
+                .iter()
+                .find(|item| item.liability_id == loan.liability_id)
+                .map(|item| (loan, item.principal))
+        });
+        let mortgage_payoff = payoff.map_or(Money(0), |(_, principal)| principal);
         let net_cash = gross_proceeds.checked_sub(mortgage_payoff)?;
         // Match the legacy contract exactly: capitalized buyer closing costs
         // enter the depreciable building basis, but the sale-gain formula uses
@@ -272,26 +271,28 @@ fn execute_property_sales(
                 amount: realized_gain.checked_neg()?,
             },
         ];
-        for index in &mortgage_indices {
-            let mortgage = &mortgages[*index];
+        if let Some((mortgage, principal)) = payoff {
             postings.extend([
                 Posting {
-                    account: mortgage_liability_account(&mortgage.agent_id, &mortgage.liability_id),
-                    amount: mortgage.principal,
+                    account: mortgage_liability_account(
+                        &purchase.buyer_agent_id,
+                        &mortgage.liability_id,
+                    ),
+                    amount: principal,
                 },
                 Posting {
                     account: mortgage_receivable_account(
-                        &mortgage.counterparty_agent_id,
+                        &mortgage.lender_agent_id,
                         &mortgage.liability_id,
                     ),
-                    amount: mortgage.principal.checked_neg()?,
+                    amount: principal.checked_neg()?,
                 },
                 Posting {
                     account: mortgage_funding_account(
-                        &mortgage.counterparty_agent_id,
+                        &mortgage.lender_agent_id,
                         &mortgage.liability_id,
                     ),
-                    amount: mortgage.principal,
+                    amount: principal,
                 },
             ]);
         }
@@ -312,9 +313,11 @@ fn execute_property_sales(
         {
             primary_residence_by_agent.insert(purchase.buyer_agent_id.clone(), None);
         }
-        for index in mortgage_indices {
-            mortgages[index].principal = Money(0);
-            mortgages[index].active = false;
+        if let Some((mortgage, _)) = payoff {
+            mortgages
+                .events
+                .paid_off
+                .push(mortgage.liability_id.clone());
         }
         record_capital_gain(tax, &purchase.buyer_agent_id, long_term_capital_gain, true)?;
         record_section_1250_recapture(tax, &purchase.buyer_agent_id, depreciation_recapture)?;
@@ -367,7 +370,7 @@ pub(super) fn execute_property_purchases(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     properties: &mut Vec<PropertyState>,
-    mortgages: &mut Vec<MortgageState>,
+    mortgages: &mut mortgages::Opening<'_>,
     month: u32,
 ) -> Result<(), SimulationError> {
     for purchase in fixture
@@ -420,11 +423,12 @@ pub(super) fn execute_property_purchases(
         ];
         let mut origination = None;
         if let Some(mortgage) = &purchase.mortgage {
-            let monthly_payment = mortgage_monthly_payment(
-                mortgage.principal,
-                mortgage.annual_interest_rate_ppb,
-                mortgage.term_months,
-            )?;
+            let monthly_payment = mortgages
+                .originations
+                .iter()
+                .find(|item| item.liability_id == mortgage.liability_id)
+                .expect("validated origination")
+                .monthly_payment;
             postings.extend([
                 Posting {
                     account: mortgage_liability_account(
@@ -448,22 +452,6 @@ pub(super) fn execute_property_purchases(
                     amount: mortgage.principal.checked_neg()?,
                 },
             ]);
-            mortgages.push(MortgageState {
-                liability_id: mortgage.liability_id.clone(),
-                property_id: purchase.property_id.clone(),
-                agent_id: purchase.buyer_agent_id.clone(),
-                payment_account_id: purchase.buyer_account_id.clone(),
-                counterparty_agent_id: mortgage.lender_agent_id.clone(),
-                counterparty_account_id: mortgage.lender_account_id.clone(),
-                origination_month: month,
-                annual_interest_rate_ppb: mortgage.annual_interest_rate_ppb,
-                term_months: mortgage.term_months,
-                monthly_payment,
-                principal: mortgage.principal,
-                interest_paid_ytd: Money(0),
-                rental_interest_paid_ytd: Money(0),
-                active: true,
-            });
             origination = Some(MortgageOriginationOutcome {
                 month,
                 cause_id: format!("{}_mortgage_origination", purchase.cause_id),
@@ -504,6 +492,12 @@ pub(super) fn execute_property_purchases(
                 amount: stake,
                 income_category: None,
             });
+        }
+        if let Some(mortgage) = &purchase.mortgage {
+            mortgages
+                .events
+                .originated
+                .push(mortgage.liability_id.clone());
         }
         properties.push(PropertyState {
             property_id: purchase.property_id.clone(),
@@ -581,15 +575,8 @@ pub(super) fn accrue_property_depreciation(
     Ok(())
 }
 
-pub(super) fn reset_property_tax_year_state(
-    properties: &mut [PropertyState],
-    mortgages: &mut [MortgageState],
-) {
+pub(super) fn reset_property_tax_year_state(properties: &mut [PropertyState]) {
     for property in properties {
         property.depreciation_ytd = Money(0);
-    }
-    for mortgage in mortgages {
-        mortgage.interest_paid_ytd = Money(0);
-        mortgage.rental_interest_paid_ytd = Money(0);
     }
 }

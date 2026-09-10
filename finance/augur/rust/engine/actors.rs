@@ -120,8 +120,6 @@ pub(super) fn execute(
             ledger: &mut state.ledger,
             recorder: &mut state.recorder,
             tax: &mut state.tax,
-            properties: &state.properties,
-            mortgages: &mut state.mortgages,
             tax_liabilities: &mut state.tax_liabilities,
             month: state.month,
         }

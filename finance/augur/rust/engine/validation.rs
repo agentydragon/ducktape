@@ -776,11 +776,6 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 &AccountRef::new(&mortgage.lender_agent_id, &mortgage.lender_account_id),
                 &mortgage.liability_id,
             )?;
-            mortgage_monthly_payment(
-                mortgage.principal,
-                mortgage.annual_interest_rate_ppb,
-                mortgage.term_months,
-            )?;
         }
     }
     let mut mortgage_interest_policies = BTreeSet::new();

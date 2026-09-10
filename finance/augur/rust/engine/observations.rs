@@ -11,7 +11,6 @@ use crate::execution::HoldingPoolSpec;
 pub(super) struct Books<'a> {
     pub ledger: &'a Ledger,
     pub lots: &'a [LotState],
-    pub mortgages: &'a [MortgageState],
     pub tax: &'a TaxState,
     pub tax_liabilities: &'a [TaxLiabilityState],
     pub tlh_portfolios: &'a [TlhPortfolioObservation],
@@ -115,16 +114,6 @@ impl ActorBooks<'_> {
             self.rollout,
             self.month,
         )
-    }
-
-    /// Originated, still-active borrower contracts; a scheduled future purchase is
-    /// not a mortgage contract. Counterparty terms do not disclose its other books.
-    pub fn mortgages(&self) -> impl Iterator<Item = &MortgageState> {
-        self.books.mortgages.iter().filter(|mortgage| {
-            mortgage.agent_id == self.agent_id()
-                && mortgage.active
-                && mortgage.origination_month <= self.month
-        })
     }
 
     /// Recorded year-to-date income by declared source, including live zero rows.

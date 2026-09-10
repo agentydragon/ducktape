@@ -3,55 +3,6 @@
 
 use super::*;
 
-pub(super) fn mortgage_monthly_payment(
-    principal: Money,
-    annual_rate_ppb: i64,
-    term_months: u32,
-) -> Result<Money, SimulationError> {
-    if annual_rate_ppb == 0 {
-        return Ok(principal.scaled_by(
-            Factor::new(1, i64::from(term_months)),
-            "zero-rate mortgage payment",
-        )?);
-    }
-    let monthly_rate = mul_div_i128_round_half_up(
-        i128::from(annual_rate_ppb),
-        CONTRACT_SCALE,
-        12 * i128::from(WIRE_RATE_SCALE),
-        "mortgage monthly rate",
-    )?;
-    let factor = CONTRACT_SCALE
-        .checked_add(monthly_rate)
-        .ok_or(ArithmeticError::Overflow {
-            operation: "mortgage rate factor",
-        })?;
-    let mut discount = CONTRACT_SCALE;
-    for _ in 0..term_months {
-        discount = mul_div_i128_round_half_up(
-            discount,
-            CONTRACT_SCALE,
-            factor,
-            "mortgage discount factor",
-        )?;
-    }
-    let denominator = CONTRACT_SCALE
-        .checked_sub(discount)
-        .ok_or(ArithmeticError::Overflow {
-            operation: "mortgage annuity denominator",
-        })?;
-    let payment = mul_div_i128_round_half_up(
-        i128::from(principal.0),
-        monthly_rate,
-        denominator,
-        "mortgage payment",
-    )?;
-    Ok(Money(i64::try_from(payment).map_err(|_| {
-        ArithmeticError::Overflow {
-            operation: "mortgage payment",
-        }
-    })?))
-}
-
 /// The existing runner's explicit all-or-none-by-source settlement control.
 /// This is distinct from the ordered, fatal-on-first-rejection actor session.
 pub(super) fn settle_grouped(

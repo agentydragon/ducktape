@@ -147,7 +147,8 @@ fn world(input: ExecutionInput, capture: CaptureMode) -> World {
 #[test]
 fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
     let mut world = world(cash_only_input(), CaptureMode::Forensic);
-    world.prepare_month(0).unwrap();
+    world.prepare_month(0, &[], &[]).unwrap();
+    world.assemble_claims(&[]).unwrap();
     let scope = world.scope("alice").unwrap();
     let observation = world.observe(&scope);
     let pools: Vec<_> = observation.books.holding_pools().collect();
@@ -177,8 +178,9 @@ fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
             .unwrap(),
         Outcome::Executed
     ));
-    world.close_month(false, Money(0)).unwrap();
-    world.prepare_month(1).unwrap();
+    world.close_month(false, Money(0), &[], &[]).unwrap();
+    world.prepare_month(1, &[], &[]).unwrap();
+    world.assemble_claims(&[]).unwrap();
     let observation = world.observe(&scope);
     assert_eq!(
         observation.books.public_price("stock").unwrap(),
@@ -186,8 +188,8 @@ fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
     );
     assert_eq!(observation.books.public_value().unwrap(), Money(4_000));
     assert_eq!(observation.books.cash().unwrap(), Money(500));
-    world.close_month(false, Money(0)).unwrap();
-    let financial = world.finish().unwrap().financial.unwrap();
+    world.close_month(false, Money(0), &[], &[]).unwrap();
+    let financial = world.finish(&[]).unwrap().financial.unwrap();
     let lot = &financial.months.last().unwrap().lots[0];
     assert_eq!(lot.units_remaining, Quantity(2_000_000));
     assert_eq!(lot.basis_remaining, Money(2_000));
@@ -206,10 +208,11 @@ fn cash_only_actor_observes_and_purchases_an_unheld_declared_asset() {
 fn declaring_an_empty_pool_does_not_invest_cash_without_an_action() {
     let mut world = world(cash_only_input(), CaptureMode::Forensic);
     for month in 0..2 {
-        world.prepare_month(month).unwrap();
-        world.close_month(false, Money(0)).unwrap();
+        world.prepare_month(month, &[], &[]).unwrap();
+        world.assemble_claims(&[]).unwrap();
+        world.close_month(false, Money(0), &[], &[]).unwrap();
     }
-    let summary = world.finish().unwrap().summary.unwrap();
+    let summary = world.finish(&[]).unwrap().summary.unwrap();
     assert!(summary.ending_book.lots.is_empty());
     assert_eq!(summary.cash[0].values, [Money(2_500); 3]);
 }
@@ -218,7 +221,8 @@ fn declaring_an_empty_pool_does_not_invest_cash_without_an_action() {
 fn an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation() {
     for wrong_scale in [false, true] {
         let mut world = world(cash_only_input(), CaptureMode::Forensic);
-        world.prepare_month(0).unwrap();
+        world.prepare_month(0, &[], &[]).unwrap();
+        world.assemble_claims(&[]).unwrap();
         let rejected = world
             .apply(
                 "alice",
@@ -245,8 +249,8 @@ fn an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation() {
             world.account_balance("alice", "checking").unwrap(),
             Some(Money(2_500))
         );
-        world.close_month(true, Money(0)).unwrap();
-        let financial = world.finish().unwrap().financial.unwrap();
+        world.close_month(true, Money(0), &[], &[]).unwrap();
+        let financial = world.finish(&[]).unwrap().financial.unwrap();
         assert!(financial.months.last().unwrap().lots.is_empty());
         assert!(
             financial
@@ -287,7 +291,8 @@ fn cashflows_claims_sales_and_cross_year_tax_share_financial_books() {
     let mut world = world(taxed_input(), CaptureMode::Forensic);
     let scope = world.scope("alice").unwrap();
     for month in 0..13 {
-        world.prepare_month(month).unwrap();
+        world.prepare_month(month, &[], &[]).unwrap();
+        world.assemble_claims(&[]).unwrap();
         let observation = world.observe(&scope);
         assert_eq!(
             observation.books.cash().unwrap(),
@@ -328,9 +333,9 @@ fn cashflows_claims_sales_and_cross_year_tax_share_financial_books() {
             ));
         }
         assert!(world.unpaid_claims("alice").is_empty());
-        world.close_month(false, Money(0)).unwrap();
+        world.close_month(false, Money(0), &[], &[]).unwrap();
     }
-    let output = world.finish().unwrap();
+    let output = world.finish(&[]).unwrap();
     let financial = output.financial.unwrap();
     assert_eq!(financial.months.len(), 14);
     assert_eq!(financial.dispositions[0].proceeds, Money(30_000));
@@ -358,7 +363,8 @@ fn cashflows_claims_sales_and_cross_year_tax_share_financial_books() {
 #[test]
 fn ordered_actions_can_buy_before_transferring_and_buy_again() {
     let mut world = world(input(2, 1), CaptureMode::Forensic);
-    world.prepare_month(0).unwrap();
+    world.prepare_month(0, &[], &[]).unwrap();
+    world.assemble_claims(&[]).unwrap();
     for (index, action) in [
         sell(20_000_000),
         buy("first-buy", "checking", 10_000_000),
@@ -374,14 +380,15 @@ fn ordered_actions_can_buy_before_transferring_and_buy_again() {
             Outcome::Executed
         ));
     }
-    world.close_month(false, Money(0)).unwrap();
-    world.prepare_month(1).unwrap();
+    world.close_month(false, Money(0), &[], &[]).unwrap();
+    world.prepare_month(1, &[], &[]).unwrap();
+    world.assemble_claims(&[]).unwrap();
     let scope = world.scope("alice").unwrap();
     let observation = world.observe(&scope);
     assert_eq!(observation.books.cash().unwrap(), Money(0));
     assert_eq!(observation.books.public_value().unwrap(), Money(105_000));
-    world.close_month(false, Money(0)).unwrap();
-    let financial = world.finish().unwrap().financial.unwrap();
+    world.close_month(false, Money(0), &[], &[]).unwrap();
+    let financial = world.finish(&[]).unwrap().financial.unwrap();
     let chosen = [
         "chosen-sale",
         "first-buy",
@@ -409,7 +416,8 @@ fn rejected_financial_request_preserves_prior_sale_and_independent_world() {
     let mut live = prepared
         .world(1, Vec::new(), CaptureMode::Forensic, Some("alice"), None)
         .unwrap();
-    failed.prepare_month(0).unwrap();
+    failed.prepare_month(0, &[], &[]).unwrap();
+    failed.assemble_claims(&[]).unwrap();
     assert!(matches!(
         failed.apply("alice", &sell(10_000_000), 0).unwrap(),
         Outcome::Executed
@@ -420,17 +428,18 @@ fn rejected_financial_request_preserves_prior_sale_and_independent_world() {
             .unwrap(),
         Outcome::Rejected(_)
     ));
-    failed.close_month(true, Money(0)).unwrap();
+    failed.close_month(true, Money(0), &[], &[]).unwrap();
     for month in 0..3 {
-        live.prepare_month(month).unwrap();
+        live.prepare_month(month, &[], &[]).unwrap();
+        live.assemble_claims(&[]).unwrap();
         assert!(matches!(
             live.apply("alice", &consume(1_000), 0).unwrap(),
             Outcome::Executed
         ));
-        live.close_month(false, Money(0)).unwrap();
+        live.close_month(false, Money(0), &[], &[]).unwrap();
     }
-    let failed = failed.finish().unwrap().financial.unwrap();
-    let live = live.finish().unwrap().financial.unwrap();
+    let failed = failed.finish(&[]).unwrap().financial.unwrap();
+    let live = live.finish(&[]).unwrap().financial.unwrap();
     assert_eq!(failed.dispositions.len(), 1);
     assert!(failed.transfers.is_empty());
     assert_eq!(failed.months.len(), 2);
@@ -448,7 +457,8 @@ fn payment_capture_names_the_actual_selected_source() {
     let mut input = input(1, 1);
     add_bill(&mut input, 5_000);
     let mut world = world(input, CaptureMode::Forensic);
-    world.prepare_month(0).unwrap();
+    world.prepare_month(0, &[], &[]).unwrap();
+    world.assemble_claims(&[]).unwrap();
     let scope = world.scope("alice").unwrap();
     let claim = world.observe(&scope).claims().next().unwrap().id;
     assert!(matches!(
@@ -471,8 +481,8 @@ fn payment_capture_names_the_actual_selected_source() {
             .unwrap(),
         Outcome::Executed
     ));
-    world.close_month(false, Money(0)).unwrap();
-    let output = world.finish().unwrap();
+    world.close_month(false, Money(0), &[], &[]).unwrap();
+    let output = world.finish(&[]).unwrap();
     let financial = output.financial.unwrap();
     assert_eq!(financial.obligations.len(), 1);
     assert_eq!(financial.obligations[0].from.account_id, "reserve");
@@ -500,7 +510,8 @@ fn compact_capture_replays_observed_prefixes_and_canonical_payment_identity() {
     ] {
         let mut world = world(input.clone(), capture);
         for month in 0..2 {
-            world.prepare_month(month).unwrap();
+            world.prepare_month(month, &[], &[]).unwrap();
+            world.assemble_claims(&[]).unwrap();
             assert!(matches!(
                 world.apply("alice", &sell(1_000_000), 0).unwrap(),
                 Outcome::Executed
@@ -513,9 +524,9 @@ fn compact_capture_replays_observed_prefixes_and_canonical_payment_identity() {
                 )
                 .unwrap();
             assert_eq!(matches!(outcome, Outcome::Rejected(_)), month == 1);
-            world.close_month(month == 1, Money(0)).unwrap();
+            world.close_month(month == 1, Money(0), &[], &[]).unwrap();
         }
-        outputs.push(world.finish().unwrap());
+        outputs.push(world.finish(&[]).unwrap());
     }
     let compact = outputs[0].summary.as_ref().unwrap();
     assert!(outputs[0].financial.is_none());
@@ -571,12 +582,13 @@ fn unpaid_claims_keep_occurrence_and_source_without_hidden_sales() {
     add_bill(&mut input, 7_000);
     for capture in [CaptureMode::Summary, CaptureMode::Forensic] {
         let mut world = world(input.clone(), capture);
-        world.prepare_month(0).unwrap();
+        world.prepare_month(0, &[], &[]).unwrap();
+        world.assemble_claims(&[]).unwrap();
         let unpaid = world.unpaid_claims("alice");
         assert_eq!(unpaid.len(), 2);
         assert_ne!(unpaid[0].id, unpaid[1].id);
-        world.close_month(true, Money(0)).unwrap();
-        let output = world.finish().unwrap();
+        world.close_month(true, Money(0), &[], &[]).unwrap();
+        let output = world.finish(&[]).unwrap();
         let summary = output.summary.unwrap();
         let claims = &summary.unpaid_claims;
         assert_ne!(claims[0].id, claims[1].id);

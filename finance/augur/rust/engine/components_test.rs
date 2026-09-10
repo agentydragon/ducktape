@@ -295,18 +295,20 @@ fn component_capture_keeps_explicit_stop_marks_and_independent_books() {
         let mut live = prepared
             .world(0, opening.clone(), mode, Some("alice"), None)
             .unwrap();
-        stopped.prepare_month(0).unwrap();
+        stopped.prepare_month(0, &[], &[]).unwrap();
+        stopped.assemble_claims(&[]).unwrap();
         stopped.set_component_marks(opening.clone()).unwrap();
-        stopped.close_month(true, Money(0)).unwrap();
+        stopped.close_month(true, Money(0), &[], &[]).unwrap();
         for month in 0..2 {
-            live.prepare_month(month).unwrap();
+            live.prepare_month(month, &[], &[]).unwrap();
+            live.assemble_claims(&[]).unwrap();
             let mut marks = opening.clone();
             marks[0].value = Money(110 + 10 * i64::from(month));
             live.set_component_marks(marks).unwrap();
-            live.close_month(false, Money(0)).unwrap();
+            live.close_month(false, Money(0), &[], &[]).unwrap();
         }
-        let stopped = stopped.finish().unwrap();
-        let live = live.finish().unwrap();
+        let stopped = stopped.finish(&[]).unwrap();
+        let live = live.finish(&[]).unwrap();
         assert_eq!((stopped.rollout_id, live.rollout_id), (1, 0));
         let stopped_summary = stopped.summary.unwrap();
         let live_summary = live.summary.unwrap();

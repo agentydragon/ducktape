@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 
 use crate::execution::{
-    BondState, ExecutionInput, MortgageState, PropertyState, TlhPortfolioObservation,
+    BondState, ExecutionInput, MortgageSnapshot, PropertyState, TlhPortfolioObservation,
 };
 use crate::holdings::{AgentHoldings, HoldingsError, LotView};
 use crate::ledger::{Ledger, LedgerError};
@@ -152,7 +152,7 @@ pub struct SnapshotState<'a> {
     pub lots: &'a [LotView<'a>],
     pub tlh_portfolios: &'a [TlhPortfolioObservation],
     pub properties: &'a [PropertyState],
-    pub mortgages: &'a [MortgageState],
+    pub mortgages: &'a [MortgageSnapshot],
     /// This snapshot's bond states, already CPI-indexed and zeroed for matured bonds
     /// by `engine::bond_states`.
     pub bonds: &'a [BondState],

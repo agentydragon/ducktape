@@ -165,7 +165,7 @@ pub(super) fn initialize(
             &state.lots,
             &state.tlh_portfolios,
             &state.properties,
-            &state.mortgages,
+            &[],
             Money(0),
             false,
         )?;
