@@ -47,7 +47,7 @@ pub struct Payment {
 }
 
 impl Payment {
-    pub(super) fn new(
+    pub(in crate::engine) fn new(
         month: u32,
         action_index: usize,
         request: &payments::Request,
@@ -102,12 +102,9 @@ pub struct Summary {
     /// This is a result, not the actor's policy observation.
     pub ending_book: MonthOutput,
     pub ending_mark_month: u32,
-    /// Final month's attempted prefix, including a rejected action. Sufficient to
-    /// resolve `Stop::RejectedAction` without retaining the whole action history.
-    pub last_receipts: Vec<Receipt>,
 }
 
-pub(super) struct Capture {
+pub(in crate::engine) struct Capture {
     cash: Vec<CashSeries>,
     holdings: BTreeMap<(AccountRef, String), Vec<Money>>,
     bond_principal: Vec<(usize, BondSeries)>,
@@ -230,7 +227,6 @@ impl Capture {
         input: &ExecutionInput,
         actor: &str,
         state: &mut RolloutState,
-        last_receipts: Vec<Receipt>,
     ) -> Result<Summary, SimulationError> {
         let recorder = &mut state.recorder;
         // Dense/forensic traces also retain these records; compact capture moves them.
@@ -285,7 +281,6 @@ impl Capture {
                 state.failed_month.is_some(),
             )?,
             ending_mark_month: state.failed_month.unwrap_or(state.month),
-            last_receipts,
         })
     }
 }

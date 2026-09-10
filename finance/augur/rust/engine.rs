@@ -4,10 +4,6 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{
-    allocation::{
-        AllocationError, deposit_by_sleeve, quantity_for_value, rebalance_by_sleeve,
-        withdrawal_by_sleeve,
-    },
     execution::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondCoupon, BondSpec, BondState,
         CapitalGainState, CapitalImprovementOutcome, DistributionOutcome, ExecutionInput,
@@ -51,13 +47,13 @@ mod private_equity;
 mod property;
 mod recorder;
 mod securities;
-mod target_allocation;
 mod taxes;
 #[cfg(test)]
 mod tests;
 pub mod trades;
 pub mod transfers;
 mod validation;
+pub mod world;
 
 pub use errors::SimulationError;
 pub use recorder::CaptureMode;
@@ -70,7 +66,6 @@ use private_equity::*;
 use property::*;
 use recorder::*;
 use securities::*;
-use target_allocation::*;
 use taxes::*;
 
 use trades::*;
@@ -300,7 +295,6 @@ struct RolloutState {
     tax: TaxState,
     tax_liabilities: Vec<TaxLiabilityState>,
     tlh_portfolios: Vec<TlhPortfolioObservation>,
-    target_allocation_buy_count: Vec<Vec<u32>>,
     primary_residence_by_agent: BTreeMap<String, Option<String>>,
     recorder: Recorder,
     failed_month: Option<u32>,
@@ -488,12 +482,6 @@ impl RolloutState {
                 basis_remaining: spec.basis,
             });
         }
-        let target_allocation_buy_count: Vec<Vec<u32>> = fixture
-            .scenario
-            .target_allocation_policies
-            .iter()
-            .map(|policy| vec![0; policy.sleeves.len()])
-            .collect();
         let properties = Vec::<PropertyState>::new();
         let mortgages = Vec::<MortgageState>::new();
         let tax_liabilities = Vec::<TaxLiabilityState>::new();
@@ -550,7 +538,6 @@ impl RolloutState {
             tax,
             tax_liabilities,
             tlh_portfolios,
-            target_allocation_buy_count,
             primary_residence_by_agent,
             recorder,
             failed_month: None,
@@ -589,16 +576,6 @@ impl RolloutState {
         let rollout_id = self.rollout_id;
         let month = self.month;
         let mut claims = self.prepare_month(fixture)?;
-        let mut target_allocation_buys = Vec::new();
-        for index in 0..fixture.scenario.target_allocation_policies.len() {
-            let plan = allocation_plan(fixture, &self, &claims, index)?;
-            for action in plan.sales {
-                let actor = &fixture.scenario.target_allocation_policies[index].agent_id;
-                let holdings = AgentHoldings::resolve(fixture, actor)?;
-                actors::execute(&mut self, fixture, &holdings, &mut claims, &action)?;
-            }
-            target_allocation_buys.extend(plan.buys);
-        }
         let settlement = settle_grouped(
             &mut payments::Context {
                 fixture,
@@ -616,15 +593,6 @@ impl RolloutState {
         if settlement.failed {
             self.failed_month = Some(month);
         } else {
-            for order in &target_allocation_buys {
-                if let Some(action) = allocation_buy(fixture, &mut self, order)? {
-                    let holdings = AgentHoldings::resolve(
-                        fixture,
-                        &fixture.scenario.target_allocation_policies[order.policy_index].agent_id,
-                    )?;
-                    actors::execute(&mut self, fixture, &holdings, &mut claims, &action)?;
-                }
-            }
             execute_private_equity(
                 fixture,
                 rollout_id,

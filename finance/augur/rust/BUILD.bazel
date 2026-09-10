@@ -27,12 +27,10 @@ py_test(
 rust_library(
     name = "simulator",
     srcs = [
-        "allocation.rs",
         "engine.rs",
         "engine/accounts.rs",
         "engine/actors.rs",
         "engine/actors/outcomes.rs",
-        "engine/actors/phases.rs",
         "engine/actors_test.rs",
         "engine/cashflows.rs",
         "engine/claims.rs",
@@ -48,7 +46,6 @@ rust_library(
         "engine/property.rs",
         "engine/recorder.rs",
         "engine/securities.rs",
-        "engine/target_allocation.rs",
         "engine/taxes.rs",
         "engine/tests.rs",
         "engine/trades.rs",
@@ -56,6 +53,7 @@ rust_library(
         "engine/transfers.rs",
         "engine/transfers_test.rs",
         "engine/validation.rs",
+        "engine/world.rs",
         "event_frames.rs",
         "execution.rs",
         "holdings.rs",

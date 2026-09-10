@@ -7,7 +7,7 @@ use super::*;
 
 /// Move an exact amount from the actor's available cash to a declared cash account.
 /// No automatic sale, borrowing or partial fill is implied.
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct TransferRequest {
     pub cause_id: String,
     pub from: AccountRef,

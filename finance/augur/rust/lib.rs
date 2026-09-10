@@ -4,7 +4,6 @@
 //! no floating-point monetary type and does not deserialize JSON numbers into
 //! one.
 
-pub mod allocation;
 pub mod engine;
 pub mod event_frames;
 pub mod execution;

@@ -5,7 +5,7 @@ use super::*;
 use crate::execution::TlhOperation;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CashRequest {
     pub cause_id: String,
     pub agent_id: String,
@@ -14,7 +14,7 @@ pub struct CashRequest {
     pub amount: Money,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LiquidateRequest {
     pub cause_id: String,
     pub agent_id: String,

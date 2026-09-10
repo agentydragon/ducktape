@@ -8,12 +8,10 @@ use super::*;
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
-    #[error("unsupported actor control input: {reason}")]
-    UnsupportedActorInput { reason: String },
-    #[error("actor responses must name each active path/month exactly once")]
-    InvalidActorResponses,
-    #[error("actor session operation does not match its pending lifecycle state")]
-    InvalidActorSessionState,
+    #[error("financial books are at month {expected}, request names {actual}")]
+    InvalidFinancialMonth { expected: u32, actual: u32 },
+    #[error("unknown scheduled sale index {index}")]
+    InvalidScheduledSale { index: usize },
     #[error(transparent)]
     PropertyValuation(#[from] crate::property::ValuationError),
     #[error(transparent)]
@@ -343,8 +341,6 @@ pub enum SimulationError {
     MixedPrivateEquityOwners { issuer_id: String },
     #[error("invalid component financial effects: {reason}")]
     InvalidComponentEffect { reason: String },
-    #[error(transparent)]
-    Allocation(#[from] AllocationError),
     #[error(transparent)]
     Ledger(#[from] LedgerError),
     #[error(transparent)]
