@@ -2,9 +2,11 @@
 
 Written 2026-04-19 and **not started since**: `atlas` still runs Proxmox
 (<../cluster/README.md> node table), `ansible/atlas.yaml` still configures it, and
-`cluster/terraform.tf` still pins `bpg/proxmox`. The delta analysis below is the
-value here — it is what would otherwise be re-derived — not a scheduled piece of
-work. The friction it exists to remove is still real and still recorded elsewhere:
+The former shared `cluster/terraform.tf` template was not an active Terraform root;
+the active cluster infrastructure lives under `cluster/terraform/main/`. The delta
+analysis below is the value here — it is what would otherwise be re-derived — not a
+scheduled piece of work. The friction it exists to remove is still real and still
+recorded elsewhere:
 <../nix/TODO.md> has to special-case atlas for `services.google-drive` because it is
 not NixOS.
 
