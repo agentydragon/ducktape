@@ -6,6 +6,9 @@ metadata:
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  # Explicitly retain CNPG's current default while causing it to retry the
+  # role tombstones after their Database resources have removed the databases.
+  logLevel: info
 
   probes:
     liveness:
