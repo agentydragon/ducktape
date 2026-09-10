@@ -15,7 +15,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: forgejo-agentydragon-state-transfer-v2
+  name: forgejo-agentydragon-state-transfer-v3
   namespace: tofu-state
 spec:
   backoffLimit: 0
@@ -45,7 +45,7 @@ spec:
           args:
             - |
               umask 077
-              trap 'rm -f /work/source.tfstate /work/destination.tfstate' EXIT
+              trap 'rm -f /work/source.tfstate /work/destination.tfstate /work/source.normalized /work/destination.normalized' EXIT
               printf 'runner started\n'
               tofu version
               mkdir -p /work/source /work/destination
@@ -60,19 +60,32 @@ spec:
               printf 'pulling source state\n'
               timeout 90s env PGPASSWORD="$OLD_PGPASSWORD" tofu state pull > /work/source.tfstate
               test -s /work/source.tfstate
-              source_count="$(timeout 90s env PGPASSWORD="$OLD_PGPASSWORD" tofu state list | wc -l)"
 
               cd /work/destination
               printf 'initializing destination backend\n'
               timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu init -input=false -no-color \
                 -backend-config='conn_str=postgres://tfstate_forgejo_agentydragon@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate_forgejo_agentydragon?sslmode=require' \
                 -backend-config='schema_name=forgejo_agentydragon'
-              test -z "$(timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state list)"
-              printf 'pushing state to destination\n'
-              timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state push /work/source.tfstate
+              # A backend with no state makes `tofu state list` fail, so do not
+              # use it as an emptiness test. A prior Job may already have
+              # written this exact state; accept only that case and otherwise
+              # fail closed rather than overwriting a target state.
+              if timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state pull > /work/destination.tfstate 2>/dev/null; then
+                printf 'destination state already exists\n'
+              else
+                rm -f /work/destination.tfstate
+                printf 'pushing state to empty destination\n'
+                timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state push /work/source.tfstate
+                timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state pull > /work/destination.tfstate
+              fi
               printf 'verifying destination state\n'
-              timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state pull > /work/destination.tfstate
-              cmp -s /work/source.tfstate /work/destination.tfstate
+              # The backend records its writer's OpenTofu version and may assign
+              # a fresh lineage when its first state is written. Everything else,
+              # including outputs and resource instances, must match exactly.
+              sed '/^  "lineage":/d; /^  "terraform_version":/d' /work/source.tfstate > /work/source.normalized
+              sed '/^  "lineage":/d; /^  "terraform_version":/d' /work/destination.tfstate > /work/destination.normalized
+              cmp -s /work/source.normalized /work/destination.normalized
+              source_count="$(timeout 90s env PGPASSWORD="$OLD_PGPASSWORD" tofu state list | wc -l)"
               destination_count="$(timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state list | wc -l)"
               test "$source_count" = "$destination_count"
               printf 'state transfer verified: %s resources\n' "$destination_count"
