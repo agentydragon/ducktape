@@ -11,8 +11,9 @@ py_library(
     name = "sleeves",
     srcs = ["sleeves.py"],
     deps = [
+        "//finance/augur/sim:actions",
         "//finance/augur/sim:fixed_point",
-        "//finance/augur/sim:session",
+        "//finance/augur/sim:observations",
     ],
 )
 
@@ -54,5 +55,18 @@ py_library(
     deps = [
         ":sleeves",
         "//finance/augur/sim:session",
+    ],
+)
+
+py_library(
+    name = "configured_allocation",
+    srcs = ["configured_allocation.py"],
+    deps = [
+        ":cash_band",
+        ":sleeves",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:prepared",
     ],
 )

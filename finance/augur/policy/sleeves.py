@@ -8,8 +8,9 @@ Independent calls on the same observation do not reserve each other's lots or ca
 
 from fractions import Fraction
 
+from finance.augur.sim.actions import Action, Buy, LotSale, Sell
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value
-from finance.augur.sim.session import Action, HoldingPool, Observation, PublicPosition
+from finance.augur.sim.observations import HoldingPool, Observation, PublicPosition
 
 
 def _count(value: int) -> int:
@@ -22,6 +23,7 @@ def _count(value: int) -> int:
 
 def _allocate(values: list[int], weights: list[int], amount: int, *, withdrawing: bool) -> list[int]:
     """Water-fill by value/weight; conserve the exact budget after currency rounding."""
+    _validate_values(values, weights)
     _count(amount)
     _count(sum(values))
     wanted = min(amount, sum(values)) if withdrawing else amount
@@ -71,6 +73,32 @@ def _allocate(values: list[int], weights: list[int], amount: int, *, withdrawing
     return [a + b for a, b in zip(result, adjusted, strict=True)]
 
 
+def _validate_values(values: list[int], weights: list[int]) -> None:
+    if not values or len(values) != len(weights) or not any(weights):
+        raise ValueError("allocation needs matching nonempty values and at least one positive target")
+    for value in (*values, *weights):
+        _count(value)
+
+
+def _rebalance_amounts(
+    values: list[int], weights: list[int], tolerance_ppb: int, *, force: bool = False
+) -> tuple[list[int], list[int]]:
+    """All sleeves rebalance together after any relative-drift threshold is reached."""
+    _validate_values(values, weights)
+    _count(tolerance_ppb)
+    total = _count(sum(values))
+    weight_total = sum(weights)
+    wanted = [total * weight // weight_total for weight in weights]
+    drifts = [value - target for value, target in zip(values, wanted, strict=True)]
+    fires = any(
+        (weight == 0 and value > 0) or (target > 0 and abs(drift) * MONEY_FACTOR_SCALE >= tolerance_ppb * target)
+        for value, weight, target, drift in zip(values, weights, wanted, drifts, strict=True)
+    )
+    if not fires and not force:
+        return [0] * len(values), [0] * len(values)
+    return [max(0, drift) for drift in drifts], [max(0, -drift) for drift in drifts]
+
+
 def _pools(
     observation: Observation, targets: dict[tuple[str, str], int], cash_account_id: str
 ) -> list[tuple[HoldingPool, list[PublicPosition], int]]:
@@ -96,6 +124,41 @@ def _quoted_value(units: int, price: int, scale: int) -> int:
     return _count((2 * units * price + scale) // (2 * scale))
 
 
+def _sale_lots(
+    lots: list[PublicPosition], amount: int, *, full_exit: bool = False, unit_target: Fraction | None = None
+) -> tuple[list[LotSale], int]:
+    """Select an ordered lot prefix by gross money or an explicit economic-unit budget.
+
+    Lots keep their own grids and per-lot proceeds rounding. A full exit selects
+    every unit, including positions whose entire mark rounds to zero.
+    """
+    selected = []
+    proceeds = 0
+    remaining = amount
+    for lot in lots:
+        if not full_exit and (unit_target <= 0 if unit_target is not None else remaining <= 0):
+            break
+        if full_exit:
+            units = lot.units
+        elif unit_target is not None:
+            units = min(lot.units, unit_target.numerator * lot.quantity_scale // unit_target.denominator)
+        else:
+            units = (
+                lot.units
+                if remaining >= lot.value
+                else min(lot.units, quantity_for_value(remaining, lot.price, lot.quantity_scale, round_up=True))
+            )
+        if not units:
+            continue
+        value = _quoted_value(units, lot.price, lot.quantity_scale)
+        remaining -= value
+        proceeds += value
+        if unit_target is not None:
+            unit_target -= Fraction(units, lot.quantity_scale)
+        selected.append(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=units))
+    return selected, _count(proceeds)
+
+
 def _sales(
     observation: Observation,
     selected: list[tuple[HoldingPool, list[PublicPosition], int]],
@@ -107,23 +170,11 @@ def _sales(
     actions = []
     proceeds = 0
     for index, ((pool, lots, _), amount, full_exit) in enumerate(zip(selected, amounts, full_exits, strict=True)):
-        sale_lots = []
-        remaining = amount
-        for lot in lots:
-            if not full_exit and remaining <= 0:
-                break
-            units = (
-                lot.units
-                if full_exit or remaining >= lot.value
-                else min(lot.units, quantity_for_value(remaining, lot.price, lot.quantity_scale, round_up=True))
-            )
-            value = _quoted_value(units, lot.price, lot.quantity_scale)
-            remaining -= value
-            proceeds += value
-            sale_lots.append((lot.account_id, lot.lot_id, units))
+        sale_lots, raised = _sale_lots(lots, amount, full_exit=full_exit)
+        proceeds += raised
         if sale_lots:
             actions.append(
-                Action.sell(
+                Sell(
                     cause_id=f"{cause_id}-sell-{index}",
                     agent_id=observation.agent_id,
                     proceeds_account_id=cash_account_id,
@@ -151,9 +202,10 @@ def _buys(
             continue
         cash_budget -= _quoted_value(units, pool.price, pool.quantity_scale)
         actions.append(
-            Action.buy(
+            Buy(
                 cause_id=f"{cause_id}-buy-{index}",
-                from_account=(observation.agent_id, cash_account_id),
+                agent_id=observation.agent_id,
+                cash_account_id=cash_account_id,
                 holding_account_id=pool.account_id,
                 asset_id=pool.asset_id,
                 lot_id=f"{cause_id}-buy-{index}",
@@ -278,33 +330,14 @@ def rebalance(
     No tax or later settlement effects are projected.
     """
     selected = _pools(observation, targets, cash_account_id)
-    _count(tolerance_ppb)
     if _count(cash_budget) > dict(observation.accounts)[cash_account_id]:
         raise ValueError("rebalance budget exceeds observed funding-account cash")
     values = [sum(lot.value for lot in lots) for _, lots, _ in selected]
-    total = _count(sum(values))
-    weight_total = sum(targets.values())
-    wanted = [total * weight // weight_total for weight in targets.values()]
-    drifts = [value - target for value, target in zip(values, wanted, strict=True)]
-    fires = any(
-        (weight == 0 and bool(lots)) or (target > 0 and abs(drift) * MONEY_FACTOR_SCALE >= tolerance_ppb * target)
-        for (_, lots, weight), target, drift in zip(selected, wanted, drifts, strict=True)
-    )
-    if not fires:
+    exits = any(weight == 0 and lots for _, lots, weight in selected)
+    sales_amounts, buy_amounts = _rebalance_amounts(values, list(targets.values()), tolerance_ppb, force=exits)
+    if not any(sales_amounts) and not any(buy_amounts) and not exits:
         return []
     sales, proceeds = _sales(
-        observation,
-        selected,
-        [max(0, drift) for drift in drifts],
-        [weight == 0 for weight in targets.values()],
-        cash_account_id,
-        cause_id,
+        observation, selected, sales_amounts, [weight == 0 for weight in targets.values()], cash_account_id, cause_id
     )
-    return sales + _buys(
-        observation,
-        selected,
-        [max(0, -drift) for drift in drifts],
-        cash_account_id,
-        _count(cash_budget + proceeds),
-        cause_id,
-    )
+    return sales + _buys(observation, selected, buy_amounts, cash_account_id, _count(cash_budget + proceeds), cause_id)
