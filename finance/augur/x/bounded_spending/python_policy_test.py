@@ -50,9 +50,9 @@ def control(
     path = tmp_path / "input.json"
     write_prepared_input(prepared, path)
     targets = {("brokerage", "STOCKS"): 1}
-    native = run(path.read_text(), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2])
+    baseline = run(path.read_text(), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2])
     traces = run(path.read_text(), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2], capture="forensic")
-    return (parameters, path.read_text(), native, traces["rollouts"])
+    return (parameters, path.read_text(), baseline, traces["rollouts"])
 
 
 @pytest.mark.parametrize("batch_authored", [False, True])
@@ -60,12 +60,12 @@ def control(
 def test_scalar_adapter_and_batch_authoring_preserve_path_identity(
     control: tuple[Parameters, str, dict[str, Any], list[dict[str, Any]]], batch_authored: bool, chunk_size: int | None
 ) -> None:
-    parameters, input_json, native, traces = control
+    parameters, input_json, baseline, traces = control
     ids = [0, 1, 2]
     policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, ids)
     assert (
         run(input_json, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), ids, chunk_size=chunk_size, reverse=True)
-        == native
+        == baseline
     )
     if chunk_size is None:
         for id_ in reversed(ids):
@@ -75,7 +75,7 @@ def test_scalar_adapter_and_batch_authoring_preserve_path_identity(
             )
             assert trace["rollouts"] == [traces[id_]]
         second_year = [5_250_000, 4_500_000, 4_992_000] if parameters.max_cut_bps else [5_000_000] * 3
-        assert [row[12] for row in consumption(native)[1]] == second_year
+        assert [row[12] for row in consumption(baseline)[1]] == second_year
 
 
 @pytest.mark.parametrize("batch_authored", [False, True])

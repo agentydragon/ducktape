@@ -42,6 +42,8 @@ record behind the canonical frames, but omits the balanced journal.
 `simulate_summaries(...)` retains only fixed-size ending-book summaries. Dense
 performance comparisons must use `simulate_dense(...)`, not the compact path.
 
+The remaining native spending control has only test callers; experiments use
+`ActionSession`. Pending its separate test migration and retirement,
 `engine::spending::simulate(...)` adds an experiment-authored spending function,
 constructed separately for each rollout. It sees opening holdings at current
 prices and origin-relative CPI before monthly cashflows; it returns nominal

@@ -1,8 +1,9 @@
 """Compare fixed-real and bounded annual spending on identical materialized paths.
 
 This is an executable-policy experiment, not a published-study reproduction. Market
-history and instrument construction come from the existing Trinity experiment; its
-tax-free portfolio and cashflow-only, sales-only funding policy are retained.
+history and instrument construction come from the existing Trinity experiment.
+The tax-free portfolio uses Python-authored sales-only funding at the common
+post-cashflow decision boundary.
 """
 
 import argparse
@@ -132,7 +133,7 @@ def _write_consumption_distribution(
                 "currency_code": currency_code,
                 "currency_quantum": currency_quantum,
                 "amount_basis": "nominal currency quanta",
-                "conditioning": "only paths observed in the event month, including their failure month",
+                "conditioning": "known component amounts on observed paths, including attempted consumption in a failure month",
                 "percentiles": percentiles,
                 "failed_month": [
                     row["summary"]["ending_mark_month"] if row["stop"] is not None else None
