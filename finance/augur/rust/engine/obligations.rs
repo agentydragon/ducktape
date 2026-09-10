@@ -53,36 +53,29 @@ pub(super) fn mortgage_monthly_payment(
 }
 
 /// The existing runner's explicit all-or-none-by-source settlement control.
-/// This is not the planned ordered, fatal-on-first-rejection actor loop.
+/// This is distinct from the ordered, fatal-on-first-rejection actor session.
 pub(super) fn settle_grouped(
     context: &mut payments::Context<'_>,
     claims: &mut claims::Claims,
-    consumption: Option<payments::Consume>,
     product_agent_id: Option<&str>,
 ) -> Result<Settlement, SimulationError> {
-    let spending_request = consumption.is_some();
-    let requests: Vec<_> = consumption
-        .map(payments::Request::Consume)
-        .into_iter()
-        .chain(
-            claims
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, claim)| !claim.paid)
-                .map(|(index, claim)| {
-                    payments::Request::PayClaim(payments::PayClaim {
-                        request_id: index as u64 + 1,
-                        cause_id: claim.cause_id.clone(),
-                        claim: claims::ClaimId {
-                            month: claims.month,
-                            index,
-                        },
-                        from: claim.from.clone(),
-                        amount: claim.amount_due,
-                    })
-                }),
-        )
+    let requests: Vec<_> = claims
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, claim)| !claim.paid)
+        .map(|(index, claim)| {
+            payments::Request::PayClaim(payments::PayClaim {
+                request_id: index as u64 + 1,
+                cause_id: claim.cause_id.clone(),
+                claim: claims::ClaimId {
+                    month: claims.month,
+                    index,
+                },
+                from: claim.from.clone(),
+                amount: claim.amount_due,
+            })
+        })
         .collect();
     let mut due_by_source = BTreeMap::<AccountRef, Money>::new();
     for request in &requests {
@@ -105,8 +98,7 @@ pub(super) fn settle_grouped(
 
     let mut any_failure = false;
     let mut product_shortfall = Money(0);
-    let mut spending_paid = None;
-    for (index, request) in requests.iter().enumerate() {
+    for request in &requests {
         let receipt = if let Some(reason) = &rejected_by_source[request.from()] {
             request.receipt(payments::Outcome::Rejected(reason.clone()))
         } else {
@@ -150,9 +142,6 @@ pub(super) fn settle_grouped(
                     attempted_funding_sources: attempted_funding_sources.clone(),
                 });
         }
-        if spending_request && index == 0 {
-            spending_paid = Some(amount_paid);
-        }
         context.recorder.record_obligation(receipt.obligation(
             request,
             &target,
@@ -167,7 +156,6 @@ pub(super) fn settle_grouped(
     Ok(Settlement {
         failed: any_failure,
         product_shortfall,
-        spending_paid,
     })
 }
 
@@ -175,8 +163,6 @@ pub(super) fn settle_grouped(
 pub(super) struct Settlement {
     pub(super) failed: bool,
     pub(super) product_shortfall: Money,
-    /// None when this month contained no policy consumption demand.
-    pub(super) spending_paid: Option<Money>,
 }
 
 fn target_allocation_attempted_sources(fixture: &ExecutionInput, account: &AccountRef) -> String {

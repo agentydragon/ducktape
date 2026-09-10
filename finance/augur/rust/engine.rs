@@ -49,7 +49,6 @@ mod private_equity;
 mod property;
 mod recorder;
 mod securities;
-pub mod spending;
 mod target_allocation;
 mod taxes;
 #[cfg(test)]
@@ -99,8 +98,6 @@ struct RolloutComputation {
     failed_month: Option<u32>,
     /// Observed snapshots only, empty when no product agent was selected.
     product_metrics: Vec<BaseMetrics>,
-    consumption_requested: Vec<Money>,
-    consumption_paid: Vec<Money>,
 }
 
 impl RolloutComputation {
@@ -206,7 +203,7 @@ fn simulate_with_capture(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.input, rollout_id, capture_mode, None, None)
+            simulate_rollout(fixture.input, rollout_id, capture_mode, None)
                 .map(RolloutComputation::into_output)
         })
         .collect();
@@ -231,7 +228,7 @@ pub fn simulate_summaries_validated(
     let rollouts: Result<Vec<_>, _> = (0..fixture.input.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.input, rollout_id, CaptureMode::Summary, None, None)
+            simulate_rollout(fixture.input, rollout_id, CaptureMode::Summary, None)
                 .map(RolloutComputation::into_summary)
         })
         .collect();
@@ -266,7 +263,6 @@ pub fn simulate_product_metrics_validated(
                 rollout_id,
                 CaptureMode::Summary,
                 Some(&inputs),
-                None,
             )
             .map(|computation| (computation.product_metrics, computation.failed_month))
         })
@@ -296,8 +292,6 @@ struct RolloutState {
     recorder: Recorder,
     failed_month: Option<u32>,
     product_metrics: Vec<BaseMetrics>,
-    consumption_requested: Vec<Money>,
-    consumption_paid: Vec<Money>,
 }
 
 fn simulate_rollout(
@@ -305,9 +299,8 @@ fn simulate_rollout(
     rollout_id: u32,
     capture_mode: CaptureMode,
     product: Option<&ProductInputs>,
-    spending: Option<&mut spending::Policy<'_>>,
 ) -> Result<RolloutComputation, SimulationError> {
-    RolloutState::new(fixture, rollout_id, capture_mode, product)?.run(fixture, product, spending)
+    RolloutState::new(fixture, rollout_id, capture_mode, product)?.run(fixture, product)
 }
 
 impl RolloutState {
@@ -539,8 +532,6 @@ impl RolloutState {
             recorder,
             failed_month: None,
             product_metrics,
-            consumption_requested: Vec::new(),
-            consumption_paid: Vec::new(),
         })
     }
 
@@ -552,51 +543,27 @@ impl RolloutState {
         mut self,
         fixture: &ExecutionInput,
         product: Option<&ProductInputs>,
-        mut spending: Option<&mut spending::Policy<'_>>,
     ) -> Result<RolloutComputation, SimulationError> {
         while !self.is_finished(fixture) {
-            self = self.advance_month(fixture, product, spending.as_deref_mut())?;
+            self = self.advance_month(fixture, product)?;
         }
         self.finish(fixture)
     }
 
-    /// Execute one month at the existing opening-review boundary. Terminal states are
-    /// unchanged and never invoke policies. Consuming the state makes any execution
+    /// Execute one configured month. Terminal states are unchanged.
+    /// Consuming the state makes any execution
     /// error fatal: a caller cannot resume a month whose books may be partly updated.
     fn advance_month(
         mut self,
         fixture: &ExecutionInput,
         product: Option<&ProductInputs>,
-        mut spending: Option<&mut spending::Policy<'_>>,
     ) -> Result<Self, SimulationError> {
         if self.is_finished(fixture) {
             return Ok(self);
         }
         let rollout_id = self.rollout_id;
         let month = self.month;
-        // Decide from opening-of-month holdings and current prices, before this month's
-        // cashflows. The resulting demand is funded with the other monthly obligations.
-        let consumption = if let Some(policy) = spending.as_deref_mut() {
-            policy.consumption(
-                fixture,
-                rollout_id,
-                month,
-                observations::Books {
-                    ledger: &self.ledger,
-                    lots: &self.lots,
-                    mortgages: &self.mortgages,
-                    tax: &self.tax,
-                    tax_liabilities: &self.tax_liabilities,
-                    tlh_cumulative_harvest: &self.tlh_cumulative_harvest,
-                },
-            )?
-        } else {
-            None
-        };
         let mut claims = self.prepare_month(fixture)?;
-        let requested = consumption
-            .as_ref()
-            .map_or(Money(0), |request| request.amount);
         let target_allocation_buys = execute_target_allocation_sales(
             fixture,
             rollout_id,
@@ -607,7 +574,6 @@ impl RolloutState {
             &mut self.tlh_cumulative_harvest,
             month,
             &claims,
-            consumption.as_ref(),
         )?;
         let settlement = settle_grouped(
             &mut payments::Context {
@@ -621,14 +587,8 @@ impl RolloutState {
                 month,
             },
             &mut claims,
-            consumption,
             product.map(|inputs| inputs.primary_agent_id()),
         )?;
-        if self.recorder.capture_mode == CaptureMode::Summary && spending.is_some() {
-            self.consumption_requested.push(requested);
-            self.consumption_paid
-                .push(settlement.spending_paid.unwrap_or(Money(0)));
-        }
         if settlement.failed {
             self.failed_month = Some(month);
         } else {
@@ -838,8 +798,6 @@ impl RolloutState {
             recorder: self.recorder,
             failed_month: self.failed_month,
             product_metrics: self.product_metrics,
-            consumption_requested: self.consumption_requested,
-            consumption_paid: self.consumption_paid,
         })
     }
 }

@@ -355,21 +355,5 @@ fn moving_cash_within_the_actor_is_not_paid_consumption() {
         assert_eq!(state.ledger, before);
         assert_eq!(state.recorder.journal_entry_count, count);
         assert!(state.recorder.transfers.is_empty());
-
-        let summary = spending::simulate_summary(
-            &input,
-            &spending::Spending {
-                from: component.from.clone(),
-                to,
-                cause_id: "own-account".into(),
-            },
-            |_| |_| Ok(Money(10)),
-        )
-        .unwrap();
-        assert_eq!(
-            summary.consumption_requested,
-            [vec![Money(10)], vec![Money(10)]]
-        );
-        assert_eq!(summary.consumption_paid, [vec![Money(0)], vec![Money(0)]]);
     }
 }

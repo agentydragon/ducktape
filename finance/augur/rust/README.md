@@ -11,10 +11,10 @@ benchmark fixture helpers construct that same input; they are not a separate sch
 
 Internally, `RolloutState` initializes opening books once and advances one month at
 a time. The full-horizon drivers loop over that same advancement. Completed or
-failed states do not advance or invoke policies; an execution error consumes the
-state, preventing continuation from a partly applied month. This is not a public
-actor-session API. Existing spending controls review opening-month
-holdings; the separate scoped action control below reviews assembled monthly claims.
+failed states do not advance; an execution error consumes the state, preventing
+continuation from a partly applied month. This configured driver has no policy
+callback. The scoped action session below instead exposes assembled monthly
+claims to a Python-owned loop.
 
 ## Invariants
 
@@ -42,29 +42,9 @@ record behind the canonical frames, but omits the balanced journal.
 `simulate_summaries(...)` retains only fixed-size ending-book summaries. Dense
 performance comparisons must use `simulate_dense(...)`, not the compact path.
 
-The remaining native spending control has only test callers; experiments use
-`ActionSession`. Pending its separate test migration and retirement,
-`engine::spending::simulate(...)` adds an experiment-authored spending function,
-constructed separately for each rollout. It sees opening holdings at current
-prices and origin-relative CPI before monthly cashflows; it returns nominal
-consumption, funded alongside the execution input's other obligations. The function owns
-its review cadence and memory. This entry point retains forensic output;
-`engine::spending::simulate_summary(...)` returns the identified component's
-`consumption_requested` and `consumption_paid` plus the payer's existing seven base
-metric series and failure months, without retaining monthly snapshots, journals or
-event traces. Consumption arrays are `[rollout][event month]` in input currency
-quanta: live zero requests are zero, the failure month is included, and subsequent
-unobserved months are absent. Product metrics retain their separate snapshot-major
-layout and opening snapshot, with explicit validity for stopped paths as described
-in <docs/product_metrics.md>. Actual payment comes from
-that demand's receipt, even when another funding group's failure stops the path.
-Other consumption (including committed rent), taxes and asset purchases are not
-part of the policy component. `engine::spending::trace_rollout(...)` replays one
-original path with fresh policy state and its original factory/series identity.
-These entry points are native-only; Python/batched callbacks are not exposed here.
-
-The Python <../x/allocation_glide/README.md> consumer submits explicit trades and
-claim payments through `ActionSession`. Its optional <../policy/sleeves.py> helpers
+Python <../x/bounded_spending/README.md> and <../x/allocation_glide/README.md>
+consumers submit explicit trades and payments through `ActionSession`; there is
+no separate native amount/weight callback API. Optional <../policy/sleeves.py> helpers
 choose withdrawals, deposits and drift trades over named account/asset pools;
 the executor receives exact lot/quantity actions, not target weights.
 

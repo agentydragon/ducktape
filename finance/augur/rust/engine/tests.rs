@@ -76,12 +76,56 @@ pub(super) fn minimal_fixture() -> ExecutionInput {
     }
 }
 
-pub(super) fn spending_fixture() -> (ExecutionInput, spending::Spending) {
+/// Test input account bindings, not an executable spending-policy interface.
+pub(super) struct CashRoute {
+    pub(super) from: AccountRef,
+    pub(super) to: AccountRef,
+    pub(super) cause_id: String,
+}
+
+/// Inspect already-retained configured books without supplying actions or budgets.
+/// Financial work stays in the existing monthly step, including housing and PE.
+fn inspect_opening_books(
+    input: &ExecutionInput,
+    agent_id: &str,
+    mut inspect: impl FnMut(observations::ActorBooks<'_>) -> Result<(), SimulationError>,
+) -> Result<SimulationOutput, SimulationError> {
+    ValidatedInput::new(input)?;
+    let scope = AgentHoldings::resolve(input, agent_id)?;
+    let mut rollouts = Vec::new();
+    for rollout in 0..input.rollout_count {
+        let mut state = RolloutState::new(input, rollout, CaptureMode::Forensic, None)?;
+        while !state.is_finished(input) {
+            inspect(observations::ActorBooks {
+                scope: &scope,
+                books: observations::Books {
+                    ledger: &state.ledger,
+                    lots: &state.lots,
+                    mortgages: &state.mortgages,
+                    tax: &state.tax,
+                    tax_liabilities: &state.tax_liabilities,
+                    tlh_cumulative_harvest: &state.tlh_cumulative_harvest,
+                },
+                input,
+                rollout,
+                month: state.month,
+            })?;
+            state = state.advance_month(input, None)?;
+        }
+        rollouts.push(state.finish(input)?.into_output());
+    }
+    Ok(SimulationOutput {
+        schema_version: INPUT_SCHEMA_VERSION,
+        rollouts,
+    })
+}
+
+pub(super) fn spending_fixture() -> (ExecutionInput, CashRoute) {
     let mut fixture = minimal_fixture();
     fixture.rollout_count = 2;
     fixture.scenario.horizon_months = 13;
     fixture.scenario.accounts[0].opening_balance = Money(100_000);
-    let spending = spending::Spending {
+    let spending = CashRoute {
         from: fixture.scenario.accounts[0].account.clone(),
         to: AccountRef::new("world", "checking"),
         cause_id: "consumption".into(),
@@ -104,7 +148,7 @@ pub(super) fn spending_fixture() -> (ExecutionInput, spending::Spending) {
 }
 
 #[test]
-fn executable_spending_matches_scheduled_funding_and_tax_events() {
+fn configured_indexed_consumption_retains_funding_and_tax_events() {
     let (mut fixture, spending) = spending_fixture();
     fixture.scenario.accounts[0].opening_balance = Money(0);
     fixture.scenario.holding_pools = vec![holding_pool("alice", "checking", "stock", 1_000_000)];
@@ -188,22 +232,7 @@ fn executable_spending_matches_scheduled_funding_and_tax_events() {
             deductible_fraction_ppb: WIRE_RATE_SCALE,
         });
     let scheduled = simulate(&fixture).unwrap();
-    let scheduled_metrics = simulate_product_metrics(&fixture, &spending.from.agent_id).unwrap();
-    fixture.scenario.recurring_obligations.clear();
-    let executable = spending::simulate(&fixture, &spending, |_| {
-        |observation| Ok(Money(1_000).scaled_by(observation.price_level, "fixed real spending")?)
-    })
-    .unwrap();
-    assert_eq!(
-        serde_json::to_value(&executable).unwrap(),
-        serde_json::to_value(&scheduled).unwrap()
-    );
-    let compact = spending::simulate_summary(&fixture, &spending, |_| {
-        |observation| Ok(Money(1_000).scaled_by(observation.price_level, "fixed real spending")?)
-    })
-    .unwrap();
-    assert_eq!(compact.product_metrics, scheduled_metrics);
-    for rollout in &executable.rollouts {
+    for rollout in &scheduled.rollouts {
         assert_eq!(rollout.failed_month, None);
         assert!(!rollout.dispositions.is_empty());
         assert!(!rollout.tax_accruals.is_empty());
@@ -211,271 +240,7 @@ fn executable_spending_matches_scheduled_funding_and_tax_events() {
     }
 }
 
-#[test]
-fn spending_functions_have_rollout_local_memory_and_stop_at_failure() {
-    let (mut fixture, spending) = spending_fixture();
-    fixture.scenario.accounts[0].opening_balance = Money(5);
-    let output = spending::simulate(&fixture, &spending, |_| {
-        let mut requested = 0;
-        move |observation| {
-            assert!(observation.month <= 2, "no decisions after failure");
-            assert_eq!(observation.public_holdings, Money(0));
-            assert_eq!(observation.cash, Money(5 - requested * (requested + 1) / 2));
-            requested += 1;
-            Ok(Money(requested))
-        }
-    })
-    .unwrap();
-    for rollout in output.rollouts {
-        assert_eq!(rollout.failed_month, Some(2));
-        assert_eq!(
-            rollout
-                .obligations
-                .iter()
-                .map(|o| o.amount_due)
-                .collect::<Vec<_>>(),
-            vec![Money(1), Money(2), Money(3)]
-        );
-    }
-}
-
-#[test]
-fn compact_spending_matches_forensic_cash_and_shortfall_on_live_and_failed_paths() {
-    let (mut fixture, spending) = spending_fixture();
-    fixture.scenario.accounts[0].opening_balance = Money(5);
-    let make_policy = |rollout| {
-        let mut decisions = 0;
-        move |observation: spending::Observation| {
-            decisions += 1;
-            assert_eq!(decisions, observation.month + 1);
-            if rollout == 0 {
-                assert!(observation.month <= 2, "no decisions after failure");
-                Ok(Money(i64::from(decisions)))
-            } else {
-                Ok(Money(0))
-            }
-        }
-    };
-    let forensic = spending::simulate(&fixture, &spending, make_policy).unwrap();
-    let summary = spending::simulate_summary(&fixture, &spending, make_policy).unwrap();
-    assert_eq!(
-        summary.consumption_requested[0],
-        vec![Money(1), Money(2), Money(3)]
-    );
-    assert_eq!(
-        summary.consumption_paid[0],
-        vec![Money(1), Money(2), Money(0)]
-    );
-    assert_eq!(summary.consumption_requested[1], vec![Money(0); 13]);
-    assert_eq!(summary.consumption_paid[1], vec![Money(0); 13]);
-    let compact = &summary.product_metrics;
-    assert_eq!(compact.failed_month, vec![2, -1]);
-    assert_eq!(compact.rollout_count, fixture.rollout_count);
-    assert_eq!(compact.snapshot_count, fixture.scenario.horizon_months + 1);
-    for rollout in &forensic.rollouts {
-        let path = rollout.rollout_id as usize;
-        let observed_months = rollout
-            .failed_month
-            .map_or(fixture.scenario.horizon_months, |month| month + 1);
-        assert_eq!(
-            summary.consumption_requested[path].len(),
-            observed_months as usize
-        );
-        assert_eq!(
-            summary.consumption_paid[path].len(),
-            observed_months as usize
-        );
-        for month in 0..observed_months {
-            let receipt = rollout.obligations.iter().find(|row| row.month == month);
-            assert_eq!(
-                summary.consumption_requested[path][month as usize],
-                receipt.map_or(Money(0), |row| row.amount_due)
-            );
-            assert_eq!(
-                summary.consumption_paid[path][month as usize],
-                receipt.map_or(Money(0), |row| row.amount_paid)
-            );
-        }
-        assert_eq!(
-            compact.failed_month[rollout.rollout_id as usize],
-            rollout.failed_month.map_or(-1, i64::from)
-        );
-        for snapshot in &rollout.months {
-            let index = (snapshot.month * compact.rollout_count + rollout.rollout_id) as usize;
-            for (metric, values) in crate::product::BASE_METRIC_NAMES
-                .iter()
-                .zip(&compact.base_series)
-            {
-                let expected = match *metric {
-                    "cash_quanta" => {
-                        snapshot
-                            .balances
-                            .iter()
-                            .find(|balance| balance.account == spending.from)
-                            .unwrap()
-                            .balance
-                            .0
-                    }
-                    "shortfall_quanta" => rollout
-                        .obligations
-                        .iter()
-                        .filter(|obligation| obligation.month + 1 == snapshot.month)
-                        .map(|obligation| obligation.shortfall.0)
-                        .sum(),
-                    _ => 0,
-                };
-                assert_eq!(
-                    values[index], expected,
-                    "{metric} at snapshot {} rollout {}",
-                    snapshot.month, rollout.rollout_id
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn spending_rejects_invalid_inputs_and_negative_requests_but_allows_zero() {
-    let (mut fixture, mut spending) = spending_fixture();
-    let unchanged = spending::simulate(&fixture, &spending, |_| |_| Ok(Money(0))).unwrap();
-    assert_eq!(
-        serde_json::to_value(unchanged).unwrap(),
-        serde_json::to_value(simulate(&fixture).unwrap()).unwrap()
-    );
-    assert!(matches!(
-        spending::simulate(&fixture, &spending, |_| |_| Ok(Money(-1))),
-        Err(SimulationError::InvalidAmount { .. })
-    ));
-    assert_eq!(
-        spending::simulate_summary(&fixture, &spending, |_| |_| Ok(Money(0)))
-            .unwrap()
-            .product_metrics,
-        simulate_product_metrics(&fixture, &spending.from.agent_id).unwrap()
-    );
-    assert!(matches!(
-        spending::simulate_summary(&fixture, &spending, |_| |_| Ok(Money(-1))),
-        Err(SimulationError::InvalidAmount { .. })
-    ));
-    spending.cause_id = " ".into();
-    assert!(matches!(
-        spending::simulate(&fixture, &spending, |_| |_| panic!("invalid identifier")),
-        Err(SimulationError::EmptyIdentifier { .. })
-    ));
-    spending.cause_id = "consumption".into();
-    fixture.series[0].values[12] = 0;
-    assert!(matches!(
-        spending::simulate(&fixture, &spending, |_| |_| panic!(
-            "invalid paths must be rejected before execution"
-        )),
-        Err(SimulationError::NonPositiveSeriesAmountLevel { .. })
-    ));
-    assert!(matches!(
-        spending::simulate_summary(
-            &fixture,
-            &spending,
-            |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
-                panic!("invalid paths must be rejected before constructing a policy")
-            }
-        ),
-        Err(SimulationError::NonPositiveSeriesAmountLevel { .. })
-    ));
-    spending.to = AccountRef::new("absent", "checking");
-    assert!(matches!(
-        spending::simulate(&fixture, &spending, |_| |_| Ok(Money(1))),
-        Err(SimulationError::UnknownAccountReference { .. })
-    ));
-}
-
-#[test]
-fn compact_consumption_uses_its_receipt_when_another_funding_group_fails() {
-    let (mut input, spending) = spending_fixture();
-    input.scenario.accounts[0].opening_balance = Money(20);
-    input.scenario.accounts.push(AccountSpec {
-        account: AccountRef::new("other", "checking"),
-        opening_balance: Money(0),
-    });
-    for (from, amount, id) in [
-        (spending.from.clone(), 7, "consumption"),
-        (AccountRef::new("other", "checking"), 1, "other-demand"),
-    ] {
-        input.scenario.obligations.push(ObligationSpec {
-            month: 0,
-            obligation_id: id.into(),
-            obligation_type: "cash_spend".into(),
-            from,
-            to: spending.to.clone(),
-            amount_due: Money(amount).into(),
-            property_id: None,
-            deduction_category: None,
-            deductible_fraction_ppb: WIRE_RATE_SCALE,
-        });
-    }
-    let make_policy = |_| {
-        |observation: spending::Observation| {
-            assert_eq!(
-                observation.month, 0,
-                "no callback after the other group's failure"
-            );
-            Ok(Money(3))
-        }
-    };
-    let summary = spending::simulate_summary(&input, &spending, make_policy).unwrap();
-    let forensic = spending::simulate(&input, &spending, make_policy).unwrap();
-    assert_eq!(summary.product_metrics.failed_month, vec![0, 0]);
-    assert_eq!(summary.consumption_requested, vec![vec![Money(3)]; 2]);
-    assert_eq!(summary.consumption_paid, vec![vec![Money(3)]; 2]);
-    assert_eq!(summary.component.cause_id, spending.cause_id);
-    for rollout in forensic.rollouts {
-        // The configured claim deliberately shares both category and cause ID with
-        // the callback; the compact result must identify the actual demand itself.
-        assert_eq!(
-            rollout.obligations[0].cause_id,
-            rollout.obligations[1].cause_id
-        );
-        assert_eq!(rollout.obligations[0].amount_paid, Money(3));
-        assert_eq!(rollout.obligations[1].amount_paid, Money(7));
-        assert_eq!(rollout.obligations[2].amount_paid, Money(0));
-    }
-}
-
-#[test]
-fn spending_selected_trace_preserves_original_path_and_factory_identity() {
-    let (input, spending) = spending_fixture();
-    let make_policy = |rollout| {
-        let mut requests = 0;
-        move |observation: spending::Observation| {
-            assert_eq!(requests, observation.month);
-            requests += 1;
-            Money(i64::from((rollout + 1) * requests))
-                .scaled_by(observation.price_level, "test request")
-                .map_err(Into::into)
-        }
-    };
-    let population = spending::simulate(&input, &spending, make_policy).unwrap();
-    for rollout in population.rollouts {
-        let selected =
-            spending::trace_rollout(&input, &spending, rollout.rollout_id, make_policy).unwrap();
-        assert_eq!(
-            serde_json::to_value(selected).unwrap(),
-            serde_json::to_value(rollout).unwrap()
-        );
-    }
-    assert!(matches!(
-        spending::trace_rollout(
-            &input,
-            &spending,
-            input.rollout_count,
-            |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
-                panic!("invalid selection must not construct a policy")
-            }
-        ),
-        Err(SimulationError::UnknownRollout { .. })
-    ));
-}
-
-/// One deterministic path: $100 cash and $1,000 of stock with $500 basis.
-/// Prices/CPI are constant; no fees, distributions, housing or borrowing.
-fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, spending::Spending) {
+fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, CashRoute) {
     let (mut input, spending) = spending_fixture();
     input.rollout_count = 1;
     input.scenario.horizon_months = horizon_months;
@@ -547,7 +312,7 @@ fn allocation_fixture(horizon_months: u32) -> ExecutionInput {
     input
 }
 
-fn scoped_observation_fixture() -> (ExecutionInput, spending::Spending) {
+fn scoped_observation_fixture() -> (ExecutionInput, CashRoute) {
     let (mut input, spending) = policy_timing_fixture(3);
     input.scenario.holding_pools = vec![
         holding_pool("alice", "checking", "stock", 10),
@@ -601,107 +366,93 @@ fn scoped_observation_fixture() -> (ExecutionInput, spending::Spending) {
 
 #[test]
 fn scoped_observations_match_output_at_same_marks_and_round_each_lot() {
-    let (input, spending) = scoped_observation_fixture();
+    let (input, _) = scoped_observation_fixture();
     let metrics = simulate_product_metrics(&input, "alice").unwrap();
     // Three half-share stock lots at price 1 each round to 1; the second sleeve
     // rounds 0.8 to 1. Summing stock quantities first would instead report 3 total.
     assert_eq!(metrics.base_series[0], vec![1_000; 4]);
     assert_eq!(metrics.base_series[1], vec![4, 8, 11, 15]);
     let baseline = simulate(&input).unwrap();
-    let spending_output = spending::simulate(&input, &spending, |_| {
-        |observation| {
-            let month = observation.month as usize;
-            assert_eq!(observation.cash.0, metrics.base_series[0][month]);
-            assert_eq!(observation.public_holdings.0, metrics.base_series[1][month]);
-            assert_eq!(observation.books.agent_id(), "alice");
-            assert_eq!(observation.books.month(), observation.month);
-            let accounts = observation
-                .books
-                .accounts()
-                .map(|account| {
-                    let account = account.unwrap();
-                    (account.account.account_id.as_str(), account.available)
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(
-                accounts,
-                [("checking", Money(100)), ("reserve", Money(900))]
-            );
-            let positions = observation
-                .books
-                .public_positions()
-                .collect::<Result<Vec<_>, _>>()
-                .unwrap();
-            assert_eq!(positions.len(), 4);
-            assert_eq!(positions[0].lot_id(), "half-a");
-            assert_eq!(positions[0].account_id(), "checking");
-            assert_eq!(positions[0].asset_id(), "stock");
-            assert_eq!(positions[0].purchase_month(), -24);
-            assert_eq!(positions[0].units(), Units::new(Quantity(5), 10));
-            assert_eq!(positions[0].book_basis(), Money(0));
-            assert_eq!(positions[0].price, PerUnit([1, 3, 5][month]));
-            assert_eq!(
-                positions
-                    .iter()
-                    .map(|position| position.value().unwrap().0)
-                    .sum::<i64>(),
-                observation.public_holdings.0
-            );
-            assert_eq!(
-                Money(2)
-                    .scaled_by(observation.price_level, "test CPI")
-                    .unwrap(),
-                Money([2, 3, 4][month])
-            );
-            Ok(Money(0))
-        }
+    let stepped = inspect_opening_books(&input, "alice", |books| {
+        let month = books.month() as usize;
+        assert_eq!(books.cash()?.0, metrics.base_series[0][month]);
+        assert_eq!(books.public_value()?.0, metrics.base_series[1][month]);
+        assert_eq!(books.agent_id(), "alice");
+        assert_eq!(books.month(), books.month());
+        let accounts = books
+            .accounts()
+            .map(|account| {
+                let account = account.unwrap();
+                (account.account.account_id.as_str(), account.available)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            accounts,
+            [("checking", Money(100)), ("reserve", Money(900))]
+        );
+        let positions = books
+            .public_positions()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(positions.len(), 4);
+        assert_eq!(positions[0].lot_id(), "half-a");
+        assert_eq!(positions[0].account_id(), "checking");
+        assert_eq!(positions[0].asset_id(), "stock");
+        assert_eq!(positions[0].purchase_month(), -24);
+        assert_eq!(positions[0].units(), Units::new(Quantity(5), 10));
+        assert_eq!(positions[0].book_basis(), Money(0));
+        assert_eq!(positions[0].price, PerUnit([1, 3, 5][month]));
+        assert_eq!(
+            positions
+                .iter()
+                .map(|position| position.value().unwrap().0)
+                .sum::<i64>(),
+            books.public_value()?.0
+        );
+        assert_eq!(
+            Money(2)
+                .scaled_by(books.cpi()?.unwrap(), "test CPI")
+                .unwrap(),
+            Money([2, 3, 4][month])
+        );
+        Ok(())
     })
     .unwrap();
-    assert_eq!(spending_output, baseline);
+    assert_eq!(stepped, baseline);
 }
 
 #[test]
-fn spending_observations_do_not_read_future_prices_or_cpi() {
-    let (input, spending) = scoped_observation_fixture();
+fn actor_books_do_not_read_future_prices_or_cpi() {
+    let (input, _) = scoped_observation_fixture();
     let mut changed_future = input.clone();
     for series in &mut changed_future.series {
         for value in &mut series.values[2..] {
             *value *= 2;
         }
     }
-    let make_policy = |_| {
-        |observation: spending::Observation| {
-            observation
-                .public_holdings
-                .scaled_by(observation.price_level, "test budget")
-                .map_err(Into::into)
-        }
+    let capture = |input: &ExecutionInput| {
+        let mut seen = Vec::new();
+        inspect_opening_books(input, "alice", |books| {
+            seen.push((
+                books.month(),
+                books.cash()?,
+                books.public_value()?,
+                books.cpi()?,
+            ));
+            Ok(())
+        })
+        .unwrap();
+        seen
     };
-    let baseline = spending::simulate(&input, &spending, make_policy).unwrap();
-    let changed = spending::simulate(&changed_future, &spending, make_policy).unwrap();
-    assert_eq!(
-        baseline.rollouts[0].obligations[..2],
-        changed.rollouts[0].obligations[..2]
-    );
-    assert_eq!(
-        baseline.rollouts[0].months[..3],
-        changed.rollouts[0].months[..3]
-    );
-    assert_ne!(
-        baseline.rollouts[0].obligations[2].amount_due,
-        changed.rollouts[0].obligations[2].amount_due
-    );
-    for (fixture, output) in [(&input, baseline), (&changed_future, changed)] {
-        assert_eq!(
-            spending::trace_rollout(fixture, &spending, 0, make_policy).unwrap(),
-            output.rollouts[0]
-        );
-    }
+    let baseline = capture(&input);
+    let changed = capture(&changed_future);
+    assert_eq!(baseline[..2], changed[..2]);
+    assert_ne!(baseline[2], changed[2]);
 }
 
 #[test]
 fn actor_books_follow_partial_sales_and_hide_exhausted_lots() {
-    let (mut input, spending) = scoped_observation_fixture();
+    let (mut input, _) = scoped_observation_fixture();
     input.scenario.initial_lots[0].basis = Money(7);
     input.scenario.scheduled_sales.push(ScheduledSaleSpec {
         month: 0,
@@ -721,48 +472,42 @@ fn actor_books_follow_partial_sales_and_hide_exhausted_lots() {
         units: Quantity(8),
         proceeds_account_id: "checking".into(),
     });
-    spending::simulate(&input, &spending, |_| {
-        |observation| {
-            let positions = observation
-                .books
-                .public_positions()
-                .collect::<Result<Vec<_>, _>>()?;
-            if observation.month == 2 {
-                assert_eq!(
-                    positions.iter().map(|lot| lot.lot_id()).collect::<Vec<_>>(),
-                    ["second", "reserve"]
-                );
-                return Ok(Money(0));
-            }
-            assert_eq!(positions.len(), 4);
-            let first = &positions[0];
-            assert_eq!(first.lot_id(), "half-a");
+    inspect_opening_books(&input, "alice", |books| {
+        let positions = books.public_positions().collect::<Result<Vec<_>, _>>()?;
+        if books.month() == 2 {
             assert_eq!(
-                first.units().quantity(),
-                Quantity(if observation.month == 0 { 5 } else { 3 })
+                positions.iter().map(|lot| lot.lot_id()).collect::<Vec<_>>(),
+                ["second", "reserve"]
             );
-            // A two-fifths sale consumes 3 of the 7 basis quanta; never show original basis.
-            assert_eq!(
-                first.book_basis(),
-                Money(if observation.month == 0 { 7 } else { 4 })
-            );
-            Ok(Money(0))
+            return Ok(());
         }
+        assert_eq!(positions.len(), 4);
+        let first = &positions[0];
+        assert_eq!(first.lot_id(), "half-a");
+        assert_eq!(
+            first.units().quantity(),
+            Quantity(if books.month() == 0 { 5 } else { 3 })
+        );
+        // A two-fifths sale consumes 3 of the 7 basis quanta; never show original basis.
+        assert_eq!(
+            first.book_basis(),
+            Money(if books.month() == 0 { 7 } else { 4 })
+        );
+        Ok(())
     })
     .unwrap();
 }
 
 #[test]
-fn spending_scope_rejects_unpriced_public_positions_before_policy_construction() {
-    let (mut input, spending) = scoped_observation_fixture();
+fn actor_books_reject_unpriced_public_positions_before_inspection() {
+    let (mut input, _) = scoped_observation_fixture();
     input.scenario.target_allocation_policies.clear();
     input
         .series
         .retain(|series| series.series_id != "security:second");
     assert!(matches!(
-        spending::simulate(&input, &spending,
-            |_| -> fn(spending::Observation) -> Result<Money, SimulationError> {
-                panic!("unpriced holdings must reject before constructing a policy")
+        inspect_opening_books(&input, "alice", |_| {
+                panic!("unpriced holdings must reject before inspecting books")
             }),
         Err(SimulationError::MissingSeries { series_id })
             if series_id == "security:second"
@@ -856,7 +601,7 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
     let [second, first] = [1, 0]
         .map(|id| RolloutState::new(validated.input, id, CaptureMode::Forensic, None).unwrap());
     for (state, tax_paid, remaining_basis) in [(second, 3_000, 40_000), (first, 2_000, 30_000)] {
-        let output = state.run(&input, None, None).unwrap().into_output();
+        let output = state.run(&input, None).unwrap().into_output();
         assert_eq!(output.failed_month, None);
         assert_eq!(output.tax_payments[0].month, 12);
         assert_eq!(output.tax_payments[0].amount_paid, Money(tax_paid));
@@ -903,19 +648,19 @@ fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
             CaptureMode::Dense,
             CaptureMode::Summary,
         ] {
-            let full = simulate_rollout(&input, 0, capture, Some(&product), None).unwrap();
+            let full = simulate_rollout(&input, 0, capture, Some(&product)).unwrap();
             let mut state = RolloutState::new(&input, 0, capture, Some(&product)).unwrap();
             for _ in 0..12 {
-                state = state.advance_month(&input, Some(&product), None).unwrap();
+                state = state.advance_month(&input, Some(&product)).unwrap();
             }
             // Assessment is retained across the pause before the next year's payment.
             assert_eq!(state.tax_liabilities[0].amount_owed, year_end_tax);
             assert!(!state.is_finished(&input));
             while !state.is_finished(&input) {
-                state = state.advance_month(&input, Some(&product), None).unwrap();
+                state = state.advance_month(&input, Some(&product)).unwrap();
             }
             // Neither a completed nor a failed path processes another month's events.
-            state = state.advance_month(&input, Some(&product), None).unwrap();
+            state = state.advance_month(&input, Some(&product)).unwrap();
             let stepped = state.finish(&input).unwrap();
             assert_eq!(stepped.product_metrics, full.product_metrics);
             match capture {
@@ -923,57 +668,6 @@ fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
                 _ => assert_eq!(stepped.into_output(), full.into_output()),
             }
         }
-    }
-}
-
-#[test]
-fn interleaved_month_steps_preserve_policy_memory_and_skip_terminal_callbacks() {
-    let (mut input, spending) = spending_fixture();
-    input.scenario.accounts[0].opening_balance = Money(5);
-    let make_policy = |rollout| {
-        let mut decisions = 0;
-        move |observation: spending::Observation| {
-            assert_eq!(observation.month, decisions);
-            assert!(rollout != 0 || decisions <= 2, "no callbacks after failure");
-            decisions += 1;
-            Ok(Money(if rollout == 0 {
-                i64::from(decisions)
-            } else {
-                0
-            }))
-        }
-    };
-    let full = spending::simulate(&input, &spending, make_policy).unwrap();
-    let holdings = AgentHoldings::resolve(&input, &spending.from.agent_id).unwrap();
-    let mut decisions = [make_policy(0), make_policy(1)];
-    let mut states: Vec<_> = [0, 1]
-        .map(|id| RolloutState::new(&input, id, CaptureMode::Forensic, None).unwrap())
-        .into();
-    while states.iter().any(|state| !state.is_finished(&input)) {
-        states.reverse();
-        states = states
-            .into_iter()
-            .map(|state| {
-                let mut policy = spending::Policy::new(
-                    &spending,
-                    &holdings,
-                    &mut decisions[state.rollout_id as usize],
-                );
-                state
-                    .advance_month(&input, None, Some(&mut policy))
-                    .unwrap()
-            })
-            .collect();
-    }
-    for state in states {
-        let expected = &full.rollouts[state.rollout_id as usize];
-        let mut unexpected =
-            |_: spending::Observation| panic!("no callbacks after completion or failure");
-        let mut policy = spending::Policy::new(&spending, &holdings, &mut unexpected);
-        let state = state
-            .advance_month(&input, None, Some(&mut policy))
-            .unwrap();
-        assert_eq!(&state.finish(&input).unwrap().into_output(), expected);
     }
 }
 
@@ -1085,7 +779,7 @@ fn allocation_missing_prices_are_not_zero_valued_holdings() {
 }
 
 #[test]
-fn policy_timing_guardrail_and_unpaid_consumption() {
+fn configured_timing_low_and_unfunded_consumption() {
     let (mut input, spending) = policy_timing_fixture(1);
     input.scenario.obligations.push(ObligationSpec {
         month: 0,
@@ -1099,24 +793,22 @@ fn policy_timing_guardrail_and_unpaid_consumption() {
         deductible_fraction_ppb: WIRE_RATE_SCALE,
     });
     for allow_cut in [false, true] {
-        let make_policy = |_| {
-            move |observation: spending::Observation| {
-                assert_eq!(observation.month, 0);
-                assert_eq!(observation.cash, Money(10_000));
-                assert_eq!(observation.public_holdings, Money(100_000));
-                let gross_wealth = observation.cash.checked_add(observation.public_holdings)?;
-                Ok(if allow_cut && gross_wealth < Money(120_000) {
-                    Money(30_000)
-                } else {
-                    Money(50_000)
-                })
-            }
-        };
-        let summary = spending::simulate_summary(&input, &spending, make_policy).unwrap();
-        let rollout = spending::simulate(&input, &spending, make_policy)
-            .unwrap()
-            .rollouts
-            .remove(0);
+        let mut selected = input.clone();
+        // These are configured demand arms, not a live policy callback. The common
+        // action-session tests cover authored cuts and ordered payment priority.
+        let amount = Money(if allow_cut { 30_000 } else { 50_000 });
+        selected.scenario.obligations.push(ObligationSpec {
+            month: 0,
+            obligation_id: spending.cause_id.clone(),
+            obligation_type: "cash_spend".into(),
+            from: spending.from.clone(),
+            to: spending.to.clone(),
+            amount_due: amount.into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+        let rollout = simulate(&selected).unwrap().rollouts.remove(0);
         assert_eq!(rollout.failed_month, if allow_cut { None } else { Some(0) });
         let consumption = rollout
             .obligations
@@ -1135,11 +827,6 @@ fn policy_timing_guardrail_and_unpaid_consumption() {
             consumption.shortfall,
             Money(if allow_cut { 0 } else { 50_000 })
         );
-        assert_eq!(
-            summary.consumption_requested[0],
-            vec![consumption.amount_due]
-        );
-        assert_eq!(summary.consumption_paid[0], vec![consumption.amount_paid]);
         let rent = rollout
             .obligations
             .iter()
@@ -1161,7 +848,7 @@ fn policy_timing_guardrail_and_unpaid_consumption() {
 }
 
 #[test]
-fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
+fn configured_timing_surplus_investment_reserves_tax_and_consumption() {
     let (mut input, spending) = policy_timing_fixture(13);
     input
         .scenario
@@ -1202,45 +889,35 @@ fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
     });
     for reinvest_surplus in [false, true] {
         input.scenario.target_allocation_policies[0].allow_purchases = reinvest_surplus;
-        let make_policy = |_| {
-            |observation: spending::Observation| {
-                assert_eq!(
-                    observation.cash,
-                    Money(if observation.month == 0 { 10_000 } else { 0 })
-                );
-                assert_eq!(
-                    observation.public_holdings,
-                    Money(if observation.month == 0 {
-                        100_000
-                    } else {
-                        60_000
-                    })
-                );
-                // The month-12 observation precedes that month's $100 contribution.
-                Ok(Money(match observation.month {
-                    0 => 50_000,
-                    12 => 5_000,
-                    _ => 0,
-                }))
-            }
-        };
-        let summary = spending::simulate_summary(&input, &spending, make_policy).unwrap();
-        let rollout = spending::simulate(&input, &spending, make_policy)
-            .unwrap()
-            .rollouts
-            .remove(0);
-        assert_eq!(rollout.failed_month, None);
-        for month in 0..13 {
-            let receipt = rollout.obligations.iter().find(|row| row.month == month);
-            assert_eq!(
-                summary.consumption_requested[0][month as usize],
-                receipt.map_or(Money(0), |row| row.amount_due)
-            );
-            assert_eq!(
-                summary.consumption_paid[0][month as usize],
-                receipt.map_or(Money(0), |row| row.amount_paid)
-            );
+        let mut selected = input.clone();
+        for (month, amount) in [(0, 50_000), (12, 5_000)] {
+            selected.scenario.obligations.push(ObligationSpec {
+                month,
+                obligation_id: spending.cause_id.clone(),
+                obligation_type: "cash_spend".into(),
+                from: spending.from.clone(),
+                to: spending.to.clone(),
+                amount_due: Money(amount).into(),
+                property_id: None,
+                deduction_category: None,
+                deductible_fraction_ppb: WIRE_RATE_SCALE,
+            });
         }
+        let rollout = inspect_opening_books(&selected, "alice", |books| {
+            assert_eq!(
+                books.cash()?,
+                Money(if books.month() == 0 { 10_000 } else { 0 })
+            );
+            assert_eq!(
+                books.public_value()?,
+                Money(if books.month() == 0 { 100_000 } else { 60_000 })
+            );
+            Ok(())
+        })
+        .unwrap()
+        .rollouts
+        .remove(0);
+        assert_eq!(rollout.failed_month, None);
         assert_eq!(
             rollout
                 .dispositions
@@ -1305,7 +982,7 @@ fn policy_timing_surplus_investment_reserves_tax_and_consumption() {
 pub(super) fn stopped_book_fixture(
     horizon: u32,
     future_multiplier: i64,
-) -> (ExecutionInput, spending::Spending) {
+) -> (ExecutionInput, CashRoute) {
     let (mut input, mut component) = policy_timing_fixture(horizon);
     input.scenario.accounts[0].opening_balance = Money(2_100);
     input.scenario.target_allocation_policies.clear();
@@ -1465,29 +1142,42 @@ fn stopped_books_preserve_positions_debt_tax_and_other_group_consumption() {
     // pay 1,000 down and eleven 100 principal payments. At m12, cash 1,000 cannot
     // fund 950 + mortgage 100 + tax 50, while the separate budget can pay 300.
     for horizon in [13, 15] {
-        let make_policy = |_| {
-            |observation: spending::Observation| {
-                assert!(observation.month <= 12);
-                // Neither the private lot, individual bond nor house belongs in this view.
-                assert_eq!(
-                    observation.public_holdings,
-                    Money(if observation.month == 0 {
-                        100_000
-                    } else {
-                        99_000
-                    })
-                );
-                Ok(Money(if observation.month == 12 { 300 } else { 0 }))
-            }
-        };
-        let (input, component) = stopped_book_fixture(horizon, 2);
-        let forensic = spending::simulate(&input, &component, make_policy).unwrap();
-        let summary = spending::simulate_summary(&input, &component, make_policy).unwrap();
-        let (different_future, _) = stopped_book_fixture(horizon, 9);
-        assert_eq!(
-            forensic,
-            spending::simulate(&different_future, &component, make_policy).unwrap()
-        );
+        let (mut input, component) = stopped_book_fixture(horizon, 2);
+        input.scenario.obligations.push(ObligationSpec {
+            month: 12,
+            obligation_id: component.cause_id.clone(),
+            obligation_type: "cash_spend".into(),
+            from: component.from.clone(),
+            to: component.to.clone(),
+            amount_due: Money(300).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+        let forensic = inspect_opening_books(&input, "alice", |books| {
+            assert!(books.month() <= 12);
+            // Private lots, individual bonds and housing are not public securities.
+            assert_eq!(
+                books.public_value()?,
+                Money(if books.month() == 0 { 100_000 } else { 99_000 })
+            );
+            Ok(())
+        })
+        .unwrap();
+        let metrics = simulate_product_metrics(&input, "alice").unwrap();
+        let (mut different_future, _) = stopped_book_fixture(horizon, 9);
+        different_future.scenario.obligations.push(ObligationSpec {
+            month: 12,
+            obligation_id: component.cause_id.clone(),
+            obligation_type: "cash_spend".into(),
+            from: component.from.clone(),
+            to: component.to.clone(),
+            amount_due: Money(300).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+        assert_eq!(forensic, simulate(&different_future).unwrap());
         let rollout = &forensic.rollouts[0];
         assert_eq!(rollout.failed_month, Some(12));
         assert_eq!(rollout.months.len(), 14);
@@ -1510,9 +1200,14 @@ fn stopped_books_preserve_positions_debt_tax_and_other_group_consumption() {
         assert_eq!(stopped.tax_liabilities[0].amount_owed, Money(50));
         assert_eq!(stopped.bonds[0].principal, Money(1_000));
         assert!(stopped.bonds[0].active); // Redemption at m13 has not happened.
-        assert_eq!(summary.consumption_requested[0][12], Money(300));
-        assert_eq!(summary.consumption_paid[0][12], Money(300));
-        let metrics = &summary.product_metrics.base_series;
+        let consumption = rollout
+            .obligations
+            .iter()
+            .find(|receipt| receipt.cause_id == format!("{}_m12", component.cause_id))
+            .unwrap();
+        assert_eq!(consumption.amount_due, Money(300));
+        assert_eq!(consumption.amount_paid, Money(300));
+        let metrics = &metrics.base_series;
         for (name, expected) in [
             ("cash_quanta", 1_200),
             ("holding_value_quanta", 99_000),
@@ -1544,19 +1239,7 @@ fn stopped_books_preserve_positions_debt_tax_and_other_group_consumption() {
             0
         );
 
-        let mut scheduled = input.clone();
-        scheduled.scenario.obligations.push(ObligationSpec {
-            month: 12,
-            obligation_id: "scheduled-budget-control".into(),
-            obligation_type: "cash_spend".into(),
-            from: component.from.clone(),
-            to: component.to.clone(),
-            amount_due: Money(300).into(),
-            property_id: None,
-            deduction_category: None,
-            deductible_fraction_ppb: WIRE_RATE_SCALE,
-        });
-        let endings = simulate_summaries(&scheduled).unwrap();
+        let endings = simulate_summaries(&input).unwrap();
         let ending = &endings.rollouts[0];
         assert_eq!(ending.failed_month, rollout.failed_month);
         assert_eq!(ending.ending_balances, stopped.balances);
@@ -1599,57 +1282,65 @@ fn actor_books_expose_only_originated_contracts_and_recorded_tax() {
                 income_category: Some(IncomeSource::Ordinary),
                 deduction_category: None,
             });
-        spending::simulate(&input, &component, |_| {
-            |observation| {
-                assert!(observation.month <= 12, "no observations after failure");
-                let books = &observation.books;
+        input.scenario.obligations.push(ObligationSpec {
+            month: 12,
+            obligation_id: component.cause_id.clone(),
+            obligation_type: "cash_spend".into(),
+            from: component.from.clone(),
+            to: component.to.clone(),
+            amount_due: Money(300).into(),
+            property_id: None,
+            deduction_category: None,
+            deductible_fraction_ppb: WIRE_RATE_SCALE,
+        });
+        inspect_opening_books(&input, "alice", |books| {
+            assert!(books.month() <= 12, "no observations after failure");
+            assert_eq!(
+                books.public_positions().count(),
+                1,
+                "private lots are not public"
+            );
+            let mortgages = books.mortgages().collect::<Vec<_>>();
+            if books.month() == 0 {
+                assert!(mortgages.is_empty(), "a planned loan has not originated");
+            } else {
+                assert_eq!(mortgages.len(), 1);
+                let mortgage = mortgages[0];
+                assert_eq!(mortgage.liability_id, "test-loan");
                 assert_eq!(
-                    books.public_positions().count(),
-                    1,
-                    "private lots are not public"
+                    mortgage.principal,
+                    Money(9_000 - 100 * i64::from(books.month() - 1))
                 );
-                let mortgages = books.mortgages().collect::<Vec<_>>();
-                if observation.month == 0 {
-                    assert!(mortgages.is_empty(), "a planned loan has not originated");
-                } else {
-                    assert_eq!(mortgages.len(), 1);
-                    let mortgage = mortgages[0];
-                    assert_eq!(mortgage.liability_id, "test-loan");
-                    assert_eq!(
-                        mortgage.principal,
-                        Money(9_000 - 100 * i64::from(observation.month - 1))
-                    );
-                    assert_eq!(mortgage.monthly_payment, Money(100));
-                }
-                assert!(
-                    books.income().all(|(_, amount)| amount == Money(0)),
-                    "Bob's income is private"
-                );
-                let facts = books.tax_facts().collect::<Vec<_>>();
-                assert_eq!(facts.len(), 1, "only Alice's jurisdiction facts");
-                assert_eq!(facts[0].0, "test-stop-tax");
-                assert_eq!(
-                    facts[0].1.long_term_gain,
-                    Money(if (1..12).contains(&observation.month) {
-                        500
-                    } else {
-                        0
-                    })
-                );
-                let liabilities = books.tax_liabilities().collect::<Vec<_>>();
-                if observation.month < 12 {
-                    assert!(
-                        liabilities.is_empty(),
-                        "future assessment is not a known liability"
-                    );
-                } else {
-                    assert_eq!(liabilities.len(), 1);
-                    assert_eq!(liabilities[0].agent_id, "alice");
-                    assert_eq!(liabilities[0].tax_year_end_month, 11);
-                    assert_eq!(liabilities[0].amount_owed, Money(50));
-                }
-                Ok(Money(if observation.month == 12 { 300 } else { 0 }))
+                assert_eq!(mortgage.monthly_payment, Money(100));
             }
+            assert!(
+                books.income().all(|(_, amount)| amount == Money(0)),
+                "Bob's income is private"
+            );
+            let facts = books.tax_facts().collect::<Vec<_>>();
+            assert_eq!(facts.len(), 1, "only Alice's jurisdiction facts");
+            assert_eq!(facts[0].0, "test-stop-tax");
+            assert_eq!(
+                facts[0].1.long_term_gain,
+                Money(if (1..12).contains(&books.month()) {
+                    500
+                } else {
+                    0
+                })
+            );
+            let liabilities = books.tax_liabilities().collect::<Vec<_>>();
+            if books.month() < 12 {
+                assert!(
+                    liabilities.is_empty(),
+                    "future assessment is not a known liability"
+                );
+            } else {
+                assert_eq!(liabilities.len(), 1);
+                assert_eq!(liabilities[0].agent_id, "alice");
+                assert_eq!(liabilities[0].tax_year_end_month, 11);
+                assert_eq!(liabilities[0].amount_owed, Money(50));
+            }
+            Ok(())
         })
         .unwrap();
     }
@@ -1668,28 +1359,33 @@ fn actor_books_keep_pool_harvest_adjustments_separate_from_lot_basis() {
         drawdown_sensitivity_ppb: 0,
         short_term_fraction_ppb: WIRE_RATE_SCALE,
     });
-    spending::simulate(&input, &component, |_| {
-        |observation| {
-            let adjustments = observation.books.harvest_adjustments().collect::<Vec<_>>();
-            assert_eq!(adjustments.len(), 1);
-            assert_eq!(adjustments[0].account_id, "checking");
-            assert_eq!(adjustments[0].asset_id, "stock");
-            assert_eq!(
-                adjustments[0].cumulative_harvest,
-                Money(if observation.month == 0 { 0 } else { 990 })
-            );
-            let lot = observation.books.public_positions().next().unwrap()?;
-            assert_eq!(
-                lot.book_basis(),
-                Money(if observation.month == 0 {
-                    50_000
-                } else {
-                    49_500
-                })
-            );
-            // Stop in m1, after observing one month's harvest of 1% of 99,000.
-            Ok(Money(if observation.month == 0 { 0 } else { 1_000_000 }))
-        }
+    input.scenario.obligations.push(ObligationSpec {
+        month: 1,
+        obligation_id: component.cause_id.clone(),
+        obligation_type: "cash_spend".into(),
+        from: component.from.clone(),
+        to: component.to.clone(),
+        amount_due: Money(1_000_000).into(),
+        property_id: None,
+        deduction_category: None,
+        deductible_fraction_ppb: WIRE_RATE_SCALE,
+    });
+    inspect_opening_books(&input, "alice", |books| {
+        let adjustments = books.harvest_adjustments().collect::<Vec<_>>();
+        assert_eq!(adjustments.len(), 1);
+        assert_eq!(adjustments[0].account_id, "checking");
+        assert_eq!(adjustments[0].asset_id, "stock");
+        assert_eq!(
+            adjustments[0].cumulative_harvest,
+            Money(if books.month() == 0 { 0 } else { 990 })
+        );
+        let lot = books.public_positions().next().unwrap()?;
+        assert_eq!(
+            lot.book_basis(),
+            Money(if books.month() == 0 { 50_000 } else { 49_500 })
+        );
+        // Stop in m1, after observing one month's harvest of 1% of 99,000.
+        Ok(())
     })
     .unwrap();
 }

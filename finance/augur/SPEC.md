@@ -77,6 +77,10 @@ start/advance session. Financial state and prepared paths stay in the executor;
 Python receives copied current facts, including the exact current/origin CPI
 ratio when modeled (explicitly absent otherwise), and cannot mutate the books. This action
 session has no alternative native policy-loop entrypoint.
+Spending and allocation rules use this same action session, not specialized
+amount/weight callbacks or a spending-only session. Existing configured full-run
+consumers retain their declared controls while being migrated; their driver has
+no executable policy callback.
 
 Its monthly decision occurs after scheduled cashflows and due-claim assembly.
 Each active path receives exactly one decision per month. Exact sales, purchases,
