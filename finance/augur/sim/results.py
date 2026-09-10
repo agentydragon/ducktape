@@ -205,7 +205,7 @@ class Receipt(Record):
 
 
 _RECEIPTS = TypeAdapter(list[Receipt])
-_ACTION = TypeAdapter(Action)
+_ACTION: TypeAdapter[Action] = TypeAdapter(Action)
 
 
 def action_from_json(document: str) -> Action:
