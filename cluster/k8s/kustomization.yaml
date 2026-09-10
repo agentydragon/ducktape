@@ -133,6 +133,7 @@ resources:
   - agentplane-testing/namespace/flux-kustomization.yaml
   - agentplane-testing/agent-rbac/flux-kustomization.yaml
   - agentplane-testing/db/flux-kustomization.yaml
+  - agentplane-testing/forgejo-images-creds/flux-kustomization.yaml
   - agentplane-testing/dex/flux-kustomization.yaml
   - agentplane-testing/llm-ingress/flux-kustomization.yaml
   - agentplane-testing/mcp-everything/flux-kustomization.yaml

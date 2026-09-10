@@ -1,0 +1,30 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-testing-forgejo-images-creds
+  namespace: ducktape-flux
+  annotations:
+    description: Forgejo registry pull credential for Agentplane testing workloads.
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 2m
+  path: ./cluster/k8s/agentplane-testing/forgejo-images-creds
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: agentplane-testing-namespace
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: forgejo-images-creds
+      namespace: agentplane-testing
