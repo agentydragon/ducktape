@@ -388,3 +388,79 @@ fn opening_component_rows_cannot_alias_or_escape_selected_paths() {
         ));
     }
 }
+
+#[test]
+fn zero_component_marks_do_not_relax_ordinary_quote_or_negative_mark_validation() {
+    let (mut input, _) = setup_at(0, 80);
+    input.series[0].values = vec![0, 0];
+    assert!(validate_fixture(&input).is_ok());
+    // The component's declaration may also supply its public observable-price binding.
+    input
+        .scenario
+        .holding_pools
+        .push(holding_pool("alice", "custody", "fund", 1));
+    assert!(validate_fixture(&input).is_ok());
+    input.series[0].values[1] = -1;
+    assert!(matches!(
+        validate_fixture(&input),
+        Err(SimulationError::InvalidSecurityPrice { value: -1, .. })
+    ));
+    input.series[0].values[1] = 0;
+    // Another ordinary pool using the same asset still needs a positive trading quote,
+    // even when it currently holds no units.
+    input
+        .scenario
+        .holding_pools
+        .push(holding_pool("alice", "ordinary", "fund", 1));
+    assert!(matches!(
+        validate_fixture(&input),
+        Err(SimulationError::InvalidSecurityPrice { value: 0, .. })
+    ));
+}
+
+#[test]
+fn configured_cash_band_at_zero_managed_value_does_not_invent_units_or_divide_by_zero() {
+    let (mut input, mut state) = setup_at(0, 80);
+    input.series[0].values = vec![0, 0];
+    input
+        .scenario
+        .target_allocation_policies
+        .push(TargetAllocationPolicySpec {
+            agent_id: "alice".into(),
+            account_id: "checking".into(),
+            source_account_ids: vec!["custody".into()],
+            cause_id_prefix: "allocation".into(),
+            cash_floor: AmountSpec::Fixed(Money(0)),
+            cash_ceiling: AmountSpec::Fixed(Money(0)),
+            allow_purchases: true,
+            rebalance_tolerance_ppb: None,
+            sleeves: vec![SleeveTargetSpec {
+                asset_id: "fund".into(),
+                weight: 1,
+                quantity_scale: 1,
+            }],
+        });
+    validate_fixture(&input).unwrap();
+    let claims = state.prepare_month(&input).unwrap();
+    let before = fingerprint(&state);
+    let plan = allocation_plan(&input, &state, &claims, 0).unwrap();
+    assert!(plan.sales.is_empty());
+    assert!(plan.buys.is_empty());
+    assert_eq!(fingerprint(&state), before);
+    // A cash shortfall cannot be funded by inventing units of a worthless component.
+    input.scenario.target_allocation_policies[0].cash_floor = AmountSpec::Fixed(Money(200));
+    input.scenario.target_allocation_policies[0].cash_ceiling = AmountSpec::Fixed(Money(200));
+    let plan = allocation_plan(&input, &state, &claims, 0).unwrap();
+    assert!(plan.sales.is_empty());
+    assert!(plan.buys.is_empty());
+    assert_eq!(fingerprint(&state), before);
+    // A component may still hold rounding cash at a zero index mark. Its reported
+    // gross value, not an inferred count of index units, limits the withdrawal.
+    state.tlh_portfolios[0].value = Money(5);
+    let plan = allocation_plan(&input, &state, &claims, 0).unwrap();
+    assert!(
+        matches!(plan.sales.as_slice(), [crate::engine::actors::Action::Withdraw(request)]
+        if request.amount == Money(5))
+    );
+    assert!(plan.buys.is_empty());
+}

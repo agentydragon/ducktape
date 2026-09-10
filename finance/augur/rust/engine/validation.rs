@@ -54,6 +54,35 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 expected,
             });
         }
+        // A managed component can release basis at a worthless mark. Ordinary
+        // security pools retain positive quotes for their trading conventions.
+        let managed_only = series
+            .series_id
+            .strip_prefix("security:")
+            .is_some_and(|asset| {
+                fixture
+                    .scenario
+                    .tlh_portfolios
+                    .iter()
+                    .any(|item| item.asset_id == asset)
+                    && !fixture
+                        .scenario
+                        .initial_lots
+                        .iter()
+                        .any(|lot| lot.asset_id == asset)
+                    && fixture
+                        .scenario
+                        .holding_pools
+                        .iter()
+                        .filter(|pool| pool.asset_id == asset)
+                        .all(|pool| {
+                            fixture.scenario.tlh_portfolios.iter().any(|item| {
+                                item.asset_id == asset
+                                    && item.owner_agent_id == pool.agent_id
+                                    && item.account_id == pool.account_id
+                            })
+                        })
+            });
         if (series.series_id.starts_with("security:")
             || series.series_id.starts_with("home_value:"))
             && let Some((index, value)) = series
@@ -61,7 +90,7 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 .iter()
                 .copied()
                 .enumerate()
-                .find(|(_, value)| *value <= 0)
+                .find(|(_, value)| *value < 0 || (*value == 0 && !managed_only))
         {
             return Err(SimulationError::InvalidSecurityPrice {
                 series_id: series.series_id.clone(),
