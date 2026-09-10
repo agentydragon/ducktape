@@ -4,10 +4,12 @@ The native financial kernels used by Python-owned action and configured drivers.
 Prepared facts originate in `finance/augur/sim`; `execution.rs` declares the private
 native input and financial result records. Validation runs once before execution.
 
-`RolloutState` initializes books once. Private bounded phases apply opening facts,
-settle exact actions or the remaining configured payment control, and close the month.
-Both Python drivers use these same kernels. Failed paths cannot execute later actions;
-unexpected errors close the session. There is no production native full-horizon runner.
+`engine::world::Prepared` shares one validated input between independent `World`
+handles. Each owns one rollout's ledger, lots, contracts, tax state, claims and
+capture. Its operations apply opening facts, settle one exact request or a configured
+payment group, and close a financial month with caller-supplied failure/shortfall facts.
+Python owns batch routing, policy calls, receipt histories, stopping and phase order;
+the native handle has no session lifecycle or production full-horizon runner.
 
 ## Invariants
 
@@ -24,9 +26,8 @@ unexpected errors close the session. There is no production native full-horizon 
   restriction imposed by individual payment execution.
 - Failed rollouts stop executing future actions and preserve the actual stopped
   book and causal trace. No later forensic snapshots or events are emitted.
-- Full forensic output and compact population output use the same state-machine
-  implementation. The compact path does not allocate every monthly snapshot or
-  journal and is suitable for 100,000-rollout workloads.
+- Full forensic output and compact output use the same financial operations.
+  Compact capture does not allocate every monthly book or journal.
 
 The Python configured driver's dense/forensic outputs retain monthly books and
 canonical event records; forensic adds balanced journals. Its compact mode retains
@@ -161,7 +162,9 @@ financial books in process. Python calls `start()`, then submits one batch to
 IDs and copied actor-scoped cash accounts, public positions, held dated bonds, declared pools/quotes,
 current claims, current/origin CPI and previous-month receipts. CPI is explicitly
 absent when no index was supplied; it is not assumed flat. The caller keeps policy memory and
-owns the outer loop; `engine::actors::Session` owns financial stepping, not callbacks.
+owns the outer loop. Python-owned action and observation models live in
+`sim.actions` and `sim.observations`; the private native boundary carries serialized
+financial facts, not public PyO3 domain classes.
 `DecisionActions` returns
 one ordered list for each active `(rollout_id, month)`; response order is immaterial.
 Missing, duplicate, stale or unknown keys and cross-path/session claim handles are simulator
@@ -244,20 +247,19 @@ and monthly actions use this session for their Python-owned policy loops.
 `Finished.rollouts` preserves the requested original ID order. Each rollout has a
 typed `summary`, optional `stop`, and optional `trace`. A trace contains typed
 historical books, journal, bond/distribution cashflows and receipts, plus the
-existing columnar `EventLog` for event queries. The native boundary decodes its
+existing columnar `EventLog` for event queries. The Python boundary decodes its
 private transport once; domain consumers do not parse JSON or retain a second
 raw result tree. For file I/O, use `Finished.model_dump_json()` and
 `Finished.model_validate_json()`; an individual replay uses the same methods on
 `Rollout`. The configured-engine forensic adapter is separate and remains until
 its remaining callers migrate.
 
-The `engine/actors_test.rs` stories drive the same steps in a test-only harness and run with
-`bbr test //finance/augur/rust:simulator_test`. They include contribution → bill →
-chosen sale → explicit payment, canonical synthetic-tax assessment/payment, mixed
-buy/transfer/buy ordering, prefix preservation, distinct unpaid-claim stops,
-batch-native versus scalar-adapted selected replay and invalid response routing.
-Their supplied paths and flat tax brackets are deterministic controls, not market
-forecasts or claims of statutory tax coverage.
+The `engine/actors_test.rs` controls call one world's financial operations directly:
+opening cashflow → sale → claim payment, synthetic-tax assessment/payment, mixed
+buy/transfer/buy ordering, atomic rejection, retained lot basis and compact/forensic
+agreement at explicit stopped marks. They run with
+`bbr test //finance/augur/rust:simulator_test`; their supplied paths and flat tax
+brackets are deterministic controls, not market forecasts or statutory coverage.
 `bbr test //finance/augur/rust:action_test` exercises the real Python boundary,
 including receipt-aware memory, complete-batch routing, selected replay and closure.
 

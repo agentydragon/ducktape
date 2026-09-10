@@ -61,7 +61,6 @@ pub(super) fn minimal_fixture() -> ExecutionInput {
             scheduled_sales: vec![],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
             tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
@@ -266,24 +265,6 @@ fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, CashRoute) {
         snapshots: horizon_months + 1,
         values: vec![1_000; horizon_months as usize + 1],
     });
-    input
-        .scenario
-        .target_allocation_policies
-        .push(TargetAllocationPolicySpec {
-            agent_id: "alice".into(),
-            account_id: "checking".into(),
-            source_account_ids: vec!["checking".into()],
-            sleeves: vec![SleeveTargetSpec {
-                asset_id: "stock".into(),
-                weight: 1,
-                quantity_scale: 1_000_000,
-            }],
-            cash_floor: Money(0).into(),
-            cash_ceiling: Money(0).into(),
-            cause_id_prefix: "timing-funding".into(),
-            allow_purchases: false,
-            rebalance_tolerance_ppb: None,
-        });
     (input, spending)
 }
 
@@ -305,13 +286,6 @@ fn allocation_fixture(horizon_months: u32) -> ExecutionInput {
         snapshots: horizon_months + 1,
         values: vec![1_000; horizon_months as usize + 1],
     });
-    input.scenario.target_allocation_policies[0]
-        .sleeves
-        .push(SleeveTargetSpec {
-            asset_id: "second".into(),
-            weight: 1,
-            quantity_scale: 1_000_000,
-        });
     input
 }
 
@@ -356,14 +330,6 @@ fn scoped_observation_fixture() -> (ExecutionInput, CashRoute) {
         snapshots: 4,
         values: vec![2, 4, 6, 8],
     });
-    input.scenario.target_allocation_policies[0].sleeves = ["stock", "second"]
-        .into_iter()
-        .map(|asset| SleeveTargetSpec {
-            asset_id: asset.into(),
-            weight: 1,
-            quantity_scale: 10,
-        })
-        .collect();
     (input, spending)
 }
 
@@ -504,7 +470,6 @@ fn actor_books_follow_partial_sales_and_hide_exhausted_lots() {
 #[test]
 fn actor_books_reject_unpriced_public_positions_before_inspection() {
     let (mut input, _) = scoped_observation_fixture();
-    input.scenario.target_allocation_policies.clear();
     input
         .series
         .retain(|series| series.series_id != "security:second");
@@ -584,7 +549,6 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
     // Same opening books, two stipulated price paths: raising 40,000 realizes
     // gains of 20,000 or 30,000. The synthetic 10% tax is paid the next year.
     let mut input = allocation_tax_and_consumption_fixture();
-    input.scenario.target_allocation_policies.clear();
     input.rollout_count = 2;
     for series in &mut input.series {
         let multiplier = if series.series_id.starts_with("security:") {
@@ -682,7 +646,6 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
 #[test]
 fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
     let mut scheduled = allocation_tax_and_consumption_fixture();
-    scheduled.scenario.target_allocation_policies.clear();
     scheduled.scenario.scheduled_sales = scheduled
         .scenario
         .initial_lots
@@ -691,7 +654,8 @@ fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
             month: 0,
             cause_id: format!("explicit-sale-{}", lot.asset_id),
             agent_id: lot.agent_id.clone(),
-            lot_id: lot.lot_id.clone(),
+            account_id: lot.account_id.clone(),
+            asset_id: lot.asset_id.clone(),
             units: Quantity(20_000_000),
             proceeds_account_id: "checking".into(),
         })
@@ -1044,7 +1008,6 @@ pub(super) fn stopped_book_fixture(
 ) -> (ExecutionInput, CashRoute) {
     let (mut input, mut component) = policy_timing_fixture(horizon);
     input.scenario.accounts[0].opening_balance = Money(2_100);
-    input.scenario.target_allocation_policies.clear();
     component.from = AccountRef::new("alice", "budget");
     input.scenario.accounts.push(AccountSpec {
         account: component.from.clone(),
@@ -2193,7 +2156,6 @@ fn transfer_and_fifo_sale_remain_balanced() {
             }],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
             tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
@@ -2581,7 +2543,6 @@ fn oversell_is_rejected_before_any_disposition() {
             }],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
             tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
@@ -2664,7 +2625,6 @@ fn failure_stops_future_actions_and_preserves_the_observed_book() {
             scheduled_sales: vec![],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
             tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
@@ -2759,7 +2719,6 @@ fn same_source_recurring_obligations_settle_all_or_none() {
             scheduled_sales: vec![],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
             tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],

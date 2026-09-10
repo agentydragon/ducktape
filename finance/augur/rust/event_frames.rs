@@ -224,7 +224,6 @@ event_frames! {
         money amount_due_quanta = amount_due,
         money amount_paid_quanta = amount_paid,
         money shortfall_quanta = shortfall,
-        text attempted_funding_sources = attempted_funding_sources,
     }
 
     rollout_failures: RolloutFailure from rollout_failures {
@@ -236,7 +235,6 @@ event_frames! {
         money amount_due_quanta = amount_due,
         money amount_paid_quanta = amount_paid,
         money shortfall_quanta = shortfall,
-        text attempted_funding_sources = attempted_funding_sources,
     }
 
     property_purchases: PropertyPurchase from property_purchases {

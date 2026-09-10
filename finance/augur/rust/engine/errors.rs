@@ -303,24 +303,6 @@ pub enum SimulationError {
     InvalidPropertyTaxPolicy { property_id: String },
     #[error("federal SALT policy for {profile_id:?} is invalid")]
     InvalidSaltPolicy { profile_id: String },
-    #[error("duplicate target-allocation policy for {agent_id}:{account_id}")]
-    DuplicateTargetAllocationPolicy {
-        agent_id: String,
-        account_id: String,
-    },
-    #[error("target-allocation policy for {agent_id}:{account_id} has invalid configuration")]
-    InvalidTargetAllocationPolicy {
-        agent_id: String,
-        account_id: String,
-    },
-    #[error(
-        "target-allocation policy for {agent_id}:{account_id} names duplicate asset {asset_id:?}"
-    )]
-    DuplicateTargetAllocationSleeve {
-        agent_id: String,
-        account_id: String,
-        asset_id: String,
-    },
     #[error("private-equity policy for {owner_agent_id:?} has invalid configuration")]
     InvalidPrivateEquityPolicy { owner_agent_id: String },
     #[error("private-equity issuer {issuer_id:?} is missing protocol series {series_id:?}")]

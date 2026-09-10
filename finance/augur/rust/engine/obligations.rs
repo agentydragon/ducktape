@@ -112,8 +112,6 @@ pub(super) fn settle_grouped(
         let target = request.describe(claims).expect("assembled payment target");
         let obligation_type = target.obligation_type;
         let firing_id = request.cause_id().to_owned();
-        let attempted_funding_sources =
-            target_allocation_attempted_sources(context.fixture, request.from());
         let month = context.month;
         if !funded && target.is_tax_payment {
             context.recorder.record_tax_payment(TaxPaymentOutcome {
@@ -126,13 +124,9 @@ pub(super) fn settle_grouped(
                 shortfall,
             })?;
         }
-        context.recorder.record_obligation(receipt.obligation(
-            request,
-            &target,
-            month,
-            &firing_id,
-            attempted_funding_sources,
-        )?);
+        context
+            .recorder
+            .record_obligation(receipt.obligation(request, &target, month, &firing_id)?);
         if product_agent_id.is_some_and(|agent| agent == request.from().agent_id) {
             product_shortfall = product_shortfall.checked_add(shortfall)?;
         }
@@ -147,23 +141,4 @@ pub(super) fn settle_grouped(
 pub(super) struct Settlement {
     pub(super) failed: bool,
     pub(super) product_shortfall: Money,
-}
-
-fn target_allocation_attempted_sources(fixture: &ExecutionInput, account: &AccountRef) -> String {
-    fixture
-        .scenario
-        .target_allocation_policies
-        .iter()
-        .find(|policy| {
-            policy.agent_id == account.agent_id && policy.account_id == account.account_id
-        })
-        .map(|policy| {
-            policy
-                .sleeves
-                .iter()
-                .map(|sleeve| format!("security:{}", sleeve.asset_id))
-                .collect::<Vec<_>>()
-                .join(",")
-        })
-        .unwrap_or_default()
 }

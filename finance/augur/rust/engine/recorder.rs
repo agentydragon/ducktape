@@ -225,7 +225,6 @@ impl Recorder {
                     amount_due: obligation.amount_due,
                     amount_paid: obligation.amount_paid,
                     shortfall: obligation.shortfall,
-                    attempted_funding_sources: obligation.attempted_funding_sources.clone(),
                 });
             }
             self.obligations.push(obligation);

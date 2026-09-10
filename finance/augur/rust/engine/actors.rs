@@ -141,7 +141,6 @@ pub(super) fn execute(
                 &target,
                 state.month,
                 target.label,
-                String::new(),
             )?);
         }
         let outcome = match &receipt.outcome {
@@ -262,7 +261,6 @@ pub(super) fn record_claims(recorder: &mut Recorder, claims: &claims::Claims) {
             amount_due: claim.amount_due,
             amount_paid: Money(0),
             shortfall: claim.amount_due,
-            attempted_funding_sources: String::new(),
             failure_active: claim.amount_due.0 > 0,
         });
     }

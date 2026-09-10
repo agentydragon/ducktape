@@ -10,7 +10,6 @@ use crate::engine::{
 fn input(horizon: u32, paths: u32) -> ExecutionInput {
     let (mut input, _) = policy_timing_fixture(horizon);
     input.rollout_count = paths;
-    input.scenario.target_allocation_policies.clear();
     for series in &mut input.series {
         series.values = series.values.repeat(paths as usize);
     }

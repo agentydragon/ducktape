@@ -127,7 +127,6 @@ OBLIGATION_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
         "amount_due_quanta": pl.Int64(),
         "amount_paid_quanta": pl.Int64(),
         "shortfall_quanta": pl.Int64(),
-        "attempted_funding_sources": pl.Utf8(),
     }
 )
 
@@ -198,7 +197,6 @@ ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
         "amount_due_quanta": pl.Int64(),
         "amount_paid_quanta": pl.Int64(),
         "shortfall_quanta": pl.Int64(),
-        "attempted_funding_sources": pl.Utf8(),
     }
 )
 

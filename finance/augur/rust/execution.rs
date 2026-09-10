@@ -57,8 +57,6 @@ pub struct ScenarioSpec {
     #[serde(default)]
     pub distributions: Vec<DistributionSpec>,
     #[serde(default)]
-    pub target_allocation_policies: Vec<TargetAllocationPolicySpec>,
-    #[serde(default)]
     pub private_equity_tender_policies: Vec<PrivateEquityTenderPolicySpec>,
     #[serde(default)]
     pub tlh_portfolios: Vec<TlhPortfolioSpec>,
@@ -404,24 +402,6 @@ fn default_distribution_tax_character() -> Vec<DistributionTaxSliceSpec> {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct TargetAllocationPolicySpec {
-    pub agent_id: String,
-    pub account_id: String,
-    #[serde(default)]
-    pub source_account_ids: Vec<String>,
-    pub sleeves: Vec<SleeveTargetSpec>,
-    #[serde(default = "default_zero_amount")]
-    pub cash_floor: AmountSpec,
-    pub cash_ceiling: AmountSpec,
-    #[serde(default = "default_allocation_cause_id_prefix")]
-    pub cause_id_prefix: String,
-    pub allow_purchases: bool,
-    #[serde(default)]
-    pub rebalance_tolerance_ppb: Option<i64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PrivateEquityTenderPolicySpec {
     pub owner_agent_id: String,
     #[serde(default = "default_account_id")]
@@ -448,22 +428,6 @@ pub struct TlhPortfolioObservation {
     pub asset_id: String,
     pub value: Money,
     pub reported_tax_basis: Money,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct SleeveTargetSpec {
-    pub asset_id: String,
-    pub weight: i64,
-    pub quantity_scale: i64,
-}
-
-fn default_allocation_cause_id_prefix() -> String {
-    "allocation_sale".into()
-}
-
-fn default_zero_amount() -> AmountSpec {
-    AmountSpec::Fixed(Money(0))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -834,7 +798,6 @@ pub struct ObligationOutcome {
     pub amount_due: Money,
     pub amount_paid: Money,
     pub shortfall: Money,
-    pub attempted_funding_sources: String,
     pub failure_active: bool,
 }
 
@@ -849,7 +812,6 @@ pub struct RolloutFailureOutcome {
     pub amount_due: Money,
     pub amount_paid: Money,
     pub shortfall: Money,
-    pub attempted_funding_sources: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -89,7 +89,6 @@ impl Receipt {
         target: &Description<'_>,
         month: u32,
         obligation_id: &str,
-        attempted_funding_sources: String,
     ) -> Result<ObligationOutcome, ArithmeticError> {
         let amount_paid = self.amount_paid();
         Ok(ObligationOutcome {
@@ -102,7 +101,6 @@ impl Receipt {
             amount_due: self.amount_requested,
             amount_paid,
             shortfall: self.amount_requested.checked_sub(amount_paid)?,
-            attempted_funding_sources,
             failure_active: self.outcome != Outcome::Paid,
         })
     }
