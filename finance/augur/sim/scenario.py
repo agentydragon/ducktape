@@ -1008,9 +1008,8 @@ class HarvestPolicy(BaseModel):
     stays a single index-tracking position; the "harvested loss" each month is a *calibrated
     function* of the index path (see `augur/sim/tlh_harvest.py`), not a real below-basis amount
     realized by selling specific underwater names. All `HarvestYieldParams` are `[HEURISTIC]`,
-    anchored only to the account's first-year (TY2025) 1099-B. See the engine phase
-    `_apply_tlh_harvest` for the full rationale; `finance/augur/sim/TODO.md`
-    tracks the more honest representative-sleeve upgrade path.
+    anchored only to the account's first-year (TY2025) 1099-B. The configured executor
+    applies this approximation in `rust/engine/tlh.rs::execute_tlh_harvest`.
 
     The policy is keyed to the lots of one (agent, account, asset) pool — typically the Plaid
     SP500 proxy sleeve. Each month the engine harvests a calibrated capital LOSS into that

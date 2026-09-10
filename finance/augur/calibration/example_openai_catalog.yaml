@@ -389,7 +389,7 @@ markets:
   # ============================================================================
   # EXACT -- macro level markets (whole-model calibration). Scored against the
   # model's security:SPY / inflation LEVEL channels, not the OpenAI PE bundle, anchored
-  # to metadata.anchors. See augur/plans/whole_model_calibration.md.
+  # to metadata.anchors.
   # ============================================================================
   - manifold_id: hISQySnLnu
     # question: "[ACX 2026] Will the S&P 500 close above 7,500 at the end of 2026?"

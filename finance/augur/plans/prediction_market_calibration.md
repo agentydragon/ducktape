@@ -1,9 +1,9 @@
 # Augur prediction-market calibration
 
 This is the compact architecture and model-design record for comparing Augur's
-structured model against prediction markets. Active work items live in
-`../TODO.md`, especially the whole-model calibration and M2.2 stochastic
-dilution sections.
+structured model against prediction markets. Remaining research and deferred app
+ideas live in [the capability backlog](future_work.md); the landing roadmap owns
+priorities. Private deployment state is not tracked here.
 
 ## Purpose
 
@@ -97,13 +97,8 @@ parameters, and later learn the shape from a hierarchical population prior.
 
 ## Remaining Work
 
-Use `../TODO.md` as the source of truth. The durable lanes are:
-
-- Surface quote fetched-at and quote-quality states in the calibration UI.
-- Add macro level fans and an eventually weighted aggregate calibration metric.
-- Deploy the M2.2 Bayesian/scale-reversion fit once private config and
-  `sample_sanity` agree.
-- Add V/dilution correlation and primary-round lumpiness only after the median
-  fit is deployable.
-- Fit hierarchical population priors across many startup trajectories, including
-  down rounds, shutdowns, and never-exited companies, to avoid survivorship bias.
+The [capability backlog](future_work.md) retains valuation/dilution dependence,
+population priors, posterior deployment and deferred reporting ideas without a
+second dispatch order. Existing evidence access remains in place; new fetching
+and caching infrastructure waits for observed throttling. Richer PE app controls
+are not planned.

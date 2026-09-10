@@ -1,128 +1,75 @@
-# Augur simulator design
+# Augur simulator implementation
 
-This document describes the **current** `finance/augur/sim` implementation. It is not a
-clean-room proposal. The financial capability surface lives in
-[`REQUIREMENTS.md`](REQUIREMENTS.md).
+The current code has one canonical set of financial mechanics and two remaining
+orchestration surfaces: the common monthly action session and the configured
+runner used by the app, feature-rich benchmark and legacy acceptance readers.
+They share financial steps but differ in policy control and supported domains.
 
-`sim/` is the scenario model, the compiler that turns one into a plan, and the contract an
-engine answers against. It does not contain an engine. The engine is
-<../rust/README.md>, and `sim/` cannot import it — the dependency runs one way, which is what
-keeps preparation independent of execution.
+## Preparation and dependencies
 
-## Design goals
+`Scenario` describes actors, accounts, holdings, contracts and path bindings.
+`compile_run` in <backend.py> resolves those inputs into `CompiledRun`.
+It does not fetch market evidence, fit a model or load tax law independently.
+The lowered document includes exact monetary terms, quantized market paths and
+resolved tax rules. Preparation currently still has padded tax intermediates and
+raw wire dictionaries; they are not a domain requirement.
 
-The simulator is a deterministic evaluator of typed financial scenarios over sampled
-exogenous paths. Given the same scenario and sampled bundle, it produces the same result.
-Its implementation is optimized for three properties:
+`sim/` owns declarations and common books/results; `rust/` imports those Python
+types at its result boundary. Preparation does not depend on the executor.
+`model/` and `fit/` sample and fit; `policy/` contains proposal helpers.
+Neither financial settlement nor preparation depends on the app's `product/`
+or HTTP modules.
 
-1. exact integer accounting in configured currency quanta;
-2. explicit financial semantics and ordering;
-3. one canonical state/output representation, with read models projected at the boundary
-   that needs them.
-
-The implementation intentionally does **not** reconstruct state by replaying an event log.
-
-## End-to-end pipeline
-
-The production handoff is:
+## Common experiment session
 
 ```text
-product/API wire models
-    -> product scenario translation
-    -> Scenario
-    -> compile_run(..., materialized paths, rules, locations)
-    -> CompiledRun (one prepared execution input)
-    -> Engine.product_metrics(...) / events(...)
-    -> canonical event frames and state channels
+authored scenario + supplied paths/rules
+    -> compile_run
+    -> ActionSession.start()
+    -> current scoped observations
+    -> Python batch policy
+    -> ActionSession.advance(ordered actions)
+    -> next observations or typed Finished
 ```
 
-Each boundary changes representation for a concrete reason rather than mirroring the same
-concept in two forms.
+The caller owns the time loop and optional policy memory. Each path is stateful;
+parallel paths do not make future months independent. Policies see current
+actor-scoped facts, not future sampled market trajectories. The executor owns
+phase ordering, validation, settlement, liabilities and tax consequences.
 
-### Product/API translation
+`rust/simulator.pyi` declares the current Python action boundary, while
+`rust/engine/actors.rs` implements the retained session and its capability checks.
+Configured allocators, housing and PE behavior are not silently enabled through
+this API. A rejected action stops only its rollout with the successful prefix
+intact; an unpaid due claim is a different stop reason. There is no retry callback
+within the month.
 
-`finance/augur/product/scenarios.py` adapts the smaller user-facing `ScenarioKey` vocabulary
-into the full authored `Scenario`. It creates the explicit agents, accounts, counterparties,
-tax profiles, obligations, property cashflows, lifecycle events, and funding policies needed
-by the domain model. Product models and simulator models are therefore related but not
-interchangeable schemas.
+## Books and capture
 
-### Authored scenario
+Money and quantities use their declared fixed-point scales. Canonical state is
+not reconstructed by replaying event descriptions. `books.py` and `results.py`
+define typed books, receipts, stops and completed results; `events.py` defines
+the columnar event frames. Compact capture and selected dense/forensic capture
+come from the same financial execution.
 
-`finance/augur/sim/scenario.py` owns the validated financial-domain model. Scheduled and
-recurring transfers, property cashflows, purchases, sales, obligations, tax profiles, target
-allocations, harvest policies, and private-equity policies remain explicit types. Their
-validators reject invalid authored topology before compilation — a scenario that cannot be
-built cannot be simulated, whichever engine would have run it. `scenario_test.py` states
-that layer on its own, without executing anything.
+Opening snapshot zero precedes events. A stopped event month `f` has an ending
+book at snapshot `f + 1`, marked at the already observed month `f`; no future
+marks or decisions are invented. Reporting must retain this distinction when
+comparing stopped books with completed horizons.
 
-### Execution preparation
+## Remaining configured consumers
 
-`finance/augur/sim/compiler/execution.py` prepares the engine's input directly:
-per-asset quantity scales, exact-money exogenous paths, and the supplied tax law
-resolved into brackets, deductions and exemptions. It does not build a second
-financial representation of dense slots and masks that an adapter then bypasses.
+`Engine` in <backend.py> and `RustEngine` in <../rust/backend.py> serve the
+existing product methods. Their configured runner owns full-horizon loops and
+implicit allocation/grouped-funding behavior. The app's projections do not define
+the financial capabilities or output shape required by every experiment.
 
-Resolving tax law here rather than in an engine is deliberate. An engine that looked up its
-own jurisdiction records could assess a different schedule than the one a case states, which
-is how three divergences reached production before the plan became the single source.
+`sim/testing/simulation_result.py` and `rust/result.py` are the separate legacy
+acceptance adapter, not the common public result contract. Existing tests on
+those adapters remain until equivalent supported-domain controls move to the
+action session. Keep independent expected financial facts, rather than retaining
+an obsolete runner just to compare implementations.
 
-Preparation rejects an empty population and preserves checks that must precede
-quantization. Rust validates the prepared input before executing it.
-
-## The engine contract
-
-`finance/augur/sim/backend.py` declares what an engine is. `CompiledRun` carries one
-prepared execution document, with no original scenario or rules to reread; `Engine` is the interface
-`ProductService` holds — product metrics, the percentile fan, terminal summaries, and the
-event log for one selected rollout.
-
-Nothing above that contract knows which engine ran: the derived metrics, the terminal
-reduction, the percentile brackets and the rollout projection are written once, against the
-canonical event frames rather than against any engine's output layout.
-
-## State and output contract
-
-`finance/augur/sim/events.py` declares the canonical event frames, and
-`sim/testing/simulation_result.py` declares the state channels — cash, lots, income, capital
-gains, tax liabilities, properties, property stakes, liabilities and rollout status — with
-the schema and sort key each carries. An engine projects its own run into those; a suite
-reads them and never an engine's buffers.
-
-State histories are indexed `snapshot = month + 1`, with month zero the compiled initial
-condition rather than a replayed event frame.
-
-## External series
-
-`finance/augur/sim/external_series.py` is the consumer-side handoff. Evidence ingestion,
-model fitting and sampling belong to `augur/model`; `sim/` is a deterministic path evaluator
-once it receives those trajectories. The handoff is the model's own typed `LevelFrames` plus
-the typed `PrivateEquityBundle`.
-
-**Sampling stays on JAX, deliberately.** `model/gbm.py`, `state_space.py`, `vecm.py` and
-`independent.py` run it, and a seed maps to sampled paths — re-implementing that PRNG
-elsewhere would change every number a stored seed produces.
-
-## Accounting and failure semantics
-
-Money is integer quanta of the configured currency throughout. Obligations sharing one payer
-and source account settle all-or-none. A rollout that cannot meet a hard demand stops: it
-executes no further actions and reports the month it stopped, rather than continuing with a
-negative balance.
-
-A price that is not a price — zero, negative, non-finite — is refused where the series is
-read, not absorbed. Valuing an unpriceable holding at zero would silently under-report net
-worth and under-fund a cash band.
-
-## Validation boundary
-
-Authored topology is rejected by `scenario.py` validators. Everything derived from it —
-missing series, unknown accounts, a sale exceeding its lots — is rejected during compilation
-or by the engine validating the prepared input, where the failure can name the offending row.
-
-## Change discipline
-
-- keep the compiled plan the single statement of what a run is, including its tax law;
-- keep `sim/` free of any dependency on an engine package;
-- state behaviour against the channels in `sim/testing/`, so a second engine is held to the
-  same answers rather than to a second description of them.
+The standalone feature-rich benchmark includes housing, PE, harvesting and
+multiple obligated actors. Migrating public-only tests does not make that whole
+workload compatible with a single-actor session or authorize stripping it down.

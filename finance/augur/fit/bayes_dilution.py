@@ -88,7 +88,7 @@ class BayesianDilutionPriors:
         all in one size regime CANNOT identify these (fitting them diverges), so in the default
         `fit_scale_reversion_shape=False` mode they are FIXED at the centers below. Their values
         are therefore load-bearing educated guesses, justified per-field, to be replaced by a
-        population/hierarchical fit (augur/TODO.md).
+        population/hierarchical fit.
 
     Numbers are monthly log-units unless noted; annualized figures use `exp(12*mu)-1` for drift
     and `sigma*sqrt(12)` for vol. Override per issuer reference class.

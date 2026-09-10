@@ -22,8 +22,7 @@ as `(1 - e) ** maturity_decay_exponent`, and is amplified in drawdowns. This sha
 is taken from Vanguard's "Tax-loss harvesting: Why a personalized approach is
 important" (July 2024); the magnitude of TLH alpha and the wash-sale haircut are
 bounded by Chaudhuri, Burnham & Lo, "An Empirical Evaluation of Tax-Loss-Harvesting
-Alpha," Financial Analysts Journal 76(3) 2020. Remaining follow-ups live in
-`finance/augur/sim/TODO.md`.
+Alpha," Financial Analysts Journal 76(3) 2020.
 
 All parameters are `[HEURISTIC]`: with only the account's first-year (TY2025)
 1099-B there is no in-account history to fit the decay rate, so the curve's shape

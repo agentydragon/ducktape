@@ -29,7 +29,7 @@
 #   - https://www.vallejosun.com/mare-island-residents-request-state-audit-of-vallejos-special-tax-spending/
 #   - https://www.cityofvallejo.net/common/pages/DisplayFile.aspx?itemId=19274617
 #
-# Caveats — see augur/sim/TODO.md for follow-ups:
+# Fixture limitations:
 #   - CFD assessments in California typically escalate up to 2%/yr;
 #     this fixture treats the figure as flat.
 #   - CFDs have stated terms (Mare Island's are designed to sunset as

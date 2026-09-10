@@ -45,9 +45,10 @@ observations carrying the value and required provenance. Update fit/artifact/con
 producers, runtime conditioning and `fit/state_space.py` readers together; reject
 incompatible/missing observations at the boundary. Retain actual observable units
 and conditioning values; no alternate dict format or duplicate extractor remains.
-This is the remaining artifact/observation slice of `typed_series_config.md`,
-linked from BIND but independently landable: no MODEL/GM statistical-adoption gate
-and no prerequisite edge to BIND's price/payout validation slice.
+This is independently landable: no MODEL/GM statistical-adoption gate and no
+prerequisite edge to BIND's price/payout validation slice. Retain current factor
+encoding; the deferred IDTYPES work in [the entity-ID note](typed_series_config.md)
+does not gate typed observation records or require an artifact/frontend ID sweep.
 
 ## P12 reader retirement
 
@@ -63,8 +64,8 @@ decodes configured forensic output into the separate
 supported-domain suites onto the common Python action session and the existing typed
 books/traces/receipts. Keep independent numerical assertions, not only
 old/new equivalence; delete superseded test contracts/adapters with their last
-readers. `sim/testing/security_distributions.py` is a supported single-actor
-next slice: retain independent payout, issuer-exemption and sub-quantum controls.
+readers. Reuse the common-session distribution, public-sale/tax and dated-bond
+controls rather than restoring their configured-runner suites.
 The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped
 multiple-actor sequencing; separate runs are not a replacement for those joint
 controls. The existing product bond-value regression remains until BONDREPORT replaces that actual adapter
@@ -94,14 +95,23 @@ cutover; do not add new endpoints or financial features there.
 
 ## DOCS — reconcile the remaining trackers
 
-Reconcile `sim/TODO.md`, the parent TODO, remaining interface sketches and linked
-subplans with the settled executable-policy/common-session model. In particular,
-remove advice to add data-driven liquidity programs, a second mutable cumulative
-TLH basis accumulator, or policy-emitted payments as if they were not implemented.
-Map genuinely unsupported capabilities to the roadmap and keep local numerical
-checks under their owning tax/product task. Remove completed entries rather than
-copying them into a new backlog. Audit stale planning PRs for overlap; propose
-closure/supersession rather than reviving their old implementations automatically.
+The [capability backlog](future_work.md) owns the remaining questions from the old
+project/simulator TODOs; the roadmap alone owns sequencing. Do not restore their
+data-driven liquidity programs, second mutable TLH basis accumulator, cached
+rollouts or completed implementation items.
+
+Reconcile the remaining interface sketches and older model/actor plans with the
+executable-policy/common-session contract. Review the prediction-market calibration,
+interpolator and exogenous-rollout notes: separate implemented calibration contracts
+(which belong in durable docs) from optional model proposals and deferred evidence
+operations. Remove code-to-plan citations as those contracts graduate. These notes
+must not introduce an alternative model-adoption gate beside SCORE/GM/READY.
+
+Audit the still-open planning/sketch PRs #5859, #4440, #4624, #4427, #4251 and #3748
+for remaining requirements and overlap; propose closure/supersession rather than
+reviving their implementations automatically. Map genuinely unsupported capabilities
+to the roadmap; do not copy completed entries into a new backlog. Ask the owner
+about unresolved intent after inspecting code and history.
 
 DOCS has no implementation prerequisite and does not gate other work. Each code
 migration still updates its own affected README/SPEC and removes its completed

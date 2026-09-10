@@ -398,9 +398,8 @@ def _schedule_e_split(rented_fraction: float) -> tuple[TransferDeductionCategory
 
     Rented fraction > 0 → property expenses route a `rented_fraction` share to Schedule E
     against rental income; fraction = 0 (pure owner-occupied) → no Schedule E deduction
-    (mortgage interest still flows to MID via the existing MID policy; SALT applies as
-    today). The Phase 2 follow-ups in `augur/sim/TODO.md` track scaling MID/SALT
-    themselves by (1 - rented_fraction); this helper only handles the Schedule E side.
+    (mortgage interest and SALT are handled separately); this helper only handles
+    the Schedule E expense share.
     """
 
     if rented_fraction <= 0.0:
@@ -840,8 +839,7 @@ def _sim_property_purchase(
         ),
         mortgage=mortgage,
         rented_fraction=rented_fraction,
-        # The wire schema doesn't yet expose this knob; we use the sim default (0.20) until
-        # the deployment-config / property-record story lands. See augur/sim/TODO.md.
+        # The wire schema has no land-fraction field; this uses the sim default.
     )
 
 

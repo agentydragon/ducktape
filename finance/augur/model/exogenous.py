@@ -1,7 +1,7 @@
 """Shared API for exogenous path models consumed by the simulator.
 
 Non-PE level series are grouped by **role** — the concern that
-references them (see `augur/plans/typed_series_config.md`). A sampled bundle
+references them. A sampled bundle
 carries one frame per `LevelSeriesKind` plus the PE bundle.
 
 Which role a kind belongs to — asset-price (prices a lot), property-value
