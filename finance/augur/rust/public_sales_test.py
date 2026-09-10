@@ -5,7 +5,7 @@ assessment, exact lot accounting and payment still use the common action session
 """
 
 from decimal import Decimal
-from operator import setitem
+from typing import Any
 
 import numpy as np
 import pytest
@@ -92,8 +92,9 @@ def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
         assert isinstance(receipt.action, Sell)
         expected = tuple(lots)
         lots.clear()
-        with pytest.raises(TypeError):
-            setitem(receipt.action.lots, 0, LotSale(account_id="checking", lot_id="invented", units=1))
+        recorded_lots: Any = receipt.action.lots
+        with pytest.raises(TypeError, match="does not support item assignment"):
+            recorded_lots[0] = LotSale(account_id="checking", lot_id="invented", units=1)
         assert receipt.action.lots == expected
         while not isinstance(batch, Finished):
             batch = session.advance(_sell_and_pay(batch, sale_month=-1))

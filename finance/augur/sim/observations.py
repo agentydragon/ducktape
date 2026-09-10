@@ -31,12 +31,12 @@ class PublicPosition(Record):
 
 
 class FixedCoupon(Record):
-    kind: Literal["Fixed"] = "Fixed"
+    kind: Literal["fixed"] = "fixed"
     amount: int
 
 
 class IndexedCoupon(Record):
-    kind: Literal["Indexed"] = "Indexed"
+    kind: Literal["indexed"] = "indexed"
     annual_rate_ppb: int
 
 
