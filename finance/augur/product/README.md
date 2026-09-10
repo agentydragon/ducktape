@@ -2,16 +2,18 @@
 
 `action_projection.metric_arrays` reduces finished `ActionSession` outcomes into
 the arrays consumed by `sim.product_metrics` fan/terminal reducers. It owns no
-session or policy. On a dense/forensic result, `rust.event_log.decode_event_log`
-reads that same rollout's `trace`; `projection.project_product_rollout` combines
+session or policy. On a dense/forensic result, `trace.events` carries the same
+rollout's columnar event log; `projection.project_product_rollout` combines
 those events with the arrays using only the original `rollout_id`. Metric arrays
 retain their ordered IDs; `select(ids)` subsets/reorders those IDs with their
 columns. Event logs retain owning IDs even for eventless paths. A projection
 rejects an ID absent from either input; array-column positions are internal.
 
-Compact public cash/securities histories suffice for population metrics; absent
-detail is `trace=None`. Property, private-equity and held-bond historical values
-are not inferred from an ending book. Unsupported histories raise explicitly.
+Compact public cash/securities and held-bond principal histories suffice for population
+metrics; absent detail is `trace=None`. Bond carrying value uses each declared bond's
+captured principal, including redemption and stopped-event marks, not a sale quote or
+an inferred history from its ending book. Missing/duplicate bond histories reject.
+Property and private-equity histories remain unsupported and raise explicitly.
 `ProductService` still uses its configured execution path for the existing app
 capabilities; these projection functions do not route between engines.
 
@@ -24,7 +26,7 @@ selected detail retains the actual stop book. Post-stop padding is unobserved.
 
 The real-session integration control covers both captured modes, summary-only
 population reductions, a taxable sale/year crossing, ordered payment failure,
-consumption rejection and selected/reordered replay:
+consumption rejection, bond redemption/stopped-CPI marks and selected/reordered replay:
 
 ```bash
 bbr test //finance/augur/product:test_action_projection

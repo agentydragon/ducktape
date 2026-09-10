@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from finance.augur.model.series import InflationKey
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import ProductRolloutProjection, project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, RolloutFailureEvent, TaxAccrualEvent
@@ -22,7 +23,8 @@ from finance.augur.sim.backend import CompiledRun
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.product_metrics import OutcomeBasis, projection_summaries
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
-from finance.augur.sim.scenario import BondHolding
+from finance.augur.sim.scenario import BondHolding, InitialAccountBalance
+from finance.augur.sim.testing.bonds import CPI_DOUBLING, bond_case
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
 from finance.augur.x.monthly_actions.policy import decide
@@ -34,8 +36,10 @@ def _run(
     ids: list[int],
     capture: Literal["summary", "dense", "forensic"],
     policy: Callable[[list[Decision]], list[DecisionActions]] = decide,
+    *,
+    actor_id: str = "example-household",
 ) -> list[Rollout]:
-    session = ActionSession(json.dumps(compiled.execution_input), "example-household", ids, capture=capture)
+    session = ActionSession(json.dumps(compiled.execution_input), actor_id, ids, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -276,7 +280,26 @@ def test_eventless_trace_keeps_its_owner_and_rejects_another_paths_metrics() -> 
         )
 
 
-def test_uncaptured_bond_is_not_reported_as_zero_even_after_redemption() -> None:
+def _hold(batch: list[Decision]) -> list[DecisionActions]:
+    return [DecisionActions(row.rollout_id, row.observation.month, []) for row in batch]
+
+
+def test_product_net_worth_carries_indexed_bonds_at_indexed_principal() -> None:
+    # Preserve the actual product metric control formerly in rust/backend_test.py.
+    # Untaxed: tax on $1M accretion would stop this cash-constrained case first.
+    for indexed, expected in ((True, 200_000_000), (False, 100_000_000)):
+        compiled = bond_case(indexed=indexed, cpi=CPI_DOUBLING, is_taxed=False).compiled_run
+        rollouts = _run(compiled, [0], "summary", _hold, actor_id="alice")
+        metrics = metric_arrays(compiled, rollouts, primary_agent_id="alice").metric_arrays()
+        assert rollouts[0].stop is None
+        assert metrics["bond_value_quanta"][-1, 0] == expected
+        assert metrics["net_worth_quanta"][-1, 0] == expected + metrics["cash_quanta"][-1, 0]
+
+
+@pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
+def test_redemption_replaces_principal_with_cash_without_changing_product_net_worth(
+    capture: Literal["summary", "dense", "forensic"],
+) -> None:
     compiled = Case(
         scenario(
             checking(("example-household", Decimal(0)), ("example-creditor", Decimal(0))),
@@ -298,12 +321,127 @@ def test_uncaptured_bond_is_not_reported_as_zero_even_after_redemption() -> None
         ),
         rollout_count=1,
     ).compiled_run
-    rollouts = _run(compiled, [0], "summary")
+    rollouts = _run(compiled, [0], capture, _hold)
     assert rollouts[0].stop is None
     assert [bond.active for bond in rollouts[0].summary.ending_book.bonds] == [False]
     assert rollouts[0].summary.cash[0].values[-1] == 10_000
-    with pytest.raises(ValueError, match="held-bond principal history"):
-        metric_arrays(compiled, rollouts, primary_agent_id="example-household")
+    metrics = metric_arrays(compiled, rollouts, primary_agent_id="example-household").metric_arrays()
+    assert metrics["cash_quanta"][:, 0].tolist() == [0, 0, 10_000]
+    assert metrics["bond_value_quanta"][:, 0].tolist() == [10_000, 10_000, 0]
+    assert metrics["net_worth_quanta"][:, 0].tolist() == [10_000, 10_000, 10_000]
+    [rollout] = rollouts
+    [captured] = rollout.summary.bond_principal
+    # Even a fully redeemed position needs its actual pre-redemption history.
+    for rows in (
+        [],
+        [captured, captured],
+        [captured.model_copy(update={"bond_id": "other"})],
+        [captured.model_copy(update={"account": captured.account.model_copy(update={"account_id": "other"})})],
+    ):
+        invalid = rollout.model_copy(update={"summary": rollout.summary.model_copy(update={"bond_principal": rows})})
+        with pytest.raises(ValueError, match="held-bond principal history"):
+            metric_arrays(compiled, [invalid], primary_agent_id="example-household")
+
+
+def test_bond_principal_totals_named_accounts_without_another_actors_holdings() -> None:
+    compiled = Case(
+        scenario(
+            [
+                *checking(("example-household", Decimal(0)), ("example-creditor", Decimal(0))),
+                InitialAccountBalance(agent_id="example-household", account_id="savings", balance=Decimal(0)),
+            ],
+            horizon_months=1,
+            tax_profiles=[],
+            initial_bonds=[
+                BondHolding(
+                    bond_id=f"{actor}-{account}",
+                    agent_id=actor,
+                    account_id=account,
+                    face_value=Decimal(face),
+                    purchase_price=Decimal(face),
+                    annual_coupon_rate=0,
+                    coupon_period_months=1,
+                    purchase_month_index=0,
+                    maturity_month_index=1,
+                )
+                for actor, account, face in (
+                    ("example-household", "checking", 100),
+                    ("example-household", "savings", 75),
+                    ("example-creditor", "checking", 999),
+                )
+            ],
+        ),
+        rollout_count=1,
+    ).compiled_run
+    rollouts = _run(compiled, [0], "summary", _hold)
+    assert len(rollouts[0].summary.bond_principal) == 2
+    values = metric_arrays(compiled, rollouts, primary_agent_id="example-household").metric_arrays()
+    assert values["bond_value_quanta"][:, 0].tolist() == [17_500, 17_500]
+    assert values["net_worth_quanta"][:, 0].tolist() == [17_500, 17_500]
+
+
+def test_stopped_bond_marks_and_selected_replay_use_captured_cpi_not_future_values() -> None:
+    authored = scenario(
+        checking(("example-household", Decimal(0)), ("example-creditor", Decimal(0))),
+        horizon_months=3,
+        tax_profiles=[],
+        initial_bonds=[
+            BondHolding(
+                bond_id="indexed-note",
+                agent_id="example-household",
+                account_id="checking",
+                face_value=Decimal(100),
+                purchase_price=Decimal(100),
+                annual_coupon_rate=0,
+                coupon_period_months=1,
+                purchase_month_index=0,
+                maturity_month_index=2,
+                inflation_indexed=True,
+            )
+        ],
+    )
+    compiled = Case(
+        authored, rollout_count=2, series={InflationKey(): np.asarray([[1.0, 2.0, 99.0, 99.0], [1.0, 2.0, 3.0, 4.0]])}
+    ).compiled_run
+
+    def stop_first(batch: list[Decision]) -> list[DecisionActions]:
+        return [
+            DecisionActions(
+                row.rollout_id,
+                row.observation.month,
+                [
+                    Action.consume(
+                        0, "unfunded", "budget", ("example-household", "checking"), ("example-creditor", "checking"), 1
+                    )
+                ]
+                if row.rollout_id == 0 and row.observation.month == 1
+                else [],
+            )
+            for row in batch
+        ]
+
+    baseline = _run(compiled, [0, 1], "summary", stop_first)
+    compact = metric_arrays(compiled, baseline, primary_agent_id="example-household")
+    arrays = compact.metric_arrays()
+    assert arrays["bond_value_quanta"].tolist() == [[10_000, 10_000], [20_000, 20_000], [20_000, 30_000], [0, 0]]
+    assert arrays["cash_quanta"].tolist() == [[0, 0], [0, 0], [0, 0], [0, 30_000]]
+    assert compact.failed_month.tolist() == [1, -1]
+    assert compact.observed[:, 0].tolist() == [True, True, True, False]
+    wealth = projection_summaries(compact, metric="net_worth_quanta", percentiles=(0, 50, 100))
+    assert wealth.metric_fan.observed_count.tolist() == [2, 2, 1, 1]
+    assert wealth.terminal_distribution.observed.tolist() == [False, True]
+    assert wealth.metric_fan.terminal_percentiles is not None
+    assert wealth.metric_fan.terminal_percentiles.tolist() == [30_000] * 3
+    for capture in ("dense", "forensic"):
+        selected = _run(compiled, [1, 0], capture, stop_first)
+        detailed = metric_arrays(compiled, selected, primary_agent_id="example-household")
+        assert detailed.rollout_ids == (1, 0)
+        for actual, expected in zip(detailed.base_series, compact.select((1, 0)).base_series, strict=True):
+            np.testing.assert_array_equal(actual, expected)
+        stopped = selected[1]
+        assert stopped.summary.ending_mark_month == 1
+        detail = _detail(compiled, selected, 1)
+        assert detail.monthly_metric_arrays["bond_value_quanta"].tolist() == [10_000, 20_000, 20_000]
 
 
 if __name__ == "__main__":

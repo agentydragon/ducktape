@@ -1,8 +1,8 @@
 """Project finished action-session outcomes; never run a policy or a financial evaluator.
 
-Compact cash/public marks support the product's fan and terminal reductions. Detailed
+Compact cash/public marks and held-bond principal support the product's fan and terminal reductions. Detailed
 events use the same result's typed `trace.events`.
-An absent property, private-equity or bond history is not an observed zero holding.
+An absent history is not an observed zero holding.
 """
 
 from collections.abc import Sequence
@@ -47,8 +47,8 @@ def _shortfall(summary: Summary) -> int:
 def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agent_id: str) -> ProductMetricArrays:
     """Use finished results from this prepared run, in their supplied selection order.
 
-    Only public cash/securities are supported here. Historical property, private-equity
-    and held-bond values must be captured before those portfolios can use this adapter;
+    Cash, public securities and held-bond principal are supported here. Historical property
+    and private-equity values must be captured before those portfolios can use this adapter;
     the configured app retains those capabilities. Masked padding is not observed money.
     """
     scenario = run.execution_input["scenario"]
@@ -56,8 +56,11 @@ def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agen
         raise ValueError("property and mortgage histories are not captured for product action projection")
     if any(pool["asset_id"].startswith("private_equity:") for pool in scenario["holding_pools"]):
         raise ValueError("private-equity histories are not captured for product action projection")
-    if scenario["initial_bonds"]:
-        raise ValueError("held-bond principal history is not captured for product action projection")
+    bond_accounts = {
+        bond["bond_id"]: bond["account_id"]
+        for bond in scenario["initial_bonds"]
+        if bond["agent_id"] == primary_agent_id
+    }
     ids = [rollout.rollout_id for rollout in rollouts]
     if not ids or len(set(ids)) != len(ids) or any(not 0 <= id_ < run.execution_input["rollout_count"] for id_ in ids):
         raise ValueError("product projection needs a nonempty unique selection of original rollout IDs")
@@ -75,11 +78,22 @@ def metric_arrays(run: CompiledRun, rollouts: Sequence[Rollout], *, primary_agen
         expected = snapshot_count if failed_month[column] < 0 else int(failed_month[column]) + 2
         if observed != expected or not 1 <= observed <= snapshot_count:
             raise ValueError("finished result does not cover its declared completed or stopped prefix")
-        if ending.properties or ending.mortgages or ending.bonds:
+        if ending.properties or ending.mortgages:
             raise ValueError("ending book contains a domain without captured historical product values")
+        captured_bonds = {row.bond_id: row.account.account_id for row in summary.bond_principal}
+        ending_bonds = {bond.bond_id: bond.account_id for bond in ending.bonds if bond.agent_id == primary_agent_id}
+        if (
+            len(captured_bonds) != len(summary.bond_principal)
+            or captured_bonds != bond_accounts
+            or ending_bonds != bond_accounts
+        ):
+            raise ValueError("held-bond principal history must cover each declared actor bond/account exactly once")
         series["cash_quanta"][:observed, column] = _total_series(summary.cash, primary_agent_id, observed)
         series["holding_value_quanta"][:observed, column] = _total_series(
             summary.public_holdings, primary_agent_id, observed
+        )
+        series["bond_value_quanta"][:observed, column] = _total_series(
+            summary.bond_principal, primary_agent_id, observed
         )
         series["shortfall_quanta"][observed - 1, column] = _shortfall(summary)
     return ProductMetricArrays(

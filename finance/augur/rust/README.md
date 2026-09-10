@@ -270,9 +270,9 @@ including receipt-aware memory, complete-batch routing, selected replay and clos
 income-character and redemption acceptance cases through the Python action session
 and typed books/receipts. Its policy pays observed claims in order; the unfunded
 accretion-tax case retains received coupon cash and stops without rescue. Shared
-bond-case construction stays in `sim/testing/bonds.py`. The product bond carrying-value
-regression remains in `backend_test.py` until product action projection supports that
-history; it is not replaced with a narrower principal-only assertion.
+bond-case construction stays in `sim/testing/bonds.py`. The actual product bond
+carrying-value regression now lives in `product/test_action_projection.py`, reducing
+the same session's captured principal histories rather than rerunning a configured engine.
 
 `bbr test //finance/augur/rust:security_distributions_test` runs the public-fund
 payout, issuer-exemption and sub-quantum payment controls through the same typed
