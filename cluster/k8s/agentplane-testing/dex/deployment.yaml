@@ -69,6 +69,8 @@ spec:
             - name: config
               mountPath: /etc/dex
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: config
           secret:
@@ -76,3 +78,5 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
+        - name: tmp
+          emptyDir: {}
