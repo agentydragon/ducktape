@@ -1,0 +1,67 @@
+# Agentplane Gateway Service experiment
+
+Status: prerequisite policy proposal; no DNS change or demonstrated fix.
+
+## Read-only observations, 2026-09-10 03:41–03:45 UTC
+
+Agentplane Pod `agentplane-app-5d6d88b587-g5sff`, IP `10.244.4.80`,
+endpoint 290 on `ovh-ns102453`, remains CrashLoopBackOff. Probes used its
+existing network namespace via the Cilium agent; no container or cluster
+configuration was changed. This is transport diagnosis, not live acceptance.
+
+The generated `gateway-system/cilium-gateway-cluster-gateway` Service is
+NodePort with ClusterIP `10.106.122.5`. Cilium service 159 maps port 443 to
+`127.0.0.1:80`; its generated Envoy listener supports both raw HTTP and TLS
+filter chains. The EndpointSlice's `192.192.192.192:9999` is a placeholder,
+not the actual datapath backend.
+
+All probes retained certificate verification and explicit SNI. HTTP probes
+requested only public OIDC discovery, with Host `auth.allegedly.works`.
+Only status lines and the Service denial's server/body were recorded; no
+credentials, cookies, authorization codes, or sessions were used.
+
+| Source / destination                   | Auth SNI TLS     | Discovery HTTP                   |
+| -------------------------------------- | ---------------- | -------------------------------- |
+| Pod → local node `147.135.37.175:443`  | reset, errno 104 | not attempted                    |
+| Pod → remote node `147.135.39.176:443` | verified TLS 1.3 | 200                              |
+| Pod → Service `10.106.122.5:443`       | verified TLS 1.3 | 403, server envoy, Access denied |
+| Host → Service                         | verified TLS 1.3 | 200                              |
+
+Negative SNI `oidc-policy-negative.allegedly.works` is rejected during TLS
+on both node-IP paths but completes verified TLS through the Service. Sending
+discovery with that SNI and the canonical Host still returns 403. Thus Service
+TLS success is not evidence that the complete request is permitted or that
+the SNI restriction is lost. A short endpoint drop monitor showed no drops
+during the first Service TLS probe.
+
+## Why a policy change is the next experiment
+
+Cilium revision `9a8982433e18019e290b8199c0c4ad24f66befe8`,
+`bpf/bpf_lxc.c`, forwards L7 Service traffic to its proxy before ordinary
+egress policy evaluation. Deployed proxy revision
+`edeb3f2af56c37c407efa1f63f0b32f595399bbc`,
+`cilium/network_filter.cc`, captures the original SNI and checks policy in
+the upstream callback against the selected backend identity and port.
+`cilium/filter_state_cilium_policy.cc` applies the source Pod's egress policy
+using that destination and SNI. This explains why node:443 permission is
+insufficient for this path. The precise live deny callback was not traced.
+
+Authentik's Service selects component=server, instance=authentik,
+name=authentik, and maps HTTP to 9000. The proposed rule adds only those Pods
+in the authentik namespace on TCP 9000 with canonical SNI. It does not grant
+unrestricted plaintext backend access. Its runtime enforcement must still
+be verified; source inspection does not prove the proposed rule succeeds.
+
+## Post-review validation gate
+
+After GitOps applies the policy, repeat canonical and negative SNI probes
+from the app network namespace, including HTTP requests. Require discovery
+and JWKS 200 with canonical SNI, rejection with negative SNI, and rejection
+of direct plaintext backend access. Repeat the local/remote/Service matrix
+with payload-free captures before concluding the Service path is reliable.
+Keep public DNS and the issuer unchanged during this experiment.
+
+Only after these checks should internal DNS routing be proposed. Real OIDC
+acceptance must use public-coder-devbox and wait for application readiness;
+the current app crash loop is a separate blocker. No BuildBuddy validation
+invocation exists for these read-only TLS/HTTP probes.

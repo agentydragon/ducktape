@@ -93,6 +93,20 @@ spec:
               protocol: TCP
           serverNames:
             - auth.allegedly.works
+    # Gateway Service traffic is checked against the selected backend, with
+    # the client's original SNI. See debug/agentplane_gateway_service_probe.md.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/name: authentik
+            app.kubernetes.io/instance: authentik
+            app.kubernetes.io/component: server
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
