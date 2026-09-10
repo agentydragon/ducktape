@@ -369,6 +369,8 @@ py_library(
     deps = [
         ":_native",
         ":actions",
+        ":books",
+        ":mortgage",
         ":observations",
         ":prepared",
         ":results",
@@ -485,6 +487,21 @@ py_test(
         ":mortgage",
         "//:conftest",
         "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "configured_mortgage_test",
+    srcs = ["configured_mortgage_test.py"],
+    deps = [
+        ":configured",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

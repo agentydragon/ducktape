@@ -36,19 +36,23 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
 
 
 @pytest.mark.parametrize("closing_cost_pct", [0, 10])
-def test_sale_pays_off_ledger_principal_before_sale_month_installment(closing_cost_pct: int) -> None:
+@pytest.mark.parametrize("financed", [False, True])
+def test_sale_pays_off_ledger_principal_before_sale_month_installment(closing_cost_pct: int, financed: bool) -> None:
     purchase = home_purchase(
         mortgage=MortgageFinancing(
             liability_id="loan", lender_agent_id="bank", principal=600, annual_interest_rate=0, term_months=60
-        ),
+        )
+        if financed
+        else None,
         purchase_price=Decimal(1000),
-        down_payment=Decimal(400),
+        down_payment=Decimal(400 if financed else 1000),
         buyer_closing_cost=Decimal(0),
     ).model_copy(update={"month": 2})
     case = Case(
         scenario=scenario(
             checking(("alice", Decimal(2000)), ("seller", Decimal(0)), ("bank", Decimal(0))),
             horizon_months=6,
+            tax_profiles=[],
             scheduled_property_purchases=[purchase],
             property_lifecycle_events=[
                 PropertySaleEvent(month=5, property_id="home", closing_cost_pct=closing_cost_pct)
@@ -71,13 +75,18 @@ def test_sale_pays_off_ledger_principal_before_sale_month_installment(closing_co
         assert path.result.financial is not None
         books = path.result.financial.months
         assert not books[2].mortgages
-        assert [book.mortgages[0].principal for book in books[3:]] == [60_000, 59_000, 58_000, 0]
         ending = books[-1]
-        assert not ending.mortgages[0].active
-        assert not path.mortgages["loan"].active
+        if financed:
+            assert [book.mortgages[0].principal for book in books[3:]] == [60_000, 59_000, 58_000, 0]
+            assert not ending.mortgages[0].active
+            assert not path.mortgages["loan"].active
+        else:
+            assert not ending.mortgages
+            assert not path.mortgages
         cash = {row.account.agent_id: row.balance for row in ending.balances if row.account.account_id == "checking"}
         assert cash["alice"] == 158_000 + (122_000 if closing_cost_pct == 0 else 104_000)
-        assert cash["bank"] == 60_000
+        # Configured payoff closes the lender's funding control, not its cash account.
+        assert cash["bank"] == (2000 if financed else 0)
 
 
 @pytest.mark.parametrize("fail_year_end", [False, True])
@@ -96,6 +105,7 @@ def test_paid_groups_update_entities_but_failed_year_end_does_not_reset_interest
     authored = scenario(
         checking(("alice", Decimal(300_000)), ("bob", Decimal(300_000)), ("seller", Decimal(0)), ("bank", Decimal(0))),
         horizon_months=12,
+        tax_profiles=[],
         scheduled_property_purchases=[purchase, bob_purchase],
         scheduled_obligations=[
             ScheduledObligation(
@@ -129,6 +139,10 @@ def test_paid_groups_update_entities_but_failed_year_end_does_not_reset_interest
         assert all(loan.interest_paid_ytd == 0 for loan in after.values())
     for id_, loan in path.mortgages.items():
         assert loan.observe(after[id_].principal) == after[id_]
+        liability = next(
+            row.balance for row in ending.balances if row.account.account_id == f"liability:mortgage:{id_}"
+        )
+        assert liability == -after[id_].principal
 
 
 if __name__ == "__main__":
