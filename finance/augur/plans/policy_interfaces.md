@@ -243,8 +243,8 @@ use this same session, not a second policy interface.
 
 P12 migrates configured consumers and removes old full-run loops and implicit
 public-portfolio strategy, preserving required existing housing/PE capabilities.
-The feature-rich benchmark, app and legacy acceptance readers remain. SALES and
-ACCEPT move supported public consumers to the common session; BENCH retains its
+The feature-rich benchmark, app and legacy acceptance readers remain.
+ACCEPT moves supported consumers to the common session; BENCH retains its
 housing/PE/harvest/multiple-actor dependencies. Existing Python funding, common
 reporting and held-bond capture are reused, not reimplemented. New `product/`
 features are deferred; its remaining adapter work must simplify existing behavior

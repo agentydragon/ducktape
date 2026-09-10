@@ -6,7 +6,7 @@ and examines distributions and individual timelines. The primary acceptance
 case is joint spending-flexibility × allocation planning with supported taxes.
 Housing remains a capability; the house-buying web app does not define the library.
 
-Grounded at `devel` `aa56335573` (2026-09-10 UTC). The
+Grounded at `devel` `0d8498b725` (2026-09-10 UTC). The
 [experiment/interface sketches, PR #5859](https://github.com/agentydragon/ducktape/pull/5859)
 remain a proposal, not an API to implement wholesale. This plan owns sequencing;
 [allocation experiments](allocation_program.md) owns the remaining experiment
@@ -47,8 +47,8 @@ loops. Native policy-loop migration is not an additional intermediate milestone.
 
 The priority is **domain modeling and experiment APIs, not large-N performance**.
 Prefer Python for a clear, inspectable object model and composable financial steps.
-RESULT repairs typed results; further moves follow actual managed
-portfolio and FIRE-study needs, not a queue of easily ported kernels. Correctness
+Further moves follow actual managed-portfolio and FIRE-study needs,
+not a queue of easily ported kernels. Correctness
 and atomic caller migration remain gates; GL and RUNTIME/GE are parked future
 optimization work and do not block this phase.
 
@@ -178,8 +178,8 @@ Paths are relative to `finance/augur/`. Each row names the change that removes i
 | Tax preparation pads bracket arrays, then `_tax_profiles` reconstructs records.                                                                                  | One variable-length typed tax preparation result; delete arrays/counts and reconstruction.                                                                       | TAXINPUT       |
 | Imported/displayed total lot basis must divide into quantized per-unit basis.                                                                                    | Exact remaining total basis through import, execution and display; no duplicate authority.                                                                       | BASIS          |
 | Market conditioning uses raw `latest_observations` and repeated fallback extraction.                                                                             | Typed observation/artifact producers and consumers, unchanged units and conditioning.                                                                            | OBSINPUT       |
-| Configured forensic output has a separate acceptance-test result model and adapter.                                                                              | Move real suites to common typed results; delete old test contracts with last readers.                                                                           | SALES, ACCEPT  |
-| An unused summary Python binding and native full-run benchmark remain.                                                                                           | Delete unused export independently; migrate the complete benchmark workload before removing its driver.                                                          | UNBIND, BENCH  |
+| Configured forensic output has a separate acceptance-test result model and adapter.                                                                              | Move real suites to common typed results; delete old test contracts with last readers.                                                                           | ACCEPT         |
+| A native full-run benchmark remains.                                                                                                                             | Migrate the complete benchmark workload before removing its driver.                                                                                              | BENCH          |
 | Other TODOs still propose superseded policy/data/TLH designs.                                                                                                    | Remove superseded guidance and reconcile real remaining work into this DAG.                                                                                      | DOCS           |
 
 `x/allocation_sensitivity.py` is a deliberately tax-free independent recurrence.
@@ -213,13 +213,9 @@ flowchart TB
     OBSINPUT["OBSINPUT: typed conditioning observations"]
     DOCS["DOCS: reconcile remaining trackers"]
 
-    RESULT["RESULT: typed common session results"] --> SALES["SALES: public scheduled-sale readers"]
-    RESULT --> ACCEPT["ACCEPT: legacy acceptance-suite readers"]
-    UNBIND["UNBIND: remove unused Python summary export"] --> P12["P12: delete remaining configured drivers and schemas"]
-    SALES --> P12
-    ACCEPT --> P12
+    ACCEPT["ACCEPT: legacy acceptance-suite readers"] --> P12["P12: delete remaining configured drivers and schemas"]
 
-    RESULT --> APP["APP: existing app cutover; no new features"]
+    APP["APP: existing app cutover; no new features"]
     BONDREPORT["BONDREPORT: existing held-bond capture into app adapter"] --> APP
     BONDREPORT -. existing product-value tests only .-> ACCEPT
     GH{"GH: managed-account phase and model boundary"} --> MA1["MA1: passive managed account"]
@@ -272,7 +268,6 @@ acceptance gate. Financial correctness and supported-domain coverage still gate
 the affected change. Parallelism across independent worlds does not require dense
 whole-horizon execution or uniform event/position counts.
 
-RESULT removes raw result-transport leaks; stable rollout identity is already implemented.
 BONDREPORT composes existing held-bond principal capture with product reporting. Reuse
 `product/funding.py`, `product/action_projection.py` and the held-bond observations;
 their implementations are not backlog. APP still removes configured funding
@@ -281,7 +276,7 @@ owner; scripted counterparties do not require a general multi-policy scheduler.
 New adaptive HOUSE/BOND features are not prerequisites for preserving current
 behavior. BENCH names the actual feature-rich workload's prerequisites; its
 housing/PE/harvest/multiple-actor requirements are not waived by calling it a
-benchmark. Public SALES/ACCEPT slices remain independently landable. The
+benchmark. Supported ACCEPT slices remain independently landable. The
 [managed-portfolio plan](managed_portfolio.md) specifies GH and MA1–MA3: a
 household-owned account with modeled service behavior, not another household
 harvesting policy. That branch does not wait for housing, PE or RUNTIME/GE.
@@ -289,8 +284,8 @@ harvesting policy. That branch does not wait for housing, PE or RUNTIME/GE.
 Outcome reporting is a consumer acceptance requirement, not a separate prerequisite
 project. Common-session summaries already retain payment/claim identities, unpaid amounts and causes,
 stop books and failed-action receipts; the joint example separates policy
-intentions, attempted requests and paid consumption. RESULT types those facts.
-Preserving them belongs to each SALES/ACCEPT/APP migration's acceptance, not
+intentions, attempted requests and paid consumption. These results are typed.
+Preserving them belongs to each ACCEPT/APP migration's acceptance, not
 another extension of the legacy native report. A study supplies its own cut or
 shortfall definition and CPI/base-date convention using these facts; no universal
 success metric is implied. CAP adds only facts demanded by a named consumer and
@@ -342,8 +337,8 @@ no tax or settlement implementation in Python.
 
 ### Domain-first Python convergence
 
-The [Python convergence plan](python_migration.md) specifies RESULT and
-subsequent domain-driven moves. Stateful financial trajectories advance through
+The [Python convergence plan](python_migration.md) specifies subsequent
+domain-driven moves. Stateful financial trajectories advance through
 time; independent trajectories may run in parallel. Presampled exogenous paths
 do not require a dense whole-future financial kernel. Data layout implements the
 domain model, not the reverse.
@@ -362,22 +357,21 @@ large, preserving the named completion condition and atomic caller updates.
 The **Needs** column names immediate prerequisites; inherited prerequisites still
 apply only to the consuming slice. No convergence node waits for RUNTIME/GE.
 
-| Unit                                                    | Independently reviewable change                                                                                                                                                                                                                                                                                      | Needs                             | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P12 — migrate configured consumers and delete old loops | Move benchmarks and the app to the same Python session and explicit policies. Land supported consumer slices independently; extend the common action path only for capabilities existing callers require. Remove old full-run entrypoints, allocator orchestration and policy schema fields with their last callers. | UNBIND, SALES, ACCEPT, BENCH, APP | All actual simulation outer loops are Python-controlled, including app/high-N runs. Rust retains step mechanics/kernels, not a parallel driver. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
+| Unit                                                    | Independently reviewable change                                                                                                                                                                                                                                                                                      | Needs              | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P12 — migrate configured consumers and delete old loops | Move benchmarks and the app to the same Python session and explicit policies. Land supported consumer slices independently; extend the common action path only for capabilities existing callers require. Remove old full-run entrypoints, allocator orchestration and policy schema fields with their last callers. | ACCEPT, BENCH, APP | All actual simulation outer loops are Python-controlled, including app/high-N runs. Rust retains step mechanics/kernels, not a parallel driver. Preserve existing financial capabilities and explicitly resolve phase/grouped-funding differences; no silent behavior change or compatibility runner. No new adaptive housing, tax or market capability is implied. |
 
 ### Domain composition and existing-app retirement
 
-| Unit       | Change and acceptance                                                                                                                                                                                                                                     | Needs                                |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| RESULT     | Typed finished rollouts, summaries, receipts and stop variants; decode once, preserve columnar traces and migrate all consumers/CLI tests.                                                                                                                | None                                 |
-| BONDREPORT | Reduce canonical bond-principal histories into product metrics, with redemption/stopped-mark controls; no second collector or invented missing-domain zeros.                                                                                              | None                                 |
-| MA1        | Passive managed-account declaration, Python approximation, canonical loss/basis consequences and scoped capture; no household harvest action. Independent financial controls and acceptance are in the [managed-portfolio plan](managed_portfolio.md).    | GH, BASIS                            |
-| MA2        | Contribution and gross-cash withdrawal actions through the same batch API, with declared liquidation/settlement and exact basis/deferral reconciliation.                                                                                                  | MA1                                  |
-| MA3        | Runnable paired managed/no-harvest comparison with identical supplied paths, documented CLI tests, compact outcomes and selected replay. Calibration validation remains separate.                                                                         | MA2                                  |
-| HOUSING    | Preserve scheduled purchase, occupancy, rent, improvements, sale and mortgage/tax lifecycle through shared financial steps and capture. Test funding failure, purchase basis, deductions and rental transitions. This is not adaptive purchase policy.    | GHOUSE                               |
-| PE         | Separate compulsory issuer state/cash events from Python tender choice. Enforce eligibility, capacity and lockups through canonical execution; preserve collapse/recovery, IPO transition, gains and event outputs.                                       | GPE                                  |
-| APP        | Cut over all product endpoints to the Python loop and common outputs; selected detail executes once, fans use compact capture. Preserve configured holdings and supported lifecycle/harvest inputs, then remove replaced methods with their last callers. | RESULT, BONDREPORT, MA2, HOUSING, PE |
+| Unit       | Change and acceptance                                                                                                                                                                                                                                     | Needs                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| BONDREPORT | Reduce canonical bond-principal histories into product metrics, with redemption/stopped-mark controls; no second collector or invented missing-domain zeros.                                                                                              | None                         |
+| MA1        | Passive managed-account declaration, Python approximation, canonical loss/basis consequences and scoped capture; no household harvest action. Independent financial controls and acceptance are in the [managed-portfolio plan](managed_portfolio.md).    | GH, BASIS                    |
+| MA2        | Contribution and gross-cash withdrawal actions through the same batch API, with declared liquidation/settlement and exact basis/deferral reconciliation.                                                                                                  | MA1                          |
+| MA3        | Runnable paired managed/no-harvest comparison with identical supplied paths, documented CLI tests, compact outcomes and selected replay. Calibration validation remains separate.                                                                         | MA2                          |
+| HOUSING    | Preserve scheduled purchase, occupancy, rent, improvements, sale and mortgage/tax lifecycle through shared financial steps and capture. Test funding failure, purchase basis, deductions and rental transitions. This is not adaptive purchase policy.    | GHOUSE                       |
+| PE         | Separate compulsory issuer state/cash events from Python tender choice. Enforce eligibility, capacity and lockups through canonical execution; preserve collapse/recovery, IPO transition, gains and event outputs.                                       | GPE                          |
+| APP        | Cut over all product endpoints to the Python loop and common outputs; selected detail executes once, fans use compact capture. Preserve configured holdings and supported lifecycle/harvest inputs, then remove replaced methods with their last callers. | BONDREPORT, MA2, HOUSING, PE |
 
 The default API test configuration includes PE and dated bonds. Public-only
 controls must declare a separate synthetic portfolio, not discard those holdings.
@@ -401,23 +395,21 @@ its last consumer; public funding does not depend on that work.
 The [reader and input cleanup plan](cleanup_migration.md) specifies live paths,
 atomic caller updates and deletion criteria.
 
-| Unit     | Change                                                                      | Needs                                                  |
-| -------- | --------------------------------------------------------------------------- | ------------------------------------------------------ |
-| TAXINPUT | Replace padded prepared-tax arrays with typed records.                      | None                                                   |
-| INPUT    | Make prepared facts authoritative and hide the lowered wire dictionary.     | TAXINPUT's record contract                             |
-| BASIS    | Preserve exact total basis across generic lot inputs and existing display.  | None                                                   |
-| OBSINPUT | Type market conditioning/artifact observations; delete fallback extractors. | None                                                   |
-| DOCS     | Reconcile superseded TODOs/sketches; map genuinely remaining work.          | None                                                   |
-| UNBIND   | Remove the unused Python summary export, retaining native live readers.     | None                                                   |
-| SALES    | Move supported scheduled-sale test consumers to explicit Python actions.    | RESULT                                                 |
-| ACCEPT   | Move remaining acceptance suites to common typed traces/receipts.           | RESULT; expanded capabilities only for affected suites |
-| BENCH    | Move the full feature-rich benchmark to a Python-controlled loop.           | MA2, HOUSING, PE, relevant GP sequencing               |
+| Unit     | Change                                                                      | Needs                                          |
+| -------- | --------------------------------------------------------------------------- | ---------------------------------------------- |
+| TAXINPUT | Replace padded prepared-tax arrays with typed records.                      | None                                           |
+| INPUT    | Make prepared facts authoritative and hide the lowered wire dictionary.     | TAXINPUT's record contract                     |
+| BASIS    | Preserve exact total basis across generic lot inputs and existing display.  | None                                           |
+| OBSINPUT | Type market conditioning/artifact observations; delete fallback extractors. | None                                           |
+| DOCS     | Reconcile superseded TODOs/sketches; map genuinely remaining work.          | None                                           |
+| ACCEPT   | Move remaining acceptance suites to common typed traces/receipts.           | Expanded capabilities only for affected suites |
+| BENCH    | Move the full feature-rich benchmark to a Python-controlled loop.           | MA2, HOUSING, PE, relevant GP sequencing       |
 
 INPUT, BASIS and OBSINPUT are independently specifiable; shared files do not
 create extra sequencing edges. BASIS feeds MA1 so managed imports reuse one exact
 opening-basis contract. INPUT need not wait for P12 or block every managed-account
-step. DOCS does not gate implementation. ACCEPT and SALES can stack on RESULT;
-no merge wait is a content dependency.
+step. DOCS does not gate implementation. ACCEPT uses the existing typed result
+contract; no merge wait is a content dependency.
 
 ### P12: retire configured helper readers
 
@@ -567,11 +559,9 @@ all the others to be solved first.
 
 ## Current dispatch and priorities
 
-1. **RESULT** is underway. **UNBIND, SALES and supported ACCEPT slices** are
-   dispatched independently; the latter two stack on RESULT's typed contract.
-   Start SALES with tax-statute/rollout-independence controls and ACCEPT with
-   supported bond cashflow/tax cases. Preserve the existing product bond-value
-   regression until BONDREPORT supplies its actual replacement.
+1. **Supported ACCEPT slices** are dispatched against the existing typed session
+   contract, beginning with bond cashflow/tax cases. Preserve the existing product
+   bond-value regression until BONDREPORT supplies its actual replacement.
 2. **TAXINPUT, BASIS, OBSINPUT and DOCS** are ready cleanup slices; INPUT consumes
    TAXINPUT's record contract. Their concrete scope is in the cleanup plan.
    BONDREPORT is allowed legacy-retirement integration, not a product feature

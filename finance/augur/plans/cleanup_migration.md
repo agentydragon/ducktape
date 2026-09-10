@@ -23,7 +23,7 @@ metadata through the existing prepared-run object and keep serialization at the
 native boundary. Migrate all callers, tests and file-entrypoint readers atomically.
 Do not retain a public raw tree beside the typed tree, merely add casts, or add a
 new executor abstraction. Consume TAXINPUT's typed records; that contract can be
-stacked on before merge. RESULT concerns output and is not an INPUT prerequisite.
+stacked on before merge. Typed common outputs already exist.
 INPUT need not wait for P12: still-live configured strategies can lower privately
 until their last consumers move, but must not dictate the public domain objects.
 
@@ -51,33 +51,23 @@ and no prerequisite edge to BIND's price/payout validation slice.
 
 ## P12 reader retirement
 
-**UNBIND — unused Python export.** Delete `simulate_summaries_json` from
-`rust/python.rs` and `rust/simulator.pyi` after a repository-wide reader check.
-Native summary functions still serve benchmark/tests; delete those only with
-their last callers. No dependency on RESULT, BENCH or performance work.
-
-**SALES — supported scheduled-sale consumers.** Start with
-`sim/testing/{tax_statute,rollout_independence}.py`: author their month-specific
-sales and claim payments as explicit Python actions, and read RESULT's common
-typed results. Preserve independent money/tax expectations and sale cadence;
-delete each moved legacy acceptance subclass/reader. Do not invent a generic
-scheduled-policy interpreter. Other TLH/feature-rich/native-test readers retain
-the scheduled-sale implementation until their own migrations; P12 deletes the
-schema and executor branch with the last one.
+Remaining TLH/feature-rich/native-test consumers still use scheduled public sales.
+Move those decisions to explicit actions as each consumer migrates; P12 deletes
+the scheduled-sale schema and executor branch with the last one. Reuse the
+existing public-sale/tax controls as independent financial coverage.
 
 **ACCEPT — remaining legacy acceptance readers.** `rust/result.py::RustResult`
 decodes configured forensic output into the separate
 `sim/testing/simulation_result.py::SimulationResult` contract;
 `rust/backend_test.py` instantiates the suites against `run_rust`. Move bounded
-supported-domain suites onto the common Python action session and RESULT's typed
+supported-domain suites onto the common Python action session and the existing typed
 books/traces/receipts. Keep independent numerical assertions, not only
 old/new equivalence; delete superseded test contracts/adapters with their last
 readers. Bond cashflow/tax controls can move independently; the existing product
 bond-value regression remains until BONDREPORT replaces that actual adapter
 coverage, rather than a weaker principal-only assertion. Native step tests remain
 useful, but no test should retain an obsolete
-full-run entrypoint solely to preserve its test harness. SALES owns its named
-suites; ACCEPT owns the remaining suites. Housing/PE/harvest suites wait only for
+full-run entrypoint solely to preserve its test harness. Housing/PE/harvest suites wait only for
 their affected capabilities, not the whole acceptance migration. Do not discard
 regressions or wrap the old runner behind the new result type.
 

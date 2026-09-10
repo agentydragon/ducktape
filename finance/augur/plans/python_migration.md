@@ -5,22 +5,6 @@ performance. Prefer Python where it makes financial entities, steps and policies
 clearer to compose and inspect. This is not a rewrite benchmark contest. The
 [roadmap](roadmap.md) owns dispatch and dependencies; remove completed work here.
 
-## Type the public result boundary
-
-**RESULT** replaces public `Finished.rollouts_json` with typed rollouts, compact
-summaries, books, receipts and explicit stop variants. Decode once at the boundary
-or expose typed native results; do not retain a raw dictionary tree beside the
-typed tree. Reuse existing columnar event frames for traces instead of inflating
-all event rows into a second record hierarchy. Preserve dense/forensic books and
-journals where real consumers need them. Ordinary mappings remain mappings;
-record/variant structure does not remain `dict[str, Any]`.
-
-All common-session result consumers, including actual CLI paths, migrate atomically.
-No alias shim, raw-dictionary alternative, cast-only typing or new evaluator.
-Reordered/subselected IDs, eventless paths, early stops, exact money, optional
-capture and selected replay are acceptance cases. Private transport serialization
-is allowed; it must not leak into domain code or be mistaken for financial logic.
-
 ## Choose subsequent moves by domain value
 
 The next priority is a coherent model that experiments can compose, not a sequence
@@ -41,7 +25,7 @@ studies to expose needed boundaries:
   allocation and managed-account examples exercise this composition; they need
   neither the app nor a universal experiment framework.
 
-RESULT does not finish typing the world. The concrete
+Typed common outputs do not finish typing the world. The concrete
 [input/reader cleanup slices](cleanup_migration.md) cover INPUT's public
 `CompiledRun.execution_input` leak, TAXINPUT's padded preparation, BASIS's exact
 opening lots, OBSINPUT's conditioning records, and the remaining P12 readers.
