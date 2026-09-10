@@ -351,3 +351,25 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "tlh",
+    srcs = ["tlh.py"],
+    deps = [
+        ":fixed_point",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "tlh_test",
+    srcs = ["tlh_test.py"],
+    deps = [
+        ":fixed_point",
+        ":tlh",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
