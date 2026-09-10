@@ -14,11 +14,7 @@ data:
       "target": {
         "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
         "audience": "agentplane-testing",
-        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
-        "subjects": ["test-subject"]
-      },
-      "subject_mapping": {
-        "test-subject": "test-subject"
+        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys"
       },
       "scope": "openid"
     }
@@ -26,6 +22,5 @@ data:
     {
       "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
       "audience": "agentplane-testing",
-      "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
-      "subjects": ["test-subject"]
+      "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys"
     }

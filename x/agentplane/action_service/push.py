@@ -153,19 +153,12 @@ class ActionPushNotifier:
     """
 
     def __init__(
-        self,
-        identity: PushIdentity,
-        subscriptions: PushSubscriptionStore,
-        *,
-        base_url: str,
-        database_url: str,
-        authorized_operators: frozenset[str],
+        self, identity: PushIdentity, subscriptions: PushSubscriptionStore, *, base_url: str, database_url: str
     ) -> None:
         self._identity = identity
         self._subscriptions = subscriptions
         self._base_url = base_url.rstrip("/")
         self._database_url = database_url
-        self._authorized_operators = authorized_operators
         self._http = httpx.AsyncClient(timeout=10, follow_redirects=False)
         self._task: asyncio.Task[None] | None = None
 
@@ -203,8 +196,6 @@ class ActionPushNotifier:
     async def reconcile(self) -> bool:
         delivered = False
         for registration in await self._subscriptions.list_all():
-            if registration.operator_principal not in self._authorized_operators:
-                continue
             # One short transaction per send: a slow device never locks Action state or all browsers.
             async with self._subscriptions._sessions.begin() as session:
                 subscription = await session.scalar(
@@ -212,7 +203,7 @@ class ActionPushNotifier:
                     .where(PushSubscriptionRow.endpoint == registration.endpoint)
                     .with_for_update(skip_locked=True)
                 )
-                if subscription is None or subscription.operator_principal not in self._authorized_operators:
+                if subscription is None:
                     continue
                 delivery = PushDeliveryRow
                 request = await session.scalar(

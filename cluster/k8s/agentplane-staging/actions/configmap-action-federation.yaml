@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-action-federation
+  namespace: agentplane-staging
+  annotations:
+    description: OIDC federation configuration for the Agentplane app and Action Service
+data:
+  action-federation: |
+    {
+      "mode": "exchange",
+      "service_url": "http://agentplane-actions.agentplane-staging.svc.cluster.local:8080",
+      "token_endpoint": "https://auth.allegedly.works/application/o/token/",
+      "login_jwks_uri": "https://auth.allegedly.works/application/o/agentplane/jwks/",
+      "target": {
+        "issuer": "https://auth.allegedly.works/application/o/agentplane-actions/",
+        "audience": "agentplane-actions",
+        "jwks_uri": "https://auth.allegedly.works/application/o/agentplane-actions/jwks/"
+      },
+      "scope": "openid"
+    }
+  operator-oidc: |
+    {
+      "issuer": "https://auth.allegedly.works/application/o/agentplane-actions/",
+      "audience": "agentplane-actions",
+      "jwks_uri": "https://auth.allegedly.works/application/o/agentplane-actions/jwks/"
+    }

@@ -1,7 +1,7 @@
 """Request-bound Authentik JWT-bearer federation, following Haku hostexec's grant shape.
 
-No global operator client/token cache, static BFF bearer, or workload-token promotion. Provider-
-scoped subjects need an explicit reviewed mapping; identical strings are never assumed continuity.
+No global operator client/token cache, static BFF bearer, or workload-token promotion. Separate
+providers use the same Authentik subject mode, and the app verifies subject continuity after exchange.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ class _ActionFederationSettings(BaseModel):
     service_url: str
     login_jwks_uri: str
     target: OperatorOidcSettings
-    subject_mapping: dict[str, str] = Field(min_length=1)
     scope: str = Field(min_length=1)
 
     @field_validator("service_url")
@@ -95,8 +94,6 @@ class FederatedOperatorActions:
             client_id=oidc.client_id,
         )
         self._target = config.target.resolver()
-        if not set(config.subject_mapping.values()) <= config.target.subjects:
-            raise ValueError("federation mappings must name authorized target subjects")
 
     def for_session(self, session: OperatorSession) -> OperatorActionServiceClient:
         return OperatorActionServiceClient(self._http, _SessionToken(self, session))
@@ -104,9 +101,6 @@ class FederatedOperatorActions:
     async def exchange(self, session: OperatorSession) -> str:
         if session.issuer != self._login_issuer or session.expires_at <= time.time() or session.access_token is None:
             raise OperatorFederationError("operator_reauthentication_required")
-        target_subject = self._config.subject_mapping.get(session.subject)
-        if target_subject is None:
-            raise OperatorFederationError("operator_federation_subject_not_authorized")
         try:
             upstream = await self._upstream.resolve(
                 {"access_token": session.access_token.get_secret_value(), "token_type": "Bearer"}
@@ -127,7 +121,7 @@ class FederatedOperatorActions:
                         scope=self._config.scope,
                     )
             downstream = await self._target.resolve(token)
-            if downstream.subject != target_subject:
+            if downstream.subject != upstream.subject:
                 raise OperatorFederationError("operator_federation_identity_mismatch")
             access_token = token["access_token"]
             if not isinstance(access_token, str):

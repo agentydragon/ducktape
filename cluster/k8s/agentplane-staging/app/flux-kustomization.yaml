@@ -35,8 +35,9 @@ spec:
       namespace: ducktape-flux
     - name: gateway # the HTTPRoute's parent
       namespace: ducktape-flux
-    # TF mints the OAuth2 provider and the agentplane-oidc Secret; reflector mirrors it into this
-    # namespace. The Deployment reads three keys out of it, so without both the pod does not start.
+    # TF mints the OAuth2 provider and agentplane-oidc Secret; Reflector mirrors the Secret into
+    # this namespace. The Actions Kustomization owns the non-secret federation ConfigMap, which
+    # this Deployment reads after its dependency has reconciled.
     - name: sso-providers-tf
       namespace: ducktape-flux
     - name: reflector

@@ -12,8 +12,8 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
   invalidation_flow  = data.authentik_flow.invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
 
-  # Preserve the existing default explicitly: IDToken.new maps this to user.uid.
-  # Terraform derives the Action mapping from that same managed user attribute.
+  # Both the login and Action providers emit the same managed user uid, so the
+  # exchange preserves identity without a provider-specific subject mapping.
   sub_mode                   = "hashed_user_id"
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true

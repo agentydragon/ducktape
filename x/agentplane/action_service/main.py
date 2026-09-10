@@ -150,11 +150,6 @@ async def async_main(settings: Settings) -> None:
                 PushSubscriptionStore(make_sessionmaker(engine)),
                 base_url=settings.web_push.public_base_url,
                 database_url=settings.database_url,
-                authorized_operators=frozenset(
-                    f"{settings.operator_oidc.issuer}:{subject}" for subject in settings.operator_oidc.subjects
-                )
-                if settings.operator_oidc
-                else frozenset(),
             )
             stack.push_async_callback(push_notifier.close)
             push_notifier.start()

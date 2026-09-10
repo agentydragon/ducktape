@@ -63,7 +63,7 @@ locals {
     upstream_issuer             = local.agentplane_mcp_issuer
     upstream_subject            = data.authentik_user.agentplane_operator.uuid
     approving_operator = {
-      issuer  = local.agentplane_operator_oidc.issuer
+      issuer  = local.agentplane_actions_issuer
       subject = data.authentik_user.agentplane_operator.uuid
       role    = "operator"
     }

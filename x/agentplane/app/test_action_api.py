@@ -123,12 +123,7 @@ async def review(
         idp_origin, app_url = f"http://127.0.0.1:{idp_port}", "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = f"{idp_origin}/application/o/actions/"
-        target = OperatorOidcSettings(
-            issuer=target_issuer,
-            audience="test-actions",
-            jwks_uri=f"{idp_url}jwks/",
-            subjects=frozenset({"target-a", "target-b"}),
-        )
+        target = OperatorOidcSettings(issuer=target_issuer, audience="test-actions", jwks_uri=f"{idp_url}jwks/")
         connections = ConnectionAuthority(
             make_sessionmaker(engine), {"public_coder": Identity(), "disabled": Identity(enabled=False)}
         )
@@ -161,8 +156,8 @@ async def review(
                     {"error": "invalid_grant", "error_description": "test-private-provider-detail"}, status_code=400
                 )
             now = int(time.time())
-            subject = {SUBJECT_A: "target-a", SUBJECT_B: "target-b"}[claims["sub"]]
-            if operator_connection == "rejected":
+            subject = claims["sub"]
+            if operator_connection == "target-subject-mismatch":
                 subject = "unauthorized"
             exchanged = {
                 "iss": target_issuer,
@@ -179,7 +174,7 @@ async def review(
             elif operator_connection == "expired":
                 exchanged.update(iat=now - 600, exp=now - 300)
             elif operator_connection == "swapped-operator":
-                exchanged["sub"] = "target-b"
+                exchanged["sub"] = SUBJECT_B
             return JSONResponse(
                 {"access_token": sign_jwt(private_key, exchanged), "token_type": "Bearer", "expires_in": 60}
             )
@@ -216,7 +211,6 @@ async def review(
             token_endpoint=f"{idp_origin}/exchange",
             login_jwks_uri=f"{idp_url}jwks/",
             target=target,
-            subject_mapping={SUBJECT_A: "target-a", SUBJECT_B: "target-b"},
             scope="openid profile",
         )
         operator_client = (
@@ -341,7 +335,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert review.calls == []
 
 
-@pytest.mark.parametrize("operator_connection", ["disabled", "rejected", "wrong-audience"])
+@pytest.mark.parametrize("operator_connection", ["disabled", "target-subject-mismatch", "wrong-audience"])
 async def test_connection_management_fails_closed_without_valid_federation(
     review: Review, operator_connection: str
 ) -> None:
@@ -389,7 +383,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     assert review.calls == []
     allowed = await browser.post(path, json=decision)
     assert allowed.status_code == 200, allowed.text
-    assert allowed.json()["decision"]["issuer"] == f"{review.issuer}:target-a"
+    assert allowed.json()["decision"]["issuer"] == f"{review.issuer}:{SUBJECT_A}"
     assert (await browser.post(path, json={**decision, "decision_note": "ignored replay"})).json()[
         "decision"
     ] == allowed.json()["decision"]
@@ -436,7 +430,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     ("operator_connection", "expected"),
     [
         ("disabled", 503),
-        ("rejected", 403),
+        ("target-subject-mismatch", 403),
         ("wrong-issuer", 403),
         ("wrong-audience", 403),
         ("expired", 403),
@@ -492,7 +486,7 @@ async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operato
     b.cookies.clear()
     review.login_as(SUBJECT_B)
     await b.get("/auth/login")
-    for browser, identity in ((a, "target-a"), (b, "target-b"), (a, "target-a")):
+    for browser, identity in ((a, SUBJECT_A), (b, SUBJECT_B), (a, SUBJECT_A)):
         pending = await review.service.submit(
             ActionRequestInput(
                 idempotency_key=f"submit-{identity}-{len(review.exchanged_subjects)}",
@@ -609,7 +603,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
         client_id="test-external-client",
         redirect_uri="https://external-client.test/callback",
         code_challenge="test-pkce-test-external-client",
-        operator=Principal(issuer=review.issuer, subject="target-a", role=PrincipalRole.OPERATOR),
+        operator=Principal(issuer=review.issuer, subject=SUBJECT_A, role=PrincipalRole.OPERATOR),
     )
     assert approved.identity_id == "public_coder"
     assert review.exchanged_subjects

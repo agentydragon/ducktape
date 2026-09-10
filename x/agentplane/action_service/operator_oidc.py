@@ -1,12 +1,12 @@
-"""Pinned Authentik JWT verification and explicit destination operator authorization.
+"""Pinned Authentik JWT verification for the Authentik-authorized Action audience.
 
-Federation does not enforce the target application's login policy. A valid signature alone must
-not admit an operator: the destination also requires a reviewed issuer-scoped subject allowlist.
+Authentik's target-provider policy decides who may obtain a token. The Action Service verifies the
+resulting issuer, audience, signature, and lifetime without maintaining a second user allowlist.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -22,7 +22,6 @@ class OperatorOidcSettings(BaseModel):
     issuer: str
     audience: str
     jwks_uri: str
-    subjects: frozenset[str] = Field(min_length=1)
 
     def resolver(self) -> AuthentikOidcPrincipalResolver:
         # These are reviewed configuration pins, not metadata taken from the presented token.
@@ -38,13 +37,10 @@ class OperatorOidcSettings(BaseModel):
 class OidcOperatorAuthenticator:
     def __init__(self, settings: OperatorOidcSettings) -> None:
         self._resolver = settings.resolver()
-        self._subjects = settings.subjects
 
     async def authenticate(self, token: str) -> Principal | None:
         try:
             identity = await self._resolver.resolve({"access_token": token, "token_type": "Bearer"})
         except (InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError):
-            return None
-        if identity.subject not in self._subjects:
             return None
         return Principal(issuer=identity.issuer, subject=identity.subject, role=PrincipalRole.OPERATOR)

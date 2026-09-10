@@ -46,10 +46,13 @@ is the browser identity lifetime. Token exchange may reject an upstream-revoked 
 ## Explicit configuration required before deployment
 
 **Staging GitOps wiring:** `tf/gitops/sso-providers/provider_agentplane_actions.tf` provisions the
-Action-only target and computes both configurations from the existing managed operator. The staging
-Deployments consume its reflected JSON configuration via their existing Settings environment sources.
-This is configuration, not evidence of a successful live exchange. Never mount a shared BFF operator
-bearer, forward a workload token, or invent a BFF signing authority.
+Action-only Authentik target and its policy binding. The non-secret `action-federation` and
+`operator-oidc` JSON is Git-owned in
+`cluster/k8s/agentplane-staging/actions/configmap-action-federation.yaml`; both Deployments read it
+from that ConfigMap through their existing Settings environment sources. Terraform still owns the
+Authentik provider and the credential-bearing Secrets, but does not render this configuration. This
+is configuration, not a credential or evidence of a successful live exchange. Never mount a shared
+BFF operator bearer, forward a workload token, or invent a BFF signing authority.
 
 The existing Haku hostexec Authentik pattern is the supported exchange shape:
 `grant_type=client_credentials`, `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`,
@@ -60,6 +63,8 @@ there is no mutable application-global operator-token cache.
 To opt in, set the app's `action_federation` YAML key (or `AGENTPLANE_ACTION_FEDERATION` JSON) with
 **all** these fields. Values below are descriptions, not deployable defaults:
 
+- `mode`: `exchange` for the staging Authentik provider boundary; `direct` only when the login token
+  already has the target issuer, audience, and subject format.
 - `service_url`: canonical Action Service base URL; use a trusted internal route or HTTPS.
 - `token_endpoint`: Authentik's shared HTTPS token endpoint. Loopback HTTP is accepted for tests only.
 - `login_jwks_uri`: pinned JWKS URI for the configured `AGENTPLANE_OIDC_ISSUER` login provider.
@@ -67,60 +72,63 @@ To opt in, set the app's `action_federation` YAML key (or `AGENTPLANE_ACTION_FED
 - `target.issuer`: exact per-provider issuer of the new Action-only federation target.
 - `target.audience`: that target's OAuth client ID, also required as `azp`.
 - `target.jwks_uri`: its pinned HTTPS JWKS URI.
-- `target.subjects`: non-empty reviewed allowlist of target-provider operator subjects.
-- `subject_mapping`: non-empty mapping of login-provider `sub` to target-provider `sub`.
-  All mapped targets must be in `target.subjects`. Establish mappings from authoritative Authentik
-  identity evidence; do not assume provider-scoped subjects are identical or join by username.
+  Configure the login and Action providers with the same Authentik `sub_mode`, so the exchanged
+  token preserves the login token's subject. This is an identity-continuity invariant, not an
+  operator authorization list.
 
 Set the Action Service's `operator_oidc` YAML key (or `AGENTPLANE_ACTIONS_OPERATOR_OIDC` JSON) to
-the same `issuer`, `audience`, `jwks_uri`, and `subjects` object as the app's `target`. Its legacy
+the same `issuer`, `audience`, and `jwks_uri` pins as the app's `target`. Authentik's target
+application policy decides who can obtain the target token; the Action Service does not maintain a
+second subject list. Its legacy
 `operator_bearer_file` adapter is mutually exclusive and is **not** a fallback for federation.
 Partial/invalid configuration fails startup. A configured app federation without OIDC login also
-fails startup. Changing reviewed mappings or allowlists requires a configuration rollout.
+fails startup. Changing Authentik's target policy changes who can exchange without a configuration
+rollout; existing short-lived target tokens remain valid until their normal expiry.
 
 The Authentik target must explicitly trust only the Agentplane login provider through
-`jwt_federation_providers`, use a short token lifetime, and emit signed RS256 access tokens with
+`jwt_federation_providers`, use the same `sub_mode` as that provider, use a short token lifetime, and emit signed RS256 access tokens with
 `iss`, `sub`, `aud`, `azp`, `iat`, and `exp`. The shared resolver enforces these pins with its existing
-30-second clock-skew allowance and five-minute JWKS cache. Do not rely on the target
-application login policy alone: the destination's independent subject allowlist is mandatory. Configure network
-reachability for BFF-to-token/JWKS/Action and Action-to-JWKS explicitly. No live cluster change or
-live-provider claim-mapping validation was performed here.
+30-second clock-skew allowance and five-minute JWKS cache. The target application's Authentik policy
+is the operator admission boundary; the Action Service only accepts a valid token issued for its
+target audience. Configure network reachability for BFF-to-token/JWKS/Action and Action-to-JWKS
+explicitly. No live cluster change or live-provider claim-mapping validation was performed here.
 
-Before declaring staging acceptance, validate the real target's subject mapping and token claims
-with Rai and a denied operator. Do not widen the current Rai-only allowlist for a test; the two-operator
-identity-continuity case remains covered by signed offline fixtures. The signed mock tests prove our request composition, verification,
-and audit continuity, not the deployed Authentik policy. The BFF verifies the retained upstream
-access token matches the current session's **issuer and subject**, then verifies the exchanged token
-matches the explicit target subject. Action Service independently verifies and authorizes that token,
-and records its actual target issuer/subject in the existing Decision issuer field.
+Before declaring staging acceptance, validate the real target's subject continuity and token claims
+with Rai and a denied operator. Do not grant a second account merely for the test; the two-operator
+identity-continuity case remains covered by signed offline fixtures. The signed mock tests prove our
+request composition, verification, and audit continuity, not the deployed Authentik policy. The BFF
+verifies the retained upstream access token matches the current session's **issuer and subject**,
+then verifies the exchanged token has the same subject. Authentik authorizes the exchange; the Action
+Service independently verifies the resulting token and records its actual target issuer/subject in
+the existing Decision issuer field.
 
 ## Staging GitOps subject proof and rollout
 
-### Authoritative mapping (configuration proof, not live token observation)
+### Authoritative subject mode (configuration proof, not live token observation)
 
-The login policy binding remains **only** `authentik_user.agentydragon.id`. Display names never
-enter the mapping. The login provider now explicitly pins its existing default
-`sub_mode = "hashed_user_id"`; the Action target explicitly selects `sub_mode = "user_uuid"`.
-The two subject strings are deliberately not assumed equal:
+The login and target application policy bindings are Authentik-managed (currently Rai plus the
+dedicated acceptance operator). Display names never enter authorization. Both providers explicitly
+use `sub_mode = "hashed_user_id"`, which makes the same Authentik user's `uid` the `sub` claim on
+both sides of the exchange:
 
 - `data.authentik_user.agentplane_operator.pk = tonumber(authentik_user.agentydragon.id)` selects
   the already-managed account by primary key. The pinned
   [Terraform provider v2026.2.0 data source](https://github.com/goauthentik/terraform-provider-authentik/blob/v2026.2.0/pkg/provider/data_source_user.go#L149)
   calls `CoreUsersRetrieve(pk)` and its `mapFromUser` exposes API `uid` and `uuid` without deriving
   either. The [resource schema](https://github.com/goauthentik/terraform-provider-authentik/blob/v2026.2.0/docs/resources/provider_oauth2.md)
-  supports both selected `sub_mode` values. No lookup by username is used for authorization.
+  supports the selected `sub_mode` value. No lookup by username is used for authorization.
 - In the cluster's pinned Authentik 2026.2.1,
   [IDToken.new](https://github.com/goauthentik/authentik/blob/version/2026.2.1/authentik/providers/oauth2/id_token.py#L108)
-  assigns `hashed_user_id` to `token.user.uid` directly, while `user_uuid` is
-  `str(token.user.uuid)`. Terraform therefore maps the authoritative API `uid` directly to the
-  authoritative target UUID; it does not derive or guess either identity value. The target still
-  allows **only the UUID**.
+  assigns `hashed_user_id` to `token.user.uid` directly. Native provider federation preserves the
+  same database user, so the exchanged token retains the source `sub`; no provider-specific mapping
+  or UUID derivation is needed.
 - [Native provider federation](https://github.com/goauthentik/authentik/blob/version/2026.2.1/authentik/providers/oauth2/views/token.py#L414)
   finds the source AccessToken only within `jwt_federation_providers`, verifies its signature,
   and assigns its database user to the grant. The pinned implementation also calls
-  `__check_policy_access` with that user: the target has a matching Rai-only policy binding as
-  defense in depth. This corrects the earlier documentation's assertion that target policy is
-  skipped; the destination allowlist is still mandatory. `create_client_credentials_response` calls
+  `__check_policy_access` with that user: the target has a matching Rai-only Authentik application
+  policy binding. This corrects the earlier documentation's assertion that target policy is skipped;
+  Authentik, not the Action Service, decides whether the exchange is permitted.
+  `create_client_credentials_response` calls
   `IDToken.new` for that user and the **target** provider. `to_access_token` stamps target `azp`;
   `IDToken.new` stamps target audience, issuer, `iat`, and `exp`.
 - `jwt_federation_providers` names only the existing Agentplane login provider; external JWT
@@ -129,25 +137,29 @@ The two subject strings are deliberately not assumed equal:
   Confirm the deployed certificate/JWKS still uses RSA/RS256 before live acceptance; the
   application and service fail closed for another algorithm.
 
-These are provider-derived values evaluated by the normal Terraform controller. No credential-bearing
-plan or state output, user token, password, or signing private key is needed in review. If the lookup
-fails or either attribute is empty, reconciliation must fail; there is no placeholder fallback.
-Account deletion/recreation changes the identity; review it as an authorization change. Future
-Authentik/provider upgrades must preserve this source contract or update and revalidate the mapping.
+Terraform binds the managed Authentik users to the target application, but does not serialize their
+`uid` or `uuid` into Action Service runtime configuration. No credential-bearing plan or state
+output, user token, password, or signing private key is needed in review. If the policy binding lookup
+fails, reconciliation must fail; there is no placeholder fallback. Account deletion/recreation changes
+the identity; review it as an Authentik authorization change. Future Authentik/provider upgrades must
+preserve this source contract or update and revalidate the subject mode.
 
 ### Distribution and ordering
 
 1. The already-existing `sso-providers-tf` health check waits for the Terraform resource. The module
-   creates the target and `agentplane-action-federation` in `authentik`; Reflector mirrors it only to
-   `agentplane-staging`. It contains `action-federation` and `operator-oidc` JSON, **no target client
-   secret or shared operator bearer**. Both use the same `local.agentplane_operator_oidc` object.
-2. Action Service depends on that Terraform layer and Reflector. It reads
-   `AGENTPLANE_ACTIONS_OPERATOR_OIDC`; its migration init gate and private Action DB remain in place.
-   Reflector readiness is not a per-secret delivery guarantee: the required Secret reference keeps
-   pods from starting until delivery. Reloader rolls both consumers when the configuration changes.
+   creates the Authentik target, its policy binding, and credential-bearing Secrets. The
+   `agentplane-action-federation` ConfigMap is a reviewed, non-secret resource in the Actions
+   Kustomization; it contains only the two verification/federation JSON objects, **no target client
+   secret, user list, or shared operator bearer**.
+2. Action Service depends on the Terraform layer and Reflector for the Secrets it consumes. It reads
+   `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the Git-owned ConfigMap; its migration init gate and
+   private Action DB remain in place. The required ConfigMap reference keeps pods from starting until
+   the Actions Kustomization has delivered it. Reloader rolls both consumers when the configuration
+   changes.
 3. The app depends on the Action Service and retains its existing database, OIDC client, and session
-   signing Secret. Its `AGENTPLANE_ACTION_FEDERATION` JSON overrides the YAML default. Both app and
-   Action YAML ConfigMaps now use Kustomize name hashes so catalog/config edits restart the process.
+   signing Secret. Its `AGENTPLANE_ACTION_FEDERATION` JSON comes from the same federation ConfigMap.
+   The stable ConfigMap name plus reloader annotations rolls both processes when its pins change;
+   generated application settings ConfigMaps retain their Kustomize name hashes.
    No replicas are added: the in-memory runner bridge still requires one app replica and `Recreate`.
 4. Use app, Action Service, and migration images published from `df4a440` (#5820) or a descendant.
    The devel CI run [34167823523](https://github.com/agentydragon/ducktape/actions/runs/34167823523)
@@ -169,7 +181,7 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 
 ### Live acceptance after merge/reconciliation (not performed in this PR)
 
-- Confirm the Terraform resource and both Flux layers are ready, configuration Secret references
+- Confirm the Terraform resource and both Flux layers are ready, configuration ConfigMap references
   resolved, the intended image revisions running, Action migration healthy, and app startup completed
   its session-table DDL. Inspect status, not secret payloads or a credential-bearing Terraform plan.
 - Verify public discovery/JWKS issuer and RS256 metadata against the configured login and target
@@ -177,12 +189,12 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
   with a different SNI on the same gateway must be denied. Do not weaken egress if this fails.
 - Log in as Rai using the existing browser Authentik session. Through the normal UI, review a pending
   non-auto-allowed fixture Action with harmless arguments, approve it, and confirm the durable Decision
-  records the target issuer and the target UUID subject from the managed user's identity record.
+  records the target issuer and the managed user's uid subject.
   Deny a second fixture and confirm no executor dispatch. The exact `echo` fixture can auto-allow:
   choose a harmless fixture outside that bounded auto-allow path, not a production side effect.
 - Confirm an existing non-authorized account cannot enter Agentplane or obtain a Decision. Do not add
   a second allowed user just to validate. Wrong issuer/audience/subject, two independent operators,
-  and source/target mismatch are additionally covered by signed offline tests, not simulated live
+  and exchanged-subject mismatch are additionally covered by signed offline tests, not simulated live
   with copied tokens. No token, code, cookie, or credential-bearing request goes into logs/review.
 - Log out, confirm old-session review access fails, and repeat login after expiry/restart. A service
   restart must retain the existing session's database authority; expiry/logout must not be undone.
@@ -200,12 +212,13 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 
 Run through `bbr`/CI only. There is no parallel copied-literal HCL/manifest contract test: those
 assertions detected edits rather than executing federation. Synthetic Settings JSON also did not
-prove Terraform's computed output. The shared Terraform local supplies both verifiers' pins; the
-provider mapping and network restrictions above remain explicit configuration review obligations.
+prove a real provider issued the target token. The Git-owned ConfigMap supplies both verifiers' pins;
+the provider subject mode, Authentik policy, and network restrictions above remain explicit
+configuration review obligations.
 
-These checks cannot prove a real provider issued the expected subject, that Terraform-computed
-configuration reached both processes, or that Cilium admitted the actual TLS path. The live acceptance
-above remains required even when every offline target is green.
+These checks cannot prove a real provider issued the expected subject, that the Git-owned
+configuration reached both processes, or that Cilium admitted the actual TLS path. The live
+acceptance above remains required even when every offline target is green.
 
 ## Failures are distinguishable and fail closed
 
@@ -213,7 +226,6 @@ above remains required even when every offline target is green.
 - Federation absent: 503 with `detail.code=operator_federation_not_configured`.
 - Expired session: 401, re-login. No usable retained access token: 403 with
   `operator_reauthentication_required`.
-- Unmapped operator: 403 with `operator_federation_subject_not_authorized`.
 - Token/session or source/target subject mismatch: 403 with `operator_federation_identity_mismatch`.
 - Signature/issuer/audience/azp/expiry/required-claim rejection: 403 with `operator_federation_token_invalid`.
 - Exchange/JWKS/network/provider failure: 403 with `operator_federation_exchange_failed`.
@@ -230,13 +242,13 @@ A result echoing an argument does not become an operator credential-disclosure p
 
 - `//x/agentplane/app:test_action_api`: signed login, request-bound exchange, independent destination
   verifier, durable decisions, two app instances with distinct DB connection pools sharing PostgreSQL,
-  callback on another replica, two operators with the same display name but different mapped subjects,
+  callback on another replica, two operators with distinct subjects and no local subject mapping,
   logout replay rejection, wrong issuer/audience/expiry/subject rejection, and real MCP single dispatch.
 - `//x/agentplane/app:test_auth_routes`: server-side PKCE/state, stable subject, expiry, logout and
   strict same-origin mutations, rejected signed login claims/signatures, state/nonce mismatch, handle
   rotation and callback replay, alongside the existing Kubernetes caller boundary.
 - `//x/agentplane/action_service:test_operator_oidc`: actual operator API admission with signed
-  wrong-issuer/audience/azp/expired/unauthorized/missing-sub/wrong-signature tokens.
+  valid arbitrary-subject and wrong-issuer/audience/azp/expired/missing-sub/wrong-signature tokens.
 - `//x/agentplane/action_service:test_acceptance`: exact operator arguments including nested
   secret-looking values, recursive caller redaction, and unchanged redacted execution results.
 

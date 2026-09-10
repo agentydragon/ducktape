@@ -31,7 +31,6 @@ class RecordingNotifier(ActionPushNotifier):
             PushSubscriptionStore(make_sessionmaker(engine)),
             base_url="https://app.example",
             database_url=db_url,
-            authorized_operators=frozenset({OPERATOR.key}),
         )
         self.recorded = recorded
         self.fail = fail

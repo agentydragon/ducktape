@@ -12,16 +12,17 @@ workload credentials into operator authority. [Authentik federation notes](../cl
 and the hostexec implementation are the reuse basis, not a new signing authority.
 
 The inspected [login provider](../tf/gitops/sso-providers/provider_agentplane_staging.tf) uses a
-per-provider issuer and hashed subjects. Target-provider subjects must therefore be established
-from authoritative provider evidence, not assumed equal or joined by display username. Federation
-preserves the Authentik user but does not enforce the destination application's login policy;
-the Action Service's explicit issuer-scoped subject allowlist remains necessary.
+per-provider issuer and hashed subjects. The target provider now uses the same subject mode, so
+federation preserves the Authentik user's `uid` without a local subject mapping. Its application
+policy is the authorization boundary; the Action Service verifies only the target issuer, audience,
+signature, and lifetime.
 
-**Deployment remains blocked:** checked-in staging configuration supplies no Action federation
-target or reviewed source-to-target subject mappings. Its
+**Deployment remains blocked:** checked-in staging configuration now supplies the Action federation
+target as a Git-owned non-secret ConfigMap, while Terraform owns the Authentik provider policy and
+credential-bearing Secrets. Its
 [app network policy](../cluster/k8s/agentplane-staging/app/networkpolicy.yaml) also needs review for
-the Action/JWKS routes before enablement. Validate two authorized operators and a denied operator
-against the real provider before enabling. Signed mock evidence is not live Authentik policy proof.
+the Action/JWKS routes before enablement. Validate subject continuity and a denied operator against
+the real provider before enabling. Signed mock evidence is not live Authentik policy proof.
 
 No live cluster edits, real token exchanges, or production secret creation are part of this PR.
 The runner bridge remains single-replica; PostgreSQL session sharing does not make its in-memory

@@ -336,10 +336,11 @@ transport exceptions or endpoint values.
 
 ### OIDC operator adapter
 
-`operator_oidc` selects pinned RS256 JWT verification plus a mandatory issuer-scoped subject
-allowlist. It is mutually exclusive with the legacy file-backed adapter; there is no fallback.
-The destination records the actual token issuer and subject, not a shared BFF identity. Deployment
-is still disabled until the explicit Authentik federation target is configured. See
+`operator_oidc` selects pinned RS256 JWT verification for the Action audience. Authentik's target
+provider policy governs who can obtain that audience; the service does not maintain a second subject
+allowlist. It is mutually exclusive with the legacy file-backed adapter; there is no fallback. The
+destination records the actual token issuer and subject, not a shared BFF identity. Deployment is
+still disabled until the explicit Authentik federation target is configured. See
 [`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.
 
 ## Action live updates and approval Web Push
@@ -359,10 +360,13 @@ The optional `web_push` configuration enables browser subscription storage and b
 
 No push configuration is enabled by this code change. Browser subscriptions are registered through
 operator-authenticated `/v1/operator/push/subscriptions`; the integration app forwards its browser
-management requests through federation. Only currently configured OIDC operator principals are
-eligible recipients. A subscription does not confer decision authority. The sender rejects other
-endpoint hosts, credentials in URLs, non-HTTPS ports, and redirects; deployed network policy must
-also constrain push-service access. VAPID rotation requires browser resubscription.
+management requests through federation, so Authentik controls access at registration and on later
+operator API requests. Stored subscriptions are notification-only and do not confer decision
+authority. Background delivery has no operator bearer with which to recheck Authentik policy, so
+revoking an account does not retroactively delete an existing subscription; remove it on the next
+authenticated management request or through the subscription store. The sender rejects other endpoint
+hosts, credentials in URLs, non-HTTPS ports, and redirects; deployed network policy must also
+constrain push-service access. VAPID rotation requires browser resubscription.
 
 Delivery uses committed Action state, PostgreSQL NOTIFY wakeups, and per-browser delivery records.
 A short subscription-row lock serializes network sends from different replicas without holding an

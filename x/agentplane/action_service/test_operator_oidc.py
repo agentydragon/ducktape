@@ -1,4 +1,4 @@
-"""Signed tokens hit the actual operator API; valid JWTs still need explicit authorization."""
+"""Signed tokens hit the actual operator API; Authentik controls token issuance."""
 
 from __future__ import annotations
 
@@ -22,9 +22,7 @@ from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 
-@pytest.mark.parametrize(
-    "failure", [None, "issuer", "audience", "expired", "unauthorized", "signature", "azp", "missing-sub"]
-)
+@pytest.mark.parametrize("failure", [None, "issuer", "audience", "expired", "signature", "azp", "missing-sub"])
 async def test_signed_operator_admission(engine: AsyncEngine, failure: str | None) -> None:
     private, public = generate_rsa_keypair()
     port = pick_free_port()
@@ -35,14 +33,7 @@ async def test_signed_operator_admission(engine: AsyncEngine, failure: str | Non
     app = create_app(
         service,
         cast(SandboxPrincipalAuthenticator, None),
-        OidcOperatorAuthenticator(
-            OperatorOidcSettings(
-                issuer=issuer,
-                audience="actions",
-                jwks_uri=f"{issuer}/jwks",
-                subjects=frozenset({"operator-a", "operator-b"}),
-            )
-        ),
+        OidcOperatorAuthenticator(OperatorOidcSettings(issuer=issuer, audience="actions", jwks_uri=f"{issuer}/jwks")),
         catalog,
         updates=ActionUpdates("postgresql://unused-test-listener"),
     )
@@ -61,8 +52,6 @@ async def test_signed_operator_admission(engine: AsyncEngine, failure: str | Non
         claims["aud"] = "workload"
     elif failure == "expired":
         claims.update(iat=now - 600, exp=now - 300)
-    elif failure == "unauthorized":
-        claims["sub"] = "signed-but-not-authorized"
     elif failure == "signature":
         private, _ = generate_rsa_keypair()
     elif failure == "azp":

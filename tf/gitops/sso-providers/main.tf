@@ -1,9 +1,9 @@
 # SSO OAuth2 providers managed by Terraform.
 #
 # Replaces blueprint+Vault+ESO chains for SSO applications. TF creates each
-# Authentik provider (which owns the client_secret), then writes K8s secrets
-# into the authentik namespace.
-# Reflector mirrors them to consumer namespaces.
+# Authentik provider (which owns the client_secret), then writes the resulting
+# K8s Secrets into the authentik namespace. Reflector mirrors them to consumer
+# namespaces.
 
 terraform {
   required_version = ">= 1.0"

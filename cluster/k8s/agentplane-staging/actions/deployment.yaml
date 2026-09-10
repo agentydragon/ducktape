@@ -6,7 +6,8 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-actions
   annotations:
-    secret.reloader.stakater.com/reload: agentplane-action-federation,agentplane-mcp-oauth,haku-console-github-mcp-client-credentials
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials
+    configmap.reloader.stakater.com/reload: agentplane-action-federation
 spec:
   replicas: 1
   strategy:
@@ -48,7 +49,7 @@ spec:
                   key: client_id
             - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
               valueFrom:
-                secretKeyRef:
+                configMapKeyRef:
                   name: agentplane-action-federation
                   key: operator-oidc
             - name: AGENTPLANE_ACTIONS_CONFIG_FILE

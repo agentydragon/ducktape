@@ -1,7 +1,7 @@
 # Action-only JWT-bearer target. See x/agentplane/docs/operator_federation.md for
-# the pinned Authentik/provider source proving the subject mapping and grant.
-# Native provider federation preserves the AccessToken's database user. Keep
-# the destination subject allowlist even though Authentik also checks policy.
+# the pinned Authentik/provider source proving the shared subject mode and grant.
+# Native provider federation preserves the AccessToken's database user; the
+# target provider policy is the authorization boundary.
 resource "authentik_provider_oauth2" "agentplane_actions" {
   name                  = "agentplane-actions"
   client_id             = "agentplane-actions"
@@ -11,7 +11,8 @@ resource "authentik_provider_oauth2" "agentplane_actions" {
   signing_key           = data.authentik_certificate_key_pair.self_signed.id
   access_token_validity = "minutes=1"
   issuer_mode           = "per_provider"
-  sub_mode              = "user_uuid"
+  # Match the login provider so the same Authentik user has the same `sub` after exchange.
+  sub_mode = "hashed_user_id"
 
   jwt_federation_providers = [authentik_provider_oauth2.agentplane_staging.id]
   jwt_federation_sources   = []
@@ -26,9 +27,9 @@ resource "authentik_application" "agentplane_actions" {
   meta_description  = "Action decisions with the operator's own federated Authentik identity"
 }
 
-# Defense in depth: Authentik 2026.2.1's native client-credentials grant checks
-# target policy with the source token's user. The service still independently
-# authorizes the exact target issuer/sub; signature or login policy alone is not enough.
+# Authentik 2026.2.1's native client-credentials grant checks target policy with
+# the source token's user. The Action Service independently verifies the target
+# issuer, audience, signature, and expiry; it does not duplicate that policy.
 resource "authentik_policy_binding" "agentplane_actions_access" {
   target = authentik_application.agentplane_actions.uuid
   user   = tonumber(authentik_user.agentydragon.id)
@@ -44,55 +45,4 @@ data "authentik_user" "agentplane_operator" {
 
 locals {
   agentplane_actions_issuer = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_actions.slug}/"
-  agentplane_operator_oidc = {
-    issuer   = local.agentplane_actions_issuer
-    audience = authentik_provider_oauth2.agentplane_actions.client_id
-    jwks_uri = "${local.agentplane_actions_issuer}jwks/"
-    subjects = [
-      data.authentik_user.agentplane_operator.uuid,
-      data.authentik_user.agentplane_acceptance_operator.uuid,
-    ]
-  }
-  agentplane_action_federation = {
-    service_url    = "http://agentplane-actions.agentplane-staging.svc.cluster.local:8080"
-    token_endpoint = "https://auth.allegedly.works/application/o/token/"
-    login_jwks_uri = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_staging.slug}/jwks/"
-    target         = local.agentplane_operator_oidc
-    subject_mapping = {
-      # Authentik 2026.2.1's HASHED_USER_ID mode emits token.user.uid directly.
-      # Keep the source uid and target UUID explicit: neither token is trusted to choose the
-      # destination subject, and the target allowlist remains separate.
-      (data.authentik_user.agentplane_operator.uid)            = data.authentik_user.agentplane_operator.uuid
-      (data.authentik_user.agentplane_acceptance_operator.uid) = data.authentik_user.agentplane_acceptance_operator.uuid
-    }
-    scope = "openid"
-  }
-}
-
-# The existing reflector/reloader path distributes configuration computed from
-# Authentik, not a shared operator credential. Each process parses its JSON env
-# field using its existing Settings source. One local object is both verifiers'
-# pin set, including the destination's mandatory operator subject allowlist.
-resource "kubernetes_secret" "agentplane_action_federation" {
-  metadata {
-    name      = "agentplane-action-federation"
-    namespace = "authentik"
-    annotations = {
-      description                                                     = "Agentplane operator federation pins (no bearer or client secret)"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agentplane-staging"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "agentplane-staging"
-    }
-  }
-  data = {
-    action-federation = jsonencode(local.agentplane_action_federation)
-    operator-oidc     = jsonencode(local.agentplane_operator_oidc)
-  }
-  lifecycle {
-    precondition {
-      condition     = data.authentik_user.agentplane_operator.uid != "" && data.authentik_user.agentplane_operator.uuid != ""
-      error_message = "The managed operator must have authoritative Authentik uid and uuid values."
-    }
-  }
 }
