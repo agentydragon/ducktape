@@ -21,7 +21,7 @@ import pytest
 from finance.augur.model.deterministic import Constant
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
-from finance.augur.model.series import LevelSeriesKey, LocationId, RentKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import LevelSeriesKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import round_currency_amount
@@ -41,7 +41,6 @@ from finance.augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledObligation,
     ScheduledPropertyPurchase,
-    SeriesIndexedAmount,
     SleeveTarget,
     TargetAllocationPolicy,
     TaxProfile,
@@ -84,173 +83,6 @@ def _external_series_context_for_levels(
         rollout_count=len(levels_by_rollout),
         horizon_months=len(levels_by_rollout[0]) - 1,
     )
-
-
-def _series_indexed_rent_obligation_scenario(amount: SeriesIndexedAmount, *, horizon_months: int) -> Scenario:
-    return Scenario(
-        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
-        initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance=20000),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
-        ],
-        recurring_obligations=[
-            RecurringObligation(
-                start_month=0,
-                obligation_id="outside_rent",
-                obligation_type="outside_rent",
-                agent_id="alice",
-                from_account_id="checking",
-                to_agent_id="landlord",
-                to_account_id="checking",
-                amount_due=amount,
-            )
-        ],
-        tax_profiles=[],
-        horizon_months=horizon_months,
-    )
-
-
-class IndexedAmountAcceptance:
-    """An amount indexed to a series is resolved against that series, per rollout and per month."""
-
-    def test_series_indexed_amount_cannot_fire_before_base_month(self, backend: Backend) -> None:
-        rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
-        scenario = _series_indexed_rent_obligation_scenario(
-            SeriesIndexedAmount(
-                base_amount=1000, series=rent_series_id, base_month_index=1, adjustment_period_months=12
-            ),
-            horizon_months=2,
-        )
-        external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0, 110.0, 120.0]])
-
-        with pytest.raises(ValueError, match="before base month 1"):
-            backend(Case(scenario=scenario, rollout_count=1, paths=external_series, locations={}))
-
-    def test_series_indexed_amount_requires_external_series_coverage(self, backend: Backend) -> None:
-        rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
-        scenario = _series_indexed_rent_obligation_scenario(
-            SeriesIndexedAmount(
-                base_amount=1000, series=rent_series_id, base_month_index=0, adjustment_period_months=12
-            ),
-            horizon_months=13,
-        )
-        external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0] * 12])
-
-        with pytest.raises(KeyError, match="missing rollout"):
-            backend(Case(scenario=scenario, rollout_count=1, paths=external_series, locations={}))
-
-    def test_series_indexed_amount_rejects_zero_base_level(self, backend: Backend) -> None:
-        rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
-        scenario = _series_indexed_rent_obligation_scenario(
-            SeriesIndexedAmount(
-                base_amount=1000, series=rent_series_id, base_month_index=0, adjustment_period_months=12
-            ),
-            horizon_months=1,
-        )
-        external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[0.0, 100.0]])
-
-        with pytest.raises(ValueError, match="zero base level"):
-            backend(Case(scenario=scenario, rollout_count=1, paths=external_series, locations={}))
-
-    def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout(self, backend: Backend) -> None:
-        """Alice pays rent to a landlord. The rent is fixed within each
-        lease year and resets annually using each rollout's rent series path."""
-        rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
-        scenario = Scenario(
-            agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
-            initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance=20000),
-                InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
-            ],
-            recurring_obligations=[
-                RecurringObligation(
-                    start_month=0,
-                    obligation_id="outside_rent",
-                    obligation_type="outside_rent",
-                    agent_id="alice",
-                    from_account_id="checking",
-                    to_agent_id="landlord",
-                    to_account_id="checking",
-                    amount_due=SeriesIndexedAmount(
-                        base_amount=1000, series=rent_series_id, base_month_index=0, adjustment_period_months=12
-                    ),
-                )
-            ],
-            tax_profiles=[],
-            horizon_months=13,
-        )
-        external_series = _external_series_context_for_levels(
-            rent_series_id, levels_by_rollout=[[100.0] * 12 + [110.0] * 2, [100.0] * 12 + [90.0] * 2]
-        )
-
-        result = backend(Case(scenario=scenario, rollout_count=2, paths=external_series, locations={}))
-
-        accruals = result.events.obligation_accruals.sort(["rollout_id", "month_index"])
-        for rollout_id in (0, 1):
-            first_year = accruals.filter((pl.col("rollout_id") == rollout_id) & (pl.col("month_index") < 12))
-            assert first_year.get_column("amount_due_quanta").map_elements(
-                quanta_to_usd, return_dtype=pl.Float64
-            ).to_list() == pytest.approx([1_000.0] * 12)
-
-        reset_amounts = (
-            accruals.filter(pl.col("month_index") == 12)
-            .sort("rollout_id")
-            .get_column("amount_due_quanta")
-            .map_elements(quanta_to_usd, return_dtype=pl.Float64)
-            .to_list()
-        )
-        assert reset_amounts == pytest.approx([1_100.0, 900.0])
-
-        final_cash = result.cash.filter(pl.col("month_index") == 13).sort(["rollout_id", "agent_id"])
-        assert final_cash.get_column("balance_quanta").map_elements(
-            quanta_to_usd, return_dtype=pl.Float64
-        ).to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
-        assert result.events.rollout_failures.is_empty()
-
-    def test_series_indexed_recurring_transfer_uses_same_amount_schedule(self, backend: Backend) -> None:
-        """Tenant rent income uses the same path-indexed amount machinery
-        as due-now rent obligations."""
-        rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
-        scenario = Scenario(
-            agents=[Agent(agent_id="tenant"), Agent(agent_id="alice")],
-            initial_cash=[
-                InitialAccountBalance(agent_id="tenant", account_id="checking", balance=20000),
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
-            ],
-            recurring_transfers=[
-                RecurringTransfer(
-                    start_month=0,
-                    cause_id="tenant_rent",
-                    from_agent_id="tenant",
-                    from_account_id="checking",
-                    to_agent_id="alice",
-                    to_account_id="checking",
-                    amount=SeriesIndexedAmount(
-                        base_amount=1500, series=rent_series_id, base_month_index=0, adjustment_period_months=12
-                    ),
-                )
-            ],
-            tax_profiles=[],
-            horizon_months=13,
-        )
-        external_series = _external_series_context_for_levels(
-            rent_series_id, levels_by_rollout=[[200.0] * 12 + [240.0] * 2]
-        )
-
-        result = backend(Case(scenario=scenario, rollout_count=1, paths=external_series, locations={}))
-
-        transfers = result.events.transfers.sort("month_index")
-        assert transfers.filter(pl.col("month_index") < 12).get_column("amount_quanta").map_elements(
-            quanta_to_usd, return_dtype=pl.Float64
-        ).to_list() == pytest.approx([1_500.0] * 12)
-        assert transfers.filter(pl.col("month_index") == 12).get_column("amount_quanta").map_elements(
-            quanta_to_usd, return_dtype=pl.Float64
-        ).item() == pytest.approx(1_800.0)
-
-        final_cash = result.cash.filter(pl.col("month_index") == 13).sort("agent_id")
-        assert final_cash.get_column("balance_quanta").map_elements(
-            quanta_to_usd, return_dtype=pl.Float64
-        ).to_list() == pytest.approx([19_800.0, 200.0])
 
 
 class AssetSaleAcceptance:

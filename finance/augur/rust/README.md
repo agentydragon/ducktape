@@ -285,6 +285,11 @@ cashflows through the common session with Alice as the sole decision actor. Exac
 cash books include the scripted counterparties, preserving conservation checks
 across 1,000 identical paths without retaining the configured test runner.
 
+`bbr test //finance/augur/rust:indexed_payments_test` checks annual rent-index
+resets on distinct paths, incoming indexed transfers, and explicit payment of
+observed indexed claims through the common session. It also pins half-up
+sub-cent scaling and cashflow-before-payment timing with conserved cash.
+
 The remaining legacy acceptance suites in `sim/testing/` assert integer answers for:
 
 - opening balances and opening equity;

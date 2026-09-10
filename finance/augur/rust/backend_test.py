@@ -18,7 +18,6 @@ from finance.augur.rust.result import run_rust
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.testing.behaviour import (
     AssetSaleAcceptance,
-    IndexedAmountAcceptance,
     ObligationAcceptance,
     PropertyCarryingCostAcceptance,
     RolloutFailureAcceptance,
@@ -125,12 +124,6 @@ class TestRustRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
 
 
 class TestRustRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
-
-
-class TestRustIndexedAmount(IndexedAmountAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust
