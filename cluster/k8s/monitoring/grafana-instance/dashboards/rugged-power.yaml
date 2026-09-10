@@ -1,0 +1,15 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rugged-power
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  datasources:
+    - inputName: DS_PROMETHEUS
+      datasourceName: Mimir
+  configMapRef:
+    name: rugged-power-dashboard
+    key: rugged-power.json

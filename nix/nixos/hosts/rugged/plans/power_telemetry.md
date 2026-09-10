@@ -169,19 +169,19 @@ attached to an investigation.
 
 ### 5. Dashboard, recording rules, and alerts
 
-Create `rugged-power.yaml` alongside the existing Grafana dashboards and list
-it in that directory's `kustomization.yaml`. Reuse the Mimir datasource and
-the node-exporter dashboard variables; scope the battery/power panels to
-Rugged's current node-exporter instance rather than creating a second dashboard
-framework. Make the stable process-group panels host-selectable so Wyrm2 uses
-the same surface.
+`Rugged Power` is deployed alongside the existing Grafana dashboards. It adapts
+Grafana dashboard 12542's battery surface to the live node-exporter metrics and
+uses Mimir. It is deliberately limited to Rugged and does not invent a
+discharge rate: the exposed battery current's sign is kernel-defined. Its RAPL
+panels select the canonical `intel-rapl` path, excluding the duplicate
+`intel-rapl-mmio` package/DRAM counters. A later shared process dashboard will
+make stable process-group panels host-selectable so Wyrm2 uses the same surface.
 
 Panels, in order:
 
-1. Battery energy/charge, state, AC/USB-C power, and a clearly labelled
-   discharge-rate estimate that is blank while charging or state is unknown.
-2. CPU package watts/energy and C-state residency only if RAPL/turbostat
-   validation made them real; otherwise show "unavailable on this hardware".
+1. Battery charge, state, AC/USB-C power, electrical power, and temperature.
+2. CPU package, DRAM, and platform watts derived from the validated RAPL
+   counters without MMIO double counting.
 3. Policy and knobs: PPD, EPP, pstate/turbo, brightness, radio state, and
    runtime-PM state—including the intentionally pinned WWAN state.
 4. Thermal, fan/cooling, CPU frequency, throttling, and pressure.

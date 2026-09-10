@@ -9,12 +9,17 @@ resources:
   - etcd.yaml
   - gpu.yaml
   - node-exporter-full.yaml
+  - rugged-power.yaml
 
 configMapGenerator:
   - name: flux-cluster-dashboard
     namespace: monitoring
     files:
       - flux-cluster.json
+  - name: rugged-power-dashboard
+    namespace: monitoring
+    files:
+      - rugged-power.json
 
 configurations:
   - kustomizeconfig
