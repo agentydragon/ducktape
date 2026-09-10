@@ -207,6 +207,8 @@ py_library(
     name = "vecm",
     srcs = ["vecm.py"],
     deps = [
+        ":conditioning",
+        ":evidence",
         ":exogenous",
         ":float64",
         ":provenance",
@@ -225,6 +227,7 @@ py_test(
     size = "large",
     srcs = ["vecm_test.py"],
     deps = [
+        ":conditioning",
         ":conftest",
         ":exogenous",
         ":series",
@@ -709,5 +712,35 @@ py_test(
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "evidence",
+    srcs = ["evidence.py"],
+    deps = [
+        ":conditioning",
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "observation_config_test",
+    srcs = ["observation_config_test.py"],
+    data = ["//finance/augur/fit/calibrated:trained_vecm_provider"],
+    deps = [
+        ":conditioning",
+        ":conftest",
+        ":exogenous",
+        ":vecm",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

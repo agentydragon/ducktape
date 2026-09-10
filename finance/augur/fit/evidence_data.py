@@ -4,11 +4,12 @@ import math
 from collections.abc import Collection
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any
 
 import numpy as np
 import polars as pl
 
+from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
+from finance.augur.model.evidence import EvidenceMetadata, FactorSeriesCalibration, ReturnEvidence
 from finance.augur.model.series import (
     SP500_KEY,
     HomeValueKey,
@@ -79,15 +80,6 @@ class PeriodReturns:
 
 
 @dataclass(frozen=True)
-class FactorSeriesCalibration:
-    monthly_log_mu: float
-    monthly_log_mu_sigma: float
-    monthly_log_vol_sigma: float
-    observed_months: float
-    observation_count: int
-
-
-@dataclass(frozen=True)
 class ExogenousEvidence:
     """Observed monthly evidence, keyed by the typed series it describes.
 
@@ -107,7 +99,8 @@ class ExogenousEvidence:
     series_path_calibration: dict[LevelSeriesKey, FactorSeriesCalibration]
     calibrated_series_path_priors: dict[str, float]
     current_mortgage30_rate_pct: float
-    latest_observations: dict[str, Any]
+    latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint]
+    metadata: EvidenceMetadata
 
 
 def calibrate_series_path_priors(
@@ -191,18 +184,29 @@ def _returns(frame: pl.DataFrame) -> PeriodReturns:
     )
 
 
-def _return_frame_summary(frame: pl.DataFrame, *, source: str, used_as_marginal_evidence: bool) -> dict[str, object]:
+def _return_frame_summary(
+    frame: pl.DataFrame,
+    *,
+    source: str,
+    used_as_marginal_evidence: bool,
+    factor: LevelSeriesKey | None = None,
+    region_name: str | None = None,
+    region_state: str | None = None,
+) -> ReturnEvidence:
     months = frame["month"].to_list()
     durations = frame["duration_months"].to_list()
-    return {
-        "source": source,
-        "used_as_marginal_evidence": used_as_marginal_evidence,
-        "return_count": frame.height,
-        "first_return_month": min(months).strftime("%Y-%m"),
-        "last_return_month": max(months).strftime("%Y-%m"),
-        "min_duration_months": float(min(durations)),
-        "max_duration_months": float(max(durations)),
-    }
+    return ReturnEvidence(
+        source_id=source,
+        factor=factor.wire_id if factor is not None else None,
+        region_name=region_name,
+        region_state=region_state,
+        used_as_marginal_evidence=used_as_marginal_evidence,
+        return_count=frame.height,
+        first_return_month=min(months),
+        last_return_month=max(months),
+        min_duration_months=float(min(durations)),
+        max_duration_months=float(max(durations)),
+    )
 
 
 def _align_inner(frames: dict[LevelSeriesKey, pl.DataFrame], value_column: str) -> pl.DataFrame:
@@ -214,12 +218,23 @@ def _align_inner(frames: dict[LevelSeriesKey, pl.DataFrame], value_column: str) 
     return reduce(lambda left, right: left.join(right, on="month", how="inner"), renamed).drop_nulls().sort("month")
 
 
-def _monthly_latest(monthly: pl.DataFrame, source: sources.EvidenceSource) -> dict[str, object]:
-    return {
-        "date": monthly["month"].to_list()[-1].strftime("%Y-%m"),
-        "value": float(monthly["value"].to_list()[-1]),
-        "source": source.provenance_label,
-    }
+def _monthly_latest(
+    monthly: pl.DataFrame,
+    source: sources.EvidenceSource,
+    *,
+    units: ObservationUnits,
+    region_name: str | None = None,
+    region_state: str | None = None,
+) -> ExogenousObservedPoint:
+    return ExogenousObservedPoint(
+        observed_at=monthly["month"].to_list()[-1],
+        value=float(monthly["value"].to_list()[-1]),
+        units=units,
+        source_id=f"public:{source.provenance_label}",
+        treatment=ObservationTreatment.HARD_START,
+        region_name=region_name,
+        region_state=region_state,
+    )
 
 
 def load_exogenous_evidence() -> ExogenousEvidence:
@@ -285,76 +300,77 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     }
     series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(series_names, marginal)
 
-    latest_observations = {
-        "sp500_price_latest": _monthly_latest(sp500_price, sources.FRED_SP500),
-        "spy_adjusted_close_latest": _monthly_latest(sp500_total_return, sources.YAHOO_SPY),
-        "btc_close_latest": _monthly_latest(btc_price, sources.YAHOO_BTC),
-        "eth_close_latest": _monthly_latest(eth_price, sources.YAHOO_ETH),
-        "zillow_home_value_latest_by_factor": {
-            home_series_key[loc].wire_id: {
-                **_monthly_latest(series, sources.ZILLOW_ZHVI),
-                "region_name": ZILLOW_HOME_VALUE_REGIONS[loc][0],
-                "state": ZILLOW_HOME_VALUE_REGIONS[loc][1],
-            }
+    latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint] = {
+        SP500_KEY: _monthly_latest(sp500_total_return, sources.YAHOO_SPY, units=ObservationUnits.USD_PER_UNIT),
+        BTC_KEY: _monthly_latest(btc_price, sources.YAHOO_BTC, units=ObservationUnits.USD_PER_UNIT),
+        ETH_KEY: _monthly_latest(eth_price, sources.YAHOO_ETH, units=ObservationUnits.USD_PER_UNIT),
+        **{
+            home_series_key[loc]: _monthly_latest(
+                series,
+                sources.ZILLOW_ZHVI,
+                units=ObservationUnits.USD,
+                region_name=ZILLOW_HOME_VALUE_REGIONS[loc][0],
+                region_state=ZILLOW_HOME_VALUE_REGIONS[loc][1],
+            )
             for loc, series in home_values.items()
         },
-        "zillow_rent_latest_by_factor": {
-            rent_series_key[loc].wire_id: {
-                **_monthly_latest(series, sources.ZILLOW_ZORI),
-                "region_name": ZILLOW_RENT_REGIONS[loc][0],
-                "state": ZILLOW_RENT_REGIONS[loc][1],
-            }
+        **{
+            rent_series_key[loc]: _monthly_latest(
+                series,
+                sources.ZILLOW_ZORI,
+                units=ObservationUnits.USD_PER_MONTH,
+                region_name=ZILLOW_RENT_REGIONS[loc][0],
+                region_state=ZILLOW_RENT_REGIONS[loc][1],
+            )
             for loc, series in rents.items()
         },
-        "case_shiller_sf_latest": _monthly_latest(case_shiller, sources.FRED_SFXRSA),
-        "cpi_latest": _monthly_latest(cpi, sources.FRED_CPI),
-        "mortgage30_latest": {
-            "date": mortgage30["date"].to_list()[-1].isoformat(),
-            "value": float(mortgage30["value"].to_list()[-1]),
-            "source": sources.FRED_MORTGAGE30.provenance_label,
+        InflationKey(): _monthly_latest(cpi, sources.FRED_CPI, units=ObservationUnits.INDEX_POINTS),
+    }
+    metadata = EvidenceMetadata(
+        auxiliary_observations={
+            "sp500_price": _monthly_latest(sp500_price, sources.FRED_SP500, units=ObservationUnits.INDEX_POINTS),
+            "case_shiller_sf": _monthly_latest(case_shiller, sources.FRED_SFXRSA, units=ObservationUnits.INDEX_POINTS),
+            "mortgage30": ExogenousObservedPoint(
+                observed_at=mortgage30["date"].to_list()[-1],
+                value=float(mortgage30["value"].to_list()[-1]),
+                units=ObservationUnits.PERCENT,
+                source_id=f"public:{sources.FRED_MORTGAGE30.provenance_label}",
+                treatment=ObservationTreatment.INFORMATIVE,
+            ),
         },
-        "spy_adjusted_close_monthly_return_count": len(marginal[SP500_KEY].log_returns),
-        "housing_return_sources": {
-            "zillow_city_zhvi_by_factor": {
-                home_series_key[loc].wire_id: {
-                    **_return_frame_summary(
-                        returns, source=sources.ZILLOW_ZHVI.provenance_label, used_as_marginal_evidence=True
-                    ),
-                    "region_name": ZILLOW_HOME_VALUE_REGIONS[loc][0],
-                    "state": ZILLOW_HOME_VALUE_REGIONS[loc][1],
-                }
+        adjusted_close_return_count=len(marginal[SP500_KEY].log_returns),
+        return_sources=(
+            *(
+                _return_frame_summary(
+                    returns,
+                    source=sources.ZILLOW_ZHVI.provenance_label,
+                    used_as_marginal_evidence=True,
+                    factor=home_series_key[loc],
+                    region_name=ZILLOW_HOME_VALUE_REGIONS[loc][0],
+                    region_state=ZILLOW_HOME_VALUE_REGIONS[loc][1],
+                )
                 for loc, returns in home_value_returns.items()
-            },
-            "case_shiller_sf_metro": _return_frame_summary(
+            ),
+            _return_frame_summary(
                 case_shiller_returns, source=sources.FRED_SFXRSA.provenance_label, used_as_marginal_evidence=False
             ),
-            "fhfa_sf_oakland_berkeley": _return_frame_summary(
+            _return_frame_summary(
                 fhfa_returns, source=sources.FRED_FHFA_SF.provenance_label, used_as_marginal_evidence=False
             ),
-        },
-        "rent_return_sources": {
-            "zillow_city_zori_by_factor": {
-                rent_series_key[loc].wire_id: {
-                    **_return_frame_summary(
-                        returns, source=sources.ZILLOW_ZORI.provenance_label, used_as_marginal_evidence=True
-                    ),
-                    "region_name": ZILLOW_RENT_REGIONS[loc][0],
-                    "state": ZILLOW_RENT_REGIONS[loc][1],
-                }
+            *(
+                _return_frame_summary(
+                    returns,
+                    source=sources.ZILLOW_ZORI.provenance_label,
+                    used_as_marginal_evidence=True,
+                    factor=rent_series_key[loc],
+                    region_name=ZILLOW_RENT_REGIONS[loc][0],
+                    region_state=ZILLOW_RENT_REGIONS[loc][1],
+                )
                 for loc, returns in rent_returns.items()
-            }
-        },
-        "series_path_prior_calibration": {
-            name.wire_id: {
-                "monthly_log_mu": point.monthly_log_mu,
-                "monthly_log_mu_sigma": point.monthly_log_mu_sigma,
-                "monthly_log_vol_sigma": point.monthly_log_vol_sigma,
-                "observed_months": point.observed_months,
-                "observation_count": point.observation_count,
-            }
-            for name, point in series_path_calibration.items()
-        },
-    }
+            ),
+        ),
+        series_path_prior_calibration={name.wire_id: point for name, point in series_path_calibration.items()},
+    )
 
     return ExogenousEvidence(
         series_names=series_names,
@@ -365,6 +381,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         calibrated_series_path_priors=calibrated_series_path_priors,
         current_mortgage30_rate_pct=float(mortgage30["value"].to_list()[-1]),
         latest_observations=latest_observations,
+        metadata=metadata,
     )
 
 

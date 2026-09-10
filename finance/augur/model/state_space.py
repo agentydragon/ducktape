@@ -26,6 +26,7 @@ from finance.augur.dates import months_between
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.conditioning import (
     ExogenousConditioningContext,
+    ExogenousObservedPoint,
     ObservationTreatment,
     latest_observations_by_series,
 )
@@ -61,10 +62,10 @@ class StateSpacePrivateEquityEventPrior(FrozenModel):
 
 
 class StateSpaceModelArtifact(FrozenModel):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     factor_names: tuple[str, ...] = Field(min_length=1)
     trained_through_month: str = Field(min_length=7, max_length=7)
-    latest_level_by_factor: dict[str, float] = Field(min_length=1)
+    latest_observations: dict[str, ExogenousObservedPoint] = Field(min_length=1)
     monthly_log_return_mu: dict[str, float] = Field(min_length=1)
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
     private_equity_event_priors: dict[str, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
@@ -75,16 +76,15 @@ class StateSpaceModelArtifact(FrozenModel):
     @model_validator(mode="after")
     def _validate_shapes(self) -> StateSpaceModelArtifact:
         factors = set(self.factor_names)
-        missing_levels = factors - set(self.latest_level_by_factor)
         missing_mu = factors - set(self.monthly_log_return_mu)
-        if missing_levels:
-            raise ValueError(f"latest_level_by_factor missing factors {sorted(missing_levels)}")
+        if set(self.latest_observations) != factors:
+            raise ValueError("latest_observations must match the fitted factors exactly")
         if missing_mu:
             raise ValueError(f"monthly_log_return_mu missing factors {sorted(missing_mu)}")
         n = len(self.factor_names)
         _require_square_matrix(self.monthly_log_return_cov, n, "monthly_log_return_cov")
-        if any(self.latest_level_by_factor[factor] <= 0 for factor in self.factor_names):
-            raise ValueError("latest_level_by_factor values must be positive")
+        if any(point.value <= 0 for point in self.latest_observations.values()):
+            raise ValueError("latest_observations values must be positive for log-level factors")
         private_equity_issuers = {str(issuer) for issuer in self.private_equity_factor_issuers}
         missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
         if missing_scale_priors:
@@ -123,7 +123,7 @@ class StateSpaceModelArtifact(FrozenModel):
 @dataclass(frozen=True)
 class StateSpaceAdditionalFactor:
     factor_name: str
-    latest_level: float
+    observation: ExogenousObservedPoint
     monthly_log_return_mu: float
     monthly_log_return_sigma: float
     covariance_with_factors: Mapping[str, float] = field(default_factory=dict)
@@ -156,6 +156,9 @@ class StateSpaceModel:
     evidence_set_id: str = ""
     calibration_artifact_id: str = ""
 
+    def __post_init__(self) -> None:
+        self._conditioned_start_levels()
+
     @classmethod
     def from_path(
         cls, path: Path, *, conditioning: ExogenousConditioningContext, evidence_source_id: str
@@ -173,7 +176,7 @@ class StateSpaceModel:
         cls,
         historical: HistoricalSeries,
         *,
-        latest_level_by_factor: Mapping[str, float],
+        latest_observations: Mapping[str, ExogenousObservedPoint],
         source_manifest: Mapping[str, Any],
         prior_manifest: Mapping[str, Any],
         additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
@@ -191,7 +194,7 @@ class StateSpaceModel:
         cov = _regularize_covariance(base_factor_names, np.asarray(cov, dtype=np.float64))
 
         factor_names = list(base_factor_names)
-        latest_levels = {factor: float(latest_level_by_factor[factor]) for factor in base_factor_names}
+        observations = {factor: latest_observations[factor] for factor in base_factor_names}
         mean_by_factor = {factor: float(mean[idx]) for idx, factor in enumerate(base_factor_names)}
         event_priors: dict[str, StateSpacePrivateEquityEventPrior] = {}
         scale_priors: dict[str, TrainedPrivateEquityScalePrior] = {}
@@ -200,10 +203,8 @@ class StateSpaceModel:
         for extra in additional_factors:
             if extra.factor_name in factor_names:
                 raise ValueError(f"additional factor duplicates fitted factor {extra.factor_name!r}")
-            if extra.latest_level <= 0:
-                raise ValueError(f"additional factor {extra.factor_name!r} latest_level must be positive")
             factor_names.append(extra.factor_name)
-            latest_levels[extra.factor_name] = float(extra.latest_level)
+            observations[extra.factor_name] = extra.observation
             mean_by_factor[extra.factor_name] = float(extra.monthly_log_return_mu)
             covariance = _append_factor_covariance(
                 tuple(factor_names[:-1]),
@@ -233,7 +234,7 @@ class StateSpaceModel:
         return StateSpaceModelArtifact(
             factor_names=tuple(factor_names),
             trained_through_month=trained_through_month,
-            latest_level_by_factor=latest_levels,
+            latest_observations=observations,
             monthly_log_return_mu=mean_by_factor,
             monthly_log_return_cov=_matrix_to_tuple(covariance),
             private_equity_event_priors=event_priors,
@@ -383,14 +384,18 @@ class StateSpaceModel:
 
     def _conditioned_start_levels(self) -> dict[str, float]:
         factor_by_series = self._series_factor_map()
-        levels = {factor: float(self.artifact.latest_level_by_factor[factor]) for factor in self.artifact.factor_names}
+        levels = {factor: self.artifact.latest_observations[factor].value for factor in self.artifact.factor_names}
         conditioned_by_factor: dict[str, tuple[str, float]] = {}
         for series_id, point in latest_observations_by_series(self.conditioning).items():
             if point.treatment == ObservationTreatment.INFORMATIVE:
                 continue
             factor = factor_by_series.get(series_id)
             if factor is None:
-                continue
+                raise ValueError(f"conditioning observation targets unknown factor {series_id!r}")
+            if point.units != self.artifact.latest_observations[factor].units:
+                raise ValueError(f"conditioning units for {factor!r} differ from the fitted observation units")
+            if point.value <= 0:
+                raise ValueError(f"conditioning factor {factor!r} requires a positive log-level observation")
             previous = conditioned_by_factor.get(factor)
             if previous is not None and not math.isclose(previous[1], point.value, rel_tol=1e-9, abs_tol=1e-9):
                 raise ValueError(

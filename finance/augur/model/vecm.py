@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any, Literal
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -44,28 +44,16 @@ import numpyro.distributions as dist
 from numpyro.infer import SVI, Trace_ELBO
 from numpyro.infer.autoguide import AutoDelta
 from numpyro.optim import Adam
-from pydantic import Field
+from pydantic import Field, model_validator
 
+from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment
+from finance.augur.model.evidence import EvidenceMetadata
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.float64 import LEVEL_DTYPE
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import (
-    SP500_SYMBOL,
-    HomeValueKey,
-    InflationKey,
-    IssuerId,
-    LevelSeriesKey,
-    RentKey,
-    SecurityKey,
-    SecuritySymbol,
-    parse_level_series_key,
-)
-
-_SECURITY_ANCHOR_OBSERVATIONS: Mapping[SecuritySymbol, tuple[str, str | None]] = {
-    SP500_SYMBOL: ("spy_adjusted_close_latest", "sp500_price_latest")
-}
+from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 
 # Sample count for h>1 MC predictive density.
 _MC_HORIZON_SAMPLES = 5000
@@ -235,7 +223,8 @@ class VecmModel:
     train_log_levels: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))
 
     # Deployment-layer config.
-    latest_observations: dict[str, Any] = field(default_factory=dict)
+    latest_observations: dict[str, ExogenousObservedPoint] = field(default_factory=dict)
+    evidence_metadata: EvidenceMetadata = field(default_factory=EvidenceMetadata)
 
     # Provenance.
     model_version_id: str = ""
@@ -358,7 +347,8 @@ class VecmModel:
         cls,
         trained_state: VecmTrainedState,
         *,
-        latest_observations: Mapping[str, Any],
+        latest_observations: Mapping[str, ExogenousObservedPoint],
+        evidence_metadata: EvidenceMetadata,
         evidence_source_id: str,
         config: VecmConfig | None = None,
     ) -> VecmModel:
@@ -372,6 +362,7 @@ class VecmModel:
             params={name: np.asarray(value, dtype=np.float32) for name, value in trained_state.params.items()},
             train_log_levels=np.asarray(trained_state.train_log_levels, dtype=LEVEL_DTYPE),
             latest_observations=dict(latest_observations),
+            evidence_metadata=evidence_metadata,
         )
         model._compute_provenance(evidence_source_id)
         return model
@@ -454,41 +445,13 @@ class VecmModel:
         return self._latest_factor_value(key) * multiplier
 
     def _latest_factor_value(self, key: LevelSeriesKey) -> float:
-        # `latest_observations` is keyed by the factor's wire id (the deployment YAML form).
-        direct = self.latest_observations.get(key.wire_id)
-        if isinstance(direct, (int, float)):
-            return float(direct)
-        match key:
-            case InflationKey():
-                return self._latest_observation_value("cpi_latest")
-            case SecurityKey(symbol=symbol):
-                # A security's anchor is its own latest close. SPY is the one symbol whose
-                # evidence arrives under two names (the Yahoo adjusted close, with the FRED
-                # index level as fallback), so it gets an explicit row rather than the
-                # `{symbol}_close_latest` convention.
-                primary, fallback = _SECURITY_ANCHOR_OBSERVATIONS.get(symbol, (f"{symbol}_close_latest", None))
-                return self._latest_observation_value(primary, fallback_key=fallback)
-            case HomeValueKey() | RentKey():
-                for obs_key in (
-                    "zillow_home_value_latest_by_factor",
-                    "zillow_rent_latest_by_factor",
-                    "case_shiller_home_value_latest_by_factor",
-                ):
-                    by_factor = self.latest_observations.get(obs_key)
-                    if isinstance(by_factor, dict) and key.wire_id in by_factor:
-                        return _observation_value(by_factor[key.wire_id], f"{obs_key}[{key.wire_id!r}]")
-                if isinstance(key, RentKey) and key.location_id == "san_francisco_ca":
-                    # FRED-only degraded evidence anchors SF rent under this legacy CPI key.
-                    return self._latest_observation_value("sf_rent_cpi_latest")
-        raise ValueError(f"VECM config latest_observations has no usable latest value for factor {key.wire_id!r}")
-
-    def _latest_observation_value(self, key: str, *, fallback_key: str | None = None) -> float:
-        if key in self.latest_observations:
-            return _observation_value(self.latest_observations[key], key)
-        if fallback_key is not None and fallback_key in self.latest_observations:
-            return _observation_value(self.latest_observations[fallback_key], fallback_key)
-        expected = key if fallback_key is None else f"{key!r} or {fallback_key!r}"
-        raise ValueError(f"VECM config latest_observations has no {expected}")
+        try:
+            point = self.latest_observations[key.wire_id]
+        except KeyError as error:
+            raise ValueError(f"VECM config has no observation for factor {key.wire_id!r}") from error
+        if point.value <= 0 or point.treatment != ObservationTreatment.HARD_START:
+            raise ValueError(f"VECM factor {key.wire_id!r} requires a positive hard-start observation")
+        return point.value
 
     def _compute_provenance(self, evidence_source_id: str) -> None:
         self.model_version_id = "model_version:" + stable_identity_digest(
@@ -498,20 +461,13 @@ class VecmModel:
             {
                 "evidence_source_id": evidence_source_id,
                 "factor_names": [factor.wire_id for factor in self.factor_names],
-                "latest_observations": dict(self.latest_observations),
+                "latest_observations": self.latest_observations,
+                "evidence_metadata": self.evidence_metadata,
             }
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
             {"model_id": self.label, "model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
         )
-
-
-def _observation_value(observation: Any, key: str) -> float:
-    if isinstance(observation, (int, float)):
-        return float(observation)
-    if isinstance(observation, dict) and isinstance(observation.get("value"), (int, float)):
-        return float(observation["value"])
-    raise TypeError(f"VECM latest_observations {key} must be a number or object with numeric 'value'")
 
 
 def _yaml_value(array: np.ndarray) -> float | tuple[float, ...]:
@@ -539,13 +495,26 @@ class VecmProviderConfig(FrozenModel):
 
     type: Literal["vecm"] = "vecm"
     trained_state: VecmTrainedState
-    latest_observations: dict[str, Any] = Field(
-        description="Latest observed series state at the start of the simulation horizon (factor → value)."
+    latest_observations: dict[str, ExogenousObservedPoint] = Field(
+        description="Actual dated source observation for each fitted factor; no source-name fallback."
     )
+    evidence_metadata: EvidenceMetadata
     current_mortgage30_rate_pct: float
+
+    @model_validator(mode="after")
+    def _validate_observations(self) -> VecmProviderConfig:
+        if set(self.latest_observations) != set(self.trained_state.factor_names):
+            raise ValueError("VECM observations must match the fitted factors exactly")
+        for factor, point in self.latest_observations.items():
+            if point.value <= 0 or point.treatment != ObservationTreatment.HARD_START:
+                raise ValueError(f"VECM factor {factor!r} requires a positive hard-start observation")
+        return self
 
     def realize_model(self) -> VecmModel:
         evidence_source_id = "vecm_trained_state:" + stable_identity_digest({"trained_state": self.trained_state})
         return VecmModel.from_trained_state(
-            self.trained_state, latest_observations=self.latest_observations, evidence_source_id=evidence_source_id
+            self.trained_state,
+            latest_observations=self.latest_observations,
+            evidence_metadata=self.evidence_metadata,
+            evidence_source_id=evidence_source_id,
         )

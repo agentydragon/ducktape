@@ -21,7 +21,10 @@ macro:
   # fit/calibrated/trained_vecm_provider.yaml for the real shape. Not hand-authored;
   # a deployment copies the block the fit target wrote.
   trained_state: {factor_names: [...], train_log_levels: [[...]], params: {...}}
-  latest_observations: {sp500: 5500.0, ...}
+  latest_observations:
+    security:SPY: {value: 550.0, units: usd_per_unit, observed_at: '2026-05-01', source_id: 'public:SPY', treatment: hard_start}
+    # One explicitly selected source observation for every fitted factor.
+  evidence_metadata: {} # auxiliary source evidence; never an anchor fallback
   current_mortgage30_rate_pct: 6.5
 private_equity:
   type: trained_private_equity

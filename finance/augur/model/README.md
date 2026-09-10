@@ -27,6 +27,15 @@ Preserving existing outputs isolates this boundary change; it does not make the
 current approximations a correctness oracle or a compatibility requirement.
 Financial corrections can land independently with independently justified tests.
 
+Fitted VECM and state-space inputs carry dated `ExogenousObservedPoint` records
+with actual source units. Evidence loaders choose each factor's anchor explicitly;
+runtime providers never search source-name fallbacks. Auxiliary observations and
+return/calibration provenance are separate from those anchors. Monthly observations
+use the month's first day as their existing period label, not a claimed daily quote.
+State-space conditioning must use the fitted factor's units; an index-point anchor
+is not silently replaced by a dollar value. These input records do not change the
+models' statistical dynamics or resolve product price/payout semantics.
+
 The runnable allocation-sensitivity experiment uses this seam to compare bond
 constructions on the same markets. Its tax-free recurrence and uncertainty
 approximations remain limitations; it is not the taxable household experiment.

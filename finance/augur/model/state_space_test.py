@@ -9,7 +9,12 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
-from finance.augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
+from finance.augur.model.conditioning import (
+    ExogenousConditioningContext,
+    ExogenousObservedPoint,
+    ObservationTreatment,
+    ObservationUnits,
+)
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import (
     SP500_SYMBOL,
@@ -79,6 +84,25 @@ def test_state_space_conditioning_changes_sampled_paths(tmp_path: Path) -> None:
     np.testing.assert_allclose(high_sp500, low_sp500 * 2.0)
 
 
+@pytest.mark.parametrize("change", ["units", "unknown_factor", "nonpositive"])
+def test_state_space_rejects_incompatible_conditioning_at_load(tmp_path: Path, change: str) -> None:
+    provider = _provider(tmp_path, sp500_anchor=100.0)
+    factor = SecurityKey(symbol=SP500_SYMBOL).wire_id
+    [point] = provider.conditioning.observations[factor]
+    if change == "units":
+        point = point.model_copy(update={"units": ObservationUnits.INDEX_POINTS})
+        expected = "conditioning units"
+    elif change == "unknown_factor":
+        factor = SecurityKey(symbol="test-missing").wire_id
+        expected = "unknown factor"
+    else:
+        point = point.model_copy(update={"value": 0.0})
+        expected = "positive log-level observation"
+    conditioning = provider.conditioning.model_copy(update={"observations": {factor: (point,)}})
+    with pytest.raises(ValueError, match=expected):
+        provider.model_copy(update={"conditioning": conditioning}).realize_model()
+
+
 def test_state_space_private_equity_marks_forward_fill_between_tenders(tmp_path: Path) -> None:
     sampled = (
         _provider(
@@ -137,6 +161,7 @@ def _provider(
             SecurityKey(symbol=SP500_SYMBOL).wire_id: (
                 ExogenousObservedPoint(
                     value=sp500_anchor,
+                    units=ObservationUnits.USD_PER_UNIT,
                     observed_at=date(2026, 5, 1),
                     source_id="fixture:sp500",
                     treatment=ObservationTreatment.HARD_START,
@@ -159,13 +184,28 @@ def _artifact(
     rent_sf = RentKey(location_id=LocationId("san_francisco_ca")).wire_id
     pe = PrivateEquityAssetKey(issuer_id=IssuerId("private_company_a")).wire_id
     factors = (sp500, inflation, btc, hv_sf, rent_sf, pe)
-    latest = {sp500: 100.0, inflation: 320.0, btc: 80_000.0, hv_sf: 1_400_000.0, rent_sf: 530.0, pe: 687.69}
+    latest = {
+        factor: ExogenousObservedPoint(
+            value=value,
+            units=units,
+            observed_at=date(2026, 4, 1),
+            source_id="fixture:public" if factor != pe else "fixture:private",
+        )
+        for factor, value, units in (
+            (sp500, 100.0, ObservationUnits.USD_PER_UNIT),
+            (inflation, 320.0, ObservationUnits.INDEX_POINTS),
+            (btc, 80_000.0, ObservationUnits.USD_PER_UNIT),
+            (hv_sf, 1_400_000.0, ObservationUnits.USD),
+            (rent_sf, 530.0, ObservationUnits.INDEX_POINTS),
+            (pe, 687.69, ObservationUnits.USD_PER_UNIT),
+        )
+    }
     mu = {sp500: 0.005, inflation: 0.002, btc: 0.01, hv_sf: 0.003, rent_sf: 0.0025, pe: 0.01}
     cov = np.diag([0.04**2, 0.003**2, 0.2**2, 0.01**2, 0.006**2, 0.08**2])
     return StateSpaceModelArtifact(
         factor_names=factors,
         trained_through_month="2026-04",
-        latest_level_by_factor=latest,
+        latest_observations=latest,
         monthly_log_return_mu=mu,
         monthly_log_return_cov=tuple(tuple(float(value) for value in row) for row in cov),
         private_equity_event_priors={

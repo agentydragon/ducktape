@@ -8,11 +8,14 @@ across machines.
 
 from __future__ import annotations
 
+from datetime import date
+
 import numpy as np
 import pytest
 import pytest_bazel
 from numpyro import distributions as dist
 
+from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import (
@@ -25,6 +28,16 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.model.vecm import VecmConfig, VecmModel
+
+
+def _observation(value: float, units: ObservationUnits) -> ExogenousObservedPoint:
+    return ExogenousObservedPoint(
+        value=value,
+        units=units,
+        observed_at=date(2026, 5, 1),
+        source_id="test:synthetic",
+        treatment=ObservationTreatment.HARD_START,
+    )
 
 
 def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
@@ -120,10 +133,10 @@ class TestVecmModel:
         model.fit(historical)
         # Attach deployment-layer state (normally done by realize_model).
         model.latest_observations = {
-            "security:SPY": 5500.0,
-            "home_value:san_francisco_ca": 1_000_000.0,
-            "rent:san_francisco_ca": 3000.0,
-            "inflation": 320.0,
+            "security:SPY": _observation(5500.0, ObservationUnits.USD_PER_UNIT),
+            "home_value:san_francisco_ca": _observation(1_000_000.0, ObservationUnits.USD),
+            "rent:san_francisco_ca": _observation(3000.0, ObservationUnits.USD_PER_MONTH),
+            "inflation": _observation(320.0, ObservationUnits.INDEX_POINTS),
         }
         model._compute_provenance(evidence_source_id="test")
 
@@ -171,7 +184,10 @@ class TestVecmModel:
                 "offdiag_flat_auto_loc": np.array([0.9], dtype=np.float64),
             },
         )
-        model.latest_observations = {"security:SPY": 5500.0, "inflation": 320.0}
+        model.latest_observations = {
+            "security:SPY": _observation(5500.0, ObservationUnits.USD_PER_UNIT),
+            "inflation": _observation(320.0, ObservationUnits.INDEX_POINTS),
+        }
         model._compute_provenance(evidence_source_id="test")
 
         cov = model._cov_np()
@@ -215,9 +231,9 @@ class TestVecmModel:
         model = VecmModel(config=VecmConfig(n_iters=300))
         model.fit(historical)
         model.latest_observations = {
-            "spy_adjusted_close_latest": 5500.0,
-            "btc_close_latest": 65_000.0,
-            "eth_close_latest": 3_200.0,
+            "security:SPY": _observation(5500.0, ObservationUnits.USD_PER_UNIT),
+            "security:btc": _observation(65_000.0, ObservationUnits.USD_PER_UNIT),
+            "security:eth": _observation(3_200.0, ObservationUnits.USD_PER_UNIT),
         }
         model._compute_provenance(evidence_source_id="test")
 
@@ -238,7 +254,7 @@ class TestVecmModel:
         )
 
         # Month-0 multiplier is 1.0, so the first sampled level equals latest_observations directly.
-        # This proves _latest_factor_value's security branch correctly maps to <symbol>_close_latest.
+        # No source-specific symbol naming convention participates in runtime lookup.
         assert sampled.level_matrix(SecurityKey(symbol=SecuritySymbol("btc")), rollout_count=2, horizon_months=6)[
             :, 0
         ].tolist() == [65_000.0, 65_000.0]

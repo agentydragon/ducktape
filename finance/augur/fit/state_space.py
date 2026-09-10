@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
@@ -22,9 +21,14 @@ from finance.augur.fit.private_equity import (
     load_training_config,
 )
 from finance.augur.model.asset_key import PrivateEquityAssetKey
-from finance.augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
+from finance.augur.model.conditioning import (
+    ExogenousConditioningContext,
+    ExogenousObservedPoint,
+    ObservationTreatment,
+    ObservationUnits,
+)
 from finance.augur.model.path_models.scenarios import HistoricalSeries
-from finance.augur.model.series import SP500_KEY, InflationKey, IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import SP500_KEY, IssuerId
 from finance.augur.model.state_space import (
     StateSpaceAdditionalFactor,
     StateSpaceModel,
@@ -45,7 +49,6 @@ _PRIVATE_EQUITY_SP500_CORR_PRIOR_WEIGHT = 2.0
 @dataclass(frozen=True)
 class FittedPrivateEquityStateSpaceFactor:
     factor: StateSpaceAdditionalFactor
-    conditioning_point: ExogenousObservedPoint
     coupling_diagnostics: dict[str, float | int]
 
 
@@ -55,7 +58,7 @@ def fit_state_space_artifact(
     private_factors = tuple(_fit_private_equity_factor(path, historical) for path in private_equity_config_paths)
     artifact = StateSpaceModel.fit(
         historical,
-        latest_level_by_factor=_latest_level_by_factor(evidence),
+        latest_observations={key.wire_id: point for key, point in evidence.latest_observations.items()},
         source_manifest=_source_manifest(evidence, private_factors),
         prior_manifest=_prior_manifest(evidence, private_factors),
         additional_factors=tuple(factor.factor for factor in private_factors),
@@ -64,76 +67,16 @@ def fit_state_space_artifact(
     return artifact, conditioning
 
 
-def _latest_level_by_factor(evidence: ExogenousEvidence) -> dict[str, float]:
-    # The artifact is an on-disk format keyed by wire id; the evidence is typed. This is the
-    # one place they meet, so `.wire_id` appears here and nowhere downstream of it.
-    return {
-        key.wire_id: _latest_observation_for(evidence.latest_observations, key).value for key in evidence.series_names
-    }
-
-
 def _conditioning_from_evidence(
     evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
 ) -> ExogenousConditioningContext:
     observations: dict[str, tuple[ExogenousObservedPoint, ...]] = {
-        key.wire_id: (_latest_observation_for(evidence.latest_observations, key),) for key in evidence.series_names
+        key.wire_id: (evidence.latest_observations[key],) for key in evidence.series_names
     }
     for fitted in private_factors:
-        observations[fitted.factor.factor_name] = (fitted.conditioning_point,)
+        observations[fitted.factor.factor_name] = (fitted.factor.observation,)
     start_at = max(point.observed_at for points in observations.values() for point in points)
     return ExogenousConditioningContext(start_at=start_at, observations=observations)
-
-
-# Per-series blob key in `latest_observations` for the singleton and per-symbol series. The
-# per-location ones are nested maps and are handled below.
-_SCALAR_LATEST_KEYS: Mapping[LevelSeriesKey, str] = {
-    SP500_KEY: "spy_adjusted_close_latest",
-    InflationKey(): "cpi_latest",
-    SecurityKey(symbol=SecuritySymbol("btc")): "btc_close_latest",
-    SecurityKey(symbol=SecuritySymbol("eth")): "eth_close_latest",
-}
-# Nested `{wire_id: observation}` blobs, tried in order for a location-keyed series.
-_NESTED_LATEST_BLOBS = (
-    "zillow_home_value_latest_by_factor",
-    "zillow_rent_latest_by_factor",
-    "case_shiller_home_value_latest_by_factor",
-)
-
-
-def _latest_observation_for(latest: Mapping[str, Any], key: LevelSeriesKey) -> ExogenousObservedPoint:
-    """The month-0 anchor for one series, from the evidence's `latest_observations` blob.
-
-    Dispatches on the TYPED key. This used to be a chain of `factor == "security:btc"` wire-id
-    comparisons — string equality standing in for identity, which is the thing
-    `parse_level_series_key` exists to stop. The blob itself stays string-keyed: it is
-    serialized provenance, and `.wire_id` is how a typed key indexes into it.
-    """
-
-    if (blob_key := _SCALAR_LATEST_KEYS.get(key)) is not None:
-        return _point_from_latest(latest[blob_key], source_prefix="public")
-    for blob_name in _NESTED_LATEST_BLOBS:
-        blob = latest.get(blob_name)
-        if isinstance(blob, Mapping) and key.wire_id in blob:
-            return _point_from_latest(blob[key.wire_id], source_prefix="public")
-    raise ValueError(f"no latest observation can anchor state-space factor {key.wire_id!r}")
-
-
-def _point_from_latest(raw: Any, *, source_prefix: str) -> ExogenousObservedPoint:
-    if not isinstance(raw, Mapping):
-        raise TypeError(f"latest observation must be a mapping, got {type(raw).__name__}")
-    value = raw.get("value")
-    source = raw.get("source")
-    observed_at = raw.get("date")
-    if not isinstance(value, int | float) or value <= 0:
-        raise ValueError(f"latest observation has invalid value {value!r}")
-    if not isinstance(source, str) or not source:
-        raise ValueError("latest observation has no source")
-    return ExogenousObservedPoint(
-        value=float(value),
-        observed_at=_parse_observed_date(observed_at),
-        source_id=f"{source_prefix}:{source}",
-        treatment=ObservationTreatment.HARD_START,
-    )
 
 
 def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) -> FittedPrivateEquityStateSpaceFactor:
@@ -154,7 +97,15 @@ def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) 
     covariance_with_sp500 = coupling["rho_to_sp500"] * artifact.monthly_log_return_sigma * sp500_sigma
     factor = StateSpaceAdditionalFactor(
         factor_name=PrivateEquityAssetKey(issuer_id=IssuerId(config.issuer_id)).wire_id,
-        latest_level=artifact.current_mark_usd,
+        observation=ExogenousObservedPoint(
+            value=artifact.current_mark_usd,
+            units=ObservationUnits.USD_PER_UNIT,
+            observed_at=artifact.as_of_date,
+            source_id=f"private:{mark.source_id}",
+            treatment=ObservationTreatment.NOISY_MARK,
+            log_sigma=mark.uncertainty_log_sigma,
+            notes=mark.notes,
+        ),
         monthly_log_return_mu=artifact.monthly_log_return_mu,
         monthly_log_return_sigma=artifact.monthly_log_return_sigma,
         covariance_with_factors={SP500_KEY.wire_id: covariance_with_sp500},
@@ -167,15 +118,7 @@ def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) 
         ),
         private_equity_scale_prior=artifact.scale_prior,
     )
-    point = ExogenousObservedPoint(
-        value=artifact.current_mark_usd,
-        observed_at=artifact.as_of_date,
-        source_id=f"private:{mark.source_id}",
-        treatment=ObservationTreatment.NOISY_MARK,
-        log_sigma=mark.uncertainty_log_sigma,
-        notes=mark.notes,
-    )
-    return FittedPrivateEquityStateSpaceFactor(factor=factor, conditioning_point=point, coupling_diagnostics=coupling)
+    return FittedPrivateEquityStateSpaceFactor(factor=factor, coupling_diagnostics=coupling)
 
 
 def _estimate_sp500_coupling(
@@ -252,7 +195,7 @@ def _source_manifest(
             "last": evidence.monthly_return_months[-1],
             "count": len(evidence.monthly_return_months),
         },
-        "latest_observations": evidence.latest_observations,
+        "evidence_metadata": evidence.metadata.model_dump(mode="json"),
         "private_equity": {
             fitted.factor.factor_name: {
                 "source_ids": fitted.factor.source_ids,
@@ -274,23 +217,16 @@ def _prior_manifest(
             "non_crypto_offdiag_shrinkage": 0.5,
             "private_equity_couples_to": SP500_KEY.wire_id,
         },
-        "series_path_prior_calibration": evidence.latest_observations.get("series_path_prior_calibration", {}),
+        "series_path_prior_calibration": {
+            name: point.model_dump(mode="json")
+            for name, point in evidence.metadata.series_path_prior_calibration.items()
+        },
         "private_equity_sp500_correlation_prior": {
             "rho": _PRIVATE_EQUITY_SP500_CORR_PRIOR,
             "interval_weight": _PRIVATE_EQUITY_SP500_CORR_PRIOR_WEIGHT,
             "applies_to": [fitted.factor.factor_name for fitted in private_factors],
         },
     }
-
-
-def _parse_observed_date(value: Any) -> date:
-    if isinstance(value, date):
-        return value
-    if not isinstance(value, str):
-        raise TypeError(f"observed date must be a string or date, got {type(value).__name__}")
-    if len(value) == 7:
-        return pd.Period(value, freq="M").to_timestamp().date()
-    return date.fromisoformat(value)
 
 
 def _resolve_path(path: str | Path, base_dir: Path) -> Path:

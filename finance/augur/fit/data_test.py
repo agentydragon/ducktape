@@ -8,6 +8,8 @@ import pytest_bazel
 
 from finance.augur.fit import evidence_data
 from finance.augur.fit.data import load_evidence, load_fred_only_evidence
+from finance.augur.model.conditioning import ObservationUnits
+from finance.augur.model.series import SP500_KEY, HomeValueKey, RentKey
 from finance.evidence import sources
 
 
@@ -37,14 +39,35 @@ def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_eviden
     # is exactly the flatten-and-reparse the typing removed.
     assert historical.series_names == evidence.series_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)
-    assert evidence.latest_observations["evidence_mode"] == {
-        "mode": "fred_only_synthesized",
-        "explicit": True,
-        "description": "FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded.",
-    }
-    assert "spy_adjusted_close_latest" not in evidence.latest_observations
-    assert "zillow_home_value_latest_by_factor" not in evidence.latest_observations
-    assert "case_shiller_home_value_latest_by_factor" in evidence.latest_observations
+    assert evidence.metadata.mode is not None
+    assert evidence.metadata.mode.mode == "fred_only_synthesized"
+    assert evidence.metadata.mode.explicit
+    assert evidence.metadata.mode.description == (
+        "FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded."
+    )
+    assert set(evidence.latest_observations) == set(evidence.series_names)
+    assert evidence.latest_observations[SP500_KEY].source_id == f"public:{sources.FRED_SP500.provenance_label}"
+    assert all(point.units == ObservationUnits.INDEX_POINTS for point in evidence.latest_observations.values())
+    for factor, point in evidence.latest_observations.items():
+        if isinstance(factor, HomeValueKey):
+            assert point.source_id == f"public:{sources.FRED_SFXRSA.provenance_label}"
+
+
+def test_full_evidence_anchors_preserve_actual_source_units(synthetic_evidence_dir: Path) -> None:
+    _, evidence = load_evidence()
+    assert set(evidence.latest_observations) == set(evidence.series_names)
+    assert evidence.latest_observations[SP500_KEY].source_id == f"public:{sources.YAHOO_SPY.provenance_label}"
+    assert evidence.latest_observations[SP500_KEY].units == ObservationUnits.USD_PER_UNIT
+    for factor, point in evidence.latest_observations.items():
+        if isinstance(factor, HomeValueKey):
+            assert point.units == ObservationUnits.USD
+            assert point.source_id == f"public:{sources.ZILLOW_ZHVI.provenance_label}"
+        if isinstance(factor, RentKey):
+            assert point.units == ObservationUnits.USD_PER_MONTH
+            assert point.source_id == f"public:{sources.ZILLOW_ZORI.provenance_label}"
+    assert evidence.metadata.auxiliary_observations["sp500_price"].units == ObservationUnits.INDEX_POINTS
+    assert evidence.metadata.auxiliary_observations["mortgage30"].units == ObservationUnits.PERCENT
+    assert evidence.metadata.return_sources
 
 
 if __name__ == "__main__":

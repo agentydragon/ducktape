@@ -12,8 +12,6 @@ only needs `HistoricalSeries`.
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 
 from finance.augur.fit.evidence_data import (
@@ -25,6 +23,8 @@ from finance.augur.fit.evidence_data import (
     calibrate_series_path_priors,
     load_exogenous_evidence,
 )
+from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
+from finance.augur.model.evidence import EvidenceMetadata, EvidenceMode
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import SP500_KEY, HomeValueKey, InflationKey, LevelSeriesKey, LocationId, RentKey
 from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series
@@ -109,27 +109,30 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         for idx, key in enumerate(series_names)
     }
     series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(series_names, marginal)
-    latest_observations: dict[str, Any] = {
-        "sp500_price_latest": _monthly_latest(sp500, FRED_SP500),
-        "case_shiller_sf_latest": _monthly_latest(home, FRED_SFXRSA),
-        "case_shiller_home_value_latest_by_factor": {
-            # A serialized provenance blob, so its keys are wire ids by nature.
-            key.wire_id: _monthly_latest(home, FRED_SFXRSA)
-            for key in home_series_keys
-        },
-        "sf_rent_cpi_latest": _monthly_latest(rent, FRED_SF_RENT_CPI),
-        "cpi_latest": _monthly_latest(cpi, FRED_CPI),
-        "mortgage30_latest": {
-            "date": mortgage["date"].to_list()[-1].isoformat(),
-            "value": float(mortgage["value"].to_list()[-1]),
-            "source": FRED_MORTGAGE30.provenance_label,
-        },
-        "evidence_mode": {
-            "mode": "fred_only_synthesized",
-            "explicit": True,
-            "description": "FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded.",
-        },
+    latest_observations: dict[LevelSeriesKey, ExogenousObservedPoint] = {
+        SP500_KEY: _monthly_latest(sp500, FRED_SP500, units=ObservationUnits.INDEX_POINTS),
+        **{key: _monthly_latest(home, FRED_SFXRSA, units=ObservationUnits.INDEX_POINTS) for key in home_series_keys},
+        RentKey(location_id=LocationId("san_francisco_ca")): _monthly_latest(
+            rent, FRED_SF_RENT_CPI, units=ObservationUnits.INDEX_POINTS
+        ),
+        InflationKey(): _monthly_latest(cpi, FRED_CPI, units=ObservationUnits.INDEX_POINTS),
     }
+    metadata = EvidenceMetadata(
+        auxiliary_observations={
+            "mortgage30": ExogenousObservedPoint(
+                observed_at=mortgage["date"].to_list()[-1],
+                value=float(mortgage["value"].to_list()[-1]),
+                units=ObservationUnits.PERCENT,
+                source_id=f"public:{FRED_MORTGAGE30.provenance_label}",
+                treatment=ObservationTreatment.INFORMATIVE,
+            )
+        },
+        mode=EvidenceMode(
+            mode="fred_only_synthesized",
+            explicit=True,
+            description="FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded.",
+        ),
+    )
     evidence = ExogenousEvidence(
         series_names=series_names,
         monthly_log_returns=monthly_log_returns,
@@ -139,6 +142,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         calibrated_series_path_priors=calibrated_series_path_priors,
         current_mortgage30_rate_pct=float(mortgage["value"].to_list()[-1]),
         latest_observations=latest_observations,
+        metadata=metadata,
     )
     return historical, evidence
 

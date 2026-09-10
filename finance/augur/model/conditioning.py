@@ -16,13 +16,28 @@ class ObservationTreatment(StrEnum):
     INFORMATIVE = "informative"
 
 
+class ObservationUnits(StrEnum):
+    """Actual source units, not a guess from a factor's name."""
+
+    INDEX_POINTS = "index_points"
+    USD_PER_UNIT = "usd_per_unit"
+    USD = "usd"
+    USD_PER_MONTH = "usd_per_month"
+    PERCENT = "percent"
+
+
 class ExogenousObservedPoint(FrozenModel):
-    value: float = Field(gt=0)
+    """A dated source observation; log-level consumers require a positive value."""
+
+    value: float = Field(strict=True, allow_inf_nan=False)
+    units: ObservationUnits
     observed_at: date
     source_id: str = Field(min_length=1)
     treatment: ObservationTreatment = ObservationTreatment.NOISY_MARK
     log_sigma: float | None = Field(default=None, gt=0)
     notes: str = ""
+    region_name: str | None = None
+    region_state: str | None = None
 
 
 class ExogenousConditioningContext(FrozenModel):

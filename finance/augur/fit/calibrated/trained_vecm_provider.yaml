@@ -1,63 +1,106 @@
 current_mortgage30_rate_pct: 6.23
 latest_observations:
-  btc_close_latest:
-    date: 2026-05
-    source: ../../data/yahoo_btc_chart_adjusted.json
+  security:SPY:
+    value: 711.5800170898438
+    units: usd_per_unit
+    observed_at: 2026-04-01
+    source_id: public:../../data/yahoo_spy_chart_adjusted.json
+    treatment: hard_start
+  security:btc:
     value: 76803.421875
-  case_shiller_sf_latest:
-    date: 2026-02
-    source: ../../data/fred_sfxrsa.csv
-    value: 361.615883051038
-  cpi_latest:
-    date: 2026-03
-    source: ../../data/fred_cpi_us.csv
-    value: 330.293
-  eth_close_latest:
-    date: 2026-05
-    source: ../../data/yahoo_eth_chart_adjusted.json
+    units: usd_per_unit
+    observed_at: 2026-05-01
+    source_id: public:../../data/yahoo_btc_chart_adjusted.json
+    treatment: hard_start
+  security:eth:
     value: 2094.830078125
-  housing_return_sources:
-    case_shiller_sf_metro:
-      first_return_month: 1987-02
-      last_return_month: 2026-02
+    units: usd_per_unit
+    observed_at: 2026-05-01
+    source_id: public:../../data/yahoo_eth_chart_adjusted.json
+    treatment: hard_start
+  home_value:san_francisco_ca:
+    value: 1356661.6050197445
+    units: usd
+    observed_at: 2026-03-01
+    source_id: public:../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+    treatment: hard_start
+    region_name: San Francisco
+    region_state: CA
+  home_value:vallejo_ca:
+    value: 520969.8257389618
+    units: usd
+    observed_at: 2026-03-01
+    source_id: public:../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+    treatment: hard_start
+    region_name: Vallejo
+    region_state: CA
+  rent:san_francisco_ca:
+    value: 528.147
+    units: index_points
+    observed_at: 2026-03-01
+    source_id: public:../../data/fred_sf_rent_cpi.csv
+    treatment: hard_start
+  inflation:
+    value: 330.293
+    units: index_points
+    observed_at: 2026-03-01
+    source_id: public:../../data/fred_cpi_us.csv
+    treatment: hard_start
+evidence_metadata:
+  auxiliary_observations:
+    sp500_price:
+      value: 7138.8
+      units: index_points
+      observed_at: 2026-04-01
+      source_id: public:../../data/fred_sp500.csv
+      treatment: informative
+    case_shiller_sf:
+      value: 361.615883051038
+      units: index_points
+      observed_at: 2026-02-01
+      source_id: public:../../data/fred_sfxrsa.csv
+      treatment: informative
+    mortgage30:
+      value: 6.23
+      units: percent
+      observed_at: 2026-04-23
+      source_id: public:../../data/fred_mortgage30.csv
+      treatment: informative
+  return_sources:
+    - first_return_month: 1987-02-01
+      last_return_month: 2026-02-01
       max_duration_months: 1.0
       min_duration_months: 1.0
       return_count: 469
-      source: ../../data/fred_sfxrsa.csv
       used_as_marginal_evidence: false
-    fhfa_sf_oakland_berkeley:
-      first_return_month: 1975-10
-      last_return_month: 2025-10
+      source_id: ../../data/fred_sfxrsa.csv
+    - first_return_month: 1975-10-01
+      last_return_month: 2025-10-01
       max_duration_months: 3.0
       min_duration_months: 3.0
       return_count: 201
-      source: ../../data/fred_fhfa_sf_oakland_berkeley.csv
       used_as_marginal_evidence: false
-    zillow_city_zhvi_by_factor:
-      home_value:san_francisco_ca:
-        first_return_month: 2000-02
-        last_return_month: 2026-03
-        max_duration_months: 1.0
-        min_duration_months: 1.0
-        region_name: San Francisco
-        return_count: 314
-        source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
-        state: CA
-        used_as_marginal_evidence: true
-      home_value:vallejo_ca:
-        first_return_month: 2000-02
-        last_return_month: 2026-03
-        max_duration_months: 1.0
-        min_duration_months: 1.0
-        region_name: Vallejo
-        return_count: 314
-        source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
-        state: CA
-        used_as_marginal_evidence: true
-  mortgage30_latest:
-    date: "2026-04-23"
-    source: ../../data/fred_mortgage30.csv
-    value: 6.23
+      source_id: ../../data/fred_fhfa_sf_oakland_berkeley.csv
+    - first_return_month: 2000-02-01
+      last_return_month: 2026-03-01
+      max_duration_months: 1.0
+      min_duration_months: 1.0
+      region_name: San Francisco
+      return_count: 314
+      used_as_marginal_evidence: true
+      source_id: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+      factor: home_value:san_francisco_ca
+      region_state: CA
+    - first_return_month: 2000-02-01
+      last_return_month: 2026-03-01
+      max_duration_months: 1.0
+      min_duration_months: 1.0
+      region_name: Vallejo
+      return_count: 314
+      used_as_marginal_evidence: true
+      source_id: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
+      factor: home_value:vallejo_ca
+      region_state: CA
   series_path_prior_calibration:
     home_value:san_francisco_ca:
       monthly_log_mu: 0.0037593351653740195
@@ -101,32 +144,7 @@ latest_observations:
       monthly_log_vol_sigma: 0.2671318518420597
       observation_count: 102
       observed_months: 102.0
-  sf_rent_cpi_latest:
-    date: 2026-03
-    source: ../../data/fred_sf_rent_cpi.csv
-    value: 528.147
-  sp500_price_latest:
-    date: 2026-04
-    source: ../../data/fred_sp500.csv
-    value: 7138.8
-  spy_adjusted_close_latest:
-    date: 2026-04
-    source: ../../data/yahoo_spy_chart_adjusted.json
-    value: 711.5800170898438
-  spy_adjusted_close_monthly_return_count: 399
-  zillow_home_value_latest_by_factor:
-    home_value:san_francisco_ca:
-      date: 2026-03
-      region_name: San Francisco
-      source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
-      state: CA
-      value: 1356661.6050197445
-    home_value:vallejo_ca:
-      date: 2026-03
-      region_name: Vallejo
-      source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
-      state: CA
-      value: 520969.8257389618
+  adjusted_close_return_count: 399
 trained_state:
   factor_names:
     - security:SPY

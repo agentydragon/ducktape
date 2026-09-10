@@ -42,7 +42,8 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
     # Fitted state is embedded directly in the manifest — no separate blob to point at.
     assert parsed.trained_state.factor_names
     assert parsed.trained_state.params
-    assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
+    assert set(parsed.latest_observations) == set(parsed.trained_state.factor_names)
+    assert all(point.source_id and point.units for point in parsed.latest_observations.values())
 
     model = parsed.realize_model()
     # Post-collapse the model's typed factors ARE the level keys; derive the home-value and
@@ -78,7 +79,7 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     assert out_manifest.exists()
     assert out_blob.exists()
     artifact = json.loads(out_blob.read_text(encoding="utf-8"))
-    assert artifact["schema_version"] == 2
+    assert artifact["schema_version"] == 3
     assert "filtered_log_state_mean" not in artifact
     assert "filtered_log_state_cov" not in artifact
 
