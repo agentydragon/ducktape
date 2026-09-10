@@ -1,7 +1,7 @@
 //! Component model output is factual input to one atomic cash/tax settlement.
 use super::*;
 use crate::engine::components::{ComponentEffects, InterestIncome, initialize, settle};
-use crate::execution::TlhPortfolioSpec;
+use crate::execution::{TlhOperation, TlhPortfolioSpec};
 
 fn setup() -> (ExecutionInput, RolloutState) {
     setup_at(100, 80)
@@ -77,14 +77,30 @@ fn fingerprint(state: &RolloutState) -> String {
 fn basis_statement_cash_and_tax_reconcile_without_ordinary_lots() {
     let (input, mut state) = setup();
     let effects = harvest(&state);
-    settle(&input, &mut state, "alice", "manager", &effects).unwrap();
+    settle(
+        &input,
+        &mut state,
+        "alice",
+        "manager",
+        &effects,
+        TlhOperation::ModeledRealization,
+    )
+    .unwrap();
     let mut contribution = effects.clone();
     contribution.observation.value = Money(120);
     contribution.observation.reported_tax_basis = Money(90);
     contribution.cash_account_id = Some("checking".into());
     contribution.cash_amount = Money(-20);
     contribution.short_term_gain = Money(0);
-    settle(&input, &mut state, "alice", "contribution", &contribution).unwrap();
+    settle(
+        &input,
+        &mut state,
+        "alice",
+        "contribution",
+        &contribution,
+        TlhOperation::Contribution,
+    )
+    .unwrap();
     assert_eq!(
         state
             .ledger
@@ -114,7 +130,7 @@ fn basis_statement_cash_and_tax_reconcile_without_ordinary_lots() {
 
 #[test]
 fn invalid_effects_and_overflow_leave_every_financial_book_unchanged() {
-    for case in 0..8 {
+    for case in 0..9 {
         let (input, mut state) = setup();
         let mut effects = harvest(&state);
         match case {
@@ -153,11 +169,20 @@ fn invalid_effects_and_overflow_leave_every_financial_book_unchanged() {
                     }],
                 };
             }
+            8 => state.recorder.tlh_financial_effect_count = u64::MAX,
             _ => unreachable!(),
         }
         let before = fingerprint(&state);
         assert!(
-            settle(&input, &mut state, "alice", "manager", &effects).is_err(),
+            settle(
+                &input,
+                &mut state,
+                "alice",
+                "manager",
+                &effects,
+                TlhOperation::ModeledRealization
+            )
+            .is_err(),
             "case {case}"
         );
         assert_eq!(fingerprint(&state), before, "case {case}");
@@ -178,7 +203,15 @@ fn distribution_cash_uses_interest_source_not_capital_gain_journal_account() {
             amount: Money(5),
         }],
     };
-    settle(&input, &mut state, "alice", "distribution", &effects).unwrap();
+    settle(
+        &input,
+        &mut state,
+        "alice",
+        "distribution",
+        &effects,
+        TlhOperation::Distribution,
+    )
+    .unwrap();
     assert_eq!(
         state
             .ledger
@@ -229,7 +262,129 @@ fn withdrawal_receipt_does_not_recalculate_component_rounded_value() {
         amount: Money(1),
     });
     crate::engine::components::validate_request(&action, &effects, &state.tlh_portfolios).unwrap();
-    settle(&input, &mut state, "alice", "redemption", &effects).unwrap();
+    settle(
+        &input,
+        &mut state,
+        "alice",
+        "redemption",
+        &effects,
+        TlhOperation::Redemption,
+    )
+    .unwrap();
     assert_eq!(state.tlh_portfolios[0].value, Money(0));
     assert_eq!(state.ledger.trial_balance(), 0);
+}
+
+#[test]
+fn selected_component_capture_keeps_observed_stop_marks_and_live_path_identity() {
+    for mode in [
+        CaptureMode::Summary,
+        CaptureMode::Dense,
+        CaptureMode::Forensic,
+    ] {
+        let (mut input, state) = setup();
+        input.rollout_count = 2;
+        input.scenario.horizon_months = 2;
+        input.series[0].snapshots = 3;
+        input.series[0].values = vec![100, 110, 120, 100, 110, 120];
+        let opening = state.tlh_portfolios.clone();
+        let mut session = crate::engine::actors::Session::with_options(
+            input,
+            "alice",
+            &[1, 0],
+            mode,
+            false,
+            None,
+            vec![(1, opening.clone()), (0, opening.clone())],
+        )
+        .unwrap();
+        session.start().unwrap();
+        session.begin_actions(vec![(0, 0), (1, 0)]).unwrap();
+        let action =
+            crate::engine::actors::Action::Withdraw(crate::engine::components::CashRequest {
+                cause_id: "too-much".into(),
+                agent_id: "alice".into(),
+                portfolio_id: "managed".into(),
+                cash_account_id: "checking".into(),
+                amount: Money(101),
+            });
+        session
+            .reject(1, action, "exceeds component value".into())
+            .unwrap();
+        let statuses = session.end_actions().unwrap();
+        assert_eq!(
+            statuses
+                .iter()
+                .map(|row| (row.rollout_id, row.month, row.stopped))
+                .collect::<Vec<_>>(),
+            [(1, 0, true), (0, 0, false)]
+        );
+        let mut live = opening.clone();
+        live[0].value = Money(110);
+        session
+            .set_component_marks(vec![(1, opening.clone()), (0, live.clone())])
+            .unwrap();
+        session.close_month().unwrap();
+        assert_eq!(
+            session
+                .decisions()
+                .unwrap()
+                .iter()
+                .map(|row| row.rollout_id)
+                .collect::<Vec<_>>(),
+            [0]
+        );
+        session.begin_actions(vec![(0, 1)]).unwrap();
+        session.end_actions().unwrap();
+        live[0].value = Money(120);
+        session.set_component_marks(vec![(0, live)]).unwrap();
+        session.close_month().unwrap();
+        let results = session.finish().unwrap();
+        assert_eq!(
+            results.iter().map(|row| row.rollout_id).collect::<Vec<_>>(),
+            [1, 0]
+        );
+        assert_eq!(
+            results[0].summary.public_holdings[0].values,
+            [Money(100), Money(100)]
+        );
+        assert_eq!(
+            results[1].summary.public_holdings[0].values,
+            [Money(100), Money(110), Money(120)]
+        );
+        assert_eq!(results[0].summary.ending_book.tlh_portfolios, opening);
+        assert_eq!(results[0].summary.ending_mark_month, 0);
+        assert_eq!(results[1].summary.ending_mark_month, 2);
+        if let Some(trace) = &results[0].trace {
+            assert_eq!(
+                trace.financial.months.last().unwrap().tlh_portfolios,
+                opening
+            );
+        }
+    }
+}
+
+#[test]
+fn opening_component_rows_cannot_alias_or_escape_selected_paths() {
+    let (input, state) = setup();
+    for rows in [
+        vec![
+            (0, state.tlh_portfolios.clone()),
+            (0, state.tlh_portfolios.clone()),
+        ],
+        vec![(1, state.tlh_portfolios.clone())],
+    ] {
+        assert!(matches!(
+            crate::engine::actors::Session::with_options(
+                input.clone(),
+                "alice",
+                &[0],
+                CaptureMode::Summary,
+                false,
+                None,
+                rows
+            ),
+            Err(SimulationError::InvalidRolloutSelection)
+        ));
+    }
 }

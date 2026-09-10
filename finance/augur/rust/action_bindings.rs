@@ -697,7 +697,7 @@ impl NativeSession {
             self.with_session(|session| session.reject(rollout_id, action.request, detail))?;
         receipt_object(py, &receipt)
     }
-    #[pyo3(signature = (rollout_id, cause_id, effects, action = None))]
+    #[pyo3(signature = (rollout_id, cause_id, effects, action = None, *, operation = "modeled_realization"))]
     fn apply_component(
         &mut self,
         py: Python<'_>,
@@ -705,13 +705,20 @@ impl NativeSession {
         cause_id: &str,
         effects: ComponentEffects,
         action: Option<Action>,
+        operation: &str,
     ) -> PyResult<Option<Py<PyAny>>> {
+        let operation = match operation {
+            "modeled_realization" => execution::TlhOperation::ModeledRealization,
+            "redemption" => execution::TlhOperation::Redemption,
+            _ => return Err(to_py_err("invalid action-less component operation")),
+        };
         self.with_session(|session| {
             session.apply_component(
                 rollout_id,
                 cause_id,
                 &effects.inner,
                 action.map(|item| item.request),
+                operation,
             )
         })?
         .map(|receipt| receipt_object(py, &receipt))
@@ -793,6 +800,19 @@ impl NativeSession {
             .ok_or_else(closed)?
             .statuses()
             .map(statuses)
+            .map_err(to_py_err)
+    }
+    fn account_balance(
+        &self,
+        rollout_id: u32,
+        agent_id: &str,
+        account_id: &str,
+    ) -> PyResult<Option<i64>> {
+        self.session
+            .as_ref()
+            .ok_or_else(closed)?
+            .account_balance(rollout_id, agent_id, account_id)
+            .map(|value| value.map(|amount| amount.0))
             .map_err(to_py_err)
     }
     fn is_finished(&self) -> PyResult<bool> {

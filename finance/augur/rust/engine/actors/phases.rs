@@ -2,6 +2,7 @@
 //! invoke policy and cannot retry a rejected action or reopen an ended month.
 
 use super::*;
+use crate::execution::TlhOperation;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) enum ActionPhase {
@@ -39,6 +40,44 @@ fn append_receipt(path: &mut Path, action: Action, outcome: Outcome) -> Receipt 
 }
 
 impl Session {
+    /// Private request preflight reads one actual account, not a copied population.
+    pub fn account_balance(
+        &self,
+        rollout_id: u32,
+        agent: &str,
+        account: &str,
+    ) -> Result<Option<Money>, SimulationError> {
+        if !self.configured
+            && self
+                .holdings
+                .as_ref()
+                .is_none_or(|scope| scope.agent_id() != agent)
+        {
+            return Ok(None);
+        }
+        let Phase::Pending { paths, claims } = &self.phase else {
+            return Err(SimulationError::InvalidActorSessionState);
+        };
+        let index = paths
+            .iter()
+            .position(|path| path.state.rollout_id == rollout_id)
+            .ok_or(SimulationError::InvalidRolloutSelection)?;
+        if claims[index].is_none() || paths[index].state.failed_month.is_some() {
+            return Err(SimulationError::InvalidActorSessionState);
+        }
+        let key = AccountRef::new(agent, account);
+        if !self
+            .input
+            .scenario
+            .accounts
+            .iter()
+            .any(|item| item.account == key)
+        {
+            return Ok(None);
+        }
+        Ok(Some(paths[index].state.ledger.balance(&key)?))
+    }
+
     pub fn component_distribution(
         &mut self,
         rollout_id: u32,
@@ -122,6 +161,7 @@ impl Session {
                 long_term_gain: Money(0),
                 interest,
             },
+            TlhOperation::Distribution,
         )?;
         state.recorder.distribution_count = count;
         if state.recorder.capture_mode.captures_output() {
@@ -240,6 +280,7 @@ impl Session {
         cause_id: &str,
         effects: &components::ComponentEffects,
         action: Option<Action>,
+        operation: TlhOperation,
     ) -> Result<Option<Receipt>, SimulationError> {
         if matches!(
             self.action_phase,
@@ -263,6 +304,31 @@ impl Session {
         if claims[index].is_none() || path.state.failed_month.is_some() {
             return Err(SimulationError::InvalidActorSessionState);
         }
+        let operation = match &action {
+            Some(Action::Contribute(_)) => TlhOperation::Contribution,
+            Some(Action::Withdraw(_) | Action::Liquidate(_)) => TlhOperation::Redemption,
+            Some(_) => return Err(SimulationError::InvalidActorSessionState),
+            None if operation == TlhOperation::ModeledRealization
+                && self.action_phase == ActionPhase::Awaiting =>
+            {
+                operation
+            }
+            None if operation == TlhOperation::Redemption
+                && self.configured
+                && self.action_phase == ActionPhase::Executing =>
+            {
+                operation
+            }
+            None => return Err(SimulationError::InvalidActorSessionState),
+        };
+        if action
+            .as_ref()
+            .is_some_and(|request| request.cause_id() != cause_id)
+        {
+            return Err(SimulationError::InvalidComponentEffect {
+                reason: "action cause differs from component effect cause".into(),
+            });
+        }
         let actor = if self.configured || action.is_none() {
             effects.observation.owner_agent_id.as_str()
         } else {
@@ -277,7 +343,14 @@ impl Session {
                 components::validate_request(action, effects, &path.state.tlh_portfolios)
             })
             .and_then(|()| {
-                components::settle(&self.input, &mut path.state, actor, cause_id, effects)
+                components::settle(
+                    &self.input,
+                    &mut path.state,
+                    actor,
+                    cause_id,
+                    effects,
+                    operation,
+                )
             });
         if let Some(action) = action {
             // Expected investor failures use reject before the component runs. A bad

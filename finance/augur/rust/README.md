@@ -1,33 +1,25 @@
 # Augur simulator
 
-The deterministic engine behind every Augur projection. It runs a compiled plan
-from `finance/augur/sim` (which holds the scenario model and the engine
-contract, and no engine) and answers in canonical event frames and state
-channels.
+The native financial kernels used by Python-owned action and configured drivers.
+Prepared facts originate in `finance/augur/sim`; `execution.rs` declares the private
+native input and financial result records. Validation runs once before execution.
 
-`execution.rs` declares the production `ExecutionInput`, runtime state, and output
-records. `ValidatedInput` checks an input once before any rollout executes. Test and
-benchmark fixture helpers construct that same input; they are not a separate schema.
-
-Internally, `RolloutState` initializes opening books once and advances one month at
-a time. The full-horizon drivers loop over that same advancement. Completed or
-failed states do not advance; an execution error consumes the state, preventing
-continuation from a partly applied month. This configured driver has no policy
-callback. The scoped action session below instead exposes assembled monthly
-claims to a Python-owned loop.
+`RolloutState` initializes books once. Private bounded phases apply opening facts,
+settle exact actions or the remaining configured payment control, and close the month.
+Both Python drivers use these same kernels. Failed paths cannot execute later actions;
+unexpected errors close the session. There is no production native full-horizon runner.
 
 ## Invariants
 
-- Money is always a checked `i64` count of the fixture's declared currency
+- Money is always a checked `i64` count of the input's declared currency
   quantum. Products use `i128` intermediates and explicit half-away-from-zero
   rounding.
 - Every monetary change is a balanced compound journal entry. Entries are
   validated and applied atomically; signed debits sum to zero.
 - Exogenous paths are sampled in Python and materialized once into a strict
-  integer fixture. Rust does not resample paths.
-- Independent rollouts execute in parallel with Rayon and are collected by
-  deterministic rollout index.
-- The configured runner groups claims and chosen consumption by payer/source
+  integer input. Rust does not resample paths.
+- Rollouts retain original IDs and selection order; Python owns policy and month sequencing.
+- The configured runner groups due claims by payer/source
   account and settles each group all-or-none. This is an explicit control, not a
   restriction imposed by individual payment execution.
 - Failed rollouts stop executing future actions and preserve the actual stopped
@@ -36,11 +28,10 @@ claims to a Python-owned loop.
   implementation. The compact path does not allocate every monthly snapshot or
   journal and is suitable for 100,000-rollout workloads.
 
-`simulate_dense(...)` retains every monthly state snapshot and every event
-record behind the canonical frames, but omits the balanced journal.
-`simulate(...)` is the strictly larger forensic path with that journal, while
-`simulate_summaries(...)` retains only fixed-size ending-book summaries. Dense
-performance comparisons must use `simulate_dense(...)`, not the compact path.
+The Python configured driver's dense/forensic outputs retain monthly books and
+canonical event records; forensic adds balanced journals. Its compact mode retains
+terminal summaries without allocating dense books. Capture never selects a different
+financial evaluator.
 
 Python <../x/bounded_spending/README.md> and <../x/allocation_glide/README.md>
 consumers submit explicit trades and payments through `ActionSession`; there is
@@ -66,7 +57,7 @@ lot consumes its exact remaining basis. This convention does not promise that sp
 a lot preserves its tax attribution.
 
 Sale preparation checks the whole request and stages only affected lot balances,
-capital-gain rows and TLH entries. Journal and receipt counters are checked before
+capital-gain rows. Journal and receipt counters are checked before
 posting. Rejection therefore changes none of those books or records. This guarantee
 is per trade, not a rollback of prior monthly actions or a batch of trades.
 
@@ -123,10 +114,11 @@ remaining public-lot/basis, active borrower-mortgage and recorded tax views at
 their opening review. The view fixes the actor and mark month; it cannot read
 another actor's books or request future path values. Tax views expose recorded
 income, jurisdiction facts and assessed outstanding liabilities, not hypothetical
-future assessments. Scheduled purchases are not originated contracts.
-Reduced-form harvesting's cumulative basis reductions remain separate scoped
-account/asset-pool facts; a public lot's `book_basis()` alone is not its complete
-adjusted tax basis when harvesting is enabled.
+future assessments. These tax views are currently native-only; the Python Observation
+does not yet expose them. Scheduled purchases are not originated contracts.
+Python-owned TLH components expose only their scoped current value and reported tax
+basis. Their cohorts are not ordinary public lots. Native component basis control
+accounts reconcile financial statements; they never calculate or own cohort basis.
 
 `holding_pools()` also exposes owned public pools with no remaining lots, and
 `public_price(asset_id)` reads their quote at the view's current mark month. Declaring
@@ -134,9 +126,8 @@ a pool creates no position, cash movement or policy decision.
 
 Assembled claims have a separate payer-scoped `Claim` projection, shared by
 allocation's demand read. Claim amounts come from canonical assembly, not a
-second evaluation of scheduled terms. The opening spending review occurs before
-that assembly, so it does not expose this month's claims. No observation changes
-the current review order or grouped settlement behavior.
+second evaluation of scheduled terms. The monthly actor review follows that assembly and component advance. Reading an
+observation does not reapply either phase.
 
 `engine/claims.rs` assembles configured demands from the current month's terms,
 live mortgages and assessed tax liabilities. It does not move money or decide
@@ -156,12 +147,12 @@ errors remain explicit simulator errors, not financial-failure receipts.
 
 `engine/obligations.rs` retains the configured all-or-none funding-group control
 and its existing demand/failure event projection, over that same executor.
-Allocation reserves both configured claims and the separate consumption request.
+Configured allocation reserves the assembled claims.
 The scoped action control instead follows the ordered execution described below.
 
 ## Scoped household action batches
 
-`simulator.ActionSession(prepared, actor, rollout_ids, capture="forensic")` accepts a
+`sim.session.ActionSession(prepared, actor, rollout_ids, capture="forensic")` accepts a
 `sim.prepared.CompiledRun` of typed resolved facts. The binding privately serializes
 it once; callers do not read or mutate a wire dictionary. `rust.invocation` writes
 this value to a file and reads it back as the same typed object. The session retains the input and
@@ -177,7 +168,8 @@ Missing, duplicate, stale or unknown keys and cross-path/session claim handles a
 errors which close the session, not resubmittable actions. A caller may adapt
 scalar authoring over these rows; there is no scalar actor-engine entry point.
 
-Each list uses exact `Sell`, `Buy`, `Transfer`, `PayClaim` and `Consume` requests.
+Each list uses exact `Sell`, `Buy`, `Transfer`, `PayClaim`, `Consume`, and managed
+`Contribute`, `Withdraw` or `Liquidate` requests.
 Canonical trade/payment/transfer operations own admission, atomic effects, lot
 basis and taxes. Receipts retain executed or rejected requests, but not an
 unattempted suffix. `Rollout::stop` distinguishes a rejected action (identified by
@@ -185,7 +177,9 @@ its month/index receipt) from unpaid due claims. Both preserve the stopped book
 and exclude that path from later batches while other paths continue. Unexpected
 accounting/arithmetic failures return a simulator error, not an action rejection.
 Preparation and closing share the configured runner's financial implementations;
-actor execution has no implicit pre/post allocation, harvesting, sale or payment.
+actor execution has no implicit pre/post allocation, investor sale or payment.
+The Python-owned manager advances before the household review; that is an exogenous
+component operation, not an investor Harvest action.
 
 `capture="summary"` omits detailed trace retention; `"dense"` adds financial event
 tables and monthly books, and `"forensic"` adds the journal. Every mode returns the
@@ -219,7 +213,7 @@ reach the next decision, even when all historical receipts are retained for repl
 Detailed output is `Rollout::trace`; its absence is not a zero-valued financial history.
 
 This session supports one decision-making household and scripted
-counterparties. It rejects configured allocation/harvesting/tender policies and
+counterparties. It rejects configured allocation/tender policies and
 scheduled sales rather than silently bypassing them. Housing and private-equity
 lifecycle inputs are not supported. Public trades use the explicit holding pools,
 so an all-cash start can buy a previously unheld asset without a dummy lot or policy.
@@ -231,7 +225,7 @@ mutable native books cross the boundary. Higher-level tax/contract observations
 are not part of this initial binding.
 
 ```python
-from finance.augur.rust.simulator import ActionSession
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.results import Finished
 
 session = ActionSession(prepared, actor, original_ids)
@@ -342,10 +336,8 @@ The remaining legacy acceptance suites in `sim/testing/` assert integer answers 
   public-market floor sales, forced-sale fractions, forced-recovery cashouts,
   deterministic issuer/FIFO order, liquid-net-worth floors that exclude PE,
   canonical opportunity traces, lot dispositions, and capital-gain effects;
-- reduced-form tax-loss harvesting after settlement, including the calibrated
-  maturity/drawdown curve, exact PPB parameter transport, short/long loss
-  allocation, adjusted-basis harvest ceilings, persistent cumulative deferral,
-  and proportional give-back through scheduled and target-allocation sales;
+- Python-owned TLH model effects settled through the same native cash/tax journals,
+  with atomic rejection, scoped reported values/basis and honest aggregate financial events;
 - insufficient-cash failure month and state freezing;
 - federal and California ordinary-income year-end tax accruals;
 - federal SALT itemization from funded property tax plus sibling state-income
@@ -362,9 +354,9 @@ one shared ordinary-loss offset and carryforward feed every jurisdiction in
 later tax years. Monthly and terminal output retain jurisdiction-level tax-liability
 state and held bond principal; selected traces expose tax-payment,
 tax-settlement, and issuer-attributed bond cashflow/accretion records.
-Monthly snapshots also retain taxpayer capital-gain state and each TLH policy's
-cumulative harvested-loss ledger; compact terminal summaries preserve the TLH
-ledger because it is future adjusted-basis state rather than explanatory trace.
+Monthly and terminal books retain taxpayer capital gains plus reported component
+value/basis statements. Compact capture retains those ending facts, not private cohorts
+or a cumulative give-back mirror.
 `event_frames.rs` emits every canonical `EventLog` frame directly, in Augur's
 own column names and units: `Money` becomes a `_quanta` column, a rate in parts
 per billion becomes the fraction Augur reports, and a `Quantity` divides by its
@@ -391,21 +383,20 @@ are 0/1. The Python adapter reconstructs the typed `PrivateEquityBundle` only wh
 sampled model hands one over; Rust never routes PE marks through ordinary
 security-price series.
 
-TLH policies encode every heuristic parameter as integer PPB. The maturity/drawdown
-curve and give-back ledger use integer arithmetic. A sale allocates each lot the
-difference between rounded cumulative proportions before and after that lot's
-units: `round(H * sold_after / U) - round(H * sold_before / U)`. This conserves the
-rounded total and assigns residual quanta in execution/lot order, with the receiving
-lot's short-/long-term gain character.
+The TLH model and exact cohort arithmetic live in <../sim/tlh.py>. It advances at
+the current mark before any investor operations, including configured scripted sales.
+Unlike the retired native pooled give-back rule, new contributions retain their own
+basis and do not inherit older loss adjustments. Contributions first participate in
+the following month's manager advance. Already-settled manager effects survive a
+later rejected household action.
 
-Scheduled sales hold `H` and `U` at the month's opening sale phase and advance a
-sold-unit cursor only after successful execution. Splitting the same ordered lot
-sequence into requests therefore leaves its total and per-lot attribution unchanged.
-Dynamic pool sales take a new `H/U` anchor for each trade; fragmentation can shift
-a quantum between lots, but full liquidation still leaves exactly zero deferral.
-These are reduced-form proportional rules, not statutory per-lot TLH. Acceptance
-cases include odd-quantum partial/full liquidation, scheduled fragmentation,
-mixed gain character and rejected-trade cursor preservation.
+`engine/components.rs` validates supplied effects before posting: household cash
+plus the change in reported basis must equal signed capital gains plus declared
+interest income. A malformed effect is a programming/accounting error, not simulated
+ruin. Investor affordability/ownership rejection occurs before committing a Python
+candidate or household books. Native settlement does not infer rounded component NAV
+from the prior rounded mark. Dense/forensic events state component realizations,
+contributions and redemptions without pretending to be constituent lot dispositions.
 
 Initial lots store total basis and never a per-unit figure. A sale apportions
 the basis a lot still holds by the units leaving it, so selling a lot down in
@@ -503,24 +494,25 @@ Preparation, precision and the remaining language-binding boundary:
 
 ## Python extension
 
-`simulator.so` is a `rust_shared_library` built from `python.rs`, imported as
-`finance.augur.rust.simulator` and typed by the hand-written `simulator.pyi`. Fixtures
-cross as JSON text because that is the simulator's input contract; results cross as Python
-integers, so the fan workload never pays for a dense JSON round trip. `simulator_cli`
-remains for out-of-process forensic runs.
+`_simulator.so` is the private extension built from `python.rs`, typed by
+`_simulator.pyi`. Public callers use `sim/session.py` or the remaining
+`sim/configured.py` control. Native phase methods never invoke Python callbacks.
+The boundary lowers a typed prepared run privately and decodes typed action results
+once; file serialization is owned by explicit I/O callers. The standalone native CLI
+and native benchmark month loop have been removed.
 
 Scenario features the fixture cannot express are refused rather than encoded without them:
 [docs/execution_boundary.md](docs/execution_boundary.md).
 
 ## Layout
 
-`engine.rs` is the orchestrator: the rollout month loop, the public entry points, and the
-shared per-rollout state. Each policy family it drives lives in `engine/` beside it —
-`validation`, `property`, `claims`, `obligations`, `taxes`, `securities`, `target_allocation`,
-`private_equity`, `tlh`, `trades`, `cashflows`, `transfers`, `recorder`, `accounts`, `errors`. Submodules reach
-the shared state through `use super::*`, and expose to the root only what it calls;
-anything a module uses alone stays private to it, which the single 7.5k-line file could
-not express.
+`engine.rs` retains shared financial state and opening/closing kernels. Native
+modules include `property`, `claims`, `obligations`, `taxes`, `securities`,
+`target_allocation`, `private_equity`, `components`, `trades`, `cashflows`,
+`transfers`, `recorder`, `accounts`, `errors` and `validation`.
+`actors/phases.rs` exposes the private bounded calls used by both Python drivers.
+Native test-only harnesses can loop those existing kernels; they are not exported
+production runtimes.
 
 The Python-controlled feature-rich benchmark lives in <../benchmark/README.md>.
 It measures the configured runner, including native financial steps and the

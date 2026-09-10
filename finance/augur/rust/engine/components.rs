@@ -2,6 +2,7 @@
 //! state lives here; the financial kernel checks cash, journals and tax consequences.
 
 use super::*;
+use crate::execution::TlhOperation;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
@@ -208,6 +209,7 @@ pub(super) fn settle(
     actor: &str,
     cause_id: &str,
     effects: &ComponentEffects,
+    operation: TlhOperation,
 ) -> Result<(), SimulationError> {
     let observation = &effects.observation;
     validate_observation(input, observation)?;
@@ -323,12 +325,26 @@ pub(super) fn settle(
             slice.amount,
         )?;
     }
-    state.recorder.apply_entry(
+    state.recorder.apply_tlh_effect(
         &mut state.ledger,
         JournalEntry {
             month: state.month,
             cause_id: cause_id.into(),
             postings,
+        },
+        TlhFinancialEffect {
+            month: state.month,
+            cause_id: cause_id.into(),
+            portfolio_id: observation.portfolio_id.clone(),
+            agent_id: actor.into(),
+            account_id: observation.account_id.clone(),
+            cash_account_id: effects.cash_account_id.clone(),
+            operation,
+            cash_amount: effects.cash_amount,
+            short_term_gain: effects.short_term_gain,
+            long_term_gain: effects.long_term_gain,
+            basis_change,
+            interest_income: interest_total,
         },
     )?;
     tax.commit();

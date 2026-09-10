@@ -338,21 +338,19 @@ impl Session {
             .map(|path| {
                 if path.state.is_finished(&self.input) {
                     Ok(None)
+                } else if self.configured {
+                    path.state.prepare_month_events(&self.input)?;
+                    claims::assemble(
+                        &self.input,
+                        path.state.rollout_id,
+                        path.state.month,
+                        &path.state.properties,
+                        &path.state.mortgages,
+                        &path.state.tax_liabilities,
+                    )
+                    .map(Some)
                 } else {
-                    if self.configured {
-                        path.state.prepare_month_events(&self.input)?;
-                        claims::assemble(
-                            &self.input,
-                            path.state.rollout_id,
-                            path.state.month,
-                            &path.state.properties,
-                            &path.state.mortgages,
-                            &path.state.tax_liabilities,
-                        )
-                        .map(Some)
-                    } else {
-                        path.state.prepare_month(&self.input).map(Some)
-                    }
+                    path.state.prepare_month(&self.input).map(Some)
                 }
             })
             .collect::<Result<Vec<_>, SimulationError>>()?;
@@ -493,7 +491,7 @@ fn finish_actions(path: &mut Path, holdings: &AgentHoldings, claims: &claims::Cl
         receipts.extend(path.previous_receipts.iter().cloned());
     }
     let capture = path.capture.as_mut().expect("actor capture");
-    capture.unpaid_claims = observations::due_claims(&claims, holdings.agent_id())
+    capture.unpaid_claims = observations::due_claims(claims, holdings.agent_id())
         .filter(|claim| claim.amount_due.0 > 0)
         .map(|claim| outcomes::UnpaidClaim {
             id: claim.id,
@@ -514,7 +512,7 @@ fn finish_actions(path: &mut Path, holdings: &AgentHoldings, claims: &claims::Cl
     if path.stop.is_some() {
         path.state.failed_month = Some(month);
     }
-    record_claims(&mut path.state.recorder, &claims);
+    record_claims(&mut path.state.recorder, claims);
 }
 
 fn validate(input: &ExecutionInput, actor: &str) -> Result<(), SimulationError> {
