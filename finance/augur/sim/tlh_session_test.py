@@ -262,6 +262,7 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
     ]
     assert rollout.summary.ending_book.tlh_portfolios[0].value == 100
     assert {(row.income_source, row.income) for row in rollout.summary.ending_book.income} == {
+        ("ordinary", 0),  # The income ledger retains every declared source, including zero buckets.
         ("interest:federal_us", 1),
         ("interest:corporate", 1),
     }
@@ -302,7 +303,9 @@ def test_configured_clock_needs_no_placeholder_economic_actor() -> None:
     case = Case(scenario=Scenario(agents=[], initial_cash=[], tax_profiles=[], horizon_months=1), rollout_count=1)
     document = json.loads(simulate_dense_json(case.compiled_run))
     [rollout] = document["rollouts"]
-    assert [(book["month"], book["balances"]) for book in rollout["months"]] == [(0, []), (1, [])]
+    # The canonical ledger's external balancing account is not a configured decision actor.
+    boundary = [{"account": {"agent_id": "__external__", "account_id": "boundary"}, "balance": 0}]
+    assert [(book["month"], book["balances"]) for book in rollout["months"]] == [(0, boundary), (1, boundary)]
 
 
 if __name__ == "__main__":
