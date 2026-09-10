@@ -12,9 +12,10 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band import Raise, cash_band
 from finance.augur.policy.funding import fund_claims
 from finance.augur.policy.sleeves import withdraw
-from finance.augur.sim.books import Book
+from finance.augur.sim.actions import ClaimId, DecisionActions, PayClaim, Transfer
+from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import (
-    ClaimId,
     Executed,
     Finished,
     InsufficientCash,
@@ -35,7 +36,7 @@ from finance.augur.sim.scenario import (
     Scenario,
     ScheduledObligation,
 )
-from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case
 
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -105,7 +106,13 @@ def _pay_claims(batch: list[Decision]) -> list[DecisionActions]:
             decision.rollout_id,
             decision.observation.month,
             [
-                Action.pay_claim(index, claim.cause_id, claim, claim.from_account, claim.amount_due)
+                PayClaim(
+                    request_id=index,
+                    cause_id=claim.cause_id,
+                    claim=claim,
+                    from_account=claim.from_account,
+                    amount=claim.amount_due,
+                )
                 for index, claim in enumerate(decision.observation.claims)
             ],
         )
@@ -338,7 +345,15 @@ def test_first_payment_survives_later_rejection_and_subsequent_action_is_skipped
             DecisionActions(
                 response.rollout_id,
                 response.month,
-                [*response.actions, Action.transfer("must-not-run", ("alice", "checking"), ("utility", "checking"), 1)],
+                [
+                    *response.actions,
+                    Transfer(
+                        cause_id="must-not-run",
+                        from_account=AccountRef(agent_id="alice", account_id="checking"),
+                        to_account=AccountRef(agent_id="utility", account_id="checking"),
+                        amount=1,
+                    ),
+                ],
             )
             for response in _pay_claims(batch)
         ]

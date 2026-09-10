@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import LocationId, RentKey
+from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import Book
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.results import Finished, Paid, Rollout
@@ -18,7 +19,7 @@ from finance.augur.sim.scenario import (
     Scenario,
     SeriesIndexedAmount,
 )
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case
 
 RENT = RentKey(location_id=LocationId("san_francisco_ca"))
@@ -66,7 +67,13 @@ def _run(scenario: Scenario, levels: list[list[float]]) -> list[Rollout]:
                         decision.rollout_id,
                         decision.observation.month,
                         [
-                            Action.pay_claim(index, claim.cause_id, claim, claim.from_account, claim.amount_due)
+                            PayClaim(
+                                request_id=index,
+                                cause_id=claim.cause_id,
+                                claim=claim,
+                                from_account=claim.from_account,
+                                amount=claim.amount_due,
+                            )
                             for index, claim in enumerate(decision.observation.claims)
                         ],
                     )

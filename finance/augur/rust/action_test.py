@@ -7,10 +7,12 @@ from typing import Any
 import pytest
 import pytest_bazel
 
+from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions, PayClaim, Transfer
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.results import ClaimId, Consume, Executed, Finished, RejectedAction, Rollout, UnpaidClaims
+from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.scenario import ObligationType, ScheduledObligation, ScheduledTransfer
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
 
@@ -52,7 +54,14 @@ def prepared() -> CompiledRun:
 
 
 def consume(amount: int, cause: str = "chosen-spend") -> Action:
-    return Action.consume(0, cause, "budget", ("alice", "checking"), ("world", "checking"), amount)
+    return Consume(
+        request_id=0,
+        cause_id=cause,
+        component_id="budget",
+        from_account=AccountRef(agent_id="alice", account_id="checking"),
+        to_account=AccountRef(agent_id="world", account_id="checking"),
+        amount=amount,
+    )
 
 
 def run(prepared: CompiledRun, ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
@@ -75,8 +84,14 @@ def run(prepared: CompiledRun, ids: list[int]) -> tuple[list[Rollout], dict[int,
                 assert observation.agent_id == "alice"
                 assert observation.cpi is None  # This nominal-only experiment supplied no CPI model.
                 assert not observation.public_positions
-                actions = [
-                    Action.pay_claim(i, "pay-bill", claim, claim.from_account, claim.amount_due)
+                actions: list[Action] = [
+                    PayClaim(
+                        request_id=i,
+                        cause_id="pay-bill",
+                        claim=claim,
+                        from_account=claim.from_account,
+                        amount=claim.amount_due,
+                    )
                     for i, claim in enumerate(observation.claims)
                 ]
                 actions.append(consume(1))
@@ -105,10 +120,19 @@ def test_action_order_prefix_retention_and_independent_continuation(prepared: Co
     responses = []
     for decision in batch:
         claim = decision.observation.claims[0]
-        actions = [Action.pay_claim(0, "pay", claim, claim.from_account, claim.amount_due)]
+        actions: list[Action] = [
+            PayClaim(
+                request_id=0, cause_id="pay", claim=claim, from_account=claim.from_account, amount=claim.amount_due
+            )
+        ]
         if decision.rollout_id == 0:
             actions += [
-                Action.transfer("prefix", ("alice", "checking"), ("world", "checking"), 1),
+                Transfer(
+                    cause_id="prefix",
+                    from_account=AccountRef(agent_id="alice", account_id="checking"),
+                    to_account=AccountRef(agent_id="world", account_id="checking"),
+                    amount=1,
+                ),
                 consume(100),
                 consume(1, "unattempted-suffix"),
             ]
@@ -160,7 +184,14 @@ def test_cross_rollout_claim_handle_is_a_routing_error(prepared: CompiledRun) ->
     claim = batch[0].observation.claims[0]
     with pytest.raises(ValueError, match="different rollout"):
         session.advance(
-            [DecisionActions(id_, 0, [Action.pay_claim(0, "pay", claim, claim.from_account, 1)]) for id_ in [0, 1]]
+            [
+                DecisionActions(
+                    id_,
+                    0,
+                    [PayClaim(request_id=0, cause_id="pay", claim=claim, from_account=claim.from_account, amount=1)],
+                )
+                for id_ in [0, 1]
+            ]
         )
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         session.start()
@@ -179,7 +210,19 @@ def test_claim_handle_cannot_alias_another_sessions_claim(prepared: CompiledRun)
     assert not isinstance(second_batch, Finished)
     assert second_batch[0].observation.claims[0].cause_id != old_claim.cause_id
     with pytest.raises(ValueError, match="different rollout or session"):
-        second.advance([DecisionActions(0, 0, [Action.pay_claim(0, "pay", old_claim, old_claim.from_account, 1)])])
+        second.advance(
+            [
+                DecisionActions(
+                    0,
+                    0,
+                    [
+                        PayClaim(
+                            request_id=0, cause_id="pay", claim=old_claim, from_account=old_claim.from_account, amount=1
+                        )
+                    ],
+                )
+            ]
+        )
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         second.advance([])
 
@@ -209,7 +252,13 @@ def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
     with pytest.raises(AttributeError):
         writable.cash = 999
     claim = observation.claims[0]
-    batch = session.advance([DecisionActions(0, 0, [Action.pay_claim(0, "pay", claim, claim.from_account, 1)])])
+    batch = session.advance(
+        [
+            DecisionActions(
+                0, 0, [PayClaim(request_id=0, cause_id="pay", claim=claim, from_account=claim.from_account, amount=1)]
+            )
+        ]
+    )
     assert not isinstance(batch, Finished)
     assert batch[0].observation.accounts == [("checking", 6)]
     session.close()

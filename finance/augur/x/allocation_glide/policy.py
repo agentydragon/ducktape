@@ -2,7 +2,8 @@
 
 from finance.augur.policy import sleeves
 from finance.augur.policy.cash_band import Invest, Raise, cash_band
-from finance.augur.sim.session import Action, Decision, DecisionActions, Observation
+from finance.augur.sim.actions import Action, DecisionActions, PayClaim
+from finance.augur.sim.observations import Decision, Observation
 
 
 def propose_trades(observation: Observation, *, annual_step: int, cash_reserve: int) -> list[Action]:
@@ -41,8 +42,8 @@ def decide(batch: list[Decision], *, annual_step: int) -> list[DecisionActions]:
         cash = dict(observation.accounts)["checking"]
         due = sum(claim.amount_due for claim in observation.claims)
         trades = propose_trades(observation, annual_step=annual_step, cash_reserve=due)
-        payments = [
-            Action.pay_claim(
+        payments: list[Action] = [
+            PayClaim(
                 request_id=index,
                 cause_id=f"pay-{claim.cause_id}",
                 claim=claim,

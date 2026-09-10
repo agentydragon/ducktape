@@ -9,10 +9,12 @@ import pytest_bazel
 
 from finance.augur.model.series import SecurityKey
 from finance.augur.policy import sleeves
+from finance.augur.sim.actions import Consume, DecisionActions, Sell, Transfer
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.results import Finished, RejectedAction, Sell
+from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.scenario import InitialLot
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, flat, scenario
 from finance.augur.sim.testing.fixtures import checking
 
@@ -116,9 +118,23 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(prepared: Comp
             cause_id="exhaust",
         )
         remaining.append(
-            Action.consume(0, "unfunded", "spending", ("test-owner", "checking"), ("test-world", "checking"), 100)
+            Consume(
+                request_id=0,
+                cause_id="unfunded",
+                component_id="spending",
+                from_account=AccountRef(agent_id="test-owner", account_id="checking"),
+                to_account=AccountRef(agent_id="test-world", account_id="checking"),
+                amount=100,
+            )
         )
-        remaining.append(Action.transfer("never", ("test-owner", "checking"), ("test-world", "checking"), 1))
+        remaining.append(
+            Transfer(
+                cause_id="never",
+                from_account=AccountRef(agent_id="test-owner", account_id="checking"),
+                to_account=AccountRef(agent_id="test-world", account_id="checking"),
+                amount=1,
+            )
+        )
         finished = session.advance([DecisionActions(0, 1, remaining)])
         assert isinstance(finished, Finished)
         [result] = finished.rollouts

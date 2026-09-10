@@ -9,7 +9,8 @@ experiment policies and their outer time loops are Python code.
 An experiment supplies a `Scenario`, market paths, jurisdiction rules and
 locations to `compile_run` in <backend.py>. It starts the common `ActionSession`,
 submits one batch of ordered actions per decision month, and reads typed results
-from <results.py> and books from <books.py>. Sampling, fitting, policy choice and
+from <results.py> and books from <books.py>. Exact requests are defined in
+<actions.py>, and current actor facts in <observations.py>. Sampling, fitting, policy choice and
 report definitions belong to the caller.
 
 See <../x/monthly_actions/README.md> for explicit actions and

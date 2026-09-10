@@ -35,7 +35,9 @@ code, not new library APIs. The small module split is evidence/path preparation,
 annual policy, and run/report. Configuration names the resolved conventions.
 
 ```python
-from finance.augur.rust.simulator import ActionSession, Decision, DecisionActions
+from finance.augur.sim.actions import DecisionActions
+from finance.augur.sim.observations import Decision
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.results import Finished
 

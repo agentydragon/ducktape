@@ -14,9 +14,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.policy.sleeves import withdraw
+from finance.augur.sim.actions import Consume, DecisionActions, PayClaim
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import ConsumptionTarget, Finished
-from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
+from finance.augur.sim.session import ActionSession
 
 
 @dataclass(frozen=True)
@@ -206,18 +209,24 @@ class SpendingPolicy:
                 else []
             )
             actions.extend(
-                Action.pay_claim(index, f"pay-{claim.cause_id}", claim, claim.from_account, claim.amount_due)
+                PayClaim(
+                    request_id=index,
+                    cause_id=f"pay-{claim.cause_id}",
+                    claim=claim,
+                    from_account=claim.from_account,
+                    amount=claim.amount_due,
+                )
                 for index, claim in enumerate(claims)
             )
             if amount:
                 actions.append(
-                    Action.consume(
-                        len(claims),
-                        cause,
-                        "annual_consumption",
-                        (observation.agent_id, "checking"),
-                        ("world", "checking"),
-                        amount,
+                    Consume(
+                        request_id=len(claims),
+                        cause_id=cause,
+                        component_id="annual_consumption",
+                        from_account=AccountRef(agent_id=observation.agent_id, account_id="checking"),
+                        to_account=AccountRef(agent_id="world", account_id="checking"),
+                        amount=amount,
                     )
                 )
             responses.append(DecisionActions(decision.rollout_id, observation.month, actions))

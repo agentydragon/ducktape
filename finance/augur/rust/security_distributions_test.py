@@ -7,8 +7,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import SecurityDistributionKey
+from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.results import Finished, Paid, Rollout
-from finance.augur.sim.session import Action, ActionSession, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case
 from finance.augur.sim.testing.fixtures import cash_spend, checking
 from finance.augur.sim.testing.security_distributions import (
@@ -43,7 +44,13 @@ def _run(case: Case) -> Rollout:
                         decision.rollout_id,
                         decision.observation.month,
                         [
-                            Action.pay_claim(index, claim.cause_id, claim, claim.from_account, claim.amount_due)
+                            PayClaim(
+                                request_id=index,
+                                cause_id=claim.cause_id,
+                                claim=claim,
+                                from_account=claim.from_account,
+                                amount=claim.amount_due,
+                            )
                             for index, claim in enumerate(decision.observation.claims)
                         ],
                     )

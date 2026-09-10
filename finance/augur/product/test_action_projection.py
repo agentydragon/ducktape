@@ -17,12 +17,15 @@ from finance.augur.model.series import InflationKey
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import ProductRolloutProjection, project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, RolloutFailureEvent, TaxAccrualEvent
+from finance.augur.sim.actions import Consume, DecisionActions
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.events import EventLog
+from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import OutcomeBasis, projection_summaries
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
 from finance.augur.sim.scenario import BondHolding, InitialAccountBalance
-from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import CPI_DOUBLING, bond_case
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -137,13 +140,13 @@ def test_attempted_consumption_gap_does_not_duplicate_claims_or_invent_future_de
                 response.month,
                 response.actions
                 + [
-                    Action.consume(
-                        i,
-                        f"spend-{i}",
-                        "budget",
-                        ("example-household", "checking"),
-                        ("example-creditor", "checking"),
-                        amount,
+                    Consume(
+                        request_id=i,
+                        cause_id=f"spend-{i}",
+                        component_id="budget",
+                        from_account=AccountRef(agent_id="example-household", account_id="checking"),
+                        to_account=AccountRef(agent_id="example-creditor", account_id="checking"),
+                        amount=amount,
                     )
                     for i, amount in enumerate((2_000, 50_000, 1))
                 ],
@@ -178,13 +181,13 @@ def test_malformed_consume_is_a_stop_not_a_monetary_shortfall(compiled: Compiled
                 decision.rollout_id,
                 decision.observation.month,
                 [
-                    Action.consume(
-                        0,
-                        "invalid",
-                        "budget",
-                        ("example-household", "checking"),
-                        ("example-creditor", "checking"),
-                        invalid_amount,
+                    Consume(
+                        request_id=0,
+                        cause_id="invalid",
+                        component_id="budget",
+                        from_account=AccountRef(agent_id="example-household", account_id="checking"),
+                        to_account=AccountRef(agent_id="example-creditor", account_id="checking"),
+                        amount=invalid_amount,
                     )
                 ],
             )
@@ -409,8 +412,13 @@ def test_stopped_bond_marks_and_selected_replay_use_captured_cpi_not_future_valu
                 row.rollout_id,
                 row.observation.month,
                 [
-                    Action.consume(
-                        0, "unfunded", "budget", ("example-household", "checking"), ("example-creditor", "checking"), 1
+                    Consume(
+                        request_id=0,
+                        cause_id="unfunded",
+                        component_id="budget",
+                        from_account=AccountRef(agent_id="example-household", account_id="checking"),
+                        to_account=AccountRef(agent_id="example-creditor", account_id="checking"),
+                        amount=1,
                     )
                 ]
                 if row.rollout_id == 0 and row.observation.month == 1

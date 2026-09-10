@@ -5,8 +5,9 @@ within the explicit budget; execution owns prices, basis and taxes.
 """
 
 from finance.augur.policy.cash_band import Invest, Raise, cash_band
+from finance.augur.sim.actions import Action, Buy, DecisionActions, LotSale, PayClaim, Sell
 from finance.augur.sim.fixed_point import quantity_for_value
-from finance.augur.sim.session import Action, Decision, DecisionActions
+from finance.augur.sim.observations import Decision
 
 
 def decide(batch: list[Decision]) -> list[DecisionActions]:
@@ -18,15 +19,16 @@ def decide(batch: list[Decision]) -> list[DecisionActions]:
         adjustment = cash_band(
             projected_cash=observation.cash - sum(claim.amount_due for claim in claims), floor=0, ceiling=0
         )
-        actions = []
+        actions: list[Action] = []
         if isinstance(adjustment, Invest) and observation.month == 0 and not positions:
             pool = observation.holding_pools[0]
             units = quantity_for_value(adjustment.amount, pool.price, pool.quantity_scale, round_up=False)
             if units:
                 actions.append(
-                    Action.buy(
+                    Buy(
                         cause_id="opening-investment",
-                        from_account=(observation.agent_id, "checking"),
+                        agent_id=observation.agent_id,
+                        cash_account_id="checking",
                         holding_account_id=pool.account_id,
                         asset_id=pool.asset_id,
                         lot_id="opening-investment",
@@ -38,17 +40,17 @@ def decide(batch: list[Decision]) -> list[DecisionActions]:
         # investment proposals are ignored, leaving any surplus cash available.
         if isinstance(adjustment, Raise):
             actions.extend(
-                Action.sell(
+                Sell(
                     cause_id=f"fund-{position.lot_id}",
                     agent_id=observation.agent_id,
                     proceeds_account_id="checking",
                     asset_id=position.asset_id,
-                    lots=[(position.account_id, position.lot_id, position.units)],
+                    lots=[LotSale(account_id=position.account_id, lot_id=position.lot_id, units=position.units)],
                 )
                 for position in positions
             )
         actions.extend(
-            Action.pay_claim(
+            PayClaim(
                 request_id=request_id,
                 cause_id=f"pay-{claim.cause_id}",
                 claim=claim,

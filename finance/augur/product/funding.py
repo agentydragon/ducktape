@@ -11,9 +11,10 @@ from finance.augur.model.series import SecurityKey
 from finance.augur.policy.cash_band import Raise, cash_band
 from finance.augur.policy.sleeves import withdraw_by_symbol
 from finance.augur.product.wire import FundingPolicy
+from finance.augur.sim.actions import Action, DecisionActions, PayClaim
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
+from finance.augur.sim.observations import Decision
 from finance.augur.sim.scenario import InitialLot
-from finance.augur.sim.session import Action, Decision, DecisionActions
 
 
 class Policy:
@@ -59,7 +60,7 @@ class Policy:
             observation = decision.observation
             if observation.agent_id != self.actor_id:
                 raise ValueError("product funding policy received another actor's observation")
-            actions = []
+            actions: list[Action] = []
             if self.targets:
                 floor, ceiling = self.floor, self.ceiling
                 if self.indexed and ceiling > 0:
@@ -73,7 +74,8 @@ class Policy:
                 due = sum(
                     claim.amount_due
                     for claim in observation.claims
-                    if claim.from_account == (self.actor_id, self.cash_account_id)
+                    if (claim.from_account.agent_id, claim.from_account.account_id)
+                    == (self.actor_id, self.cash_account_id)
                 )
                 proposal = cash_band(projected_cash=cash - due, floor=floor, ceiling=ceiling)
                 if isinstance(proposal, Raise):
@@ -86,7 +88,7 @@ class Policy:
                         cause_id=f"product-funding-{observation.month}",
                     )
             actions.extend(
-                Action.pay_claim(
+                PayClaim(
                     request_id=index + 1,
                     cause_id=claim.cause_id,
                     claim=claim,

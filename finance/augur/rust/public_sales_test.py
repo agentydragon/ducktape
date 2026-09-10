@@ -10,10 +10,12 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.books import TaxAccrual
+from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell, Transfer
+from finance.augur.sim.books import AccountRef, TaxAccrual
+from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
 from finance.augur.sim.scenario import InitialLot, OrdinaryIncome, ScheduledTransfer
-from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import VTI, checking, taxed
 
@@ -30,16 +32,16 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
     responses = []
     for decision in decisions:
         observation = decision.observation
-        actions = []
+        actions: list[Action] = []
         if observation.month == sale_month:
             actions.append(
-                Action.sell(
+                Sell(
                     cause_id="sell-vti",
                     agent_id="alice",
                     proceeds_account_id="checking",
                     asset_id="vti",
                     lots=[
-                        (lot.account_id, lot.lot_id, lot.units)
+                        LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=lot.units)
                         for lot in observation.public_positions
                         if lot.asset_id == "vti" and lot.account_id == "checking"
                     ],
@@ -47,11 +49,11 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
             )
         # Author order is sale, then this month's due payments. No engine allocator.
         actions.extend(
-            Action.pay_claim(
+            PayClaim(
                 request_id=index,
                 cause_id=claim.cause_id,
                 claim=claim,
-                from_account=("alice", "checking"),
+                from_account=AccountRef(agent_id="alice", account_id="checking"),
                 amount=claim.amount_due,
             )
             for index, claim in enumerate(observation.claims)
@@ -280,14 +282,19 @@ def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(indep
                         response.month,
                         [
                             *response.actions,
-                            Action.sell(
+                            Sell(
                                 cause_id="sell-exhausted-lot",
                                 agent_id="alice",
                                 proceeds_account_id="checking",
                                 asset_id="vti",
-                                lots=[("checking", "alice-vti", 1)],
+                                lots=[LotSale(account_id="checking", lot_id="alice-vti", units=1)],
                             ),
-                            Action.transfer("unattempted", ("alice", "checking"), ("irs", "checking"), 1),
+                            Transfer(
+                                cause_id="unattempted",
+                                from_account=AccountRef(agent_id="alice", account_id="checking"),
+                                to_account=AccountRef(agent_id="irs", account_id="checking"),
+                                amount=1,
+                            ),
                         ],
                     )
             batch = session.advance(responses)
