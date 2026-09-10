@@ -55,7 +55,7 @@ def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -
                         session.effects(
                             spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
                         ),
-                        operation="Redemption",
+                        operation="redemption",
                     )
                     session.portfolios[rollout_id][spec.portfolio_id] = candidate
                 for index, _ in enumerate(run.scenario._target_allocation_policies):
