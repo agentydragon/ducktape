@@ -13,7 +13,7 @@ mod action_bindings;
 
 use augur_rust_simulator::engine::{
     ValidatedInput, simulate_dense_validated, simulate_product_metrics_validated,
-    simulate_summaries_validated, simulate_validated,
+    simulate_validated,
 };
 use augur_rust_simulator::event_frames::FramedOutput;
 use augur_rust_simulator::execution::ExecutionInput;
@@ -102,20 +102,6 @@ fn simulate_forensic_json(fixture_json: &str) -> PyResult<String> {
     serde_json::to_string(&FramedOutput::new(&output)).map_err(to_py_err)
 }
 
-/// Run every rollout retaining only fixed-size terminal summaries.
-#[pyfunction]
-fn simulate_summaries_json(fixture_json: &str) -> PyResult<String> {
-    let fixture = parse(fixture_json)?;
-    let output = Python::attach(|py| {
-        py.detach(|| {
-            let validated = ValidatedInput::new(&fixture)?;
-            simulate_summaries_validated(validated)
-        })
-    })
-    .map_err(to_py_err)?;
-    serde_json::to_string(&output).map_err(to_py_err)
-}
-
 #[pymodule]
 fn simulator(module: &Bound<'_, PyModule>) -> PyResult<()> {
     action_bindings::register(module)?;
@@ -123,6 +109,5 @@ fn simulator(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(simulate_product_metrics, module)?)?;
     module.add_function(wrap_pyfunction!(simulate_dense_json, module)?)?;
     module.add_function(wrap_pyfunction!(simulate_forensic_json, module)?)?;
-    module.add_function(wrap_pyfunction!(simulate_summaries_json, module)?)?;
     Ok(())
 }
