@@ -15,11 +15,10 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: forgejo-agentydragon-state-transfer
+  name: forgejo-agentydragon-state-transfer-v2
   namespace: tofu-state
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 300
   ttlSecondsAfterFinished: 86400
   template:
     spec:
@@ -35,7 +34,9 @@ spec:
         - name: transfer
           # This is the deployed tofu-controller runner image. v0.16.5 bundles
           # OpenTofu 1.11.3, avoiding mixed pg-backend lock implementations.
-          image: ghcr.io/flux-iac/tf-runner:v0.16.5@sha256:7209171093907ec1d0559c682949fcee4b625205a6a058c16fe0ce0017af5f41
+          # Match the live controller setting. This tag is already pulled and
+          # successfully started by controller-created runners on this node.
+          image: ghcr.io/flux-iac/tf-runner:v0.16.5
           command: ["/bin/sh", "-ec"]
           securityContext:
             allowPrivilegeEscalation: false
@@ -45,27 +46,34 @@ spec:
             - |
               umask 077
               trap 'rm -f /work/source.tfstate /work/destination.tfstate' EXIT
+              printf 'runner started\n'
+              tofu version
               mkdir -p /work/source /work/destination
               cp /config/main.tf /work/source/main.tf
               cp /config/main.tf /work/destination/main.tf
 
               cd /work/source
-              env PGPASSWORD="$OLD_PGPASSWORD" tofu init -input=false -no-color \
+              printf 'initializing source backend\n'
+              timeout 90s env PGPASSWORD="$OLD_PGPASSWORD" tofu init -input=false -no-color \
                 -backend-config='conn_str=postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable' \
                 -backend-config='schema_name=forgejo_agentydragon'
-              env PGPASSWORD="$OLD_PGPASSWORD" tofu state pull > /work/source.tfstate
+              printf 'pulling source state\n'
+              timeout 90s env PGPASSWORD="$OLD_PGPASSWORD" tofu state pull > /work/source.tfstate
               test -s /work/source.tfstate
-              source_count="$(env PGPASSWORD="$OLD_PGPASSWORD" tofu state list | wc -l)"
+              source_count="$(timeout 90s env PGPASSWORD="$OLD_PGPASSWORD" tofu state list | wc -l)"
 
               cd /work/destination
-              env PGPASSWORD="$NEW_PGPASSWORD" tofu init -input=false -no-color \
+              printf 'initializing destination backend\n'
+              timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu init -input=false -no-color \
                 -backend-config='conn_str=postgres://tfstate_forgejo_agentydragon@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate_forgejo_agentydragon?sslmode=require' \
                 -backend-config='schema_name=forgejo_agentydragon'
-              test -z "$(env PGPASSWORD="$NEW_PGPASSWORD" tofu state list)"
-              env PGPASSWORD="$NEW_PGPASSWORD" tofu state push /work/source.tfstate
-              env PGPASSWORD="$NEW_PGPASSWORD" tofu state pull > /work/destination.tfstate
+              test -z "$(timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state list)"
+              printf 'pushing state to destination\n'
+              timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state push /work/source.tfstate
+              printf 'verifying destination state\n'
+              timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state pull > /work/destination.tfstate
               cmp -s /work/source.tfstate /work/destination.tfstate
-              destination_count="$(env PGPASSWORD="$NEW_PGPASSWORD" tofu state list | wc -l)"
+              destination_count="$(timeout 90s env PGPASSWORD="$NEW_PGPASSWORD" tofu state list | wc -l)"
               test "$source_count" = "$destination_count"
               printf 'state transfer verified: %s resources\n' "$destination_count"
           env:
