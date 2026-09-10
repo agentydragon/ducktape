@@ -45,7 +45,7 @@ py_library(
     name = "policy",
     srcs = ["policy.py"],
     deps = [
-        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:session",
         "//finance/augur/x/allocation_glide:policy",
         "//finance/augur/x/bounded_spending:python_policy",
     ],

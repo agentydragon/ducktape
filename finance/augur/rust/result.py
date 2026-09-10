@@ -16,8 +16,8 @@ from typing import Any, cast
 
 import polars as pl
 
-from finance.augur.rust import simulator
 from finance.augur.rust.event_log import decode_event_log
+from finance.augur.sim import configured
 from finance.augur.sim.scenario import Scenario
 from finance.augur.sim.testing.case import Case
 from finance.augur.sim.testing.simulation_result import CHANNEL, SimulationResult, held_lots
@@ -30,12 +30,10 @@ RATE_SCALE_PPB = 1_000_000_000
 class RustResult(SimulationResult):
     """The canonical channels plus the ones only Rust keeps.
 
-    The journal is not part of the canonical shape by design, and the TLH ledger
-    is engine state no canonical channel carries.
+    The journal and additional property/tax projections serve remaining configured acceptance readers.
     """
 
     journal: pl.DataFrame
-    tlh_ledger: pl.DataFrame
     # The accrual fields recorded beyond the canonical `tax_breakdowns` frame: §1250 tax and
     # the shared capital-loss carryforward, neither of which the canonical frame carries.
     tax_accrual_details: pl.DataFrame
@@ -68,7 +66,7 @@ def run_rust(case: Case) -> RustResult:
 
     # Forensic rather than dense: a suite wants the balanced journal, which is the
     # double-entry invariant made checkable and is not part of the canonical shape.
-    rust = cast(dict[str, Any], json.loads(simulator.simulate_forensic_json(case.compiled_run)))
+    rust = cast(dict[str, Any], json.loads(configured.simulate_forensic_json(case.compiled_run)))
     return rust_result(rust, case.scenario)
 
 
@@ -235,26 +233,6 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         {"rollout_id": pl.Int64, "month_index": pl.Int64, "cause_id": pl.String, "imbalance_quanta": pl.Int64},
         ["rollout_id", "month_index", "cause_id"],
     )
-    tlh_ledger = _sorted(
-        [
-            {
-                "rollout_id": rollout["rollout_id"],
-                "month_index": snapshot["month"],
-                "policy_index": index,
-                "cumulative_harvest_quanta": value,
-            }
-            for rollout in rust["rollouts"]
-            for snapshot in rollout["months"]
-            for index, value in enumerate(snapshot["tlh_cumulative_harvest"])
-        ],
-        {
-            "rollout_id": pl.Int64,
-            "month_index": pl.Int64,
-            "policy_index": pl.Int64,
-            "cumulative_harvest_quanta": pl.Int64,
-        },
-        ["rollout_id", "month_index", "policy_index"],
-    )
 
     def detail_frame(channel: str, keys: dict[str, Any], money: tuple[str, ...], sort_by: list[str]) -> pl.DataFrame:
         """One of Rust's own record streams, typed. `keys` maps column name to record field."""
@@ -351,7 +329,6 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         liabilities=liability_state,
         rollout_status=status,
         journal=journal,
-        tlh_ledger=tlh_ledger,
         tax_accrual_details=tax_accrual_details,
         property_sale_details=property_sale_details,
         property_details=property_details,

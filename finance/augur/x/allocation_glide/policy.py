@@ -2,7 +2,7 @@
 
 from finance.augur.policy import sleeves
 from finance.augur.policy.cash_band import Invest, Raise, cash_band
-from finance.augur.rust.simulator import Action, Decision, DecisionActions, Observation
+from finance.augur.sim.session import Action, Decision, DecisionActions, Observation
 
 
 def propose_trades(observation: Observation, *, annual_step: int, cash_reserve: int) -> list[Action]:

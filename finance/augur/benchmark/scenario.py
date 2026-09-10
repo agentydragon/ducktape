@@ -41,7 +41,6 @@ from finance.augur.sim.scenario import (
     DriftBand,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
-    HarvestPolicy,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
@@ -68,9 +67,10 @@ from finance.augur.sim.scenario import (
     SleeveTarget,
     TargetAllocationPolicy,
     TaxProfile,
+    TlhPortfolioSpec,
 )
 from finance.augur.sim.testing.case import Case, scenario
-from finance.augur.sim.tlh_harvest import HarvestYieldParams
+from finance.augur.sim.tlh import TlhAssumptions
 
 MIN_FEATURE_HORIZON_MONTHS = 60
 
@@ -296,15 +296,6 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 quantity=60.0,
                 cost_basis=1200,
             ),
-            InitialLot(
-                lot_id="tlh-sp500",
-                agent_id="tlh_owner",
-                account_id="brokerage",
-                asset=SP500,
-                purchase_month_index=0,
-                quantity=1_000.0,
-                cost_basis=1000,
-            ),
         ],
         initial_bonds=[
             BondHolding(
@@ -429,18 +420,30 @@ def feature_rich_scenario(horizon_months: int, *, extra_obligations: Sequence[Sc
                 liquid_net_worth_floor=_indexed(Decimal(50_000), INFLATION),
             )
         ],
-        harvest_policies=[
-            HarvestPolicy(
+        tlh_portfolios=[
+            TlhPortfolioSpec(
+                portfolio_id="tlh-sp500",
+                initial_lots=[
+                    InitialLot(
+                        lot_id="tlh-sp500",
+                        agent_id="tlh_owner",
+                        account_id="brokerage",
+                        asset=SP500,
+                        purchase_month_index=0,
+                        quantity=1_000.0,
+                        cost_basis=1000,
+                    )
+                ],
                 owner_agent_id="tlh_owner",
                 account_id="brokerage",
                 asset=SP500,
-                yield_params=HarvestYieldParams(
+                assumptions=TlhAssumptions(
                     peak_annual_yield=0.12,
                     floor_annual_yield=0.004,
                     maturity_decay_exponent=1.5,
                     drawdown_sensitivity=6.0,
+                    short_term_fraction=1.0,
                 ),
-                short_term_fraction=1.0,
             )
         ],
         scheduled_property_purchases=[

@@ -14,7 +14,6 @@ from finance.augur.model.series import InflationKey, LevelSeriesKey, RentKey, Se
 from finance.augur.product.funding import Policy
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, build_scenario
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SleeveWeight, SpendIndex
-from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
@@ -27,6 +26,7 @@ from finance.augur.sim.scenario import (
     SecurityDistribution,
     TaxProfile,
 )
+from finance.augur.sim.session import ActionSession
 
 ACTOR = "test-owner"
 FIRST = SecurityKey(symbol="test-first")

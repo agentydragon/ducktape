@@ -27,7 +27,7 @@ from finance.augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
 )
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
-from finance.augur.sim.scenario import HarvestPolicy
+from finance.augur.sim.scenario import TlhPortfolioSpec
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
     CurrentHolding,
@@ -37,11 +37,6 @@ from finance.plaid.db.read_model import (
 from finance.plaid.db.schema import async_session_factory
 
 logger = logging.getLogger(__name__)
-
-# A direct-indexing sleeve's short-term harvest character comes from its recently-bought lots; a
-# lot is short-term until it has been held a full year (IRC §1222), so buckets below this many
-# months at month 0 contribute to the harvested loss's short-term share.
-_SHORT_TERM_HOLDING_PERIOD_MONTHS = 12
 
 
 @dataclass(frozen=True)
@@ -53,7 +48,7 @@ class _PortfolioContribution:
     # Bonds ride the merge alongside holdings so `_merge_contributions` re-validates them as
     # part of one `PortfolioConfig`. Plaid contributes none: it imports positions, not terms.
     bonds: tuple[BondHoldingConfig, ...]
-    harvest_policies: tuple[HarvestPolicy, ...]
+    tlh_portfolios: tuple[TlhPortfolioSpec, ...]
     latest_captured_at: datetime | None
 
 
@@ -61,10 +56,7 @@ class _PortfolioContribution:
 class ResolvedPortfolioSources:
     snapshot: FinanceSnapshot
     portfolio: PortfolioConfig
-    # Reduced-form TLH harvest processes attached to index-tracking sleeves (Piece 2b). Empty when
-    # no proxy group configures `harvest`. Fed into `Scenario.harvest_policies` so the engine's
-    # `_apply_tlh_harvest` phase realizes calibrated losses with a sale-time basis give-back.
-    harvest_policies: tuple[HarvestPolicy, ...]
+    tlh_portfolios: tuple[TlhPortfolioSpec, ...]
 
 
 def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
@@ -87,8 +79,8 @@ def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
         as_of_date=_merged_as_of_date(present),
         cash=sum((contribution.cash for contribution in present), start=Decimal(0)),
     )
-    harvest_policies = tuple(policy for contribution in present for policy in contribution.harvest_policies)
-    return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio, harvest_policies=harvest_policies)
+    tlh_portfolios = tuple(policy for contribution in present for policy in contribution.tlh_portfolios)
+    return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio, tlh_portfolios=tlh_portfolios)
 
 
 async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url: str) -> _PortfolioContribution:
@@ -118,7 +110,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
 
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
-    harvest_policies: list[HarvestPolicy] = []
+    tlh_portfolios: list[TlhPortfolioSpec] = []
     for group in plaid.sp500_proxy_groups:
         group_holdings = tuple(
             holding for account_id in group.plaid_account_ids for holding in holdings_by_account.get(account_id, ())
@@ -133,9 +125,20 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
                 label=group.account_label,
             )
         )
-        holdings.append(_sp500_proxy_holding(group, group_holdings))
-        if group.tlh_model is not None:
-            harvest_policies.append(_harvest_policy(group))
+        holding = _sp500_proxy_holding(group, group_holdings)
+        holdings.append(holding)
+        if group.tlh_assumptions is not None:
+            opening = PortfolioConfig(accounts=(accounts[-1],), holdings=(holding,))
+            tlh_portfolios.append(
+                TlhPortfolioSpec(
+                    portfolio_id=group.position_id,
+                    owner_agent_id=group.owner_agent_id,
+                    account_id=group.portfolio_account_id,
+                    asset=SecurityKey(symbol=SP500_SYMBOL),
+                    initial_lots=list(opening.to_initial_lots()),
+                    assumptions=group.tlh_assumptions,
+                )
+            )
 
     captured = [balance.captured_at for balance in cash_balances] + [
         holding.captured_at for holding in current_holdings
@@ -148,52 +151,9 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
         # Plaid imports positions, not bond terms — a coupon rate and a maturity are not in the
         # holdings feed, so a bond ladder is deployment-authored config only.
         bonds=(),
-        harvest_policies=tuple(harvest_policies),
+        tlh_portfolios=tuple(tlh_portfolios),
         latest_captured_at=max(captured) if captured else None,
     )
-
-
-def _harvest_policy(group: PlaidSp500ProxyGroupConfig) -> HarvestPolicy:
-    """Build the scenario-level TLH harvest policy for one proxy group's sleeve.
-
-    The policy is keyed to the proxy's (owner_agent, portfolio_account, SP500) lots — the same
-    pool `_sp500_proxy_holding` expanded. The short-term share is the config override if set,
-    else the buckets' short-term (<12mo) market-value share, else 1.0 (no buckets → young account,
-    all short-term, matching the TY2025 1099-B).
-    """
-
-    assert group.tlh_model is not None  # caller guards
-    tlh_model = group.tlh_model
-    if tlh_model.short_term_fraction is not None:
-        short_term_fraction = tlh_model.short_term_fraction
-    else:
-        short_term_fraction = _bucket_short_term_fraction(group)
-    return HarvestPolicy(
-        owner_agent_id=group.owner_agent_id,
-        account_id=group.portfolio_account_id,
-        asset=SecurityKey(symbol=SP500_SYMBOL),
-        yield_params=tlh_model.yield_params,
-        short_term_fraction=short_term_fraction,
-    )
-
-
-def _bucket_short_term_fraction(group: PlaidSp500ProxyGroupConfig) -> float:
-    """Short-term (<12mo) market-value share across the proxy's holding-period buckets.
-
-    With no buckets the sleeve is a single aggregate lot whose age is unknown; treat a fresh
-    direct-indexing account as fully short-term (1.0), which both matches the TY2025 1099-B and is
-    the conservative-for-deferral default (short-term losses are the more valuable to harvest)."""
-
-    buckets = group.holding_period_buckets
-    if not buckets:
-        return 1.0
-    total = sum(bucket.market_value_fraction for bucket in buckets)
-    short_term = sum(
-        bucket.market_value_fraction
-        for bucket in buckets
-        if bucket.holding_period_months_at_start < _SHORT_TERM_HOLDING_PERIOD_MONTHS
-    )
-    return short_term / total if total > 0.0 else 1.0
 
 
 def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBalance, ...]) -> Decimal:
@@ -309,7 +269,7 @@ def _fixed_contribution(fixed: FixedPortfolioSourceConfig) -> _PortfolioContribu
         accounts=fixed.portfolio.accounts,
         holdings=fixed.portfolio.holdings,
         bonds=fixed.portfolio.bonds,
-        harvest_policies=(),
+        tlh_portfolios=(),
         latest_captured_at=None,
     )
 

@@ -1,5 +1,7 @@
 """Private native/file codec for the single typed prepared-run representation."""
 
+import json
+
 from pydantic import TypeAdapter
 
 from finance.augur.sim.prepared import CompiledRun
@@ -15,3 +17,18 @@ def _encode(run: CompiledRun) -> str:
 
 def _decode(document: str) -> CompiledRun:
     return _RUN.validate_json(document, strict=True, extra="forbid")
+
+
+def _encode_native(run: CompiledRun) -> str:
+    """Native accounting receives component identity, never its owned model state."""
+    document = _RUN.dump_python(run, mode="json", by_alias=True, warnings="error")
+    document["scenario"]["tlh_portfolios"] = [
+        {
+            "portfolio_id": portfolio.portfolio_id,
+            "owner_agent_id": portfolio.owner_agent_id,
+            "account_id": portfolio.account_id,
+            "asset_id": portfolio.asset_id,
+        }
+        for portfolio in run.scenario.tlh_portfolios
+    ]
+    return json.dumps(document)

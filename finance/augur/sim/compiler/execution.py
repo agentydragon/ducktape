@@ -8,7 +8,7 @@ Unsupported inputs are rejected rather than silently omitted.
 from __future__ import annotations
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 
 import numpy as np
@@ -66,10 +66,10 @@ from finance.augur.sim.prepared import (
     PreparedRecurringTransfer,
     PreparedScenario,
     PreparedSeries,
+    PreparedTlhPortfolio,
     PreparedTransfer,
     _AllocationPolicy,
     _CapitalImprovement,
-    _HarvestPolicy,
     _MortgageFinancing,
     _MortgageInterestDeduction,
     _PrimaryResidence,
@@ -88,6 +88,7 @@ from finance.augur.sim.scenario import (
     CapitalImprovementEvent,
     DriftBand,
     FixedAmount,
+    InitialLot,
     PropertySaleEvent,
     Scenario,
     SeriesIndexedAmount,
@@ -245,9 +246,12 @@ def _jurisdiction_identities(
 
 def _holding_pools(scenario: Scenario) -> tuple[PreparedHoldingPool, ...]:
     pools: dict[tuple[str, str, str], PreparedHoldingPool] = {}
+    managed = {(p.owner_agent_id, p.account_id, _asset_id(p.asset)) for p in scenario.tlh_portfolios}
 
     def add(agent_id: str, account_id: str, asset: AssetKey) -> None:
         asset_id = _asset_id(asset)
+        if (agent_id, account_id, asset_id) in managed:
+            return
         pools[agent_id, account_id, asset_id] = PreparedHoldingPool(
             agent_id=agent_id, account_id=account_id, asset_id=asset_id, quantity_scale=quantity_scale_for_asset(asset)
         )
@@ -263,9 +267,9 @@ def _holding_pools(scenario: Scenario) -> tuple[PreparedHoldingPool, ...]:
     return tuple(pools.values())
 
 
-def _initial_lots(scenario: Scenario, *, quantum: Decimal) -> tuple[PreparedLot, ...]:
+def _initial_lots(initial_lots: Sequence[InitialLot], *, quantum: Decimal) -> tuple[PreparedLot, ...]:
     lots = []
-    for lot in scenario.initial_lots:
+    for lot in initial_lots:
         scale = quantity_scale_for_asset(lot.asset)
         units = int(quantity_to_quanta(lot.quantity, scale=scale))
         lots.append(
@@ -569,7 +573,7 @@ def prepare_run(
                 )
                 for obligation in scenario.recurring_obligations
             ),
-            initial_lots=_initial_lots(scenario, quantum=quantum),
+            initial_lots=_initial_lots(scenario.initial_lots, quantum=quantum),
             initial_bonds=_initial_bonds(scenario, quantum=quantum),
             _scheduled_sales=tuple(
                 _ScheduledSale(
@@ -614,18 +618,17 @@ def prepare_run(
                 )
                 for policy in scenario.private_equity_tender_policies
             ),
-            _harvest_policies=tuple(
-                _HarvestPolicy(
-                    owner_agent_id=policy.owner_agent_id,
-                    account_id=policy.account_id,
-                    asset_id=_asset_id(policy.asset),
-                    peak_annual_yield_ppb=policy.yield_params.peak_annual_yield_ppb,
-                    floor_annual_yield_ppb=policy.yield_params.floor_annual_yield_ppb,
-                    maturity_decay_exponent_ppb=rate_to_ppb(policy.yield_params.maturity_decay_exponent),
-                    drawdown_sensitivity_ppb=policy.yield_params.drawdown_sensitivity_ppb,
-                    short_term_fraction_ppb=rate_to_ppb(policy.short_term_fraction),
+            tlh_portfolios=tuple(
+                PreparedTlhPortfolio(
+                    portfolio_id=portfolio.portfolio_id,
+                    owner_agent_id=portfolio.owner_agent_id,
+                    account_id=portfolio.account_id,
+                    asset_id=_asset_id(portfolio.asset),
+                    quantity_scale=quantity_scale_for_asset(portfolio.asset),
+                    initial_cohorts=_initial_lots(portfolio.initial_lots, quantum=quantum),
+                    assumptions=portfolio.assumptions,
                 )
-                for policy in scenario.harvest_policies
+                for portfolio in scenario.tlh_portfolios
             ),
             _scheduled_property_purchases=_property_purchases(scenario, quantum=quantum),
             _initial_primary_residences=tuple(

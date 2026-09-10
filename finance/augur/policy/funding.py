@@ -1,7 +1,7 @@
 """Optional sales-only funding of claims from one cash account; surplus cash stays idle."""
 
 from finance.augur.policy.sleeves import withdraw
-from finance.augur.rust.simulator import Action, Decision, DecisionActions
+from finance.augur.sim.session import Action, Decision, DecisionActions
 
 
 def fund_claims(

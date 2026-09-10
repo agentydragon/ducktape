@@ -28,12 +28,12 @@ from pydantic import (
 )
 
 from finance.augur.model.asset_key import AssetKey, asset_price_key_or_none
-from finance.augur.model.series import IndexSeriesKey
+from finance.augur.model.series import IndexSeriesKey, SecurityKey
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.policy.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
-from finance.augur.sim.tlh_harvest import HarvestYieldParams
+from finance.augur.sim.tlh import TlhAssumptions
 
 type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
 type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
@@ -999,42 +999,26 @@ class PrivateEquityTenderPolicy(BaseModel):
     liquid_net_worth_floor: AmountSchedule
 
 
-class HarvestPolicy(BaseModel):
-    """Attach a reduced-form tax-loss-harvesting (TLH) process to one index-tracking holding.
+class TlhPortfolioSpec(BaseModel):
+    """A separately owned reduced-form portfolio, not an ordinary holding plus a policy."""
 
-    LIMITED / DELIBERATELY-APPROXIMATE ("UNTRUTHFUL") MODEL — read before relying on output.
-    This does NOT simulate the real direct-indexing sleeve's constituent stocks. The holding
-    stays a single index-tracking position; the "harvested loss" each month is a *calibrated
-    function* of the index path (see `augur/sim/tlh_harvest.py`), not a real below-basis amount
-    realized by selling specific underwater names. All `HarvestYieldParams` are `[HEURISTIC]`,
-    anchored only to the account's first-year (TY2025) 1099-B. The configured executor
-    applies this approximation in `rust/engine/tlh.rs::execute_tlh_harvest`.
-
-    The policy is keyed to the lots of one (agent, account, asset) pool — typically the Plaid
-    SP500 proxy sleeve. Each month the engine harvests a calibrated capital LOSS into that
-    owner's `capital_gain_ytd` (Piece-1 netting then nets it like any other realized loss) and
-    accumulates the harvested total into a single scalar `tlh_cumulative_harvest` per
-    (policy, rollout). That scalar lowers the holding's adjusted basis, which (a) raises the
-    embedded-gain fraction so the yield decays toward its floor ("ossification"), and (b) is
-    GIVEN BACK at sale time: any realized gain on this pool's lots uses the *reduced* basis, so
-    the deferred gain is honestly repaid. The net benefit is therefore bounded deferral +
-    rate-arbitrage + the $3k/yr ordinary offset — never free money.
-    """
-
+    portfolio_id: str = Field(min_length=1)
     owner_agent_id: str
-    account_id: str = "checking"
-    asset: AssetKey = Field(description="Index-tracking asset whose lots this policy harvests (e.g. a SecurityKey).")
-    yield_params: HarvestYieldParams
-    short_term_fraction: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Share of each month's harvested loss booked as short-term (the rest is long-term). "
-            "Seeded from the holding-period buckets — near 1.0 for a young account, matching the "
-            "TY2025 1099-B's essentially-all-short-term harvest. [HEURISTIC]."
-        ),
-    )
+    account_id: str
+    asset: AssetKey
+    initial_lots: list[InitialLot]
+    assumptions: TlhAssumptions
+
+    @model_validator(mode="after")
+    def _validate_opening_positions(self) -> TlhPortfolioSpec:
+        if not isinstance(self.asset, SecurityKey):
+            raise ValueError("TLH portfolios require a public security price, not private equity")
+        for lot in self.initial_lots:
+            if (lot.agent_id, lot.account_id, lot.asset) != (self.owner_agent_id, self.account_id, self.asset):
+                raise ValueError("TLH opening lots must match the portfolio owner, account and asset")
+        if len({lot.lot_id for lot in self.initial_lots}) != len(self.initial_lots):
+            raise ValueError("TLH opening lot IDs must be unique within the portfolio")
+        return self
 
 
 class MortgageInterestDeductionPolicy(BaseModel):
@@ -1103,9 +1087,8 @@ class Scenario(BaseModel):
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = Field(default_factory=list)
     federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] = Field(default_factory=list)
     private_equity_tender_policies: list[PrivateEquityTenderPolicy] = Field(default_factory=list)
-    # Reduced-form TLH harvest processes attached to index-tracking holdings (Piece 2). Empty by
-    # default, so scenarios without harvesting reproduce prior behavior exactly. See HarvestPolicy.
-    harvest_policies: list[HarvestPolicy] = Field(default_factory=list)
+    # Component-owned opening positions never also appear in ordinary initial_lots.
+    tlh_portfolios: list[TlhPortfolioSpec] = Field(default_factory=list)
     external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
     # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
     tax_profiles: list[TaxProfile]
@@ -1133,6 +1116,24 @@ class Scenario(BaseModel):
         if duplicates:
             duplicate_list = ", ".join(repr(agent_id) for agent_id in sorted(duplicates))
             raise ValueError(f"duplicate agent_id(s): {duplicate_list}")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_tlh_ownership(self) -> Scenario:
+        ids = [portfolio.portfolio_id for portfolio in self.tlh_portfolios]
+        if len(set(ids)) != len(ids):
+            raise ValueError("TLH portfolio IDs must be unique")
+        ordinary = {(lot.agent_id, lot.account_id, lot.asset.wire_id) for lot in self.initial_lots}
+        ordinary.update((pool.agent_id, pool.account_id, pool.asset.wire_id) for pool in self.holding_pools)
+        owners = {agent.agent_id for agent in self.agents}
+        managed: set[tuple[str, str, str]] = set()
+        for portfolio in self.tlh_portfolios:
+            key = (portfolio.owner_agent_id, portfolio.account_id, portfolio.asset.wire_id)
+            if portfolio.owner_agent_id not in owners:
+                raise ValueError(f"TLH portfolio {portfolio.portfolio_id!r} has an unknown owner")
+            if key in ordinary or key in managed:
+                raise ValueError(f"TLH pool {key!r} must have exactly one component owner and no ordinary holdings")
+            managed.add(key)
         return self
 
     @model_validator(mode="after")

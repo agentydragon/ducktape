@@ -141,7 +141,6 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.policy.funding import fund_claims
-from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
 from finance.augur.sim.prepared import CompiledRun
@@ -157,6 +156,7 @@ from finance.augur.sim.scenario import (
     SecurityDistribution,
     SeriesIndexedAmount,
 )
+from finance.augur.sim.session import ActionSession
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.study.trinity.synthetic import synthetic_history
 

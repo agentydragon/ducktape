@@ -245,7 +245,7 @@ py_library(
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:scenario",
-        "//finance/augur/sim:tlh_harvest",
+        "//finance/augur/sim:tlh",
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",

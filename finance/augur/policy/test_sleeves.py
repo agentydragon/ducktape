@@ -9,10 +9,10 @@ import pytest_bazel
 
 from finance.augur.model.series import SecurityKey
 from finance.augur.policy import sleeves
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, RejectedAction, Sell
 from finance.augur.sim.scenario import InitialLot
+from finance.augur.sim.session import Action, ActionSession, DecisionActions
 from finance.augur.sim.testing.case import Case, flat, scenario
 from finance.augur.sim.testing.fixtures import checking
 

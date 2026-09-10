@@ -11,9 +11,9 @@ from finance.augur.model.series import SecurityKey
 from finance.augur.policy.cash_band import Raise, cash_band
 from finance.augur.policy.sleeves import withdraw_by_symbol
 from finance.augur.product.wire import FundingPolicy
-from finance.augur.rust.simulator import Action, Decision, DecisionActions
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import InitialLot
+from finance.augur.sim.session import Action, Decision, DecisionActions
 
 
 class Policy:

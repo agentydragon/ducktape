@@ -11,10 +11,10 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:books",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:bonds",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
@@ -93,7 +93,7 @@ rust_test(
 )
 
 # The CPython extension module. `crate_name` is what names the emitted
-# `libsimulator.so`; `simulator` must also be the `#[pymodule]` function name and the
+# `lib_simulator.so`; `_simulator` must also be the `#[pymodule]` function name and the
 # final file stem, or the interpreter refuses the module on import.
 rust_shared_library(
     name = "simulator_pyo3",
@@ -101,7 +101,7 @@ rust_shared_library(
         "action_bindings.rs",
         "python.rs",
     ],
-    crate_name = "simulator",
+    crate_name = "_simulator",
     crate_root = "python.rs",
     edition = "2024",
     deps = [
@@ -114,16 +114,16 @@ rust_shared_library(
 copy_file(
     name = "simulator_so",
     src = ":simulator_pyo3",
-    out = "simulator.so",
+    out = "_simulator.so",
     allow_symlink = True,
 )
 
-# `simulator.pyi` is the extension's only type surface — the `.so` carries no Python
+# `_simulator.pyi` is the extension's only type surface — the `.so` carries no Python
 # source for mypy to read.
 py_library(
     name = "simulator_ext",
     data = [
-        "simulator.pyi",
+        "_simulator.pyi",
         ":simulator_so",
     ],
     imports = ["../../.."],
@@ -139,8 +139,8 @@ py_library(
     srcs = ["backend.py"],
     deps = [
         ":event_log",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
+        "//finance/augur/sim:configured",
         "//finance/augur/sim:events",
         "//finance/augur/sim:metric_composition",
         "//finance/augur/sim:prepared",
@@ -191,7 +191,7 @@ py_library(
     srcs = ["result.py"],
     deps = [
         ":event_log",
-        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:configured",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:simulation_result",
@@ -217,11 +217,12 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/benchmark:scenario",
         "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
+        "//finance/augur/sim:configured",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/x/bounded_spending:python_policy",
         "//finance/augur/x/monthly_actions:run",
         "@pypi//numpy",
@@ -237,10 +238,10 @@ py_test(
     deps = [
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
@@ -254,10 +255,10 @@ py_test(
     deps = [
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:books",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "@pypi//numpy",
@@ -273,9 +274,9 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:books",
         "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:bonds",
         "//finance/augur/sim/testing:case",
         "@pypi//pytest",
@@ -290,8 +291,8 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "//finance/augur/sim/testing:security_distributions",
@@ -306,10 +307,10 @@ py_test(
     deps = [
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:books",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -323,11 +324,11 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:books",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -345,8 +346,8 @@ py_test(
         "//finance/augur/api:portfolio",
         "//finance/augur/model:series",
         "//finance/augur/product:portfolio",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",

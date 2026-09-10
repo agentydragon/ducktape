@@ -169,7 +169,7 @@ py_library(
     deps = [
         ":enums",
         ":fixed_point",
-        ":tlh_harvest",
+        ":tlh",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
@@ -328,9 +328,9 @@ py_test(
     srcs = ["test_results.py"],
     deps = [
         ":results",
+        ":session",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/x/monthly_actions:policy",
         "//finance/augur/x/monthly_actions:run",
         "@pypi//pydantic",
@@ -346,6 +346,7 @@ py_library(
         ":books",
         ":jurisdictions",
         ":scenario",
+        ":tlh",
         "//finance/augur/sim/compiler:income_sources",
         "//finance/augur/sim/compiler:tax",
         "@pypi//pydantic",
@@ -369,6 +370,47 @@ py_test(
         ":tlh",
         "//:conftest",
         "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "configured",
+    srcs = ["configured.py"],
+    deps = [
+        ":prepared",
+        ":results",
+        ":session",
+        "//finance/augur/rust:simulator_ext",
+    ],
+)
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    deps = [
+        ":prepared",
+        ":results",
+        ":tlh",
+        "//finance/augur/rust:simulator_ext",
+    ],
+)
+
+py_test(
+    name = "tlh_session_test",
+    srcs = ["tlh_session_test.py"],
+    deps = [
+        ":books",
+        ":results",
+        ":scenario",
+        ":session",
+        ":tlh",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

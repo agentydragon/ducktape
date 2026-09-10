@@ -8,8 +8,8 @@ Independent calls on the same observation do not reserve each other's lots or ca
 
 from fractions import Fraction
 
-from finance.augur.rust.simulator import Action, HoldingPool, Observation, PublicPosition
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value
+from finance.augur.sim.session import Action, HoldingPool, Observation, PublicPosition
 
 
 def _count(value: int) -> int:

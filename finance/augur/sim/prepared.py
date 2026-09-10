@@ -15,6 +15,7 @@ from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.jurisdictions import JurisdictionLevel
 from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferDeductionCategory, TransferIncomeCategory
+from finance.augur.sim.tlh import TlhAssumptions
 
 
 def _income_source(value: object) -> TransferIncomeCategory:
@@ -220,15 +221,14 @@ class _TenderPolicy:
 
 
 @dataclass(frozen=True, kw_only=True)
-class _HarvestPolicy:
+class PreparedTlhPortfolio:
+    portfolio_id: str
     owner_agent_id: str
     account_id: str
     asset_id: str
-    peak_annual_yield_ppb: int
-    floor_annual_yield_ppb: int
-    maturity_decay_exponent_ppb: int
-    drawdown_sensitivity_ppb: int
-    short_term_fraction_ppb: int
+    quantity_scale: int
+    initial_cohorts: tuple[PreparedLot, ...]
+    assumptions: TlhAssumptions
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -350,7 +350,7 @@ class PreparedScenario:
     _scheduled_sales: Annotated[tuple[_ScheduledSale, ...], Field(alias="scheduled_sales")]
     _target_allocation_policies: Annotated[tuple[_AllocationPolicy, ...], Field(alias="target_allocation_policies")]
     _private_equity_tender_policies: Annotated[tuple[_TenderPolicy, ...], Field(alias="private_equity_tender_policies")]
-    _harvest_policies: Annotated[tuple[_HarvestPolicy, ...], Field(alias="harvest_policies")]
+    tlh_portfolios: tuple[PreparedTlhPortfolio, ...]
     _scheduled_property_purchases: Annotated[tuple[_PropertyPurchase, ...], Field(alias="scheduled_property_purchases")]
     _initial_primary_residences: Annotated[tuple[_PrimaryResidence, ...], Field(alias="initial_primary_residences")]
     _primary_residence_events: Annotated[tuple[_PrimaryResidenceEvent, ...], Field(alias="primary_residence_events")]
@@ -390,4 +390,4 @@ class CompiledRun:
     rollout_count: int
     scenario: PreparedScenario
     series: tuple[PreparedSeries, ...]
-    _schema_version: Annotated[Literal[14], Field(alias="schema_version")] = 14
+    _schema_version: Annotated[Literal[15], Field(alias="schema_version")] = 15

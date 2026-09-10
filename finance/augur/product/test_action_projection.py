@@ -17,12 +17,12 @@ from finance.augur.model.series import InflationKey
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.product.projection import ProductRolloutProjection, project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, MonthlyExpenseEvent, RolloutFailureEvent, TaxAccrualEvent
-from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import OutcomeBasis, projection_summaries
 from finance.augur.sim.results import Finished, PaymentRejection, PaymentRequestError, Rejected, Rollout
 from finance.augur.sim.scenario import BondHolding, InitialAccountBalance
+from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
 from finance.augur.sim.testing.bonds import CPI_DOUBLING, bond_case
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking

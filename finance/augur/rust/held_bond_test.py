@@ -10,7 +10,10 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
-from finance.augur.rust.simulator import (
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
+from finance.augur.sim.scenario import BondHolding, Currency
+from finance.augur.sim.session import (
     Action,
     ActionSession,
     Decision,
@@ -19,9 +22,6 @@ from finance.augur.rust.simulator import (
     IndexedCoupon,
     simulate_dense_json,
 )
-from finance.augur.sim.books import AccountRef
-from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
-from finance.augur.sim.scenario import BondHolding, Currency
 from finance.augur.sim.testing.bonds import CORPORATE, MUNI, TREASURY, bond_case
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking

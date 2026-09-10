@@ -5,8 +5,8 @@ within the explicit budget; execution owns prices, basis and taxes.
 """
 
 from finance.augur.policy.cash_band import Invest, Raise, cash_band
-from finance.augur.rust.simulator import Action, Decision, DecisionActions
 from finance.augur.sim.fixed_point import quantity_for_value
+from finance.augur.sim.session import Action, Decision, DecisionActions
 
 
 def decide(batch: list[Decision]) -> list[DecisionActions]:

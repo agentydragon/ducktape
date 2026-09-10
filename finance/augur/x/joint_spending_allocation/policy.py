@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from finance.augur.rust.simulator import Action, Decision, DecisionActions
+from finance.augur.sim.session import Action, Decision, DecisionActions
 from finance.augur.x.allocation_glide.policy import propose_trades
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Observations, Parameters
 

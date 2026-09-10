@@ -14,9 +14,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.policy.sleeves import withdraw
-from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import ConsumptionTarget, Finished
+from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
 
 
 @dataclass(frozen=True)

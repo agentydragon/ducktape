@@ -14,11 +14,12 @@ from pydantic import ValidationError
 from finance.augur.benchmark.scenario import feature_rich_case
 from finance.augur.model.series import InflationKey
 from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
-from finance.augur.rust.simulator import ActionSession, simulate_forensic_json
 from finance.augur.sim.backend import compile_run
+from finance.augur.sim.configured import simulate_forensic_json
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, Scenario
+from finance.augur.sim.session import ActionSession
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
 from finance.augur.x.monthly_actions.run import prepare
 

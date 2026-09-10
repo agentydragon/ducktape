@@ -147,7 +147,35 @@ class Consume(Record):
     amount: int
 
 
-type Action = Annotated[Sell | Buy | Transfer | PayClaim | Consume, Field(discriminator="kind")]
+class Contribute(Record):
+    kind: Literal["Contribute"] = "Contribute"
+    cause_id: str
+    agent_id: str
+    portfolio_id: str
+    cash_account_id: str
+    amount: int
+
+
+class Withdraw(Record):
+    kind: Literal["Withdraw"] = "Withdraw"
+    cause_id: str
+    agent_id: str
+    portfolio_id: str
+    cash_account_id: str
+    amount: int
+
+
+class Liquidate(Record):
+    kind: Literal["Liquidate"] = "Liquidate"
+    cause_id: str
+    agent_id: str
+    portfolio_id: str
+    cash_account_id: str
+
+
+type Action = Annotated[
+    Sell | Buy | Transfer | PayClaim | Consume | Contribute | Withdraw | Liquidate, Field(discriminator="kind")
+]
 
 
 class InvalidRequest(Record):
@@ -177,6 +205,12 @@ class Receipt(Record):
 
 
 _RECEIPTS = TypeAdapter(list[Receipt])
+_ACTION = TypeAdapter(Action)
+
+
+def action_from_json(document: str) -> Action:
+    """Decode a private native request for dispatch by the owning Python session."""
+    return _ACTION.validate_json(document)
 
 
 def receipts_from_json(document: str) -> list[Receipt]:

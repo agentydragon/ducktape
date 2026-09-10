@@ -14,8 +14,8 @@ from finance.augur.api.portfolio import (
 )
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import product_portfolio_response
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
 from finance.augur.sim.results import Finished
+from finance.augur.sim.session import Action, ActionSession, DecisionActions
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
 

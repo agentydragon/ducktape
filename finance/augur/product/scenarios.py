@@ -39,7 +39,6 @@ from finance.augur.sim.scenario import (
     DistributionTaxSlice,
     FilingStatus,
     FixedAmount,
-    HarvestPolicy,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing as SimMortgageFinancing,
@@ -64,6 +63,7 @@ from finance.augur.sim.scenario import (
     SleeveTarget,
     TargetAllocationPolicy,
     TaxProfile,
+    TlhPortfolioSpec,
     TransferDeductionCategory,
 )
 
@@ -194,7 +194,7 @@ def build_scenario(
     properties_by_id: dict[str, Property],
     initial_bonds: tuple[BondHolding, ...] = (),
     security_distributions: tuple[SecurityDistribution, ...] = (),
-    harvest_policies: tuple[HarvestPolicy, ...] = (),
+    tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
 ) -> Scenario:
     horizon_months = int(scenario_key.horizon_months)
     end_month = horizon_months - 1
@@ -340,7 +340,15 @@ def build_scenario(
     return Scenario(
         currency=Currency(code=scenario_key.currency_code, quantum=scenario_key.currency_quantum),
         agents=agents,
-        initial_lots=list(initial_lots),
+        initial_lots=[
+            lot
+            for lot in initial_lots
+            if not any(
+                (lot.agent_id, lot.account_id, lot.asset)
+                == (portfolio.owner_agent_id, portfolio.account_id, portfolio.asset)
+                for portfolio in tlh_portfolios
+            )
+        ],
         initial_bonds=list(initial_bonds),
         security_distributions=list(security_distributions),
         initial_cash=initial_balances,
@@ -369,7 +377,7 @@ def build_scenario(
         target_allocation_policies=_target_allocation_policies_from_funding_policy(
             scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
         ),
-        harvest_policies=list(harvest_policies),
+        tlh_portfolios=list(tlh_portfolios),
         horizon_months=horizon_months,
     )
 

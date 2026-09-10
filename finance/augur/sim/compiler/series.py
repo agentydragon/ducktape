@@ -52,6 +52,8 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     # Holdings are marked every month off their asset-price series.
     for lot in scenario.initial_lots:
         add(asset_price_key_or_none(lot.asset))
+    for portfolio in scenario.tlh_portfolios:
+        add(asset_price_key_or_none(portfolio.asset))
     # A TIPS' principal rides CPI, so an inflation-indexed bond DEMANDS inflation even when
     # nothing else in the scenario does. Without this, the engine rejects a missing inflation
     # path for any scenario that does not happen to want CPI for another

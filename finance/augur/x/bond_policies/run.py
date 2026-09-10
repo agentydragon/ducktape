@@ -18,7 +18,6 @@ from pydantic import TypeAdapter
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import fund_claims
 from finance.augur.rust.invocation import write_prepared_input
-from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.books import Record
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -34,6 +33,7 @@ from finance.augur.sim.scenario import (
     ScheduledObligation,
     SecurityDistribution,
 )
+from finance.augur.sim.session import ActionSession
 from finance.augur.x.bond_policies.construction import (
     DatedConstruction,
     ProxyConstruction,

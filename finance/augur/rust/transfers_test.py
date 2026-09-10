@@ -3,10 +3,10 @@
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.simulator import ActionSession, DecisionActions
 from finance.augur.sim.books import Book
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, RecurringTransfer, Scenario, ScheduledTransfer
+from finance.augur.sim.session import ActionSession, DecisionActions
 from finance.augur.sim.testing.case import sampled
 
 

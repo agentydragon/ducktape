@@ -6,8 +6,8 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.results import Finished, Paid, PaymentReceipt, PaymentRejected, RejectedAction
+from finance.augur.sim.session import ActionSession
 from finance.augur.x.monthly_actions.policy import decide
 from finance.augur.x.monthly_actions.run import prepare
 

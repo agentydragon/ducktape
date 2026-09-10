@@ -10,10 +10,10 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
 from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
 from finance.augur.sim.scenario import InitialLot, OrdinaryIncome, ScheduledTransfer
+from finance.augur.sim.session import Action, ActionSession, Decision, DecisionActions
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import VTI, checking, taxed
 

@@ -11,9 +11,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
 from finance.augur.sim.books import IncomeState
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
+from finance.augur.sim.session import Action, ActionSession, DecisionActions
 from finance.augur.sim.testing.bonds import (
     CORPORATE,
     CPI_DEFLATING,

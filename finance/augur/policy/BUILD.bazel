@@ -11,8 +11,8 @@ py_library(
     name = "sleeves",
     srcs = ["sleeves.py"],
     deps = [
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:session",
     ],
 )
 
@@ -37,10 +37,10 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
@@ -53,6 +53,6 @@ py_library(
     srcs = ["funding.py"],
     deps = [
         ":sleeves",
-        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:session",
     ],
 )

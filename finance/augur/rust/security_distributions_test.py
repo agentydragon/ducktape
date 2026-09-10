@@ -7,8 +7,8 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import SecurityDistributionKey
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
 from finance.augur.sim.results import Finished, Paid, Rollout
+from finance.augur.sim.session import Action, ActionSession, DecisionActions
 from finance.augur.sim.testing.case import Case
 from finance.augur.sim.testing.fixtures import cash_spend, checking
 from finance.augur.sim.testing.security_distributions import (

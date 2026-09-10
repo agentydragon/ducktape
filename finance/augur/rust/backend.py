@@ -17,8 +17,8 @@ from typing import Any, cast, overload
 import numpy as np
 from jaxtyping import Int64
 
-from finance.augur.rust import simulator
 from finance.augur.rust.event_log import decode_event_log
+from finance.augur.sim import configured
 from finance.augur.sim.backend import Engine
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
@@ -34,7 +34,7 @@ from finance.augur.sim.product_metrics import (
 )
 
 
-def _base_series(metrics: simulator.ProductMetrics) -> tuple[Int64[np.ndarray, " snapshot rollout"], ...]:
+def _base_series(metrics: configured.ProductMetrics) -> tuple[Int64[np.ndarray, " snapshot rollout"], ...]:
     """Reshape each flat `[snapshot][rollout]` block the extension returns."""
 
     shape = (metrics.snapshot_count, metrics.rollout_count)
@@ -47,7 +47,7 @@ def _base_series(metrics: simulator.ProductMetrics) -> tuple[Int64[np.ndarray, "
 def run_rust_product_metric_arrays(run: CompiledRun, *, primary_agent_id: str) -> ProductMetricArrays:
     """Every base metric series for one population, from one Rust execution."""
 
-    metrics = simulator.simulate_product_metrics(run, primary_agent_id)
+    metrics = configured.simulate_product_metrics(run, primary_agent_id)
     return ProductMetricArrays(
         # Configured full runs emit every prepared row in its original order.
         rollout_ids=tuple(range(metrics.rollout_count)),
@@ -127,5 +127,5 @@ class RustEngine(Engine):
     def events(self, run: CompiledRun) -> EventLog:
         # Dense, not forensic: both carry the canonical frames, and the balanced journal the
         # forensic run adds is Rust's own double-entry invariant with no reader here.
-        dense = cast(dict[str, Any], json.loads(simulator.simulate_dense_json(run)))
+        dense = cast(dict[str, Any], json.loads(configured.simulate_dense_json(run)))
         return decode_event_log(dense)

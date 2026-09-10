@@ -15,7 +15,6 @@ import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
 from finance.augur.rust.invocation import write_prepared_input
-from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.prepared import CompiledRun
@@ -28,6 +27,7 @@ from finance.augur.sim.scenario import (
     ScheduledObligation,
     SeriesIndexedAmount,
 )
+from finance.augur.sim.session import ActionSession
 from finance.augur.x.allocation_glide.policy import decide
 
 GROWTH = SecurityKey(symbol="test-growth")

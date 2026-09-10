@@ -7,7 +7,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import LocationId, RentKey
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
 from finance.augur.sim.books import Book
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.results import Finished, Paid, Rollout
@@ -19,6 +18,7 @@ from finance.augur.sim.scenario import (
     Scenario,
     SeriesIndexedAmount,
 )
+from finance.augur.sim.session import Action, ActionSession, DecisionActions
 from finance.augur.sim.testing.case import Case
 
 RENT = RentKey(location_id=LocationId("san_francisco_ca"))

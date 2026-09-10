@@ -6,10 +6,10 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import SecurityKey
-from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.scenario import HoldingPool
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, flat, scenario
 from finance.augur.sim.testing.fixtures import cash_spend, checking
 from finance.augur.x.monthly_actions.policy import decide

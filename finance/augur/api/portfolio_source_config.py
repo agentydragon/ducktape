@@ -5,14 +5,13 @@ from __future__ import annotations
 import math
 from decimal import Decimal
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import Field, NonNegativeInt, model_validator
 
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig, PositiveCurrencyAmount
 from finance.augur.api.schemas import ApiModel
-from finance.augur.sim.tlh_harvest import HarvestYieldParams
+from finance.augur.sim.tlh import TlhAssumptions
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -58,39 +57,6 @@ class PlaidProxyHoldingPeriodBucket(ApiModel):
     )
 
 
-class ReducedFormTlhModel(ApiModel):
-    """`tlh_model` variant `reduced_form_tlh` — a LIMITED, DELIBERATELY-APPROXIMATE ("untruthful")
-    tax-loss-harvesting model. The `type` tag is the honesty signal: it does NOT simulate the
-    direct-indexing sleeve's constituent stocks. The harvestable loss is a calibrated function of
-    the SP500 path (`augur.sim.scenario.HarvestPolicy`, engine phase `_apply_tlh_harvest`), not a
-    real below-basis amount; all `HarvestYieldParams` are `[HEURISTIC]` (first-year-1099-B anchor,
-    external decay prior). The loss is honest deferral — a basis give-back at sale repays it.
-
-    A less-fake variant (`type: representative_sleeve_tlh`, the plan's option #3 — a handful of
-    index-factor + idiosyncratic-noise sleeves with REAL FIFO harvesting) would join this as a
-    sibling in `TlhModelConfig`; the discriminator then tells you which fidelity is deployed.
-    """
-
-    type: Literal["reduced_form_tlh"] = "reduced_form_tlh"
-    yield_params: HarvestYieldParams = Field(description="Calibrated harvest-yield curve. All params [HEURISTIC].")
-    short_term_fraction: float | None = Field(
-        default=None,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "Optional override for the share of each month's harvested loss booked as short-term. "
-            "When omitted, it is seeded from the proxy's holding_period_buckets short-term (<12mo) "
-            "market-value share, defaulting to 1.0 when no buckets are configured (young account, "
-            "all short-term — matching the TY2025 1099-B)."
-        ),
-    )
-
-
-# Discriminated by `type`. Single variant today; when the plan's option #3 lands it becomes
-# `Annotated[ReducedFormTlhModel | RepresentativeSleeveTlhModel, Field(discriminator="type")]`.
-TlhModelConfig = ReducedFormTlhModel
-
-
 class PlaidSp500ProxyGroupConfig(ApiModel):
     """Map selected Plaid investment accounts into one Augur SP500 proxy position."""
 
@@ -114,13 +80,11 @@ class PlaidSp500ProxyGroupConfig(ApiModel):
             "is modeled."
         ),
     )
-    tlh_model: TlhModelConfig | None = Field(
+    tlh_assumptions: TlhAssumptions | None = Field(
         default=None,
         description=(
-            "Optional tax-loss-harvesting model for this sleeve (Piece 2b), tagged by `type` "
-            "(`reduced_form_tlh`). When set, the sleeve realizes calibrated monthly capital losses "
-            "with a basis give-back at sale (honest deferral). When omitted, the sleeve behaves "
-            "exactly as before — no harvesting."
+            "Optional reduced-form TLH portfolio assumptions, including explicit loss character. "
+            "Imported broker basis initializes component-owned positions. Omit for ordinary holdings."
         ),
     )
 

@@ -59,7 +59,7 @@ from finance.augur.sim.product_metrics import (
 )
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.runtime import load_jurisdictions_for
-from finance.augur.sim.scenario import HarvestPolicy, Scenario
+from finance.augur.sim.scenario import Scenario, TlhPortfolioSpec
 
 
 class ProductService:
@@ -70,7 +70,7 @@ class ProductService:
         initial_cash: Decimal | int | str,
         primary_agent_id: str,
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
-        harvest_policies: tuple[HarvestPolicy, ...] = (),
+        tlh_portfolios: tuple[TlhPortfolioSpec, ...] = (),
         known_location_ids: frozenset[str],
         locations: dict[str, Location],
         properties_by_id: dict[str, Property],
@@ -97,7 +97,7 @@ class ProductService:
         self._security_distributions = security_distributions_from_portfolio(
             portfolio, security_distributions, primary_agent_id=primary_agent_id
         )
-        self._harvest_policies = harvest_policies
+        self._tlh_portfolios = tlh_portfolios
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
         # Keep one product projection in flight per API process. A dense rollout batch is
         # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
@@ -259,7 +259,7 @@ class ProductService:
             properties_by_id=self._properties_by_id,
             initial_bonds=self._initial_bonds,
             security_distributions=self._security_distributions,
-            harvest_policies=self._harvest_policies,
+            tlh_portfolios=self._tlh_portfolios,
         )
         sampling_request = ExogenousSamplingRequest(
             horizon_months=int(scenario_key.horizon_months),

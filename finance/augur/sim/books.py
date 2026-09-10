@@ -90,6 +90,17 @@ class MortgageState(Record):
     active: bool
 
 
+class TlhPortfolioState(Record):
+    """Reported portfolio facts, never a mirror of its private cohorts."""
+
+    portfolio_id: str
+    owner_agent_id: str
+    account_id: str
+    asset_id: str
+    value: int
+    reported_tax_basis: int
+
+
 class Book(Record):
     """Snapshot after events before `month`; a stopped book uses the result's stop mark."""
 
@@ -102,7 +113,7 @@ class Book(Record):
     mortgages: list[MortgageState]
     tax_liabilities: list[TaxLiabilityState]
     capital_gains: list[CapitalGainState]
-    tlh_cumulative_harvest: list[int]
+    tlh_portfolios: list[TlhPortfolioState]
     failed: bool
 
 
@@ -168,7 +179,7 @@ class DistributionOutcome(Record):
     slice_index: int
     fraction_ppb: int
     issuer_jurisdiction_id: str | None
-    units: int
+    units: int | None
     amount: int
 
 

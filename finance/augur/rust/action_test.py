@@ -7,10 +7,10 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import ClaimId, Consume, Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.scenario import ObligationType, ScheduledObligation, ScheduledTransfer
+from finance.augur.sim.session import Action, ActionSession, DecisionActions
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
 

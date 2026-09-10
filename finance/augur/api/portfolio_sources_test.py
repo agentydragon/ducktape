@@ -23,6 +23,7 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
 from finance.augur.model.series import SP500_SYMBOL
+from finance.augur.sim.tlh import TlhAssumptions
 from finance.plaid.db.read_model import CurrentCashBalance, CurrentHolding
 
 
@@ -185,8 +186,9 @@ def test_plaid_source_reuses_existing_portfolio_account(
     assert resolved.portfolio.holdings[0].total_cost_basis == 0.0
 
 
+@pytest.mark.parametrize("managed", [False, True])
 def test_plaid_source_expands_holding_period_buckets(
-    monkeypatch: pytest.MonkeyPatch, minimal_config: MinimalConfig, plaid_config: PortfolioSourcesConfig
+    monkeypatch: pytest.MonkeyPatch, minimal_config: MinimalConfig, plaid_config: PortfolioSourcesConfig, managed: bool
 ) -> None:
     """A configured holding-period histogram splits the single live Plaid aggregate into per-band
     lots (so short- vs long-term tax treatment is modeled), while preserving the aggregate value and
@@ -222,6 +224,15 @@ def test_plaid_source_expands_holding_period_buckets(
     [group] = plaid_config.plaid.sp500_proxy_groups
     bucketed_group = group.model_copy(
         update={
+            "tlh_assumptions": TlhAssumptions(
+                peak_annual_yield=0.12,
+                floor_annual_yield=0.004,
+                maturity_decay_exponent=1.5,
+                drawdown_sensitivity=6,
+                short_term_fraction=0.75,
+            )
+            if managed
+            else None,
             "holding_period_buckets": (
                 PlaidProxyHoldingPeriodBucket(
                     key="lt12", holding_period_months_at_start=4, market_value_fraction=0.25, cost_basis_fraction=0.5
@@ -229,7 +240,7 @@ def test_plaid_source_expands_holding_period_buckets(
                 PlaidProxyHoldingPeriodBucket(
                     key="ltcore", holding_period_months_at_start=16, market_value_fraction=0.75, cost_basis_fraction=0.5
                 ),
-            )
+            ),
         }
     )
     source = plaid_config.model_copy(
@@ -254,6 +265,16 @@ def test_plaid_source_expands_holding_period_buckets(
     # The split preserves the live Plaid aggregate exactly.
     assert holding.total_quantity == 1.0
     assert holding.total_cost_basis == 600.0
+    if managed:
+        [portfolio] = resolved.tlh_portfolios
+        assert portfolio.portfolio_id == "wealthfront_sp500"
+        assert [lot.quantity for lot in portfolio.initial_lots] == [0.25, 0.75]
+        assert [lot.cost_basis for lot in portfolio.initial_lots] == [300, 300]
+        assert [lot.purchase_month_index for lot in portfolio.initial_lots] == [-4, -16]
+        # Loss character is an explicit model assumption, not inferred from opening cohort weights.
+        assert portfolio.assumptions.short_term_fraction == 0.75
+    else:
+        assert resolved.tlh_portfolios == ()
 
 
 def test_holding_period_buckets_market_value_fractions_must_sum_to_one() -> None:

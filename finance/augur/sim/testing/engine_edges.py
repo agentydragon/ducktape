@@ -33,7 +33,6 @@ from finance.augur.sim.scenario import (
     Agent,
     CashflowOnly,
     FilingStatus,
-    HarvestPolicy,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
@@ -48,15 +47,20 @@ from finance.augur.sim.scenario import (
     SleeveTarget,
     TargetAllocationPolicy,
     TaxProfile,
+    TlhPortfolioSpec,
 )
 from finance.augur.sim.testing.case import Case, sampled
 from finance.augur.sim.testing.simulation_result import Backend
-from finance.augur.sim.tlh_harvest import HarvestYieldParams
+from finance.augur.sim.tlh import TlhAssumptions
 
 # A high peak yield + strong drawdown sensitivity makes the harvested losses large enough to read
 # cleanly off the YTD frame in a short horizon. These are test fixtures, not calibrated values.
-_PARAMS = HarvestYieldParams(
-    peak_annual_yield=0.12, floor_annual_yield=0.004, maturity_decay_exponent=1.5, drawdown_sensitivity=6.0
+_PARAMS = TlhAssumptions(
+    peak_annual_yield=0.12,
+    floor_annual_yield=0.004,
+    maturity_decay_exponent=1.5,
+    drawdown_sensitivity=6.0,
+    short_term_fraction=1.0,
 )
 
 
@@ -167,7 +171,7 @@ def _harvest_scenario(
     scheduled_asset_sales: list[ScheduledAssetSale] | None = None,
     extra_lots: list[InitialLot] | None = None,
 ) -> Scenario:
-    """Single taxable agent holding an SP500 sleeve, optionally with a harvest policy.
+    """Single taxable agent holding an SP500 sleeve, optionally held inside a managed TLH portfolio.
 
     The sleeve is one lot priced by the `sp500` series; `unit_value`/quantity are chosen so MV is
     easy to reason about (1000 units at $1 cost basis). `extra_lots` adds non-sleeve lots (e.g. a
@@ -184,16 +188,15 @@ def _harvest_scenario(
             cost_basis=Decimal(str(quantity)) * cost_basis_per_unit,
         )
     ]
-    if extra_lots:
-        lots.extend(extra_lots)
-    harvest_policies = (
+    tlh_portfolios = (
         [
-            HarvestPolicy(
+            TlhPortfolioSpec(
+                portfolio_id="alice-sp500",
+                initial_lots=lots,
                 owner_agent_id="alice",
                 account_id="brokerage",
                 asset=SecurityKey(symbol=SP500_SYMBOL),
-                yield_params=_PARAMS,
-                short_term_fraction=short_term_fraction,
+                assumptions=_PARAMS.model_copy(update={"short_term_fraction": short_term_fraction}),
             )
         ]
         if with_harvest
@@ -206,9 +209,9 @@ def _harvest_scenario(
             InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
             InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
-        initial_lots=lots,
+        initial_lots=([] if with_harvest else lots) + (extra_lots or []),
         scheduled_asset_sales=scheduled_asset_sales or [],
-        harvest_policies=harvest_policies,
+        tlh_portfolios=tlh_portfolios,
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
@@ -660,49 +663,10 @@ class ValidationEdgeAcceptance:
             backend(Case(scenario=scenario, rollout_count=1, paths=external, locations={}))
 
     def test_a_security_price_is_required_at_the_terminal_snapshot_too(self, backend: Backend) -> None:
-        """Same rule as the mark above, on the sleeve a harvest policy reads."""
+        """Same rule as the mark above, on the managed portfolio's supplied price."""
 
         horizon = 2
-        scenario = Scenario(
-            agents=[Agent(agent_id="alice"), Agent(agent_id="irs")],
-            initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
-            ],
-            initial_lots=[
-                InitialLot(
-                    lot_id="alice_sp500",
-                    agent_id="alice",
-                    account_id="brokerage",
-                    asset=SecurityKey(symbol=SP500_SYMBOL),
-                    purchase_month_index=0,
-                    quantity=100.0,
-                    cost_basis=100,
-                )
-            ],
-            harvest_policies=[
-                HarvestPolicy(
-                    owner_agent_id="alice",
-                    account_id="brokerage",
-                    asset=SecurityKey(symbol=SP500_SYMBOL),
-                    yield_params=HarvestYieldParams(
-                        peak_annual_yield=0.12,
-                        floor_annual_yield=0.004,
-                        maturity_decay_exponent=1.5,
-                        drawdown_sensitivity=6.0,
-                    ),
-                )
-            ],
-            tax_profiles=[
-                TaxProfile(
-                    agent_id="alice",
-                    filing_status=FilingStatus.SINGLE,
-                    jurisdiction_ids=["federal_us"],
-                    tax_authority_agent_id="irs",
-                )
-            ],
-            horizon_months=horizon,
-        )
+        scenario = _harvest_scenario(horizon_months=horizon, quantity=100.0, with_harvest=True)
         external = _external_series_context_for_levels(SecurityKey(symbol=SP500_SYMBOL), [[1.0, 1.0, -1.0]])
 
         with pytest.raises(ValueError, match=r"(?i)non-positive value"):
@@ -921,15 +885,14 @@ class HarvestAcceptance:
         baseline = run(with_harvest=False)
 
         # Snapshot `month_index = m + 1` is the end of calendar month `m`. The sale fires inside month
-        # `sale_month` (before that month's harvest, which then finds an empty sleeve), so the harvest
-        # accumulated through the END of month sale_month-1 — i.e. snapshot `month_index = sale_month` —
-        # is exactly what gets given back. It is the cumulative short-term loss booked so far (negative).
+        # `sale_month`, after that month's modeled harvest. The net monthly gain change repays
+        # losses accumulated through month sale_month-1 (snapshot `month_index = sale_month`).
         cumulative_harvest = -_ytd_gain(harvested, month_index=sale_month, classification="stcg")
         assert cumulative_harvest > 0.0
 
-        # Realized gain booked AT the sale = the jump in cumulative YTD across the sale month, i.e. from
-        # snapshot `sale_month` to `sale_month + 1`.
-        def sale_realized(result) -> float:
+        # The YTD change includes both this month's loss and the liquidation gain. It is not
+        # a sale receipt; their sum cancels this month's additional deferral.
+        def net_sale_month_gain(result) -> float:
             before = _ytd_gain(result, month_index=sale_month, classification="stcg") + _ytd_gain(
                 result, month_index=sale_month, classification="ltcg"
             )
@@ -938,10 +901,9 @@ class HarvestAcceptance:
             )
             return after - before
 
-        # Baseline sale realizes ~0 (price == basis). The harvested run's sale realizes the give-back —
-        # an extra gain equal to exactly the cumulative harvested loss (deferral repaid).
-        assert sale_realized(baseline) == pytest.approx(0.0, abs=1e-6)
-        assert sale_realized(harvested) == pytest.approx(cumulative_harvest, rel=1e-9, abs=1e-6)
+        # Baseline monthly gain is zero; the managed run repays all prior deferral.
+        assert net_sale_month_gain(baseline) == pytest.approx(0.0, abs=1e-6)
+        assert net_sale_month_gain(harvested) == pytest.approx(cumulative_harvest, rel=1e-9, abs=1e-6)
 
         # Deferral, not free money: after the give-back, the net realized capital gain over the whole
         # (sub-year) horizon returns to the no-harvest baseline (~0) — bounded, not unbounded free money.
@@ -951,7 +913,7 @@ class HarvestAcceptance:
 
     def test_partial_sales_give_back_proportionally_and_never_exceed_harvest(self, backend: Backend) -> None:
         # Two partial sales (half, then the rest) must together give back exactly the cumulative harvest
-        # — proportional to units sold — and never more (the scalar drains, so no double give-back).
+        # through consumed adjusted basis. The portfolio has no separate deferral balance.
         horizon = 9
         levels = [1.0] * (horizon + 1)
         sales = [

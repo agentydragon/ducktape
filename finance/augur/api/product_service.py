@@ -28,7 +28,7 @@ def build_product_service(
         initial_cash=resolved_portfolio.snapshot.cash,
         primary_agent_id=resolve_primary_agent_id(config),
         security_distributions=config.security_distributions,
-        harvest_policies=resolved_portfolio.harvest_policies,
+        tlh_portfolios=resolved_portfolio.tlh_portfolios,
         known_location_ids=catalog.location_ids,
         locations=sim_locations_from_config(config.locations),
         properties_by_id=catalog.properties_by_id,
