@@ -63,6 +63,7 @@ produce $240 and $40 short-term gain. After the $150 bill and the synthetic 20%
 short-term tax ($8), each retains $82. The offline CLI test verifies these actual
 purchase, sale and payment effects; native tests also show that omitting the buy
 leaves an empty pool and unchanged cash.
+
 ## Population capture and profiling
 
 `--rollouts N --horizon-months H` repeats the same two stipulated paths over the
