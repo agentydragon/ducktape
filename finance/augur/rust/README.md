@@ -196,9 +196,9 @@ Tax records remain selected canonical events, not preaggregated universal metric
 Consumers choose their own account/component reductions and tax treatment.
 
 `Observation.held_bonds` contains only owned, unredeemed dated bonds. Each frozen
-`HeldBond` has its ID/account, issuer jurisdiction, face/purchase amounts, coupon
-rate in parts per billion, coupon period, purchase/maturity months, indexation flag
-and current principal. Known contractual dates are observable; future CPI or future
+`HeldBond` has its ID/account, issuer jurisdiction, face/purchase amounts, a fixed
+nominal coupon amount or indexed annual rate, coupon period, purchase/maturity
+months and current principal. Known contractual dates are observable; future CPI or future
 indexed payments are not. The observation follows scheduled processing, so a
 redemption due this event has already become cash and that bond is absent.
 Principal is a par/indexed carrying amount, not a tradable quote or liquid balance;
@@ -222,23 +222,37 @@ lifecycle inputs are not supported. Public trades use the explicit holding pools
 so an all-cash start can buy a previously unheld asset without a dummy lot or policy.
 Current account and quote records are frozen typed objects; money and quantities
 are exact integers with the declared currency/quantity scales. Prior receipts and
-terminal results keep their canonical JSON encoding. No full future series or
+terminal results are typed records from `sim.results`; their action, payment and
+stop variants have explicit `kind` tags. No full future series or
 mutable native books cross the boundary. Higher-level tax/contract observations
 are not part of this initial binding.
 
 ```python
+from finance.augur.rust.simulator import ActionSession
+from finance.augur.sim.results import Finished
+
 session = ActionSession(input_json, actor, original_ids)
 try:
     batch = session.start()
     while not isinstance(batch, Finished):
         batch = session.advance(decide(batch))
-    rollouts = json.loads(batch.rollouts_json)
+    rollouts = batch.rollouts
 finally:
     session.close()
 ```
 
 Close releases retained input/books if a Python policy raises. Bounded spending
 and monthly actions use this session for their Python-owned policy loops.
+
+`Finished.rollouts` preserves the requested original ID order. Each rollout has a
+typed `summary`, optional `stop`, and optional `trace`. A trace contains typed
+historical books, journal, bond/distribution cashflows and receipts, plus the
+existing columnar `EventLog` for event queries. The native boundary decodes its
+private transport once; domain consumers do not parse JSON or retain a second
+raw result tree. For file I/O, use `Finished.model_dump_json()` and
+`Finished.model_validate_json()`; an individual replay uses the same methods on
+`Rollout`. The configured-engine forensic adapter is separate and remains until
+its remaining callers migrate.
 
 The `engine/actors_test.rs` stories drive the same steps in a test-only harness and run with
 `bbr test //finance/augur/rust:simulator_test`. They include contribution → bill →

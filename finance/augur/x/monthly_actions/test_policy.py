@@ -7,7 +7,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import SecurityKey
-from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.rust.simulator import ActionSession
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.scenario import HoldingPool
 from finance.augur.sim.testing.case import Case, flat, scenario
 from finance.augur.sim.testing.fixtures import cash_spend, checking
@@ -51,28 +53,29 @@ def test_opening_investment_reserves_claims_and_does_not_rescue_shortfalls(
         assert not isinstance(batch, Finished)
         finished = session.advance(decide(batch))
         assert isinstance(finished, Finished)
-        [result] = json.loads(finished.rollouts_json)
+        [result] = finished.rollouts
     finally:
         session.close()
-    financial = result["trace"]["financial"]
-    assert [next(iter(receipt["action"])) for receipt in result["trace"]["receipts"]] == (
+    financial = result.trace
+    assert financial is not None
+    assert [receipt.action.kind for receipt in financial.receipts] == (
         ["Buy", "PayClaim"] if bought_units else ["PayClaim"]
     )
-    assert financial["obligations"][0]["amount_paid"] == paid
-    closing = financial["months"][-1]
+    assert result.summary.payments[0].receipt.amount_paid == paid
+    closing = financial.books[-1]
     assert (
         next(
-            row["balance"]
-            for row in closing["balances"]
-            if row["account"] == {"agent_id": "example-household", "account_id": "checking"}
+            row.balance
+            for row in closing.balances
+            if row.account == AccountRef(agent_id="example-household", account_id="checking")
         )
         == ending_cash
     )
-    assert [(lot["units_remaining"], lot["basis_remaining"]) for lot in closing["lots"]] == (
+    assert [(lot.units_remaining, lot.basis_remaining) for lot in closing.lots] == (
         [(bought_units, 5_000)] if bought_units else []
     )
-    assert result["stop"] == (None if paid else {"RejectedAction": {"month": 0, "action_index": 0}})
-    assert financial["dispositions"] == []
+    assert result.stop == (None if paid else RejectedAction(month=0, action_index=0))
+    assert financial.events.lot_dispositions.is_empty()
 
 
 if __name__ == "__main__":

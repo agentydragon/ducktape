@@ -7,7 +7,8 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions, Finished
+from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
+from finance.augur.sim.results import ClaimId, Consume, Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.scenario import ObligationType, ScheduledObligation, ScheduledTransfer
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -53,7 +54,7 @@ def consume(amount: int, cause: str = "chosen-spend") -> Action:
     return Action.consume(0, cause, "budget", ("alice", "checking"), ("world", "checking"), amount)
 
 
-def run(input_json: str, ids: list[int]) -> tuple[list[Any], dict[int, list[tuple[int, int]]]]:
+def run(input_json: str, ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
     session = ActionSession(input_json, "alice", ids)
     observed: dict[int, list[tuple[int, int]]] = {id_: [] for id_ in ids}
     memory = dict.fromkeys(ids, 0)
@@ -64,10 +65,10 @@ def run(input_json: str, ids: list[int]) -> tuple[list[Any], dict[int, list[tupl
             for decision in reversed(batch):
                 observation = decision.observation
                 observed[decision.rollout_id].append((observation.month, observation.cash))
-                receipts = json.loads(observation.previous_receipts_json)
-                assert all(receipt["month"] == observation.month - 1 for receipt in receipts)
-                assert all(receipt["outcome"] == "Executed" for receipt in receipts)
-                memory[decision.rollout_id] += sum("Consume" in receipt["action"] for receipt in receipts)
+                receipts = observation.previous_receipts
+                assert all(receipt.month == observation.month - 1 for receipt in receipts)
+                assert all(isinstance(receipt.outcome, Executed) for receipt in receipts)
+                memory[decision.rollout_id] += sum(isinstance(receipt.action, Consume) for receipt in receipts)
                 assert memory[decision.rollout_id] == observation.month
                 assert observation.accounts == [("checking", observation.cash)]
                 assert observation.agent_id == "alice"
@@ -80,7 +81,7 @@ def run(input_json: str, ids: list[int]) -> tuple[list[Any], dict[int, list[tupl
                 actions.append(consume(1))
                 responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
             batch = session.advance(responses)
-        return json.loads(batch.rollouts_json), observed
+        return batch.rollouts, observed
     finally:
         session.close()
 
@@ -92,8 +93,8 @@ def test_current_facts_receipt_memory_and_original_replay(input_json: str) -> No
         actual, replay_observed = run(input_json, ids)
         assert actual == [baseline[id_] for id_ in ids]
         assert replay_observed == {id_: observed[id_] for id_ in ids}
-    assert [row["rollout_id"] for row in baseline] == [0, 1]
-    assert all(row["stop"] is None for row in baseline)
+    assert [row.rollout_id for row in baseline] == [0, 1]
+    assert all(row.stop is None for row in baseline)
 
 
 def test_action_order_prefix_retention_and_independent_continuation(input_json: str) -> None:
@@ -118,12 +119,13 @@ def test_action_order_prefix_retention_and_independent_continuation(input_json: 
         assert batch[0].observation.month == month
         batch = session.advance([DecisionActions(1, month, [])])
     assert isinstance(batch, Finished)
-    stopped, completed = json.loads(batch.rollouts_json)
-    assert stopped["stop"] == {"RejectedAction": {"month": 0, "action_index": 2}}
-    assert [next(iter(row["action"])) for row in stopped["trace"]["receipts"]] == ["PayClaim", "Transfer", "Consume"]
-    closing = stopped["trace"]["financial"]["months"][-1]
-    assert next(row["balance"] for row in closing["balances"] if row["account"]["agent_id"] == "alice") == 5
-    assert completed["stop"] is None
+    stopped, completed = batch.rollouts
+    assert stopped.stop == RejectedAction(month=0, action_index=2)
+    assert stopped.trace is not None
+    assert [row.action.kind for row in stopped.trace.receipts] == ["PayClaim", "Transfer", "Consume"]
+    closing = stopped.trace.books[-1]
+    assert next(row.balance for row in closing.balances if row.account.agent_id == "alice") == 5
+    assert completed.stop is None
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         session.advance([])
 
@@ -133,10 +135,11 @@ def test_unpaid_due_claim_is_not_an_implicit_payment(input_json: str) -> None:
     session.start()
     finished = session.advance([DecisionActions(1, 0, [])])
     assert isinstance(finished, Finished)
-    [rollout] = json.loads(finished.rollouts_json)
-    assert rollout["stop"] == {"UnpaidClaims": {"month": 0, "claims": [{"month": 0, "index": 0}]}}
-    assert rollout["trace"]["receipts"] == []
-    assert rollout["trace"]["financial"]["obligations"][0]["amount_paid"] == 0
+    [rollout] = finished.rollouts
+    assert rollout.stop == UnpaidClaims(month=0, claims=[ClaimId(month=0, index=0)])
+    assert rollout.trace is not None
+    assert rollout.trace.receipts == []
+    assert rollout.trace.events.obligation_settlements.get_column("amount_paid_quanta").to_list() == [0]
 
 
 @pytest.mark.parametrize("keys", [[], [(0, 0)], [(0, 0), (0, 0)], [(0, 1), (1, 0)], [(0, 0), (2, 0)]])

@@ -104,7 +104,6 @@ struct Claim {
     due_month: u32,
 }
 
-#[derive(Clone)]
 #[pyclass(frozen, get_all, module = "finance.augur.rust.simulator")]
 struct Observation {
     agent_id: String,
@@ -117,13 +116,13 @@ struct Observation {
     public_positions: Vec<PublicPosition>,
     held_bonds: Vec<HeldBond>,
     claims: Vec<Claim>,
-    previous_receipts_json: String,
+    previous_receipts: Py<PyAny>,
 }
 
 #[pyclass(frozen, get_all, module = "finance.augur.rust.simulator")]
 struct Decision {
     rollout_id: u32,
-    observation: Observation,
+    observation: Py<Observation>,
 }
 
 /// The wrapped canonical request is immutable and contains no execution authority.
@@ -247,10 +246,6 @@ impl Action {
             }),
         }
     }
-
-    fn to_json(&self) -> PyResult<String> {
-        serde_json::to_string(&self.request).map_err(to_py_err)
-    }
 }
 
 fn account((agent, account): (String, String)) -> AccountRef {
@@ -275,11 +270,6 @@ impl DecisionActions {
             actions,
         }
     }
-}
-
-#[pyclass(frozen, get_all, module = "finance.augur.rust.simulator")]
-struct Finished {
-    rollouts_json: String,
 }
 
 #[pyclass(module = "finance.augur.rust.simulator")]
@@ -366,10 +356,15 @@ impl ActionSession {
     fn handoff(&mut self, py: Python<'_>, mut session: actors::Session) -> PyResult<Py<PyAny>> {
         if session.is_finished() {
             let rollouts = py.detach(|| session.finish()).map_err(to_py_err)?;
-            return Finished {
-                rollouts_json: serde_json::to_string(&rollouts).map_err(to_py_err)?,
-            }
-            .into_py_any(py);
+            let document = format!(
+                "{{\"rollouts\":{}}}",
+                serde_json::to_string(&rollouts).map_err(to_py_err)?
+            );
+            return Ok(py
+                .import("finance.augur.sim.results")?
+                .getattr("Finished")?
+                .call_method1("model_validate_json", (document,))?
+                .unbind());
         }
         let batch = session
             .decisions()
@@ -381,94 +376,107 @@ impl ActionSession {
                 let cpi = books.cpi().map_err(to_py_err)?;
                 Ok(Decision {
                     rollout_id: decision.rollout_id,
-                    observation: Observation {
-                        agent_id: books.agent_id().into(),
-                        month: books.month(),
-                        cpi: cpi.map(|level| (level.numerator(), level.denominator())),
-                        cash: books.cash().map_err(to_py_err)?.0,
-                        public_holdings: books.public_value().map_err(to_py_err)?.0,
-                        accounts: books
-                            .accounts()
-                            .map(|account| {
-                                account
-                                    .map(|account| {
-                                        (account.account.account_id.clone(), account.available.0)
+                    observation: Py::new(
+                        py,
+                        Observation {
+                            agent_id: books.agent_id().into(),
+                            month: books.month(),
+                            cpi: cpi.map(|level| (level.numerator(), level.denominator())),
+                            cash: books.cash().map_err(to_py_err)?.0,
+                            public_holdings: books.public_value().map_err(to_py_err)?.0,
+                            accounts: books
+                                .accounts()
+                                .map(|account| {
+                                    account
+                                        .map(|account| {
+                                            (
+                                                account.account.account_id.clone(),
+                                                account.available.0,
+                                            )
+                                        })
+                                        .map_err(to_py_err)
+                                })
+                                .collect::<PyResult<_>>()?,
+                            holding_pools: books
+                                .holding_pools()
+                                .map(|pool| {
+                                    Ok(HoldingPool {
+                                        account_id: pool.account_id.clone(),
+                                        asset_id: pool.asset_id.clone(),
+                                        quantity_scale: pool.quantity_scale,
+                                        price: books
+                                            .public_price(&pool.asset_id)
+                                            .map_err(to_py_err)?
+                                            .0,
                                     })
-                                    .map_err(to_py_err)
-                            })
-                            .collect::<PyResult<_>>()?,
-                        holding_pools: books
-                            .holding_pools()
-                            .map(|pool| {
-                                Ok(HoldingPool {
-                                    account_id: pool.account_id.clone(),
-                                    asset_id: pool.asset_id.clone(),
-                                    quantity_scale: pool.quantity_scale,
-                                    price: books.public_price(&pool.asset_id).map_err(to_py_err)?.0,
                                 })
-                            })
-                            .collect::<PyResult<_>>()?,
-                        public_positions: books
-                            .public_positions()
-                            .map(|position| {
-                                let position = position.map_err(to_py_err)?;
-                                Ok(PublicPosition {
-                                    account_id: position.account_id().into(),
-                                    asset_id: position.asset_id().into(),
-                                    lot_id: position.lot_id().into(),
-                                    purchase_month: position.purchase_month(),
-                                    units: position.units().quantity().0,
-                                    quantity_scale: position.quantity_scale(),
-                                    book_basis: position.book_basis().0,
-                                    price: position.price.0,
-                                    value: position.value().map_err(to_py_err)?.0,
+                                .collect::<PyResult<_>>()?,
+                            public_positions: books
+                                .public_positions()
+                                .map(|position| {
+                                    let position = position.map_err(to_py_err)?;
+                                    Ok(PublicPosition {
+                                        account_id: position.account_id().into(),
+                                        asset_id: position.asset_id().into(),
+                                        lot_id: position.lot_id().into(),
+                                        purchase_month: position.purchase_month(),
+                                        units: position.units().quantity().0,
+                                        quantity_scale: position.quantity_scale(),
+                                        book_basis: position.book_basis().0,
+                                        price: position.price.0,
+                                        value: position.value().map_err(to_py_err)?.0,
+                                    })
                                 })
-                            })
-                            .collect::<PyResult<_>>()?,
-                        held_bonds: observation
-                            .held_bonds()
-                            .map(|position| {
-                                let position = position.map_err(to_py_err)?;
-                                let terms = position.terms;
-                                Ok(HeldBond {
-                                    bond_id: terms.bond_id.clone(),
-                                    account_id: terms.account_id.clone(),
-                                    issuer_jurisdiction_id: terms.issuer_jurisdiction_id.clone(),
-                                    face_value: terms.face_value.0,
-                                    purchase_price: terms.purchase_price.0,
-                                    coupon: terms.coupon,
-                                    coupon_period_months: terms.coupon_period_months,
-                                    purchase_month: terms.purchase_month_index,
-                                    maturity_month: terms.maturity_month_index,
-                                    principal: position.principal.0,
+                                .collect::<PyResult<_>>()?,
+                            held_bonds: observation
+                                .held_bonds()
+                                .map(|position| {
+                                    let position = position.map_err(to_py_err)?;
+                                    let terms = position.terms;
+                                    Ok(HeldBond {
+                                        bond_id: terms.bond_id.clone(),
+                                        account_id: terms.account_id.clone(),
+                                        issuer_jurisdiction_id: terms
+                                            .issuer_jurisdiction_id
+                                            .clone(),
+                                        face_value: terms.face_value.0,
+                                        purchase_price: terms.purchase_price.0,
+                                        coupon: terms.coupon,
+                                        coupon_period_months: terms.coupon_period_months,
+                                        purchase_month: terms.purchase_month_index,
+                                        maturity_month: terms.maturity_month_index,
+                                        principal: position.principal.0,
+                                    })
                                 })
-                            })
-                            .collect::<PyResult<_>>()?,
-                        claims: observation
-                            .claims()
-                            .map(|claim| Claim {
-                                id: claim.id,
-                                rollout_id: decision.rollout_id,
-                                session: Arc::clone(&self.identity),
-                                cause_id: claim.cause_id.into(),
-                                obligation_type: claim.obligation_type.into(),
-                                from_account: (
-                                    claim.from.agent_id.clone(),
-                                    claim.from.account_id.clone(),
-                                ),
-                                to_account: (
-                                    claim.to.agent_id.clone(),
-                                    claim.to.account_id.clone(),
-                                ),
-                                amount_due: claim.amount_due.0,
-                                due_month: claim.due_month,
-                            })
-                            .collect(),
-                        previous_receipts_json: serde_json::to_string(
-                            observation.previous_receipts,
-                        )
-                        .map_err(to_py_err)?,
-                    },
+                                .collect::<PyResult<_>>()?,
+                            claims: observation
+                                .claims()
+                                .map(|claim| Claim {
+                                    id: claim.id,
+                                    rollout_id: decision.rollout_id,
+                                    session: Arc::clone(&self.identity),
+                                    cause_id: claim.cause_id.into(),
+                                    obligation_type: claim.obligation_type.into(),
+                                    from_account: (
+                                        claim.from.agent_id.clone(),
+                                        claim.from.account_id.clone(),
+                                    ),
+                                    to_account: (
+                                        claim.to.agent_id.clone(),
+                                        claim.to.account_id.clone(),
+                                    ),
+                                    amount_due: claim.amount_due.0,
+                                    due_month: claim.due_month,
+                                })
+                                .collect(),
+                            previous_receipts: py
+                                .import("finance.augur.sim.results")?
+                                .getattr("receipts_from_json")?
+                                .call1((serde_json::to_string(observation.previous_receipts)
+                                    .map_err(to_py_err)?,))?
+                                .unbind(),
+                        },
+                    )?,
                 })
             })
             .collect::<PyResult<Vec<_>>>()?;
@@ -490,6 +498,5 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Observation>()?;
     module.add_class::<Decision>()?;
     module.add_class::<DecisionActions>()?;
-    module.add_class::<Finished>()?;
     Ok(())
 }

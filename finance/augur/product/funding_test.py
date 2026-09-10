@@ -6,7 +6,6 @@ The configured product runner remains a separate cutover caller, not a fallback 
 
 import json
 from decimal import Decimal
-from typing import Any
 
 import numpy as np
 import pytest
@@ -16,10 +15,11 @@ from finance.augur.model.series import InflationKey, LevelSeriesKey, RentKey, Se
 from finance.augur.product.funding import Policy
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, TAX_AUTHORITY_AGENT_ID, build_scenario
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SleeveWeight, SpendIndex
-from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.scenario import (
     DistributionTaxSlice,
     FilingStatus,
@@ -82,7 +82,7 @@ def run(
     series: dict[LevelSeriesKey, np.ndarray],
     *,
     jurisdictions: dict[str, Jurisdiction] | None = None,
-) -> dict[str, Any]:
+) -> Rollout:
     prepared = compile_run(
         scenario,
         rollout_count=1,
@@ -104,8 +104,7 @@ def run(
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(policy(batch))
-        result: dict[str, Any] = json.loads(batch.rollouts_json)[0]
-        return result
+        return batch.rollouts[0]
     finally:
         session.close()
 
@@ -127,11 +126,12 @@ def test_symbol_weight_is_not_repeated_per_account_and_fifo_is_account_scoped() 
     result = run(scenario, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
     # FIRST totals $200 versus SECOND $100. A $100 withdrawal comes entirely from FIRST,
     # emptying the preferred account despite the older lot in the later account.
-    sales = result["trace"]["financial"]["dispositions"]
-    assert [(row["lot_id"], row["proceeds"]) for row in sales] == [("first-old", 3000), ("first-new", 7000)]
-    assert [next(iter(row["action"])) for row in result["trace"]["receipts"]] == ["Sell", "PayClaim"]
-    assert result["stop"] is None
-    remaining = {row["lot_id"]: row["units_remaining"] for row in result["summary"]["ending_book"]["lots"]}
+    assert result.trace is not None
+    sales = result.trace.events.lot_dispositions
+    assert sales.select("lot_id", "proceeds_quanta").rows() == [("first-old", 3000), ("first-new", 7000)]
+    assert [row.action.kind for row in result.trace.receipts] == ["Sell", "PayClaim"]
+    assert result.stop is None
+    remaining = {row.lot_id: row.units_remaining for row in result.summary.ending_book.lots}
     assert remaining == {"first-new": 0, "first-old": 0, "globally-oldest": 1_000_000, "second": 1_000_000}
 
 
@@ -145,9 +145,10 @@ def test_refill_to_ceiling_inclusive_band_and_surplus_never_invested(cash: int, 
     )
     scenario = product_scenario(config, cash=Decimal(cash), lots=(lot("fund", "brokerage", FIRST, Decimal(10)),))
     result = run(scenario, config, {FIRST: np.full((1, 2), 100.0)})
-    assert sum(row["proceeds"] for row in result["trace"]["financial"]["dispositions"]) == raised * 100
-    assert result["summary"]["cash"][0]["values"] == [cash * 100, ending * 100]
-    assert {next(iter(row["action"])) for row in result["trace"]["receipts"]} <= {"Sell", "PayClaim"}
+    assert result.trace is not None
+    assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").sum() == raised * 100
+    assert result.summary.cash[0].values == [cash * 100, ending * 100]
+    assert {row.action.kind for row in result.trace.receipts} <= {"Sell", "PayClaim"}
 
 
 @pytest.mark.parametrize(
@@ -167,13 +168,14 @@ def test_empty_excluded_or_unheld_targets_allow_cash_payments_but_never_sell(wei
     result = run(
         scenario, config, {FIRST: np.full((1, 3), 100.0), RentKey(location_id="test-location"): np.ones((1, 3))}
     )
-    assert result["trace"]["financial"]["dispositions"] == []
+    assert result.trace is not None
+    assert result.trace.events.lot_dispositions.is_empty()
     # Intentional ordered-action semantics: first $30 payment stays paid; the next $40 claim
     # fails with $20 left. The old configured group would reject both against their $70 total.
-    assert result["stop"] == {"RejectedAction": {"month": 0, "action_index": 1}}
-    assert result["summary"]["cash"][0]["values"] == [5000, 2000]
-    assert [row["receipt"]["outcome"] == "Paid" for row in result["summary"]["payments"]] == [True, False]
-    assert result["summary"]["ending_book"]["month"] == 1
+    assert result.stop == RejectedAction(month=0, action_index=1)
+    assert result.summary.cash[0].values == [5000, 2000]
+    assert [isinstance(row.receipt.outcome, Paid) for row in result.summary.payments] == [True, False]
+    assert result.summary.ending_book.month == 1
 
 
 def test_zero_weight_excludes_from_sales_and_target_denominator_even_on_exhaustion() -> None:
@@ -186,10 +188,11 @@ def test_zero_weight_excludes_from_sales_and_target_denominator_even_on_exhausti
         lots=(lot("keep", "brokerage", FIRST, Decimal(10)), lot("sell", "brokerage", SECOND, Decimal(1))),
     )
     result = run(scenario, config, {asset: np.full((1, 2), 100.0) for asset in (FIRST, SECOND)})
-    sales = result["trace"]["financial"]["dispositions"]
-    assert [(row["lot_id"], row["proceeds"]) for row in sales] == [("sell", 10_000)]
-    assert result["stop"] == {"RejectedAction": {"month": 0, "action_index": 1}}
-    assert result["summary"]["ending_book"]["lots"][0]["units_remaining"] == 10_000_000
+    assert result.trace is not None
+    sales = result.trace.events.lot_dispositions
+    assert sales.select("lot_id", "proceeds_quanta").rows() == [("sell", 10_000)]
+    assert result.stop == RejectedAction(month=0, action_index=1)
+    assert result.summary.ending_book.lots[0].units_remaining == 10_000_000
 
 
 def test_monthly_cpi_band_rounds_original_bound_once() -> None:
@@ -202,8 +205,9 @@ def test_monthly_cpi_band_rounds_original_bound_once() -> None:
         config, spend=Decimal("0.01"), horizon=3, lots=(lot("fund", "brokerage", FIRST, Decimal(10)),)
     )
     result = run(scenario, config, {FIRST: np.full((1, 4), 100.0), InflationKey(): np.array([[3.0, 4.0, 5.0, 99.0]])})
-    assert result["summary"]["cash"][0]["values"] == [0, 1, 1, 2]
-    assert [row["proceeds"] for row in result["trace"]["financial"]["dispositions"]] == [2, 1, 2]
+    assert result.summary.cash[0].values == [0, 1, 1, 2]
+    assert result.trace is not None
+    assert result.trace.events.lot_dispositions.get_column("proceeds_quanta").to_list() == [2, 1, 2]
     with pytest.raises(ValueError, match="requires a supplied CPI"):
         run(scenario, config, {FIRST: np.full((1, 4), 100.0)})
 
@@ -228,15 +232,18 @@ def test_product_spend_tracks_monthly_cpi_but_rent_resets_only_annually() -> Non
     rent[:, 12] = 2
     rent[:, 13:] = 8
     result = run(scenario, config, {InflationKey(): cpi, RentKey(location_id="test-location"): rent})
-    payments = result["trace"]["financial"]["obligations"]
-    assert [row["amount_paid"] for row in payments if row["obligation_type"] == "cash_spend"] == [100] + [150] * 11 + [
-        200,
-        300,
-    ]
-    assert [row["amount_paid"] for row in payments if row["obligation_type"] == "outside_rent"] == [1000] * 12 + [
-        2000
-    ] * 2
-    assert result["stop"] is None
+    payments = result.summary.payments
+    assert [
+        row.receipt.amount_paid
+        for row in payments
+        if row.target is not None and row.target.obligation_type == "cash_spend"
+    ] == [100] + [150] * 11 + [200, 300]
+    assert [
+        row.receipt.amount_paid
+        for row in payments
+        if row.target is not None and row.target.obligation_type == "outside_rent"
+    ] == [1000] * 12 + [2000] * 2
+    assert result.stop is None
 
 
 def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim() -> None:
@@ -281,13 +288,14 @@ def test_coupon_precedes_funding_and_next_year_tax_is_an_explicit_funded_claim()
         {FIRST: np.full((1, 14), 100.0), SecurityDistributionKey(symbol=FIRST.symbol): coupons},
         jurisdictions={rule.jurisdiction_id: rule},
     )
-    sales = result["trace"]["financial"]["dispositions"]
-    assert (sales[0]["proceeds"], sales[0]["basis"]) == (1000, 500)
+    assert result.trace is not None
+    sales = result.trace.events.lot_dispositions
+    assert sales.select("proceeds_quanta", "cost_basis_consumed_quanta").row(0) == (1000, 500)
     # Year 1: $40 coupon × 20% + $280 realized LT gains × 10% = $36 tax.
-    assert result["summary"]["tax_accruals"][0]["total_tax"] == 3600
-    assert sum(row["amount_paid"] for row in result["summary"]["tax_payments"]) == 3600
-    assert (sales[-1]["month"], sales[-1]["proceeds"]) == (12, 8600)
-    assert result["stop"] is None
+    assert result.summary.tax_accruals[0].total_tax == 3600
+    assert sum(row.amount_paid for row in result.summary.tax_payments) == 3600
+    assert sales.select("month_index", "proceeds_quanta").row(-1) == (12, 8600)
+    assert result.stop is None
 
 
 if __name__ == "__main__":

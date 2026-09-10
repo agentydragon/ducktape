@@ -12,6 +12,8 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:bonds",
         "//finance/augur/sim/testing:case",
@@ -125,6 +127,7 @@ py_library(
         ":simulator_so",
     ],
     imports = ["../../.."],
+    deps = ["//finance/augur/sim:results"],
 )
 
 py_library(
@@ -234,6 +237,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",

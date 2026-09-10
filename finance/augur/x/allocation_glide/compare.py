@@ -9,15 +9,16 @@ import argparse
 import json
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
 from finance.augur.rust.invocation import write_prepared_input
-from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import CompiledRun, compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
@@ -93,14 +94,13 @@ def execute(
     annual_step: int,
     rollout_ids: list[int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
-) -> list[dict[str, Any]]:
+) -> list[Rollout]:
     session = ActionSession(input_json, "test-retiree", rollout_ids, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(decide(batch, annual_step=annual_step))
-        rollouts: list[dict[str, Any]] = json.loads(batch.rollouts_json)
-        return rollouts
+        return batch.rollouts
     finally:
         session.close()
 
@@ -113,16 +113,16 @@ def compare(output_dir: Path) -> None:
     write_prepared_input(run, input_path)
     for name, step in (("constant", 0), ("glide", 5)):
         population = execute(input_path.read_text(), annual_step=step, rollout_ids=[0, 1, 2])
-        (output_dir / f"{name}.json").write_text(json.dumps({"rollouts": population}))
+        (output_dir / f"{name}.json").write_text(Finished(rollouts=population).model_dump_json())
         traces = execute(input_path.read_text(), annual_step=step, rollout_ids=[2, 0], capture="forensic")
-        (output_dir / f"{name}-traces.json").write_text(json.dumps({"rollouts": traces}))
+        (output_dir / f"{name}-traces.json").write_text(Finished(rollouts=traces).model_dump_json())
         for rollout in population:
             paid = sum(
-                row["receipt"]["amount_requested"]
-                for row in rollout["summary"]["payments"]
-                if row["target"]["obligation_type"] == "cash_spend" and row["receipt"]["outcome"] == "Paid"
+                row.receipt.amount_paid
+                for row in rollout.summary.payments
+                if row.target is not None and row.target.obligation_type == "cash_spend"
             )
-            print(f"{name} path={rollout['rollout_id']}: consumption_paid=${paid / 100:.2f}; stop={rollout['stop']}")
+            print(f"{name} path={rollout.rollout_id}: consumption_paid=${paid / 100:.2f}; stop={rollout.stop}")
     (output_dir / "experiment.json").write_text(
         json.dumps(
             {

@@ -12,6 +12,7 @@ import pytest_bazel
 from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 from finance.augur.study.trinity.replay import BONDS, EQUITY, HORIZON_MONTHS, build_scenario, execute, sleeve_targets
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -55,9 +56,9 @@ def test_indexed_claims_use_original_base_not_previous_rounded_withdrawal() -> N
         ),
     )
     result = execute(run, targets=sleeve_targets(1), rollout_ids=[0], capture="forensic")[0]
-    payments = result["trace"]["financial"]["obligations"]
-    assert [(row["month"], row["amount_paid"]) for row in payments] == [(0, 1), (12, 1), (24, 2)]
-    assert result["stop"] is None
+    payments = result.summary.payments
+    assert [(row.month, row.receipt.amount_paid) for row in payments] == [(0, 1), (12, 1), (24, 2)]
+    assert result.stop is None
 
 
 def test_coupons_precede_claims_surplus_stays_cash_and_final_snapshot_does_not_pay() -> None:
@@ -78,13 +79,14 @@ def test_coupons_precede_claims_surplus_stays_cash_and_final_snapshot_does_not_p
         ),
     )
     result = execute(run, targets=sleeve_targets(0), rollout_ids=[0], capture="forensic")[0]
-    assert result["stop"] is None
-    assert result["summary"]["cash"][0]["values"] == [0, 600, 1000]
-    assert result["summary"]["public_holdings"][0]["values"] == [20_000, 24_000, 22_000]
-    financial = result["trace"]["financial"]
-    assert financial["dispositions"] == []
-    assert [next(iter(row["action"])) for row in result["trace"]["receipts"]] == ["PayClaim"]
-    assert financial["months"][-1]["lots"][0]["units_remaining"] == 2_000_000
+    assert result.stop is None
+    assert result.summary.cash[0].values == [0, 600, 1000]
+    assert result.summary.public_holdings[0].values == [20_000, 24_000, 22_000]
+    financial = result.trace
+    assert financial is not None
+    assert financial.events.lot_dispositions.is_empty()
+    assert [row.action.kind for row in financial.receipts] == ["PayClaim"]
+    assert financial.books[-1].lots[0].units_remaining == 2_000_000
 
 
 def test_nondivisible_sale_uses_quantity_ceiling_and_canonical_basis() -> None:
@@ -104,13 +106,14 @@ def test_nondivisible_sale_uses_quantity_ceiling_and_canonical_basis() -> None:
         ),
     )
     result = execute(run, targets=sleeve_targets(1), rollout_ids=[0], capture="forensic")[0]
-    assert result["stop"] is None
-    financial = result["trace"]["financial"]
-    sale = financial["dispositions"][0]
-    assert (sale["proceeds"], sale["basis"], sale["realized_gain"]) == (100, 33, 67)
-    lot = financial["months"][-1]["lots"][0]
-    assert (lot["units_remaining"], lot["basis_remaining"]) == (666_666, 67)
-    assert result["summary"]["cash"][0]["values"] == [0, 0]
+    assert result.stop is None
+    financial = result.trace
+    assert financial is not None
+    assert financial.events.lot_dispositions.select("proceeds_quanta", "cost_basis_consumed_quanta").row(0) == (100, 33)
+    assert financial.events.lot_dispositions.get_column("realized_gain_quanta").to_list() == [67]
+    lot = financial.books[-1].lots[0]
+    assert (lot.units_remaining, lot.basis_remaining) == (666_666, 67)
+    assert result.summary.cash[0].values == [0, 0]
 
 
 @pytest.mark.parametrize(("portfolio_dollars", "success"), [(29, False), (30, True), (31, True)])
@@ -133,19 +136,20 @@ def test_final_exact_depletion_is_success_but_an_unpaid_final_withdrawal_is_not(
         ),
     )
     result = execute(run, targets=sleeve_targets(1), rollout_ids=[0], capture="forensic")[0]
-    assert (result["stop"] is None) == success
-    payments = result["trace"]["financial"]["obligations"]
-    assert [(row["month"], row["amount_paid"]) for row in payments] == [
+    assert (result.stop is None) == success
+    payments = result.summary.payments
+    assert [(row.month, row.receipt.amount_paid) for row in payments] == [
         (year * 12, 100 if year < portfolio_dollars else 0) for year in range(30)
     ]
-    summary = result["summary"]
-    assert summary["ending_mark_month"] == (360 if success else 348)
-    assert summary["public_holdings"][0]["values"][-1] == max(0, portfolio_dollars - 30) * 100
-    assert summary["cash"][0]["values"][-1] == 0
-    assert summary["tax_accruals"] == summary["tax_payments"] == []
+    summary = result.summary
+    assert summary.ending_mark_month == (360 if success else 348)
+    assert summary.public_holdings[0].values[-1] == max(0, portfolio_dollars - 30) * 100
+    assert summary.cash[0].values[-1] == 0
+    assert summary.tax_accruals == []
+    assert summary.tax_payments == []
     if not success:
-        assert len(summary["cash"][0]["values"]) == 350
-        assert result["stop"] == {"RejectedAction": {"month": 348, "action_index": 0}}
+        assert len(summary.cash[0].values) == 350
+        assert result.stop == RejectedAction(month=348, action_index=0)
 
 
 @pytest.mark.parametrize("share", [0.0, 0.5, 1.0])
@@ -171,14 +175,15 @@ def test_offline_cli_replays_selected_original_windows(tmp_path: Path, share: fl
     study = json.loads((output / "study.json").read_text())
     assert study["source"] == "synthetic placeholder history"
     assert study["window_starts"] == [f"1930-0{month}-01" for month in range(1, 5)]
-    outcomes = json.loads((output / "outcomes.json").read_text())
-    traces = json.loads((output / "traces.json").read_text())
-    assert [row["rollout_id"] for row in outcomes] == [0, 1, 2, 3]
-    assert [row["rollout_id"] for row in traces] == [2, 0]
-    assert study["success_rate"] == sum(row["stop"] is None for row in outcomes) / 4
+    outcomes = Finished.model_validate_json((output / "outcomes.json").read_text()).rollouts
+    traces = Finished.model_validate_json((output / "traces.json").read_text()).rollouts
+    assert [row.rollout_id for row in outcomes] == [0, 1, 2, 3]
+    assert [row.rollout_id for row in traces] == [2, 0]
+    assert study["success_rate"] == sum(row.stop is None for row in outcomes) / 4
     for trace in traces:
-        assert outcomes[trace["rollout_id"]]["summary"] == trace["summary"]
-        assert {next(iter(row["action"])) for row in trace["trace"]["receipts"]} <= {"Sell", "PayClaim"}
+        assert outcomes[trace.rollout_id].summary == trace.summary
+        assert trace.trace is not None
+        assert {row.action.kind for row in trace.trace.receipts} <= {"Sell", "PayClaim"}
 
 
 if __name__ == "__main__":

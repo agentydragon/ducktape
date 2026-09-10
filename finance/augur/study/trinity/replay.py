@@ -122,7 +122,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 
@@ -141,9 +141,10 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.policy.funding import fund_claims
-from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import CompiledRun, compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
+from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.scenario import (
     Agent,
     DistributionTaxSlice,
@@ -335,15 +336,14 @@ def execute(
     targets: dict[tuple[str, str], int],
     rollout_ids: Sequence[int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
-) -> list[dict[str, Any]]:
+) -> list[Rollout]:
     """Python owns the monthly batch loop; native execution owns all financial effects."""
     session = ActionSession(json.dumps(run.execution_input), RETIREE, list(rollout_ids), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(fund_claims(batch, targets=targets, cash_account_id=CHECKING))
-        results: list[dict[str, Any]] = json.loads(batch.rollouts_json)
-        return results
+        return batch.rollouts
     finally:
         session.close()
 
@@ -375,7 +375,7 @@ class Replay:
         withdrawal_rate: float,
         rollout_ids: Sequence[int] | None = None,
         capture: Literal["summary", "dense", "forensic"] = "summary",
-    ) -> list[dict[str, Any]]:
+    ) -> list[Rollout]:
         """Run a cell or selected original window IDs on the same supplied population."""
         scenario = build_scenario(equity_share=equity_share, withdrawal_rate=withdrawal_rate)
         run = compile_run(
@@ -395,7 +395,7 @@ class Replay:
     def success_rate(self, *, equity_share: float, withdrawal_rate: float) -> float:
         """Fraction of windows completing all scheduled withdrawals, including exact depletion."""
         results = self.run(equity_share=equity_share, withdrawal_rate=withdrawal_rate)
-        return sum(row["stop"] is None for row in results) / len(results)
+        return sum(row.stop is None for row in results) / len(results)
 
     def safemax(self, *, equity_share: float, grid: tuple[float, ...]) -> float | None:
         """Highest rate in `grid` that every window survived, or `None` if even the lowest fails.
@@ -511,7 +511,7 @@ def main() -> None:
     if cell:
         outcomes = replay.run(equity_share=args.equity_share, withdrawal_rate=args.withdrawal_rate)
         args.output_dir.mkdir(parents=True, exist_ok=False)
-        (args.output_dir / "outcomes.json").write_text(json.dumps(outcomes))
+        (args.output_dir / "outcomes.json").write_text(Finished(rollouts=outcomes).model_dump_json())
         (args.output_dir / "study.json").write_text(
             json.dumps(
                 {
@@ -519,7 +519,7 @@ def main() -> None:
                     "window_starts": [start.isoformat() for start in replay.window_starts],
                     "equity_share": args.equity_share,
                     "withdrawal_rate": args.withdrawal_rate,
-                    "success_rate": sum(row["stop"] is None for row in outcomes) / len(outcomes),
+                    "success_rate": sum(row.stop is None for row in outcomes) / len(outcomes),
                 }
             )
         )
@@ -530,7 +530,7 @@ def main() -> None:
                 rollout_ids=args.trace_rollout,
                 capture="forensic",
             )
-            (args.output_dir / "traces.json").write_text(json.dumps(traces))
+            (args.output_dir / "traces.json").write_text(Finished(rollouts=traces).model_dump_json())
         print(f"Saved {len(outcomes)} overlapping windows to {args.output_dir}; not independent probability samples.")
         return
     print_table(replay)

@@ -37,12 +37,10 @@ def main() -> None:
     # Record high-water marks before verification/hash construction adds allocations.
     self_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     seconds = sum(entry.inlinetime for entry in profiler.getstats())
-    observed_months = sum(rollout["summary"]["ending_book"]["month"] for rollout in output["rollouts"])
+    observed_months = sum(rollout.summary.ending_book.month for rollout in output.rollouts)
     compact_hash = hashlib.sha256()
-    for rollout in output["rollouts"]:
-        compact_hash.update(
-            json.dumps({key: value for key, value in rollout.items() if key != "trace"}, sort_keys=True).encode()
-        )
+    for rollout in output.rollouts:
+        compact_hash.update(rollout.model_dump_json(exclude={"trace"}).encode())
     report = {
         "rollouts": args.rollouts,
         "horizon_months": args.horizon_months,

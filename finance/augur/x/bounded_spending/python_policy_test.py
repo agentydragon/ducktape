@@ -4,7 +4,6 @@ import json
 import subprocess
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
@@ -12,10 +11,11 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey
 from finance.augur.rust.invocation import write_prepared_input
-from finance.augur.rust.simulator import ActionSession, DecisionActions, Finished
+from finance.augur.rust.simulator import ActionSession, DecisionActions
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.results import Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.scenario import (
     FilingStatus,
     InitialLot,
@@ -42,9 +42,7 @@ from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture(params=[Parameters(400, 1000, 500), Parameters(400, 0, 0)])
-def control(
-    request: pytest.FixtureRequest, tmp_path: Path
-) -> tuple[Parameters, str, dict[str, Any], list[dict[str, Any]]]:
+def control(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[Parameters, str, Finished, list[Rollout]]:
     parameters: Parameters = request.param
     prepared = prepare(rollout_count=3, horizon_months=36)
     path = tmp_path / "input.json"
@@ -52,13 +50,13 @@ def control(
     targets = {("brokerage", "STOCKS"): 1}
     baseline = run(path.read_text(), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2])
     traces = run(path.read_text(), SpendingPolicy(BatchPolicy(parameters, 3), targets), [0, 1, 2], capture="forensic")
-    return (parameters, path.read_text(), baseline, traces["rollouts"])
+    return (parameters, path.read_text(), baseline, traces.rollouts)
 
 
 @pytest.mark.parametrize("batch_authored", [False, True])
 @pytest.mark.parametrize("chunk_size", [None, 1, 2])
 def test_scalar_adapter_and_batch_authoring_preserve_path_identity(
-    control: tuple[Parameters, str, dict[str, Any], list[dict[str, Any]]], batch_authored: bool, chunk_size: int | None
+    control: tuple[Parameters, str, Finished, list[Rollout]], batch_authored: bool, chunk_size: int | None
 ) -> None:
     parameters, input_json, baseline, traces = control
     ids = [0, 1, 2]
@@ -73,7 +71,7 @@ def test_scalar_adapter_and_batch_authoring_preserve_path_identity(
             trace = run(
                 input_json, SpendingPolicy(replay_policy, {("brokerage", "STOCKS"): 1}), [id_], capture="forensic"
             )
-            assert trace["rollouts"] == [traces[id_]]
+            assert trace.rollouts == [traces[id_]]
         second_year = [5_250_000, 4_500_000, 4_992_000] if parameters.max_cut_bps else [5_000_000] * 3
         assert [row[12] for row in consumption(baseline)[1]] == second_year
 
@@ -85,9 +83,9 @@ def test_depleted_paths_stop_and_live_zero_requests_continue(batch_authored: boo
         parameters = Parameters(10_000, cut, 0)
         policy = BatchPolicy(parameters, 3) if batch_authored else ScalarAdapter(parameters, [0, 1, 2])
         result = run(input_json, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), [0, 1, 2])
-        assert [
-            row["summary"]["ending_mark_month"] if row["stop"] is not None else -1 for row in result["rollouts"]
-        ] == [failure] * 3
+        assert [row.summary.ending_mark_month if row.stop is not None else -1 for row in result.rollouts] == [
+            failure
+        ] * 3
         paid = consumption(result)[1]
         assert all(len(path) == expected_length for path in paid)
         assert all(path == [100_000_000, *([0] * (expected_length - 1))] for path in paid)
@@ -162,12 +160,12 @@ def test_post_cashflow_review_and_ordered_claim_prefix_are_explicit() -> None:
     result = run(
         json.dumps(case.compiled_run.execution_input), SpendingPolicy(BatchPolicy(Parameters(10_000, 0, 0), 1), {}), [0]
     )
-    [row] = result["rollouts"]
+    [row] = result.rollouts
     assert consumption(result) == ([[20_000]], [[0]])  # includes the current $100 contribution
-    assert row["stop"] == {"RejectedAction": {"month": 0, "action_index": 1}}
-    assert row["summary"]["cash"][0]["values"] == [10_000, 17_000]  # the earlier bill stays paid
-    assert row["summary"]["payments"][0]["receipt"]["outcome"] == "Paid"
-    assert row["summary"]["unpaid_claims"] == []
+    assert row.stop == RejectedAction(month=0, action_index=1)
+    assert row.summary.cash[0].values == [10_000, 17_000]  # the earlier bill stays paid
+    assert isinstance(row.summary.payments[0].receipt.outcome, Paid)
+    assert row.summary.unpaid_claims == []
 
 
 def test_current_cpi_is_routed_without_future_values() -> None:
@@ -246,18 +244,18 @@ def test_authored_funding_pays_canonical_tax_claims_and_replays_compactly() -> N
             SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 1), {("brokerage", str(stock.symbol)): 1}),
             [0],
             capture="forensic" if forensic else "summary",
-        )["rollouts"][0]
+        ).rollouts[0]
         for forensic in [False, True]
     ]
-    assert outputs[0]["summary"] == outputs[1]["summary"]
-    summary = outputs[0]["summary"]
-    taxes = [payment for payment in summary["payments"] if payment["target"]["is_tax_payment"]]
-    assert [
-        (payment["month"], payment["receipt"]["amount_requested"], payment["receipt"]["outcome"]) for payment in taxes
-    ] == [(12, 240, "Paid")]
-    assert summary["tax_accruals"]
-    assert summary["tax_payments"]
-    assert summary["public_holdings"][0]["values"][-1] == 91_760
+    assert outputs[0].summary == outputs[1].summary
+    summary = outputs[0].summary
+    taxes = [payment for payment in summary.payments if payment.target is not None and payment.target.is_tax_payment]
+    assert [(payment.month, payment.receipt.amount_requested, payment.receipt.outcome) for payment in taxes] == [
+        (12, 240, Paid())
+    ]
+    assert summary.tax_accruals
+    assert summary.tax_payments
+    assert summary.public_holdings[0].values[-1] == 91_760
 
 
 def test_actual_profile_cli_uses_same_batch_session_for_both_authoring_forms(tmp_path: Path) -> None:

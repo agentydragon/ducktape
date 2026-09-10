@@ -220,6 +220,7 @@ LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
         "units_sold": pl.Float64(),
         "cost_basis_consumed_quanta": pl.Int64(),
         "proceeds_quanta": pl.Int64(),
+        "realized_gain_quanta": pl.Int64(),
         "proceeds_account_id": pl.Utf8(),
     }
 )
@@ -378,6 +379,17 @@ class EventLog:
     """Events and their owning original paths, including eventless trajectories."""
 
     rollout_ids: tuple[int, ...]
+
+    def __hash__(self) -> int:
+        raise TypeError("EventLog contains unhashable dataframe values")
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, EventLog):
+            return NotImplemented
+        return self.rollout_ids == other.rollout_ids and all(
+            self.frame(spec).equals(other.frame(spec)) for spec in EVENT_FRAME_SPECS
+        )
+
     _frames: Mapping[str, pl.DataFrame]
 
     @classmethod

@@ -4,7 +4,6 @@ import json
 import subprocess
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
@@ -12,6 +11,7 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.sim.scenario import InitialLot, ObligationType, ScheduledObligation
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -22,7 +22,7 @@ from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture
-def early_claim_failure() -> dict[str, Any]:
+def early_claim_failure() -> Finished:
     stock = SecurityKey(symbol="test-bill-funding")
     case = Case(
         scenario(
@@ -63,15 +63,15 @@ def early_claim_failure() -> dict[str, Any]:
     )
 
 
-def test_unattempted_consumption_has_known_zero_paid_on_observed_stop(early_claim_failure: dict[str, Any]) -> None:
-    stopped = early_claim_failure["rollouts"][0]
-    assert stopped["stop"] == {"RejectedAction": {"month": 0, "action_index": 1}}
-    assert [next(iter(row["action"])) for row in stopped["summary"]["last_receipts"]] == ["Sell", "PayClaim"]
+def test_unattempted_consumption_has_known_zero_paid_on_observed_stop(early_claim_failure: Finished) -> None:
+    stopped = early_claim_failure.rollouts[0]
+    assert stopped.stop == RejectedAction(month=0, action_index=1)
+    assert [row.action.kind for row in stopped.summary.last_receipts] == ["Sell", "PayClaim"]
     assert consumption(early_claim_failure) == ([[None], [1_200, 0]], [[0], [1_200, 0]])
 
 
 def test_paid_distribution_keeps_zero_when_request_is_unattempted(
-    early_claim_failure: dict[str, Any], tmp_path: Path
+    early_claim_failure: Finished, tmp_path: Path
 ) -> None:
     path = tmp_path / "consumption.json"
     _write_consumption_distribution(
@@ -123,8 +123,8 @@ def test_bounded_spending_reacts_to_each_path_and_preserves_the_fixed_real_contr
         output_dir=output,
         trace_rollouts=(0, 1, 2),
     )
-    fixed = json.loads((output / "fixed_real.json").read_text())
-    bounded = json.loads((output / "bounded.json").read_text())
+    fixed = Finished.model_validate_json((output / "fixed_real.json").read_text())
+    bounded = Finished.model_validate_json((output / "bounded.json").read_text())
     policies = json.loads((output / "policies.json").read_text())
     assert policies["bounded"] == {"max_cut_bps": 1000, "max_raise_bps": 500}
     for name, document, second_year, third_year in (
@@ -132,28 +132,29 @@ def test_bounded_spending_reacts_to_each_path_and_preserves_the_fixed_real_contr
         ("bounded", bounded, (5_250_000, 4_500_000, 4_992_000), (5_512_500, 4_050_000, 4_792_320)),
     ):
         for rollout_id, (expected, next_expected) in enumerate(zip(second_year, third_year, strict=True)):
-            rollout = json.loads((output / f"{name}.trace-{rollout_id}.json").read_text())
-            financial = rollout["trace"]["financial"]
-            withdrawals = financial["obligations"]
-            assert withdrawals[0]["amount_paid"] == 4_000_000
-            assert withdrawals[1]["month"] == 12
-            assert withdrawals[1]["amount_paid"] == expected
-            assert withdrawals[2]["month"] == 24
-            assert withdrawals[2]["amount_paid"] == next_expected
-            assert financial["dispositions"]  # actual funding sales, not a portfolio-value calculator
-            assert financial["tax_accruals"] == []  # this control is intentionally tax-free
-            failed_month = financial["failed_month"]
+            rollout = Rollout.model_validate_json((output / f"{name}.trace-{rollout_id}.json").read_text())
+            financial = rollout.trace
+            assert financial is not None
+            withdrawals = rollout.summary.payments
+            assert withdrawals[0].receipt.amount_paid == 4_000_000
+            assert withdrawals[1].month == 12
+            assert withdrawals[1].receipt.amount_paid == expected
+            assert withdrawals[2].month == 24
+            assert withdrawals[2].receipt.amount_paid == next_expected
+            assert not financial.events.lot_dispositions.is_empty()  # actual funding sales
+            assert rollout.summary.tax_accruals == []  # this control is intentionally tax-free
+            failed_month = rollout.stop.month if rollout.stop is not None else None
             observed_months = HORIZON_MONTHS if failed_month is None else failed_month + 1
             requests, payments = consumption(document)
             requested = requests[rollout_id]
             paid = payments[rollout_id]
             assert len(requested) == len(paid) == observed_months
-            receipts = {row["month"]: row["receipt"] for row in rollout["summary"]["payments"]}
+            receipts = {row.month: row.receipt for row in rollout.summary.payments}
             for month in range(observed_months):
                 receipt = receipts.get(month)
-                assert requested[month] == (receipt["amount_requested"] if receipt else 0)
-                assert paid[month] == (receipt["amount_requested"] if receipt and receipt["outcome"] == "Paid" else 0)
-            assert document["rollouts"][rollout_id]["summary"] == rollout["summary"]
+                assert requested[month] == (receipt.amount_requested if receipt else 0)
+                assert paid[month] == (receipt.amount_paid if receipt else 0)
+            assert document.rollouts[rollout_id].summary == rollout.summary
         distribution = json.loads((output / f"{name}.consumption.json").read_text())
         assert distribution["component"] == "annual_consumption"
         assert distribution["months"][0]["observed_path_count"] == 3
@@ -181,11 +182,11 @@ def test_live_zero_consumption_is_not_confused_with_post_stop_absence(tmp_path: 
         output_dir=output,
     )
     assert not list(output.glob("*.trace-*.json"))  # Population output does not request full traces.
-    fixed = json.loads((output / "fixed_real.json").read_text())
-    bounded = json.loads((output / "bounded.json").read_text())
-    assert fixed["rollouts"][0]["stop"] == {"RejectedAction": {"month": 12, "action_index": 0}}
+    fixed = Finished.model_validate_json((output / "fixed_real.json").read_text())
+    bounded = Finished.model_validate_json((output / "bounded.json").read_text())
+    assert fixed.rollouts[0].stop == RejectedAction(month=12, action_index=0)
     assert consumption(fixed) == ([[100_000_000, *([0] * 11), 100_000_000]], [[100_000_000, *([0] * 12)]])
-    assert bounded["rollouts"][0]["stop"] is None
+    assert bounded.rollouts[0].stop is None
     assert consumption(bounded) == ([[100_000_000, *([0] * (HORIZON_MONTHS - 1))]],) * 2
     fixed_distribution = json.loads((output / "fixed_real.consumption.json").read_text())
     bounded_distribution = json.loads((output / "bounded.consumption.json").read_text())
@@ -219,9 +220,9 @@ def test_actual_study_cli_runs_on_generated_placeholder_paths(tmp_path: Path) ->
         ],
         check=True,
     )
-    population = json.loads((output / "bounded.json").read_text())
-    replay = json.loads((output / "bounded.trace-2.json").read_text())
-    assert replay["summary"] == population["rollouts"][2]["summary"]
+    population = Finished.model_validate_json((output / "bounded.json").read_text())
+    replay = Rollout.model_validate_json((output / "bounded.trace-2.json").read_text())
+    assert replay.summary == population.rollouts[2].summary
     assert consumption(population)[1][2][12] == 4_992_000
 
 

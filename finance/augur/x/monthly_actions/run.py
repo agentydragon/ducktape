@@ -5,20 +5,20 @@ tax example. The prepared document retains the complete financial assumptions.
 """
 
 import argparse
-import json
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 
 from finance.augur.model.series import SecurityKey
 from finance.augur.rust.invocation import write_prepared_input
-from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import CompiledRun, compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import (
     Agent,
     FilingStatus,
@@ -110,17 +110,17 @@ def prepare(rollout_count: int = 2, horizon_months: int = 13, *, cash_only_start
 
 def execute(
     input_path: Path, output_path: Path, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"]
-) -> dict[str, Any]:
+) -> Finished:
     """Own the monthly Python loop over one retained action session and write its results."""
     session = ActionSession(input_path.read_text(), "example-household", list(rollout_ids), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(decide(batch))
-        output = {"rollouts": json.loads(batch.rollouts_json)}
+        output = batch
     finally:
         session.close()
-    output_path.write_text(json.dumps(output))
+    output_path.write_text(output.model_dump_json())
     return output
 
 
@@ -132,15 +132,15 @@ def run_example(
     rollout_count: int = 2,
     horizon_months: int = 13,
     cash_only_start: bool = False,
-) -> dict[str, Any]:
+) -> Finished:
     compiled = prepare(rollout_count, horizon_months, cash_only_start=cash_only_start)
     output_dir.mkdir(parents=True, exist_ok=False)
     input_path = output_dir / "execution-input.json"
     write_prepared_input(compiled, input_path)
     ids = range(rollout_count) if rollout_ids is None else rollout_ids
     output = execute(input_path, output_dir / "outcomes.json", ids, capture)
-    stopped = sum(rollout["stop"] is not None for rollout in output["rollouts"])
-    print(f"paths={len(output['rollouts'])}; stopped={stopped}; capture={capture}")
+    stopped = sum(rollout.stop is not None for rollout in output.rollouts)
+    print(f"paths={len(output.rollouts)}; stopped={stopped}; capture={capture}")
     return output
 
 

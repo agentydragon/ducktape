@@ -44,8 +44,8 @@ def test_prepared_input_retains_original_path_cpi_and_selected_replay(tmp_path: 
     baseline = run(encoded, SpendingPolicy(BatchPolicy(parameters, 3), {}), [0, 1, 2])
     assert [row[12] for row in consumption(baseline)[1]] == [800, 400, 1200]
     replay = run(encoded, SpendingPolicy(BatchPolicy(parameters, 3), {}), [2, 0], capture="forensic")
-    assert [row["rollout_id"] for row in replay["rollouts"]] == [2, 0]
-    assert [row["summary"] for row in replay["rollouts"]] == [baseline["rollouts"][id_]["summary"] for id_ in [2, 0]]
+    assert [row.rollout_id for row in replay.rollouts] == [2, 0]
+    assert [row.summary for row in replay.rollouts] == [baseline.rollouts[id_].summary for id_ in [2, 0]]
     assert path.read_text() == encoded
 
 

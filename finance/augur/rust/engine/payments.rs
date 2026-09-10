@@ -34,12 +34,14 @@ pub enum Request {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(tag = "kind")]
 pub enum Target {
     Claim(claims::ClaimId),
     Consumption { component_id: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(tag = "kind")]
 pub enum Rejection {
     UnknownClaim,
     AlreadyPaid,
@@ -53,6 +55,7 @@ pub enum Rejection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", content = "reason")]
 pub enum Outcome {
     Paid,
     Rejected(Rejection),

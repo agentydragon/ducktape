@@ -150,6 +150,7 @@ event_frames! {
         units units_sold = units,
         money cost_basis_consumed_quanta = basis,
         money proceeds_quanta = proceeds,
+        money realized_gain_quanta = realized_gain,
         text proceeds_account_id = proceeds_account_id,
     }
 

@@ -8,8 +8,8 @@ import os
 import pstats
 import resource
 from pathlib import Path
-from typing import Any
 
+from finance.augur.sim.results import Finished
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, ScalarAdapter, SpendingPolicy, run
 from finance.augur.x.bounded_spending.stress_paths import prepare
 
@@ -33,7 +33,7 @@ def main() -> None:
     input_path.write_text(input_json)
     parameters = Parameters(400, 1000, 500)
 
-    def execute() -> dict[str, Any]:
+    def execute() -> Finished:
         ids = list(range(args.rollouts))
         policy = (
             ScalarAdapter(parameters, ids) if args.authoring == "scalar" else BatchPolicy(parameters, args.rollouts)
@@ -45,7 +45,7 @@ def main() -> None:
     profiler.dump_stats(args.output_dir / "execution.prof")
     stats = pstats.Stats(profiler)
     profiled_seconds = sum(entry.inlinetime for entry in profiler.getstats())
-    observed_months = sum(path["summary"]["ending_book"]["month"] for path in output["rollouts"])
+    observed_months = sum(path.summary.ending_book.month for path in output.rollouts)
     report = {
         "authoring": args.authoring,
         "capture": args.capture,
@@ -55,7 +55,7 @@ def main() -> None:
         "profiled_seconds": profiled_seconds,
         "profiled_path_months_per_second": observed_months / profiled_seconds,
         "peak_self_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-        "output_sha256": hashlib.sha256(json.dumps(output, sort_keys=True).encode()).hexdigest(),
+        "output_sha256": hashlib.sha256(output.model_dump_json().encode()).hexdigest(),
         "logical_cpu_count": os.cpu_count(),
         "rayon_num_threads": os.environ.get("RAYON_NUM_THREADS"),
         "input_sha256": hashlib.sha256(input_json.encode()).hexdigest(),

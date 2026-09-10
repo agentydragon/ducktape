@@ -5,64 +5,97 @@ import json
 from dataclasses import asdict
 from itertools import product
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.sim.books import Record
 from finance.augur.sim.quantiles import currency_quantiles
+from finance.augur.sim.results import Finished, Stop, UnpaidClaim
 from finance.augur.x.bounded_spending.python_policy import Parameters, consumption, run
 from finance.augur.x.joint_spending_allocation.policy import JointPolicy
 from finance.augur.x.joint_spending_allocation.scenario import prepare, sample
 
 
-def measurements(output: dict[str, Any], policy: JointPolicy) -> dict[str, Any]:
+class Month(Record):
+    month: int
+    intended_consumption: int | None
+    fixed_real_anchor: int | None
+    cut_from_fixed_real_anchor: int | None
+    consumption_requested: int | None
+    consumption_paid: int
+    consumption_shortfall: int | None
+
+
+class PathMeasurements(Record):
+    rollout_id: int
+    stop: Stop | None
+    ending_mark_month: int
+    ending_assets: int
+    terminal_assets: int | None
+    tax_assessed: int
+    tax_paid: int
+    unpaid_claims: list[UnpaidClaim]
+    months: list[Month]
+
+
+class Measurements(Record):
+    paths: list[PathMeasurements]
+    completed_paths: int
+    terminal_assets_percentiles: tuple[int, ...] | None
+
+
+class Output(Finished):
+    measurements: Measurements
+
+
+def measurements(output: Finished, policy: JointPolicy) -> Measurements:
     requests, paid = consumption(output)
     paths = []
-    for rollout, path_requests, path_paid in zip(output["rollouts"], requests, paid, strict=True):
-        id_ = rollout["rollout_id"]
-        summary = rollout["summary"]
+    for rollout, path_requests, path_paid in zip(output.rollouts, requests, paid, strict=True):
+        id_ = rollout.rollout_id
+        summary = rollout.summary
         intentions = policy.intentions.get(id_, {})
         months = []
         for month, (requested, actual) in enumerate(zip(path_requests, path_paid, strict=True)):
             intent = intentions.get(month)
             months.append(
-                {
-                    "month": month,
-                    "intended_consumption": intent.consumption if intent is not None else None,
-                    "fixed_real_anchor": intent.fixed_real_anchor if intent is not None else None,
-                    "cut_from_fixed_real_anchor": max(0, intent.fixed_real_anchor - intent.consumption)
+                Month(
+                    month=month,
+                    intended_consumption=intent.consumption if intent is not None else None,
+                    fixed_real_anchor=intent.fixed_real_anchor if intent is not None else None,
+                    cut_from_fixed_real_anchor=max(0, intent.fixed_real_anchor - intent.consumption)
                     if intent is not None
                     else None,
-                    "consumption_requested": requested,
-                    "consumption_paid": actual,
-                    "consumption_shortfall": max(0, intent.consumption - actual)
+                    consumption_requested=requested,
+                    consumption_paid=actual,
+                    consumption_shortfall=max(0, intent.consumption - actual)
                     if intent is not None and actual is not None
                     else None,
-                }
+                )
             )
-        assets = sum(row["values"][-1] for field in ("cash", "public_holdings") for row in summary[field])
+        assets = sum(row.values[-1] for row in [*summary.cash, *summary.public_holdings])
         paths.append(
-            {
-                "rollout_id": id_,
-                "stop": rollout["stop"],
-                "ending_mark_month": summary["ending_mark_month"],
-                "ending_assets": assets,
-                "terminal_assets": assets if rollout["stop"] is None else None,
-                "tax_assessed": sum(row["total_tax"] for row in summary["tax_accruals"]),
-                "tax_paid": sum(row["amount_paid"] for row in summary["tax_payments"]),
-                "unpaid_claims": summary["unpaid_claims"],
-                "months": months,
-            }
+            PathMeasurements(
+                rollout_id=id_,
+                stop=rollout.stop,
+                ending_mark_month=summary.ending_mark_month,
+                ending_assets=assets,
+                terminal_assets=assets if rollout.stop is None else None,
+                tax_assessed=sum(row.total_tax for row in summary.tax_accruals),
+                tax_paid=sum(row.amount_paid for row in summary.tax_payments),
+                unpaid_claims=summary.unpaid_claims,
+                months=months,
+            )
         )
-    terminal = [path["terminal_assets"] for path in paths if path["terminal_assets"] is not None]
-    return {
-        "paths": paths,
-        "completed_paths": len(terminal),
-        "terminal_assets_percentiles": currency_quantiles(np.asarray(terminal, dtype=np.int64), (0.0, 50.0, 100.0))
+    terminal = [path.terminal_assets for path in paths if path.terminal_assets is not None]
+    return Measurements(
+        paths=paths,
+        completed_paths=len(terminal),
+        terminal_assets_percentiles=currency_quantiles(np.asarray(terminal, dtype=np.int64), (0.0, 50.0, 100.0))
         if terminal
         else None,
-    }
+    )
 
 
 def compare(output_dir: Path) -> None:
@@ -80,16 +113,14 @@ def compare(output_dir: Path) -> None:
         parameters = Parameters(rate, cut, raise_)
         policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
         output = run(input_json, policy, [0, 1, 2])
-        output["measurements"] = measurements(output, policy)
-        (output_dir / f"{name}.json").write_text(json.dumps(output))
+        measured = Output(rollouts=output.rollouts, measurements=measurements(output, policy))
+        (output_dir / f"{name}.json").write_text(measured.model_dump_json())
         replay_policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
         replay = run(input_json, replay_policy, [2, 0], capture="forensic")
-        replay["measurements"] = measurements(replay, replay_policy)
-        (output_dir / f"{name}-traces.json").write_text(json.dumps(replay))
+        detailed = Output(rollouts=replay.rollouts, measurements=measurements(replay, replay_policy))
+        (output_dir / f"{name}-traces.json").write_text(detailed.model_dump_json())
         cells.append({"name": name, "spending": asdict(parameters), "annual_allocation_step_percent": step})
-        print(
-            f"{name}: completed={output['measurements']['completed_paths']}/3; paired stipulated cases, not probability"
-        )
+        print(f"{name}: completed={measured.measurements.completed_paths}/3; paired stipulated cases, not probability")
     (output_dir / "experiment.json").write_text(
         json.dumps(
             {

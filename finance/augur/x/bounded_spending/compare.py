@@ -17,6 +17,7 @@ from finance.augur.rust.invocation import write_prepared_input
 from finance.augur.sim.backend import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.quantiles import currency_quantiles
+from finance.augur.sim.results import Finished
 from finance.augur.study.trinity.replay import HORIZON_MONTHS, build_scenario, sample_replay, sleeve_targets
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
 from finance.augur.x.bounded_spending.stress_paths import sample
@@ -75,7 +76,7 @@ def compare(
         summary = run(
             input_json, SpendingPolicy(BatchPolicy(parameters, rollout_count), targets), list(range(rollout_count))
         )
-        summary_path.write_text(json.dumps(summary))
+        summary_path.write_text(summary.model_dump_json())
         for rollout_id in trace_rollouts:
             replay = run(
                 input_json,
@@ -83,7 +84,7 @@ def compare(
                 [rollout_id],
                 capture="forensic",
             )
-            summary_path.with_suffix(f".trace-{rollout_id}.json").write_text(json.dumps(replay["rollouts"][0]))
+            summary_path.with_suffix(f".trace-{rollout_id}.json").write_text(replay.rollouts[0].model_dump_json())
         _write_consumption_distribution(
             summary,
             output_dir / f"{name}.consumption.json",
@@ -94,7 +95,7 @@ def compare(
 
 
 def _write_consumption_distribution(
-    summary: dict[str, Any], output_path: Path, *, horizon_months: int, currency_code: str, currency_quantum: str
+    summary: Finished, output_path: Path, *, horizon_months: int, currency_code: str, currency_quantum: str
 ) -> None:
     """Describe the empirical component distribution among paths observed that month."""
     percentiles = (5.0, 50.0, 95.0)
@@ -130,8 +131,7 @@ def _write_consumption_distribution(
                 "conditioning": "requested: known requests on observed paths; paid: all observed paths, including zero when an earlier rejection prevents consumption",
                 "percentiles": percentiles,
                 "failed_month": [
-                    row["summary"]["ending_mark_month"] if row["stop"] is not None else None
-                    for row in summary["rollouts"]
+                    row.summary.ending_mark_month if row.stop is not None else None for row in summary.rollouts
                 ],
                 "months": months,
             },

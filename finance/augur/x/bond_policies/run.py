@@ -10,15 +10,18 @@ import json
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
+from pydantic import TypeAdapter
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import fund_claims
-from finance.augur.rust.simulator import ActionSession, Finished
+from finance.augur.rust.simulator import ActionSession
 from finance.augur.sim.backend import CompiledRun, compile_run
+from finance.augur.sim.books import Record
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
 from finance.augur.sim.scenario import (
     Agent,
     DistributionTaxSlice,
@@ -119,7 +122,7 @@ def compile_construction(
 
 def execute(
     run: CompiledRun, *, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"] = "summary"
-) -> list[dict[str, Any]]:
+) -> list[Rollout]:
     """Run the monthly batch policy on selected original paths, without reinvestment."""
     session = ActionSession(json.dumps(run.execution_input), HOUSEHOLD, list(rollout_ids), capture=capture)
     try:
@@ -128,35 +131,58 @@ def execute(
             batch = session.advance(
                 fund_claims(batch, targets={(BROKERAGE, str(STRATEGY)): 1}, cash_account_id=CHECKING)
             )
-        results: list[dict[str, Any]] = json.loads(batch.rollouts_json)
-        return results
+        return batch.rollouts
     finally:
         session.close()
 
 
-def measurements(rollout: dict[str, Any]) -> dict[str, Any]:
+class Measurements(Record):
+    rollout_id: int
+    stop: Stop | None
+    ending_mark_month: int
+    ending_assets_quanta: int
+    terminal_wealth_quanta: int | None
+    spending_requested_quanta: int
+    spending_paid_quanta: int
+    attempted_spending_shortfall_quanta: int
+    unpaid_claims: list[UnpaidClaim]
+    tax_paid_quanta: int
+
+
+class Cell(Record):
+    path: str
+    construction: str
+    annual_spending_usd: str
+    output: str
+    currency_code: str
+    currency_quantum: str
+    measurements: Measurements
+
+
+CELLS = TypeAdapter(list[Cell])
+
+
+def measurements(rollout: Rollout) -> Measurements:
     """Report observed payment attempts and assets; stopped assets are not terminal wealth."""
-    summary = rollout["summary"]
-    assets = sum(row["values"][-1] for field in ("cash", "public_holdings") for row in summary[field])
+    summary = rollout.summary
+    assets = sum(row.values[-1] for row in [*summary.cash, *summary.public_holdings])
     payments = [
-        row["receipt"]
-        for row in summary["payments"]
-        if row["target"] is not None and row["target"]["obligation_type"] == "cash_spend"
+        row.receipt for row in summary.payments if row.target is not None and row.target.obligation_type == "cash_spend"
     ]
-    requested = sum(receipt["amount_requested"] for receipt in payments)
-    paid = sum(receipt["amount_requested"] for receipt in payments if receipt["outcome"] == "Paid")
-    return {
-        "rollout_id": rollout["rollout_id"],
-        "stop": rollout["stop"],
-        "ending_mark_month": summary["ending_mark_month"],
-        "ending_assets_quanta": assets,
-        "terminal_wealth_quanta": assets if rollout["stop"] is None else None,
-        "spending_requested_quanta": requested,
-        "spending_paid_quanta": paid,
-        "attempted_spending_shortfall_quanta": requested - paid,
-        "unpaid_claims": summary["unpaid_claims"],
-        "tax_paid_quanta": sum(row["amount_paid"] for row in summary["tax_payments"]),
-    }
+    requested = sum(receipt.amount_requested for receipt in payments)
+    paid = sum(receipt.amount_paid for receipt in payments)
+    return Measurements(
+        rollout_id=rollout.rollout_id,
+        stop=rollout.stop,
+        ending_mark_month=summary.ending_mark_month,
+        ending_assets_quanta=assets,
+        terminal_wealth_quanta=assets if rollout.stop is None else None,
+        spending_requested_quanta=requested,
+        spending_paid_quanta=paid,
+        attempted_spending_shortfall_quanta=requested - paid,
+        unpaid_claims=summary.unpaid_claims,
+        tax_paid_quanta=sum(row.amount_paid for row in summary.tax_payments),
+    )
 
 
 def run_experiment(
@@ -225,22 +251,23 @@ def run_experiment(
             run = compile_construction(construction, annual_spending=spending)
             (cell_dir / "execution_input.json").write_text(json.dumps(run.execution_input))
             results = execute(run, rollout_ids=range(len(curves)))
-            (cell_dir / "rollouts.json").write_text(json.dumps(results))
+            (cell_dir / "rollouts.json").write_text(Finished(rollouts=results).model_dump_json())
             traces = execute(run, rollout_ids=trace_rollouts, capture="forensic") if trace_rollouts else []
-            (cell_dir / "traces.json").write_text(json.dumps(traces))
+            if traces:
+                (cell_dir / "traces.json").write_text(Finished(rollouts=traces).model_dump_json())
             for rollout, path_name in zip(results, curves, strict=True):
                 summaries.append(
-                    {
-                        "path": path_name,
-                        "construction": name,
-                        "annual_spending_usd": str(spending),
-                        "output": str(cell_dir.relative_to(output_dir)),
-                        "currency_code": "USD",
-                        "currency_quantum": "0.01",
-                        **measurements(rollout),
-                    }
+                    Cell(
+                        path=path_name,
+                        construction=name,
+                        annual_spending_usd=str(spending),
+                        output=str(cell_dir.relative_to(output_dir)),
+                        currency_code="USD",
+                        currency_quantum="0.01",
+                        measurements=measurements(rollout),
+                    )
                 )
-    (output_dir / "summary.json").write_text(json.dumps(summaries, indent=2))
+    (output_dir / "summary.json").write_bytes(CELLS.dump_json(summaries, indent=2))
     print(f"Saved {len(summaries)} deterministic path/construction/spending cells to {output_dir}; not probabilities.")
 
 

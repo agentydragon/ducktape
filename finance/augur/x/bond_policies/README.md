@@ -63,8 +63,10 @@ its unobserved internal flows are not reported as zero events.
 
 Each spending cell saves its complete `execution_input.json`, canonical compact
 results in `rollouts.json`, and selected forensic replays in `traces.json`.
+Both result files use `sim.results.Finished`; read them with
+`Finished.model_validate_json(path.read_text())` and access `.rollouts`.
 `--trace-rollouts` selects original zero-based path IDs, in the supplied order;
-omit its values for no detailed replays. All cells use the same five paths, and
+omit its values for no detailed replays or trace file. All cells use the same five paths, and
 replaying a subset does not renumber them.
 
 `summary.json` links each path/cell to observed requested/paid spending, attempted
@@ -73,6 +75,7 @@ explicit stop result. A failed payment is not partially paid: any preceding unit
 sale remains effective, that payment changes no books, and only that path stops.
 No later events are invented. Requested/shortfall totals cover attempted payments,
 not unobserved future scheduled withdrawals.
+Each cell's numerical report is its typed `measurements` record.
 
 Terminal wealth is cash plus marked units only for completed horizons; stopped
 assets have their own `ending_mark_month` and are not horizon outcomes. Amounts

@@ -305,3 +305,35 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "books",
+    srcs = ["books.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "results",
+    srcs = ["results.py"],
+    deps = [
+        ":books",
+        ":events",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_results",
+    srcs = ["test_results.py"],
+    deps = [
+        ":results",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/x/monthly_actions:policy",
+        "//finance/augur/x/monthly_actions:run",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

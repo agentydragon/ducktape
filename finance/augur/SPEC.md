@@ -100,6 +100,10 @@ results preserve original path, request, claim, component and account identities
 observed cash/public-holding histories, canonical tax results and the exact stop
 book with its attempted action prefix. No post-stop value is an observation.
 Selected detailed replay agrees with these results on the same supplied paths.
+The common action session exposes typed Python results and prior-action receipts,
+with exact integer amounts and explicit stop/payment variants. JSON is transport
+or file I/O, not a second financial object model. Optional traces preserve books
+and journal alongside columnar events; omitted capture is not a zero history.
 Results use one original `rollout_id` within a prepared run. Reordering or
 subsetting results does not renumber paths: metric axes and event logs retain
 their IDs, and selected detail resolves its array column internally by that ID.

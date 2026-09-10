@@ -6,6 +6,8 @@ must be edited in lockstep with the `#[pymodule]` block in `python.rs`.
 
 from typing import Literal
 
+from finance.augur.sim.results import Finished, Receipt
+
 class ProductMetrics:
     """The seven base product metric series for one population."""
 
@@ -148,7 +150,7 @@ class Observation:
     @property
     def claims(self) -> list[Claim]: ...
     @property
-    def previous_receipts_json(self) -> str: ...
+    def previous_receipts(self) -> list[Receipt]: ...
 
 class Decision:
     @property
@@ -194,7 +196,6 @@ class Action:
         to_account: tuple[str, str],
         amount: int,
     ) -> Action: ...
-    def to_json(self) -> str: ...
 
 class DecisionActions:
     def __init__(self, rollout_id: int, month: int, actions: list[Action]) -> None: ...
@@ -204,11 +205,6 @@ class DecisionActions:
     def month(self) -> int: ...
     @property
     def actions(self) -> list[Action]: ...
-
-class Finished:
-    @property
-    def rollouts_json(self) -> str:
-        """Terminal summaries and optional traces in the original selection order."""
 
 class ActionSession:
     """One household's retained monthly action session; the caller owns the Python loop.

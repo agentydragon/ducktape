@@ -10,7 +10,8 @@ import pytest_bazel
 
 from finance.augur.model.series import SecurityKey
 from finance.augur.policy import sleeves
-from finance.augur.rust.simulator import Action, ActionSession, DecisionActions, Finished
+from finance.augur.rust.simulator import Action, ActionSession, DecisionActions
+from finance.augur.sim.results import Finished, RejectedAction, Sell
 from finance.augur.sim.scenario import InitialLot
 from finance.augur.sim.testing.case import Case, flat, scenario
 from finance.augur.sim.testing.fixtures import checking
@@ -118,19 +119,20 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(input_document
         remaining.append(Action.transfer("never", ("test-owner", "checking"), ("test-world", "checking"), 1))
         finished = session.advance([DecisionActions(0, 1, remaining)])
         assert isinstance(finished, Finished)
-        [result] = json.loads(finished.rollouts_json)
+        [result] = finished.rollouts
     finally:
         session.close()
-    sales = result["trace"]["financial"]["dispositions"]
-    assert [(sale["lot_id"], sale["units"], sale["basis"], sale["proceeds"]) for sale in sales] == [
-        ("test-older", 3, 1, 1),
-        ("test-newer", 4, 1, 1),
+    assert result.trace is not None
+    sales = result.trace.events.lot_dispositions
+    assert sales.select("lot_id", "units_sold", "cost_basis_consumed_quanta", "proceeds_quanta").rows() == [
+        ("test-older", 0.3, 1, 1),
+        ("test-newer", 0.4, 1, 1),
     ]
-    assert result["stop"] == {"RejectedAction": {"month": 1, "action_index": 1}}
-    assert result["summary"]["cash"][0]["values"] == [7, 8, 9]
-    lots = {lot["lot_id"]: lot for lot in result["summary"]["ending_book"]["lots"]}
-    assert lots["test-outside"]["units_remaining"] == 1
-    assert lots["test-second"]["units_remaining"] == 10
+    assert result.stop == RejectedAction(month=1, action_index=1)
+    assert result.summary.cash[0].values == [7, 8, 9]
+    lots = {lot.lot_id: lot for lot in result.summary.ending_book.lots}
+    assert lots["test-outside"].units_remaining == 1
+    assert lots["test-second"].units_remaining == 10
 
 
 def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_grid(
@@ -154,10 +156,11 @@ def test_grouped_symbol_withdrawal_keeps_account_order_and_each_lots_quantity_gr
         assert not isinstance(batch, Finished)
         finished = session.advance([DecisionActions(0, 1, [])])
         assert isinstance(finished, Finished)
-        result = json.loads(finished.rollouts_json)[0]
-        sales = result["trace"]["financial"]["dispositions"]
-        assert [(sale["lot_id"], sale["proceeds"]) for sale in sales] == [("test-older", 1), ("test-newer", 1)]
-        remaining = {lot["lot_id"]: lot["units_remaining"] for lot in result["summary"]["ending_book"]["lots"]}
+        result = finished.rollouts[0]
+        assert result.trace is not None
+        sales = result.trace.events.lot_dispositions
+        assert sales.select("lot_id", "proceeds_quanta").rows() == [("test-older", 1), ("test-newer", 1)]
+        remaining = {lot.lot_id: lot.units_remaining for lot in result.summary.ending_book.lots}
         assert remaining == {"test-newer": 0, "test-older": 0, "test-second": 10, "test-outside": 1}
     finally:
         session.close()
@@ -185,23 +188,24 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(input_document: dict[st
             )
             batch = session.advance([DecisionActions(0, month, actions)])
         assert isinstance(batch, Finished)
-        [result] = json.loads(batch.rollouts_json)
+        [result] = batch.rollouts
     finally:
         session.close()
-    assert result["stop"] is None
-    assert result["summary"]["cash"][0]["values"] == [7, 7, 7]
-    first_sales = [sale for sale in result["trace"]["financial"]["dispositions"] if sale["month"] == 0]
-    assert sum(sale["units"] for sale in first_sales) == (1 if dust else 7)
-    assert sum(sale["proceeds"] for sale in first_sales) == (0 if dust else 2)
-    lots = result["summary"]["ending_book"]["lots"]
+    assert result.stop is None
+    assert result.summary.cash[0].values == [7, 7, 7]
+    assert result.trace is not None
+    first_sales = [
+        receipt.action for receipt in result.trace.receipts if receipt.month == 0 and isinstance(receipt.action, Sell)
+    ]
+    assert sum(lot.units for sale in first_sales for lot in sale.lots) == (1 if dust else 7)
+    assert result.trace.events.at_month(0).lot_dispositions.get_column("proceeds_quanta").sum() == (0 if dust else 2)
+    lots = result.summary.ending_book.lots
     assert all(
-        lot["units_remaining"] == lot["basis_remaining"] == 0
-        for lot in lots
-        if lot["asset_id"] == "security:test-second"
+        lot.units_remaining == lot.basis_remaining == 0 for lot in lots if lot.asset_id == "security:test-second"
     )
-    [reentry] = [lot for lot in lots if lot["purchase_month"] == 1]
-    assert (reentry["units_remaining"], reentry["basis_remaining"]) == ((10, 3) if dust else (16, 5))
-    assert next(lot for lot in lots if lot["lot_id"] == "test-outside")["units_remaining"] == 1
+    [reentry] = [lot for lot in lots if lot.purchase_month == 1]
+    assert (reentry.units_remaining, reentry.basis_remaining) == ((10, 3) if dust else (16, 5))
+    assert next(lot for lot in lots if lot.lot_id == "test-outside").units_remaining == 1
 
 
 @pytest.mark.parametrize("unheld", [False, True])
@@ -269,11 +273,17 @@ def test_selected_pools_keep_their_own_economic_unit_scale(input_document: dict[
         assert ("outside", "test-first") not in remaining
         finished = session.advance([DecisionActions(0, 1, [])])
         assert isinstance(finished, Finished)
-        [result] = json.loads(finished.rollouts_json)
+        [result] = finished.rollouts
     finally:
         session.close()
-    sales = result["trace"]["financial"]["dispositions"]
-    assert [(sale["quantity_scale"], sale["units"], sale["proceeds"]) for sale in sales] == [(10, 7, 2), (1, 1, 3)]
+    assert result.trace is not None
+    sales = result.trace.events.lot_dispositions
+    assert sales.select("units_sold", "proceeds_quanta").rows() == [(0.7, 2), (1.0, 3)]
+    assert [
+        (lot.quantity_scale, lot.units_remaining)
+        for lot in result.summary.ending_book.lots
+        if lot.lot_id in {"test-second", "test-outside"}
+    ] == [(10, 3), (1, 0)]
 
 
 if __name__ == "__main__":

@@ -5,17 +5,17 @@ NumPy object arrays (Python integers), not a claim of SIMD or compiled-policy sp
 Neither implementation performs financial settlement or computes tax.
 """
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import batched
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.policy.sleeves import withdraw
-from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions, Finished
+from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
+from finance.augur.sim.results import ConsumptionTarget, Finished
 
 
 @dataclass(frozen=True)
@@ -231,7 +231,7 @@ def run(
     capture: Literal["summary", "dense", "forensic"] = "summary",
     chunk_size: int | None = None,
     reverse: bool = False,
-) -> dict[str, Any]:
+) -> Finished:
     """Python owns the loop; chunks author one complete response before each advance."""
     if chunk_size is not None and chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
@@ -247,29 +247,29 @@ def run(
                 for response in policy(list(chunk))
             ]
             batch = session.advance(responses)
-        return {"rollouts": json.loads(batch.rollouts_json)}
+        return batch
     finally:
         session.close()
 
 
-def consumption(output: dict[str, Any]) -> tuple[list[list[int | None]], list[list[int]]]:
+def consumption(output: Finished) -> tuple[list[list[int | None]], list[list[int]]]:
     """Project attempted requests and actual payments over each path's observed months."""
     requested = []
     paid = []
-    for rollout in output["rollouts"]:
-        summary = rollout["summary"]
-        amounts: list[int | None] = [0] * summary["ending_book"]["month"]
+    for rollout in output.rollouts:
+        summary = rollout.summary
+        amounts: list[int | None] = [0] * summary.ending_book.month
         receipts = [0] * len(amounts)
         # This policy omits live zero requests. On a stopped month, absence can also
         # mean an earlier action prevented consumption; the request is absent,
         # but the complete execution prefix proves actual payment is zero.
-        if rollout["stop"] is not None:
+        if rollout.stop is not None:
             amounts[-1] = None
-        for payment in summary["payments"]:
-            receipt = payment["receipt"]
-            if receipt["target"] == {"Consumption": {"component_id": "annual_consumption"}}:
-                amounts[payment["month"]] = receipt["amount_requested"]
-                receipts[payment["month"]] = receipt["amount_requested"] if receipt["outcome"] == "Paid" else 0
+        for payment in summary.payments:
+            receipt = payment.receipt
+            if isinstance(receipt.target, ConsumptionTarget) and receipt.target.component_id == "annual_consumption":
+                amounts[payment.month] = receipt.amount_requested
+                receipts[payment.month] = receipt.amount_paid
         requested.append(amounts)
         paid.append(receipts)
     return requested, paid

@@ -9,6 +9,7 @@ pub mod outcomes;
 /// Exact immediate-cash requests in declared public pools/assets, including empty pools.
 /// Sequence order is execution order, not priority by type.
 #[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind")]
 pub enum Action {
     Sell(trades::SaleRequest),
     Buy(trades::PurchaseRequest),
@@ -30,12 +31,14 @@ impl Action {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", content = "detail")]
 pub enum Rejection {
     InvalidRequest(String),
     Payment(payments::Rejection),
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", content = "reason")]
 pub enum Outcome {
     /// Full execution of the exact request; canonical financial records carry its effects.
     Executed,
@@ -53,6 +56,7 @@ pub struct Receipt {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(tag = "kind")]
 pub enum Stop {
     /// The matching receipt contains the failed action and reason.
     RejectedAction { month: u32, action_index: usize },
@@ -71,12 +75,43 @@ pub struct Rollout {
     pub stop: Option<Stop>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct Trace {
     pub financial: RolloutOutput,
     /// The same financial records in the shared product/event vocabulary.
     pub event_frames: crate::event_frames::EventFrames,
     pub receipts: Vec<Receipt>,
+}
+
+impl Serialize for Trace {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Events<'a> {
+            rollout_ids: [u32; 1],
+            frames: &'a crate::event_frames::EventFrames,
+        }
+        #[derive(Serialize)]
+        struct TraceOutput<'a> {
+            events: Events<'a>,
+            books: &'a [MonthOutput],
+            journal: &'a [JournalEntry],
+            bond_cashflows: &'a [BondCashflowOutcome],
+            distributions: &'a [DistributionOutcome],
+            receipts: &'a [Receipt],
+        }
+        TraceOutput {
+            events: Events {
+                rollout_ids: [self.financial.rollout_id],
+                frames: &self.event_frames,
+            },
+            books: &self.financial.months,
+            journal: &self.financial.journal,
+            bond_cashflows: &self.financial.bond_cashflows,
+            distributions: &self.financial.distributions,
+            receipts: &self.receipts,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Current actor books after scheduled cashflows and claim assembly. No future paths,

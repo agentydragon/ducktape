@@ -51,6 +51,8 @@ bbr run //finance/augur/study/trinity:replay_bin -- \
 
 `study.json` records the inputs and window-start mapping; `outcomes.json` contains
 the population summaries and `traces.json` the selected detailed rollouts. Use
+`sim.results.Finished.model_validate_json(path.read_text()).rollouts` to read
+either result file as typed records. Use
 `--evidence-dir PATH` instead of `--synthetic` for an existing evidence checkout.
 The all-stock, mixed and all-bond CLI cells, selected replay, original-base CPI,
 coupon cash retention, final payout boundary and exact-depletion controls run in CI.

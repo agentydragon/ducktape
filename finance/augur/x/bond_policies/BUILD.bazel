@@ -27,9 +27,12 @@ py_library(
         "//finance/augur/policy:funding",
         "//finance/augur/rust:simulator_ext",
         "//finance/augur/sim:backend",
+        "//finance/augur/sim:books",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "@pypi//numpy",
+        "@pypi//pydantic",
     ],
 )
 
@@ -55,6 +58,7 @@ py_test(
         ":run",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/sim:results",
         "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pytest",
