@@ -35,7 +35,7 @@ class TlhAssumptions(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    peak_annual_yield: float = Field(gt=0)
+    peak_annual_yield: float = Field(ge=0)
     floor_annual_yield: float = Field(ge=0)
     maturity_decay_exponent: float = Field(gt=0, multiple_of=0.5)
     drawdown_sensitivity: float = Field(ge=0)
@@ -45,6 +45,9 @@ class TlhAssumptions(BaseModel):
     def _validate_curve(self) -> Self:
         if self.floor_annual_yield > self.peak_annual_yield:
             raise ValueError("floor_annual_yield must not exceed peak_annual_yield")
+        for rate in (self.peak_annual_yield, self.floor_annual_yield, self.drawdown_sensitivity):
+            if rate * MONEY_FACTOR_SCALE >= 1 << 63:
+                raise ValueError("TLH rates must fit signed 64-bit parts per billion")
         return self
 
     def monthly_loss_fraction(self, *, embedded_gain_ppb: int, drawdown_ppb: int) -> int:
@@ -133,6 +136,10 @@ class TlhPortfolio:
     amount. Share-grid overfill remains as cash inside the portfolio. A caller
     needing transactional settlement can operate on a deepcopy, adopting it only
     when the accounting engine accepts its financial effects.
+
+    Each fill and remaining position is marked separately to the nearest currency
+    quantum. Splitting a fractional position can therefore differ by a rounding
+    quantum from liquidating it in one fill; basis is apportioned without loss.
 
     Sale character uses Augur's monthly holding-period convention (12 months is
     long-term). Harvested character is a model assumption; constituent holding
