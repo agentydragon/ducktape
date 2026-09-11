@@ -17,8 +17,6 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
-    - name: agentplane-testing-actions # destination verifier ready before the BFF
-      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: agent-sandbox-controller # CRDs + controller
