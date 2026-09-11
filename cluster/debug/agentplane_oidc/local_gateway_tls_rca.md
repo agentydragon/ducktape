@@ -242,10 +242,13 @@ Acceptance, each against a non-canary `hil-ovh` node as control:
    totals for the TLS egress cluster stop increasing on the canary and keep
    increasing on the control.
 
-Rollback is deleting the object and recreating the same agent Pods. After a
-soak without regressions, set `envoy.useOriginalSourceAddress: false` in
-<../../terraform/main/cilium-values.yaml>, run `//cluster:bootstrap`, and delete
-the canary object in the same change.
+Rollback is deleting the object and recreating the same agent Pods. The global
+setting is `envoy.useOriginalSourceAddress: false` in
+<../../terraform/main/cilium-values.yaml>; the canary object left with that
+change. It reaches a node only when its cilium-agent Pod restarts on the new
+`cilium-config`: with the DaemonSet's unavailability budget held by offline
+roaming nodes (<README.md> open items), recreate the remaining OVH agents by hand
+and verify each with the agent's `build-config` output.
 
 ### Canary result, 2026-09-11
 

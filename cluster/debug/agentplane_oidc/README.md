@@ -10,11 +10,13 @@ the Gateway Service). DNS is unchanged.
 
 ## Open items
 
-- **Datapath fix and acceptance.** The RCA's recommendation (a),
-  `proxy-use-original-source-address: false`, is canaried on two Gateway nodes by
-  a Flux-managed `CiliumNodeConfig` (RCA § Rollout); recreate the cilium-agent
-  Pods there, run the acceptance steps, then flip `envoy.useOriginalSourceAddress`
-  in the Helm values through `//cluster:bootstrap` and remove the canary object. Whether in-cluster clients
+- **Datapath fix rollout.** The RCA's recommendation (a) passed its canary on
+  `ovh-ns103711` and `ovh-ns102453` (RCA § Rollout) and is now the Helm value
+  `envoy.useOriginalSourceAddress: false`. Remaining: apply the values change
+  (targeted `null_resource.cilium_bootstrap` plan, <../../docs/network.md>
+  § Changing MTUs safely), then recreate the cilium-agent Pods on
+  `ovh-ns103656`, `ovh-ns104952`, `ovh-ns104963` and verify `build-config` shows
+  the flag, since the stuck DaemonSet rollout will not deliver it. Whether in-cluster clients
   should route to the Gateway Service instead of the public IPs (option c) is a
   separate decision; a shared CoreDNS rewrite would first need a client policy
   audit — `public-coder-agent-proxy` and `agentplane-egress` allow node HTTPS

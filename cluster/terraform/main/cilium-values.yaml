@@ -55,6 +55,12 @@ gatewayAPI:
 # NET_BIND_SERVICE required for binding privileged ports (80, 443) in hostNetwork mode.
 envoy:
   enabled: true
+  # Policy-proxy upstream sockets use the node address, not the pod's IP:port.
+  # With preservation on, a pod reaching a hostNetwork listener on its own node
+  # (the Gateway, behind an SNI egress rule) collides with its own proxied
+  # connection and the handshake resets; the Gateway's own upstreams already run
+  # without it. cluster/debug/agentplane_oidc/local_gateway_tls_rca.md.
+  useOriginalSourceAddress: false
   dnsPolicy: ClusterFirstWithHostNet
   securityContext:
     capabilities:
