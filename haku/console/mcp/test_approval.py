@@ -87,7 +87,7 @@ from haku.console.tool_calls import (
     ToolCallStatus,
 )
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
 
 
@@ -206,8 +206,8 @@ async def _serve_remote_oauth(
     Authentik (fronted by the Kubernetes MCP server), which has no DCR endpoint — so the test
     fails loudly if the client under test attempts dynamic registration anyway.
     """
-    port = pick_free_port()
-    base_url = f"http://127.0.0.1:{port}"
+    sock = bind_free_port()
+    base_url = f"http://127.0.0.1:{sock.getsockname()[1]}"
     expected_client_id = preregistered_client_id or "dynamic-client"
 
     async def mcp(request: Request) -> JSONResponse:
@@ -301,7 +301,7 @@ async def _serve_remote_oauth(
     if preregistered_client_id is None:
         routes.append(Route("/auth/register", register, methods=["POST"]))
     app = Starlette(routes=routes)
-    with serve_app_sync(app, port=port):
+    with serve_app_sync(app, sock=sock):
         yield base_url
 
 
