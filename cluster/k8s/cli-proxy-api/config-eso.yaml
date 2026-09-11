@@ -28,6 +28,8 @@ spec:
           api-keys:
             - "{{ .client_key }}"
           debug: false
+          # Recheck restored provider quota instead of honoring stale local cooldown windows.
+          disable-cooling: true
           streaming:
             bootstrap-retries: 3
           # Permit AIQuota's management-key requests from its separate pod.
