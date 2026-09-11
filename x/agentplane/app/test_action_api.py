@@ -151,6 +151,10 @@ async def review(
                 body["client_assertion"], public_key, algorithms=["RS256"], issuer=idp_url, audience="test-app"
             )
             exchanged_subjects.append(claims["sub"])
+            if operator_connection == "exchange-unavailable":
+                return JSONResponse({"private": "test-private-provider-detail"}, status_code=503)
+            if operator_connection == "exchange-malformed":
+                return JSONResponse({"error": "server_error", "error_description": "test-private-provider-detail"})
             if operator_connection == "exchange-rejected":
                 return JSONResponse(
                     {"error": "invalid_grant", "error_description": "test-private-provider-detail"}, status_code=400
@@ -196,6 +200,13 @@ async def review(
 
         idp = login_provider(SUBJECT_A)
 
+        async def unavailable_keys(request: Request) -> JSONResponse:
+            if operator_connection == "jwks-malformed":
+                return JSONResponse({"keys": [], "private": "test-private-provider-detail"})
+            return JSONResponse({"private": "test-private-provider-detail"}, status_code=503)
+
+        idp.routes.insert(0, Route("/federation-keys", unavailable_keys))
+
         def login_as(subject: str) -> None:
             idp.routes[:] = login_provider(subject).routes
 
@@ -208,8 +219,12 @@ async def review(
         )
         federation = ExchangeFederationSettings(
             service_url="http://test-actions.invalid",
-            token_endpoint=f"{idp_origin}/exchange",
-            login_jwks_uri=f"{idp_url}jwks/",
+            token_endpoint=f"http://127.0.0.1:{pick_free_port()}/exchange"
+            if operator_connection == "exchange-disconnected"
+            else f"{idp_origin}/exchange",
+            login_jwks_uri=f"{idp_origin}/federation-keys?private=test-private-query"
+            if operator_connection in {"jwks-unavailable", "jwks-malformed"}
+            else f"{idp_url}jwks/",
             target=target,
             scope="openid profile",
         )
@@ -436,7 +451,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
         ("expired", 403),
         ("swapped-operator", 403),
         ("source-mismatch", 403),
-        ("exchange-rejected", 403),
+        ("exchange-rejected", 400),
     ],
 )
 async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review, expected: int) -> None:
@@ -463,6 +478,40 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
         )
     ).status_code == expected
     assert (await review.service.get(pending.id, CALLER)).state is ActionState.DECISION_PENDING
+    assert review.calls == []
+
+
+@pytest.mark.parametrize(
+    ("operator_connection", "expected", "upstream_path", "error_type"),
+    [
+        ("exchange-unavailable", 503, "/exchange", "HTTPStatusError"),
+        ("exchange-disconnected", 503, "/exchange", "ConnectError"),
+        ("jwks-unavailable", 503, "/federation-keys", "HTTPStatusError"),
+        ("exchange-malformed", 502, None, None),
+        ("jwks-malformed", 503, None, None),
+    ],
+)
+async def test_provider_availability_is_not_operator_rejection(
+    review: Review, expected: int, upstream_path: str | None, error_type: str | None
+) -> None:
+    await review.browser.get("/auth/login")
+    for path in ("/actions", "/mcp-servers", "/push/config"):
+        response = await review.browser.get(path)
+        assert response.status_code == expected, response.text
+        detail = response.json()["detail"]
+        if upstream_path is not None:
+            assert httpx.URL(detail["url"]).path == upstream_path
+            assert detail["method"] == ("POST" if upstream_path == "/exchange" else "GET")
+            assert detail["error_type"] == error_type
+            assert detail["upstream_status"] == (503 if error_type == "HTTPStatusError" else None)
+        else:
+            assert detail["code"] in {
+                "operator_federation_exchange_failed",
+                "operator_federation_verification_unavailable",
+            }
+        assert "test-private" not in response.text
+        assert "access_token" not in response.text
+        assert SUBJECT_A not in response.text
     assert review.calls == []
 
 

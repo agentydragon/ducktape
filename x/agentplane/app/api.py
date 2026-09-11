@@ -292,7 +292,7 @@ async def _operator_actions(
     try:
         yield provider.for_session(session)
     except OperatorFederationError as error:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": str(error)}) from None
+        raise HTTPException(error.status_code, {"code": str(error)}) from None
     except httpx.HTTPStatusError as error:
         raise upstream_http_error(error) from error
     except httpx.RequestError as error:

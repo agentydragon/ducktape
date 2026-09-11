@@ -28,6 +28,15 @@ from x.agentplane.app.oidc import OIDCSettings, OperatorSession
 class OperatorFederationError(Exception):
     """Fixed public failure codes only; never provider bodies or token material."""
 
+    def __init__(self, code: str, *, status_code: int = 403) -> None:
+        super().__init__(code)
+        self.status_code = status_code
+
+
+async def _check_token_response(response: httpx.Response) -> None:
+    # Authlib otherwise discards the HTTP response when raising OAuthError.
+    response.raise_for_status()
+
 
 class _ActionFederationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -112,7 +121,11 @@ class FederatedOperatorActions:
             else:
                 assert self._config.token_endpoint is not None
                 # Authlib mutates token state: create a fresh OAuth client for each exchange.
-                async with AsyncOAuth2Client(client_id=self._config.target.audience, timeout=10) as client:
+                async with AsyncOAuth2Client(
+                    client_id=self._config.target.audience,
+                    timeout=10,
+                    event_hooks={"response": [_check_token_response]},
+                ) as client:
                     token = await client.fetch_token(
                         url=self._config.token_endpoint,
                         grant_type="client_credentials",
@@ -129,8 +142,12 @@ class FederatedOperatorActions:
             return access_token
         except InvalidOidcPrincipalError:
             raise OperatorFederationError("operator_federation_token_invalid") from None
-        except (OAuthError, httpx.HTTPError, OidcPrincipalVerificationUnavailableError, ValueError):
-            raise OperatorFederationError("operator_federation_exchange_failed") from None
+        except OidcPrincipalVerificationUnavailableError as error:
+            if error.http_error is not None:
+                raise error.http_error from None
+            raise OperatorFederationError("operator_federation_verification_unavailable", status_code=503) from None
+        except (OAuthError, ValueError):
+            raise OperatorFederationError("operator_federation_exchange_failed", status_code=502) from None
 
 
 class _SessionToken:

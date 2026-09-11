@@ -41,8 +41,9 @@ class InvalidOidcPrincipalError(Exception):
 class OidcPrincipalVerificationUnavailableError(Exception):
     """The configured issuer's signing keys are currently unusable."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, http_error: httpx.HTTPStatusError | httpx.RequestError | None = None) -> None:
         super().__init__("OIDC principal verification is temporarily unavailable")
+        self.http_error = http_error
 
 
 class _TokenResponse(BaseModel):
@@ -169,6 +170,8 @@ class AuthentikOidcPrincipalResolver:
                 signing_key = await asyncio.to_thread(self._signing_key, kid)
         except _UnknownSigningKeyError:
             raise InvalidOidcPrincipalError from None
+        except (httpx.HTTPStatusError, httpx.RequestError) as error:
+            raise OidcPrincipalVerificationUnavailableError(http_error=error) from None
         except (
             AttributeError,
             httpx.HTTPError,
