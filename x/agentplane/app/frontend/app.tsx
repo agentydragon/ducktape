@@ -52,6 +52,7 @@ function SessionRoute(): JSX.Element {
   const navigate = useNavigate();
   return (
     <SessionView
+      key={`${name}/${required(params.sessionId, "sessionId")}`}
       sandbox={name}
       sessionId={required(params.sessionId, "sessionId")}
       onBack={() => void navigate(sandboxPath(name))}
