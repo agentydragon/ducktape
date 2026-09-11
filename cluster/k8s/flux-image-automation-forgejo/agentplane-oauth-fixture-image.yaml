@@ -1,0 +1,24 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: agentplane-oauth-fixture
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: agentplane-oauth-fixture
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: agentplane-oauth-fixture
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

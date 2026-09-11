@@ -53,6 +53,7 @@ MCP_OAUTH_TOKEN_REQUEST_DURATION = Histogram(
 class McpProvider(StrEnum):
     GITHUB = "github"
     KUBERNETES = "kubernetes"
+    EXAMPLE = "example"
 
 
 class McpOAuthServer(BaseModel):

@@ -1,4 +1,7 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
@@ -16,4 +19,64 @@ py_library(
         "//x/agentplane/action_service:catalog",
         "@pypi//tenacity",
     ],
+)
+
+py_library(
+    name = "oauth_mcp_server",
+    srcs = ["oauth_mcp_server.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_oauth_mcp_server",
+    size = "medium",
+    srcs = ["test_oauth_mcp_server.py"],
+    requires_docker = True,
+    deps = [
+        ":lifecycle",
+        ":oauth_mcp_server",
+        "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "//x/agentplane/action_service:db",
+        "//x/agentplane/action_service:mcp_executor",
+        "//x/agentplane/action_service:mcp_linkage",
+        "//x/agentplane/action_service:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# Deployable image: an OAuth-protected MCP server for acceptance-testing linkage against a real
+# in-cluster backend. Deployed only to the testing namespace; never referenced by production
+# Action Service settings.
+aspect_py_binary(
+    name = "oauth_mcp_server_image_bin",
+    main = "oauth_mcp_server.py",
+    deps = [":oauth_mcp_server"],
+)
+
+py_image_layer(
+    name = "oauth_mcp_server_layers",
+    binary = ":oauth_mcp_server_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "oauth_mcp_server_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("oauth_mcp_server_image_bin"),
+    env = py_image_env(binary_name = "oauth_mcp_server_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":oauth_mcp_server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
 )

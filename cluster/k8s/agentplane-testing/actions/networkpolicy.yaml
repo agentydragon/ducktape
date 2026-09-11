@@ -67,6 +67,8 @@ spec:
             - port: "5432"
               protocol: TCP
     # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
+    # MCP OAuth discovery/token exchange for the linked "example" server crosses the same path,
+    # same as the real GitHub/Kubernetes MCP OAuth providers already linked in staging.
     - toEntities:
         - remote-node
         - host
@@ -76,3 +78,4 @@ spec:
               protocol: TCP
           serverNames:
             - agentplane-dex-testing.allegedly.works
+            - agentplane-oauth-fixture-testing.allegedly.works
