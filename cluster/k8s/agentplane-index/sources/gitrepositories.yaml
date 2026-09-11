@@ -1,0 +1,35 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: agentplane-index-ducktape
+  namespace: flux-system
+  annotations:
+    description: Full Ducktape tree for semantic indexing; independent of the sparse deployment sources.
+spec:
+  interval: 1m
+  timeout: 2m
+  url: https://github.com/agentydragon/ducktape.git
+  ref:
+    branch: devel
+  # Override Flux's deployment-oriented exclusions, including .github and .gitignore.
+  # File eligibility is decided by the indexer's strict UTF-8 check.
+  ignore: |
+    .git/
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: agentplane-index-haku-state
+  namespace: flux-system
+  annotations:
+    description: Full Haku state tree for semantic indexing, using the existing GitOps-owned read credential.
+spec:
+  interval: 1m
+  timeout: 2m
+  url: http://forgejo-http.forgejo:3000/haku/haku-state.git
+  ref:
+    branch: main
+  secretRef:
+    name: haku-forgejo-git
+  ignore: |
+    .git/

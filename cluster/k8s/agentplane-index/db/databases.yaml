@@ -1,0 +1,29 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: agentplane-index-ducktape
+  namespace: agentplane-index
+spec:
+  cluster:
+    name: agentplane-index-db
+  name: ducktape
+  owner: indexer
+  databaseReclaimPolicy: retain
+  extensions:
+    - name: vector
+      ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: agentplane-index-haku-state
+  namespace: agentplane-index
+spec:
+  cluster:
+    name: agentplane-index-db
+  name: haku_state
+  owner: indexer
+  databaseReclaimPolicy: retain
+  extensions:
+    - name: vector
+      ensure: present

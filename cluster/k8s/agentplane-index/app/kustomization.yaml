@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ducktape.yaml
+  - haku-state.yaml
+configMapGenerator:
+  - name: agentplane-index-config
+    namespace: agentplane-index
+    literals:
+      - AGENTPLANE_INDEX_SOURCE_NAMESPACE=flux-system
+      - AGENTPLANE_INDEX_EMBEDDING_URL=http://ollama.ollama.svc.cluster.local:11434/v1
+      - AGENTPLANE_INDEX_EMBEDDING_MODEL=qwen3-embedding:4b
+      - AGENTPLANE_INDEX_EMBEDDING_API_KEY=ollama
+      - "AGENTPLANE_INDEX_QUERY_INSTRUCTION=Instruct: Given a search query, retrieve relevant passages that answer the query\nQuery: "
+      - AGENTPLANE_INDEX_EMBEDDING_TIMEOUT_SECONDS=120
+      # Ducktape currently contains ~200 MiB and a 23 MiB binary blob. The archive
+      # must accept that blob even though the UTF-8 filter subsequently excludes it.
+      - 'AGENTPLANE_INDEX_ARCHIVE_LIMITS={"compressed_bytes":134217728,"expanded_bytes":536870912,"file_bytes":33554432,"entries":100000}'

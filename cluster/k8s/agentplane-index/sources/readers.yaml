@@ -1,0 +1,57 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-index-ducktape
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - gitrepositories
+    resourceNames:
+      - agentplane-index-ducktape
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-index-ducktape
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-index-ducktape
+subjects:
+  - kind: ServiceAccount
+    name: ducktape
+    namespace: agentplane-index
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-index-haku-state
+  namespace: flux-system
+rules:
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - gitrepositories
+    resourceNames:
+      - agentplane-index-haku-state
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-index-haku-state
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-index-haku-state
+subjects:
+  - kind: ServiceAccount
+    name: haku-state
+    namespace: agentplane-index
