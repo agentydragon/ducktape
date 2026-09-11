@@ -22,7 +22,7 @@ from airlock.oauth.provider import (
     TokenData,
     TokenSecretConfig,
 )
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app
 
 
@@ -60,10 +60,11 @@ def _settings(port: int, *, oauth: OAuthConfig | None = None) -> Settings:
 async def test_oauth_api_works_after_startup(
     rsa_key_pair: RSAKeyPair, operator_headers: dict[str, str], mock_k8s_store: MagicMock
 ) -> None:
-    port = pick_free_port()
+    sock = bind_free_port()
+    port = sock.getsockname()[1]
     app = create_app(_settings(port), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False)
 
-    async with serve_app(app, port=port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
         assert (await http.get("/healthz")).json() == {"ok": True}
         assert (await http.get("/auth/config")).json()["client_id"] == "airlock-test"
         response = await http.get("/api/oauth/providers", headers=operator_headers)
@@ -119,12 +120,13 @@ async def test_oauth_providers_reports_expired_token_status(
             )
         ],
     )
-    port = pick_free_port()
+    sock = bind_free_port()
+    port = sock.getsockname()[1]
     with patch("airlock.app.token_refresh_loop", side_effect=fake_token_refresh_loop):
         app = create_app(
             _settings(port, oauth=oauth), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False
         )
-        async with serve_app(app, port=port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+        async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
             response = await http.get("/api/oauth/providers", headers=operator_headers)
 
     assert response.status_code == 200
@@ -139,11 +141,12 @@ async def test_oauth_providers_reports_expired_token_status(
 
 
 async def test_api_requires_valid_bearer_token(rsa_key_pair: RSAKeyPair, mock_k8s_store: MagicMock) -> None:
-    port = pick_free_port()
+    sock = bind_free_port()
+    port = sock.getsockname()[1]
     app = create_app(_settings(port), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False)
     valid_token = rsa_key_pair.create_token(subject="operator", scopes=["openid"])
 
-    async with serve_app(app, port=port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
         assert (await http.get("/api/oauth/providers")).status_code == 401
         assert (
             await http.get("/api/oauth/providers", headers={"Authorization": "Bearer not-a-jwt"})
@@ -156,10 +159,11 @@ async def test_api_requires_valid_bearer_token(rsa_key_pair: RSAKeyPair, mock_k8
 async def test_mcp_and_tool_approval_routes_are_absent(
     rsa_key_pair: RSAKeyPair, operator_headers: dict[str, str], mock_k8s_store: MagicMock
 ) -> None:
-    port = pick_free_port()
+    sock = bind_free_port()
+    port = sock.getsockname()[1]
     app = create_app(_settings(port), auth=JWTVerifier(public_key=rsa_key_pair.public_key), include_static=False)
 
-    async with serve_app(app, port=port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
+    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
         assert (await http.post("/mcp", headers=operator_headers)).status_code == 404
         assert (await http.get("/api/actions", headers=operator_headers)).status_code == 404
         assert (await http.get("/api/backends", headers=operator_headers)).status_code == 404

@@ -21,9 +21,8 @@ import uvicorn
 from sqlalchemy import select, update
 from starlette.responses import Response
 from starlette.routing import Route
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.agentplane.app.api import Provider, create_app
@@ -69,8 +68,8 @@ def serve(
         subjects: frozenset[str], *, reject_token_exchange: bool = False, id_failure: str | None = None
     ) -> AsyncIterator[str]:
         private_key, public_key = generate_rsa_keypair()
-        idp_port, app_port = pick_free_port(), pick_free_port()
-        idp_url, app_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{app_port}"
+        idp_sock, app_sock = bind_free_port(), bind_free_port()
+        idp_url, app_url = (f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, app_sock))
         extra_claims: dict[str, Any] = {"preferred_username": OPERATOR}
         if id_failure == "issuer":
             extra_claims["iss"] = "https://wrong-issuer.invalid"
@@ -107,17 +106,16 @@ def serve(
         reviewer = TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=subjects)
         app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, oidc, reviewer)
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
-        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=app_port, log_level="warning"))
-        async with serve_app(idp, port=idp_port):
-            serving = asyncio.create_task(server.serve())
+        server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+        async with serve_app(idp, sock=idp_sock):
+            serving = asyncio.create_task(server.serve(sockets=[app_sock]))
             try:
-                async for attempt in AsyncRetrying(
-                    stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(OSError)
-                ):
-                    with attempt:
-                        _, writer = await asyncio.open_connection("127.0.0.1", app_port)
-                        writer.close()
-                        await writer.wait_closed()
+                # The socket already accepts, so a probe connection proves nothing; wait for uvicorn itself.
+                while not server.started:
+                    if serving.done():
+                        serving.result()
+                        raise RuntimeError("uvicorn exited before starting")
+                    await asyncio.sleep(0.02)
                 yield app_url
             finally:
                 server.should_exit = True

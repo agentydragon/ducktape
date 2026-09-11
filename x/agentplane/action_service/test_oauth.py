@@ -29,7 +29,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
 
-from util.net import pick_free_port
+from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.agentplane.action_service.api import create_app
@@ -155,8 +155,8 @@ class OAuthFixture:
 @pytest.fixture
 async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterator[OAuthFixture]:
     private_key, public_key = generate_rsa_keypair()
-    oidc_port, service_port = pick_free_port(), pick_free_port()
-    issuer = f"http://127.0.0.1:{oidc_port}/application/o/actions/"
+    oidc_sock, service_port = bind_free_port(), pick_free_port()
+    issuer = f"http://127.0.0.1:{oidc_sock.getsockname()[1]}/application/o/actions/"
     base_url = f"http://127.0.0.1:{service_port}"
     secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
     secret.write_text("test-only-upstream-secret")
@@ -179,7 +179,7 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
     )
-    async with serve_app(idp, port=oidc_port), running_oauth(settings, db_url, enrollments, connections) as proxy:
+    async with serve_app(idp, sock=oidc_sock), running_oauth(settings, db_url, enrollments, connections) as proxy:
         app = Starlette(routes=proxy.get_routes(mcp_path="/mcp"))
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app), base_url=base_url, follow_redirects=False

@@ -464,7 +464,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//tenacity",
         "@pypi//uvicorn",
     ],
 )
