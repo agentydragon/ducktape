@@ -86,6 +86,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
   const [inheritedThread, setInheritedThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
+  const [modelCatalog, setModelCatalog] = useState<Record<string, string[]> | null>(null);
+  const modelOptions = thread.provider ? (modelCatalog?.[thread.provider] ?? []) : [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
@@ -102,6 +104,26 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setPresets(presetViews ?? []);
     })();
   }, []);
+
+  useEffect(() => {
+    void api.GET("/models").then(
+      ({ data, error: failure }) => {
+        if (failure) setError(displayableError(failure));
+        else setModelCatalog(data);
+      },
+      (reason: unknown) => setError(displayableError(reason))
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!modelCatalog) return;
+    setThread((current) => {
+      if (!current.provider) return current;
+      const offered = modelCatalog[current.provider];
+      if (current.model && offered.includes(current.model)) return current;
+      return { ...current, model: offered[0] ?? null };
+    });
+  }, [modelCatalog, thread.provider, thread.model]);
 
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
@@ -181,7 +203,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(picked) => setForm({ ...form, policies: picked })}
           style={{ flex: "1 1 12rem" }}
         />
-        <Button onClick={() => void create()} disabled={!form.slug}>
+        <Button
+          onClick={() => void create()}
+          disabled={!form.slug || Boolean(form.preset && (!thread.model || !modelOptions.includes(thread.model)))}
+        >
           New sandbox
         </Button>
       </Group>
@@ -193,16 +218,22 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           <Group align="flex-end">
             <Select
               label="Harness"
+              allowDeselect={false}
               data={["claude", "codex"]}
               value={thread.provider ?? null}
               onChange={(provider) =>
                 setThread({ ...thread, provider: (provider ?? undefined) as ThreadDefaults["provider"] })
               }
             />
-            <TextInput
+            <Select
               label="Model"
-              value={thread.model ?? ""}
-              onChange={(event) => setThread({ ...thread, model: event.currentTarget.value })}
+              searchable
+              allowDeselect={false}
+              data={modelOptions}
+              value={thread.model ?? null}
+              onChange={(model) => setThread({ ...thread, model })}
+              disabled={modelOptions.length === 0}
+              placeholder={modelCatalog ? "No models available" : "Loading models…"}
               style={{ flex: "1 1 20rem" }}
             />
             <Select
