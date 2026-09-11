@@ -174,18 +174,29 @@ pkgs.dockerTools.buildLayeredImage {
       #
       # --max-old-space-size is set rather than derived. Node sizes V8's old space
       # at about half of uv_get_constrained_memory(), which inside a container is
-      # the cgroup memory limit, so leaving it implicit makes `limits.memory`
-      # silently halve the usable heap and the gateway abort with most of that
-      # limit unused. Keep it in step with `limits.memory` in
-      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml: the difference
-      # covers native allocations and SQLite page cache.
+      # the cgroup memory limit -- so left implicit, `limits.memory` silently
+      # decides the heap, and editing the limit for an unrelated reason moves the
+      # heap with it. 2048 is what the current 4Gi limit already derives -- both
+      # give heap_size_limit 2096 MiB -- so this changes nothing today and only
+      # stops the heap drifting when the limit next moves. Keep it in step with
+      # `limits.memory` in
+      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml.
       #
-      # --heapsnapshot-near-heap-limit=1 writes one snapshot as the heap
-      # approaches that cap. It is the only artifact that names what is retained,
-      # so it is what a leak investigation actually needs. The file is roughly
-      # heap-sized, which is why --diagnostic-dir points at the /tmp emptyDir
-      # rather than the state PVC that volsync backs up.
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp --report-on-fatalerror --heapsnapshot-near-heap-limit=1 --diagnostic-dir=/tmp --max-old-space-size=3072"
+      # --heapsnapshot-signal is the on-demand trigger: `kill -s PWR 1` writes a
+      # snapshot without the process having to be near death. Two taken an hour
+      # apart diff into what is accumulating, which is the question a single
+      # snapshot cannot answer. SIGPWR because SIGUSR2 is already the report
+      # signal above and SIGUSR1 is Node's inspector, which the previous
+      # paragraph rules out.
+      #
+      # --heapsnapshot-near-heap-limit=1 covers the unattended case, capturing
+      # the state at the abort itself. Note it is the riskier of the two: V8
+      # raises its own limit to serialize, so the spike has to fit inside
+      # `limits.memory` or the kernel turns a clean abort into an OOMKill.
+      #
+      # Snapshots are roughly heap-sized, which is why --diagnostic-dir points at
+      # the /tmp emptyDir and not the state PVC that volsync backs up.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp --report-on-fatalerror --heapsnapshot-signal=SIGPWR --heapsnapshot-near-heap-limit=1 --diagnostic-dir=/tmp --max-old-space-size=2048"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"

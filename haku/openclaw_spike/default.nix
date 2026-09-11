@@ -134,8 +134,13 @@ pkgs.dockerTools.buildLayeredImage {
       # them attach to the gateway process and read its credentials.
       # --report-on-fatalerror covers what --report-on-signal cannot: a heap-limit
       # abort has nobody present to send SIGUSR2 and otherwise leaves no report.
-      # Heap sizing stays derived here; only the public-coder image pins it.
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp --report-on-fatalerror"
+      # --heapsnapshot-signal adds the on-demand snapshot (`kill -s PWR 1`);
+      # SIGPWR because SIGUSR2 is the report signal and SIGUSR1 is the inspector.
+      #
+      # No --heapsnapshot-near-heap-limit and no pinned heap size here, unlike the
+      # public-coder image: this pod's 16Gi limit implies an ~8 GiB cap, where an
+      # unattended snapshot is far more expensive to take and to hold.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp --report-on-fatalerror --heapsnapshot-signal=SIGPWR"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"

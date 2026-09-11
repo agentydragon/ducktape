@@ -272,13 +272,14 @@ spec:
               memory: 768Mi
             limits:
               cpu: "2"
-              # Sized around the gateway's pinned V8 heap, not the other way
-              # round: openclaw/default.nix sets --max-old-space-size=3072, and
-              # the headroom here carries native allocations plus the SQLite page
-              # cache that makes the container's working set read far above the
-              # process RSS. Moving either value without the other either starves
-              # the heap or hands V8 a cap the cgroup cannot honour.
-              memory: 6Gi
+              # openclaw/default.nix pins --max-old-space-size at exactly what
+              # this limit derives today, so the two move together. The
+              # gap is not slack: it carries native allocations, and it has to
+              # absorb the transient growth when V8 raises its own limit to
+              # serialize a near-heap-limit snapshot. Raising this silently
+              # raises nothing -- the heap is pinned -- but lowering it below
+              # that headroom turns a clean heap-limit abort into an OOMKill.
+              memory: 4Gi
       volumes:
         - name: data
           persistentVolumeClaim:
