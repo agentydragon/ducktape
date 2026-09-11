@@ -1,5 +1,7 @@
 # Cluster-internal MCP backend. Only haku-console and Agentplane staging are callers; SSH egress is
-# constrained to wyrm2/rugged's Nebula mesh addresses (nebula-mesh.json at the repo root).
+# constrained to port 22 on cluster nodes, which is where the Nebula-addressed targets live
+# (nebula-mesh.json at the repo root). Which of those nodes a target actually names is decided by
+# settings.yaml, and reaching one still requires a key the Secret holds.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -32,10 +34,15 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # wyrm2 (10.42.0.20) and rugged (10.42.0.30) Nebula addresses, per nebula-mesh.json.
-    - toCIDR:
-        - 10.42.0.20/32
-        - 10.42.0.30/32
+    # Gotcha: wyrm2 and rugged are cluster nodes whose InternalIPs are their Nebula addresses
+    # (10.42.0.20 / 10.42.0.30). Cilium gives node IPs the host/remote-node identity, and a
+    # CIDR selector does not match those unless the agent runs with
+    # `policy-cidr-match-mode: nodes` -- which this cluster does not set. A `toCIDR` rule
+    # naming those addresses therefore selects nothing and every SSH connection times out.
+    # Keep this as entities until that flag is set cluster-wide.
+    - toEntities:
+        - host
+        - remote-node
       toPorts:
         - ports:
             - port: "22"

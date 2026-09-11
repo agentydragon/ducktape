@@ -19,25 +19,25 @@ Reflector, and Forgejo image credentials. Both consumers depend on that secrets
 layer, not the backend Deployment's readiness. The backend namespace has its own
 non-pruning Flux owner.
 
-## Deployment prerequisites
+## Targets
 
-- Publish the renamed `ssh-mcp` image through the registered CI target and let its
-  Flux image policy replace the initial placeholder with a published tag before
-  reconciling the backend. An image published under a different repository name
-  does not establish availability at the new name.
+`ssh-mcp-keys` holds four per-`(host,user)` ed25519 keys for `{wyrm2,rugged} ×
+{agentydragon,root}`, SOPS-encrypted in `secrets/keys.sops.yaml`, with the public halves
+in each host's NixOS `authorizedKeys`.
 
-- Capture `rugged`'s SSH host key and add it to `known_hosts` once the host is
-  reachable — it's a roaming laptop and was offline at provisioning time, so only
-  `wyrm2`'s host key (verified against the operator's own trusted `known_hosts`) is
-  populated so far. Empty host trust and missing identity files do not authorize SSH;
-  host verification must remain strict, so the `rugged` targets stay unavailable
-  until its host key is captured and reviewed.
+Both `wyrm2` targets execute end to end. The `rugged` targets do not, and will not until
+that host rejoins the cluster: its SSH host key was never captured and its Nebula address
+does not answer. They stay listed and fail closed — the designed behaviour for a target
+whose key or host trust is absent. Host verification stays strict, so capturing that key
+is a prerequisite for those two targets, not a formality.
 
-Rendered configuration and policy tests prove wiring, not live image availability,
-secret reconciliation, network reachability, or successful SSH execution.
-`ssh-mcp-keys` (four per-`(host,user)` ed25519 keys for `{wyrm2,rugged} ×
-{agentydragon,root}`, SOPS-encrypted in `secrets/keys.sops.yaml`), the public halves
-in each host's NixOS `authorizedKeys`, and the egress `NetworkPolicy` (pinned to the
-hosts' Nebula addresses) are provisioned; live SSH execution against each target is
-still unverified until the hosts have `nixos-rebuild switch`ed and the backend image
-is published.
+## Network path
+
+Two Pod-specific properties are load-bearing, each commented at its own declaration: the
+egress policy selects nodes by entity rather than by CIDR (`networkpolicy.yaml`), and the
+target hostnames are pinned with `hostAliases` (`deployment.yaml`). Both exist because the
+targets are cluster nodes reached over Nebula, so neither a CIDR selector nor cluster DNS
+resolves them the way a host on the mesh does.
+
+Rendered configuration and policy tests prove wiring only — not secret reconciliation,
+network reachability, or successful SSH execution.

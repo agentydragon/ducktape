@@ -20,6 +20,16 @@ spec:
         app.kubernetes.io/name: ssh-mcp
     spec:
       automountServiceAccountToken: false
+      # Gotcha: the NixOS hosts resolve `*.nebula.allegedly.works` through the mesh via their
+      # `~nebula.allegedly.works` routing domain, but a Pod has no such override -- cluster DNS
+      # forwards upstream, where the public `*.allegedly.works` wildcard answers with whichever
+      # OVH ingress node comes up in the round robin. Pin the two names to the mesh addresses so
+      # settings.yaml and known_hosts can stay keyed by hostname.
+      hostAliases:
+        - ip: 10.42.0.20
+          hostnames: ["wyrm2.nebula.allegedly.works"]
+        - ip: 10.42.0.30
+          hostnames: ["rugged.nebula.allegedly.works"]
       imagePullSecrets:
         - name: forgejo-images-creds
       containers:
