@@ -232,7 +232,9 @@ py_library(
     name = "bridge",
     srcs = ["bridge.py"],
     deps = [
+        ":changes",
         ":inventory",
+        ":live",
         ":presets",
         ":trajectory",
         "//x/agentplane/runner:client",
@@ -241,7 +243,7 @@ py_library(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//tenacity",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -261,6 +263,7 @@ py_test(
     deps = [
         ":api",
         ":bridge",
+        ":changes",
         ":conftest",
         ":decisions",
         ":egress",
@@ -269,6 +272,7 @@ py_test(
         ":live",
         ":trajectory",
         "//:conftest",
+        "//x/agentplane/runner:client",
         "//x/agentplane/runner:conftest",
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:scripted_model",
@@ -334,6 +338,7 @@ py_library(
     deps = [
         ":changes",
         ":operator_sessions",
+        ":trajectory_updates",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//asyncpg",
         "@pypi//protobuf",
@@ -604,5 +609,15 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "trajectory_updates",
+    srcs = ["trajectory_updates.py"],
+    deps = [
+        ":changes",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
     ],
 )

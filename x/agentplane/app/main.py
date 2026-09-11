@@ -218,7 +218,21 @@ async def async_main(settings: Settings) -> None:
         )
         store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
-        bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
+        await store.start_updates()
+
+        async def running_sandboxes() -> list[str]:
+            return [
+                view.name
+                for view in live.sandbox_views(include_archived=False)
+                if view.state is ProvisioningState.RUNNING
+            ]
+
+        bridge = RunnerBridge(
+            address_of=runner_address(live, settings.runner_port),
+            store=store,
+            discover_sandboxes=running_sandboxes,
+            sandbox_changes=live.changes,
+        )
         operator_actions = (
             FederatedOperatorActions(settings.action_federation, oidc, actions_http)
             if settings.action_federation is not None and oidc is not None
@@ -256,9 +270,7 @@ async def async_main(settings: Settings) -> None:
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         watch_task = asyncio.create_task(watch.run(), name="live-watch")
         try:
-            await bridge.start(
-                [view.name for view in await inventory.list_sandboxes() if view.state is ProvisioningState.RUNNING]
-            )
+            await bridge.start(await running_sandboxes())
             await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False)).serve()
         finally:
             watch_task.cancel()

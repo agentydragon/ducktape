@@ -10,18 +10,20 @@ is staging-only and disposable until a production instance needs migrations in p
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, func, select, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base as SessionBase, OperatorSessionStore
+from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
 from x.agentplane.runner import protocol_pb2 as pb
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -63,6 +65,51 @@ class Event(Base):
     payload: Mapped[dict[str, object]] = mapped_column(JSONB)
 
 
+class SandboxIngestion(Base):
+    __tablename__ = "sandbox_ingestion"
+
+    sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
+    token: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class FeedState(Base):
+    __tablename__ = "feed_state"
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    attached: Mapped[dict[str, object]] = mapped_column(JSONB)
+    # NULL means the stream has not ended. Empty JSON is a normal end; a message is an error end.
+    end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
+
+
+@dataclass(frozen=True)
+class IngestionLease:
+    sandbox: str
+    token: UUID
+
+
+class IngestionLeaseLostError(Exception):
+    """The sandbox ingester no longer owns authority to commit observations."""
+
+
+@dataclass(frozen=True)
+class FeedEnd:
+    pass
+
+
+@dataclass(frozen=True)
+class FeedError:
+    message: str
+
+
+@dataclass(frozen=True)
+class FeedSnapshot:
+    attached: pb.Attached
+    end: FeedEnd | FeedError | None
+
+
 class ThreadView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,10 +135,8 @@ class TrajectoryStore:
         self._engine = engine
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self.operator_sessions = OperatorSessionStore(engine)
-        # A thread appearing or being renamed is a change the live stream pushes (live.py). Stored
-        # events are not: they arrive by the hundreds per turn, and the session's own SSE carries
-        # them already.
         self.changes = Changes()
+        self._updates = TrajectoryUpdates(engine.url, self.changes)
 
     @classmethod
     def connect(cls, database_url: str) -> TrajectoryStore:
@@ -107,29 +152,35 @@ class TrajectoryStore:
             await connection.execute(text("ALTER TABLE thread ADD COLUMN IF NOT EXISTS name text"))
 
     async def close(self) -> None:
+        await self._updates.close()
         await self._engine.dispose()
+
+    async def start_updates(self) -> None:
+        await self._updates.start()
 
     async def thread(self, sandbox: str, session_id: str, spec: pb.SessionSpec) -> UUID:
         """The thread for a session, created from its spec on first sight."""
         async with self._sessions.begin() as session:
-            existing = await session.scalar(
-                select(Thread.id).where(Thread.sandbox == sandbox, Thread.session_id == session_id)
+            created = await session.scalar(
+                insert(Thread)
+                .values(
+                    sandbox=sandbox,
+                    session_id=session_id,
+                    provider=pb.Provider.Name(spec.provider),
+                    model=spec.model,
+                    cwd=spec.cwd,
+                )
+                .on_conflict_do_nothing(index_elements=[Thread.sandbox, Thread.session_id])
+                .returning(Thread.id)
             )
-            if existing is not None:
-                return existing
-            row = Thread(
-                sandbox=sandbox,
-                session_id=session_id,
-                provider=pb.Provider.Name(spec.provider),
-                model=spec.model,
-                cwd=spec.cwd,
-            )
-            session.add(row)
-            await session.flush()
-            created = row.id
-        # Past the commit: a subscriber woken here reads a thread the database already holds.
-        self.changes.notify()
-        return created
+            if created is not None:
+                await _notify(session)
+                return created
+            return (
+                await session.scalars(
+                    select(Thread.id).where(Thread.sandbox == sandbox, Thread.session_id == session_id)
+                )
+            ).one()
 
     async def last_sequence(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
@@ -140,7 +191,7 @@ class TrajectoryStore:
                 or 0
             )
 
-    async def record(self, thread_id: UUID, events: Sequence[pb.Event]) -> None:
+    async def record(self, thread_id: UUID, events: Sequence[pb.Event], *, lease: IngestionLease) -> None:
         """Store events; one already stored under its sequence is left as it was, so a replay after
         a reconnect is harmless."""
         if not events:
@@ -156,7 +207,103 @@ class TrajectoryStore:
             for event in events
         ]
         async with self._sessions.begin() as session:
-            await session.execute(insert(Event).values(rows).on_conflict_do_nothing())
+            await _fence(session, lease, thread_id)
+            inserted = await session.scalars(
+                insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload)
+            )
+            state = await session.get(FeedState, thread_id)
+            if state is not None:
+                attached = ParseDict(state.attached, pb.Attached())
+                previous_model = attached.spec.model
+                for event in sorted(
+                    (ParseDict(payload, pb.Event()) for payload in inserted), key=lambda event: event.sequence
+                ):
+                    # An Attached snapshot describes the runner at its cursor. Replaying the
+                    # earlier log fills history, but must not rewind that snapshot's state.
+                    if event.sequence <= attached.last_sequence:
+                        continue
+                    _project_attached(attached, event)
+                    if event.HasField("harness_started"):
+                        state.end = None
+                state.attached = MessageToDict(attached)
+                if attached.spec.model != previous_model:
+                    await session.execute(
+                        update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model)
+                    )
+                await session.flush()
+            await _notify(session)
+
+    async def acquire_ingestion(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
+        _positive_duration(duration)
+        token = uuid4()
+        async with self._sessions.begin() as session:
+            acquired = await session.scalar(
+                insert(SandboxIngestion)
+                .values(sandbox=sandbox, token=token, expires_at=func.clock_timestamp() + duration)
+                .on_conflict_do_update(
+                    index_elements=[SandboxIngestion.sandbox],
+                    set_={"token": token, "expires_at": func.clock_timestamp() + duration},
+                    where=SandboxIngestion.expires_at <= func.clock_timestamp(),
+                )
+                .returning(SandboxIngestion.token)
+            )
+        return IngestionLease(sandbox, token) if acquired is not None else None
+
+    async def renew_ingestion(self, lease: IngestionLease, duration: timedelta) -> bool:
+        _positive_duration(duration)
+        async with self._sessions.begin() as session:
+            renewed = await session.scalar(
+                update(SandboxIngestion)
+                .where(
+                    SandboxIngestion.sandbox == lease.sandbox,
+                    SandboxIngestion.token == lease.token,
+                    SandboxIngestion.expires_at > func.clock_timestamp(),
+                )
+                .values(expires_at=func.clock_timestamp() + duration)
+                .returning(SandboxIngestion.token)
+            )
+        return renewed is not None
+
+    async def release_ingestion(self, lease: IngestionLease) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(
+                delete(SandboxIngestion).where(
+                    SandboxIngestion.sandbox == lease.sandbox, SandboxIngestion.token == lease.token
+                )
+            )
+
+    async def set_attached(self, thread_id: UUID, attached: pb.Attached, *, lease: IngestionLease) -> None:
+        async with self._sessions.begin() as session:
+            await _fence(session, lease, thread_id)
+            state = await session.get(FeedState, thread_id)
+            if state is not None and attached.last_sequence < ParseDict(state.attached, pb.Attached()).last_sequence:
+                raise ValueError("attachment snapshot is older than the committed feed state")
+            values = {"attached": MessageToDict(attached), "end": None}
+            await session.execute(
+                insert(FeedState)
+                .values(thread_id=thread_id, **values)
+                .on_conflict_do_update(index_elements=[FeedState.thread_id], set_=values)
+            )
+            await session.execute(update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model))
+            await _notify(session)
+
+    async def end_feed(self, thread_id: UUID, *, lease: IngestionLease, error: str | None) -> None:
+        async with self._sessions.begin() as session:
+            await _fence(session, lease, thread_id)
+            state = await session.get(FeedState, thread_id)
+            if state is None:
+                raise ValueError("cannot end a feed before persisting its attachment")
+            state.end = {} if error is None else {"message": error}
+            await session.flush()
+            await _notify(session)
+
+    async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:
+        async with self._sessions() as session:
+            state = await session.get(FeedState, thread_id)
+            if state is None:
+                return None
+            end = None if state.end is None else FeedError(state.end["message"]) if state.end else FeedEnd()
+            return FeedSnapshot(ParseDict(state.attached, pb.Attached()), end)
 
     async def list_threads(self, *, sandbox: str | None = None, session_id: str | None = None) -> list[ThreadView]:
         """Newest first; each filter given narrows the list to threads matching it."""
@@ -197,7 +344,7 @@ class TrajectoryStore:
             thread.name = name
             await session.flush()
             renamed = _view(thread, *await _last(session, thread_id))
-        self.changes.notify()
+            await _notify(session)
         return renamed
 
     async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int) -> list[pb.Event]:
@@ -210,6 +357,45 @@ class TrajectoryStore:
                 .limit(limit)
             )
             return [ParseDict(payload, pb.Event()) for payload in payloads]
+
+
+def _positive_duration(duration: timedelta) -> None:
+    if duration <= timedelta(0):
+        raise ValueError("ingestion lease duration must be positive")
+
+
+async def _fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) -> None:
+    # Lock before reading database time: a transaction that waited on an owner must not rely on
+    # its transaction-start timestamp. Takeover/renewal waits until this write commits or rolls back.
+    owned = await session.scalar(
+        select(SandboxIngestion).where(SandboxIngestion.sandbox == lease.sandbox).with_for_update()
+    )
+    now = (await session.scalars(select(func.clock_timestamp()))).one()
+    if owned is None or owned.token != lease.token or owned.expires_at <= now:
+        raise IngestionLeaseLostError(lease.sandbox)
+    sandbox = await session.scalar(select(Thread.sandbox).where(Thread.id == thread_id))
+    if sandbox != lease.sandbox:
+        raise IngestionLeaseLostError("lease does not own this thread's sandbox")
+
+
+async def _notify(session: AsyncSession) -> None:
+    # PostgreSQL delivers NOTIFY only on commit; payloads carry no trajectory or identity data.
+    await session.execute(select(func.pg_notify(CHANNEL, "")))
+
+
+def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
+    attached.last_sequence = event.sequence
+    match event.WhichOneof("observation"):
+        case "harness_started":
+            attached.harness = pb.HARNESS_STATE_RUNNING
+        case "harness_exited" | "harness_lost":
+            attached.harness = pb.HARNESS_STATE_STOPPED
+        case "turn_started":
+            attached.active_turn_id = event.turn_started.turn_id
+        case "turn_completed":
+            attached.active_turn_id = ""
+        case "model_switch_succeeded":
+            attached.spec.model = event.model_switch_succeeded.model
 
 
 async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None]:

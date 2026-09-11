@@ -8,6 +8,7 @@ import asyncio
 import json
 import socket
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +21,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
+from x.agentplane.app.changes import Changes
 from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
@@ -28,6 +30,7 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.conftest import RunnerHandle
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
@@ -145,9 +148,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         async with http.stream("GET", EVENTS) as first_tab:
             first = first_tab.aiter_lines()
             assert (await next_message(first)).event == "attached"
-            # A fresh Open would supersede this stream, so opening again while streaming is refused.
             reopened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
-            assert reopened.status_code == 409, reopened.text
+            assert reopened.status_code == 201, reopened.text
             accepted = await http.post(
                 f"{SESSIONS}/{SESSION}/inputs", json={"inputId": "input-1", "text": "Reply with exactly: BRIDGE_OK"}
             )
@@ -162,8 +164,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             completed = [message.data["itemCompleted"] for message in seen if "itemCompleted" in message.data]
             assert [item["text"] for item in completed] == ["BRIDGE_OK"]
 
-            # A second tab on the same session loads the history the first one saw, then both follow
-            # the next turn live; the runner sees one attachment, so the first tab is not superseded.
+            # A second tab loads the first tab's history, then both follow the same committed log.
             async with http.stream("GET", EVENTS) as second_tab:
                 second = second_tab.aiter_lines()
                 assert (await next_message(second)).event == "attached"
@@ -254,6 +255,181 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
             SESSIONS, json={"session_id": "s", "spec": {"provider": "PROVIDER_CLAUDE", "nope": 1}}
         )
         assert malformed.status_code == 422
+
+
+@dataclass
+class Replicas:
+    owner: RunnerBridge
+    survivor: RunnerBridge
+
+
+@pytest.fixture
+async def replicas(runner: RunnerHandle, store: TrajectoryStore, db_url: str) -> AsyncIterator[Replicas]:
+    async def address_of(name: str) -> str:
+        assert name == SANDBOX
+        return runner.target
+
+    replica_store = TrajectoryStore.connect(db_url)
+    await replica_store.start_updates()
+    owner = RunnerBridge(address_of=address_of, store=store)
+    survivor = RunnerBridge(address_of=address_of, store=replica_store)
+    await owner.start([SANDBOX])
+    await owner.reconcile()
+    try:
+        yield Replicas(owner, survivor)
+    finally:
+        await owner.close()
+        await survivor.close()
+        await replica_store.close()
+
+
+async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
+    async for frame in frames:
+        for line in frame.decode().splitlines():
+            yield line
+
+
+async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit(
+    replicas: Replicas, model: ScriptedModel, spec: pb.SessionSpec
+) -> None:
+    await replicas.owner.open_session(SANDBOX, SESSION, spec)
+    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
+        lines = frame_lines(frames)
+        assert (await next_message(lines)).event == "attached"
+        await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="input-1", text="FIRST_REPLICA_TURN"))
+        model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
+        async with asyncio.timeout(10):
+            first = await read_until(lines, "turnCompleted")
+
+        await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="input-2", text="AFTER_OWNER_EXIT"))
+        request = await model.request()
+        await replicas.owner.close()
+        model.reply(request, Text("AFTER_OWNER_EXIT"))
+        async with asyncio.timeout(10):
+            second = await read_until(lines, "turnCompleted")
+        seen = [*first, *second]
+        assert [message.id for message in seen] == list(range(1, len(seen) + 1))
+        assert [message.data["itemCompleted"]["text"] for message in seen if "itemCompleted" in message.data] == [
+            "FIRST_REPLICA_TURN",
+            "AFTER_OWNER_EXIT",
+        ]
+        await replicas.survivor.shutdown(SANDBOX, SESSION)
+        async with asyncio.timeout(10):
+            await read_until(lines, "harnessExited")
+            assert (await next_message(lines)).event == "end"
+    model.assert_quiescent()
+
+
+async def test_inventory_change_discovers_existing_runner_session_without_browser_open(
+    runner: RunnerHandle,
+    store: TrajectoryStore,
+    model: ScriptedModel,
+    spec: pb.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # This must wake from the informer notification, not the periodic recovery scan.
+    monkeypatch.setattr("x.agentplane.app.bridge.RECONCILE_S", 3600)
+    running: list[str] = []
+    changes = Changes()
+    discovered = asyncio.Event()
+
+    async def address_of(name: str) -> str:
+        assert name == SANDBOX
+        return runner.target
+
+    async def discover() -> list[str]:
+        discovered.set()
+        return list(running)
+
+    bridge = RunnerBridge(address_of=address_of, store=store, discover_sandboxes=discover, sandbox_changes=changes)
+    client = RunnerClient(runner.target)
+    try:
+        attachment = await client.attach(SESSION, spec=spec)
+        await attachment.detach()
+        await attachment.drain_until_end()
+        await bridge.start([])
+        async with asyncio.timeout(10):
+            await discovered.wait()
+        discovered.clear()
+        running.append(SANDBOX)
+        changes.notify()
+        async with asyncio.timeout(10):
+            await discovered.wait()
+        # Only the discovery coordinator can create this row: no app Open, command, or SSE request ran.
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                threads = await store.list_threads()
+                assert len(threads) == 1
+                assert await store.last_sequence(threads[0].id) > 0
+        assert threads[0].sandbox == SANDBOX
+        assert threads[0].session_id == SESSION
+    finally:
+        await bridge.close()
+        await client.close()
+    model.assert_quiescent()
+
+
+async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
+    replicas: Replicas, model: ScriptedModel, spec: pb.SessionSpec
+) -> None:
+    await replicas.owner.open_session(SANDBOX, SESSION, spec)
+    await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="seed-input", text="BEFORE_RESUME"))
+    model.reply(await model.request(), Text("BEFORE_RESUME"))
+    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
+        async with asyncio.timeout(10):
+            await read_until(frame_lines(frames), "turnCompleted")
+    await replicas.survivor.shutdown(SANDBOX, SESSION)
+    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
+        lines = frame_lines(frames)
+        assert (await next_message(lines)).event == "attached"
+        async with asyncio.timeout(10):
+            stopped = await read_until(lines, "harnessExited")
+            assert (await next_message(lines)).event == "end"
+    cursor = stopped[-1].id
+    assert cursor is not None
+    await replicas.survivor.open_session(SANDBOX, SESSION, spec)
+    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=cursor)) as frames:
+        lines = frame_lines(frames)
+        assert (await next_message(lines)).event == "attached"
+        await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="resumed-input", text="RESUMED_REPLICA"))
+        model.reply(await model.request(), Text("RESUMED_REPLICA"))
+        async with asyncio.timeout(10):
+            resumed = await read_until(lines, "turnCompleted")
+        assert all(message.event == "event" for message in resumed)
+        assert any(message.data.get("harnessStarted", {}).get("resumed") for message in resumed)
+        assert [message.id for message in resumed] == list(range(cursor + 1, cursor + len(resumed) + 1))
+        await replicas.survivor.shutdown(SANDBOX, SESSION)
+    model.assert_quiescent()
+
+
+async def test_stored_conversation_stream_does_not_require_reachable_runner(
+    replicas: Replicas, store: TrajectoryStore, spec: pb.SessionSpec
+) -> None:
+    await replicas.owner.open_session(SANDBOX, SESSION, spec)
+    await replicas.survivor.shutdown(SANDBOX, SESSION)
+    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
+        lines = frame_lines(frames)
+        await next_message(lines)
+        async with asyncio.timeout(10):
+            stored = await read_until(lines, "harnessExited")
+            assert (await next_message(lines)).event == "end"
+    await replicas.owner.close()
+    await replicas.survivor.close()
+
+    async def unavailable(name: str) -> str:
+        raise ConnectionError(f"test runner {name} is unavailable")
+
+    offline = RunnerBridge(address_of=unavailable, store=store)
+    try:
+        async with asyncio.timeout(10), aclosing(offline.events(SANDBOX, SESSION, after_sequence=0)) as frames:
+            lines = frame_lines(frames)
+            assert (await next_message(lines)).event == "attached"
+            assert await read_until(lines, "harnessExited") == stored
+            assert (await next_message(lines)).event == "end"
+    finally:
+        await offline.close()
 
 
 if __name__ == "__main__":

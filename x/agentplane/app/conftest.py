@@ -53,6 +53,7 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
 async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
     store = TrajectoryStore.connect(db_url)
     await store.ensure_schema()
+    await store.start_updates()
     try:
         yield store
     finally:

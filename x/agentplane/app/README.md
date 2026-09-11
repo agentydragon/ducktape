@@ -29,14 +29,15 @@ bbr test //x/agentplane/app/...
   repository's to remove, so revoking one is refused with 409 rather than deleting an object the
   next reconcile re-creates. `decisions.py` reads the proxy's recent decisions off its admin port,
   and an unreachable proxy leaves the rules readable.
-- `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
-  the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
+- `bridge.py`: runner-first commands, leased ingestion per sandbox, and database-backed browser
+  SSE; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
 - `live.py`: one list-and-watch over Sandboxes, their Pods, and the egress objects
   (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open tab.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `trajectory.py`: the PostgreSQL store of threads and their events.
+- `trajectory.py`: the PostgreSQL store of threads, events, feed state, and ingestion leases.
+  `trajectory_updates.py` turns committed PostgreSQL notifications into replica-local wakeups.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
@@ -44,6 +45,37 @@ bbr test //x/agentplane/app/...
   scenarios under `frontend/visual/`.
 
 ## Live views
+
+### Replica-safe runner delivery
+
+Every app replica can send commands through an independent runner attachment. Inputs go to the
+runner first, with stable `input_id` values: the runner serializes admission and deduplicates retries.
+There is no database command queue. A successful HTTP command response is not a promise that the
+trajectory copy is already committed; the runner's input settlement events describe its outcome.
+
+One app replica leases each sandbox's ingestion in PostgreSQL. It observes every runner session,
+copying events from the last committed sequence. Each write locks and validates the lease token
+against database time, so an expired owner cannot write after takeover. Disconnects retry from the
+committed cursor; event keys make replay idempotent. A graceful exit releases leases, while a crashed
+owner is replaced after its lease expires. This coordinates ownership, not balanced placement.
+
+Sandbox discovery and runner addresses use the existing Kubernetes list/watch cache, including
+relist recovery; watch changes wake reconciliation. The timer renews leases and discovers sessions
+via runner `ListSessions`, which currently has no watch RPC. Merely observing a stopped session
+does not restart its harness. Explicit Open starts/resumes it and waits for ingestion to catch up
+before returning, so a resumed browser does not read the previous harness's terminal state.
+
+Browser SSE reads committed PostgreSQL events on whichever replica receives the request, never an
+ingester's in-process queue. Transactional `NOTIFY` wakes readers for event, thread, and rename
+changes. Notifications carry no data and are not a durable queue: the database sequence cursor is
+authoritative, and listener reconnects and keepalives trigger catch-up reads. Stored history remains
+readable while the runner is unreachable.
+
+Rollout prerequisite: existing sandbox runners must support independent attachments before the new
+app bridge is deployed. This change does not increase deployment replicas or change rollout strategy;
+old runner processes are not upgraded merely by publishing the new image.
+
+### Inventory snapshots
 
 `/live/sandboxes` and `/live/sandboxes/{name}` are SSE, authenticated like every other route. Each
 carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
@@ -233,11 +265,8 @@ per-turn task remain the place for workload-specific constraints and the request
   bidirectional `Attach`, and a standard proxy would still need per-sandbox routing to Pod
   addresses that change on every resume. The app stays the one HTTP surface; the schema is shared
   through proto-JSON and generated types instead. Splitting `Attach` into a server-streaming
-  `Open` plus unary commands waits for a second, non-browser client that wants it, since the
-  stream is what identifies the controlling attachment today.
-- **One replica:** the bridge holds live runner attachments in memory, and a second replica would
-  supersede them. Operator sessions and pending OAuth state are shared in PostgreSQL; login callbacks and logout
-  work across replicas. This does not make the in-memory runner bridge multi-replica safe.
+  `Open` plus unary commands waits for a second, non-browser client that wants it. Attachments are
+  independent; commands share the runner session's serialization and deduplication.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
