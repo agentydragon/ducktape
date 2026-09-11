@@ -2,4 +2,4 @@
 // canned inventory and runner events, nothing on the network.
 import { main } from "../../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
-await main("session", { element: "#app", viewport: { width: 1200, height: 900 } });
+await main("session", { element: "#app", viewport: { width: 1200, height: 900 }, captureViewport: true });

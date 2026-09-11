@@ -333,12 +333,9 @@ export function SessionView({
 
   const activeTurn = state.turns.find((turn) => turn.status === null);
   return (
-    // The session fills the window and the composer sits at its foot, rather than the page growing
-    // past the fold and the composer going with it. `dvh` so a phone's collapsing URL bar does not
-    // leave the composer under it; the subtraction is App's own `py="md"` on the Container, top and
-    // bottom (app.tsx).
-    <Stack h="calc(100dvh - 2 * var(--mantine-spacing-md))">
-      <Group>
+    // App owns the viewport height; use only the space left below its navigation.
+    <Stack style={{ flex: 1, minHeight: 0 }}>
+      <Group style={{ flexShrink: 0 }}>
         <Button variant="subtle" onClick={onBack}>
           ← {sandbox}
         </Button>
@@ -409,7 +406,7 @@ export function SessionView({
           <div ref={bottom} />
         </Stack>
       </ScrollArea>
-      <Group align="flex-end" gap="xs" wrap="nowrap">
+      <Group align="flex-end" gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
         <Textarea
           style={{ flex: 1 }}
           placeholder="Enter sends, Ctrl+Enter for a new line"

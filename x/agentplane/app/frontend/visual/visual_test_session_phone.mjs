@@ -6,4 +6,5 @@ await main("session", {
   element: "#app",
   viewport: { width: 412, height: 915, deviceScaleFactor: 2.625 },
   outputName: "session-phone",
+  captureViewport: true,
 });

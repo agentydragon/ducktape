@@ -1,5 +1,5 @@
 import { Button, Container, Group, Stack } from "@mantine/core";
-import { HashRouter, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions";
 import { Connections } from "./connections";
@@ -62,9 +62,10 @@ function SessionRoute(): JSX.Element {
 function AppRoutes(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
+  const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
   return (
-    <Container size="xl" py="md">
-      <Stack>
+    <Container size="xl" py="md" h={sessionRoute ? "100dvh" : undefined}>
+      <Stack h="100%">
         <Group>
           <Button variant={location.pathname === "/" ? "filled" : "subtle"} onClick={() => void navigate("/")}>
             Sandboxes

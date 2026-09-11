@@ -43,7 +43,7 @@ const __dirname = dirname(__filename);
  * Called from each per-scenario test file.
  *
  * @param {string} scenarioName - Harness page name (e.g. "ListPage").
- * @param {{ element: string, viewport?: { width: number, height: number }, outputName?: string, colorScheme?: 'light' | 'dark', readySelectors?: string[] }} options - Overrides.
+ * @param {{ element: string, viewport?: { width: number, height: number }, outputName?: string, colorScheme?: 'light' | 'dark', readySelectors?: string[], captureViewport?: boolean }} options - Overrides.
  *   element is the CSS selector to screenshot. Required — there is no default — so every scenario
  *   states its choice explicitly: '#app' for a scenario that is genuinely a full page/full app, or
  *   a scenario-specific selector (conventionally '#shot') for a single component, so the crop is
@@ -131,7 +131,10 @@ export async function main(scenarioName, options) {
       throw new Error(`${outputName}: requests escaped the harness:\n  ${escapedRequests.join("\n  ")}`);
     }
 
-    const screenshot = await screenshotElement(page, options.element, { context: "main()" });
+    // Viewport captures preserve clipping instead of expanding to fit an overflowing app.
+    const screenshot = options.captureViewport
+      ? await page.screenshot({ fullPage: false })
+      : await screenshotElement(page, options.element, { context: "main()" });
 
     if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
     writeFileSync(join(outputDir, `${outputName}-actual.png`), screenshot);
