@@ -68,29 +68,27 @@ fields remain available when no preset is selected.
 
 ## Update rules
 
-Preset changes reconcile through the integration app, which is the desired-state authority. The
-runtime reports what was applied.
+Preset configuration is live: a bound Sandbox is resolved against the currently configured presets
+at every session open.
 
 - New Thread defaults update automatically.
 - Existing Threads do not change.
 - Mutable egress/runtime settings update only through existing supported runtime operations.
-- Pod template or mount-topology changes report that a new Sandbox is required.
-- A changed bootstrap script becomes a pending update; it is never rerun automatically on a live
-  Sandbox. Applying it is an explicit runner initialization operation.
-- A removed or invalid preset leaves the last valid Sandbox state usable and surfaces the broken
-  binding rather than deleting or silently mutating the Sandbox.
+- A binding naming a SandboxPreset or ThreadPreset that is no longer configured makes
+  `POST /sandboxes/{name}/sessions` answer 422 (`UnknownPresetError`); the Sandbox is neither
+  deleted nor mutated. `POST /sandboxes` answers 422 for an unknown preset at creation.
+- A changed bootstrap script is refused on a live Sandbox (below).
 
 ## Bootstrap
 
-Bootstrap belongs to the SandboxPreset and is executed by the runner after the Sandbox Pod is ready
-and before the first Thread is opened. The integration app resolves either inline configured source
-or a configured file/ConfigMap path to content, then sends the content to the runner; the app never
-executes shell.
-
-The runner validates and executes the requested initialization, returns bounded structured status,
-and writes an idempotence marker on persistent state. The first slice may use configured script
-content. Arbitrary user-provided shell, automatic reruns after source changes, and a general script
-registry remain out of scope.
+Bootstrap belongs to the SandboxPreset as inline script content. Before every session open on a
+bound Sandbox, the app sends that content to the runner (`bridge.initialize`); the app never
+executes shell. The runner pins the SHA-256 of the first script it is given under its state
+directory, runs it with `/bin/sh -eu`, and keeps a replayable log of output and result: the same
+script re-sent is a no-op once completed and a retry after a failure, while a different script is
+refused (`FAILED_PRECONDITION`), so a changed preset bootstrap never reruns on a live Sandbox. A
+refused or non-zero-exit bootstrap fails the session open with 409. Arbitrary user-provided shell,
+automatic reruns after source changes, and a script registry are out of scope.
 
 ## UX
 
@@ -103,12 +101,8 @@ the live preset binding and the edited defaults. Launching a Thread later starts
 current effective Thread defaults, while per-Thread edits remain local to that Thread.
 
 An existing Sandbox page shows the bound preset and whether its Thread default is inherited or
-overridden, for example `Public coder · inherited`. If a different preset requires a new
-Sandbox template or bootstrap/runtime shape, the UI must say so and offer creating a new Sandbox;
-it must not silently apply only half of the preset.
-
-Initialization is visible in the Sandbox lifecycle (`Initializing workspace`) and a failed required
-bootstrap prevents the Thread launch action until the operator retries or creates a fresh Sandbox.
+overridden, for example `Public coder · inherited`. A failed bootstrap fails the Thread launch; the
+operator retries it or creates a fresh Sandbox.
 
 ## Implemented first slice
 
@@ -120,10 +114,6 @@ bootstrap prevents the Thread launch action until the operator retries or create
 4. Send the configured bootstrap source to the runner before opening the first Thread.
 5. Add the preset selector and inherited-default presentation to the existing UI.
 6. Add the one-action Sandbox-plus-Thread launch path.
-
-**Remaining support / deployment evidence**
-
-- A runner initialization operation with idempotence and bounded result reporting.
 
 **Live acceptance target**
 
