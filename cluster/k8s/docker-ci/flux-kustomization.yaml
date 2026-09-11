@@ -21,12 +21,9 @@ spec:
       name: docker-ci
       namespace: docker-ci
   dependsOn:
-    # No storage dep (emptyDir, not a CSI PVC). Needs the Gateway for the
-    # TLSRoute, the cluster-internal-ca ClusterIssuer for the mTLS Certificates,
-    # and agent-rbac-base for the claude-sandbox namespace the client Certificate
-    # lives in.
-    - name: gateway
-      namespace: ducktape-flux
+    # No storage dep (emptyDir, not a CSI PVC). Needs the cluster-internal-ca
+    # ClusterIssuer for the mTLS Certificates and agent-rbac-base for the
+    # claude-sandbox namespace the client Certificate lives in.
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: claude-rbac

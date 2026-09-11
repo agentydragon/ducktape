@@ -5,5 +5,4 @@ resources:
   - certificates.yaml
   - deployment.yaml
   - service.yaml
-  - tlsroute.yaml
   - cronjobs.yaml

@@ -5,18 +5,16 @@ across test runs, avoiding the ~46s cold-pull penalty on disposable RBE executor
 
 ## Architecture
 
-The daemon listens with `--tlsverify`. There are two would-be clients; only the
-in-cluster one is wired up today:
+The daemon listens with `--tlsverify` and is reachable only inside the cluster,
+through the ClusterIP Service `docker-ci.docker-ci.svc.cluster.local:2376`
+(`service.yaml`). Nothing routes it through the Gateway.
 
 ```text
-in-cluster eval Job (loom/gym, claude-sandbox ns) — LIVE
+in-cluster eval Job (loom/gym, claude-sandbox ns)
   │  mounts the cert-manager Secret docker-ci-client (ca/cert/key)
   │  DOCKER_HOST=tcp://docker-ci.docker-ci.svc.cluster.local:2376
   ▼
-DinD pod (k8s, OVH) ──── mTLS ──── external RBE via TLSRoute — DORMANT
-  ▲                                  docker-ci.allegedly.works:2376
-  │                                  (DUCKTAPE_DOCKER_CLIENT_KEY export is
-  └── --tlscacert = cluster root      commented out; docker_mtls fixture no-ops)
+DinD pod (k8s, OVH) ── --tlscacert = cluster root
 ```
 
 ## mTLS Certificate Setup
@@ -52,6 +50,10 @@ the `reloader.stakater.com/auto: "true"` annotation on its Deployment.
 The external-RBE client path (`bbr test` over `DUCKTAPE_DOCKER_CLIENT_KEY` + the
 `util/testing/docker_mtls.py` fixture) is **dormant** — see that fixture's
 docstring and the tombstone in `devinfra/secrets/_common.sh` for how to revive it.
+Reviving it also needs a Gateway route for the public `docker-ci.allegedly.works`
+SAN the server Certificate still carries; the TLS-passthrough listener and TLSRoute
+that once served it were removed after the listener conflict
+([cilium#42159](https://github.com/cilium/cilium/issues/42159)).
 
 ## Kubernetes Resources
 
