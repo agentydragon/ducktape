@@ -150,16 +150,7 @@ export const actionService: ActionService = {
 
 export function displayableError(error: unknown): string {
   if (error instanceof Error) return error.message;
-  if (Array.isArray(error)) return error.map(displayableError).join("; ");
-  if (typeof error === "object" && error !== null) {
-    if ("detail" in error) return displayableError(error.detail);
-    if ("message" in error && typeof error.message === "string") return error.message;
-    if ("msg" in error && typeof error.msg === "string") {
-      return "loc" in error && Array.isArray(error.loc) ? `${error.loc.join(".")}: ${error.msg}` : error.msg;
-    }
-    if ("code" in error && typeof error.code === "string") return error.code;
-    return JSON.stringify(error);
-  }
+  if (typeof error === "object" && error !== null) return JSON.stringify(error);
   return String(error);
 }
 
