@@ -4,7 +4,7 @@ metadata:
   name: public-coder-devbox-ssh
   namespace: public-coder-agent
   annotations:
-    description: ClusterIP for operator port-forward access (e.g. nixos-rebuild switch per docs/kubevirt_nixos_vm.md), not public.
+    description: ClusterIP for operator port-forward access (e.g. nixos-rebuild switch per docs/kubevirt_nixos_vm.md) and for ssh-mcp's public-coder-devbox targets (cluster/k8s/ssh-mcp); not public.
   labels:
     app.kubernetes.io/name: public-coder-devbox
 spec:

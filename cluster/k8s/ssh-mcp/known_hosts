@@ -6,3 +6,10 @@ wyrm2.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAwoT0hzkNNzOU
 # rugged: not yet captured -- the host is a roaming laptop and was unreachable over
 # Nebula at provisioning time. Run `ssh-keyscan -t ed25519 rugged.nebula.allegedly.works`
 # once it's online and add its line here before relying on the rugged targets below.
+# public-coder-devbox: ssh_keys/public-coder-devbox-host.pub, the same persisted host key
+# sshpiper pins (cluster/k8s/agents/public-coder-agent/sshpiper) -- not blind first-contact TOFU.
+public-coder-devbox-ssh.public-coder-agent.svc.cluster.local ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIARgvl0zwplvewSpQLX6v8ayfrwo4bsuLBIOwNstBzQB
+# atlas: not yet captured -- unlike wyrm2/rugged/public-coder-devbox, nothing in this repo
+# persists or manages atlas's sshd host key (it is not NixOS; ansible/atlas.yaml has no
+# analogous "install host key" task). Run `ssh-keyscan -t ed25519 atlas.nebula.allegedly.works`
+# and add its line here before relying on the atlas targets below.

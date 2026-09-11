@@ -1,7 +1,7 @@
 # Cluster-internal MCP backend. Only haku-console and Agentplane staging are callers; SSH egress is
-# constrained to port 22 on cluster nodes, which is where the Nebula-addressed targets live
-# (nebula-mesh.json at the repo root). Which of those nodes a target actually names is decided by
-# settings.yaml, and reaching one still requires a key the Secret holds.
+# constrained to port 22 on the specific targets settings.yaml configures -- cluster nodes reached
+# over Nebula (nebula-mesh.json at the repo root) and, for public-coder-devbox, an ordinary pod.
+# Reaching any of them still requires a key the Secret holds.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -43,6 +43,27 @@ spec:
     - toEntities:
         - host
         - remote-node
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    # public-coder-devbox is a KubeVirt VM running as an ordinary pod, not a cluster node, so it
+    # gets a normal cross-namespace toEndpoints rule instead of the host/remote-node entities above.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            app.kubernetes.io/name: public-coder-devbox
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    # atlas is a Nebula peer like wyrm2/rugged, but unlike them it is not a Kubernetes node
+    # (nebula-mesh.json: role "non-k8s") -- its address never gets the host/remote-node identity
+    # the gotcha above describes, so an entities rule would select nothing here. A plain toCIDR
+    # rule is the correct selector for a genuinely external destination; unlike the entities rule
+    # above, this one is unverified against the live cluster (see cluster/k8s/ssh-mcp/README.md).
+    - toCIDR:
+        - 10.42.0.5/32
       toPorts:
         - ports:
             - port: "22"

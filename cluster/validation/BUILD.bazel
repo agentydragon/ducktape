@@ -395,6 +395,21 @@ py_test(
 )
 
 py_test(
+    name = "test_ssh_mcp_known_hosts",
+    srcs = ["test_ssh_mcp_known_hosts.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "//ssh_keys:public-coder-devbox-host.pub",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],
     data = [

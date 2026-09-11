@@ -19,3 +19,20 @@ targets:
   - host: rugged.nebula.allegedly.works
     user: root
     identity_file: /etc/ssh-mcp/keys/rugged-root
+  # public-coder-devbox: an in-cluster KubeVirt VM, reached over its own ClusterIP Service
+  # (cluster/k8s/agents/public-coder-agent/devbox/service.yaml) rather than a Nebula hostAlias.
+  - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
+    user: root
+    identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-root
+  - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
+    user: coder
+    identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-coder
+  # atlas: a Nebula peer like wyrm2/rugged, but not a Kubernetes node (Proxmox VE, ansible-
+  # managed). Its sshd host key has never been captured -- see the known_hosts comment below --
+  # so these targets stay listed and fail closed until an operator captures it.
+  - host: atlas.nebula.allegedly.works
+    user: root
+    identity_file: /etc/ssh-mcp/keys-atlas/atlas-root
+  - host: atlas.nebula.allegedly.works
+    user: agentydragon
+    identity_file: /etc/ssh-mcp/keys-atlas/atlas-agentydragon
