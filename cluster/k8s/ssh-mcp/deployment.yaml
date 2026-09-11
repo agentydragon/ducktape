@@ -70,9 +70,11 @@ spec:
               cpu: 500m
           securityContext:
             allowPrivilegeEscalation: false
+            # No readOnlyRootFilesystem: the aspect_rules_py launcher materialises its venv at
+            # startup inside the image's own runfiles directory (props/oci.bzl), so the root
+            # filesystem has to be writable or the container exits before serving anything.
             capabilities:
               drop: ["ALL"]
-            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
