@@ -80,6 +80,27 @@ pins **fell** over the interval (96,666 -> 85,164, of which `Promise` 90,178 ->
 82,030), so this is not async-resource proliferation — the stores themselves
 survive their runs.
 
+## Where the container's memory actually goes
+
+The heap is not the whole footprint, and the difference matters when reading
+`kubectl top`. A healthy pod at 7 minutes, measured on a fresh process:
+
+|                                | healthy                              | at abort                 |
+| ------------------------------ | ------------------------------------ | ------------------------ |
+| V8 heap                        | 1000 MiB committed, **415 MiB live** | **2096 MiB** (the cap)   |
+| native: brk arena + other anon | ~450 MiB (brk alone 79 MiB)          | ~450 MiB                 |
+| page cache from the state DB   | ~1570 MiB, **reclaimable**           | reclaimed under pressure |
+| node RSS                       | 1488 MiB                             | ~2.5 GiB                 |
+
+Only the heap grows without bound, and this leak is what fills it: from ~415 MiB
+of genuine live data to the 2096 MiB cap. The kernel reclaims page cache rather
+than OOMKilling, which is why the failure is a clean V8 abort (134) and never a
+137 -- the 4Gi container limit is not the binding constraint, the heap cap is.
+
+`kubectl top` counts page cache, so it reads ~1.5 GiB above anonymous memory and
+makes the container look far closer to its limit than it is. Read
+`memory.stat`'s `anon` and `file` separately before concluding anything.
+
 ## Why one copy already costs 32 MiB
 
 The store holds **386 sessions**, restored from the SQLite state database at
