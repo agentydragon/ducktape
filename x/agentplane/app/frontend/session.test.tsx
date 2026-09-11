@@ -68,8 +68,10 @@ function enter(composer: HTMLTextAreaElement): void {
 }
 
 it("shows sending immediately, suppresses repeated Enter, and clears only after acknowledgment", async () => {
-  const acknowledgment = Promise.withResolvers<void>();
-  vi.mocked(sendInput).mockReturnValue(acknowledgment.promise);
+  let acknowledge = (): void => {
+    throw new Error("Acknowledgment is not initialized");
+  };
+  vi.mocked(sendInput).mockReturnValue(new Promise<void>((resolve) => (acknowledge = resolve)));
   const { container, composer } = await render();
   await type(composer, "hello");
   await act(async () => {
@@ -80,7 +82,7 @@ it("shows sending immediately, suppresses repeated Enter, and clears only after 
   expect(container.querySelector('[role="status"]')?.textContent).toBe("Sending…");
   expect(composer.disabled).toBe(true);
   expect(composer.value).toBe("hello");
-  await act(async () => acknowledgment.resolve());
+  await act(async () => acknowledge());
   expect(container.querySelector('[role="status"]')).toBeNull();
   expect(composer.disabled).toBe(false);
   expect(composer.value).toBe("");
