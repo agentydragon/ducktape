@@ -16,12 +16,15 @@ afterEach(async () => {
   }
 });
 
-async function render(list: McpLinkageService["list"]): Promise<HTMLDivElement> {
+async function render(
+  list: McpLinkageService["list"],
+  overrides: Partial<McpLinkageService> = {}
+): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   mounted.push({ root, container });
-  const service: McpLinkageService = { list, status: vi.fn(), start: vi.fn(), disconnect: vi.fn() };
+  const service: McpLinkageService = { list, status: vi.fn(), start: vi.fn(), disconnect: vi.fn(), ...overrides };
   await act(async () =>
     root.render(
       <MantineProvider>
@@ -45,6 +48,42 @@ function pendingList(): { promise: Promise<McpLinkageView[]>; resolve: (rows: Mc
   });
   return { promise, resolve };
 }
+
+it.each(["Reconnect", "Disconnect"])("spins only the clicked %s button until the operation fails", async (label) => {
+  const rows: McpLinkageView[] = ["github", "second-server"].map((server_id) => ({
+    server_id,
+    provider: "github",
+    server_url: "https://mcp.example.test",
+    status: "linked",
+    revision: 1,
+    scopes: [],
+    expires_at: null,
+    linked_at: null,
+    linked_by: null,
+  }));
+  let reject!: (error: Error) => void;
+  const pending = new Promise<never>((_, fail) => {
+    reject = fail;
+  });
+  const start = vi.fn<McpLinkageService["start"]>().mockReturnValue(pending);
+  const disconnect = vi.fn<McpLinkageService["disconnect"]>().mockReturnValue(pending);
+  const container = await render(async () => rows, { start, disconnect });
+  const buttons = [...container.querySelectorAll("button")];
+  const clicked = buttons.find((button) => button.textContent === label);
+  if (!clicked) throw new Error(`Missing ${label}`);
+  await act(async () => clicked.click());
+  expect(container.querySelectorAll("button[data-loading]")).toHaveLength(1);
+  expect(clicked.hasAttribute("data-loading")).toBe(true);
+  expect(refresh(container).hasAttribute("data-loading")).toBe(false);
+  expect(buttons.every((button) => button.disabled)).toBe(true);
+  if (label === "Reconnect") expect(start).toHaveBeenCalledWith("github", []);
+  else expect(disconnect).toHaveBeenCalledWith("github");
+
+  await act(async () => reject(new Error("Operation failed")));
+  expect(container.querySelectorAll("button[data-loading]")).toHaveLength(0);
+  expect(buttons.every((button) => !button.disabled)).toBe(true);
+  expect(container.textContent).toContain("Operation failed");
+});
 
 it("does not claim an empty inventory until the pending request succeeds", async () => {
   const response = pendingList();
