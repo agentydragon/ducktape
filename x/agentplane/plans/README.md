@@ -23,6 +23,8 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Mobile/compact UI density](mobile_density.md) — captured, not designed: nav/header overflow,
   badge-to-dot and role-to-bubble transcript styling, a global pending-approval overlay
+- [Session-first navigation](session_first_navigation.md) — bigger later redesign: a conversation-list
+  home view instead of Sandbox-first, and the cross-sandbox session listing it would need
 
 ## Implemented contracts
 

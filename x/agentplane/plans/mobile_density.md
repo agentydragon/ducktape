@@ -20,6 +20,10 @@ primary (they're the operational loop — see below on Actions specifically), mo
 servers, and Notifications under a settings/overflow menu. That alone removes 3 of 5 buttons from
 the permanent top row.
 
+Whether "Sandboxes" stays the primary landing button at all is exactly the question in
+[session-first navigation](session_first_navigation.md) — a bigger, separate redesign; don't block
+this smaller nav cleanup on that decision.
+
 ## Session header row — `session.tsx:404-430`
 
 One `Group` currently holds: back button, editable thread title, status `Badge`, harness `Badge`,
