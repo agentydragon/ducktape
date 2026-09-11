@@ -5,6 +5,30 @@ that took the agent down are resolved; these are the recurring errors and loose
 ends it left behind. Diagnosis and the recovery runbook:
 <../../../../openclaw/debug/2026_8_1_recovery/README.md>.
 
+## Released PV from the retired state claim
+
+`public-coder-agent-state` (the pre-`state-v2` claim) is gone from GitOps, but its
+volume is not. local-path placed it on **ovh-ns103656, a control-plane node** the
+gateway is pinned away from — which is why it had to be replaced rather than
+reused, and why nothing has read it since `state-v2` landed.
+
+Its reclaim policy was flipped `Delete` → `Retain` before the prune, so Flux left
+the PV `Released` and the directory intact instead of destroying it. That was
+deliberate: nothing backs this claim up (volsync covers `state-v2` only) and its
+contents were never confirmed empty. Until both the PV and the directory are
+gone, this is a `Released` PV holding ~10Gi of control-plane disk for nothing.
+
+- [ ] Confirm nothing is wanted from the directory below on ovh-ns103656, then
+      delete both:
+
+```bash
+# on ovh-ns103656 (Talos: no shell — mount the PV in a Pod tolerating the
+# control-plane taint, or use a privileged debug container)
+/var/mnt/local-path-ovh-hdd/local-path/pvc-29a423f0-42e9-4ea1-9b4d-61fa7e725ec1_public-coder-agent_public-coder-agent-state
+
+kubectl delete pv pvc-29a423f0-42e9-4ea1-9b4d-61fa7e725ec1
+```
+
 ## No system agent, so two subsystems fail every minute
 
 `agents.defaults.systemAgent.agentId` is unset, which a multi-agent config does

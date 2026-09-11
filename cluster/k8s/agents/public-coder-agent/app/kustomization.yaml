@@ -5,7 +5,6 @@ resources:
   - github-token-eso.yaml
   - gateway-password-eso.yaml
   - devbox-ssh-key.sops.yaml
-  - pvc.yaml
   - pvc-v2.yaml
   - pvc-diagnostics.yaml
   - deployment.yaml
