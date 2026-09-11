@@ -10,7 +10,10 @@ ignore rules; Git history and files excluded by Flux are not indexed.
 
 Files advance independently. A changed file's previous version remains searchable until all
 chunks of its replacement have embeddings. New files appear when ready. Deleted files disappear
-when a complete replacement manifest is accepted. Empty and binary files have no search hits.
+when a complete replacement manifest is accepted. Only files whose contents decode as strict
+UTF-8 are eligible for embedding; invalid bytes are never replaced or ignored to recover text.
+NUL-containing text is also excluded. Empty and excluded files have no search hits, including
+when an excluded file replaces a previously searchable version.
 Identical embedding inputs reuse vectors within this service.
 
 Search can contain multiple source revisions during an update. Every hit identifies its

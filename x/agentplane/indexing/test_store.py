@@ -68,6 +68,18 @@ async def test_identical_content_reuses_embeddings_and_updates_citations(store: 
     assert {hit.revision for hit in (await store.search(await embedder.embed_query("alpha")))[0]} == {"B"}
 
 
+async def test_invalid_utf8_replacement_removes_old_hits(store: Store, embedder: FakeEmbedder) -> None:
+    await ingest(store, "A", {"changed.txt": b"alpha", "unicode.data": "café".encode()})
+    await drain(store, embedder)
+    await ingest(store, "B", {"changed.txt": b"alpha\xff", "unicode.data": "café".encode()})
+    # Excluding the replacement needs no provider call, even though it has a valid prefix.
+    assert await store.advance(ExplodingEmbedder())
+    hits, status = await store.search(await embedder.embed_query("alpha"))
+    assert [(hit.path, hit.text) for hit in hits] == [("unicode.data", "café")]
+    assert status.completed_revision == "B"
+    assert not status.updating
+
+
 async def test_empty_binary_and_empty_snapshot_complete(store: Store, embedder: FakeEmbedder) -> None:
     await ingest(store, "A", {"empty": b"", "binary": b"\xff", "nul": b"a\x00b"})
     await drain(store, embedder)

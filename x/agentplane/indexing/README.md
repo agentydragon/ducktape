@@ -4,6 +4,11 @@ A standalone, single-collection semantic search service. It polls one Flux `GitR
 downloads its published tar.gz artifact, verifies the SHA-256 digest, and incrementally
 publishes searchable file versions. No Agentplane app or Haku Console service is required.
 
+Only strict UTF-8 file contents are embedded. NUL-containing text is also excluded because
+PostgreSQL text columns cannot store it. Excluded files remain in snapshot membership with
+zero chunks, so a text-to-binary change removes the old searchable version. There is no
+extension-based filter or encoding detection/conversion.
+
 The container is `git.allegedly.works/ducktape-ci/agentplane-index`, published by the image
 roster after its test gate passes. Use a pinned published tag. The Bazel binary is
 `//x/agentplane/indexing:main_bin`; the container target is `:image`.
