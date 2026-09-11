@@ -118,10 +118,28 @@ Node state on `ovh-ns103711`, from the cilium-agent pod:
 
 - Envoy logs contain no entry for these failures; the policy proxy does not log
   connect timeouts.
-- <local_gateway_tls.md> (2026-09-10, ovh-ns102453) recorded the same two
-  sockets and a veth capture in which a second SYN-ACK acknowledging the
-  upstream ISN+1 reaches the pod. Its sequence number is unrelated to the first
-  SYN-ACK's, as expected from a listener that saw a rewritten tuple.
+- The 2026-09-10 probes from the previous app pod (`10.244.4.80`, endpoint 290
+  on `ovh-ns102453`, local node `147.135.37.175`) recorded the same two sockets
+  (`ESTAB 147.135.37.175:443 ← 10.244.4.80:48432 fwmark:0xb00`,
+  `SYN-SENT 10.244.4.80:48432 → 147.135.37.175:443 fwmark:0xec680b00`, both in
+  the Envoy cgroup) and a payload-free Talos `pcap` on the pod's host-side veth
+  for source port 49125:
+
+  ```text
+  03:18:47.284687 Pod -> node SYN     seq=734713715
+  03:18:47.284723 node -> Pod SYN-ACK seq=4096322733 ack=734713716
+  03:18:47.284733 Pod -> node ACK                    ack=4096322734
+  03:18:47.285337 node -> Pod SYN-ACK seq=2559352832 ack=734723413
+  03:18:47.285344 Pod -> node ACK                    ack=4096322734
+  03:18:49.288832 node -> Pod RST-ACK seq=4096322734 ack=734714038
+  ```
+
+  The second SYN-ACK acknowledges the upstream ISN+1 and reaches the pod; its
+  sequence number is unrelated to the first SYN-ACK's, as expected from a
+  listener that saw a rewritten tuple. The pod re-ACKs the first connection and
+  the proxy resets it two seconds later. The same matrix reset on the node's
+  Nebula address `10.42.0.15:443` and succeeded from the host namespace to both
+  local addresses; the capture postdates the Gateway listener repair (#5999).
 
 ## Inferred
 
@@ -162,7 +180,7 @@ on the same node). Same family:
   no retries; `socket.create_connection` stops at the first address whose TCP
   connect succeeds, which the policy proxy always is. The TLS reset is
   terminal, so P(fail) ≈ 1/5 per fetch from a Gateway-node pod; observed 4/12
-  in <staging_recheck_20260911.md>. Token exchange uses Authlib
+  from the app pod with normal DNS on 2026-09-11. Token exchange uses Authlib
   `AsyncOAuth2Client`; anyio's `connect_tcp` staggers addresses by 250 ms but
   likewise accepts the first TCP success.
 - Node down: the same clients move past a dead address only after a connect
