@@ -161,9 +161,7 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
    the host disk; this keeps that I/O off the etcd spindles and onto the NVMe workers in
    normal operation. Soft (not required) because the controllers are
    `system-cluster-critical` and must retain a scheduling fallback if both workers are
-   down. **Retargeted 2026-09-11:** the Stage 2 role swap made the HDD boxes the
-   workers, so "not control-plane" was steering the controllers onto the HDDs; the
-   preference now keys on the hardware label `storage.allegedly.works/tier`.
+   down.
 3. **Throttled kustomize-controller's dependency retry-storm.** The controllers were
    also amplifying I/O directly: `--concurrent=16` + `--requeue-dependency=5s` made
    unhealthy dependency followers wake every 5s and re-run the full reconcile path
