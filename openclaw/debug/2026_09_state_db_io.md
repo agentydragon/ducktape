@@ -167,6 +167,28 @@ the Haku spike, sharing the same image build, keeps the default.
 It takes effect only once the image is rebuilt: the variable does not exist in a
 bundle that has not been through the patch script.
 
+Confirmed on the first pod carrying the patched image
+(`devel-20260911085124-03daf89`), at 13.5 minutes of gateway uptime — past the
+five-minute trigger. Ages are not exactly matched, but the gap is far larger
+than the age difference explains:
+
+|                                  | before, ~20 min | after, 13.5 min |
+| -------------------------------- | --------------: | --------------: |
+| `io.pressure full avg10`         |           24.58 |        **2.43** |
+| device `8:16` read since start   |         9.79 GB |         375 MiB |
+| device `8:0` written since start |         1.91 GB |         194 MiB |
+| gateway `read_bytes`             |          9.0 GB |         432 MiB |
+| gateway read syscalls/s          |          20,255 |           2,383 |
+| `~/.cache/openclaw`              |        1.49 GiB |           empty |
+| verify worker process            |         pid 290 |          absent |
+
+The process table holds only `tini` and the gateway, and the log carries
+`database integrity verifier disabled by OPENCLAW_DATABASE_VERIFY=off`. The
+workload is not controlled, so the fall in the gateway's own main-thread page
+traffic is partly the verifier no longer competing for the disk and partly
+whatever the agent happened to be doing — but an empty cache directory past the
+trigger point is unambiguous.
+
 What gating it costs: this verifier is the only thing that quarantines a
 corrupted state or agent database.
 
