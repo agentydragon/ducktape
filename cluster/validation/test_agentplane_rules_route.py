@@ -77,6 +77,7 @@ def test_staging_egress_retains_one_available_replica_during_voluntary_changes()
     assert rolling["maxSurge"] == 1
     assert budget["selector"] == deployment["selector"]
     for spread in pod["spec"]["topologySpreadConstraints"]:
+        assert spread["whenUnsatisfiable"] == "ScheduleAnyway"  # Placement must not block scheduling.
         assert spread["labelSelector"] == deployment["selector"]
         assert spread["topologyKey"] == "kubernetes.io/hostname"
     assert pod["spec"]["terminationGracePeriodSeconds"] >= 60
