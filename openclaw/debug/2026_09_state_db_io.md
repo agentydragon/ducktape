@@ -192,6 +192,27 @@ trigger point is unambiguous.
 What gating it costs: this verifier is the only thing that quarantines a
 corrupted state or agent database.
 
+## Still to watch
+
+The gate removed the verifier's I/O, not the reasons this pod is unhealthy. Four
+things to re-measure rather than assume:
+
+- **The abort cadence.** The heap leak is untouched, so exit 134 every ~2h50m
+  should continue. If it moves materially, the leak model is wrong and the
+  snapshots need redoing.
+- **Whether `io.pressure` stays down.** The 2.43 above is one sample on a
+  13-minute-old pod whose page cache was cold and small, and the gateway's own
+  ~20k `pread()`/s on the event loop thread was never addressed. Re-read
+  `io.pressure full avg300` and the `sessions.*` / `system-prompt` timings on a
+  pod past an hour.
+- **Database growth.** Nothing prunes `transcript_events` or the memory index,
+  so `PRAGMA page_count` keeps climbing past 1533 MiB whether or not the
+  verifier runs.
+- **That no integrity check runs at all now.** This is the gate's cost, live. If
+  one of these databases corrupts, nothing quarantines it and the first symptom
+  is a gateway that will not start. A full offline check is still available, and
+  is what to run before trusting a restore.
+
 ## Measuring this again
 
 No `sqlite3` binary in the image; the pod's own Node has `node:sqlite`, and its
