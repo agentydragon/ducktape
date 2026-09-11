@@ -10,7 +10,11 @@ function keyBytes(value: string): Uint8Array {
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { credentials: "same-origin", ...init });
-  if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`);
+  if (!response.ok) {
+    const path = new URL(url, window.location.href).pathname;
+    const status = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+    throw new Error(`${init?.method ?? "GET"} ${path}: ${status}: ${await response.text()}`);
+  }
   return response.status === 204 ? (undefined as T) : response.json();
 }
 

@@ -66,6 +66,36 @@ it("lists registered browsers, identifies this browser, and unregisters it local
   }
 });
 
+it.each(["Forbidden", ""])("shows failed configuration HTTP status and body (status text: %s)", async (statusText) => {
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const body = { detail: { code: "operator_federation_exchange_failed" } };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) =>
+      url === "/push/config" ? Response.json(body, { status: 403, statusText }) : Response.json([])
+    )
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <MantineProvider>
+          <PushSettings />
+        </MantineProvider>
+      )
+    );
+    expect(container.textContent).toContain(
+      `GET /push/config: HTTP 403${statusText ? ` ${statusText}` : ""}: ${JSON.stringify(body)}`
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("explains pending settings and a failed load without claiming the server is unconfigured", async () => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   let rejectResponse!: (reason: Error) => void;
