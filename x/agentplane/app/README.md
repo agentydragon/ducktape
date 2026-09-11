@@ -91,6 +91,8 @@ Two things stay request-shaped, both because their source offers no stream. The 
 decisions live in its memory and the egress tab still asks for them on an interval; the runner
 answers `ListSessions` per request, so the sandbox page re-reads the session table when the
 sandbox's Pod comes or goes and when a session opens (which reaches it as a new thread).
+An unavailable runner shows a waiting state and retries until it answers, without requiring a
+reload. Session creation displays progress and prevents duplicate clicks while the request runs.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves

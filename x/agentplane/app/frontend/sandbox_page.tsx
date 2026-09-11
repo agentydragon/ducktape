@@ -18,7 +18,15 @@ import { useSearchParams } from "react-router";
 
 import { create } from "@bufbuild/protobuf";
 
-import { api, displayableError, listSessions, openSession, type Condition, type SandboxView } from "./client";
+import {
+  api,
+  displayableError,
+  listSessions,
+  openSession,
+  RunnerUnavailableError,
+  type Condition,
+  type SandboxView,
+} from "./client";
 import { EgressSection } from "./egress";
 import { effectiveThreadDefaults } from "./launch_presets";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
@@ -134,6 +142,8 @@ export function SandboxPage({
   const requestedTab = searchParams.get("tab");
   const tab: Tab = isTab(requestedTab) ? requestedTab : DEFAULT_TAB;
   const [error, setError] = useState<string | null>(null);
+  const [sessionList, setSessionList] = useState<"loading" | "waiting" | "ready" | { error: string }>("loading");
+  const [creatingSession, setCreatingSession] = useState(false);
   const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
   const [instructions, setInstructions] = useState("");
@@ -157,15 +167,39 @@ export function SandboxPage({
   // records as a thread and the stream then pushes. A harness stopping is not among them; it shows
   // when the page next reads.
   const state = sandbox?.state;
+  const podIp = sandbox?.pod?.ip;
   const openedSessions = threads.length;
   const presetBindingKey = JSON.stringify(sandbox?.preset_binding ?? null);
   useEffect(() => {
+    let cancelled = false;
+    let retry: number | undefined;
+    setSessionList("loading");
     if (state !== "running") {
       setSessions([]);
       return;
     }
-    listSessions(name).then(setSessions, (reason: unknown) => setError(displayableError(reason)));
-  }, [name, state, openedSessions]);
+    async function refresh(): Promise<void> {
+      try {
+        const rows = await listSessions(name);
+        if (cancelled) return;
+        setSessions(rows);
+        setSessionList("ready");
+      } catch (reason: unknown) {
+        if (cancelled) return;
+        if (reason instanceof RunnerUnavailableError) {
+          setSessionList("waiting");
+          retry = window.setTimeout(() => void refresh(), 2000);
+        } else {
+          setSessionList({ error: displayableError(reason) });
+        }
+      }
+    }
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(retry);
+    };
+  }, [name, state, podIp, openedSessions]);
 
   useEffect(() => {
     void (async () => {
@@ -221,7 +255,9 @@ export function SandboxPage({
   }
 
   async function createSession(): Promise<void> {
-    if (!sandbox || !model) return;
+    if (!sandbox || !model || creatingSession) return;
+    setCreatingSession(true);
+    setError(null);
     try {
       await openSession(
         name,
@@ -237,6 +273,8 @@ export function SandboxPage({
       onOpenSession(sessionId);
     } catch (reason: unknown) {
       setError(displayableError(reason));
+    } finally {
+      setCreatingSession(false);
     }
   }
 
@@ -292,6 +330,11 @@ export function SandboxPage({
         </Tabs.Panel>
         <Tabs.Panel value="sessions" pt="sm">
           <Stack>
+            {state === "running" && sessionList === "loading" && <Text role="status">Loading sessions…</Text>}
+            {state === "running" && sessionList === "waiting" && (
+              <Text role="status">Waiting for the sandbox runner to become available; retrying automatically…</Text>
+            )}
+            {typeof sessionList === "object" && <Text c="red">{sessionList.error}</Text>}
             <Group align="flex-end">
               <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
               <Select
@@ -309,9 +352,10 @@ export function SandboxPage({
               />
               <Button
                 onClick={() => void createSession()}
-                disabled={!sandbox || sandbox.state !== "running" || !sessionId || !model}
+                loading={creatingSession}
+                disabled={!sandbox || sandbox.state !== "running" || sessionList !== "ready" || !sessionId || !model}
               >
-                New session
+                {creatingSession ? "Creating session…" : "New session"}
               </Button>
             </Group>
             <Textarea

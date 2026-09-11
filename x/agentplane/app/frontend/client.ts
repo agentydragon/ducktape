@@ -162,8 +162,16 @@ export function displayableError(error: unknown): string {
  * The bridge's session routes carry proto-JSON of the runner protocol's messages, typed here by
  * protobuf-es from protocol.proto itself; the OpenAPI document knows them only as objects.
  */
+export class RunnerUnavailableError extends Error {}
+
 export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
-  const { data, error } = await api.GET("/sandboxes/{name}/sessions", { params: { path: { name: sandbox } } });
+  const { data, error, response } = await api.GET("/sandboxes/{name}/sessions", {
+    params: { path: { name: sandbox } },
+  });
+  // These routes report a missing Pod address as 409 and an unavailable runner as 503.
+  if (error && (response.status === 409 || response.status === 503)) {
+    throw new RunnerUnavailableError(displayableError(error));
+  }
   if (error) throw new Error(displayableError(error));
   return data.map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }
