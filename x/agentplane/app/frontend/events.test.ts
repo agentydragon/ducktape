@@ -1,7 +1,7 @@
 import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
-import { EMPTY, reduce, timeline, type Row } from "./events";
+import { EMPTY, groupItems, reduce, timeline, type Item, type Row } from "./events";
 import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
 function event(
@@ -75,6 +75,41 @@ describe("reduce", () => {
     ].reduce(reduce, EMPTY);
     expect(state.inputs).toMatchObject([{ id: "i1", state: "rejected", detail: "nope", text: "", turnId: null }]);
     expect(state.harness).toBe("lost");
+  });
+});
+
+function testItem(id: string, kind: ItemKind): Item {
+  return {
+    id,
+    kind,
+    toolName: "",
+    text: "",
+    argumentsJson: "",
+    output: "",
+    completed: true,
+    succeeded: null,
+    firstSequence: 0n,
+  };
+}
+
+describe("groupItems", () => {
+  it("runs consecutive tool calls and reasoning together, leaving other items standing alone", () => {
+    const items = [
+      testItem("a", ItemKind.TOOL_CALL),
+      testItem("b", ItemKind.REASONING),
+      testItem("c", ItemKind.TOOL_CALL),
+      testItem("d", ItemKind.ASSISTANT_TEXT),
+      testItem("e", ItemKind.TOOL_CALL),
+    ];
+    expect(groupItems(items)).toEqual([
+      { kind: "run", items: [items[0], items[1], items[2]] },
+      { kind: "single", item: items[3] },
+      { kind: "run", items: [items[4]] },
+    ]);
+  });
+
+  it("keeps an empty list empty", () => {
+    expect(groupItems([])).toEqual([]);
   });
 });
 

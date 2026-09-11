@@ -86,6 +86,27 @@ export function timeline(state: SessionState): TimelineStep[] {
     .map((event) => ({ event, row: rows.get(event.sequence) ?? null }));
 }
 
+/** A turn's items, tool calls and reasoning steps run together into collapsible groups; anything
+ * else (an assistant's answer) stands alone and ends the run before it. */
+export type ItemGroup = { kind: "single"; item: Item } | { kind: "run"; items: Item[] };
+
+const COLLAPSIBLE: ReadonlySet<ItemKind> = new Set([ItemKind.TOOL_CALL, ItemKind.REASONING]);
+
+export function groupItems(items: Item[]): ItemGroup[] {
+  const groups: ItemGroup[] = [];
+  for (const current of items) {
+    const last = groups.at(-1);
+    if (!COLLAPSIBLE.has(current.kind)) {
+      groups.push({ kind: "single", item: current });
+    } else if (last?.kind === "run") {
+      last.items.push(current);
+    } else {
+      groups.push({ kind: "run", items: [current] });
+    }
+  }
+  return groups;
+}
+
 function item(state: SessionState, id: string, firstSequence: bigint): Item {
   return (
     state.items[id] ?? {
