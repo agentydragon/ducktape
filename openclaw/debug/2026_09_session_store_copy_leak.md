@@ -1,6 +1,7 @@
-# Gateway heap exhaustion: leaked `activeSessionStore` copies
+# Gateway heap exhaustion: per-run session stores retained via AsyncLocalStorage
 
-Active. Root cause identified in OpenClaw 2026.8.1; no fix, not yet reported upstream.
+Active. Mechanism and call site identified in OpenClaw 2026.8.1; no fix, not yet
+reported upstream.
 
 `public-coder-agent` aborts every ~2h50m with container exit **134**, not 137 —
 the kernel never kills it, V8 does:
@@ -11,10 +12,9 @@ the kernel never kills it, V8 does:
 FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
 ```
 
-`mu = 0.139` means ~86% of wall-clock was spent in GC reclaiming almost nothing,
-which is also why `/healthz` readiness probes time out shortly before each abort.
+`mu = 0.139` means ~86% of wall-clock was spent in GC reclaiming almost nothing.
 
-## What leaks: copies of the store, not its contents
+## What leaks: one session store per run, never released
 
 Two heap snapshots of one pod, at 8 and 63 minutes:
 
@@ -23,12 +23,12 @@ Two heap snapshots of one pod, at 8 and 63 minutes:
 | Heap, live objects                                 | 588.4 MiB    | 790.5 MiB     | +202.1 MiB     |
 | Retained objects                                   | 5,284,586    | 7,466,845     | +2,182,259     |
 | Distinct session keys, all stores                  | 477          | 479           | +2             |
-| `coder` store copies, ~32.2 MiB each (386 keys)    | 1            | 4             | +3             |
-| `haku_console_tpm` copies, ~5.3 MiB each (91 keys) | 2            | 3             | +1             |
-| **Retained by all copies**                         | **42.7 MiB** | **145.0 MiB** | **+102.3 MiB** |
+| `coder` stores, ~32.2 MiB each (386 keys)          | 1            | 4             | +3             |
+| `haku_console_tpm` stores, ~5.3 MiB each (91 keys) | 2            | 3             | +1             |
+| **Retained by all stores**                         | **42.7 MiB** | **145.0 MiB** | **+102.3 MiB** |
 
-Session count is flat. What multiplies is the number of retained **copies**, and
-key-set comparison shows they are duplicates rather than distinct data:
+Session count is flat. What multiplies is the number of live store **objects**,
+holding identical data:
 
 ```text
 12931827 vs 13332873:  |A|=386  |B|=386  shared=386
@@ -36,11 +36,9 @@ key-set comparison shows they are duplicates rather than distinct data:
  5303393 vs 12647641:  |A|=91   |B|=91   shared=90
 ```
 
-Four new copies -- three `coder`, one `haku_console_tpm` -- account for
-**102.3 MiB of the 202.1 MiB** of heap growth, roughly 51%, at about one copy
-every 14 minutes.
-
-Per copy, with the async resource pinning it at 63 min:
+Four new stores account for **102.3 MiB of the 202.1 MiB** of heap growth,
+roughly 51%, at about one every 14 minutes. Each is pinned by a different async
+resource:
 
 | Store                       | 8 min    | 63 min   | pinned by      |
 | --------------------------- | -------- | -------- | -------------- |
@@ -52,15 +50,15 @@ Per copy, with the async resource pinning it at 63 min:
 | `5303393` haku_console_tpm  | 5.2 MiB  | 5.3 MiB  | `FSEvent`      |
 | `12647641` haku_console_tpm | --       | 5.3 MiB  | `FSEvent`      |
 
-The other ~100 MiB is in `system / Context` blobs (109.8 -> 185.1 MiB) and two
-new `closure finish` blobs (60.6 MiB). Those are plausibly this leak's
-scaffolding -- the ALS store objects and `beforeDispatch` closures wrapping each
-copy -- but that is **not established**: they are distinct blobs in the dominator
-tree, not containers of the copies, and nothing yet ties their growth to it.
+The remaining ~100 MiB is in `system / Context` blobs (109.8 -> 185.1 MiB) and
+two new `closure finish` blobs (60.6 MiB). Plausibly this leak's scaffolding, but
+**not established**: they are distinct blobs in the dominator tree, not
+containers of the stores.
 
-Every copy is retained through the same shape, differing only in which async
-resource happens to pin it — observed holders include `Timeout`, `FSEvent`,
-`FSReqPromise`, `Promise`, and the HTTP server's `connectionsCheckingInterval`:
+## The retention path, and the call site
+
+Every store is held through the same shape, differing only in which async
+resource pins it:
 
 ```text
 <async resource> --<symbol kResourceStore>--> Object
@@ -69,54 +67,103 @@ resource happens to pin it — observed holders include `Timeout`, `FSEvent`,
    --activeSessionStore--> Object (32.2 MiB)
 ```
 
-`borrowSnapshot` copies the whole store; the copy lands in an AsyncLocalStorage
-store as `beforeDispatch`'s captured scope; every async resource created under
-that context holds it through `kResourceStore`; nothing releases it. So each
-`borrowSnapshot` call strands a full copy of the session store for the life of
-the process.
+`kResourceStore` is Node's `AsyncLocalStorage`. The scope is a process-wide
+singleton (`src/agents/prepared-model-runtime-generation-scope.ts`):
+
+```js
+const preparedModelRuntimePluginGenerationScope = resolveGlobalSingleton(
+  Symbol.for("openclaw.preparedModelRuntimePluginGenerationScope"),
+  () => new AsyncLocalStorage()
+);
+
+function withPreparedModelRuntimePluginGenerationScope(generation, run, borrowSnapshot) {
+  const inherited = preparedModelRuntimePluginGenerationScope.getStore();
+  const borrow = borrowSnapshot ?? (inherited?.generation === generation ? inherited.borrowSnapshot : void 0);
+  return preparedModelRuntimePluginGenerationScope.run(
+    { generation, ...(borrow ? { borrowSnapshot: borrow } : {}) },
+    run
+  );
+}
+```
+
+`borrowSnapshot` is a **closure** parked in the ALS store. Node copies that store
+into every async resource created inside the scope, so any resource outliving the
+run — a timer, an `fs` watcher, a pending promise — keeps the whole run scope
+reachable. The scope reaches the run's session map
+(`src/agents/agent-runner-memory.ts`):
+
+```js
+const activeSessionStore = params.sessionStore ?? {};
+```
+
+That is a reference, not a copy: each agent run materialises its own session map,
+and the ALS-captured closure then prevents any of them being collected when the
+run ends. Hence one ~32 MiB store per run, all holding the same 386 sessions.
 
 AsyncLocalStorage is the retention path, not the cause. Total `kResourceStore`
-pins **fell** over the interval (96,666 -> 85,164, of which `Promise` 90,178 ->
-82,030), so this is not async-resource proliferation — the stores themselves
-survive their runs.
+pins **fell** over the interval (96,666 -> 85,164, `Promise` 90,178 -> 82,030),
+so this is not async-resource proliferation.
+
+The same file already carries the escape hatch, unused on run completion:
+
+```js
+/** Detached queue drains re-admit on the current generation, never a predecessor's scope. */
+function runOutsidePreparedModelRuntimePluginGenerationScope(run) {
+  return preparedModelRuntimePluginGenerationScope.exit(run);
+}
+```
 
 ## Where the container's memory actually goes
 
-The heap is not the whole footprint, and the difference matters when reading
-`kubectl top`. A healthy pod at 7 minutes, measured on a fresh process:
+The heap is a minority of the footprint, and `kubectl top` does not show that.
+A healthy pod, fresh process:
 
-|                                | healthy                              | at abort                 |
-| ------------------------------ | ------------------------------------ | ------------------------ |
-| V8 heap                        | 1000 MiB committed, **415 MiB live** | **2096 MiB** (the cap)   |
-| native: brk arena + other anon | ~450 MiB (brk alone 79 MiB)          | ~450 MiB                 |
-| page cache from the state DB   | ~1570 MiB, **reclaimable**           | reclaimed under pressure |
-| node RSS                       | 1488 MiB                             | ~2.5 GiB                 |
+|                                                | at 7 min                             | at 15 min      |
+| ---------------------------------------------- | ------------------------------------ | -------------- |
+| `slab_reclaimable` — kernel dentry/inode cache | --                                   | **2277.1 MiB** |
+| `anon` — the process                           | 1448 MiB                             | 994.2 MiB      |
+| `file` — page cache                            | 1570 MiB                             | 780.7 MiB      |
+| node RSS                                       | 1488 MiB                             | 998 MiB        |
+| V8 heap                                        | 1000 MiB committed, **415 MiB live** | --             |
+| glibc `brk` arena                              | 78.8 MiB                             | 77.4 MiB       |
 
-Only the heap grows without bound, and this leak is what fills it: from ~415 MiB
-of genuine live data to the 2096 MiB cap. The kernel reclaims page cache rather
-than OOMKilling, which is why the failure is a clean V8 abort (134) and never a
-137 -- the 4Gi container limit is not the binding constraint, the heap cap is.
+**Over half the 4Gi charge is kernel slab, not openclaw.** The agent's filesystem
+activity — 25 active `fs_event` watchers, workspace and git churn, session-file
+indexing — grows the dentry/inode cache until it fills the cgroup. The gateway
+process itself is ~1 GiB, of which ~415 MiB is genuine live heap.
 
-`kubectl top` counts page cache, so it reads ~1.5 GiB above anonymous memory and
-makes the container look far closer to its limit than it is. Read
-`memory.stat`'s `anon` and `file` separately before concluding anything.
+Only the V8 heap grows without bound, and this leak is what fills it, from
+~415 MiB to the 2096 MiB cap. Slab and page cache are reclaimable, which is why
+the failure is always a clean V8 abort and never a 137: the 4Gi limit is not the
+binding constraint, the heap cap is.
 
-## Why one copy already costs 32 MiB
+## Second, separate problem: the container lives in reclaim
 
-The store holds **386 sessions**, restored from the SQLite state database at
-startup, including every `agent:coder:cron:<uuid>:run:<uuid>` ever executed. Each
-entry carries `compactionCheckpoints`. That sets the floor: even a
-non-leaking gateway pays 32 MiB for this store, and every leaked copy pays it
-again. Pruning session history shrinks both.
+```text
+memory.current = 4095 MiB   max = 4096 MiB
+memory.events:  max 12182   oom_kill 0
+```
+
+The cgroup has hit its ceiling **12,182 times**, reclaiming cache each time and
+never being killed. That is the cause of the `/healthz` readiness timeouts
+between aborts — allocation stalls during direct reclaim, not the GC pauses the
+abort itself produces. Raising `limits.memory` would address this independently
+of the leak: the extra is cache the kernel returns under pressure.
+
+## Why one store costs 32 MiB
+
+It holds **386 sessions**, restored from the SQLite state database at startup,
+including every `agent:coder:cron:<uuid>:run:<uuid>` ever executed, each with
+`compactionCheckpoints`. `openclaw.json5` exposes no retention or pruning knob.
+That sets the floor and multiplies every leaked store.
 
 ## Not established
 
-- Which call site invokes `borrowSnapshot`, and why the copies outlive their run.
-  The snapshots name the retention path, not the code path.
+- Why the copies outlive their run — whether the scope is never exited, or
+  exited but already captured. The fix hinges on this.
+- Whether the remaining ~49% of heap growth is the same leak's scaffolding.
 - Whether upstream has a fix. No issue in openclaw/openclaw matches 2026.8.1;
   the nearest in shape, openclaw/openclaw#13758, is 2026.2.3-1 with no root cause.
-- Whether the ~2.17 GiB of non-heap RSS is steady state or residue from taking
-  snapshots. It was ~400 MiB on a pod that had never been snapshotted.
 
 ## Measuring this again
 
@@ -136,18 +183,25 @@ gateway.
 
 Gotchas that cost time here:
 
-- **Snapshots are not free.** Serialising one added ~200 MiB of native RSS that
-  Node did not return; two captures walked a 4Gi container from 3348 MiB to
-  4018 MiB in nine minutes and pushed it into an OOMKill. On a container this
-  close to its ceiling, budget for that or raise the limit first.
+- **Read `memory.stat`, not `kubectl top`.** `kubectl top` reports the whole
+  cgroup charge, which here is dominated by reclaimable kernel slab. It read
+  ~3 GiB above the process's anonymous memory and made a healthy container look
+  nearly full.
+- **Snapshots are not free.** Serialising one added ~390 MiB of native RSS that
+  Node did not return; two left a 1523 MiB `brk` arena where a never-snapshotted
+  pod under the same load has 78 MiB. Budget for it near a ceiling.
 - **Do not parse a snapshot inside the pod.** It needs multiple GiB and would
   OOMKill the gateway under study. Copy it out and analyse elsewhere.
 - `kubectl cp` runs over `kubectl exec`; where exec is unavailable,
-  `kubectl exec ... -- cat /diag/<file> > local` works and does not require `tar`
-  in the image.
-- Reading the file into a JS string caps out at V8's ~536M characters. Parse
+  `kubectl exec ... -- cat /diag/<file> > local` works and needs no `tar` in the
+  image.
+- Reading a snapshot into a JS string caps out at V8's ~536M characters. Parse
   from a `Buffer`.
-- Constructor/self-size aggregation cannot answer this question: every top
-  constructor is an anonymous `Object`, `Array` or closure `Context`. It takes a
-  dominator tree and retained sizes to name a holder, and a key-set comparison
-  between candidate objects to tell duplicate copies from distinct data.
+- Constructor/self-size aggregation cannot answer this: every top constructor is
+  an anonymous `Object`, `Array` or closure `Context`. It takes a dominator tree
+  for retained sizes, and a key-set comparison to tell duplicate stores from
+  distinct data.
+- The gateway bundle ships unminified at
+  `/nix/store/*openclaw-gateway-*/lib/openclaw/dist/`, as thousands of small
+  chunks with readable names. `grep -l` over `dist/*.js` finds a symbol in
+  seconds; a recursive grep on an HDD-backed node times out.
