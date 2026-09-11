@@ -256,6 +256,7 @@ dependencies = [
     "fonttools>=4.0",
 
     # Development and testing
+    "hypothesis>=6.0",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "pytest-timeout>=2.3",

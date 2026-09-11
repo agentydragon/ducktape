@@ -563,6 +563,13 @@ mcp:
           client_registration:
             kind: dynamic
             client_name: Haku Console
+    ssh:
+      id: ssh
+      backend:
+        kind: remote_mcp
+        url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
+        auth:
+          kind: static_bearer
     # Writable Home Assistant management through homeassistant-ai/ha-mcp. The upstream Home
     # Assistant token remains in the ha-mcp pod; haku-console authenticates with a static bearer
     # reflected from ha-mcp/ha-mcp-bearer, exactly like tana-rw. Read tools

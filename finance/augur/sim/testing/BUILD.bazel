@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -224,5 +224,279 @@ py_library(
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "accounting",
+    srcs = ["accounting.py"],
+    deps = [
+        ":case",
+        "//finance/augur/sim:accounting",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:tax",
+    ],
+)
+
+py_library(
+    name = "configured_result",
+    srcs = ["configured_result.py"],
+    deps = [
+        ":case",
+        ":simulation_result",
+        "//finance/augur/sim:configured",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:scenario",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "action_test",
+    srcs = ["action_test.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "asset_sales_test",
+    srcs = ["asset_sales_test.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:gbm",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series",
+        "//finance/augur/model:series_model",
+        "//finance/augur/policy:sleeves",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "bond_test",
+    srcs = ["bond_test.py"],
+    deps = [
+        ":bonds",
+        ":case",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "configured_acceptance_test",
+    srcs = ["configured_acceptance_test.py"],
+    deps = [
+        ":behaviour",
+        ":case",
+        ":cash_conservation",
+        ":configured_result",
+        ":deductions",
+        ":engine_edges",
+        ":fixtures",
+        ":frozen_rollout",
+        ":income_sources",
+        ":private_equity",
+        ":property_stakes",
+        ":rental_lifecycle",
+        ":simulation_result",
+        ":target_allocation",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "held_bond_test",
+    srcs = ["held_bond_test.py"],
+    deps = [
+        ":bonds",
+        ":case",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:configured",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "indexed_payments_test",
+    srcs = ["indexed_payments_test.py"],
+    deps = [
+        ":case",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "lot_basis_test",
+    srcs = ["lot_basis_test.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/api:finance",
+        "//finance/augur/api:portfolio",
+        "//finance/augur/model:series",
+        "//finance/augur/product:portfolio",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "obligations_test",
+    srcs = ["obligations_test.py"],
+    deps = [
+        ":case",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:cash_band",
+        "//finance/augur/policy:funding",
+        "//finance/augur/policy:sleeves",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "public_sales_test",
+    srcs = ["public_sales_test.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "security_distributions_test",
+    srcs = ["security_distributions_test.py"],
+    deps = [
+        ":case",
+        ":fixtures",
+        ":security_distributions",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:session",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_invocation",
+    srcs = ["test_invocation.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:artifacts",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim/compiler:execution",
+        "//finance/augur/x/bounded_spending:python_policy",
+        "//finance/augur/x/monthly_actions:run",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "transfers_test",
+    srcs = ["transfers_test.py"],
+    deps = [
+        ":case",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

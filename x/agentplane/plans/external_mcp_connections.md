@@ -66,10 +66,10 @@ exercise the provider's refresh path. Do not print or persist token values.
    After unbind/revocation, old tokens fail and unclaimed work cannot borrow replacement authority.
    Already-claimed execution is not killed.
 
-`APPROVALUI` tracks the real operator federation/browser proof; its current blocker is intermittent
-Authentik reachability from staging pods, recorded in the
-[reachability investigation](../../../cluster/debug/agentplane_oidc/README.md). Provenance
-presentation is already implemented, not another UI task.
+`APPROVALUI` tracks the real operator federation/browser proof; the Authentik reachability defect
+that blocked it is fixed cluster-wide
+([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)).
+Provenance presentation is already implemented, not another UI task.
 
 Record Claude.ai success separately as `CLAUDEAI`. Then repeat the client flow with Claude Code
 running on an operator machine, not an Agentplane-hosted harness, to establish `EXTERNALMCP`.

@@ -56,7 +56,7 @@ class Observations:
     cpi: NDArray[np.object_]
 
     @classmethod
-    def from_native(cls, batch: list[Decision]) -> "Observations":
+    def from_decisions(cls, batch: list[Decision]) -> "Observations":
         cpi = []
         for row in batch:
             level = row.observation.cpi
@@ -191,7 +191,7 @@ class SpendingPolicy:
 
     def __call__(self, batch: list[Decision]) -> list[DecisionActions]:
         responses = []
-        for decision, amount in zip(batch, self.rule(Observations.from_native(batch)), strict=True):
+        for decision, amount in zip(batch, self.rule(Observations.from_decisions(batch)), strict=True):
             observation = decision.observation
             claims = observation.claims
             cause = f"annual_consumption_m{observation.month}"

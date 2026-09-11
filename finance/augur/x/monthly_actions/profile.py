@@ -9,7 +9,7 @@ import pstats
 import resource
 from pathlib import Path
 
-from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.sim.artifacts import write_prepared_input
 from finance.augur.x.monthly_actions.run import execute, prepare
 
 

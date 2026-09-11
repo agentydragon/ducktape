@@ -14,12 +14,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_for_value, rate_to_ppb
-
-
-def _round_ratio(numerator: int, denominator: int) -> int:
-    """Round a nonnegative exact ratio to the nearest quantum, ties upward."""
-
-    return (2 * numerator + denominator) // (2 * denominator)
+from finance.augur.sim.money import round_ratio
 
 
 def _nonnegative(**amounts: int) -> None:
@@ -60,14 +55,14 @@ class TlhAssumptions(BaseModel):
         half_exponent = int(self.maturity_decay_exponent * 2)
         maturity = scale
         for _ in range(half_exponent // 2):
-            maturity = _round_ratio(maturity * base, scale)
+            maturity = round_ratio(maturity * base, scale)
         if half_exponent % 2:
-            maturity = _round_ratio(maturity * isqrt(base * scale), scale)
+            maturity = round_ratio(maturity * isqrt(base * scale), scale)
         floor = rate_to_ppb(self.floor_annual_yield)
-        annual = floor + _round_ratio((rate_to_ppb(self.peak_annual_yield) - floor) * maturity, scale)
-        monthly = _round_ratio(annual, 12)
-        drawdown_multiplier = scale + _round_ratio(rate_to_ppb(self.drawdown_sensitivity) * drawdown_ppb, scale)
-        return _round_ratio(monthly * drawdown_multiplier, scale)
+        annual = floor + round_ratio((rate_to_ppb(self.peak_annual_yield) - floor) * maturity, scale)
+        monthly = round_ratio(annual, 12)
+        drawdown_multiplier = scale + round_ratio(rate_to_ppb(self.drawdown_sensitivity) * drawdown_ppb, scale)
+        return round_ratio(monthly * drawdown_multiplier, scale)
 
 
 @dataclass(frozen=True)
@@ -171,7 +166,7 @@ class TlhPortfolio:
         ]
 
     def _value(self, units: int) -> int:
-        return _round_ratio(units * self._price, self._quantity_scale)
+        return round_ratio(units * self._price, self._quantity_scale)
 
     def observe(self) -> TlhObservation:
         return self._observe_at_price(self._price)
@@ -181,8 +176,7 @@ class TlhPortfolio:
 
         _nonnegative(price=price)
         return TlhObservation(
-            value=self._cash
-            + sum(_round_ratio(cohort.units * price, self._quantity_scale) for cohort in self._cohorts),
+            value=self._cash + sum(round_ratio(cohort.units * price, self._quantity_scale) for cohort in self._cohorts),
             reported_tax_basis=self._cash + sum(cohort.basis for cohort in self._cohorts),
         )
 
@@ -191,16 +185,16 @@ class TlhPortfolio:
         if market.month != self._month + 1:
             raise ValueError("TLH must advance exactly one month at a time")
         scale = MONEY_FACTOR_SCALE
-        drawdown = _round_ratio(max(0, self._price - market.price) * scale, self._price) if self._price else 0
+        drawdown = round_ratio(max(0, self._price - market.price) * scale, self._price) if self._price else 0
         updated = []
         short_term = 0
         long_term = 0
         for cohort in self._cohorts:
-            value = _round_ratio(cohort.units * market.price, self._quantity_scale)
-            embedded_gain = _round_ratio(max(0, value - cohort.basis) * scale, value) if value else 0
+            value = round_ratio(cohort.units * market.price, self._quantity_scale)
+            embedded_gain = round_ratio(max(0, value - cohort.basis) * scale, value) if value else 0
             fraction = self._assumptions.monthly_loss_fraction(embedded_gain_ppb=embedded_gain, drawdown_ppb=drawdown)
-            loss = min(cohort.basis, _round_ratio(value * fraction, scale))
-            short_loss = _round_ratio(loss * rate_to_ppb(self._assumptions.short_term_fraction), scale)
+            loss = min(cohort.basis, round_ratio(value * fraction, scale))
+            short_loss = round_ratio(loss * rate_to_ppb(self._assumptions.short_term_fraction), scale)
             short_term -= short_loss
             long_term -= loss - short_loss
             updated.append(replace(cohort, basis=cohort.basis - loss))
@@ -271,7 +265,7 @@ class TlhPortfolio:
         for cohort in self._cohorts:
             sold = min(remaining, cohort.units)
             proceeds = self._value(sold)
-            basis = _round_ratio(cohort.basis * sold, cohort.units)
+            basis = round_ratio(cohort.basis * sold, cohort.units)
             gain = proceeds - basis
             if self._month - cohort.purchase_month >= 12:
                 long_term += gain
@@ -288,6 +282,6 @@ class TlhPortfolio:
         """Cash paid externally, quoted in nano-quanta per unit on the input rate grid."""
 
         _nonnegative(per_unit_rate=per_unit_rate)
-        return _round_ratio(
+        return round_ratio(
             sum(cohort.units for cohort in self._cohorts) * per_unit_rate, self._quantity_scale * MONEY_FACTOR_SCALE
         )

@@ -23,7 +23,7 @@ class JointPolicy:
         self.intentions: dict[int, dict[int, Intention]] = {}
 
     def __call__(self, batch: list[Decision]) -> list[DecisionActions]:
-        observations = Observations.from_native(batch)
+        observations = Observations.from_decisions(batch)
         responses = []
         for decision, amount, anchor in zip(batch, self.rule(observations), self.reference(observations), strict=True):
             observation = decision.observation

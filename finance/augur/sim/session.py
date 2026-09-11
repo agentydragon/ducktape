@@ -4,8 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Literal
 
-from finance.augur.rust import _simulator as native
-from finance.augur.sim import _native, results
+from finance.augur.sim import results
 from finance.augur.sim.actions import (
     Action,
     ClaimId,
@@ -17,10 +16,13 @@ from finance.augur.sim.actions import (
     Transfer,
     Withdraw,
 )
-from finance.augur.sim.books import AccountRef, MortgageState
-from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
-from finance.augur.sim.observations import Decision, Observation, TlhPortfolioObservation, observation_from_json
+from finance.augur.sim.books import MortgageState
+from finance.augur.sim.capture import WorldResult
+from finance.augur.sim.managed import ComponentEffects
+from finance.augur.sim.mortgage import Mortgage, MortgagePayment
+from finance.augur.sim.observations import Decision, Observation, TlhPortfolioObservation
 from finance.augur.sim.prepared import CompiledRun, PreparedTlhPortfolio
+from finance.augur.sim.property import mortgage_terms
 from finance.augur.sim.tlh import (
     ModeledRealizations,
     TlhMarketUpdate,
@@ -29,6 +31,8 @@ from finance.augur.sim.tlh import (
     TlhOpeningPosition,
     TlhPortfolio,
 )
+from finance.augur.sim.validation import validate
+from finance.augur.sim.world import World
 
 type Capture = Literal["summary", "dense", "forensic"]
 
@@ -37,7 +41,7 @@ _NO_REALIZATIONS = ModeledRealizations()
 
 @dataclass
 class _Path:
-    world: native._World
+    world: World
     portfolios: dict[str, TlhPortfolio]
     mortgages: dict[str, Mortgage] = field(default_factory=dict)
     mortgage_payments: dict[str, MortgagePayment] = field(default_factory=dict)
@@ -46,7 +50,7 @@ class _Path:
     stop: results.Stop | None = None
     failed: bool = False
     shortfall: int = 0
-    result: _native.WorldResult | None = None
+    result: WorldResult | None = None
 
 
 def _action_actor(action: Action) -> str:
@@ -85,7 +89,7 @@ def _validate_actor(run: CompiledRun, actor: str) -> None:
 
 
 class _Session:
-    """Own selected paths, time, components and receipts; native worlds own only books."""
+    """Own selected paths, time, components and receipts; worlds own only financial books."""
 
     def __init__(
         self,
@@ -114,6 +118,7 @@ class _Session:
             if actor is None:
                 raise ValueError("action sessions require an actor")
             _validate_actor(run, actor)
+        validate(run)
         self.run = run
         self.actor = actor
         self.configured = configured
@@ -123,7 +128,6 @@ class _Session:
         self.closed = False
         self.specs = {spec.portfolio_id: spec for spec in run.scenario.tlh_portfolios}
         self.series = {series.series_id: series for series in run.series}
-        prepared = native._PreparedWorlds(run)
         self.paths: dict[int, _Path] = {}
         for rollout_id in rollout_ids:
             portfolios = {
@@ -141,10 +145,11 @@ class _Session:
                 for spec in self.specs.values()
             }
             opening = [self.statement(spec, portfolios[spec.portfolio_id].observe()) for spec in self.specs.values()]
-            world = prepared.world(
+            world = World(
+                run,
                 rollout_id,
-                _native.MARKS.dump_json(opening).decode(),
-                capture=capture,
+                opening,
+                capture_mode=capture,
                 actor=None if configured else actor,
                 product_actor=product_actor,
             )
@@ -172,8 +177,8 @@ class _Session:
         cash_account_id: str | None,
         cash_amount: int,
         realizations: ModeledRealizations = _NO_REALIZATIONS,
-    ) -> _native.ComponentEffects:
-        return _native.ComponentEffects(
+    ) -> ComponentEffects:
+        return ComponentEffects(
             observation=self.statement(spec, candidate.observe()),
             cash_account_id=cash_account_id,
             cash_amount=cash_amount,
@@ -212,15 +217,21 @@ class _Session:
                     ):
                         continue
                     rate = self.price(f"security_distribution:{spec.asset_id}", rollout_id, self.month)
-                    path.world.component_distribution(index, current._distribution(rate))
+                    path.world.managed.distribute(
+                        self.run.scenario, path.world.accounting, self.month, index, current._distribution(rate)
+                    )
                 candidate = deepcopy(current)
                 realized = candidate.advance(
                     TlhMarketUpdate(self.month, self.price(f"security:{spec.asset_id}", rollout_id, self.month))
                 )
-                path.world.apply_component_json(
+                path.world.managed.settle(
+                    self.run.scenario,
+                    path.world.accounting,
+                    self.month,
                     spec.owner_agent_id,
                     f"tlh:{spec.portfolio_id}:advance:m{self.month}",
-                    self.effects(spec, candidate, None, 0, realized).model_dump_json(),
+                    self.effects(spec, candidate, None, 0, realized),
+                    operation="modeled_realization",
                 )
                 path.portfolios[spec.portfolio_id] = candidate
 
@@ -231,40 +242,11 @@ class _Session:
             financing = purchase.mortgage
             if purchase.month != self.month or financing is None:
                 continue
-            candidates[financing.liability_id] = Mortgage(
-                MortgageTerms(
-                    liability_id=financing.liability_id,
-                    property_id=purchase.property_id,
-                    borrower=AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
-                    lender=AccountRef(agent_id=financing.lender_agent_id, account_id=financing.lender_account_id),
-                    origination_month=purchase.month,
-                    origination_principal=financing.principal,
-                    annual_interest_rate_ppb=financing.annual_interest_rate_ppb,
-                    term_months=financing.term_months,
-                )
-            )
-        sales = {sale.property_id for sale in self.run.scenario._property_sales if sale.month == self.month}
-        opening = _native.MortgageOpening.model_validate_json(
-            path.world.prepare_month(
-                self.month,
-                _native.MORTGAGE_ORIGINATIONS.dump_json(
-                    [
-                        _native.MortgageOrigination(liability_id=id_, monthly_payment=loan.monthly_payment)
-                        for id_, loan in candidates.items()
-                    ]
-                ).decode(),
-                _native.MORTGAGE_PAYOFFS.dump_json(
-                    [
-                        _native.MortgagePayoff(liability_id=id_, principal=path.world.mortgage_principal(id_))
-                        for id_, loan in path.mortgages.items()
-                        if loan.active and loan.terms.property_id in sales
-                    ]
-                ).decode(),
-            )
-        )
-        for id_ in opening.paid_off:
+            candidates[financing.liability_id] = Mortgage(mortgage_terms(purchase))
+        originated, paid_off = path.world.prepare_month(self.month, candidates, path.mortgages)
+        for id_ in paid_off:
             path.mortgages[id_].payoff()
-        for id_ in opening.originated:
+        for id_ in originated:
             path.mortgages[id_] = candidates[id_]
         path.mortgage_payments = {}
         for id_, loan in path.mortgages.items():
@@ -277,19 +259,7 @@ class _Session:
             )
             if payment is not None:
                 path.mortgage_payments[id_] = payment
-        path.world.assemble_claims(
-            _native.MORTGAGE_INSTALLMENTS.dump_json(
-                [
-                    _native.MortgageInstallment(
-                        liability_id=id_,
-                        interest=payment.interest,
-                        principal=payment.principal,
-                        rental_interest=payment.rental_interest,
-                    )
-                    for id_, payment in path.mortgage_payments.items()
-                ]
-            ).decode()
-        )
+        path.world.assemble_claims(list(path.mortgage_payments.values()))
 
     @staticmethod
     def mortgage_snapshots(path: _Path) -> list[MortgageState]:
@@ -297,9 +267,10 @@ class _Session:
 
     def observe(self, rollout_id: int, actor: str) -> Observation:
         path = self.paths[rollout_id]
-        return observation_from_json(
-            path.world.observe_json(actor), owner=self, rollout_id=rollout_id, previous_receipts=path.previous_receipts
-        )
+        observation = path.world.observe(actor)
+        for claim in observation.claims:
+            claim._bind(self, rollout_id)
+        return observation.model_copy(update={"previous_receipts": tuple(path.previous_receipts)})
 
     def begin_actions(self, responses: list[DecisionActions]) -> None:
         """Validate the complete routing envelope before executing any action."""
@@ -335,9 +306,7 @@ class _Session:
         if isinstance(action, Contribute | Withdraw | Liquidate):
             outcome = self._component_action(path, actor, action)
         else:
-            outcome = _native.OUTCOME.validate_json(
-                path.world.apply_json(actor, action.model_dump_json(by_alias=True), index)
-            )
+            outcome = path.world.apply(actor, action, index)
         historical_action = action
         if isinstance(action, PayClaim):
             historical_action = action.model_copy(
@@ -383,7 +352,16 @@ class _Session:
             effects = self.effects(
                 spec, candidate, action.cash_account_id, withdrawal.cash_received, withdrawal.realizations
             )
-        path.world.apply_component_json(actor, action.cause_id, effects.model_dump_json(), action.model_dump_json())
+        path.world.managed.validate_request(action, effects)
+        path.world.managed.settle(
+            self.run.scenario,
+            path.world.accounting,
+            self.month,
+            actor,
+            action.cause_id,
+            effects,
+            operation="contribution" if isinstance(action, Contribute) else "redemption",
+        )
         path.portfolios[spec.portfolio_id] = candidate
         return results.Executed()
 
@@ -392,7 +370,7 @@ class _Session:
             if not self.configured:
                 if self.actor is None:
                     raise RuntimeError("action sessions require an actor")
-                unpaid = _native.UNPAID.validate_json(path.world.unpaid_claims_json(self.actor))
+                unpaid = path.world.unpaid_claims(self.actor)
                 if unpaid and path.stop is None:
                     path.failed = True
                     path.stop = results.UnpaidClaims(month=self.month, claims=[claim.id for claim in unpaid])
@@ -405,17 +383,13 @@ class _Session:
                 )
                 for spec in self.specs.values()
             ]
-            path.world.set_component_marks_json(_native.MARKS.dump_json(marks).decode())
-            for id_ in _native.PAID_MORTGAGES.validate_json(path.world.paid_mortgages_json()):
+            path.world.managed.mark(self.run.scenario, marks)
+            for id_ in (
+                claim.effect.terms.liability_id
+                for claim in path.world.claims.entries
+                if claim.paid and isinstance(claim.effect, MortgagePayment)
+            ):
                 path.mortgages[id_].record_payment(path.mortgage_payments[id_], path.world.mortgage_principal(id_))
-            interest = [
-                _native.MortgageInterest(
-                    liability_id=id_,
-                    owner_interest_paid_ytd=loan.interest_paid_ytd - loan.rental_interest_paid_ytd,
-                    origination_principal=loan.terms.origination_principal,
-                )
-                for id_, loan in path.mortgages.items()
-            ]
             reset_year = not path.failed and (self.month + 1) % 12 == 0
             snapshots = self.mortgage_snapshots(path)
             if reset_year:
@@ -426,16 +400,14 @@ class _Session:
             path.world.close_month(
                 failed=path.failed,
                 shortfall=path.shortfall,
-                mortgage_interest_json=_native.MORTGAGE_INTEREST.dump_json(interest).decode(),
-                mortgage_snapshots_json=_native.MORTGAGE_SNAPSHOTS.dump_json(snapshots).decode(),
+                mortgages=list(path.mortgages.values()),
+                snapshots=snapshots,
             )
             if reset_year:
                 for loan in path.mortgages.values():
                     loan.reset_year()
             if path.failed or self.month + 1 == self.run.scenario.horizon_months:
-                path.result = _native.WorldResult.model_validate_json(
-                    path.world.finish_json(_native.MORTGAGE_SNAPSHOTS.dump_json(snapshots).decode())
-                )
+                path.result = path.world.finish(snapshots)
         self.month += 1
         if not self.is_finished():
             self.opening()

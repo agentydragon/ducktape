@@ -113,9 +113,7 @@ def _target_status(settings: SshSettings, target: TargetConfig) -> TargetStatus:
 
 
 def build_mcp(settings: SshSettings) -> FastMCP:
-    mcp = FastMCP(
-        "agentplane-ssh", instructions="Execute approved non-interactive commands over SSH on configured targets."
-    )
+    mcp = FastMCP("ssh-mcp", instructions="Execute approved non-interactive commands over SSH on configured targets.")
     execution_slots = asyncio.Semaphore(settings.max_concurrent_executions)
 
     @mcp.tool(annotations=_READ_ONLY)

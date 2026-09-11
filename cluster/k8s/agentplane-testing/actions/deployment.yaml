@@ -95,10 +95,6 @@ spec:
             - name: settings
               mountPath: /etc/agentplane-actions
               readOnly: true
-            - name: ssh-mcp-bearer
-              mountPath: /etc/agentplane-actions/ssh-mcp-bearer
-              subPath: bearer-token
-              readOnly: true
           ports:
             - name: http
               containerPort: 8080
@@ -126,10 +122,3 @@ spec:
         - name: settings
           configMap:
             name: agentplane-actions-settings
-        - name: ssh-mcp-bearer
-          secret:
-            secretName: agentplane-ssh-mcp-bearer
-            optional: true
-            items:
-              - key: bearer-token
-                path: bearer-token

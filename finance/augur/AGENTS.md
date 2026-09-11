@@ -4,8 +4,9 @@ Augur is pre-production. Do not add compatibility shims for older URL state
 versions, request schemas, or serialized payloads unless the user explicitly
 asks for backward compatibility.
 
-Python orchestrates execution through `augur/sim`; native financial steps live in
-`augur/rust`. TLH portfolio state and its transitions belong to the Python
+Python owns financial execution through `augur/sim/session.py` and
+`augur/sim/world.py`. The retained `augur/rust` implementation is pending removal
+and must not be used as a runtime fallback. TLH portfolio state and its transitions belong to the Python
 component, not a second native holding book. Do not revive deleted `augur/core`
 execution or market-bundle adapters. When
 extending API responses, project the prepared input and the canonical frames
@@ -15,7 +16,7 @@ read-model tables over `SimulationRun`'s long-form polars frames.
 ## numpy vs jnp
 
 JAX is the sampler, not the simulator: `model/` and `fit/` trace and jit;
-`sim/` runs ordinary Python alongside native financial steps. Inside the traced
+`sim/` runs ordinary Python financial steps. Inside the traced
 packages numpy still belongs, but only in specific places, and the
 line is not "whichever imports first":
 

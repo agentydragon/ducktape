@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-actions
   annotations:
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer
     configmap.reloader.stakater.com/reload: agentplane-action-federation
 spec:
   replicas: 2
@@ -128,6 +128,11 @@ spec:
             - name: settings
               mountPath: /etc/agentplane-actions
               readOnly: true
+            # Its own directory: a subPath file cannot be mounted inside the read-only
+            # settings volume (runc: "not a directory").
+            - name: ssh-mcp-bearer
+              mountPath: /run/secrets/ssh-mcp
+              readOnly: true
           ports:
             - name: http
               containerPort: 8080
@@ -152,6 +157,12 @@ spec:
               memory: 512Mi
           securityContext: *container-security
       volumes:
+        - name: ssh-mcp-bearer
+          secret:
+            secretName: ssh-mcp-bearer
+            items:
+              - key: bearer-token
+                path: bearer-token
         - name: github-mcp-client
           secret:
             secretName: haku-console-github-mcp-client-credentials

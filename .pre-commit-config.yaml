@@ -283,7 +283,7 @@ repos:
             cluster/k8s/agentplane-testing/app/config\.yaml|
             cluster/k8s/agentplane-testing/actions/settings\.yaml|
             # SSH MCP settings are mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agentplane-testing/ssh-mcp/settings\.yaml|
+            cluster/k8s/ssh-mcp/settings\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/openshell/openclaw/policy\.yaml|
             # iron-proxy config mounted via configMapGenerator, not a K8s manifest

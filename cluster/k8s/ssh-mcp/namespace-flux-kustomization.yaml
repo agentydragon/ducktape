@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ssh-mcp-namespace
+  namespace: ducktape-flux
+  annotations:
+    description: Namespace for the standalone SSH MCP backend.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 2m
+  path: ./cluster/k8s/ssh-mcp/namespace
+  prune: false
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: ssh-mcp

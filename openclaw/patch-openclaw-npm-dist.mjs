@@ -166,6 +166,49 @@ agentDatabaseMaintenanceSource = agentDatabaseMaintenanceSource.replace(
 );
 fs.writeFileSync(agentDatabaseMaintenanceFile, agentDatabaseMaintenanceSource);
 
+// OpenClaw 2026.8.1 runs a background database integrity verifier that forks a
+// worker, copies every registered agent database out of the state volume, and
+// scans the copy. Its five-minute initial delay and 24-hour repeat are module
+// constants despite their environment-variable-shaped names, and its only guard
+// is a vitest-only test flag -- so a gateway that restarts more often than daily
+// pays the copy-and-scan on every start and never reaches the cadence the check
+// was designed around. Add the off switch upstream lacks, defaulting to on.
+const databaseVerifyFiles = jsFiles.filter((file) => {
+  const source = fs.readFileSync(file, "utf8");
+  return (
+    source.includes("function startOpenClawDatabaseIntegrityVerifier(options)") &&
+    source.includes("const OPENCLAW_DATABASE_VERIFY_INTERVAL_MS = 1440 * 6e4;")
+  );
+});
+if (databaseVerifyFiles.length !== 1) {
+  fail(`expected exactly one database verify chunk, found ${databaseVerifyFiles.length}`);
+}
+const databaseVerifyFile = databaseVerifyFiles[0];
+let databaseVerifySource = fs.readFileSync(databaseVerifyFile, "utf8");
+const databaseVerifyReplacements = new Map([
+  [
+    "const OPENCLAW_DATABASE_VERIFY_INTERVAL_MS = 1440 * 6e4;",
+    `const OPENCLAW_DATABASE_VERIFY_INTERVAL_MS = 1440 * 6e4;
+function resolveOpenClawDatabaseVerifyEnabled() {
+\tconst raw = process.env.OPENCLAW_DATABASE_VERIFY?.trim().toLowerCase() || "on";
+\tif (raw !== "on" && raw !== "off") throw new Error("OPENCLAW_DATABASE_VERIFY must be on or off");
+\treturn raw === "on";
+}`,
+  ],
+  [
+    "\tschedule(OPENCLAW_DATABASE_VERIFY_INITIAL_DELAY_MS);",
+    `\tif (resolveOpenClawDatabaseVerifyEnabled()) schedule(OPENCLAW_DATABASE_VERIFY_INITIAL_DELAY_MS);
+\telse log.info("database integrity verifier disabled by OPENCLAW_DATABASE_VERIFY=off");`,
+  ],
+]);
+for (const [original, replacement] of databaseVerifyReplacements) {
+  if (databaseVerifySource.split(original).length - 1 !== 1) {
+    fail(`expected exactly one OpenClaw database verify site: ${original}`);
+  }
+  databaseVerifySource = databaseVerifySource.replace(original, replacement);
+}
+fs.writeFileSync(databaseVerifyFile, databaseVerifySource);
+
 const hardlinkPolicyFiles = jsFiles.filter((file) =>
   fs.readFileSync(file, "utf8").includes("function shouldRejectHardlinkedPluginFiles")
 );

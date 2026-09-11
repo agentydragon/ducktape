@@ -36,7 +36,7 @@ py_library(
     deps = [
         ":python_policy",
         ":stress_paths",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:results",
     ],
 )
@@ -57,8 +57,8 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/rust:invocation",
         "//finance/augur/sim:actions",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:prepared",
@@ -81,7 +81,7 @@ py_library(
     deps = [
         ":python_policy",
         ":stress_paths",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:quantiles",
         "//finance/augur/sim:results",

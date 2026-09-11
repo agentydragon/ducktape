@@ -19,7 +19,7 @@ instrument or that its forecasts are adequate for a particular decision.
 
 Preparation resolves the authored scenario, rules and supplied paths into one
 self-contained typed value of exact monetary terms, resolved tax rules and paths.
-Sessions and reports consume these facts directly; file/native serialization is
+Sessions and reports consume these facts directly; file serialization is
 private, not a parallel mutable domain API. Execution does not reread the original
 scenario or load evidence/tax configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Ordinary public-security and

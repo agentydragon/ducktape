@@ -160,9 +160,8 @@ preserve this source contract or update and revalidate the subject mode.
    signing Secret. Its `AGENTPLANE_ACTION_FEDERATION` JSON comes from the same federation ConfigMap.
    The stable ConfigMap name plus reloader annotations rolls both processes when its pins change;
    generated application settings ConfigMaps retain their Kustomize name hashes.
-   No replicas are added by this migration. Runner ingestion now supports replicas through database
-   leases and shared event delivery; changing deployment scale/strategy still requires upgrading
-   existing sandbox runners to the independent-attachment protocol first.
+   No replicas are added by this migration. Runner ingestion supports replicas through database
+   leases and shared event delivery.
 4. Use app, Action Service, and migration images published from `df4a440` (#5820) or a descendant.
    The devel CI run [34167823523](https://github.com/agentydragon/ducktape/actions/runs/34167823523)
    published all three; existing Flux image markers/policies remain enabled. Do not enable this

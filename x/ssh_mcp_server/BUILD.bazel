@@ -66,5 +66,5 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["agentplane-ssh-mcp:latest"],
+    repo_tags = ["ssh-mcp:latest"],
 )

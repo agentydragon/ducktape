@@ -4,7 +4,7 @@ A behavioural suite should not know which engine produced the rows it reads. Eac
 projects a run into the channels declared here, so a suite asserts against
 `SimulationResult` and inherits into a runner per engine, the way the acceptance suites do.
 
-An engine's projection lives beside that engine — `rust/result.py` — so `sim/` keeps its
+An engine's projection lives beside that engine — `sim/testing/configured_result.py` — so `sim/` keeps its
 one-way dependency and a suite pulls in only the engine it runs. The two normalizations
 below live here instead, because they are properties of the shape rather than of an engine:
 a zero gain and an absent row say the same thing, and a lot holding no units says nothing

@@ -84,7 +84,7 @@ cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # The Agentplane app's settings file, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agentplane-staging/app/config.yaml cluster-manifest-ignored=true
 # SSH MCP settings, mounted via configMapGenerator — not a Kubernetes manifest.
-cluster/k8s/agentplane-testing/ssh-mcp/settings.yaml cluster-manifest-ignored=true
+cluster/k8s/ssh-mcp/settings.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.

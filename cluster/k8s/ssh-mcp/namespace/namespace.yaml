@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ssh-mcp
+  labels:
+    name: ssh-mcp
+  annotations:
+    description: Standalone SSH MCP backend; private keys stay in this namespace.

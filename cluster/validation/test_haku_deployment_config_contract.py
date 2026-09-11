@@ -1,13 +1,17 @@
 """Contracts between Haku's deployed configuration and its Kubernetes wiring."""
 
+from uuid import uuid4
+
 import pytest
 import pytest_bazel
 import yaml
 from pydantic import SecretStr
 
+from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
-from haku.console.mcp_config import PreregisteredOAuthClient, RemoteMcpBackend, RemoteServerOAuthAuth
+from haku.console.mcp_config import PreregisteredOAuthClient, RemoteMcpBackend, RemoteServerOAuthAuth, StaticBearerAuth
 from haku.console.settings import Settings
+from haku.console.tool_call_actor import AgentActor
 from util.bazel.runfiles import get_required_path
 
 
@@ -22,6 +26,7 @@ def _console_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
         "HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__ATLAS__TOKEN",
         "HAKU_CONSOLE__MCP__SERVERS__TANA_RW__BACKEND__AUTH__TOKEN",
         "HAKU_CONSOLE__MCP__SERVERS__HOME_ASSISTANT__BACKEND__AUTH__TOKEN",
+        "HAKU_CONSOLE__MCP__SERVERS__SSH__BACKEND__AUTH__TOKEN",
         "HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_ID",
         "HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_SECRET",
     ):
@@ -132,6 +137,38 @@ def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> No
         assert "create_grant" not in grant_tools, policy["id"]
         if policy["id"] != "grants_own_revoke":
             assert "revoke_grants" not in grant_tools, policy["id"]
+
+
+def test_ssh_backend_uses_shared_secret_and_requires_agent_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = _console_settings(monkeypatch)
+    backend = config.mcp.servers["ssh"].backend
+    assert isinstance(backend, RemoteMcpBackend)
+    assert isinstance(backend.auth, StaticBearerAuth)
+    assert backend.auth.token.get_secret_value().startswith(
+        "test-haku_console__mcp__servers__ssh__backend__auth__token"
+    )
+    deployment = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/deployment.yaml").read_text())
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    reference = next(
+        e for e in container["env"] if e["name"] == "HAKU_CONSOLE__MCP__SERVERS__SSH__BACKEND__AUTH__TOKEN"
+    )["valueFrom"]["secretKeyRef"]
+    source = next(
+        r
+        for r in yaml.safe_load_all(get_required_path("_main/cluster/k8s/ssh-mcp/secrets/bearer-eso.yaml").read_text())
+        if r["kind"] == "ExternalSecret"
+    )
+    assert reference["name"] == source["spec"]["target"]["name"]
+    assert reference["key"] in source["spec"]["target"]["template"]["data"]
+    assert reference["name"] in deployment["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(",")
+    staging = yaml.safe_load(
+        get_required_path("_main/cluster/k8s/agentplane-staging/actions/settings.yaml").read_text()
+    )
+    assert str(backend.url) == staging["action_groups"]["ssh"]["executor"]["config"]["url"]
+    registry = AutoApprovalPolicyRegistry(config)
+    for profile in config.access_profiles:
+        actor = AgentActor(agent_id=uuid4(), operator_id=uuid4(), binding_id=uuid4(), access_profile_id=profile.id)
+        for tool in ("list_targets", "exec"):
+            assert registry.tool_mode(actor, "ssh", tool) is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
 
 
 def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest.MonkeyPatch) -> None:

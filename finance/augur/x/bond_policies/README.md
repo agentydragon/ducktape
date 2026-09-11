@@ -41,7 +41,7 @@ transaction costs, defaults, inflation, and interest on cash are absent.
   idle cash **inside the investment**, or use proceeds to buy replacement bonds
   when rolling. Principal is not labeled coupon income.
 
-This is a unitized investment model, not native tradable `BondHolding` support or
+This is a unitized investment model, not tradable `BondHolding` support or
 a model of an actual ETF. Redeeming units before maturity liquidates a proportional
 part of the investment exposure. Only the zero-withdrawal `hold` control literally
 retains every initial bond to maturity; the spending cells test that construction

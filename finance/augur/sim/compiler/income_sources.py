@@ -13,7 +13,7 @@ def income_source_sort_key(category: TransferIncomeCategory) -> tuple[int, str]:
 
 
 def income_source_wire_id(category: TransferIncomeCategory) -> str:
-    """The native income ledger's label for one prepared category."""
+    """The financial income ledger's label for one prepared category."""
 
     if isinstance(category, InterestIncome):
         issuer = category.issuer_jurisdiction_id

@@ -311,7 +311,7 @@ def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> 
     for actual, expected in zip(arrays.base_series, compact.base_series, strict=True):
         np.testing.assert_array_equal(actual, expected)
     if capture == "summary":
-        assert all(result.financial is None and result.event_frames is None for result in completed)
+        assert all(result.financial is None and result.events is None for result in completed)
         with pytest.raises(RuntimeError, match="event projection requires"):
             project_events(completed)
     else:
@@ -339,7 +339,7 @@ def test_in_process_events_do_not_export_json(monkeypatch: pytest.MonkeyPatch) -
     def reject_export(*_args, **_kwargs):
         raise AssertionError("in-process event projection must not serialize a configured artifact")
 
-    monkeypatch.setattr(configured, "_export", reject_export)
+    monkeypatch.setattr(configured, "export_results", reject_export)
     events = simulate_events(sale_and_tax_year())
     assert events.lot_dispositions.height > 0
     assert events.tax_accruals.height > 0

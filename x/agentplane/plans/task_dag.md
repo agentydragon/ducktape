@@ -50,6 +50,7 @@ flowchart TB
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
     T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
     PR["Remaining deployment acceptance<br/>egress safety image + two staging replicas<br/>bounded drain and watch-loss proof"]:::active
+    APP_ROLL["Remaining deployment acceptance<br/>integration app on two rolling replicas<br/>staging rollout proof"]:::active
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
@@ -86,6 +87,7 @@ flowchart TB
     T3 -. product work .-> PROD
     PR -. independent reliability .-> PROD
     PR --> PC_EGRESS
+    APP_ROLL -. independent reliability .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
 ```
@@ -148,6 +150,20 @@ rewrite that keeps the real key out of the local Sandbox but hands it to agent-c
 BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
 gateway). The boundary, wire shape and required evidence are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
+
+### `APP_ROLL` — integration app on two rolling replicas
+
+**Remaining deployment acceptance:** staging declares two replicas with RollingUpdate
+`maxUnavailable: 0`/`maxSurge: 1`, hostname spread and a PDB `minAvailable: 1`, matching the
+Actions Deployment; testing stays at one replica. Everything it waited on has landed:
+PostgreSQL-leased runner ingestion and database-backed browser delivery, independent runner
+attachments, a bounded shutdown that drains streams and fails readiness first, and no sandbox from
+before the independent-attachment protocol (all were deleted on 2026-09-11).
+
+**Acceptance evidence:** a rollout keeps an available endpoint throughout; a live session with an
+open browser stream survives the ingestion owner's exit and the stream reconnects from the
+database-backed cursor; an operator login made on one replica is valid on the other; no duplicate
+ingestion of one session's events. Remove this entry after the deployed rollout is observed.
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
@@ -434,12 +450,11 @@ controls and live-update path; this is not a missing UI implementation.
 
 **Needed live evidence:** verify actual deployment, provider claims, allowed/denied operator access,
 VAPID configuration, reviewed push-service egress, and browser/service-worker behavior. Execute the
-existing BFF approval acceptance without widening allowlists for a test. Federation exchanges from
-staging pods currently fail intermittently because verified TLS to Authentik resets on the caller's
-own Gateway node; the
-[Authentik reachability investigation](../../../cluster/debug/agentplane_oidc/README.md) owns that
-blocker, which must be cleared or scoped around before this gate can pass. Signed mock integration
-and CI are evidence for code paths, not deployed Authentik, SSE, or OS push proof.
+existing BFF approval acceptance without widening allowlists for a test. The local-Gateway TLS
+reset that made federation fail intermittently is fixed cluster-wide
+([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)); a
+federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
+not deployed Authentik, SSE, or OS push proof.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 

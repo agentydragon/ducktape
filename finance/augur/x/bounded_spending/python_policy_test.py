@@ -10,8 +10,8 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
 from finance.augur.sim.actions import DecisionActions
+from finance.augur.sim.artifacts import read_prepared_input, write_prepared_input
 from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket

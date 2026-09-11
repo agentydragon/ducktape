@@ -230,7 +230,7 @@
       "test": "//x/agentplane/action_service/...",
       "registry": "forgejo"
     },
-    "agentplane-ssh-mcp": {
+    "ssh-mcp": {
       "target": "//x/ssh_mcp_server:image",
       "test": "//x/ssh_mcp_server/...",
       "registry": "forgejo"

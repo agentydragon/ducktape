@@ -70,6 +70,14 @@ spec:
         - kube-apiserver
     - toEndpoints:
         - matchLabels:
+            k8s:io.kubernetes.pod.namespace: ssh-mcp
+            app.kubernetes.io/name: ssh-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
             k8s:cnpg.io/cluster: postgres
       toPorts:

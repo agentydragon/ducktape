@@ -1,6 +1,5 @@
 """The real session posts opaque component effects without owning its model state."""
 
-import json
 from dataclasses import replace
 from decimal import Decimal
 
@@ -10,9 +9,9 @@ from pydantic import ValidationError
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
+from finance.augur.sim import configured
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
-from finance.augur.sim.books import TlhPortfolioState
-from finance.augur.sim.configured import simulate_dense_json
+from finance.augur.sim.books import AccountBalance, AccountRef, TlhPortfolioState
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction
 from finance.augur.sim.scenario import (
     Currency,
@@ -372,11 +371,11 @@ def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None
 
 def test_configured_clock_needs_no_placeholder_economic_actor() -> None:
     case = Case(scenario=Scenario(agents=[], initial_cash=[], tax_profiles=[], horizon_months=1), rollout_count=1)
-    document = json.loads(simulate_dense_json(case.compiled_run))
-    [rollout] = document["rollouts"]
+    [rollout] = configured.execute(case.compiled_run, "dense")
+    assert rollout.financial is not None
     # The canonical ledger's external balancing account is not a configured decision actor.
-    boundary = [{"account": {"agent_id": "__external__", "account_id": "boundary"}, "balance": 0}]
-    assert [(book["month"], book["balances"]) for book in rollout["months"]] == [(0, boundary), (1, boundary)]
+    boundary = [AccountBalance(account=AccountRef(agent_id="__external__", account_id="boundary"), balance=0)]
+    assert [(book.month, book.balances) for book in rollout.financial.months] == [(0, boundary), (1, boundary)]
 
 
 if __name__ == "__main__":

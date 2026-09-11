@@ -48,7 +48,7 @@ then compare reordered and selected replay through the same authoring function.
 All inputs are generated locally; the tests need no live service or evidence data.
 
 `run.py` owns the Python monthly loop over the in-process
-[action session](../../rust/README.md#scoped-household-action-batches).
+[action session](../../sim/docs/financial_engine.md#scoped-household-action-batches).
 Policies are ordinary Python functions; editing one requires no Rust rebuild.
 Prepared input is written once for reproduction, while current observations and
 ordered actions cross the existing extension in memory. There is no native

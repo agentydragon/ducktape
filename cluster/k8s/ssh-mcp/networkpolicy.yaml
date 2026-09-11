@@ -1,0 +1,42 @@
+# Cluster-internal MCP backend. Only haku-console and Agentplane staging are callers; SSH egress is
+# constrained to wyrm2/rugged's Nebula mesh addresses (nebula-mesh.json at the repo root).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ssh-mcp
+  namespace: ssh-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ssh-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-actions
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            app.kubernetes.io/name: haku-console
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # wyrm2 (10.42.0.20) and rugged (10.42.0.30) Nebula addresses, per nebula-mesh.json.
+    - toCIDR:
+        - 10.42.0.20/32
+        - 10.42.0.30/32
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP

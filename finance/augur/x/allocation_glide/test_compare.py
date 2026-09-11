@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.invocation import read_prepared_input
+from finance.augur.sim.artifacts import read_prepared_input
 from finance.augur.sim.results import Finished, Paid
 from finance.augur.x.allocation_glide.compare import execute
 from util.bazel.runfiles import get_required_path, own_repo_rlocation

@@ -2,7 +2,9 @@
 
 Status: **implementation in progress**, replacing the earlier `HOSTEXEC`/hostexecd adapter
 direction. Layer 1 is a separate bearer-protected SSH MCP server; the existing Agentplane MCP
-Executor connects to it. This does not yet alter the existing Haku Console hostexec implementation.
+Executor connects to it. The backend is the independent `ssh-mcp` service in
+<../../ssh_mcp_server/README.md>, also consumed by Haku Console; it is not an Agentplane
+component. This does not alter the existing Haku Console hostexec implementation.
 
 ## Outcome
 
@@ -65,13 +67,13 @@ Conceptually:
 keys:
   - id: wyrm2-coder
     secret:
-      name: agentplane-ssh-keys
+      name: ssh-mcp-keys
       key: wyrm2-coder
     host: wyrm2.example
     user: coder
   - id: rugged-coder
     secret:
-      name: agentplane-ssh-keys
+      name: ssh-mcp-keys
       key: rugged-coder
     host: rugged.example
     user: coder

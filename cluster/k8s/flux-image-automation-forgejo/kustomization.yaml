@@ -46,7 +46,7 @@ resources:
   - agentplane-runner-image.yaml
   - agentplane-app-image.yaml
   - agentplane-action-service-image.yaml
-  - agentplane-ssh-mcp-image.yaml
+  - ssh-mcp-image.yaml
   - agentplane-action-service-migrate-image.yaml
   - agentplane-egress-migrate-image.yaml
   - agentplane-egress-image.yaml

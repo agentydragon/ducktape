@@ -530,13 +530,18 @@ py_test(
 py_test(
     name = "test_haku_deployment_config_contract",
     srcs = ["test_haku_deployment_config_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    data = [
+        "//cluster/k8s:agentplane_actions_remote_mcp",
+        "//cluster/k8s:haku_manifest_contract_files",
+    ],
     deps = [
         ":conftest",
         "//:conftest",
         "//haku/console:config",
         "//haku/console:mcp_config",
         "//haku/console:settings",
+        "//haku/console:tool_call_actor",
+        "//haku/console/auto_approval:registry",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",

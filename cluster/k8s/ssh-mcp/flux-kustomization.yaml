@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ssh-mcp
+  namespace: ducktape-flux
+  annotations:
+    description: Standalone SSH MCP backend for haku-console and Agentplane staging.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/ssh-mcp
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: ssh-mcp-secrets
+      namespace: ducktape-flux

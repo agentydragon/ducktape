@@ -55,7 +55,7 @@ The current construction remains an approximation: it applies the positive-yield
 guard and two-point government curve to constant-maturity funds, and treats an
 equity total-return index as a price with no dividend payout. Raw short-rate paths
 retain negative values; structural equity dynamics still use floored short-rate
-changes. This separation does not add dividend taxes or native tradable bonds.
+changes. This separation does not add dividend taxes or tradable bonds.
 
 Historical replay materializes caller-selected starting dates in caller order. A
 date's path is unchanged by partitioning, reordering or extending the selection;

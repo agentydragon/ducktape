@@ -32,7 +32,7 @@ py_library(
     deps = [
         ":policy",
         ":scenario",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:books",
         "//finance/augur/sim:quantiles",
         "//finance/augur/sim:results",

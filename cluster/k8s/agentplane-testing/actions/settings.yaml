@@ -17,16 +17,5 @@ action_groups:
         transport: streamable-http
         url: http://agentplane-mcp-everything.agentplane-testing.svc.cluster.local:3001/mcp
         auth: none
-  ssh:
-    title: SSH
-    description: Execute approved non-interactive commands on configured SSH targets.
-    executor:
-      kind: mcp
-      description: OpenSSH backend using deployment-managed keys for configured machine/user pairs.
-      config:
-        transport: streamable-http
-        url: http://agentplane-ssh-mcp.agentplane-testing.svc.cluster.local:8080/mcp
-        auth: static_bearer
-        bearer_file: /etc/agentplane-actions/ssh-mcp-bearer
 fixture_auto_allow:
   group: everything

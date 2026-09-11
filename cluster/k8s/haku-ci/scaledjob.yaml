@@ -77,26 +77,20 @@ spec:
         # any more. Slightly above config.yaml's `shutdown_timeout: 30m` so a drained
         # node lets a build of up to that length finish instead of dropping it.
         terminationGracePeriodSeconds: 1830
-        # This privileged, agent-controlled build compute runs only on approved always-on
-        # workers: non-control-plane HIL nodes and the home OptiPlex. Their Talos configs
-        # enable the user namespaces rootless dind needs; roaming and unrelated workers
-        # remain ineligible without introducing a separately reconciled capability label.
-        affinity:
-          nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-                - matchExpressions:
-                    - key: topology.kubernetes.io/region
-                      operator: In
-                      values: ["hil"]
-                    - key: node-role.kubernetes.io/control-plane
-                      operator: DoesNotExist
-                - matchExpressions:
-                    - key: kubernetes.io/hostname
-                      operator: In
-                      values: ["optiplex"]
-                    - key: node-role.kubernetes.io/control-plane
-                      operator: DoesNotExist
+        # No node affinity: this privileged, agent-controlled build compute may land on any
+        # worker — the HIL workers, the home OptiPlex, wyrm2, and the roaming laptops when
+        # they are reachable. Control-plane nodes keep their NoSchedule taint and stay out.
+        # A Talos worker needs `user.max_user_namespaces` raised for rootless dind
+        # (ovh-nodes.tf, home-nodes.tf); the NixOS hosts keep the kernel default.
+        tolerations:
+          # Roaming laptops (iguana, rugged) are tainted so ordinary workloads avoid them;
+          # a CI job is disposable enough to run there. If the laptop leaves mid-build the
+          # unreachable taint evicts the pod and the queued job is retried on the next KEDA
+          # poll, at the cost of the minutes already spent.
+          - key: node-role.kubernetes.io/roaming
+            operator: Equal
+            value: "true"
+            effect: NoSchedule
         # Requests describe only the runner's idle footprint, so the default scheduler's
         # resource scoring alone can co-locate an entire four-job burst. Prefer an even
         # host spread, but keep CI available when only one capable worker is schedulable.

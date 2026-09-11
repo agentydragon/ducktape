@@ -4,38 +4,25 @@ This preserves the configured consumers' financial ordering, without giving the
 financial kernel another policy or population loop.
 """
 
-import json
 from collections import defaultdict
 from copy import deepcopy
+from typing import Any
 
 import numpy as np
 from pydantic import JsonValue
 
 from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan, validate_prepared
-from finance.augur.sim import _native, results
+from finance.augur.sim import results
 from finance.augur.sim.actions import Buy, DecisionActions
-from finance.augur.sim.events import EventLog
+from finance.augur.sim.capture import WorldResult
+from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
-from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.session import Capture, _Session
 
 
-def _amount(session: _Session, rollout_id: int, amount: PreparedAmount) -> int:
-    if isinstance(amount, int):
-        return amount
-    if isinstance(amount, PreparedFixedAmount):
-        return amount.amount
-    elapsed = session.month - amount.base_month_index
-    reset = amount.base_month_index + elapsed // amount.adjustment_period_months * amount.adjustment_period_months
-    numerator = amount.base_amount * session.price(amount.series_id, rollout_id, reset)
-    denominator = session.price(amount.series_id, rollout_id, amount.base_month_index)
-    # Match the financial amount boundary: round half away from zero, once.
-    rounded = (2 * abs(numerator) + denominator) // (2 * denominator)
-    return rounded if numerator >= 0 else -rounded
-
-
-def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> tuple[_native.WorldResult, ...]:
+def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> tuple[WorldResult, ...]:
     if not isinstance(run, CompiledRun):
         raise TypeError("execution requires a CompiledRun, not serialized input")
     validate_prepared(run)
@@ -55,7 +42,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
             session.begin_actions([DecisionActions(id_, session.month, []) for id_ in paths])
             pending: list[tuple[int, PendingBuy]] = []
             for rollout_id, path in paths.items():
-                for index, sale in enumerate(run.scenario._scheduled_sales):
+                for sale in run.scenario._scheduled_sales:
                     if sale.month != session.month:
                         continue
                     spec = next(
@@ -68,16 +55,19 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         None,
                     )
                     if spec is None:
-                        path.world.scheduled_sale(index)
+                        path.world.holdings.scheduled_sale(path.world.accounting, path.world.market, sale)
                         continue
                     candidate = deepcopy(path.portfolios[spec.portfolio_id])
                     withdrawal = candidate._withdraw_units(sale.units)
-                    path.world.apply_component_json(
+                    path.world.managed.settle(
+                        run.scenario,
+                        path.world.accounting,
+                        session.month,
                         spec.owner_agent_id,
                         sale.cause_id,
                         session.effects(
                             spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
-                        ).model_dump_json(),
+                        ),
                         operation="redemption",
                     )
                     path.portfolios[spec.portfolio_id] = candidate
@@ -86,8 +76,8 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         session.observe(rollout_id, policy.agent_id),
                         policy,
                         policy_index=index,
-                        floor=_amount(session, rollout_id, policy.cash_floor),
-                        ceiling=_amount(session, rollout_id, policy.cash_ceiling),
+                        floor=path.world.market.amount(policy.cash_floor, session.month),
+                        ceiling=path.world.market.amount(policy.cash_ceiling, session.month),
                         prices={
                             sleeve.asset_id: session.price(f"security:{sleeve.asset_id}", rollout_id, session.month)
                             for sleeve in policy.sleeves
@@ -102,7 +92,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                     pending.extend((rollout_id, buy) for buy in proposal.buys)
             for path in paths.values():
                 if not path.failed:
-                    settlement = _native.Settlement.model_validate_json(path.world.settle_claims_json())
+                    settlement = path.world.settle_claims()
                     path.failed = settlement.failed
                     path.shortfall = settlement.product_shortfall
             for rollout_id, pending_buy in pending:
@@ -119,7 +109,14 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         lot_sequences[key] += 1
             for path in paths.values():
                 if not path.failed:
-                    path.world.run_private_equity()
+                    path.world.private_equity.advance(
+                        run.scenario,
+                        path.world.accounting,
+                        path.world.holdings,
+                        path.world.market,
+                        list(path.world.managed.marks.values()),
+                        session.month,
+                    )
             session.close_month()
         completed = []
         for path in session.paths.values():
@@ -131,7 +128,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
         session.close()
 
 
-def _export(run: CompiledRun, capture: Capture) -> str:
+def export_results(run: CompiledRun, capture: Capture) -> dict[str, Any]:
     completed = execute(run, capture)
     rollouts = []
     frames: dict[str, list[dict[str, JsonValue]]] = {}
@@ -139,30 +136,18 @@ def _export(run: CompiledRun, capture: Capture) -> str:
         if capture == "summary":
             if result.configured_summary is None:
                 raise RuntimeError("summary export requires a financial terminal summary")
-            rollouts.append(result.configured_summary.model_dump(mode="json", by_alias=True))
+            rollouts.append(result.configured_summary.export())
         elif result.financial is not None:
-            rollouts.append(result.financial.model_dump(mode="json", by_alias=True))
-            if result.event_frames is None:
+            rollouts.append(result.financial.export())
+            if result.events is None:
                 raise RuntimeError("dense export requires event frames")
-            for name, rows in result.event_frames.items():
-                frames.setdefault(name, []).extend(rows)
+            for spec in EVENT_FRAME_SPECS:
+                frames.setdefault(spec.name, []).extend(result.events.frame(spec).to_dicts())
         else:
             raise RuntimeError("dense export requires financial capture")
     if capture == "summary":
-        return json.dumps({"schema_version": run._schema_version, "rollouts": rollouts})
-    return json.dumps({"schema_version": run._schema_version, "rollouts": rollouts, "event_frames": frames})
-
-
-def simulate_dense_json(run: CompiledRun) -> str:
-    return _export(run, "dense")
-
-
-def simulate_forensic_json(run: CompiledRun) -> str:
-    return _export(run, "forensic")
-
-
-def simulate_summaries_json(run: CompiledRun) -> str:
-    return _export(run, "summary")
+        return {"schema_version": run._schema_version, "rollouts": rollouts}
+    return {"schema_version": run._schema_version, "rollouts": rollouts, "event_frames": frames}
 
 
 def simulate_events(run: CompiledRun) -> EventLog:
@@ -171,12 +156,12 @@ def simulate_events(run: CompiledRun) -> EventLog:
     return project_events(execute(run, "dense"))
 
 
-def project_events(completed: tuple[_native.WorldResult, ...]) -> EventLog:
+def project_events(completed: tuple[WorldResult, ...]) -> EventLog:
     logs = []
     for result in completed:
-        if result.event_frames is None:
+        if result.events is None:
             raise RuntimeError("event projection requires dense or forensic capture")
-        logs.append(EventLog.from_serialized(result.event_frames, rollout_ids=[result.rollout_id]))
+        logs.append(result.events)
     return EventLog.concat(logs)
 
 
@@ -184,7 +169,7 @@ def simulate_product_metrics(run: CompiledRun, primary_agent_id: str) -> Product
     return project_product_metrics(run, execute(run, "summary", primary_agent_id))
 
 
-def project_product_metrics(run: CompiledRun, completed: tuple[_native.WorldResult, ...]) -> ProductMetricArrays:
+def project_product_metrics(run: CompiledRun, completed: tuple[WorldResult, ...]) -> ProductMetricArrays:
     rollout_count = len(completed)
     snapshots = run.scenario.horizon_months + 1
     base_series = [[0] * (snapshots * rollout_count) for _ in BASE_METRIC_NAMES]
