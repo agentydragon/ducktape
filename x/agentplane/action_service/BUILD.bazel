@@ -861,3 +861,27 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_mcp_linkage_callback",
+    srcs = ["test_mcp_linkage_callback.py"],
+    requires_docker = True,
+    deps = [
+        ":api",
+        ":auth",
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":mcp_linkage",
+        ":models",
+        ":service",
+        ":updates",
+        "//:conftest",
+        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
