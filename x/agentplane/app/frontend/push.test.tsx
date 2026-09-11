@@ -43,6 +43,11 @@ it("lists registered browsers, identifies this browser, and unregisters it local
     );
     expect(container.textContent).toContain("Test browser");
     expect(container.textContent).toContain("(this browser)");
+    expect(container.textContent).toContain("Browser notifications are not configured on this server");
+    expect(
+      [...container.querySelectorAll("button")].find((button) => button.textContent === "Register this browser")
+        ?.disabled
+    ).toBe(true);
     const forget = [...container.querySelectorAll("button")].find((button) => button.textContent === "Forget");
     expect(forget).toBeDefined();
     await act(async () => forget?.click());
@@ -58,5 +63,41 @@ it("lists registered browsers, identifies this browser, and unregisters it local
     vi.unstubAllGlobals();
     if (previous) Object.defineProperty(navigator, "serviceWorker", previous);
     else Reflect.deleteProperty(navigator, "serviceWorker");
+  }
+});
+
+it("explains pending settings and a failed load without claiming the server is unconfigured", async () => {
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const response = Promise.withResolvers<Response>();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => response.promise)
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <MantineProvider>
+          <PushSettings />
+        </MantineProvider>
+      )
+    );
+    expect(container.textContent).toContain("Loading notification settings");
+    expect(container.textContent).not.toContain("not configured on this server");
+    expect(
+      [...container.querySelectorAll("button")].find((button) => button.textContent === "Register this browser")
+        ?.disabled
+    ).toBe(true);
+    await act(async () => response.reject(new Error("Server unavailable")));
+    expect(container.textContent).toContain("Could not load notification settings");
+    expect(container.textContent).toContain("Server unavailable");
+    expect(container.textContent).not.toContain("Loading notification settings");
+    expect(container.textContent).not.toContain("not configured on this server");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
   }
 });

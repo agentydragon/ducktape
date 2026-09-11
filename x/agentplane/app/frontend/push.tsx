@@ -19,9 +19,11 @@ export function PushSettings(): JSX.Element {
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const [config, registered] = await Promise.all([
         json<{ application_server_key: string | null }>("/push/config"),
@@ -36,6 +38,8 @@ export function PushSettings(): JSX.Element {
       setError(null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setLoading(false);
     }
   }, []);
   useEffect(() => void refresh(), [refresh]);
@@ -96,6 +100,20 @@ export function PushSettings(): JSX.Element {
     }
   }
 
+  const unavailable = loading
+    ? "Loading notification settings…"
+    : error && !key
+      ? "Could not load notification settings. Retry to check whether registration is available."
+      : !key
+        ? "Browser notifications are not configured on this server (no Web Push application server key)."
+        : !window.isSecureContext
+          ? "Browser notifications require a secure HTTPS connection."
+          : !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)
+            ? "This browser does not support Web Push notifications."
+            : Notification.permission === "denied"
+              ? "Notifications are blocked for this site. Allow them in your browser settings, then retry."
+              : null;
+
   return (
     <Stack>
       <Title order={2}>Notifications</Title>
@@ -103,8 +121,21 @@ export function PushSettings(): JSX.Element {
         Register this browser for Action approval notifications and manage the operator&apos;s registered browsers.
       </Text>
       {error && <Text c="red">{error}</Text>}
-      <Button onClick={() => void enable()} loading={busy} disabled={!key}>
+      {unavailable && (
+        <Text id="push-registration-status" role="status">
+          {unavailable}
+        </Text>
+      )}
+      <Button
+        onClick={() => void enable()}
+        loading={busy}
+        disabled={unavailable !== null}
+        aria-describedby={unavailable ? "push-registration-status" : undefined}
+      >
         Register this browser
+      </Button>
+      <Button variant="light" onClick={() => void refresh()} disabled={busy} loading={loading}>
+        Refresh notification settings
       </Button>
       {devices.map((device) => (
         <Paper withBorder p="sm" key={device.endpoint}>
