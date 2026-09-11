@@ -1,18 +1,4 @@
-import {
-  Badge,
-  Button,
-  Code,
-  Group,
-  Select,
-  Stack,
-  Switch,
-  Table,
-  Tabs,
-  Text,
-  Textarea,
-  TextInput,
-  Title,
-} from "@mantine/core";
+import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Tabs, Text, Textarea, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -144,7 +130,6 @@ export function SandboxPage({
   const [error, setError] = useState<string | null>(null);
   const [sessionList, setSessionList] = useState<"loading" | "waiting" | "ready" | { error: string }>("loading");
   const [creatingSession, setCreatingSession] = useState(false);
-  const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
   const [instructions, setInstructions] = useState("");
   const [presetLabel, setPresetLabel] = useState<string | null>(null);
@@ -258,6 +243,9 @@ export function SandboxPage({
     if (!sandbox || !model || creatingSession) return;
     setCreatingSession(true);
     setError(null);
+    // The operator does not pick a session id; the client mints one fresh for each attempt so a
+    // retry after failure never collides with the one that just failed.
+    const sessionId = `s-${crypto.randomUUID()}`;
     try {
       await openSession(
         name,
@@ -336,7 +324,6 @@ export function SandboxPage({
             )}
             {typeof sessionList === "object" && <Text c="red">{sessionList.error}</Text>}
             <Group align="flex-end">
-              <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
               <Select
                 label="Harness"
                 data={HARNESSES}
@@ -353,7 +340,7 @@ export function SandboxPage({
               <Button
                 onClick={() => void createSession()}
                 loading={creatingSession}
-                disabled={!sandbox || sandbox.state !== "running" || sessionList !== "ready" || !sessionId || !model}
+                disabled={!sandbox || sandbox.state !== "running" || sessionList !== "ready" || !model}
               >
                 {creatingSession ? "Creating session…" : "New session"}
               </Button>
@@ -379,12 +366,11 @@ export function SandboxPage({
                 {sessions.map((session) => (
                   <Table.Tr key={session.sessionId}>
                     <Table.Td>
-                      <Group gap="xs">
-                        <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
-                          {session.sessionId}
-                        </Button>
-                        {names[session.sessionId] && <Text size="sm">{names[session.sessionId]}</Text>}
-                      </Group>
+                      {/* The id is only useful once you're in the session's own detail view (which
+                          shows it beside the name); the list links by name where one exists. */}
+                      <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
+                        {names[session.sessionId] ?? session.sessionId}
+                      </Button>
                     </Table.Td>
                     <Table.Td>{HarnessState[session.harness]}</Table.Td>
                     <Table.Td>{session.activeTurnId || "—"}</Table.Td>
