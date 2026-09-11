@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from util.net import pick_free_port
+from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from x.agentplane.action_service import api as service_api
@@ -120,8 +120,8 @@ async def review(
         stack.push_async_callback(service.close)
         await service.start()
         private_key, public_key = generate_rsa_keypair()
-        idp_port = pick_free_port()
-        idp_origin, app_url = f"http://127.0.0.1:{idp_port}", "http://test-app.invalid"
+        idp_sock = bind_free_port()
+        idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = f"{idp_origin}/application/o/actions/"
         target = OperatorOidcSettings(issuer=target_issuer, audience="test-actions", jwks_uri=f"{idp_url}jwks/")
@@ -244,7 +244,7 @@ async def review(
             reviewer,
             operator_actions=operator_client,
         )
-        await stack.enter_async_context(serve_app(idp, port=idp_port))
+        await stack.enter_async_context(serve_app(idp, sock=idp_sock))
         browser = await stack.enter_async_context(
             httpx.AsyncClient(base_url=app_url, follow_redirects=True, mounts={app_url: httpx.ASGITransport(app=app)})
         )

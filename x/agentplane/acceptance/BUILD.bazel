@@ -182,3 +182,34 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Real testing ingress; never send registrations to staging or run this implicitly in CI.
+py_test(
+    name = "test_dcr",
+    size = "medium",
+    srcs = ["test_dcr.py"],
+    tags = [
+        "manual",
+        "no-cache",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        ":dcr",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "dcr",
+    srcs = ["dcr.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+    ],
+)

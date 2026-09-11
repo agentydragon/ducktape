@@ -26,21 +26,21 @@ receive the Action API URL and public workload placeholder, discover the `everyt
 group's `echo` Action, submit a structured group/name request, poll until terminal,
 and report JSON. The test checks the reported result against the fresh marker's exact
 upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
-Staging GitOps wires the upstream image, ActionGroup, narrow echo provider, and discovery
-egress. Run after the PR's images and manifests have rolled out; remote adapter tests
-are not evidence that the real-agent staging test has run.
+Testing GitOps (`cluster/k8s/agentplane-testing/actions/`) wires the upstream image, ActionGroup,
+narrow echo provider, and discovery egress. Run after the PR's images and manifests have rolled
+out; remote adapter tests are not evidence that the real-agent deployed test has run.
 
 `test_agent_mcp_bff_decision` adds allow/deny cases on each harness: turn 1 submits
 an echo longer than the fixture's 200-character auto-allow bound and returns only
 its UUID; Python inspects and decides through the app's `/actions/{id}` BFF; the
 same Agent polls in turn 2 and returns strict JSON. Python independently checks
 durable request/Decision/Execution snapshots, exact arguments/result, operator
-identity, duplicate-decision idempotency and stale-version rejection. Full Action
-events are currently **not exposed by the BFF**: the agent reads them, but Python
-does not independently verify history. No canonical operator API fallback is used.
+identity, duplicate-decision idempotency and stale-version rejection. Python also
+reads the full event history through the BFF's `GET /actions/{id}/events` and asserts
+the contiguous sequence and state progression. No canonical operator API fallback is used.
 
-These cases read only `public-coder-agent/agentplane-acceptance-operator` via
-`kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-acceptance-operator`
+These cases read only `public-coder-agent/agentplane-testing-acceptance-operator` via
+`kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator`
 using the existing kubeconfig and Haku Console Kubernetes proxy
 (`https://haku-kubeapi.allegedly.works`). No operator environment variables or
 pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
@@ -95,9 +95,10 @@ Override any of it through the environment:
 
 Staging remains available for ad hoc click-through tests by overriding the URL, namespace,
 IDP, and operator Secret path to the Authentik deployment. The shipped default is Dex/testing.
-The testing environment is Flux-managed and exposes only the app and Dex HTTPS routes needed
-for the browser authorization-code flow; the MCP fixture itself is cluster-internal. Do not copy credentials into
-the checkout or pass them as command-line arguments.
+The testing environment is Flux-managed and exposes the app and Dex HTTPS routes needed for the
+browser authorization-code flow plus the Action Service's `/mcp` and OAuth surface at
+`agentplane-actions-testing.allegedly.works`; the `mcp-everything` fixture itself is
+cluster-internal. Do not copy credentials into the checkout or pass them as command-line arguments.
 
 ### Controlled-host preflight
 

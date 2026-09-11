@@ -28,7 +28,7 @@ from mcp_infra.authentik_auth.oidc_principal import (
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
@@ -121,9 +121,9 @@ def signing_keys() -> tuple[_SigningKey, _SigningKey, _SigningKey]:
 @pytest.fixture
 async def jwks_server(signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey]):
     state = _JwksState(document=_jwks(signing_keys[0]))
-    port = pick_free_port()
-    async with serve_app(Starlette(routes=[Route("/jwks", state.serve)]), port=port):
-        yield state, f"http://127.0.0.1:{port}/jwks"
+    sock = bind_free_port()
+    async with serve_app(Starlette(routes=[Route("/jwks", state.serve)]), sock=sock):
+        yield state, f"http://127.0.0.1:{sock.getsockname()[1]}/jwks"
 
 
 async def test_resolves_only_issuer_and_subject_from_access_token(
@@ -621,13 +621,13 @@ async def _authorization_and_refresh_tokens(
 
 async def test_authentik_compatible_mock_access_tokens_match_authentik_audience_contract() -> None:
     private_key, public_key = generate_rsa_keypair()
-    port = pick_free_port()
-    base_url = f"http://127.0.0.1:{port}"
+    sock = bind_free_port()
+    base_url = f"http://127.0.0.1:{sock.getsockname()[1]}"
     issuer = f"{base_url}/application/o/test/"
     app = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
     )
-    async with serve_app(app, port=port), httpx.AsyncClient(base_url=base_url, follow_redirects=False) as client:
+    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=base_url, follow_redirects=False) as client:
         token_responses = await _authorization_and_refresh_tokens(
             client, authorization_path="/application/o/authorize/", token_path="/application/o/token/"
         )
@@ -654,10 +654,10 @@ async def test_authentik_compatible_mock_access_tokens_match_authentik_audience_
 
 async def test_default_mock_access_token_audience_behavior_is_unchanged() -> None:
     private_key, public_key = generate_rsa_keypair()
-    port = pick_free_port()
-    issuer = f"http://127.0.0.1:{port}"
+    sock = bind_free_port()
+    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
     app = build_mock_oidc_app(issuer_url=issuer, private_key=private_key, public_key=public_key)
-    async with serve_app(app, port=port), httpx.AsyncClient(base_url=issuer, follow_redirects=False) as client:
+    async with serve_app(app, sock=sock), httpx.AsyncClient(base_url=issuer, follow_redirects=False) as client:
         issued, refreshed = await _authorization_and_refresh_tokens(
             client, authorization_path="/authorize", token_path="/token"
         )

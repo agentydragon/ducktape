@@ -10,6 +10,7 @@ thread and hand back once it's accepting connections; ``serve_fastmcp`` mounts a
 from __future__ import annotations
 
 import asyncio
+import socket
 import threading
 import time
 from collections.abc import Generator
@@ -25,11 +26,13 @@ from util.net import pick_free_port, wait_for_port
 
 
 @asynccontextmanager
-async def serve_app(app: ASGIApp, *, port: int):
-    """Start a uvicorn server in a dedicated thread; yield when ready; shut down on exit."""
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
+async def serve_app(app: ASGIApp, *, sock: socket.socket):
+    """Serve ``app`` under uvicorn on ``sock`` -- bound and listening, from ``bind_free_port`` -- in a
+    dedicated thread; yield once it's accepting; shut down on exit. Taking the socket rather than a
+    port number means the port is never released between choosing it and serving on it; uvicorn
+    closes the socket on shutdown."""
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     deadline = time.monotonic() + 10.0
     while not server.started:
@@ -38,7 +41,7 @@ async def serve_app(app: ASGIApp, *, port: int):
         if time.monotonic() > deadline:
             server.should_exit = True
             thread.join(timeout=3.0)
-            raise TimeoutError(f"server did not start on port {port}")
+            raise TimeoutError(f"server did not start on {sock.getsockname()}")
         await asyncio.sleep(0.02)
     try:
         yield

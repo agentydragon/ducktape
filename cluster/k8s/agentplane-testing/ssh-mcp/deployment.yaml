@@ -24,7 +24,7 @@ spec:
         - name: forgejo-images-creds
       containers:
         - name: server
-          image: git.allegedly.works/ducktape-ci/agentplane-ssh-mcp:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:agentplane-ssh-mcp"}
+          image: git.allegedly.works/ducktape-ci/agentplane-ssh-mcp:devel-20260911062617-5a3faf6 # {"$imagepolicy": "flux-system:agentplane-ssh-mcp"}
           imagePullPolicy: Always
           env:
             - name: SSH_MCP_CONFIG_FILE

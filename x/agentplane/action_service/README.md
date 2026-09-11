@@ -146,11 +146,12 @@ rather than an outbox.
 `waits.ActionWaiter` provides bounded, notification-driven receipt reads for transports that offer
 waiting. `WaitOptions` defaults to immediate reads and caps waits at 30 seconds, with `decision`
 and `terminal` predicates. Each ORM insertion of a canonical Action event emits a UUID-only
-PostgreSQL `NOTIFY` in the same transaction. `updates.ActionUpdates` owns one dedicated listener
-connection per service instance and coalesces wakeups per waiting request. It subscribes before
-rechecking durable state and releases registrations on every exit path. A lost listener fails
-bounded waits explicitly until the listener is restarted; it never falls back to timed queries.
-The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
+PostgreSQL `NOTIFY` in the same transaction. Each `updates.ActionUpdates` owns one dedicated
+listener connection and coalesces wakeups per waiting request: the API holds one per service
+instance, and `push.ActionPushNotifier` opens a second when `web_push` is configured. It
+subscribes before rechecking durable state and releases registrations on every exit path. A lost
+listener fails bounded waits explicitly until the listener is restarted; it never falls back to
+timed queries. The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
 
 ## Generic MCP frontend
 
@@ -159,10 +160,13 @@ the PostgreSQL update listener and MCP transport and unwinds both on shutdown/st
 This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
 Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
 Operator/OIDC bearers remain confined to `/v1/operator/...`; configured external OAuth grants are
-also accepted by `/mcp`. No public ingress or harness deployment is added here. FastMCP's automatic Host/Origin
-guard protects loopback access without categorically rejecting requests carrying Origin; authority
-comes from the explicit validated bearer, not Origin or browser cookies. Browser CORS policy can
-be configured alongside future external exposure.
+also accepted by `/mcp`. Staging and testing publish `/mcp`, `/register`, `/authorize`, `/token`,
+`/revoke`, `/auth/callback`, and the OAuth well-known paths through an `HTTPRoute` at
+`agentplane-actions-{staging,testing}.allegedly.works`
+(`cluster/k8s/agentplane-{staging,testing}/actions/httproute.yaml`); REST and operator endpoints
+stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
+categorically rejecting requests carrying Origin; authority comes from the explicit validated
+bearer, not Origin or browser cookies.
 Staging's current `egresspolicy-basic.yaml` permits the REST and `/mcp` paths with the same
 workload credential substitution. The protocol tests exercise substitution at that boundary.
 
@@ -266,7 +270,11 @@ an unlinked or expired provider starts unavailable, and its supervisor connects 
 shared linkage authority reports a current link. It keeps the group unavailable across connection,
 catalog, and authorization failures and creates a fresh FastMCP client for the next connection.
 The HTTP auth hook resolves the current linkage token for every request, so ordinary token refresh
-does not require restarting the service. Startup unwinds already-opened adapters, including a
+does not require restarting the service. Operators manage linkage at `GET /v1/operator/mcp-servers`
+(every configured server's status), `GET /v1/operator/mcp-servers/{server_id}/linkage`, and
+`POST .../linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
+unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only an unconsumed,
+unexpired flow matching `state`. Startup unwinds already-opened adapters, including a
 partially started adapter; shutdown stops service tasks before closing MCP clients/refresh tasks,
 then Kubernetes and database resources. After startup, catalog-refresh failures retain the landed
 adapter's unavailable-and-retry behavior.
@@ -279,14 +287,15 @@ transactionally if unexpected preexisting rows exist.
 
 ## Credentialless upstream echo auto-allow
 
-`fixture_auto_allow` defaults to absent. Staging opts in for the reviewed `everything` group,
-bound to the existing upstream image described in [the deployment note](../docs/mcp_fixture_choice.md).
+`fixture_auto_allow` defaults to absent. The testing environment
+(`cluster/k8s/agentplane-testing/actions/`) opts in for the reviewed `everything` group, bound to
+the upstream `mcp-everything` image described in [the deployment note](../docs/mcp_fixture_choice.md).
 The provider allows only that group's `echo` Action with exactly one string `message` argument
 of at most 200 characters, from an authenticated in-scope Kubernetes Sandbox UID. Unavailable
 or missing discovery, other tools, extra arguments, and untrusted identities get no allow vote.
 The MCP adapter still checks the current backend schema. Deny dominance and human fallback
 remain unchanged; opting in does not enable the operator API or grant other upstream tools.
-No custom MCP server or image is built. The real staging test is
+No custom MCP server or image is built. The real test against testing is
 `//x/agentplane/acceptance:test_mcp`: it tasks real agents with discovery, submission, event/result
 polling and a JSON report checked against the upstream echo result.
 
@@ -314,28 +323,34 @@ Its minimal v0 file-backed bearer adapter retains only a digest and is not a cla
 Kubernetes ServiceAccount lists are the final operator design.
 
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
-creates tables at startup. `:image` and `:migration_image` are separate OCI targets. The staging
-manifests give the service its own PostgreSQL cluster and credentials rather than coupling it to the
-integration app database.
+creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
+environment gives the service its own `actions` database and login role on the namespace's shared
+CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/db/{postgres-cluster,databases}.yaml`),
+separate from the integration app's database.
 
 ## MCP executor transports
 
 `McpActionGroupExecutor.from_group` owns one persistent MCP connection for a group. Its
 `McpExecutorBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
-`transport: stdio`) or a credentialless streamable-HTTP endpoint:
+`transport: stdio`) or a streamable-HTTP endpoint:
 
 ```yaml
 transport: streamable-http
 url: http://127.0.0.1:8000/mcp
-auth: none
+auth: none # or `oauth` with `server_id`, or `static_bearer` with `bearer_file`
 ```
 
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
 JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
 validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
-exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and authentication
-or header settings. The production composition uses this same transport selection. OAuth and
-credential profiles are outside this seam. Invalid discovered schemas or duplicate supported tool names
+exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
+header settings. `auth: none` sends no credentials. `auth: oauth` names a configured `mcp_servers`
+linkage through `server_id`; `from_group_with_linkage` attaches an `httpx` auth hook that resolves
+that linkage's current access token on every request, and the group stays unavailable until the
+linkage authority reports a current link ([§ Action catalog](#action-catalog)). `auth: static_bearer`
+reads `bearer_file`, a mounted secret, once when the transport is built and sends it as the bearer
+on every request; an unreadable or empty file makes the group unavailable. The production
+composition uses this same transport selection. Invalid discovered schemas or duplicate supported tool names
 make the entire group unavailable, clearing stale Actions. Invalid live schemas are refused before
 `tools/call`. Production startup and shutdown report only the group and failure category, not raw
 transport exceptions or endpoint values.
@@ -345,8 +360,11 @@ transport exceptions or endpoint values.
 `operator_oidc` selects pinned RS256 JWT verification for the Action audience. Authentik's target
 provider policy governs who can obtain that audience; the service does not maintain a second subject
 allowlist. It is mutually exclusive with the legacy file-backed adapter; there is no fallback. The
-destination records the actual token issuer and subject, not a shared BFF identity. Deployment is
-still disabled until the explicit Authentik federation target is configured. See
+destination records the actual token issuer and subject, not a shared BFF identity. Both deployed
+environments set `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the `operator-oidc` key of their
+`agentplane-action-federation` ConfigMap
+(`cluster/k8s/agentplane-{staging,testing}/actions/configmap-action-federation.yaml`); staging
+targets the Authentik `agentplane-actions` provider. See
 [`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.
 
 ## Action live updates and approval Web Push
@@ -364,8 +382,13 @@ The optional `web_push` configuration enables browser subscription storage and b
 - `public_base_url`: integration-app origin used for Action links;
 - `allowed_push_hosts`: exact reviewed HTTPS browser push-service hostnames.
 
-No push configuration is enabled by this code change. Browser subscriptions are registered through
-operator-authenticated `/v1/operator/push/subscriptions`; the integration app forwards its browser
+Staging enables it (`cluster/k8s/agentplane-staging/actions/settings.yaml`): the VAPID key comes
+from the SOPS Secret `agentplane-staging-web-push-vapid` through
+`AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM`, `public_base_url` is the staging app origin, and
+the allowed hosts are FCM and Mozilla's push service. Testing configures no `web_push`; its
+registration route answers 503. Browser subscriptions are registered through operator-authenticated
+`POST /v1/operator/push/subscriptions`, listed by `GET`, and removed by `DELETE ...?endpoint=`
+(404 when the caller holds no such subscription); the integration app forwards its browser
 management requests through federation, so Authentik controls access at registration and on later
 operator API requests. Stored subscriptions are notification-only and do not confer decision
 authority. Background delivery has no operator bearer with which to recheck Authentik policy, so

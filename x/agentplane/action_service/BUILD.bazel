@@ -799,6 +799,7 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
+        "//x/agentplane/acceptance:dcr",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//cryptography",
         "@pypi//fastapi",
@@ -811,6 +812,8 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
+        "@pypi//tenacity",
+        "@pypi//uvicorn",
     ],
 )
 

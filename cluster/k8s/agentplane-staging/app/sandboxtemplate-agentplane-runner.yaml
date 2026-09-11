@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-20260911033622-3df6f30 # {"$imagepolicy": "flux-system:agentplane-runner"}
+          image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-20260911063431-3f926fb # {"$imagepolicy": "flux-system:agentplane-runner"}
           # The image's entrypoint is the runner's Bazel launcher, which finds its runfiles next to
           # its own real path; a command override through a symlink loses them and the container
           # exits at once. Only the arguments are set here.

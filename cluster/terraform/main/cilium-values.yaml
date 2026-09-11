@@ -45,7 +45,9 @@ gatewayAPI:
     enabled: true
     nodes:
       # The Gateway Service needs a local proxy backend on every client node,
-      # including roaming workers when connected. Public DNS remains OVH-only.
+      # including roaming workers when connected, so host ports 80/443 stay
+      # reserved for its listeners on every cluster node. Public DNS remains
+      # OVH-only.
       matchLabels: {}
 
 # Standalone Envoy DaemonSet (separate from cilium-agent) for cleaner lifecycle.
