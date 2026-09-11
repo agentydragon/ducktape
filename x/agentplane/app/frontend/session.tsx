@@ -35,7 +35,18 @@ import {
 } from "./client";
 import "./session.css";
 
-import { EMPTY, reduce, timeline, type InputState, type Item, type Row, type SessionState, type Turn } from "./events";
+import {
+  EMPTY,
+  groupItems,
+  reduce,
+  timeline,
+  type InputState,
+  type Item,
+  type ItemGroup,
+  type Row,
+  type SessionState,
+  type Turn,
+} from "./events";
 import { FrameView } from "./frame";
 import { Markdown } from "./markdown";
 import { AttachedSchema, EventSchema, ItemKind, Provider, TurnStatus } from "./protocol_pb";
@@ -116,6 +127,49 @@ function ItemView({ item }: { item: Item }): JSX.Element {
       {item.output && <Code block>{item.output}</Code>}
     </Paper>
   );
+}
+
+/** "12 tool calls, 3 reasoning steps": each kind counted separately, so a mixed run still reads
+ * at a glance without claiming a false total. */
+function summarizeRun(items: Item[]): string {
+  const toolCalls = items.filter((item) => item.kind === ItemKind.TOOL_CALL).length;
+  const reasoning = items.filter((item) => item.kind === ItemKind.REASONING).length;
+  const parts: string[] = [];
+  if (toolCalls > 0) parts.push(`${toolCalls} tool call${toolCalls === 1 ? "" : "s"}`);
+  if (reasoning > 0) parts.push(`${reasoning} reasoning step${reasoning === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+
+/** A run of tool calls/reasoning collapsed behind a summary, so a long chain of intermediate
+ * steps does not bury the answer that follows it; expanding shows each step as usual. */
+function ItemRunView({ items }: { items: Item[] }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <Accordion variant="contained" chevronPosition="left" value={open ? "run" : null} onChange={() => setOpen(!open)}>
+      <Accordion.Item value="run">
+        <Accordion.Control>
+          <Group gap="xs">
+            <Badge variant="light">{summarizeRun(items)}</Badge>
+            {items.some((item) => !item.completed) && <Badge color="yellow">streaming</Badge>}
+            {items.some((item) => item.succeeded === false) && <Badge color="red">failed</Badge>}
+          </Group>
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Stack gap="xs">
+            {items.map((item) => (
+              <ItemView key={item.id} item={item} />
+            ))}
+          </Stack>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  );
+}
+
+function ItemGroupView({ group }: { group: ItemGroup }): JSX.Element {
+  if (group.kind === "single") return <ItemView item={group.item} />;
+  if (group.items.length === 1) return <ItemView item={group.items[0]} />;
+  return <ItemRunView items={group.items} />;
 }
 
 function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
@@ -399,7 +453,9 @@ export function SessionView({
                     .map((input) => (
                       <InputView key={input.id} input={input} />
                     ))}
-                  {turn.itemIds.map((id) => state.items[id] && <ItemView key={id} item={state.items[id]} />)}
+                  {groupItems(turn.itemIds.flatMap((id) => (state.items[id] ? [state.items[id]] : []))).map((group) => (
+                    <ItemGroupView key={group.kind === "single" ? group.item.id : group.items[0].id} group={group} />
+                  ))}
                 </Stack>
               ))}
               {state.inputs
