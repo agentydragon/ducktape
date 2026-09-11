@@ -233,7 +233,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         await executor.close()
 
 
-async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text(execution_lease: ExecutionLease) -> None:
+async def test_tool_error_output_is_a_successful_result(execution_lease: ExecutionLease) -> None:
     mcp = FastMCP("demo")
 
     @mcp.tool
@@ -248,9 +248,9 @@ async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text(e
         result = await executor.execute(
             _request(action=ActionIdentity(group=GROUP_KEY, name="explode"), arguments={}), execution_lease
         )
-        assert result.state is ExecutionState.FAILED
-        assert result.error == {"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
-        assert "xyz-secret-123" not in str(result.error)
+        assert result.state is ExecutionState.SUCCEEDED
+        assert result.error is None
+        assert result.result == {"is_error": True, "content": ["credential xyz-secret-123 rejected by upstream"]}
         assert group.available
         assert executor._connection is not None
         assert executor._connection.client.is_connected()

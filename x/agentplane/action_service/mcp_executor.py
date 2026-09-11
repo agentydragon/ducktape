@@ -596,21 +596,26 @@ class McpActionGroupExecutor:
             self._session_failed(connection)
             raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from None
 
-        if result.is_error:
-            error_kind = _mcp_error_kind(result)
-            if error_kind == "execution_unknown":
-                raise ExecutionOutcomeUnknownError("MCP backend reported an unknown execution outcome")
-            return ExecutionResult(
-                state=ExecutionState.FAILED, error={"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
-            )
+        if result.is_error and _mcp_error_kind(result) == "execution_unknown":
+            raise ExecutionOutcomeUnknownError("MCP backend reported an unknown execution outcome")
+        # A tool's error output is one of its two valid answers, not an execution failure: the
+        # backend ran the call and replied. Only transport and outcome uncertainty fail here.
         return ExecutionResult(state=ExecutionState.SUCCEEDED, result=_safe_result(result))
 
 
 def _safe_result(result: Any) -> JsonValue:
+    if result.is_error:
+        payload: dict[str, JsonValue] = {"is_error": True, "content": _texts(result)}
+        if result.structured_content is not None:
+            payload["structured_content"] = cast(JsonValue, result.structured_content)
+        return payload
     if result.structured_content is not None:
         return cast(JsonValue, result.structured_content)
-    texts: list[JsonValue] = [block.text for block in result.content if isinstance(block, mcp.types.TextContent)]
-    return {"content": texts}
+    return {"content": _texts(result)}
+
+
+def _texts(result: Any) -> list[JsonValue]:
+    return [block.text for block in result.content if isinstance(block, mcp.types.TextContent)]
 
 
 def _mcp_error_kind(result: Any) -> str | None:

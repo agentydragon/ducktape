@@ -117,7 +117,7 @@ class FakeMcpServer:
                 # The peer accepted the call; a missing result cannot prove it did not execute.
                 return Response(status_code=503)
             result = {
-                "content": [{"type": "text", "text": "test-only private backend error" if self.tool_error else "hi"}],
+                "content": [{"type": "text", "text": "backend tool error text" if self.tool_error else "hi"}],
                 "isError": self.tool_error,
             }
             if not self.tool_error:
@@ -284,7 +284,7 @@ async def test_http_list_failure_refuses_dispatch(
     assert fake_server.calls == []
 
 
-async def test_http_tool_error_is_safe_failure(
+async def test_http_tool_error_output_is_a_successful_result(
     execution_lease: ExecutionLease,
     executor: McpActionGroupExecutor,
     fake_server: FakeMcpServer,
@@ -292,8 +292,9 @@ async def test_http_tool_error_is_safe_failure(
 ) -> None:
     fake_server.tool_error = True
     result = await executor.execute(execution_request, execution_lease)
-    assert result.state is ExecutionState.FAILED
-    assert result.error == {"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
+    assert result.state is ExecutionState.SUCCEEDED
+    assert result.error is None
+    assert result.result == {"is_error": True, "content": ["backend tool error text"]}
     assert len(fake_server.calls) == 1
 
 
@@ -541,7 +542,7 @@ async def test_production_http_composition_one_execution_no_replay(
         await service.decide(pending.id, decision, operator)
         expected = {
             "success": ActionState.SUCCEEDED,
-            "tool_error": ActionState.FAILED,
+            "tool_error": ActionState.SUCCEEDED,
             "unknown": ActionState.EXECUTION_UNKNOWN,
             "schema_mismatch": ActionState.FAILED,
             "invalid_schema": ActionState.FAILED,
@@ -550,13 +551,15 @@ async def test_production_http_composition_one_execution_no_replay(
             while (final := await service.get(pending.id, caller)).state is not expected:
                 pass  # Each database read yields; wait for durable completion, not an elapsed delay.
         assert final.execution is not None
-        assert final.execution.result == ({"echoed": "hi", "api_key": "[redacted]"} if outcome == "success" else None)
-        if outcome != "success":
+        assert final.execution.result == {
+            "success": {"echoed": "hi", "api_key": "[redacted]"},
+            "tool_error": {"is_error": True, "content": ["backend tool error text"]},
+        }.get(outcome)
+        if outcome not in {"success", "tool_error"}:
             assert final.execution.error is not None
             assert (
                 final.execution.error["kind"]
                 == {
-                    "tool_error": "mcp_tool_error",
                     "unknown": "execution_outcome_unknown",
                     "schema_mismatch": "incompatible_action_schema",
                     "invalid_schema": "mcp_invalid_schema",

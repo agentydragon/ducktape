@@ -140,5 +140,5 @@ Discovery exposes replica-local, credential-safe lifecycle diagnostics, never st
 Approved work remains durably unclaimed during temporary backend outages. Revoked authority
 still becomes terminal; removed Actions and incompatible schemas are not treated as outages.
 Execution pins one connection generation and never automatically replays an ambiguous call.
-Normal tool errors fail only the Action. Draining stops new claims and reconnects while keeping
+A tool's own error output is one of its two valid answers and completes the Action; the caller receives it flagged as an error. Only unreachable backends and unknown outcomes fail an execution. Draining stops new claims and reconnects while keeping
 in-flight execution leases and connections through bounded result persistence.
