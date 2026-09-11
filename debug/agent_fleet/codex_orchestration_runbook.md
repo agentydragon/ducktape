@@ -72,7 +72,7 @@ broker — **least durable**; keep it inside one active window or move it to a p
 2. **`codex app-server`** — one long-lived process serving **multiple threads**, with **`turn/steer`**
    (inject mid-turn), **`turn/interrupt`** (abort), and **server→client approval requests**. The only
    interface with true mid-turn back-and-forth; heaviest to drive. Transport is `--listen <url>`:
-   `stdio://` (what we drove, and what `haku/runner` uses) **or a network websocket URL** — the latter
+   `stdio://` (what we drove, and what the since-removed `haku/runner` used) **or a network websocket URL** — the latter
    is the one that survives a pod boundary (§ Running the fleet as cluster pods).
 3. **`codex mcp-server`** — Codex exposed as MCP tools (`codex`, `codex-reply`). **A dead end for a
    durable fleet**, read from source at `rust-v0.150.1` (not run): it is **stdio-only, deprecated at
@@ -222,14 +222,14 @@ required; optional `cwd`, `model`, `approval-policy` ∈ {`on-request`,`never`},
 **`codex-reply`** (continue by `threadId` + `prompt`). **Net: mcp-server is out; `app-server` is the
 live/mid-turn path; `exec`/`resume` is the genuinely-durable turn-based path.**
 
-### The cluster already runs codex app-server in a pod
+### The cluster ran codex app-server in a pod (removed in #5992)
 
-`haku/runner`'s codex harness (`haku-runtime-sandbox` ns) spawns `codex app-server --listen stdio://`,
-holds the NDJSON stdio channel, and bridges each frame outbound over a WebSocket to haku-console with
+`haku/runner`'s codex harness (`haku-runtime-sandbox` ns) spawned `codex app-server --listen stdio://`,
+held the NDJSON stdio channel, and bridged each frame outbound over a WebSocket to haku-console with
 replay across reconnects (`haku/runner/{harness,transport,backend}.py`). `approvalPolicy:never`,
 `danger-full-access`, warm pool `replicas:0` (on-demand). So the durable-stdio-app-server-in-a-pod pattern
-is **built** — but it is a Console chat runtime, not exposed to an external agent. Tier-2 below is "expose
-the existing runtime," not "build it."
+was **proven** as a Console chat runtime — and then removed with the whole hosted-agent stack (#5992), so
+Tier-2 below is "rebuild it," with that code in git history as the reference.
 
 ### Three sandbox systems — don't conflate them
 
@@ -238,7 +238,7 @@ the existing runtime," not "build it."
   `stdin=False`, buffered output, 5-min / 100 KB cap** (`haku/sandbox/kubernetes_client.py`) — it cannot
   hold a live stdio JSON-RPC channel, and a web session has **no** direct `kubectl exec`/attach RBAC. Fine
   for one-shot `codex exec`; useless for `app-server` stdio.
-- **`haku/runner` runtimes** (`codex_app_server`) → the pod pattern above.
+- **`haku/runner` runtimes** (`codex_app_server`) → the pod pattern above; gone since #5992.
 - **legacy `agent-workspaces`** → image `agent-workspace` bakes claude+codex+node
   (`cluster/k8s/agents/agent-sandbox/workspace-image/Dockerfile`), region-pinned OVH.
 
@@ -257,7 +257,7 @@ idle-timer field, so a claim with no exec activity is reaped.
    `exec_sandbox`. Blockers, both in README § Next steps: point a template the MCP pool serves at a codex
    image, and reflect a worker LiteLLM key. Costs: 5-min/100 KB per exec, no live stream, no mid-turn.
 2. **Live / mid-turn:** drive `codex app-server` — a network `--listen` reachable via ingress, or expose
-   the existing `haku/runner` runtime to external agents via a haku-console tool. Not mcp-server.
+   the removed `haku/runner` runtime's pattern as a haku-console tool. Not mcp-server.
 
 ## Not yet paved / limitations
 

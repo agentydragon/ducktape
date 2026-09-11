@@ -1,6 +1,9 @@
 # Agent SDK loop in a Haku sandbox, driven from haku-console
 
-Status: **built, and this plan is the record of why rather than a queue of work.** The 2026-07-31
+Status: **built, then removed** — the hosted-agent runtime described below (the in-sandbox bridge,
+the console's session runtime and chat surface, the Matrix room) was torn out in #5992; the console
+stays the MCP/approval shell in front of agents running elsewhere. This plan is the record of why the
+runtime was shaped as it was, not a queue of work. The 2026-07-31
 Kubernetes probe resolved the two architecture-blocking mechanical questions — subscription OAuth
 works headlessly through the Agent SDK, and the bundled Claude CLI works through Haku's
 TLS-intercepting forced proxy — and the runtime that answer unblocked is running: the
@@ -127,7 +130,7 @@ around Claude Code's stdin/stdout, deriving a versioned launch frame from `Claud
 pinning it against the SDK's `SubprocessCLITransport` with a compatibility test.
 
 **Built, and the SDK is out of the loop entirely** — <cli_protocol_ownership.md> is the decision and
-its reasoning. The bridge is `//haku/runner:runner_bin`, which starts the pinned Claude
+its reasoning. The bridge was `//haku/runner:runner_bin` (removed in #5992), which started the pinned Claude
 Code executable the sandbox image supplies; the console drives the wire itself
 (`console/x/claude_code/client.py` replaces `ClaudeSDKClient`, `runner/claude/options.py` replaces `ClaudeAgentOptions` plus that private argv
 builder, and `test_claude_options.py` pins the argv where the compatibility test used to). The WebSocket

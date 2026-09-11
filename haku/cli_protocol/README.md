@@ -19,7 +19,8 @@ CLI version.
 | <probes/>                                | Runnable experiments, each printing every frame in both directions |
 | <testdata/>                              | One scrubbed capture of a real session, kept as evidence           |
 
-The Claude provider client that uses all this is the runner's `haku/runner/claude/harness.py`.
+Nothing in the tree drives the protocol today: its consumer, the hosted-agent runtime's Claude
+harness, went with that runtime (#5992). What remains is the reference and the probes.
 
 ## Running a probe
 
