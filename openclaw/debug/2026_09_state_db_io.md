@@ -138,7 +138,7 @@ rotational disk.
 
 ## Turning the verifier off
 
-There is no supported switch. The call site in `server-start` carries one guard:
+Upstream has no switch. The call site in `server-start` carries one guard:
 
 ```js
 if (!minimalTestGateway) {
@@ -156,12 +156,16 @@ config-shaped lever is target collection — `resolveOpenClawStateSqlitePath` pl
 `listOpenClawRegisteredAgentDatabases`, filtered by `existsSync` — so exempting
 an agent database means deregistering the agent.
 
-<../patch-openclaw-npm-dist.mjs> is where a gate belongs. It already
-content-matches `dist/*.js` rather than filenames, whose chunk hashes churn every
-release; replaces hardcoded constants with fail-fast environment reads that keep
-the upstream default; and fails the build when a pattern does not match exactly
-once. `OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK`, which this Deployment already
-sets, was minted there.
+<../patch-openclaw-npm-dist.mjs> therefore mints `OPENCLAW_DATABASE_VERIFY`
+(`on`, the upstream behaviour, or `off`), guarding the initial `schedule()` call
+and logging the disable. That script content-matches `dist/*.js` rather than
+filenames, whose chunk hashes churn every release, and fails the build when a
+pattern does not match exactly once — the same mechanism behind
+`OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK`. `public-coder-agent` sets it `off`;
+the Haku spike, sharing the same image build, keeps the default.
+
+It takes effect only once the image is rebuilt: the variable does not exist in a
+bundle that has not been through the patch script.
 
 What gating it costs: this verifier is the only thing that quarantines a
 corrupted state or agent database.

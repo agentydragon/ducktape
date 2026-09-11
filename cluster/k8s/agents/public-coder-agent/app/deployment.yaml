@@ -96,6 +96,27 @@ spec:
             # and full integrity checks remain available offline.
             - name: OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK
               value: none
+            # Turn off the gateway's background database integrity verifier.
+            # Not an upstream knob -- openclaw/patch-openclaw-npm-dist.mjs adds
+            # it, because upstream guards the verifier only behind a vitest-only
+            # test flag and hardcodes its schedule.
+            #
+            # It forks a worker that copies every registered agent database out
+            # of this volume into the container filesystem and scans the copy:
+            # 2.25 GiB read and 1.59 GiB written per pass against a ~2.1 GB
+            # database set, on the rotational disk this agent already saturates.
+            # It runs five minutes after start and then daily -- but this gateway
+            # aborts on the V8 heap limit every ~2h50m, so the daily pass never
+            # arrives and the five-minute one restarts from zero every boot. It
+            # has not been observed to complete.
+            #
+            # Nothing else quarantines a corrupted state or agent database, so
+            # this trades a check that is not finishing for the I/O it costs.
+            #
+            # CLEANUP(added 2026-09-11): restore "on" once the gateway stops
+            # aborting on the heap limit, so the daily pass can actually run.
+            - name: OPENCLAW_DATABASE_VERIFY
+              value: "off"
             # Keep provider, compaction, and agent-loop debug records on
             # stdout so cluster logging captures them in Loki. OpenClaw's
             # sensitive-value redaction remains enabled at its default.
