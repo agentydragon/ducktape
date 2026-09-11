@@ -27,12 +27,8 @@ from x.agentplane.action_service.runtime import running_executor
 @pytest.fixture(scope="module")
 def rendered() -> list[dict[str, Any]]:
     kustomize = get_required_path("multitool/tools/kustomize/kustomize")
-    root = get_required_path("_main/cluster/k8s/agentplane-testing/actions/kustomization.yaml").parent.parent
-    return [
-        document
-        for directory in ("actions", "mcp-everything")
-        for document in yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(root / directory)]))
-    ]
+    actions = get_required_path("_main/cluster/k8s/agentplane-testing/actions/kustomization.yaml").parent
+    return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(actions)])))
 
 
 @pytest.fixture
