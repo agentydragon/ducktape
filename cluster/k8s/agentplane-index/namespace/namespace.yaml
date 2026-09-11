@@ -4,6 +4,7 @@ metadata:
   name: agentplane-index
   labels:
     name: agentplane-index
+    goldilocks.fairwinds.com/enabled: "false"
     rbac.ducktape.io/agent-readable-logs: "true"
   annotations:
     description: Single-repository semantic indexes for ducktape and haku-state.
