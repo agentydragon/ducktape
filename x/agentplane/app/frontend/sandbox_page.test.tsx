@@ -52,10 +52,15 @@ afterAll(() => vi.unstubAllGlobals());
 
 async function render(sessions: (request: Request) => Promise<Response>): Promise<ReturnType<typeof vi.fn>> {
   fetchMock.mockImplementation((request: Request) => {
-    if (new URL(request.url).pathname === "/models") {
+    const path = new URL(request.url).pathname;
+    if (path === "/models") {
       return Promise.resolve(Response.json({ claude: ["test-model"], codex: [] }));
     }
-    return sessions(request);
+    if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
+      return Promise.resolve(Response.json([]));
+    }
+    if (path.startsWith("/sandboxes/startup-test/sessions")) return sessions(request);
+    throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
   container = document.createElement("div");
   document.body.append(container);
