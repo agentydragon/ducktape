@@ -1,13 +1,15 @@
 # Agentplane Git index
 
-A standalone, single-collection semantic search service. It polls one Flux `GitRepository`,
-downloads its published tar.gz artifact, verifies the SHA-256 digest, and incrementally
-publishes searchable file versions. No Agentplane app or Haku Console service is required.
+A standalone, single-collection semantic search service. It keeps a bare clone of one
+branch of one Git remote, fetches it on every poll, and incrementally publishes
+searchable file versions from the tree of the branch tip. No Agentplane app, Haku Console
+service, or Flux source is required.
 
 Only strict UTF-8 file contents are embedded. NUL-containing text is also excluded because
 PostgreSQL text columns cannot store it. Excluded files remain in snapshot membership with
 zero chunks, so a text-to-binary change removes the old searchable version. There is no
-extension-based filter or encoding detection/conversion.
+extension-based filter or encoding detection/conversion; `IGNORE` patterns are the only
+way to leave a path out of a snapshot.
 
 The container is `git.allegedly.works/ducktape-ci/agentplane-index`, published by the image
 roster after its test gate passes. Use a pinned published tag. The Bazel binary is
@@ -17,23 +19,27 @@ roster after its test gate passes. Use a pinned published tag. The Bazel binary 
 
 Flags use kebab case; environment variables have prefix `AGENTPLANE_INDEX_`.
 
-| Required variable                 | Meaning                                                                          |
-| --------------------------------- | -------------------------------------------------------------------------------- |
-| `DATABASE_URL`                    | Dedicated `postgresql+asyncpg://` database URL                                   |
-| `SOURCE_NAMESPACE`, `SOURCE_NAME` | Flux `GitRepository` to follow                                                   |
-| `EMBEDDING_URL`                   | OpenAI-compatible base URL, including `/v1`                                      |
-| `EMBEDDING_MODEL`                 | Exact model identity returned by the embedding endpoint                          |
-| `EMBEDDING_API_KEY`               | Provider credential; a placeholder is sufficient for an unauthenticated provider |
-| `READ_TOKEN`                      | Nonempty bearer credential for search and status                                 |
+| Required variable   | Meaning                                                                          |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `DATABASE_URL`      | Dedicated `postgresql+asyncpg://` database URL                                   |
+| `REPOSITORY_URL`    | Git remote: an HTTP(S) URL or a local path                                       |
+| `BRANCH`            | Branch whose tip is indexed                                                      |
+| `CHECKOUT_DIR`      | Directory for the bare clone; created on first use, re-cloned if it is empty     |
+| `EMBEDDING_URL`     | OpenAI-compatible base URL, including `/v1`                                      |
+| `EMBEDDING_MODEL`   | Exact model identity returned by the embedding endpoint                          |
+| `EMBEDDING_API_KEY` | Provider credential; a placeholder is sufficient for an unauthenticated provider |
+| `READ_TOKEN`        | Nonempty bearer credential for search and status                                 |
 
-Optional settings include `QUERY_INSTRUCTION`, `POLL_SECONDS` (30),
+Optional settings include `GIT_USERNAME` + `GIT_PASSWORD` (set together; HTTP basic auth
+for the remote), `GIT_CA_BUNDLE` (PEM bundle for HTTPS remotes — libgit2 does not read
+`SSL_CERT_FILE`), `IGNORE` (gitignore-syntax patterns, one per line; an ignored directory
+is never descended), `QUERY_INSTRUCTION`, `POLL_SECONDS` (30),
 `EMBEDDING_TIMEOUT_SECONDS` (60), `GC_SECONDS` (3600), `GC_GRACE_SECONDS` (86400),
-`HOST` (`0.0.0.0`), `PORT` (8080), and `KUBECONFIG` (omit for in-cluster credentials).
-`CHUNK_BUDGET` and `ARCHIVE_LIMITS` accept JSON objects; archive limits must be positive integers.
-The default archive limits are 128 MiB compressed, 512 MiB expanded, 8 MiB per file,
-and 100,000 entries. Exceeding a limit rejects the whole snapshot; use Flux ignore rules
-or explicitly raise limits for larger sources. Archive contents are held in memory during
-validation, so size the pod for expanded input plus parsing and database buffers.
+`HOST` (`0.0.0.0`), and `PORT` (8080). `CHUNK_BUDGET` and `SNAPSHOT_LIMITS` accept JSON
+objects; snapshot limits must be positive integers. The default snapshot limits are 512 MiB
+in total, 8 MiB per file, and 100,000 files. Exceeding a limit rejects the whole snapshot;
+use `IGNORE` or explicitly raise limits for larger sources. Snapshot contents are held in
+memory during ingestion, so size the pod for the tree plus parsing and database buffers.
 
 Provide PostgreSQL with the pgvector extension available. Startup creates the extension and
 the service-owned `agentplane_index` schema, so the initial database role needs those
@@ -41,23 +47,14 @@ privileges. Existing Haku tables and migrations are not used. This initial schem
 upgrade migrations; incompatible future changes must ship an explicit migration or require
 a separate database. Startup rejects a changed model or chunking configuration.
 
-The worker needs Kubernetes `get` on the named resource, HTTP access to source-controller's
-artifact endpoint, and access to PostgreSQL and the embedding endpoint. It never needs Git
-credentials. A Role in the source namespace can restrict its rule to:
-
-```yaml
-apiGroups: [source.toolkit.fluxcd.io]
-resources: [gitrepositories]
-resourceNames: [your-source]
-verbs: [get]
-```
-
-Bind that Role to the worker's ServiceAccount, even if the worker runs in another namespace.
-Polling needs neither `list` nor `watch`. Deploy one replica initially; database advisory
-locks also serialize mutations from overlapping replicas during a rollout. Give the pod a
-Service on port 8080 with readiness/liveness probes at `/healthz`. Mount secrets through
-`secretKeyRef` or `envFrom`; configure `imagePullSecrets` for the Forgejo registry. A typical
-Deployment container configuration is:
+The worker needs network access to the Git remote, PostgreSQL, and the embedding endpoint,
+and a writable `CHECKOUT_DIR` sized for the clone. It needs no Kubernetes API access. A
+private remote gets `GIT_USERNAME`/`GIT_PASSWORD` from a Secret; a public one needs nothing.
+Deploy one replica initially; database advisory locks also serialize mutations from
+overlapping replicas during a rollout. Give the pod a Service on port 8080 with
+readiness/liveness probes at `/healthz`. Mount secrets through `secretKeyRef` or `envFrom`;
+configure `imagePullSecrets` for the Forgejo registry. A typical Deployment container
+configuration is:
 
 ```yaml
 name: index
@@ -66,10 +63,19 @@ envFrom:
   - secretRef:
       name: agentplane-index
 env:
-  - name: AGENTPLANE_INDEX_SOURCE_NAMESPACE
-    value: flux-system
-  - name: AGENTPLANE_INDEX_SOURCE_NAME
-    value: your-source
+  - name: AGENTPLANE_INDEX_REPOSITORY_URL
+    value: https://git.example/owner/repository.git
+  - name: AGENTPLANE_INDEX_BRANCH
+    value: main
+  - name: AGENTPLANE_INDEX_CHECKOUT_DIR
+    value: /var/lib/agentplane-index/repository
+  - name: AGENTPLANE_INDEX_IGNORE
+    value: |
+      generated/
+      *.gz
+volumeMounts:
+  - name: repository
+    mountPath: /var/lib/agentplane-index
 ports:
   - containerPort: 8080
 readinessProbe:
@@ -78,7 +84,7 @@ livenessProbe:
   httpGet: { path: /healthz, port: 8080 }
 ```
 
-Choose the source and dedicated database when deploying. Place the deployment behind the
+Choose the remote and dedicated database when deploying. Place the deployment behind the
 intended private service boundary and use TLS for
 bearer-authenticated requests outside a trusted internal network.
 
@@ -87,10 +93,10 @@ bearer-authenticated requests outside a trusted internal network.
 `GET /status` and `POST /search` require `Authorization: Bearer <READ_TOKEN>`.
 Search accepts `{"query":"how are approvals handled?","limit":10}` (limit 1–100).
 Responses contain `hits`, `status`, and an optional `warning`. Hits carry repository URL,
-revision, artifact digest, path, byte range, exact embedded text, and cosine similarity.
+revision, tree id, path, byte range, exact embedded text, and cosine similarity.
 The status contains desired/completed revisions, pending/served file counts, and separate
 source, embedding, and garbage-collection error classes. Error details are in worker logs.
-`GET /healthz` checks database access; source/provider outages appear in status rather than
+`GET /healthz` checks database access; remote/provider outages appear in status rather than
 forcing pod restarts. Search still requires the embedding endpoint to embed the query.
 
 ## Storage and updates
@@ -98,8 +104,8 @@ forcing pod restarts. Search still requires the embedding endpoint to embed the 
 `snapshots` and `snapshot_files` describe accepted manifests. `state` holds desired and
 completed snapshot pointers and the pinned configuration. `served_files` is the per-path
 publication pointer. Blobs, chunk layouts, exact content, and model-specific embeddings
-are cached separately. Snapshot identity includes artifact digest, revision, and repository
-URL: two revisions can contain identical bytes while needing different citations.
+are cached separately. Snapshot identity includes tree id, revision, and repository
+URL: two revisions can contain identical trees while needing different citations.
 
 The source loop accepts a validated manifest atomically, removes deleted paths, and advances
 unchanged paths' provenance immediately. The embedding loop processes pending files with
@@ -128,6 +134,6 @@ bbr test //x/agentplane/indexing:all
 
 The store/API tests use PostgreSQL with pgvector on RBE. They cover publication and provider
 failure boundaries, revision supersession, embedding reuse, restart, garbage collection,
-authentication, and the artifact-to-search path. Source tests cover Flux readiness, digest
-verification, archive limits, and unsafe entries. Flux's artifact contract is documented in
-the [GitRepository reference](https://fluxcd.io/flux/components/source/gitrepositories/).
+authentication, and the commit-to-search path. Source tests drive a throwaway upstream
+repository through commits and cover incremental fetches, ignore patterns, entry kinds
+(symlinks and submodules are skipped), snapshot limits, and a relocated remote.

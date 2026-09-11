@@ -65,7 +65,7 @@ def create_app(*, store: Store, embedder: Embedder, maintenance: Maintenance, re
         hits, snapshot_status = await store.search(vector, limit=body.limit)
         state = index_status(snapshot_status)
         warning = None
-        if state.index.desired_digest is None:
+        if state.index.desired_tree_id is None:
             warning = "No source snapshot has been indexed yet."
         elif state.index.updating:
             warning = "Index update in progress; results may include older file revisions. Consult each hit's citation."

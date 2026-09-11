@@ -45,7 +45,7 @@ class Base(DeclarativeBase):
 class Snapshot(Base):
     __tablename__ = "snapshots"
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    artifact_digest: Mapped[str] = mapped_column(Text)
+    tree_id: Mapped[str] = mapped_column(Text)
     revision: Mapped[str] = mapped_column(Text)
     repository_url: Mapped[str] = mapped_column(Text)
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -118,7 +118,7 @@ class Status:
     desired_revision: str | None
     desired_repository_url: str | None
     completed_revision: str | None
-    desired_digest: str | None
+    desired_tree_id: str | None
     pending_files: int
     served_files: int
     updating: bool
@@ -129,7 +129,7 @@ class Hit:
     path: str
     revision: str
     repository_url: str
-    artifact_digest: str
+    tree_id: str
     byte_start: int
     byte_end: int
     text: str
@@ -156,6 +156,15 @@ class Store:
             await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}"))
             await connection.run_sync(Base.metadata.create_all)
+            # CLEANUP(added 2026-09-11): drop once both deployed index databases have started
+            #   on a version with the git source (their snapshots table then has tree_id).
+            await connection.execute(
+                text(
+                    f"DO $$ BEGIN IF EXISTS (SELECT FROM information_schema.columns WHERE table_schema = '{SCHEMA}'"
+                    " AND table_name = 'snapshots' AND column_name = 'artifact_digest')"
+                    f" THEN ALTER TABLE {SCHEMA}.snapshots RENAME COLUMN artifact_digest TO tree_id; END IF; END $$"
+                )
+            )
         async with self._mutation() as session:
             state = await session.get(State, 1)
             if state is None:
@@ -165,8 +174,8 @@ class Store:
                     "Index configuration changed; use a new database for a different embedding/chunking regime"
                 )
 
-    async def ingest(self, *, digest: str, revision: str, repository_url: str, files: Mapping[str, bytes]) -> None:
-        snapshot_key = hashlib.sha256(json.dumps([digest, revision, repository_url]).encode()).hexdigest()
+    async def ingest(self, *, tree_id: str, revision: str, repository_url: str, files: Mapping[str, bytes]) -> None:
+        snapshot_key = hashlib.sha256(json.dumps([tree_id, revision, repository_url]).encode()).hexdigest()
         async with self._mutation() as session:
             state = await self._state(session)
             if state.desired == snapshot_key:
@@ -176,7 +185,7 @@ class Store:
                 session.add(
                     Snapshot(
                         id=snapshot_key,
-                        artifact_digest=digest,
+                        tree_id=tree_id,
                         revision=revision,
                         repository_url=repository_url,
                         accepted_at=datetime.now(UTC),
@@ -191,7 +200,7 @@ class Store:
                     session.add(SnapshotFile(snapshot=snapshot_key, path=path, blob=sha))
                 await session.flush()
             elif snapshot.revision != revision or snapshot.repository_url != repository_url:
-                raise ValueError("Artifact digest reused with different provenance")
+                raise ValueError("Tree reused with different provenance")
             else:
                 snapshot.unreachable_since = None
             state.desired = snapshot_key
@@ -221,9 +230,9 @@ class Store:
         return state
 
     @staticmethod
-    def _pending(digest: str) -> Select[tuple[SnapshotFile]]:
+    def _pending(snapshot_key: str) -> Select[tuple[SnapshotFile]]:
         return select(SnapshotFile).where(
-            SnapshotFile.snapshot == digest,
+            SnapshotFile.snapshot == snapshot_key,
             ~exists().where(ServedFile.path == SnapshotFile.path, ServedFile.blob == SnapshotFile.blob),
         )
 
@@ -333,7 +342,7 @@ class Store:
             desired_revision=desired.revision if desired else None,
             desired_repository_url=desired.repository_url if desired else None,
             completed_revision=completed.revision if completed else None,
-            desired_digest=desired.artifact_digest if desired else None,
+            desired_tree_id=desired.tree_id if desired else None,
             pending_files=pending or 0,
             served_files=await session.scalar(select(func.count()).select_from(ServedFile)) or 0,
             updating=bool(pending),
@@ -348,7 +357,7 @@ class Store:
                 ServedFile.path,
                 Snapshot.revision,
                 Snapshot.repository_url,
-                Snapshot.artifact_digest,
+                Snapshot.tree_id,
                 Chunk.byte_start,
                 Chunk.byte_end,
                 Content.content,
@@ -373,7 +382,7 @@ class Store:
                     path=row.path,
                     revision=row.revision,
                     repository_url=row.repository_url,
-                    artifact_digest=row.artifact_digest,
+                    tree_id=row.tree_id,
                     byte_start=row.byte_start,
                     byte_end=row.byte_end,
                     text=row.content,

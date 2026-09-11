@@ -109,6 +109,8 @@ resource "forgejo_collaborator" "claude" {
 #     credential Haku already holds in haku-sandbox, not a second one: this is the same
 #     agent on a different runtime, and a per-runtime Forgejo account would fragment the
 #     repo's history by which harness happened to be running.
+#   - agentplane-index: the haku-state index worker keeps its own bare clone of the repo
+#     and fetches with these credentials (cluster/k8s/agentplane-index). Read-only pull.
 # The canonical copy serves in-cluster scan runs / the self-hosted worker + the
 # haku-ui backend (operator clicks/feedback → Forgejo writes).
 resource "kubernetes_secret" "haku_forgejo_git" {
@@ -117,9 +119,9 @@ resource "kubernetes_secret" "haku_forgejo_git" {
     namespace = "haku-sandbox"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,haku-runtime-sandbox"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,haku-runtime-sandbox"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system,haku-runtime-sandbox,agentplane-index"
     }
   }
 

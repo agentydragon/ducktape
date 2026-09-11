@@ -18,7 +18,7 @@ REPOSITORY = "https://example.test/repo.git"
 
 
 async def ingest(store: Store, revision: str, files: dict[str, bytes]) -> None:
-    await store.ingest(digest=revision, revision=revision, repository_url=REPOSITORY, files=files)
+    await store.ingest(tree_id=revision, revision=revision, repository_url=REPOSITORY, files=files)
 
 
 async def drain(store: Store, embedder: FakeEmbedder) -> None:
@@ -63,7 +63,7 @@ async def test_identical_content_reuses_embeddings_and_updates_citations(store: 
     await drain(store, embedder)
     async with store.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(Embedding)) == 1
-    await store.ingest(digest="A", revision="B", repository_url=REPOSITORY, files={"a": b"alpha", "b": b"alpha"})
+    await store.ingest(tree_id="A", revision="B", repository_url=REPOSITORY, files={"a": b"alpha", "b": b"alpha"})
     assert not await store.advance(ExplodingEmbedder())
     assert {hit.revision for hit in (await store.search(await embedder.embed_query("alpha")))[0]} == {"B"}
 
@@ -145,6 +145,20 @@ async def test_search_remains_available_during_embedding(store: Store, embedder:
     finally:
         gated.release.set()
         await task
+
+
+async def test_initialize_renames_the_artifact_digest_column(engine: AsyncEngine, embedder: FakeEmbedder) -> None:
+    async with engine.begin() as connection:
+        await connection.exec_driver_sql("CREATE SCHEMA agentplane_index")
+        await connection.exec_driver_sql(
+            "CREATE TABLE agentplane_index.snapshots (id text PRIMARY KEY, artifact_digest text NOT NULL,"
+            " revision text NOT NULL, repository_url text NOT NULL, accepted_at timestamptz NOT NULL,"
+            " unreachable_since timestamptz)"
+        )
+    store = Store(engine, budget=DEFAULT_CHUNK_BUDGET, model_key=embedder.model_key)
+    await store.initialize()
+    await ingest(store, "A", {"a": b"alpha"})
+    assert (await store.status()).desired_tree_id == "A"
 
 
 async def test_configuration_change_rejected(store: Store, engine: AsyncEngine) -> None:
