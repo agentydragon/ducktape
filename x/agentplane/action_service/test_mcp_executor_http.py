@@ -34,7 +34,13 @@ from starlette.routing import Route
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
+from x.agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionGroup,
+    ActionIdentity,
+    ActionUnavailableError,
+    McpExecutorBinding,
+)
 from x.agentplane.action_service.db import ExecutionRow, make_sessionmaker
 from x.agentplane.action_service.main import Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
@@ -168,7 +174,7 @@ def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
             config_url=f"{issuer}.well-known/openid-configuration",
             upstream_client_id="test-actions-client",
             upstream_client_secret_file=secret,
-            base_url="http://test-actions",
+            base_url="https://actions.example.test",
             integration_app_url="https://integration.example.test",
             jwt_signing_key_file=signing,
             encryption_key_file=encryption,
@@ -452,7 +458,7 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
         await wait_retry(http_group)
         assert not http_group.available
         assert fake_server.calls == []
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url=oauth_settings.base_url) as client:
             assert (await client.get("/healthz")).status_code == 200
             assert (await client.get("/readyz")).status_code == 200
             metadata = await client.get("/.well-known/oauth-authorization-server")
@@ -560,6 +566,13 @@ async def test_production_http_composition_one_execution_no_replay(
             view = await service.get(pending.id, principal)
             assert "test-only" not in view.model_dump_json()
             assert str(http_group.executor.config["url"]) not in view.model_dump_json()
+        if outcome == "invalid_schema":
+            # Execution-time detection cleared the offered catalog; new submissions see the outage
+            # until the backend publishes a valid schema again.
+            with pytest.raises(ActionUnavailableError):
+                await service.submit(body, caller)
+            fake_server.tools[0]["inputSchema"] = {"type": "object"}
+            await wait_available(http_group)
         assert (await service.submit(body, caller)).execution == final.execution
         assert (await service.decide(pending.id, decision, operator)).execution == final.execution
         # Duplicate dispatch and restart recovery must both respect the durable single-Execution claim.
