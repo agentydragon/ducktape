@@ -57,3 +57,14 @@ spec:
         - ports:
             - port: "22"
               protocol: TCP
+    # atlas is a Nebula peer like wyrm2/rugged, but unlike them it is not a Kubernetes node
+    # (nebula-mesh.json: role "non-k8s") -- its address never gets the host/remote-node identity
+    # the gotcha above describes, so an entities rule would select nothing here. A plain toCIDR
+    # rule is the correct selector for a genuinely external destination; unlike the entities rule
+    # above, this one is unverified against the live cluster (see cluster/k8s/ssh-mcp/README.md).
+    - toCIDR:
+        - 10.42.0.5/32
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP

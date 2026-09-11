@@ -1,2 +1,5 @@
 roles:
   - src: nbigot.ansible-fail2ban # Fail2Ban
+
+collections:
+  - name: ansible.posix # ansible.posix.authorized_key, used by atlas.yaml

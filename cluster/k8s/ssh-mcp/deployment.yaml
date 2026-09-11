@@ -30,6 +30,8 @@ spec:
           hostnames: ["wyrm2.nebula.allegedly.works"]
         - ip: 10.42.0.30
           hostnames: ["rugged.nebula.allegedly.works"]
+        - ip: 10.42.0.5
+          hostnames: ["atlas.nebula.allegedly.works"]
       imagePullSecrets:
         - name: forgejo-images-creds
       containers:
@@ -61,6 +63,9 @@ spec:
               readOnly: true
             - name: keys-public-coder-devbox
               mountPath: /etc/ssh-mcp/keys-public-coder-devbox
+              readOnly: true
+            - name: keys-atlas
+              mountPath: /etc/ssh-mcp/keys-atlas
               readOnly: true
           readinessProbe:
             httpGet:
@@ -109,4 +114,9 @@ spec:
             # decrypt the existing file, so keeping them apart never risks the working
             # wyrm2/rugged keys that Secret already holds.
             secretName: ssh-mcp-keys-public-coder-devbox
+            optional: true
+        - name: keys-atlas
+          secret:
+            # Same reasoning as keys-public-coder-devbox above (secrets/keys-atlas.sops.yaml).
+            secretName: ssh-mcp-keys-atlas
             optional: true
