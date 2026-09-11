@@ -4,8 +4,8 @@
 # trajectory store (../db) as they arrive. Reached straight from the gateway
 # (httproute.yaml): the app authenticates its own callers, by an operator's OIDC
 # session or a reviewed Kubernetes token. One replica until every existing
-# sandbox runner speaks the independent-attachment protocol and the app bounds
-# its Uvicorn graceful shutdown; ingestion is already PostgreSQL-leased.
+# sandbox runner speaks the independent-attachment protocol; ingestion is
+# already PostgreSQL-leased and shutdown is bounded.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +33,9 @@ spec:
       # Proxmox-single, which is the rule already unmet rather than a new constraint.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease release and
+      # the store's close.
+      terminationGracePeriodSeconds: 60
       serviceAccountName: agentplane-app
       automountServiceAccountToken: true
       imagePullSecrets:
@@ -129,7 +132,7 @@ spec:
               protocol: TCP
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10

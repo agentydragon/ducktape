@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
-import { Fragment, useEffect, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -222,6 +222,9 @@ export function SessionView({
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const submitting = useRef(false);
+  const pendingInput = useRef<{ sandbox: string; sessionId: string; text: string; inputId: string } | null>(null);
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
@@ -292,13 +295,28 @@ export function SessionView({
 
   async function submit(): Promise<void> {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || submitting.current) return;
+    if (
+      pendingInput.current?.text !== text ||
+      pendingInput.current.sandbox !== sandbox ||
+      pendingInput.current.sessionId !== sessionId
+    ) {
+      pendingInput.current = { sandbox, sessionId, text, inputId: crypto.randomUUID() };
+    }
+    submitting.current = true;
+    setSending(true);
     try {
-      await sendInput(sandbox, sessionId, crypto.randomUUID(), text);
+      // A failed HTTP response may follow runner admission. Retry the same input id until
+      // acknowledged so a lost response cannot turn a retry into a second user message.
+      await sendInput(sandbox, sessionId, pendingInput.current.inputId, text);
+      pendingInput.current = null;
       setDraft("");
       setError(null);
     } catch (reason: unknown) {
       setError(displayableError(reason));
+    } finally {
+      submitting.current = false;
+      setSending(false);
     }
   }
 
@@ -408,10 +426,11 @@ export function SessionView({
           autosize
           minRows={2}
           maxRows={12}
-          disabled={state.harness !== "running"}
+          disabled={state.harness !== "running" || sending}
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />
+        {sending && <Text role="status">Sending…</Text>}
         <ActionIcon
           size="lg"
           variant="light"

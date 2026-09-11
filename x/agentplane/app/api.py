@@ -63,6 +63,7 @@ from x.agentplane.app.presets import (
     ThreadDefaults,
     UnknownPresetError,
 )
+from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -404,13 +405,13 @@ async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator
 
 @actions_router.get("/stream")
 async def action_stream(
-    request: Request, chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)]
+    request: Request, shutdown: Shutdown, chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)]
 ) -> StreamingResponse:
     async def body() -> AsyncIterator[bytes]:
         # Force periodic reauthentication (including logout in another replica), not state polling.
         try:
             async with asyncio.timeout(30):
-                async for chunk in chunks:
+                async for chunk in shutdown.until(chunks):
                     if operator_session(request) is None or await request.is_disconnected():
                         return
                     yield chunk
@@ -552,6 +553,7 @@ def create_app(
     app.state.oidc = oidc
     app.state.reviewer = reviewer
     app.state.operator_actions = operator_actions
+    app.state.drain = Drain()
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
     for api_router in (
@@ -580,6 +582,8 @@ def create_app(
         app.state.oauth = build_oauth(oidc)
         # Unguarded, because these are how a browser with no credential acquires one.
         app.include_router(auth_routes.router)
+    # Outermost, so a request the drain refuses touches nothing below it.
+    app.add_middleware(DrainMiddleware, drain=app.state.drain, liveness_path="/healthz")
 
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
@@ -587,7 +591,13 @@ def create_app(
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:
-        # The Deployment's probe: the process serves; the inventory's own reachability is per request.
+        # The Deployment's liveness probe: the process serves; the inventory's own reachability is
+        # per request. Answered through the drain, unlike everything else.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> Response:
+        # The Deployment's readiness probe: the drain middleware answers 503 here once shutdown begins.
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.exception_handler(SandboxNotFoundError)

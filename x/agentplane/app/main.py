@@ -6,6 +6,7 @@ import asyncio
 import logging
 import mimetypes
 import os
+import socket
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
@@ -24,7 +25,7 @@ from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from x.agentplane.app.api import ModelCatalog, create_app
-from x.agentplane.app.bridge import RunnerBridge, runner_address
+from x.agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
@@ -32,6 +33,7 @@ from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.live import STALE_AFTER_CYCLES, LiveIndex, watch_for
 from x.agentplane.app.oidc import load_settings
 from x.agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from x.agentplane.app.shutdown import Drain, drain_of
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -69,6 +71,21 @@ class SpaFiles(StaticFiles):
             headers={"Cache-Control": "no-store"},
             status_code=status_code,
         )
+
+
+class AppServer(uvicorn.Server):
+    """Uvicorn, with the app's drain begun as its shutdown starts."""
+
+    def __init__(self, config: uvicorn.Config, drain: Drain) -> None:
+        super().__init__(config)
+        self._drain = drain
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        # Before Uvicorn waits on what is open: the streams end now rather than at its budget, and
+        # /readyz fails. Here rather than in `handle_exit`, whose signal context can interrupt the
+        # loop mid-`Event.wait` and lose the waiter; the tick between the signal and this is 0.1s.
+        self._drain.begin()
+        await super().shutdown(sockets)
 
 
 class Settings(BaseSettings):
@@ -120,6 +137,11 @@ class Settings(BaseSettings):
     egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
+    )
+    shutdown_timeout: int = Field(
+        default=5,
+        description="Seconds Uvicorn waits after SIGTERM for open requests and streams before cancelling "
+        "them; the rest of the Deployment's grace period is the bridge's lease release and the store's.",
     )
     resync_seconds: int = Field(
         default=300,
@@ -270,13 +292,38 @@ async def async_main(settings: Settings) -> None:
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         watch_task = asyncio.create_task(watch.run(), name="live-watch")
         try:
-            await bridge.start(await running_sandboxes())
-            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False)).serve()
+            await serve_then_close(
+                AppServer(
+                    uvicorn.Config(
+                        app,
+                        host=settings.host,
+                        port=settings.port,
+                        access_log=False,
+                        timeout_graceful_shutdown=settings.shutdown_timeout,
+                    ),
+                    drain_of(app),
+                ),
+                bridge=bridge,
+                store=store,
+                sandboxes=running_sandboxes,
+            )
         finally:
             watch_task.cancel()
             await asyncio.gather(watch_task, return_exceptions=True)
-            await bridge.close()
-            await store.close()
+
+
+async def serve_then_close(
+    server: uvicorn.Server, *, bridge: RunnerBridge, store: TrajectoryStore, sandboxes: DiscoverSandboxes
+) -> None:
+    """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
+    timeout bounds the requests and streams still open, and the bridge's lease release and the store's
+    close have the rest of the Pod's grace period to themselves."""
+    try:
+        await bridge.start(await sandboxes())
+        await server.serve()
+    finally:
+        await bridge.close()
+        await store.close()
 
 
 if __name__ == "__main__":

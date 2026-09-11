@@ -51,6 +51,7 @@ from x.agentplane.app.inventory import (
     sandbox_view,
     sandbox_views,
 )
+from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
 from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
@@ -290,18 +291,20 @@ def _stream(source: AsyncIterator[bytes]) -> StreamingResponse:
 
 @router.get("/sandboxes", responses=_SANDBOXES_FRAMES)
 async def live_sandboxes(
-    index: Index, include_archived: Annotated[bool, Query(description="Also carry archived sandboxes.")] = False
+    index: Index,
+    shutdown: Shutdown,
+    include_archived: Annotated[bool, Query(description="Also carry archived sandboxes.")] = False,
 ) -> StreamingResponse:
     """The sandbox list, pushed."""
 
     async def snapshot() -> SandboxesSnapshot:
         return SandboxesSnapshot(sandboxes=index.sandbox_views(include_archived=include_archived), watch=_health(index))
 
-    return _stream(frames(snapshot, lambda: _health(index), index.changes))
+    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes)))
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
-async def live_sandbox(index: Index, store: Store, name: str) -> StreamingResponse:
+async def live_sandbox(index: Index, store: Store, shutdown: Shutdown, name: str) -> StreamingResponse:
     """One sandbox page, pushed: the sandbox, its bindings, and its threads.
 
     Threads are not Kubernetes and no watch reaches them; the store notifies when it creates or
@@ -316,4 +319,4 @@ async def live_sandbox(index: Index, store: Store, name: str) -> StreamingRespon
             watch=_health(index),
         )
 
-    return _stream(frames(snapshot, lambda: _health(index), index.changes, store.changes))
+    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, store.changes)))

@@ -87,7 +87,18 @@ spec:
               protocol: TCP
           serverNames:
             - auth.allegedly.works
-    # Remote MCP OAuth metadata/token and MCP traffic use the public Gateway/remote-node path.
+    # GitHub MCP discovery advertises github.com as its OAuth authorization server.
+    - toFQDNs:
+        - matchName: api.githubcopilot.com
+        - matchName: github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.githubcopilot.com
+            - github.com
+    # The Kubernetes MCP server uses the public Gateway/remote-node path.
     - toEntities:
         - remote-node
         - host
@@ -96,7 +107,6 @@ spec:
             - port: "443"
               protocol: TCP
           serverNames:
-            - api.githubcopilot.com
             - kubectl-passthrough-mcp.allegedly.works
     # Gateway Service traffic is checked against the selected backend, with
     # the client's original SNI. See cluster/docs/cilium_network_policy.md

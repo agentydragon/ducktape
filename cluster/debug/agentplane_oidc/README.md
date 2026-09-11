@@ -10,11 +10,13 @@ the Gateway Service). DNS is unchanged.
 
 ## Open items
 
-- **Datapath fix and acceptance.** The RCA's recommendation (a),
-  `proxy-use-original-source-address: false`, is canaried on two Gateway nodes by
-  a Flux-managed `CiliumNodeConfig` (RCA § Rollout); recreate the cilium-agent
-  Pods there, run the acceptance steps, then flip `envoy.useOriginalSourceAddress`
-  in the Helm values through `//cluster:bootstrap` and remove the canary object. Whether in-cluster clients
+- **Datapath fix rollout.** The RCA's recommendation (a) passed its canary on
+  `ovh-ns103711` and `ovh-ns102453` (RCA § Rollout) and is now the Helm value
+  `envoy.useOriginalSourceAddress: false`. Remaining: apply the values change
+  (targeted `null_resource.cilium_bootstrap` plan, <../../docs/network.md>
+  § Changing MTUs safely), then recreate the cilium-agent Pods on
+  `ovh-ns103656`, `ovh-ns104952`, `ovh-ns104963` and verify `build-config` shows
+  the flag, since the stuck DaemonSet rollout will not deliver it. Whether in-cluster clients
   should route to the Gateway Service instead of the public IPs (option c) is a
   separate decision; a shared CoreDNS rewrite would first need a client policy
   audit — `public-coder-agent-proxy` and `agentplane-egress` allow node HTTPS
@@ -22,13 +24,6 @@ the Gateway Service). DNS is unchanged.
   them, and non-OVH consumers (aiquota, Airlock, Manifold/Plaid/Postscanmail/Tana
   MCPs on wyrm2; Home Assistant and the JWT rotation Jobs on optiplex) were
   inventoried but never exercised through the Service.
-- **App shutdown budget.** <../../../x/agentplane/app/main.py> builds Uvicorn
-  without `timeout_graceful_shutdown`, and `bridge.close()`/`store.close()` run
-  only after `serve()` returns, so an open browser stream can hold shutdown past
-  the 30 s pod grace. The app is one replica with `Recreate`
-  (<../../k8s/agentplane-staging/app/deployment-agentplane-app.yaml>), so a
-  rollout's outage is termination plus startup (174 s observed on 2026-09-11).
-  Bound the HTTP/SSE drain and leave time for bridge and database close.
 - **mitmproxy Docker-CI rule.** The `toFQDNs docker-ci.allegedly.works:2376`
   rule in <../../k8s/agents/mitmproxy/cnp-cloud-api-egress.yaml> (annotated as
   suspected dead) is confirmed dead: on 2026-09-10 04:08 UTC a TCP connect from

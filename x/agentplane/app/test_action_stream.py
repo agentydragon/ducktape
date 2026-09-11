@@ -15,6 +15,7 @@ from x.agentplane.app.action_federation import FederatedOperatorActions
 from x.agentplane.app.api import actions_router
 from x.agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from x.agentplane.app.oidc import OperatorSession
+from x.agentplane.app.shutdown import Drain
 
 
 class StreamActions(FederatedOperatorActions):
@@ -46,6 +47,7 @@ class Stream(httpx.AsyncByteStream):
 def app() -> FastAPI:
     app = FastAPI()
     app.include_router(actions_router)
+    app.state.drain = Drain()
     app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
     return app
 
