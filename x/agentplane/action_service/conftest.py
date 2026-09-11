@@ -69,7 +69,9 @@ def echo_catalog() -> ActionCatalog:
 @pytest.fixture
 def everything_url() -> Iterator[str]:
     deployment = yaml.safe_load(
-        get_required_path("_main/cluster/k8s/agentplane-testing/mcp-everything/deployment.yaml").read_text()
+        get_required_path(
+            "_main/cluster/k8s/agentplane-testing/actions/mcp-everything-deployment.yaml"
+        ).read_text()
     )
     container_spec = deployment["spec"]["template"]["spec"]["containers"][0]
     with (

@@ -261,7 +261,7 @@ filegroup(
 )
 
 exports_files(
-    ["agentplane-testing/mcp-everything/deployment.yaml"],
+    ["agentplane-testing/actions/mcp-everything-deployment.yaml"],
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )
 
@@ -270,7 +270,6 @@ filegroup(
     srcs = glob([
         "agentplane-staging/actions/*.yaml",
         "agentplane-testing/actions/*.yaml",
-        "agentplane-testing/mcp-everything/*.yaml",
     ]),
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )
