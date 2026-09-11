@@ -34,7 +34,7 @@ flowchart TB
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
-    MCPDEPLOY["In progress<br/>OAuth-capable images + staging wiring<br/>public MCP and Sandbox reachability"]:::active
+    MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
@@ -135,10 +135,6 @@ status controller, or leader election. Runtime contracts belong in the [egress s
 - Verify every old proxy retires on the published safety image **before** removing the shared
   CRD status schema and status-patch RBAC;
   old informers fail their task group when a status patch is rejected.
-- Verify the database and per-Pod migration init container, and clear the egress Flux dependency
-  gates; then deliver staging's
-  two replicas with RollingUpdate `maxUnavailable: 1`/`maxSurge: 1`, PDB `minAvailable: 1`, hostname
-  spread and 60-second termination grace. Testing stays at one replica.
 - Observe two ready Service endpoints on the safety image, shared committed decisions, a rollout
   retaining an available endpoint, and bounded admitted-stream completion/interruption. Exercise
   revocation/watch staleness on an already-open connection without replaying side-effecting requests.
@@ -209,16 +205,14 @@ test.
 
 ### `MCPDEPLOY` — stage the external MCP endpoint
 
-**In progress:** [#6093](https://github.com/agentydragon/ducktape/pull/6093) adds the reviewed GitHub
-and Kubernetes MCP server configuration, reflected GitHub client credentials, callback route, and
-Action Service egress. Keep deployment acceptance open until published Action Service, migration,
-and integration-app images contain the merged consent/OAuth implementation and the deployment pins
-are compatible. A merged source PR or a healthy old pod does not establish readiness.
-
-**Acceptance:** after operator-approved rollout, verify migrations, required reflected configuration,
-public discovery/callback/resource URLs, and external MCP reachability. Follow the rollout runbook
-in that PR. Then run `CLAUDEAI`; this configuration task alone cannot satisfy it. Verify Sandbox
-MCP reachability in parallel; that caller's acceptance is not a prerequisite for `CLAUDEAI`.
+**Remaining acceptance:** staging carries the reviewed GitHub and Kubernetes MCP server
+configuration, reflected GitHub client credentials, callback route, and Action Service egress.
+After operator-approved rollout, verify migrations, required reflected configuration, public
+discovery/callback/resource URLs, and external MCP reachability on published Action Service,
+migration, and integration-app images that contain the merged consent/OAuth implementation; a
+merged source PR or a healthy old pod does not establish readiness. Then run `CLAUDEAI`; this
+configuration task alone cannot satisfy it. Verify Sandbox MCP reachability in parallel; that
+caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
 ### `POLICYBIND` — policy-binding model and storage
 
@@ -431,10 +425,12 @@ controls and live-update path; this is not a missing UI implementation.
 
 **Needed live evidence:** verify actual deployment, provider claims, allowed/denied operator access,
 VAPID configuration, reviewed push-service egress, and browser/service-worker behavior. Execute the
-existing BFF approval acceptance without widening allowlists for a test. [#5922](https://github.com/agentydragon/ducktape/pull/5922)
-fixed login-client CSRF handling and the source-subject mapping, but its live run did not complete
-the approval gate; verify the corrected configuration has rolled out before rerunning. Signed mock
-integration and CI are evidence for code paths, not deployed Authentik, SSE, or OS push proof.
+existing BFF approval acceptance without widening allowlists for a test. Federation exchanges from
+staging pods currently fail intermittently because verified TLS to Authentik resets on the caller's
+own Gateway node; the
+[Authentik reachability investigation](../../../cluster/debug/agentplane_oidc/README.md) owns that
+blocker, which must be cleared or scoped around before this gate can pass. Signed mock integration
+and CI are evidence for code paths, not deployed Authentik, SSE, or OS push proof.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
@@ -533,7 +529,9 @@ to extract now, and not a reason to add speculative service interfaces or preset
 **Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
 user/Agent subscriptions, and deliver structured events into an Agent/Thread ingress. The Hub owns
 subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
-and Thread wake/queue semantics. It is not an executor or an Action decision authority.
+and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
+the canonical Action event sequence, preserving individual events and ordering, and adds no second
+Action outbox or event store; cross-Identity delivery requires an explicit read policy.
 
 ## Deferred
 

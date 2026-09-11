@@ -24,10 +24,10 @@ Standing under it:
 - The standalone Action Service landed in PR
   [#5700](https://github.com/agentydragon/ducktape/pull/5700): one invariant ActionRequest, a separate
   human Decision, automatic at-most-one Execution, caller-own/operator-all reads, and no blind retry.
-- [`async_approvals.md`](async_approvals.md): submission remains non-blocking, and a caller can
-  already poll the durable Action event sequence from pending to a terminal state; the open work is
+- Submission is non-blocking, and a caller polls the durable Action event sequence from pending
+  to a terminal state ([Action Service specification](../action_service/SPEC.md)); the open work is
   delivering those redacted Decision/result events into an Agent/Thread as a later machine input
-  through the Event & Notification Hub.
+  through the Event & Notification Hub (`ING` in [the DAG](task_dag.md)).
 - [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
   express the boundary, brokered credential where it cannot, agent-requested grants, and the
   revocation gate (placeholder token, substitution only while the ledger and the apiserver agree).
@@ -181,7 +181,7 @@ paragraph that led to it. One agent writes the interaction surface it is then dr
 Standing under it:
 
 - The decision that external events arrive as thread inputs, and the batcher and envelope
-  from [`async_approvals.md`](async_approvals.md): a UI event is one more source, delivered as a
+  of the Event & Notification Hub (`ING` in [the DAG](task_dag.md)): a UI event is one more source, delivered as a
   `<agentplane-event>` in a user-message envelope, batched with whatever else arrived.
 - Haku already owns a deployed UI: it authors the `haku/ui` repository on Forgejo, the image is
   published from it, and Flux applies the workload under the constrained `haku-state` reconciler
@@ -200,8 +200,8 @@ Missing:
   write code that gets deployed where it can send messages to Haku; if it built the UI to lie,
   it would be lying to itself. So the UI posts as Haku's Kubernetes identity, the envelope names
   `haku-ui` as the source, and Rai's identity is Authentik's business at the UI's edge, not the
-  envelope's. The UI never gets a direct pipe: the ingress is the batcher from
-  [`async_approvals.md`](async_approvals.md) with a workload identity on the caller side, feeding
+  envelope's. The UI never gets a direct pipe: the ingress is the Event & Notification Hub's
+  batcher with a workload identity on the caller side, feeding
   the existing inputs route: no new object.
 - **Rendering state Haku owns**: the cards and paragraphs are data Haku edits, so "dismiss and
   rewrite" is a write to that state followed by the page re-rendering, not a redeploy.

@@ -20,30 +20,23 @@ management. Sandbox callers use the same MCP frontend with workload bearers, wit
 
 ## Staging rollout (`MCPDEPLOY`)
 
-[#6093](https://github.com/agentydragon/ducktape/pull/6093) adds the reviewed GitHub and Kubernetes
-MCP server configuration, reflected GitHub client credentials, the staging OAuth callback route,
-and Action Service egress. It remains open until published Action Service, migration, and app
-images contain the merged OAuth/consent code and compatible pins are ready. Do not enable
-configuration against older images or infer rollout from merged source.
+Staging carries the reviewed GitHub and Kubernetes MCP server configuration, reflected GitHub
+client credentials, the staging OAuth callback route, and Action Service egress. Do not enable
+enrollment against images older than the merged OAuth/consent code or infer rollout from merged
+source.
 
 After operator-approved rollout, verify migration completion, required reflected configuration,
 canonical discovery/resource/callback URLs, and external MCP reachability. Check the workload path
-in parallel, without gating Claude.ai acceptance on it. Follow the staging rollout/runbook evidence in that PR; do not expose operator REST or enrollment-management routes through the public MCP route.
-A healthy deployment is intermediate evidence, not real-client acceptance.
-
-## Connection reconnect and rebind
-
-Existing-Connection reconnect and Identity rebind are implemented in [#5930](https://github.com/agentydragon/ducktape/pull/5930). A fresh OAuth consent lets the operator choose a new Connection or an existing Connection, select a configured Identity, and confirm replacement using the reviewed Connection version. The Action Service preserves immutable grant and Action provenance, revokes the prior grant when replacement is reserved, and never retargets old tokens or historical receipts.
-
-Real-client reconnect behavior is covered by the broader `CLAUDEAI` / `EXTERNALMCP` acceptance; this is no longer a separate implementation gate.
+in parallel, without gating Claude.ai acceptance on it. Do not expose operator REST or
+enrollment-management routes through the public MCP route. A healthy deployment is intermediate
+evidence, not real-client acceptance.
 
 ## Real-client acceptance (`CLAUDEAI`, then `EXTERNALMCP`)
 
 Use a harmless credentialless Action and independently inspect canonical requests, Decisions,
 Executions, events, and results; neither model prose nor signed protocol fixtures prove deployment.
 Record the deployed revisions, client/version, exact scenario, and redacted evidence. Reuse existing
-acceptance helpers and reconcile the open
-[#5822](https://github.com/agentydragon/ducktape/pull/5822) evidence work before adding duplicates.
+acceptance helpers before adding duplicates.
 
 The protocol-side acceptance should use the pinned FastMCP client rather than a second hand-rolled
 MCP implementation. Build a small live/manual Bazel target that performs DCR, drives the browser
@@ -73,9 +66,10 @@ exercise the provider's refresh path. Do not print or persist token values.
    After unbind/revocation, old tokens fail and unclaimed work cannot borrow replacement authority.
    Already-claimed execution is not killed.
 
-`APPROVALUI` tracks the real operator federation/browser proof. The login/mapping fixes in
-[#5922](https://github.com/agentydragon/ducktape/pull/5922) did not complete that gate; check their
-rollout before rerunning it. Provenance presentation is already implemented, not another UI task.
+`APPROVALUI` tracks the real operator federation/browser proof; its current blocker is intermittent
+Authentik reachability from staging pods, recorded in the
+[reachability investigation](../../../cluster/debug/agentplane_oidc/README.md). Provenance
+presentation is already implemented, not another UI task.
 
 Record Claude.ai success separately as `CLAUDEAI`. Then repeat the client flow with Claude Code
 running on an operator machine, not an Agentplane-hosted harness, to establish `EXTERNALMCP`.
