@@ -7,9 +7,15 @@ max_concurrent_executions: 4
 # Target identity is the (host, user) tuple. Missing key files keep the target visible
 # through list_targets with an unavailable error.
 targets:
-  - host: wyrm2
-    user: coder
-    identity_file: /etc/ssh-mcp/keys/wyrm2-coder
-  - host: rugged
-    user: coder
-    identity_file: /etc/ssh-mcp/keys/rugged-coder
+  - host: wyrm2.nebula.allegedly.works
+    user: agentydragon
+    identity_file: /etc/ssh-mcp/keys/wyrm2-agentydragon
+  - host: wyrm2.nebula.allegedly.works
+    user: root
+    identity_file: /etc/ssh-mcp/keys/wyrm2-root
+  - host: rugged.nebula.allegedly.works
+    user: agentydragon
+    identity_file: /etc/ssh-mcp/keys/rugged-agentydragon
+  - host: rugged.nebula.allegedly.works
+    user: root
+    identity_file: /etc/ssh-mcp/keys/rugged-root

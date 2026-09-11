@@ -588,11 +588,11 @@ in
   # User configuration
   users.users.${username} = {
     shell = pkgs.zsh;
-    openssh.authorizedKeys.keys = sshKeys;
+    openssh.authorizedKeys.keys = sshKeys ++ [ keys.wyrm2McpAgentydragon ];
     extraGroups = [ "systemd-journal" ];
   };
 
-  users.users.root.openssh.authorizedKeys.keys = sshKeys;
+  users.users.root.openssh.authorizedKeys.keys = sshKeys ++ [ keys.wyrm2McpRoot ];
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   # SPICE USB redirection helper (setuid root for USB device passthrough)

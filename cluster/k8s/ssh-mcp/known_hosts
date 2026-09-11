@@ -1,2 +1,8 @@
 # configMapGenerator input; not a standalone Kubernetes manifest (kubeconform-excluded).
-# Populate and review actual host keys before enabling the backend.
+# wyrm2: captured via ssh-keyscan over Nebula and cross-checked against the operator's
+# own ~/.ssh/known_hosts entry for wyrm2.nebula.allegedly.works (SHA256:4pleXe119Nlx
+# Dgg+Avgv7DRMokIe4jbQjJ3KKHarYzo) -- fingerprints match, not blind first-contact TOFU.
+wyrm2.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAwoT0hzkNNzOUjFqb1g7jKQ3phR5XmPU5R52hfFCJZ
+# rugged: not yet captured -- the host is a roaming laptop and was unreachable over
+# Nebula at provisioning time. Run `ssh-keyscan -t ed25519 rugged.nebula.allegedly.works`
+# once it's online and add its line here before relying on the rugged targets below.

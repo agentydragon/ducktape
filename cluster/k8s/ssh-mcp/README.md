@@ -26,14 +26,18 @@ non-pruning Flux owner.
   reconciling the backend. An image published under a different repository name
   does not establish availability at the new name.
 
-- Provision `ssh-mcp-keys` **only** in the backend namespace using the approved
-  machine-key workflow; consumer pods receive only the MCP bearer.
-- Populate reviewed host keys in `known_hosts`. Empty host trust and missing
-  identity files do not authorize SSH; host verification must remain strict.
-- Resolve the configured machine names and replace the existing host-only TCP/22
-  egress placeholder with reviewed target destinations before claiming remote SSH
-  readiness. The current rule is not proof of connectivity to both machines.
+- Capture `rugged`'s SSH host key and add it to `known_hosts` once the host is
+  reachable — it's a roaming laptop and was offline at provisioning time, so only
+  `wyrm2`'s host key (verified against the operator's own trusted `known_hosts`) is
+  populated so far. Empty host trust and missing identity files do not authorize SSH;
+  host verification must remain strict, so the `rugged` targets stay unavailable
+  until its host key is captured and reviewed.
 
 Rendered configuration and policy tests prove wiring, not live image availability,
-secret reconciliation, network reachability, or successful SSH execution. No machine
-key provisioning or live reconciliation is performed by this wiring change.
+secret reconciliation, network reachability, or successful SSH execution.
+`ssh-mcp-keys` (four per-`(host,user)` ed25519 keys for `{wyrm2,rugged} ×
+{agentydragon,root}`, SOPS-encrypted in `secrets/keys.sops.yaml`), the public halves
+in each host's NixOS `authorizedKeys`, and the egress `NetworkPolicy` (pinned to the
+hosts' Nebula addresses) are provisioned; live SSH execution against each target is
+still unverified until the hosts have `nixos-rebuild switch`ed and the backend image
+is published.

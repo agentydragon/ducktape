@@ -1,5 +1,5 @@
 # Cluster-internal MCP backend. Only haku-console and Agentplane staging are callers; SSH egress is
-# deliberately constrained by the target network policy once rugged/wyrm2 addresses are pinned.
+# constrained to wyrm2/rugged's Nebula mesh addresses (nebula-mesh.json at the repo root).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -32,10 +32,10 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # TODO: replace this temporary host egress with exact rugged/wyrm2 destinations
-    # when their routable addresses are recorded in the deployment contract.
-    - toEntities:
-        - host
+    # wyrm2 (10.42.0.20) and rugged (10.42.0.30) Nebula addresses, per nebula-mesh.json.
+    - toCIDR:
+        - 10.42.0.20/32
+        - 10.42.0.30/32
       toPorts:
         - ports:
             - port: "22"
