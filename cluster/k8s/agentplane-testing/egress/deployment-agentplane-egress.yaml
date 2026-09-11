@@ -137,6 +137,6 @@ spec:
       volumes:
         - name: ca
           secret:
-            secretName: agentplane-egress-ca
+            secretName: agentplane-testing-egress-ca
         - name: confdir
           emptyDir: {}

@@ -10,7 +10,7 @@ metadata:
 spec:
   isCA: true
   commonName: agentplane-egress-root-ca
-  secretName: agentplane-egress-ca
+  secretName: agentplane-testing-egress-ca
   duration: 87600h # 10 years
   renewBefore: 8760h # 1 year
   privateKey:

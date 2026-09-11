@@ -11,7 +11,23 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/agentplane-staging/egress
   prune: true
-  wait: true
+  # Include the generated bundle consumed by runner Pods, not only applied resources.
+  healthChecks:
+    - apiVersion: v1
+      kind: ConfigMap
+      name: agentplane-egress-ca
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-egress
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: agentplane-egress-root-ca
+      namespace: agentplane-staging
+    - apiVersion: trust.cert-manager.io/v1alpha1
+      kind: Bundle
+      name: agentplane-egress-ca
   sourceRef:
     kind: GitRepository
     name: ducktape

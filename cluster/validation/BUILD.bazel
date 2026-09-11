@@ -733,6 +733,18 @@ py_test(
 )
 
 py_test(
+    name = "test_agentplane_ca_isolation",
+    srcs = ["test_agentplane_ca_isolation.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    deps = [
+        ":conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_agentplane_rules_route",
     srcs = ["test_agentplane_rules_route.py"],
     data = ["//cluster/k8s:cluster_yaml_files"],

@@ -1,10 +1,10 @@
 # Public roots + cluster root + the proxy's interception root, written as ConfigMap
-# agentplane-egress-ca into agentplane-testing, where the runner SandboxTemplate mounts it over the
+# agentplane-testing-egress-ca into agentplane-testing, where the runner SandboxTemplate mounts it over the
 # runner container's system bundle so every TLS client there accepts intercepted connections.
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: agentplane-egress-ca
+  name: agentplane-testing-egress-ca
 spec:
   sources:
     - useDefaultCAs: true
@@ -12,7 +12,7 @@ spec:
         name: cluster-root-ca-secret
         key: ca.crt
     - secret:
-        name: agentplane-egress-ca
+        name: agentplane-testing-egress-ca
         key: tls.crt
   target:
     configMap:
