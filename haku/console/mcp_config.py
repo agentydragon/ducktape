@@ -21,7 +21,7 @@ from fastmcp import FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from haku.console.config import HostexecConfig, KubernetesAuthorizationConfig, NodeDaemonsConfig
+from haku.console.config import KubernetesAuthorizationConfig, NodeDaemonsConfig
 from haku.console.identity.naming import normalize_agent_name
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
@@ -284,32 +284,6 @@ class HomeAssistantEntityControlAutoApprovalPolicy(AutoApprovalPolicyBase):
         return value
 
 
-class HostexecHostScopedAutoApprovalPolicy(AutoApprovalPolicyBase):
-    """Conditionally auto-approve `hostexec` `bash` calls confined to named hosts and users.
-
-    hostexec's execution authority never changes: the console still mints the approving Operator's
-    own short-lived per-host Authentik token on every call (haku/docs/security.md invariant #9)
-    regardless of whether a human clicked approve or this policy matched. ``hosts`` and ``run_as``
-    are the only constraints — deliberately never ``cmd`` — so the exception this policy grants is
-    legible as "which machine, as which user, may skip the click", never "which command".
-
-    ``run_as`` is required, not merely allowed to be narrow: the host's own daemon-token file is
-    root-owned and mode 0600, and `hostexecd` runs as root specifically so it can drop to whatever
-    `run_as` a call names before executing. An auto-approved call naming `run_as=root` would let the
-    Agent itself read that file (and everything else on the box) with no human ever seeing the
-    command — a `hosts`-only policy that leaves `run_as` open, as this one first shipped with, hands
-    back exactly the standing root access invariant #9 exists to prevent. Every host this policy
-    names must therefore provision a real unprivileged account for its listed `run_as` values,
-    distinct from whatever account the human Operator uses for manual approval. See
-    ``haku/console/auto_approval/hostexec.py``.
-    """
-
-    type: Literal["hostexec_host_scoped"] = "hostexec_host_scoped"
-    server: str = Field(min_length=1)
-    hosts: set[str] = Field(min_length=1)
-    run_as: set[str] = Field(min_length=1)
-
-
 class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve reviewed GitHub reads for one repository."""
 
@@ -371,7 +345,6 @@ type AutoApprovalPolicy = Annotated[
     | GmailLabelNamespaceAutoApprovalPolicy
     | GitHubRepositoryAutoApprovalPolicy
     | HomeAssistantEntityControlAutoApprovalPolicy
-    | HostexecHostScopedAutoApprovalPolicy
     | GitHubPublicRepositoryAutoApprovalPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy
@@ -449,11 +422,6 @@ class ConsoleConfigFile(BaseModel):
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: dict[str, StaticAgentEntry] = Field(default_factory=dict)
-    # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
-    # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
-    # → the server is not offered, no offline_access is requested at operator login, and no operator
-    # Authentik token is persisted (nothing would read it).
-    hostexec: HostexecConfig | None = None
     node_daemons: NodeDaemonsConfig | None = None
     # Declared source configuration, not a harness convention. This is intentionally in the
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
@@ -649,15 +617,6 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(
                     f"static Agent {agent.agent_id} references unknown access profile {agent.access_profile_id!r}"
                 )
-        if self.hostexec is not None:
-            if self.node_daemons is None:
-                raise ValueError("hostexec requires node_daemons configuration")
-            for host, entry in self.hostexec.hosts.items():
-                daemon = self.node_daemons.daemons.get(entry.daemon_id)
-                if daemon is None:
-                    raise ValueError(f"hostexec host {host!r} references unknown daemon {entry.daemon_id!r}")
-                if "hostexec" not in daemon.backends:
-                    raise ValueError(f"node daemon {entry.daemon_id!r} does not advertise the hostexec backend")
         return self
 
 

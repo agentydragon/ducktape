@@ -147,8 +147,6 @@ Built-ins are assembled in `mcp/in_process_servers.py`:
   Their tool schemas/descriptions are the API contract; `TODO.md` inventories intentionally
   unexposed provider affordances. Auto-approval policy lives in the reviewed deployment config.
 - `haku_routine` launches the reviewed routine through ordinary approval.
-- `hostexec` exchanges the acting Operator's login authority only during approved execution; its
-  host-side trust boundary is documented in <../hostexec/README.md>.
 
 Recall indexing is currently disabled in deployment. The `recall_index` database schema and data
 remain available for a future re-enable, but the deployed catalog registers no `haku_index` server,

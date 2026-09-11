@@ -1433,8 +1433,6 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/grocy:requests_test",
         "//haku/console/frontend/tool_rendering/grocy:responses_test",
         "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
-        "//haku/console/frontend/tool_rendering/hostexec:requests_test",
-        "//haku/console/frontend/tool_rendering/hostexec:responses_test",
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
     ],

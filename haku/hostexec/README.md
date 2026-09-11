@@ -1,23 +1,26 @@
 # hostexec — outbound node execution daemons
 
-`hostexec` lets an Agent request shell commands on a registered machine (`wyrm2`, `rugged`,
-`atlas`, …). Every call executes under a bound Operator's own Authentik authority
-(haku/docs/security.md invariant #9) and goes through the console's ordinary manual MCP approval
-queue.
+`hostexecd` runs on a registered machine (`wyrm2`, `rugged`, `atlas`, …) and executes durably
+queued work claimed from `haku-console`'s generic node-daemon broker over outbound HTTPS. The
+`hostexec` backend it implements runs a bash command under a bound Operator's own short-lived
+Authentik authority (haku/docs/security.md invariant #9).
+
+The console-side MCP tool that used to submit work here (an Agent-facing `bash` call through the
+ordinary manual approval queue) has been removed; the broker and daemon protocol below are
+unchanged, and currently have no caller.
 
 ## Architecture
 
 The node initiates every connection:
 
 ```text
-approved hostexec tool call
-  -> console exchanges the operator login token for a short-lived per-host token
+caller enqueues hostexec work, payload carrying a per-host operator token
   -> console writes a pending execution to Postgres
   -> hostexecd heartbeats and long-polls haku-console over outbound HTTPS
   -> hostexecd claims the execution with a lease
   -> hostexecd verifies the embedded operator token and its host/run_as authority
   -> hostexecd executes, renews its lease, and submits an idempotent result
-  -> console completes the waiting tool call
+  -> the caller's wait on the execution resolves
 ```
 
 `hostexecd` has no listener or host port. Roaming and off-mesh nodes therefore need only
@@ -87,8 +90,8 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
 
 ## Configuration ownership
 
-- `cluster/k8s/haku/console/config.yaml` owns daemon ids, display names, allowed backends,
-  token environment slots, and host-to-daemon routing.
+- `cluster/k8s/haku/console/config.yaml` (`node_daemons`) owns daemon ids, display names,
+  advertised backends, and token environment slots.
 - `cluster/k8s/haku/console/node-daemon-*.sops.yaml` owns one encrypted routing bearer per
   node. Each file is decryptable by both the cluster secret controller and that node.
 - `nix/nixos/modules/hostexecd.nix` owns the outbound daemon service on a NixOS host and reads
@@ -100,11 +103,9 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
 
 ## Security and failure semantics
 
-- `bash` is never in the unconditional auto-approval policy.
 - `cmd` is bash script text, run as `bash -c cmd` — full shell semantics apply (pipes,
-  redirects, globs, quoting, `$VAR` expansion). This is intentional: the approving operator
-  sees the exact script text before it runs, and the operator-approval gate (not argv
-  restriction) is what bounds what a call can do.
+  redirects, globs, quoting, `$VAR` expansion). The bound operator's short-lived Authentik
+  authority (not argv restriction) is what bounds what a call can do.
 - `hostexecd` runs as root only so it can switch to the authorized `run_as` user.
 - Operator tokens, daemon bearers, and lease tokens are never logged or returned by the
   operator status API.
@@ -115,7 +116,7 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
 
 ## Bringing up a node
 
-1. Add the daemon id, display name, allowed backends and routing to
+1. Add the daemon id, display name, and allowed backends to
    `cluster/k8s/haku/console/config.yaml`, and its routing bearer as a
    `node-daemon-*.sops.yaml` beside it.
 2. Add the per-host Authentik provider and execution-authority groups in
@@ -124,7 +125,7 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
    `nix/nixos/modules/hostexecd.nix`. `atlas` runs Proxmox VE (Debian, not NixOS), so it instead
    gets a plain systemd unit from the `ansible/roles/hostexecd` role (`ansible-playbook atlas.yaml`)
    — a second, independently maintained rendering of the same unit; keep both in sync by hand.
-4. Confirm the node is `connected` in Settings before approving a hostexec call.
+4. Confirm the node is `connected` in Settings.
 
 Order between console and daemon does not matter: a configured node with no daemon appears
 offline and its calls fail closed until a valid heartbeat arrives.

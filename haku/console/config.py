@@ -266,35 +266,6 @@ class WebPushConfig(BaseModel):
         return value
 
 
-class HostexecHostConfig(BaseModel):
-    """One in-scope host for the `hostexec` in-process server.
-
-    `daemon_id` selects the outbound node-daemon connection that receives work for this host.
-    `audience_client_id` is the Authentik client_id of
-    the host's `hostexec-<host>` provider — the audience the operator's token is exchanged for.
-    """
-
-    daemon_id: str
-    audience_client_id: str
-
-
-class HostexecConfig(BaseModel):
-    """The `hostexec` in-process server: the in-scope hosts and the token-exchange scope.
-
-    The Authentik token endpoint is derived from the operator OIDC issuer at composition (the same
-    Authentik that authenticated the operator mints the per-host token from their identity), so it
-    is not configured here. Lives in the console config file (`ConsoleConfigFile.hostexec`); unset
-    there → the server is not offered.
-    """
-
-    hosts: dict[str, HostexecHostConfig]
-    # Scopes requested on the per-host exchange. `groups` is required — the per-host provider's
-    # `groups` scope mapping emits the operator's `hostexec-*` groups, which hostexecd checks for
-    # `hostexec-<run_as>-<host>`; `openid` carries `sub` for the audit log. Configurable in case the
-    # Authentik scope mapping is named differently.
-    exchange_scope: str = "openid groups"
-
-
 class NodeDaemonDefinition(BaseModel):
     """One outbound node daemon and the bearer used to authenticate it."""
 

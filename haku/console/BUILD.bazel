@@ -407,7 +407,6 @@ py_library(
         "//haku/recall_index:config",
         "//haku/recall_index:openai_embedder",
         "//haku/sandbox:kubernetes_client",
-        "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
         "@pypi//openai",
