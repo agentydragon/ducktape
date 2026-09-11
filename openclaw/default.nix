@@ -167,7 +167,25 @@ pkgs.dockerTools.buildLayeredImage {
       # Deliberately not --inspect: these containers execute agent-authored
       # commands, and an always-listening inspector on loopback would let any of
       # them attach to the gateway process and read its credentials.
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp"
+      #
+      # --report-on-fatalerror covers what --report-on-signal cannot. A heap-limit
+      # abort has nobody present to send SIGUSR2, and the SIGABRT otherwise leaves
+      # no report at all -- only the container exit code 134.
+      #
+      # --max-old-space-size is set rather than derived. Node sizes V8's old space
+      # at about half of uv_get_constrained_memory(), which inside a container is
+      # the cgroup memory limit, so leaving it implicit makes `limits.memory`
+      # silently halve the usable heap and the gateway abort with most of that
+      # limit unused. Keep it in step with `limits.memory` in
+      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml: the difference
+      # covers native allocations and SQLite page cache.
+      #
+      # --heapsnapshot-near-heap-limit=1 writes one snapshot as the heap
+      # approaches that cap. It is the only artifact that names what is retained,
+      # so it is what a leak investigation actually needs. The file is roughly
+      # heap-sized, which is why --diagnostic-dir points at the /tmp emptyDir
+      # rather than the state PVC that volsync backs up.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp --report-on-fatalerror --heapsnapshot-near-heap-limit=1 --diagnostic-dir=/tmp --max-old-space-size=3072"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"

@@ -132,7 +132,10 @@ pkgs.dockerTools.buildLayeredImage {
       # Deliberately not --inspect: these containers execute agent-authored
       # commands, and an always-listening inspector on loopback would let any of
       # them attach to the gateway process and read its credentials.
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp"
+      # --report-on-fatalerror covers what --report-on-signal cannot: a heap-limit
+      # abort has nobody present to send SIGUSR2 and otherwise leaves no report.
+      # Heap sizing stays derived here; only the public-coder image pins it.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp --report-on-fatalerror"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
