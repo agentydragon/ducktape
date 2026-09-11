@@ -7,7 +7,7 @@
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: litellm
+  name: agentplane-llm-ingress
   namespace: agentplane-staging
 spec:
   rules:

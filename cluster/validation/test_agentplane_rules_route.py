@@ -32,7 +32,7 @@ def test_service_routes_rules_to_the_separate_declared_listener() -> None:
     assert f"--listen-port={ports[proxy['targetPort']]}" in container["args"]
 
 
-def test_default_policy_and_nonsecret_instructions_bootstrap_existing_workload_credential() -> None:
+def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_credentials() -> None:
     policy = manifest("egress/egresspolicy-egress-rules.yaml")
     credential = manifest("egress/egresscredential-agentplane-workload.yaml")
     config = manifest("app/config.yaml")
@@ -42,7 +42,12 @@ def test_default_policy_and_nonsecret_instructions_bootstrap_existing_workload_c
 
     assert "egresspolicy-egress-rules.yaml" in resources
     assert "egresscredential-agentplane-workload.yaml" in resources
-    assert policy["metadata"]["name"] in config["default_policies"]
+    assert config["sandbox_presets"]["public-coder"]["policies"] == [
+        "github-public",
+        "agentplane-actions",
+        "egress-rules",
+    ]
+    assert config["default_policies"] == ["agentplane-llm-ingress"]
     assert rule["credentialRef"]["name"] == credential["metadata"]["name"]
     assert credential["spec"]["source"] == {"authenticatedWorkloadToken": {}}
     assert target == {"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}

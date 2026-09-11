@@ -55,10 +55,10 @@ BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
 # The authenticated model ingress, on the same egress path as everything else
-# (cluster/k8s/agentplane-staging/egress/egresspolicy-litellm.yaml). It holds the LiteLLM key and
+# (cluster/k8s/agentplane-staging/egress/egresspolicy-agentplane-llm-ingress.yaml). It holds the LiteLLM key and
 # is granted by the deployment's `default_policies` rather than by a caller, because an agent that
 # cannot reach it has nothing to run -- so a sandbox that names no policy still has this one.
-LITELLM = "litellm"
+LLM_INGRESS_POLICY = "agentplane-llm-ingress"
 LLM_INGRESS_HOST = f"agentplane-llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
@@ -181,7 +181,8 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     sandbox reaching LiteLLM directly with the key in its own environment, which answers just as well
     and is what routing the model endpoint through the proxy exists to stop.
 
-    The sandbox names no policy. `litellm` reaching the ingress anyway is what `default_policies` is
+    The sandbox names no policy. `agentplane-llm-ingress` reaching the ingress anyway is what
+    `default_policies` is
     for.
     """
     view = await sandbox(f"accept-model-{provider}")
@@ -191,7 +192,7 @@ async def test_the_model_call_itself_goes_through_the_proxy(
 
     served = await _decision_for(client, view.name, LLM_INGRESS_HOST)
     assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
-    assert served.policy == LITELLM, f"the model call was admitted by another policy: {served!r}"
+    assert served.policy == LLM_INGRESS_POLICY, f"the model call was admitted by another policy: {served!r}"
     assert served.substituted, (
         f"the model call was admitted with no credential substituted, so the sandbox did not present "
         f"only the inert placeholder to the authenticated ingress: {served!r}"

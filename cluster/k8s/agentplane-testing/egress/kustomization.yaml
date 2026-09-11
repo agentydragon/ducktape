@@ -14,6 +14,6 @@ resources:
   - egresscredential-github-pat.yaml
   - egresspolicy-github-public.yaml
   - egresscredential-agentplane-workload.yaml
-  - egresspolicy-litellm.yaml
+  - egresspolicy-agentplane-llm-ingress.yaml
   - egresspolicy-agentplane-actions.yaml
   - egresspolicy-egress-rules.yaml
