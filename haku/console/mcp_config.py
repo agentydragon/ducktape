@@ -21,7 +21,7 @@ from fastmcp import FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from haku.console.config import KubernetesAuthorizationConfig, NodeDaemonsConfig
+from haku.console.config import KubernetesAuthorizationConfig
 from haku.console.identity.naming import normalize_agent_name
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
@@ -422,7 +422,6 @@ class ConsoleConfigFile(BaseModel):
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: dict[str, StaticAgentEntry] = Field(default_factory=dict)
-    node_daemons: NodeDaemonsConfig | None = None
     # Declared source configuration, not a harness convention. This is intentionally in the
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
     # credentials remain environment references on that entry.

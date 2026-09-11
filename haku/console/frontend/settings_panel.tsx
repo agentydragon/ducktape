@@ -20,12 +20,10 @@ import { GrantsPanel } from "./grants_panel";
 import { DisconnectIcon } from "./icons";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
-import { formatTimestamp, shortDate } from "./time";
+import { shortDate } from "./time";
 import {
   getMcpServerStatus,
-  listNodeDaemons,
   listMcpServers,
-  type DaemonStatus,
   type McpOperatorAuthDegraded,
   type McpOperatorAuthStatus,
   type McpServerConnection,
@@ -318,55 +316,6 @@ function McpServerRow({
   );
 }
 
-const DAEMON_STATUS_COLOR: Record<DaemonStatus["status"], string> = {
-  connected: "teal",
-  busy: "blue",
-  stale: "yellow",
-  offline: "gray",
-};
-
-function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
-  const seen = daemon.last_heartbeat_at ? formatTimestamp(daemon.last_heartbeat_at) : null;
-  return (
-    <Table.Tr className="haku-node-row">
-      <Table.Td data-slot="primary" className="haku-dense-primary">
-        <Text fw={600} size="sm">
-          {daemon.display_name}
-        </Text>
-      </Table.Td>
-      <Table.Td data-slot="status" className="haku-dense-status">
-        <span
-          className="haku-status-dot haku-node-status-dot"
-          data-color={DAEMON_STATUS_COLOR[daemon.status]}
-          data-status={daemon.status}
-          role="img"
-          aria-label={`Node status: ${daemon.status}`}
-          title={`Node status: ${daemon.status}`}
-        />
-      </Table.Td>
-      <Table.Td data-slot="version" className="haku-dense-secondary haku-dense-version">
-        <Text size="sm">{daemon.version ?? "—"}</Text>
-      </Table.Td>
-      <Table.Td data-slot="heartbeat" className="haku-dense-secondary haku-dense-heartbeat">
-        <Text size="sm" title={seen?.title}>
-          {seen?.text ?? "—"}
-        </Text>
-      </Table.Td>
-      <Table.Td data-slot="action" className="haku-dense-action">
-        {daemon.active_execution_id ? (
-          <Text size="xs" c="dimmed" ff="monospace" title={daemon.active_execution_id}>
-            {daemon.active_execution_id.slice(0, 12)}…
-          </Text>
-        ) : (
-          <Text size="xs" c="dimmed">
-            —
-          </Text>
-        )}
-      </Table.Td>
-    </Table.Tr>
-  );
-}
-
 const AGENT_STATUS_COLOR: Record<AgentView["status"], string> = {
   draft: "blue",
   active: "teal",
@@ -530,7 +479,7 @@ function PushNotificationTable() {
   );
 }
 
-const SETTINGS_TABS = ["mcp", "agents", "grants", "notifications", "nodes", "system"] as const;
+const SETTINGS_TABS = ["mcp", "agents", "grants", "notifications", "system"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function settingsTabFromSearch(search: string): SettingsTab {
@@ -638,18 +587,15 @@ export function SettingsPanel(): JSX.Element {
   const mcpResource = useAsyncResource(loadMcpServers, resourceOptions("mcp"));
   const agentsResource = useAsyncResource(listAgents, resourceOptions("agents"));
   const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system"));
-  const daemonsResource = useAsyncResource(listNodeDaemons, resourceOptions("nodes", 10_000));
   const refreshMcp = mcpResource.refresh;
   const refreshAgents = agentsResource.refresh;
   const refreshDeployment = deploymentResource.refresh;
-  const refreshDaemons = daemonsResource.refresh;
   const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshActiveTab = useCallback(() => {
     if (activeTab === "mcp") return refreshMcp();
     if (activeTab === "agents") return refreshAgents();
-    if (activeTab === "nodes") return refreshDaemons();
     if (activeTab === "system") return refreshDeployment();
-  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshMcp]);
+  }, [activeTab, refreshAgents, refreshDeployment, refreshMcp]);
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
@@ -746,11 +692,9 @@ export function SettingsPanel(): JSX.Element {
       ? mcpResource.loading
       : activeTab === "agents"
         ? agentsResource.loading
-        : activeTab === "nodes"
-          ? daemonsResource.loading
-          : activeTab === "system"
-            ? deploymentResource.loading
-            : false;
+        : activeTab === "system"
+          ? deploymentResource.loading
+          : false;
 
   return (
     <Tabs
@@ -784,7 +728,6 @@ export function SettingsPanel(): JSX.Element {
             <span className="haku-settings-tab-long">Notifications</span>
             <span className="haku-settings-tab-short">Alerts</span>
           </Tabs.Tab>
-          <Tabs.Tab value="nodes">Nodes</Tabs.Tab>
           <Tabs.Tab value="system">System</Tabs.Tab>
         </Tabs.List>
       </header>
@@ -862,33 +805,6 @@ export function SettingsPanel(): JSX.Element {
             <SectionHeading title="Notifications" />
             <PushNotificationTable />
           </Stack>
-        </Tabs.Panel>
-        <Tabs.Panel value="nodes">
-          <ResourcePanel
-            title="Node daemons"
-            resource={daemonsResource}
-            label="node daemons"
-            emptyMessage="No node daemons are configured."
-          >
-            {(items) => (
-              <DenseTable label="Node daemons">
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Node</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                    <Table.Th>Version</Table.Th>
-                    <Table.Th>Heartbeat</Table.Th>
-                    <Table.Th>Active work</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {items.map((daemon) => (
-                    <DaemonRow key={daemon.daemon_id} daemon={daemon} />
-                  ))}
-                </Table.Tbody>
-              </DenseTable>
-            )}
-          </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="system">
           <Stack gap="xs" className="haku-page-list">

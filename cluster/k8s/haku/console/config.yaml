@@ -660,14 +660,3 @@ mcp:
         credential:
           kind: operator_connection
           connection: google_calendar
-node_daemons:
-  daemons:
-    wyrm2:
-      display_name: wyrm2
-      backends: [hostexec]
-    rugged:
-      display_name: rugged
-      backends: [hostexec]
-    atlas:
-      display_name: atlas
-      backends: [hostexec]

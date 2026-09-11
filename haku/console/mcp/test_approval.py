@@ -39,7 +39,6 @@ from haku.console.database_schema import (
     McpToolCallPrincipal,
     StaticCredential,
 )
-from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.identity import operator_auth
 from haku.console.identity.agent import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -1743,7 +1742,6 @@ async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> Non
         "credential_kind": tuple(kind.value for kind in CredentialKind),
         "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
         "operator_status": tuple(status.value for status in OperatorStatus),
-        "node_daemon_execution_status": tuple(status.value for status in ExecutionStatus),
         "tool_call_status": tuple(status.value for status in ToolCallStatus),
     }
     assert baseline_values == current_values

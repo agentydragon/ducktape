@@ -35,7 +35,6 @@ from pydantic import BaseModel
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
-from haku.console.hostexecd.service import DaemonStatusResponse
 from haku.console.mcp.in_process_servers import InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp.server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
 from haku.console.tools.grants import GrantsToolsService
@@ -47,7 +46,6 @@ GROCY_SF_SERVER_ID = "grocy-sf"
 _CONSOLE_NATIVE_RESULT_MODELS: dict[str, type[BaseModel]] = {
     "get_mcp_server_status": McpServerProbeResponse,
     "list_mcp_servers": McpServerConnectionStatusResponse,
-    "list_node_daemons": DaemonStatusResponse,
 }
 
 # grocy-sf is reflected only for the batch tools the console renders previews for; the rest of

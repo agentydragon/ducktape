@@ -64,9 +64,7 @@ without conflating their authorship. `auto_approval_evaluation` retains the poli
 
 The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
 `/api/tool-calls`; `POST /api/tool-calls/{tool_call_id}/decision` is exact-Origin-gated. The event
-WebSocket is only a lossy invalidation channel: REST remains authoritative. `list_node_daemons`
-reflects persisted heartbeat/lease state; the separately authenticated `/api/node-daemons/v1/*`
-machine API owns heartbeat, durable work claims, lease renewal, and idempotent results. Operator
+WebSocket is only a lossy invalidation channel: REST remains authoritative. Operator
 OAuth and provider associations are managed by `mcp/operator_oauth.py` and
 `oauth/provider_connection.py`; browser rendering and callback-result handling are specified in
 <docs/oauth_browser_surfaces.md>.

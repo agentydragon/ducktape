@@ -107,22 +107,6 @@ const SCENES = [
     frame: true,
   },
   {
-    name: "settings-nodes",
-    viewport: { width: 1200, height: 1000 },
-    closeApprovals: true,
-    clicks: ['[role="tab"]::-p-text(Nodes)'],
-    expectVisible: '[aria-label="Node status: busy"]',
-    frame: true,
-  },
-  {
-    name: "settings-nodes-mobile",
-    viewport: { width: 390, height: 900 },
-    closeApprovals: true,
-    clickTabText: "Nodes",
-    expectVisible: '[aria-label="Node status: busy"]',
-    frame: true,
-  },
-  {
     name: "settings-system",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,

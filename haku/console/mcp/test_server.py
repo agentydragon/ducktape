@@ -301,7 +301,6 @@ async def _operator_post(
 
 async def test_tool_surface_splits_pass_through_and_request(agent_client: Client, harness: _Harness) -> None:
     tools = {t.name: t for t in await agent_client.list_tools()}
-    daemon_status = await agent_client.call_tool("list_node_daemons", {})
 
     # Gmail reads are transparent pass-through: server-prefixed name, no envelope nesting.
     assert "gmail__labels_list" in tools
@@ -345,13 +344,7 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
         "approval_mode": "approval_required",
     }
     # The read tools are present.
-    assert {
-        "get_mcp_server_status",
-        "get_tool_call",
-        "list_node_daemons",
-        "list_tool_calls",
-        "list_mcp_servers",
-    } <= tools.keys()
+    assert {"get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
     assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
@@ -363,16 +356,9 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert get_fields["default"] == [ToolCallPayloadField.RESULT]
     assert list_fields["items"]["enum"] == [field.value for field in ToolCallPayloadField]
     assert list_fields["default"] == []
-    assert daemon_status.structured_content == {"daemons": []}
     # Native read tools advertise read-only + closed-world so clients (claude.ai) treat them as
     # passive reads and skip approvals. See mcp_infra/docs/tool_annotations.md.
-    for meta_tool in (
-        "get_mcp_server_status",
-        "get_tool_call",
-        "list_node_daemons",
-        "list_tool_calls",
-        "list_mcp_servers",
-    ):
+    for meta_tool in ("get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"):
         ann = tools[meta_tool].annotations
         assert ann is not None
         assert ann.readOnlyHint is True

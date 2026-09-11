@@ -133,8 +133,6 @@ function sceneElement(scene: string) {
     case "settings-grants-history":
     case "settings-grants-revoke":
     case "settings-notifications":
-    case "settings-nodes":
-    case "settings-nodes-mobile":
     case "settings-system":
       return <ConsoleScene view="settings" />;
     case "settings-oauth-success":

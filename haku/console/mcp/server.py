@@ -57,7 +57,6 @@ from pydantic import (
 
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import tool_call_console_url
-from haku.console.hostexecd.service import DaemonStatusResponse, Service
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp.approval import (
     DegradedReflection,
@@ -146,7 +145,6 @@ class ConsoleMcpContext:
     provider_store: PostgresProviderConnectionStore
     dispatcher: McpServerDispatcher
     catalogs: OperatorCatalogReconciler
-    node_daemons: Service | None = None
 
 
 class ToolCallStub(BaseModel):
@@ -856,22 +854,6 @@ def build_console_mcp(
         Cataloged provider accounts whose OAuth client is absent remain visible as ``unprovisioned``.
         """
         return await _passive_server_connection_statuses(context, actor)
-
-    @mcp.tool(annotations=_READ_ONLY_META)
-    async def list_node_daemons(actor: RuntimeActor = current_actor_dependency) -> DaemonStatusResponse:
-        """List configured node daemons and their current persisted heartbeat/lease status.
-
-        Use this to check whether approved node work can currently be dispatched; do not use it to
-        submit or alter work. Each result includes the daemon's derived presence state, last
-        heartbeat, advertised backends/version, and active execution when one exists. This is a
-        read-only console-state view and does not contact a daemon or renew its lease.
-        """
-        _ = actor
-        return (
-            await context.node_daemons.statuses()
-            if context.node_daemons is not None
-            else DaemonStatusResponse(daemons=[])
-        )
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_mcp_server_status(

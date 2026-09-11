@@ -27,7 +27,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `approvals_embed_page.tsx` — the small-window tool-approval surface. It reuses the approvals tab
   and shared tool-call cards without mounting navigation chrome or the cross-origin Haku UI iframe;
   Agent UI bridge-only location and screenshot approvals remain in the full shell.
-- `settings_panel.tsx` — the Settings page. It reads MCP-server and node-daemon reflection through
+- `settings_panel.tsx` — the Settings page. It reads MCP-server reflection through
   the console's Operator-authenticated MCP transport, validating each result against the
   Python-generated MCP result-schema catalog, and hosts account connect/disconnect, per-Agent
   auto-approval policy, Web Push registration, deployment commit links, and configured recall-index

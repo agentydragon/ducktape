@@ -4,7 +4,6 @@
 // client) — harness.tsx imports this first. Paired with a `<base href>` in the harness page
 // (render.mjs) so the relative "/api/…" URL parses in the origin-less setContent page.
 import {
-  SAMPLE_DAEMONS,
   SAMPLE_DEPLOYMENT,
   SAMPLE_GRANTS,
   SAMPLE_MCP_PROBES,
@@ -164,7 +163,6 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
       }
       return SAMPLE_MCP_PROBES[serverId];
     },
-    list_node_daemons: () => ({ daemons: SAMPLE_DAEMONS }),
   });
   if (mcpResponse !== null) return mcpResponse;
   if (url.includes("/api/tool-calls")) {

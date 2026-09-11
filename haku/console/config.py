@@ -266,32 +266,6 @@ class WebPushConfig(BaseModel):
         return value
 
 
-class NodeDaemonDefinition(BaseModel):
-    """One outbound node daemon and the bearer used to authenticate it."""
-
-    display_name: str
-    token: SecretStr
-    backends: list[str] = Field(min_length=1)
-
-
-class NodeDaemonsConfig(BaseModel):
-    """Reusable heartbeat, long-poll, and lease policy for node execution daemons."""
-
-    daemons: dict[str, NodeDaemonDefinition]
-    heartbeat_interval_seconds: int = Field(default=10, ge=2, le=60)
-    connected_after_seconds: int = Field(default=30, ge=5, le=300)
-    offline_after_seconds: int = Field(default=60, ge=10, le=600)
-    claim_wait_seconds: int = Field(default=20, ge=1, le=25)
-    dispatch_timeout_seconds: int = Field(default=10, ge=1, le=60)
-    lease_seconds: int = Field(default=30, ge=10, le=300)
-
-    @model_validator(mode="after")
-    def _ordered_presence_thresholds(self) -> Self:
-        if self.offline_after_seconds <= self.connected_after_seconds:
-            raise ValueError("offline_after_seconds must exceed connected_after_seconds")
-        return self
-
-
 class ConsoleProcessConfig(BaseModel):
     """Process-local fields combined with the deploy catalog by ``settings.Settings``."""
 

@@ -2,7 +2,7 @@
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
 import type { AiquotaView, DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
-import type { DaemonStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
+import type { McpServerConnection, McpServerProbe } from "../mcp_status_client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -417,27 +417,6 @@ export const SAMPLE_GRANTS: GrantListResponse = {
     },
   ],
 } satisfies GrantListResponse;
-
-export const SAMPLE_DAEMONS: DaemonStatus[] = [
-  {
-    daemon_id: "wyrm2",
-    display_name: "wyrm2",
-    status: "busy",
-    last_heartbeat_at: "2025-02-01T11:58:00Z",
-    version: "0.1.0",
-    backends: ["hostexec"],
-    active_execution_id: "8c8b5bc2-8b0c-4e89-9f1b-8129fa28d255",
-  },
-  {
-    daemon_id: "rugged",
-    display_name: "rugged",
-    status: "offline",
-    last_heartbeat_at: "2025-01-31T14:10:00Z",
-    version: "0.1.0",
-    backends: ["hostexec"],
-    active_execution_id: null,
-  },
-];
 
 export const SAMPLE_DEPLOYMENT: DeploymentInfo = {
   server: {
