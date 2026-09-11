@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useState, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -226,7 +226,6 @@ export function SessionView({
   const [model, setModel] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelPending, setModelPending] = useState(false);
-  const bottom = useRef<HTMLDivElement | null>(null);
   // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
   // so a reading can be linked to and survives a reload.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -290,10 +289,6 @@ export function SessionView({
       setModelPending(false);
     }
   }
-
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
-  }, [state.lastSequence]);
 
   async function submit(): Promise<void> {
     const text = draft.trim();
@@ -406,7 +401,6 @@ export function SessionView({
                 ))}
             </>
           )}
-          <div ref={bottom} />
         </Stack>
       </ScrollArea>
       <Group align="flex-end" gap="xs" wrap="nowrap">
