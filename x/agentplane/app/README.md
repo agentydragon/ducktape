@@ -101,8 +101,8 @@ stopped moving says so rather than showing it as live.
 
 ## Authentication and authorization
 
-Every API route needs a caller; only `/healthz`, the `/auth/*` endpoints, the service worker at
-`/sw.js`, and the SPA's static files mounted at `/` answer without one. There are two credentials,
+Every API route needs a caller; only `/healthz`, `/readyz`, the `/auth/*` endpoints, the service
+worker at `/sw.js`, and the SPA's static files mounted at `/` answer without one. There are two credentials,
 and both are cryptographic:
 
 - **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
@@ -131,6 +131,15 @@ way in. The API server's service proxy was the other way in and it forwards call
 headers, so anyone with `services/proxy` on the Service could grant themselves egress.
 Owning the login also drops the outpost's 15-second stall on every SSE stream, whose response
 writer implements no `Flush()`.
+
+## Shutdown
+
+SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/healthz` stays a
+liveness check), every other new request is refused, and every open SSE stream -- the live views,
+a session's events, the Actions stream -- ends where it is waiting rather than at its next frame.
+Uvicorn waits at most `--shutdown-timeout` (5 s) for what is still open, then cancels it. Only after
+that does the bridge release its ingestion leases and the store close its connections, which is what
+the rest of the Deployments' 60-second grace period is for. No preStop delay consumes that budget.
 
 ## Shape
 

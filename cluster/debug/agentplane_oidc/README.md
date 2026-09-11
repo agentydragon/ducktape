@@ -22,13 +22,6 @@ the Gateway Service). DNS is unchanged.
   them, and non-OVH consumers (aiquota, Airlock, Manifold/Plaid/Postscanmail/Tana
   MCPs on wyrm2; Home Assistant and the JWT rotation Jobs on optiplex) were
   inventoried but never exercised through the Service.
-- **App shutdown budget.** <../../../x/agentplane/app/main.py> builds Uvicorn
-  without `timeout_graceful_shutdown`, and `bridge.close()`/`store.close()` run
-  only after `serve()` returns, so an open browser stream can hold shutdown past
-  the 30 s pod grace. The app is one replica with `Recreate`
-  (<../../k8s/agentplane-staging/app/deployment-agentplane-app.yaml>), so a
-  rollout's outage is termination plus startup (174 s observed on 2026-09-11).
-  Bound the HTTP/SSE drain and leave time for bridge and database close.
 - **mitmproxy Docker-CI rule.** The `toFQDNs docker-ci.allegedly.works:2376`
   rule in <../../k8s/agents/mitmproxy/cnp-cloud-api-egress.yaml> (annotated as
   suspected dead) is confirmed dead: on 2026-09-10 04:08 UTC a TCP connect from

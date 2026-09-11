@@ -21,6 +21,7 @@ from x.agentplane.app.changes import Changes
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import PresetCatalog, Provider, SandboxBinding
+from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import FeedEnd, FeedError, IngestionLease, IngestionLeaseLostError, TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
@@ -417,6 +418,7 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
 @router.get("/{session_id}/events")
 async def session_events(
     bridge: Bridge,
+    shutdown: Shutdown,
     name: str,
     session_id: str,
     after: Annotated[int, Query(ge=0, description="Replay events with a greater sequence.")] = 0,
@@ -425,7 +427,7 @@ async def session_events(
     # A browser's automatic reconnect sends the last id it saw; that wins over the query parameter.
     after_sequence = last_event_id if last_event_id is not None else after
     return StreamingResponse(
-        bridge.events(name, session_id, after_sequence=after_sequence),
+        shutdown.until(bridge.events(name, session_id, after_sequence=after_sequence)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
