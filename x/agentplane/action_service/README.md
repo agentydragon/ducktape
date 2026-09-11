@@ -248,7 +248,9 @@ evaluation. Invalid arguments return HTTP 422 without reserving the idempotency 
 Dispatch uses the executor bound to that group. `ActionStore` owns persistence and lifecycle,
 not a second admission registry. Executors expose execution only, not an action registry.
 Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
-retried. The existing single-Execution claim and no-retry state machine are unchanged.
+retried. Each service replica may own its own current FastMCP connection; the database-backed
+single-Execution claim and lease token, not the MCP connection, fence dispatch and keep a lost
+attempt from being replayed. The existing no-retry state machine is unchanged.
 
 `runtime.running_executor` owns one typed `McpActionGroupExecutor` per reviewed group, using
 `isinstance(McpExecutorBinding)` and the stdio or streamable-HTTP config below. It passes a group-keyed
@@ -258,13 +260,17 @@ executor, never a production default or factory option.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
 path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail
-settings validation without echoing input values; missing/invalid MCP config, connection failure, or failed initial
-`tools/list` aborts startup before HTTP serving or pending-request recovery. All bindings are
-validated before any server is launched. Startup unwinds already-opened adapters, including a
+settings validation without echoing input values. All bindings are validated before any server is
+launched. Credentialless MCP groups must connect and complete initial `tools/list` before HTTP
+serving or pending-request recovery; a failure aborts startup. OAuth-linked groups are different:
+an unlinked or expired provider starts unavailable, and its supervisor connects only after the
+shared linkage authority reports a current link. It keeps the group unavailable across connection,
+catalog, and authorization failures and creates a fresh FastMCP client for the next connection.
+The HTTP auth hook resolves the current linkage token for every request, so ordinary token refresh
+does not require restarting the service. Startup unwinds already-opened adapters, including a
 partially started adapter; shutdown stops service tasks before closing MCP clients/refresh tasks,
 then Kubernetes and database resources. After startup, catalog-refresh failures retain the landed
-adapter's unavailable-and-retry behavior. OAuth, credential/profile design, and a generic executor
-registry are not part of this composition.
+adapter's unavailable-and-retry behavior.
 
 Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
 The fields remain separate throughout discovery, validation and dispatch; no concatenated identity

@@ -148,6 +148,7 @@ class McpLinkageAuthority:
         self._engine = engine
         self._stop = asyncio.Event()
         self._refresh_task: asyncio.Task[None] | None = None
+        self._change_events: dict[str, set[asyncio.Event]] = {}
 
     async def start_refresh_loop(self) -> None:
         if self._refresh_task is None:
@@ -182,6 +183,24 @@ class McpLinkageAuthority:
 
     def servers(self) -> dict[str, McpOAuthServer]:
         return dict(self._servers)
+
+    def subscribe_changes(self, server_id: str) -> asyncio.Event:
+        self._server(server_id)
+        changed = asyncio.Event()
+        self._change_events.setdefault(server_id, set()).add(changed)
+        return changed
+
+    def unsubscribe_changes(self, server_id: str, changed: asyncio.Event) -> None:
+        subscribers = self._change_events.get(server_id)
+        if subscribers is None:
+            return
+        subscribers.discard(changed)
+        if not subscribers:
+            self._change_events.pop(server_id, None)
+
+    def _notify_change(self, server_id: str) -> None:
+        for changed in self._change_events.get(server_id, ()):
+            changed.set()
 
     async def statuses(self) -> list[McpLinkageView]:
         return [await self.status(server_id) for server_id in self._servers]
@@ -290,7 +309,9 @@ class McpLinkageAuthority:
                 current.linked_at = now
                 current.linked_by = operator_principal
             await db.flush()
-            return _view(server, current, token_state)
+            view = _view(server, current, token_state)
+        self._notify_change(server.server_id)
+        return view
 
     async def disconnect(self, server_id: str, operator: Principal) -> McpLinkageView:
         self._require_operator(operator)
@@ -310,7 +331,9 @@ class McpLinkageAuthority:
                 row.linked_by = None
             if state is not None:
                 await db.delete(state)
-            return _view(server, row, None)
+            view = _view(server, row, None)
+        self._notify_change(server.server_id)
+        return view
 
     async def access_token(self, server_id: str, expected_revision: int) -> str:
         """Resolve a token only after dispatch has fenced the linkage revision."""

@@ -481,7 +481,9 @@ async def test_discovery_wait_renews_and_lost_lease_prevents_tool_call() -> None
     lease = ControlledLease(listing, "healthy")
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
     await executor.start()
-    list_tools = executor._client.list_tools
+    client = executor._client
+    assert client is not None
+    list_tools = client.list_tools
 
     async def gated_list():
         listing.set()
@@ -489,7 +491,7 @@ async def test_discovery_wait_renews_and_lost_lease_prevents_tool_call() -> None
         return await list_tools()
 
     try:
-        with patch.object(executor._client, "list_tools", gated_list):
+        with patch.object(client, "list_tools", gated_list):
             task = asyncio.create_task(
                 executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="echo"), arguments={}), lease)
             )

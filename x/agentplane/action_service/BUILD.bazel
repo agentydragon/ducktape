@@ -443,6 +443,7 @@ py_test(
         ":db",
         ":main",
         ":mcp_executor",
+        ":mcp_linkage",
         ":models",
         ":runtime",
         ":service",

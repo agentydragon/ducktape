@@ -17,11 +17,13 @@ from x.agentplane.action_service.models import Executor
 async def running_executor(
     catalog: ActionCatalog, linkage: McpLinkageAuthority | None = None
 ) -> AsyncIterator[dict[str, Executor]]:
-    """Validate all bindings before connecting, then require initial discovery for every group.
+    """Validate all bindings before connecting, then start each executor.
 
     An empty catalog intentionally serves no actions. A configured group must have a valid MCP
-    binding and connect/discover successfully; there is no EchoExecutor fallback. Later discovery
-    failures retain the adapter's unavailable-and-retry behavior.
+    binding; there is no EchoExecutor fallback. Credentialless groups must connect and discover
+    successfully before serving. OAuth-linked groups may start unavailable while unlinked and
+    reconnect in the background when their shared linkage authority becomes linked. Later
+    discovery failures retain the adapter's unavailable-and-retry behavior.
     """
     executors: dict[str, McpActionGroupExecutor] = {}
     for key, group in catalog.groups.items():

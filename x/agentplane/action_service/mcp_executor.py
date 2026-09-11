@@ -1,9 +1,10 @@
 """The first concrete Executor wiring gate adapter: one ActionGroup backed by one MCP server.
 
-Owns a persistent connection to the configured MCP server, mirrors its `tools/list` into the
-bound `ActionGroup`'s catalog, and initiates `tools/call` itself — the Agent/harness never gets
-a direct MCP client. See plans/operations_and_access.md § "Action groups, MCP discovery, and
-backend ownership".
+Owns the current FastMCP connection to the configured MCP server, mirrors its `tools/list` into
+the bound `ActionGroup`'s catalog, and initiates `tools/call` itself — the Agent/harness never
+gets a direct MCP client. OAuth-backed groups may be dormant until their shared linkage authority
+has a token. See plans/operations_and_access.md § "Action groups, MCP discovery, and backend
+ownership".
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from typing import Any, Literal, cast
@@ -34,13 +36,14 @@ from pydantic import (
 )
 
 from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key, McpExecutorBinding
-from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority
+from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStatus
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
 from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CATALOG_REFRESH_INTERVAL = timedelta(minutes=5)
+LINKAGE_POLL_INTERVAL = timedelta(seconds=5)
 _KEY_ADAPTER = TypeAdapter(Key)
 
 
@@ -104,6 +107,10 @@ class _LinkageBearerAuth(httpx.Auth):
         yield request
 
 
+class _InvalidMcpCatalogError(Exception):
+    pass
+
+
 class McpActionGroupExecutor:
     """Implements `Executor` for exactly one `ActionGroup` backed by one MCP server connection."""
 
@@ -111,10 +118,11 @@ class McpActionGroupExecutor:
         self,
         group_key: str,
         group: ActionGroup,
-        transport: ClientTransport | Any,
+        transport: ClientTransport | Any | None = None,
         *,
         catalog_refresh_interval: timedelta = DEFAULT_CATALOG_REFRESH_INTERVAL,
         execution_timeout: timedelta = timedelta(minutes=10),
+        transport_factory: Callable[[], ClientTransport | Any] | None = None,
     ) -> None:
         if execution_timeout <= timedelta(0):
             raise ValueError("execution_timeout must be positive")
@@ -123,9 +131,23 @@ class McpActionGroupExecutor:
         self._group = group
         self._catalog_refresh_interval = catalog_refresh_interval
         self._tool_list_changed = asyncio.Event()
-        self._client = Client(transport, message_handler=_ToolListChangeHandler(self._tool_list_changed))
-        self._stack = AsyncExitStack()
+        if transport_factory is None:
+            if transport is None:
+                raise ValueError("an MCP transport or transport factory is required")
+
+            def make_transport() -> ClientTransport | Any:
+                return transport
+
+            self._transport_factory = make_transport
+        else:
+            self._transport_factory = transport_factory
+        self._client: Client[Any] | None = None
+        self._stack: AsyncExitStack | None = None
         self._refresh_task: asyncio.Task[None] | None = None
+        self._linkage_task: asyncio.Task[None] | None = None
+        self._linkage: McpLinkageAuthority | None = None
+        self._linkage_server_id: str | None = None
+        self._linkage_changed: asyncio.Event | None = None
         self._requires_linkage = False
 
     @property
@@ -143,12 +165,18 @@ class McpActionGroupExecutor:
         if not isinstance(group.executor, McpExecutorBinding):
             raise ValueError("unsupported executor binding; expected MCP")
         config = _SERVER_CONFIG_ADAPTER.validate_python(group.executor.config)
-        transport: ClientTransport
         if isinstance(config, McpStdioServerConfig):
-            transport = StdioTransport(config.command, config.args, env=config.env or None, cwd=config.cwd)
+
+            def transport_factory() -> ClientTransport:
+                return StdioTransport(config.command, config.args, env=config.env or None, cwd=config.cwd)
         else:
-            transport = StreamableHttpTransport(config.url, auth=None)
-        return cls(group_key, group, transport, catalog_refresh_interval=catalog_refresh_interval)
+
+            def transport_factory() -> ClientTransport:
+                return StreamableHttpTransport(config.url, auth=None)
+
+        return cls(
+            group_key, group, catalog_refresh_interval=catalog_refresh_interval, transport_factory=transport_factory
+        )
 
     @classmethod
     def from_group_with_linkage(
@@ -164,24 +192,169 @@ class McpActionGroupExecutor:
         config = _SERVER_CONFIG_ADAPTER.validate_python(group.executor.config)
         if not isinstance(config, McpHttpServerConfig) or config.auth != "oauth" or config.server_id is None:
             return cls.from_group(group_key, group, catalog_refresh_interval=catalog_refresh_interval)
-        transport = StreamableHttpTransport(config.url, auth=_LinkageBearerAuth(linkage, config.server_id))
-        executor = cls(group_key, group, transport, catalog_refresh_interval=catalog_refresh_interval)
+        server_id = config.server_id
+
+        def transport_factory() -> ClientTransport:
+            return StreamableHttpTransport(config.url, auth=_LinkageBearerAuth(linkage, server_id))
+
+        executor = cls(
+            group_key, group, catalog_refresh_interval=catalog_refresh_interval, transport_factory=transport_factory
+        )
+        executor._linkage = linkage
+        executor._linkage_server_id = server_id
+        executor._linkage_changed = linkage.subscribe_changes(server_id)
         executor._requires_linkage = True
         return executor
 
     async def start(self) -> None:
         self._group.available = False
         self._group.actions = {}
-        await self._stack.enter_async_context(self._client)
-        await self.refresh_catalog()
+        if self._requires_linkage:
+            self._linkage_task = asyncio.create_task(
+                self._linkage_loop(), name=f"mcp-executor-linkage-{self._group_key}"
+            )
+            return
+        await self._connect_client()
         self._refresh_task = asyncio.create_task(self._refresh_loop(), name=f"mcp-executor-refresh-{self._group_key}")
 
     async def close(self) -> None:
-        if self._refresh_task is not None:
-            self._refresh_task.cancel()
-            await asyncio.gather(self._refresh_task, return_exceptions=True)
-            self._refresh_task = None
-        await self._stack.aclose()
+        for task_name in ("_refresh_task", "_linkage_task"):
+            task = getattr(self, task_name)
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                setattr(self, task_name, None)
+        await self._disconnect_client()
+        if self._linkage is not None and self._linkage_server_id is not None and self._linkage_changed is not None:
+            self._linkage.unsubscribe_changes(self._linkage_server_id, self._linkage_changed)
+            self._linkage_changed = None
+
+    async def _connect_client(self) -> None:
+        client = Client[Any](self._transport_factory(), message_handler=_ToolListChangeHandler(self._tool_list_changed))
+        stack = AsyncExitStack()
+        try:
+            await stack.enter_async_context(client)
+            actions = await self._discover_catalog(client)
+        except _InvalidMcpCatalogError:
+            self._client = client
+            self._stack = stack
+            self._mark_unavailable()
+            return
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+            raise
+        self._client = client
+        self._stack = stack
+        self._publish_catalog(actions)
+
+    async def _disconnect_client(self, *, suppress_errors: bool = False) -> None:
+        stack = self._stack
+        self._client = None
+        self._stack = None
+        if stack is None:
+            return
+        if suppress_errors:
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+        else:
+            await stack.aclose()
+
+    async def _linkage_loop(self) -> None:
+        while True:
+            if self._client is None:
+                self._clear_wakeup()
+                if not await self._linkage_is_ready():
+                    self._mark_unavailable()
+                    await self._wait_for_wakeup(LINKAGE_POLL_INTERVAL)
+                    continue
+                try:
+                    await self._connect_client()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("MCP OAuth connection failed; %s remains unavailable", self._group_key)
+                    self._mark_unavailable()
+                    await self._wait_for_wakeup(LINKAGE_POLL_INTERVAL)
+                continue
+
+            await self._wait_for_wakeup(self._catalog_refresh_interval)
+            self._clear_wakeup()
+            client = self._client
+            if client is None:
+                continue
+            if not await self._linkage_is_ready():
+                self._mark_unavailable()
+                await self._disconnect_client(suppress_errors=True)
+                continue
+            try:
+                actions = await self._discover_catalog(client)
+            except asyncio.CancelledError:
+                raise
+            except _InvalidMcpCatalogError:
+                logger.warning("MCP catalog invalid; %s marked unavailable", self._group_key)
+                self._mark_unavailable()
+            except Exception:
+                logger.warning("MCP OAuth session failed; reconnecting %s", self._group_key)
+                self._mark_unavailable()
+                await self._disconnect_client(suppress_errors=True)
+            else:
+                self._publish_catalog(actions)
+
+    async def _linkage_is_ready(self) -> bool:
+        if self._linkage is None or self._linkage_server_id is None:
+            return False
+        try:
+            status = await self._linkage.status(self._linkage_server_id)
+        except Exception:
+            logger.warning("MCP OAuth linkage status failed; %s remains unavailable", self._group_key)
+            return False
+        return status.status is McpLinkageStatus.LINKED
+
+    async def _wait_for_wakeup(self, delay: timedelta) -> None:
+        events = [self._tool_list_changed]
+        if self._linkage_changed is not None:
+            events.append(self._linkage_changed)
+        waiters = [asyncio.create_task(event.wait()) for event in events]
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout(delay.total_seconds()):
+                await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
+        for waiter in waiters:
+            waiter.cancel()
+        await asyncio.gather(*waiters, return_exceptions=True)
+
+    def _clear_wakeup(self) -> None:
+        self._tool_list_changed.clear()
+        if self._linkage_changed is not None:
+            self._linkage_changed.clear()
+
+    async def _discover_catalog(self, client: Client[Any]) -> dict[str, ActionDefinition]:
+        tools = await client.list_tools()
+        actions: dict[str, ActionDefinition] = {}
+        for tool in tools:
+            try:
+                key = _KEY_ADAPTER.validate_python(tool.name)
+            except ValidationError:
+                logger.warning("MCP tool name %r does not fit the catalog key pattern; skipping", tool.name)
+                continue
+            try:
+                jsonschema.validators.validator_for(tool.inputSchema).check_schema(tool.inputSchema)
+                if key in actions:
+                    raise ValueError("duplicate MCP tool name")
+                actions[key] = ActionDefinition(
+                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.inputSchema
+                )
+            except (jsonschema.SchemaError, ValueError) as error:
+                raise _InvalidMcpCatalogError from error
+        return actions
+
+    def _publish_catalog(self, actions: dict[str, ActionDefinition]) -> None:
+        self._group.actions = actions
+        self._group.available = True
+
+    def _mark_unavailable(self) -> None:
+        self._group.available = False
+        self._group.actions = {}
 
     async def _refresh_loop(self) -> None:
         while True:
@@ -198,34 +371,21 @@ class McpActionGroupExecutor:
                 logger.warning("periodic MCP catalog refresh failed; will retry")
 
     async def refresh_catalog(self) -> None:
+        client = self._client
+        if client is None:
+            self._mark_unavailable()
+            return
         try:
-            tools = await self._client.list_tools()
+            actions = await self._discover_catalog(client)
+        except _InvalidMcpCatalogError:
+            logger.warning("MCP catalog invalid; %s marked unavailable", self._group_key)
+            self._mark_unavailable()
+            return
         except Exception:
             logger.warning("MCP tools/list failed; %s marked unavailable", self._group_key)
-            self._group.available = False
-            self._group.actions = {}
+            self._mark_unavailable()
             return
-        actions: dict[str, ActionDefinition] = {}
-        for tool in tools:
-            try:
-                key = _KEY_ADAPTER.validate_python(tool.name)
-            except ValidationError:
-                logger.warning("MCP tool name %r does not fit the catalog key pattern; skipping", tool.name)
-                continue
-            try:
-                jsonschema.validators.validator_for(tool.inputSchema).check_schema(tool.inputSchema)
-                if key in actions:
-                    raise ValueError("duplicate MCP tool name")
-                actions[key] = ActionDefinition(
-                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.inputSchema
-                )
-            except (jsonschema.SchemaError, ValueError):
-                logger.warning("MCP catalog invalid; %s marked unavailable", self._group_key)
-                self._group.available = False
-                self._group.actions = {}
-                return
-        self._group.actions = actions
-        self._group.available = True
+        self._publish_catalog(actions)
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         # Ownership/liveness, not evidence of backend progress. Bound the whole exchange so
@@ -271,10 +431,19 @@ class McpActionGroupExecutor:
                 error={"kind": "unknown_action", "message": "action is not owned by this group"},
             )
 
+        client = self._client
+        if client is None:
+            return ExecutionResult(
+                state=ExecutionState.FAILED,
+                error={"kind": "mcp_unavailable", "message": "could not verify the current tool schema"},
+            )
+
         try:
-            tools = await self._client.list_tools()
+            tools = await client.list_tools()
         except Exception:
             logger.warning("MCP tools/list failed before dispatch; refusing without calling the backend")
+            if self._requires_linkage:
+                self._tool_list_changed.set()
             return ExecutionResult(
                 state=ExecutionState.FAILED,
                 error={"kind": "mcp_unavailable", "message": "could not verify the current tool schema"},
@@ -305,8 +474,10 @@ class McpActionGroupExecutor:
 
         await self._renew(lease)
         try:
-            result = await self._client.call_tool(name, request.arguments, raise_on_error=False)
+            result = await client.call_tool(name, request.arguments, raise_on_error=False)
         except Exception as error:
+            if self._requires_linkage:
+                self._tool_list_changed.set()
             raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from error
 
         if result.is_error:

@@ -11,10 +11,12 @@ import json
 import traceback
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 import pytest_bazel
 import uvicorn
@@ -32,7 +34,8 @@ from util.testing.asgi import serve_app_sync
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.db import ExecutionRow, make_sessionmaker
 from x.agentplane.action_service.main import Settings, async_main
-from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
+from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
+from x.agentplane.action_service.mcp_linkage import McpLinkageStatus
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
@@ -269,6 +272,69 @@ async def test_http_missing_call_result_is_unknown_without_retry(
     with pytest.raises(ExecutionOutcomeUnknownError, match="MCP tools/call transport failure"):
         await executor.execute(execution_request, execution_lease)
     assert len(fake_server.calls) == 1
+
+
+async def test_unlinked_oauth_group_starts_dormant_without_connecting() -> None:
+    group = ActionGroup(
+        title="OAuth test group",
+        description="Unlinked OAuth test peer",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="OAuth test peer",
+            config={
+                "transport": "streamable-http",
+                "url": "https://unlinked.invalid/mcp",
+                "auth": "oauth",
+                "server_id": "github",
+            },
+        ),
+    )
+    linkage = AsyncMock()
+    linkage_changed = asyncio.Event()
+    linkage.subscribe_changes = Mock(return_value=linkage_changed)
+    linkage.unsubscribe_changes = Mock()
+    linkage.status.side_effect = [
+        SimpleNamespace(status=McpLinkageStatus.UNLINKED),
+        SimpleNamespace(status=McpLinkageStatus.LINKED),
+    ]
+    with patch("x.agentplane.action_service.mcp_executor.StreamableHttpTransport") as transport:
+        executor = McpActionGroupExecutor.from_group_with_linkage("remote", group, linkage)
+        connected = asyncio.Event()
+        release = asyncio.Event()
+
+        async def connect() -> None:
+            connected.set()
+            await release.wait()
+
+        with patch.object(executor, "_connect_client", connect):
+            await executor.start()
+            try:
+                await asyncio.sleep(0)
+                assert not group.available
+                assert group.actions == {}
+                assert transport.call_count == 0
+                linkage.status.assert_awaited()
+                linkage_changed.set()
+                async with asyncio.timeout(1):
+                    await connected.wait()
+            finally:
+                await executor.close()
+
+
+async def test_oauth_auth_resolves_the_current_token_for_each_request() -> None:
+    linkage = AsyncMock()
+    linkage.access_token_for_execution.side_effect = ["token-one", "token-two"]
+    auth = _LinkageBearerAuth(linkage, "github")
+
+    async def authenticated(request: httpx.Request) -> httpx.Request:
+        async for result in auth.async_auth_flow(request):
+            return cast(httpx.Request, result)
+        raise AssertionError("auth flow did not yield a request")
+
+    first = await authenticated(httpx.Request("GET", "https://test.invalid/mcp"))
+    second = await authenticated(httpx.Request("GET", "https://test.invalid/mcp"))
+    assert first.headers["Authorization"] == "Bearer token-one"
+    assert second.headers["Authorization"] == "Bearer token-two"
 
 
 @pytest.mark.parametrize(
