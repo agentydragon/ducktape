@@ -48,6 +48,29 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      # Migrations are part of the proxy Pod lifecycle: a new migration image rolls the
+      # Deployment, and a failed migration keeps this Pod unavailable while Kubernetes retries
+      # it. The migration takes a PostgreSQL advisory lock, so concurrent starts serialize.
+      initContainers:
+        - name: migrate
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-migrate:devel-20260911005717-ebffd47 # {"$imagepolicy": "flux-system:agentplane-egress-migrate"}
+          imagePullPolicy: Always
+          env:
+            - name: AGENTPLANE_EGRESS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-egress-db-app
+                  key: uri
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: proxy
           image: git.allegedly.works/ducktape-ci/agentplane-egress:devel-20260911005723-ebffd47 # {"$imagepolicy": "flux-system:agentplane-egress"}

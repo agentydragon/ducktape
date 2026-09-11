@@ -17,8 +17,6 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
-    - name: agentplane-staging-egress-migrations
-      namespace: ducktape-flux
     - name: agentplane-staging-namespace
       namespace: ducktape-flux
     # Bring the authenticated destination up before changing the model policy away from direct
