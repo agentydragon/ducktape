@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 import pytest
 import pytest_bazel
 import yaml
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from more_itertools import one
 from pydantic import JsonValue
 
@@ -18,6 +20,7 @@ from util.bazel.runfiles import get_required_path
 from x.agentplane.action_service.catalog import ActionCatalog
 from x.agentplane.action_service.main import Settings
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor, McpHttpServerConfig
+from x.agentplane.action_service.push import PushIdentity
 from x.agentplane.action_service.runtime import running_executor
 
 
@@ -106,6 +109,56 @@ async def test_reviewed_binding_errors_fail_before_any_connection(
                 pytest.fail("malformed reviewed binding was served")
         assert "test-only-private" not in str(error.value)
         start.assert_not_awaited()
+
+
+def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatch) -> None:
+    root = get_required_path("_main/cluster/k8s/agentplane-staging/actions/kustomization.yaml").parent
+    kustomize = get_required_path("multitool/tools/kustomize/kustomize")
+    resources = list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(root)])))
+    deployment = one(r for r in resources if r["kind"] == "Deployment")
+    pod = deployment["spec"]["template"]["spec"]
+    container = one(c for c in pod["containers"] if c["name"] == "actions")
+    key_env = one(e for e in container["env"] if e["name"] == "AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM")
+    reference = key_env["valueFrom"]["secretKeyRef"]
+    secret = one(r for r in resources if r["kind"] == "Secret" and r["metadata"]["name"] == reference["name"])
+    assert secret["metadata"]["namespace"] == "agentplane-staging"
+    assert secret["stringData"][reference["key"]].startswith("ENC[AES256_GCM,")
+    assert reference["name"] in deployment["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(",")
+    flux = yaml.safe_load((root / "flux-kustomization.yaml").read_text())
+    assert flux["spec"]["decryption"] == {"provider": "sops", "secretRef": {"name": "sops-age-cluster-secrets"}}
+
+    private_key = (
+        ec.generate_private_key(ec.SECP256R1())
+        .private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+        .decode()
+    )
+    monkeypatch.setenv(key_env["name"], private_key)
+    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(root / "settings.yaml"))
+    settings = Settings(database_url="postgresql://test.invalid/test", _cli_parse_args=False)
+    assert settings.web_push is not None
+    assert settings.web_push.public_base_url == "https://agentplane-staging.allegedly.works"
+    identity = PushIdentity(settings.web_push)
+    assert identity.application_server_key == PushIdentity(settings.web_push).application_server_key
+    assert len(identity.application_server_key) == 87
+    for host in settings.web_push.allowed_push_hosts:
+        identity.validate_endpoint(f"https://{host}/test-subscription")
+        assert identity.authorization(f"https://{host}/test-subscription").startswith("vapid ")
+    for endpoint in (
+        "https://unreviewed.example/push",
+        "http://fcm.googleapis.com/push",
+        "https://fcm.googleapis.com:8443/push",
+    ):
+        with pytest.raises(ValueError, match="configured HTTPS push service"):
+            identity.validate_endpoint(endpoint)
+
+    policy = one(r for r in resources if r["kind"] == "CiliumNetworkPolicy")
+    rule = one(r for r in policy["spec"]["egress"] if "toFQDNs" in r)
+    assert {r["matchName"] for r in rule["toFQDNs"]} == settings.web_push.allowed_push_hosts
+    port = one(rule["toPorts"])
+    assert port["ports"] == [{"port": "443", "protocol": "TCP"}]
+    assert set(port["serverNames"]) == settings.web_push.allowed_push_hosts
+    dns = one(r for r in policy["spec"]["egress"] if any("rules" in p for p in r.get("toPorts", [])))
+    assert one(dns["toPorts"])["rules"]["dns"] == [{"matchPattern": "*"}]
 
 
 if __name__ == "__main__":

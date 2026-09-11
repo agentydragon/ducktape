@@ -12,6 +12,10 @@ spec:
   path: ./cluster/k8s/agentplane-staging/actions
   prune: true
   wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   sourceRef:
     kind: GitRepository
     name: ducktape

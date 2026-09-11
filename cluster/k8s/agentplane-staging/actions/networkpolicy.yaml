@@ -44,6 +44,19 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: fcm.googleapis.com
+        - matchName: updates.push.services.mozilla.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - fcm.googleapis.com
+            - updates.push.services.mozilla.com
     - toEntities:
         - kube-apiserver
     - toEndpoints:

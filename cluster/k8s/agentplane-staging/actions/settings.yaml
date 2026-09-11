@@ -2,6 +2,12 @@
 # action groups expose only reviewed tool catalogs and never expose client credentials.
 allowed_service_account_namespaces:
   - agentplane-staging
+web_push:
+  subject: mailto:agentydragon@gmail.com
+  public_base_url: https://agentplane-staging.allegedly.works
+  allowed_push_hosts:
+    - fcm.googleapis.com
+    - updates.push.services.mozilla.com
 identities:
   personal:
     enabled: true

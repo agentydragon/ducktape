@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-actions
   annotations:
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid
     configmap.reloader.stakater.com/reload: agentplane-action-federation
 spec:
   replicas: 1
@@ -39,6 +39,11 @@ spec:
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260910235839-0214b48 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
           imagePullPolicy: Always
           env: &database-env
+            - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-staging-web-push-vapid
+                  key: private-key-pem
             - name: AGENTPLANE_ACTIONS_OAUTH
               valueFrom:
                 secretKeyRef:

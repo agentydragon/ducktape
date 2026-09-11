@@ -10,6 +10,7 @@ resources:
   - service.yaml
   - networkpolicy.yaml
   - httproute.yaml
+  - web-push-vapid.sops.yaml
 configMapGenerator:
   - name: agentplane-actions-settings
     files:

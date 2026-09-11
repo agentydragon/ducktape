@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: agentplane-staging-web-push-vapid
+    namespace: agentplane-staging
+type: Opaque
+stringData:
+    private-key-pem: ENC[AES256_GCM,data:CExIchTdlHKFkaRgC/ZJkksGfIq3yO8hpiJs8d/E0F+4C0/xbFXAHPQknz1eaJZkadcVXd9+vjreW9k7PQZWOaOifIKx7y5iBubEDdD5GVpoW02czf5igG9I4XHW8GiT0DL+icTEvd/8WI5b2zkXJXEepdWD92B6SEq/nn3ddGH1BZ3qsXPLH6nyBTIiassNuSpPw6EkWYEctUQTVdVzCscJfJBfr+FZMif8soepEHXqARxov/+pYm5Luo0SZ7PCEWODcrDuDtw0b9vHpsF5kx56+oKuTA3nh5y3dQcTn9k1oFHqkZ4gPsgNG3bz/L20DA==,iv:TAyzWr4BBsE/G6rHvQjD/eBQSpMEbUnsWtT493V2dOQ=,tag:7Bz9dFzb7GwVg23OaITCpQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTSGg4QkF0ZWxMZlAyc1pM
+            SFVxQUd6RFByZDE0NklBZGZhSSswRVRSajI4Ck81eUF5NTRJUk1GRDU5Skp6Zm5X
+            WVBLZkdRdlRwUlR5eDZtN0ZvOUNJdGsKLS0tIEVvbzhrWW1Wa3NYd2c5RnN6Nk9J
+            akFmTGhGWUhISloyVE9vTjh6N2QvcjAKRnNNWLODEZbCTFYFqFiRGrQgGJkwTa5f
+            7KuQAgNRkbInJqvSvhvYs4IAgH7B75NS+M9hzkngflgcTf2Fitzaxg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0UkRwWXE4Unl5T01mcVdk
+            SG5yRi9sUTMwM0VaMUhCd0ZQZGdCditqUHhRCnhsZHZBemdNOWNoNTZSRDNNY05J
+            QU1yaUYxOVNucy9MelpKNG96SEJVS2cKLS0tIFdEOVBPSEk5Mmw3VU9BUnBZeEhT
+            MG5qRXpybkFmOFRQTmp3c2lqanVDTEUKJ7eSHpbhExU2ju4e0z0UXUI9YI6nCz1i
+            1HRmbdxg9BYifiEe+AgshnTKltbeJAPWXG7fs28st+ec5umydFazVQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-11T02:07:29Z"
+    mac: ENC[AES256_GCM,data:QuzJ3gY3LpL286h+I6zlsidtx0IL8wiORknommn+GsrRhk8F+JnRAz6lX1iG3HS9Ng0HeA9fgHR6pIBSTiAlPwkzd5DJPnYsWRl9vgsx6+36aMG32ZW4biWmC8SxanK4fAL6nYHtjijrsEjHi9Qo5Tj5RnH7vkCzkHNZdGi+v7U=,iv:8UYPBc185MS+3GuR1CqULogp33tihi5t3FLC4A05aoc=,tag:/i5sXnPel4wFQhSZQ4GTrw==,type:str]
+    version: 3.13.3
