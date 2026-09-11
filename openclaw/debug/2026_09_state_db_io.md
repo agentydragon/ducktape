@@ -47,6 +47,12 @@ start.
 occurs in exactly one bundle module, `openclaw-agent-db-maintenance-*.js`; the
 verifier is a different module reached from `server-start`.
 
+It has not been observed to finish. On a pod 35 minutes into its life the worker
+was still running after 27 minutes of scanning — `write_bytes` flat at 1.59 GiB,
+so the copy phase was long done — having read 2.72 GiB, with **no** verification
+result of any kind in the log. Whether it completes before the ~2h50m abort is
+unmeasured.
+
 ### 2. The gateway main thread, synchronously
 
 ```text
@@ -129,6 +135,36 @@ So the size is not the problem a bigger limit would solve. 41% is a text
 re-encoding of vectors that already exist packed alongside it, 42% is an unbounded
 transcript log, and the code walks all of it synchronously on the event loop, on a
 rotational disk.
+
+## Turning the verifier off
+
+There is no supported switch. The call site in `server-start` carries one guard:
+
+```js
+if (!minimalTestGateway) {
+  const { startOpenClawDatabaseIntegrityVerifier } = await import("./openclaw-database-verify-<hash>.js");
+  kernel.addGatewayLifetimeSidecar(startOpenClawDatabaseIntegrityVerifier({ env: process.env }));
+}
+```
+
+and that flag is
+`isVitestRuntimeEnv() && process.env.OPENCLAW_TEST_MINIMAL_GATEWAY === "1"` —
+unreachable outside a vitest run, and it strips most of the gateway besides.
+Below it, driver and worker read no `process.env` at all; `options` is `{ env }`,
+used only to resolve target paths and persist quarantine records. The one
+config-shaped lever is target collection — `resolveOpenClawStateSqlitePath` plus
+`listOpenClawRegisteredAgentDatabases`, filtered by `existsSync` — so exempting
+an agent database means deregistering the agent.
+
+<../patch-openclaw-npm-dist.mjs> is where a gate belongs. It already
+content-matches `dist/*.js` rather than filenames, whose chunk hashes churn every
+release; replaces hardcoded constants with fail-fast environment reads that keep
+the upstream default; and fails the build when a pattern does not match exactly
+once. `OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK`, which this Deployment already
+sets, was minted there.
+
+What gating it costs: this verifier is the only thing that quarantines a
+corrupted state or agent database.
 
 ## Measuring this again
 
