@@ -33,6 +33,9 @@ process. A single client is pre-registered at startup with a fixed `client_id`, 
 registration would mint an unpredictable one and Agentplane's `McpOAuthServer` configuration
 needs to name it. This is our own code (unlike `everything`), so it is built and published like
 any other in-cluster image (`agentplane-oauth-fixture` in `devinfra/ci/image_targets.json`) and
-deployed under `cluster/k8s/agentplane-testing/actions/`, exposed publicly (`oauth-fixture-httproute.yaml`)
-because the authorization endpoint is inherently browser-facing, the same as the real
-GitHub/Kubernetes MCP OAuth providers linked in staging.
+deployed under `cluster/k8s/agentplane-testing/actions/`, cluster-internal only (no public route),
+same as `everything`. The OAuth authorize step is normally browser-facing, but the acceptance
+suite runs from the `public-coder-devbox` KubeVirt VM
+(`cluster/k8s/agents/public-coder-agent/devbox/`) -- a genuine pod-network endpoint, not an
+external host -- so it reaches the fixture's `/authorize` directly the same way the Action
+Service reaches it for discovery/token exchange, no port-forward or public exposure needed.

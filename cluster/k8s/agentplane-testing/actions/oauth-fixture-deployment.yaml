@@ -24,8 +24,12 @@ spec:
         - name: fixture
           image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:devel-20260911000000-0000000 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture"}
           env:
+            # Cluster-internal only (see oauth-fixture-networkpolicy.yaml): both the Action
+            # Service's discovery/token exchange and the acceptance test's own "browser" GET to
+            # /authorize reach this hostname directly -- the acceptance suite runs from the
+            # public-coder-devbox KubeVirt VM, a genuine pod-network endpoint, not an external host.
             - name: OAUTH_FIXTURE_BASE_URL
-              value: https://agentplane-oauth-fixture-testing.allegedly.works
+              value: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080
             - name: OAUTH_FIXTURE_REDIRECT_URI
               value: https://agentplane-testing.allegedly.works/mcp-linkage/callback
           ports:

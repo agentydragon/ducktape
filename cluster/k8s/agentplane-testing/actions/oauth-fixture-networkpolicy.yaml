@@ -1,6 +1,9 @@
-# Public ingress via the Gateway (the OAuth authorize/token/well-known endpoints and the MCP
-# tool endpoint all live on this one process); no fixture egress -- it is entirely self-contained
-# and mints its own tokens in memory.
+# Cluster-internal only, no public route: the Action Service needs it for discovery/token
+# exchange/tool calls, and the acceptance suite's "browser" GET to /authorize runs from the
+# public-coder-devbox KubeVirt VM (cluster/k8s/agents/public-coder-agent/devbox/), a genuine
+# pod-network endpoint reachable the same way any other pod is -- not an external host, so no
+# port-forward or public exposure is needed. No fixture egress: it is entirely self-contained and
+# mints its own tokens in memory.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -11,8 +14,13 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-oauth-fixture
   ingress:
-    - fromEntities:
-        - ingress
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+            app.kubernetes.io/name: agentplane-actions
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            app.kubernetes.io/name: public-coder-devbox
       toPorts:
         - ports:
             - port: "8080"

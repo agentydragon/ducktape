@@ -10,7 +10,7 @@ mcp_servers:
   example:
     server_id: example
     provider: example
-    server_url: https://agentplane-oauth-fixture-testing.allegedly.works/mcp
+    server_url: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
     client_id: agentplane-acceptance-client
     redirect_uri: https://agentplane-testing.allegedly.works/mcp-linkage/callback
 action_groups:
@@ -32,7 +32,7 @@ action_groups:
       description: In-memory OAuth authorization server and MCP tool in one process; no real credentials.
       config:
         transport: streamable-http
-        url: https://agentplane-oauth-fixture-testing.allegedly.works/mcp
+        url: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
         server_id: example
         auth: oauth
 fixture_auto_allow:

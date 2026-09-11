@@ -14,7 +14,6 @@ resources:
   - mcp-everything-networkpolicy.yaml
   - oauth-fixture-deployment.yaml
   - oauth-fixture-service.yaml
-  - oauth-fixture-httproute.yaml
   - oauth-fixture-networkpolicy.yaml
 configMapGenerator:
   - name: agentplane-actions-settings
