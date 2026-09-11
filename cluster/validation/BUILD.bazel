@@ -8,6 +8,22 @@ package(default_visibility = [
 ])
 
 py_test(
+    name = "test_actions_artifact",
+    srcs = ["test_actions_artifact.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s:flux_bootstrap_files",
+        "@multitool//tools/kustomize",
+    ],
+    deps = [
+        ":tool_resolve",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_terraform_sources",
     srcs = ["test_terraform_sources.py"],
     data = [
