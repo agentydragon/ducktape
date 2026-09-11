@@ -10,20 +10,20 @@ the Gateway Service). DNS is unchanged.
 
 ## Open items
 
-- **Datapath fix rollout.** The RCA's recommendation (a) passed its canary on
-  `ovh-ns103711` and `ovh-ns102453` (RCA § Rollout) and is now the Helm value
-  `envoy.useOriginalSourceAddress: false`. Remaining: apply the values change
-  (targeted `null_resource.cilium_bootstrap` plan, <../../docs/network.md>
-  § Changing MTUs safely), then recreate the cilium-agent Pods on
-  `ovh-ns103656`, `ovh-ns104952`, `ovh-ns104963` and verify `build-config` shows
-  the flag, since the stuck DaemonSet rollout will not deliver it. Whether in-cluster clients
-  should route to the Gateway Service instead of the public IPs (option c) is a
-  separate decision; a shared CoreDNS rewrite would first need a client policy
-  audit — `public-coder-agent-proxy` and `agentplane-egress` allow node HTTPS
-  without the Authentik backend:9000 permission, so the Service path would deny
-  them, and non-OVH consumers (aiquota, Airlock, Manifold/Plaid/Postscanmail/Tana
-  MCPs on wyrm2; Home Assistant and the JWT rotation Jobs on optiplex) were
-  inventoried but never exercised through the Service.
+- **Datapath fix rollout.** `envoy.useOriginalSourceAddress: false` is applied
+  (Helm release 12, 2026-09-11 07:50 UTC) and every `hil-ovh` cilium-agent runs it,
+  verified from each agent's `build-config` output. `wyrm2` and `optiplex` still
+  run agents started before the change; they host no Agentplane Pods and pick it
+  up on their next agent restart, which the stuck DaemonSet rollout (below) does
+  not deliver.
+- **Stuck cilium-agent DaemonSet rollout.** `maxUnavailable: 2` is held by two
+  roaming nodes: `rugged` dropped off the mesh one second after its agent finished
+  init (status frozen, tolerates the unreachable taint), and `iguana` has been
+  NotReady since 2026-07-18 with an agent Pod that has carried a deletion
+  timestamp since 2026-08-27. Every `cilium-config` change since then reached the
+  `hil-ovh` nodes only by hand. Options: delete the `iguana` Node object (PodGC
+  frees one slot; rejoin needs a manual CSR approval), and raise `maxUnavailable`
+  to roaming-node count plus one in the Helm values.
 - **mitmproxy Docker-CI rule.** The `toFQDNs docker-ci.allegedly.works:2376`
   rule in <../../k8s/agents/mitmproxy/cnp-cloud-api-egress.yaml> (annotated as
   suspected dead) is confirmed dead: on 2026-09-10 04:08 UTC a TCP connect from
