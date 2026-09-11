@@ -281,7 +281,7 @@ class McpLinkageAuthority:
                 else None
             )
             if token_state is None:
-                token_state = McpOAuthTokenStateRow(id=uuid4(), server_id=server.server_id)
+                token_state = McpOAuthTokenStateRow(id=uuid4(), server_id=server.server_id, token_revision=0)
                 db.add(token_state)
             _replace_token_state(token_state, token, scopes, now)
             if current is None:
