@@ -194,3 +194,37 @@ above from app and Actions pods plus a twelve-sample JWKS fetch with normal
 DNS before calling it fixed. Whether in-cluster clients should stop using the
 public IPs at all (c) and whether the public edge needs an LB (d) stay
 separate decisions.
+
+## Rollout
+
+Canary first, on the two `hil-ovh` nodes hosting the app and Actions Pods
+(`ovh-ns103711`, `ovh-ns102453`), through a Flux-managed `CiliumNodeConfig`
+(<../../k8s/kube-system/ciliumnodeconfig-proxy-original-source-canary.yaml>). The
+agent reads it in its `build-config` init container, so after Flux applies it,
+delete the `cilium-agent` Pod on each canary node and wait for the replacement to
+be Ready. No Helm or `//cluster:bootstrap` run is involved until the global flip.
+
+Acceptance, each against a non-canary `hil-ovh` node as control:
+
+1. Setting present: `cilium-dbg config` in the canary agent shows
+   `ProxyUseOriginalSourceAddress: false`; the Envoy config dump shows
+   `use_original_source_address: false` on the policy listener.
+2. Defect gone: rerun the table in § Observed from a pod on the canary node; the
+   own-node row succeeds every time, remote rows still succeed; twelve JWKS
+   fetches with normal DNS produce no `ConnectError`; a real operator login,
+   federation exchange, and one Action approval from the app succeed.
+3. Policy unchanged: wrong SNI to the Gateway is still refused; a host outside
+   the policy is still denied.
+4. Attribution: before deleting the agent, list every endpoint on the canary
+   with a non-DNS proxy redirect (`cilium-dbg endpoint list`, policy status);
+   only the four `serverNames` policies should appear. After the flip the
+   Gateway access log shows the node address as source for those flows, as it
+   already does for cross-node requests.
+5. Counters: the policy proxy's upstream connect-timeout and connect-failure
+   totals for the TLS egress cluster stop increasing on the canary and keep
+   increasing on the control.
+
+Rollback is deleting the object and recreating the same agent Pods. After a
+day without regressions, set `envoy.useOriginalSourceAddress: false` in
+<../../terraform/main/cilium-values.yaml>, run `//cluster:bootstrap`, and delete
+the canary object in the same change.
