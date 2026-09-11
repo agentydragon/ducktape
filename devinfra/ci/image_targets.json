@@ -1,5 +1,10 @@
 {
   "images": {
+    "agentplane-index": {
+      "target": "//x/agentplane/indexing:image",
+      "test": "//x/agentplane/indexing/...",
+      "registry": "forgejo"
+    },
     "airlock": {
       "target": "//airlock:image",
       "test": "//airlock/...",

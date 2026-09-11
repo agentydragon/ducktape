@@ -1,0 +1,185 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_binary(
+    name = "server",
+    main_module = "x.agentplane.indexing.main",
+    deps = [":main"],
+)
+
+aspect_py_binary(
+    name = "image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("image_bin"),
+    env = py_image_env(
+        binary_name = "image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        ":maintenance",
+        ":store",
+        "//haku/recall_index:embedder",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":app",
+        ":maintenance",
+        ":source",
+        ":store",
+        "//haku/recall_index:chunking",
+        "//haku/recall_index:openai_embedder",
+        "//util:kubernetes",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "maintenance",
+    srcs = ["maintenance.py"],
+    deps = [
+        ":source",
+        ":store",
+        "//haku/recall_index:embedder",
+    ],
+)
+
+py_library(
+    name = "source",
+    srcs = ["source.py"],
+    deps = [
+        "//util:kubernetes",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    deps = [
+        "//haku/recall_index:chunking",
+        "//haku/recall_index:content",
+        "//haku/recall_index:embedder",
+        "//haku/recall_index:vector_type",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_source",
+    srcs = ["test_source.py"],
+    deps = [
+        ":conftest",
+        ":source",
+        "//:conftest",
+        "//util:kubernetes",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":store",
+        "//haku/recall_index:chunking",
+        "//haku/recall_index:fake_embedder",
+        "//third_party/containers:rlocations",
+        "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    size = "medium",
+    srcs = ["test_app.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":conftest",
+        ":maintenance",
+        ":source",
+        ":store",
+        "//:conftest",
+        "//haku/recall_index:fake_embedder",
+        "//util:kubernetes",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    size = "medium",
+    srcs = ["test_store.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":store",
+        "//:conftest",
+        "//haku/recall_index:chunking",
+        "//haku/recall_index:content",
+        "//haku/recall_index:fake_embedder",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
