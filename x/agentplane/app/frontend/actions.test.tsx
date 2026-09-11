@@ -82,6 +82,16 @@ afterEach(async () => {
 });
 
 describe("ActionRequests", () => {
+  it("shows structured list errors without an empty-state claim", async () => {
+    const failure = { detail: { code: "operator_federation_exchange_failed" } };
+    const container = await render({ list: vi.fn().mockRejectedValue(failure), decide: vi.fn() });
+    expect(container.textContent).toContain(JSON.stringify(failure));
+    expect(container.textContent).not.toContain("[object Object]");
+    expect(container.textContent).not.toContain("No requests are waiting");
+    expect(container.textContent).not.toContain("No decided requests");
+    expect(container.textContent).not.toContain("Loading actions");
+  });
+
   it.each(["decision_pending", "succeeded"] as const)(
     "shows the immutable authenticated submitter for %s receipts",
     async (state) => {
@@ -202,6 +212,23 @@ it("renders server-pushed Action state without list polling and closes the strea
   const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
   try {
     const container = await render(actionService);
+    expect(container.textContent).toContain("Loading actions");
+    expect(container.textContent).not.toContain("No requests are waiting");
+    expect(container.textContent).not.toContain("No decided requests");
+    expect(container.textContent).not.toContain("Pending (0)");
+    await act(async () => {
+      stream?.dispatchEvent(new MessageEvent("snapshot", { data: "not JSON" }));
+    });
+    expect(container.textContent).toContain("The live Action update was invalid");
+    expect(container.textContent).not.toContain("No requests are waiting");
+    expect(container.textContent).not.toContain("No decided requests");
+    await act(async () => {
+      stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
+    });
+    expect(container.textContent).toContain("No requests are waiting");
+    expect(container.textContent).toContain("No decided requests");
+    expect(container.textContent).not.toContain("Loading actions");
+    expect(container.textContent).not.toContain("The live Action update was invalid");
     await act(async () => {
       stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) }));
     });

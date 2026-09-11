@@ -143,14 +143,19 @@ function ActionCard({
 export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [deciding, setDeciding] = useState<string | null>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setError(null);
     try {
       setRequests(await service.list());
       setError(null);
     } catch (failure) {
       setError(displayableError(failure));
+    } finally {
+      setLoading(false);
     }
   }, [service]);
 
@@ -160,15 +165,24 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
       return;
     }
     const source = new EventSource("/actions/stream");
+    source.onopen = () => {
+      setLoading(true);
+      setError(null);
+    };
     source.addEventListener("snapshot", (event) => {
       try {
         setRequests(JSON.parse((event as MessageEvent).data) as ActionRequestView[]);
         setError(null);
       } catch {
         setError("The live Action update was invalid.");
+      } finally {
+        setLoading(false);
       }
     });
-    source.onerror = () => setError("The live Action stream disconnected; reconnecting.");
+    source.onerror = () => {
+      setLoading(false);
+      setError("The live Action stream disconnected; reconnecting.");
+    };
     return () => source.close();
   }, [refresh, service]);
 
@@ -201,8 +215,9 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
         </Text>
       </div>
       {error && <Text c="red">{error}</Text>}
-      <Title order={3}>Pending ({pending.length})</Title>
-      {pending.length === 0 && <Text c="dimmed">No requests are waiting for a decision.</Text>}
+      {loading && <Text role="status">Loading actions…</Text>}
+      <Title order={3}>{loading || error ? "Pending" : `Pending (${pending.length})`}</Title>
+      {!loading && !error && pending.length === 0 && <Text c="dimmed">No requests are waiting for a decision.</Text>}
       {pending.map((request) => (
         <ActionCard
           key={request.id}
@@ -212,7 +227,7 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
         />
       ))}
       <Title order={3}>Recent requests</Title>
-      {decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}
+      {!loading && !error && decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}
       {decided.map((request) => (
         <ActionCard
           key={request.id}
