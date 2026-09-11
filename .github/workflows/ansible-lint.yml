@@ -51,6 +51,17 @@ jobs:
           cd ansible
           ansible-galaxy role install -r requirements.yaml
 
+      # requirements.yaml now names a real collection dependency (ansible.posix, for
+      # atlas.yaml's authorized_key task). Without an explicit install, ansible-lint's own
+      # implicit collection resolution creates an empty project-local
+      # ansible/.ansible/collections/ansible_collections that shadows the perfectly good
+      # bundled ansible.posix ahead of it on the collections search path, so the module
+      # fails to resolve. Installing it explicitly here keeps that directory populated.
+      - name: Install Ansible Galaxy collections
+        run: |
+          cd ansible
+          ansible-galaxy collection install -r requirements.yaml
+
       - name: Run ansible-lint (thorough mode)
         run: .github/scripts/run-ansible-lint.sh
 
