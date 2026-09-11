@@ -21,10 +21,13 @@ patches:
         path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs
         value: "true"
   # Keep flux controller disk I/O (git clones, artifacts, image automation — all on
-  # emptyDir, i.e. the host disk) off the control-plane nodes, whose etcd lives on slow
-  # rotational HDDs. Soft (preferred) so these system-cluster-critical controllers keep a
-  # scheduling fallback if both NVMe workers are down. See
-  # cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md
+  # emptyDir, i.e. the host disk) off rotational disks: every ducktape commit is a fresh
+  # clone plus an artifact per GitRepository, and on an HDD that saturates the disk. Keyed
+  # to the hardware label, not a node role: the roles moved between the KS-5 HDD boxes and
+  # the NVMe boxes during storage tiering, and a role-keyed preference silently inverted.
+  # NotIn also admits nodes without the label (wyrm2). Soft (preferred) so these
+  # system-cluster-critical controllers keep a scheduling fallback if every SSD node is
+  # down. See cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md
   - target:
       kind: Deployment
     patch: |
@@ -36,5 +39,6 @@ patches:
               - weight: 100
                 preference:
                   matchExpressions:
-                    - key: node-role.kubernetes.io/control-plane
-                      operator: DoesNotExist
+                    - key: storage.allegedly.works/tier
+                      operator: NotIn
+                      values: [hdd]
