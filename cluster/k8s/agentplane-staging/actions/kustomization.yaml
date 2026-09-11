@@ -4,7 +4,6 @@ namespace: agentplane-staging
 resources:
   - serviceaccount.yaml
   - rbac.yaml
-  - postgres-cluster.yaml
   - configmap-action-federation.yaml
   - deployment.yaml
   - service.yaml

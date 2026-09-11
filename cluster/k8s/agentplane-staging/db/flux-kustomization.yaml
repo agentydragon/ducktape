@@ -4,7 +4,7 @@ metadata:
   name: agentplane-staging-db
   namespace: ducktape-flux
   annotations:
-    description: The Agentplane trajectory store, a single-instance CNPG PostgreSQL in agentplane-staging.
+    description: One single-instance CNPG PostgreSQL hosting Agentplane staging's separate trajectory, actions, and egress databases.
 spec:
   interval: 10m
   retryInterval: 1m
@@ -16,10 +16,18 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      current: >-
+        has(status.applied) && status.applied &&
+        has(status.observedGeneration) && status.observedGeneration == metadata.generation
   dependsOn:
     - name: agentplane-staging-namespace
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
     - name: local-path-provisioner
+      namespace: ducktape-flux
+    - name: external-secrets-config
       namespace: ducktape-flux

@@ -1,0 +1,25 @@
+# The services retain separate ownership and schemas while sharing one disposable PostgreSQL
+# instance. Deleting either CR deliberately drops that staging database.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: agentplane-db-actions
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: agentplane-db
+  name: agentplane_actions
+  owner: agentplane_actions
+  databaseReclaimPolicy: delete
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: agentplane-db-egress
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: agentplane-db
+  name: agentplane_egress
+  owner: agentplane_egress
+  databaseReclaimPolicy: delete

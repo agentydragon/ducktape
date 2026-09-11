@@ -35,6 +35,8 @@ spec:
   dependsOn:
     - name: agentplane-staging-namespace
       namespace: ducktape-flux
+    - name: agentplane-staging-db
+      namespace: ducktape-flux
     # Bring the authenticated destination up before changing the model policy away from direct
     # LiteLLM. The app already depends on this egress Kustomization, so runner URLs change last.
     - name: agentplane-staging-llm-ingress
