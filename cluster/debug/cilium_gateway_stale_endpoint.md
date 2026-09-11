@@ -28,13 +28,14 @@ another namespace. The Gateway thus crosses a namespace boundary on IP reuse whe
 backend has zero Ready endpoints. The CiliumNetworkPolicy on the receiving Pod did not
 stop it: Gateway traffic arrives from the `ingress` identity, which that policy admits.
 
-## To confirm after the app Pod is Ready again
+## Confirmed after recovery
 
-- The Envoy cluster's endpoint list replaces `10.244.2.97` with the Ready Pod's IP as
-  soon as the EndpointSlice carries a Ready endpoint (no Envoy restart needed).
-- Whether the same retention happens on a clean scale-to-zero, which separates a
-  Cilium bug (stale EDS on transition to zero Ready endpoints) from an artifact of the
-  earlier crash-loop.
+With two Ready `agentplane-app` Pods (10:24 UTC), the same Envoy cluster listed exactly
+their IPs, both `healthy`, and a deleted replica's IP left the list within seconds of its
+replacement becoming Ready. The retention only occurs while the backend has zero Ready
+endpoints, and no Envoy restart was needed to clear it.
 
-Upstream: check `cilium/cilium` for an open issue on Gateway API EDS retaining endpoints
-after the last Ready endpoint leaves, before filing.
+Open: whether a clean scale-to-zero reproduces the retention, which separates a Cilium
+bug (stale EDS on the transition to zero Ready endpoints) from an artifact of the earlier
+crash-loop. Check `cilium/cilium` for an open issue on Gateway API EDS retaining endpoints
+after the last Ready endpoint leaves before filing.
