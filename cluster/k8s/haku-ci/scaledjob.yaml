@@ -78,10 +78,19 @@ spec:
         # node lets a build of up to that length finish instead of dropping it.
         terminationGracePeriodSeconds: 1830
         # No node affinity: this privileged, agent-controlled build compute may land on any
-        # untainted worker — the HIL workers, the home OptiPlex and wyrm2. Control-plane and
-        # roaming nodes carry NoSchedule taints and stay out without a rule here. A Talos
-        # worker needs `user.max_user_namespaces` raised for rootless dind (ovh-nodes.tf,
-        # home-nodes.tf); wyrm2 is NixOS and keeps the kernel default.
+        # worker — the HIL workers, the home OptiPlex, wyrm2, and the roaming laptops when
+        # they are reachable. Control-plane nodes keep their NoSchedule taint and stay out.
+        # A Talos worker needs `user.max_user_namespaces` raised for rootless dind
+        # (ovh-nodes.tf, home-nodes.tf); the NixOS hosts keep the kernel default.
+        tolerations:
+          # Roaming laptops (iguana, rugged) are tainted so ordinary workloads avoid them;
+          # a CI job is disposable enough to run there. If the laptop leaves mid-build the
+          # unreachable taint evicts the pod and the queued job is retried on the next KEDA
+          # poll, at the cost of the minutes already spent.
+          - key: node-role.kubernetes.io/roaming
+            operator: Equal
+            value: "true"
+            effect: NoSchedule
         # Requests describe only the runner's idle footprint, so the default scheduler's
         # resource scoring alone can co-locate an entire four-job burst. Prefer an even
         # host spread, but keep CI available when only one capable worker is schedulable.
