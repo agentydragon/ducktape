@@ -21,16 +21,16 @@
 // written again, and the runner re-emits that input's outcome so a client that retried after a lost
 // connection learns the original result.
 //
-// Harness lifecycle. Open starts the harness if it is not running, resuming the native conversation
+// Harness lifecycle. Open with a spec starts the harness if it is not running, resuming the native conversation
 // when the session has one. Shutdown interrupts an active turn, stops the harness, reports
-// HarnessExited, and ends the stream; the session stays resumable. Detach, or a dropped connection,
+// HarnessExited, and ends all observing streams; the session stays resumable. Detach, or a dropped connection,
 // ends the stream only: the harness keeps running and its events keep accruing in the log. A runner
 // that restarts and finds a session it had running reports HarnessLost, TurnCompleted with
 // PROCESS_LOST for an active turn, and InputUncertain for each input that was submitted but never
 // settled; a client sees those on its next Attach.
 //
-// One attachment controls a session at a time. A newer Open supersedes the current one, whose
-// stream ends with an error.
+// Attachments independently replay and follow the log; commands share the session lock and input
+// deduplication. Open without a spec never starts the harness and ends after replay if stopped.
 
 syntax = "proto3";
 
@@ -351,7 +351,7 @@ message ServerMessage {
   oneof message {
     Attached attached = 1;
     Event event = 2;
-    // The stream ends after an error: a malformed command, a spec mismatch, or a newer attachment.
+    // The stream ends after an error, such as a malformed command or a spec mismatch.
     string error = 3;
   }
 }

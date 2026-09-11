@@ -56,7 +56,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     # A resume starts a fresh harness process, and the two carry the instructions there by different
     # routes: Claude Code re-sends them in its handshake, Codex replays the developer message its
     # thread stored when it was created. The runner SPEC has what that difference costs.
-    second = await client.attach("instructions-1", after_sequence=first.cursor)
+    second = await client.attach("instructions-1", spec=first.attached.spec, after_sequence=first.cursor)
     assert second.attached.spec.instructions == INSTRUCTIONS
     started = await second.until(events.is_kind("harness_started"))
     assert started.harness_started.resumed

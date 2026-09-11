@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 import pytest_bazel
 
@@ -88,19 +90,31 @@ async def test_resending_an_input_id_delivers_it_once(
     model.assert_quiescent()
 
 
-async def test_a_newer_attachment_supersedes_the_current_one(
+async def test_attachments_share_events_and_detach_independently(
     client: RunnerClient, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:
-    first = await client.attach("supersede-1", spec=spec)
-    second = await client.attach("supersede-1", after_sequence=first.cursor)
-    with pytest.raises(RunnerError, match="superseded"):
-        await first.until(lambda _: False, timeout_s=30)
-    await second.send("input-1", "Reply with exactly: SECOND_OK")
+    first = await client.attach("observers-1", spec=spec)
+    await first.until(events.is_kind("harness_started"))
+    replay_cursor = first.cursor
+    second = await client.attach("observers-1", after_sequence=replay_cursor)
+    await asyncio.gather(
+        first.send("input-1", "Reply with exactly: SECOND_OK"), second.send("input-1", "Reply with exactly: SECOND_OK")
+    )
     request = await model.request()
     model.reply(request, Text("SECOND_OK"))
     await second.until(events.turn_completed)
+    await first.until(events.turn_completed)
+    assert [event for event in first.seen if event.sequence > replay_cursor] == second.seen
+    events.assert_contiguous(first.seen)
+    assert len(events.of_kind(first.seen, "input_submitted")) == 1
+    assert request.user_texts.count("Reply with exactly: SECOND_OK") == 1
     await second.detach()
     await second.drain_until_end()
+    await first.send("input-2", "Reply with exactly: FIRST_STILL_HERE")
+    model.reply(await model.request(), Text("FIRST_STILL_HERE"))
+    await first.until(events.turn_completed)
+    await first.detach()
+    await first.drain_until_end()
     model.assert_quiescent()
 
 
@@ -112,12 +126,22 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     request = await model.request()
     model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
+    observer = await client.attach("shutdown-1", after_sequence=first.cursor)
     await first.shutdown()
     exited = await first.until(events.is_kind("harness_exited"))
     assert exited.harness_exited.stopped_by_runner
     await first.drain_until_end()
+    await observer.drain_until_end()
+    assert events.of_kind(observer.seen, "harness_exited")[-1] == exited
 
-    second = await client.attach("shutdown-1", after_sequence=first.cursor)
+    replay = await client.attach("shutdown-1")
+    assert replay.attached.harness == pb.HARNESS_STATE_STOPPED
+    await replay.drain_until_end()
+    assert replay.seen == first.seen
+    (summary,) = await client.list_sessions()
+    assert summary.harness == pb.HARNESS_STATE_STOPPED
+
+    second = await client.attach("shutdown-1", spec=spec, after_sequence=first.cursor)
     started = await second.until(events.is_kind("harness_started"))
     assert started.harness_started.resumed
     assert second.attached.harness == pb.HARNESS_STATE_RUNNING

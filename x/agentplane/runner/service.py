@@ -7,7 +7,7 @@ import hashlib
 import json
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from pathlib import PurePosixPath
 
 import grpc
@@ -18,7 +18,7 @@ from x.agentplane.runner.claude import ClaudeAdapter
 from x.agentplane.runner.codex import CodexAdapter
 from x.agentplane.runner.config import RunnerConfig
 from x.agentplane.runner.initialization import InitializationLog
-from x.agentplane.runner.session import Attachment, Session
+from x.agentplane.runner.session import Session
 from x.agentplane.runner.store import SessionRecord, SessionStore, validate_session_id
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -176,7 +176,8 @@ class Runner:
                 session_id, record=record, store=self.store, config=self.config, make_adapter=make_adapter
             )
             self.sessions[session_id] = session
-        await session.ensure_running()
+        if request.HasField("spec"):
+            await session.ensure_running()
         return session
 
     async def stop(self) -> None:
@@ -268,7 +269,8 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
                 f"whose last sequence is {session.log.last_sequence}"
             )
             return
-        attachment = session.attach()
+        opened_sequence = session.log.last_sequence
+        ended = not session.harness_running
         yield pb.ServerMessage(
             attached=pb.Attached(
                 session_id=session.session_id,
@@ -287,33 +289,43 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         try:
             while True:
                 for event in session.log.since(cursor):
+                    if ended and event.sequence > opened_sequence and event.HasField("harness_started"):
+                        return
                     yield pb.ServerMessage(event=event)
                     cursor = event.sequence
-                if attachment.superseded.is_set():
-                    yield pb.ServerMessage(error="superseded by a newer attachment")
+                    if event.sequence > opened_sequence and event.HasField("harness_exited"):
+                        ended = True
+                if ended:
                     return
                 if closing.is_set():
                     if failure:
                         yield pb.ServerMessage(error=failure[0])
                     return
-                await _wake(session, attachment, closing, cursor)
+                await _wake(session, closing, cursor)
         finally:
             if not consumer.done():
                 consumer.cancel()
+            await asyncio.gather(consumer, return_exceptions=True)
 
 
-async def _wake(session: Session, attachment: Attachment, closing: asyncio.Event, cursor: int) -> None:
-    """Return when there is a new event, the attachment is superseded, or the stream is closing."""
-    waits = [
-        asyncio.create_task(session.log.wait_beyond(cursor)),
-        asyncio.create_task(attachment.superseded.wait()),
-        asyncio.create_task(closing.wait()),
-    ]
+async def _wake(session: Session, closing: asyncio.Event, cursor: int) -> None:
+    waits = [asyncio.create_task(session.log.wait_beyond(cursor)), asyncio.create_task(closing.wait())]
     try:
         await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
     finally:
         for wait in waits:
             wait.cancel()
+        await asyncio.gather(*waits, return_exceptions=True)
+
+
+async def _finish_command(command: Awaitable[None]) -> None:
+    # A connection disappearing must not cancel a shared harness operation halfway through.
+    task = asyncio.ensure_future(command)
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await asyncio.gather(task, return_exceptions=True)
+        raise
 
 
 async def _consume(
@@ -323,13 +335,15 @@ async def _consume(
         async for message in requests:
             match message.WhichOneof("command"):
                 case "input":
-                    await session.submit(message.input.input_id, message.input.text)
+                    await _finish_command(session.submit(message.input.input_id, message.input.text))
                 case "interrupt":
-                    await session.interrupt()
+                    await _finish_command(session.interrupt())
                 case "switch_model":
-                    await session.switch_model(message.switch_model.switch_id, message.switch_model.model)
+                    await _finish_command(
+                        session.switch_model(message.switch_model.switch_id, message.switch_model.model)
+                    )
                 case "shutdown":
-                    await session.shutdown()
+                    await _finish_command(session.shutdown())
                     return
                 case "detach":
                     return

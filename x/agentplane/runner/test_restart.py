@@ -128,7 +128,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
 
     second_runner = await start_runner()
     client = RunnerClient(second_runner.target)
-    second = await client.attach("restart-1", after_sequence=first.cursor)
+    second = await client.attach("restart-1", spec=spec, after_sequence=first.cursor)
     lost = await second.until(events.is_kind("harness_lost"))
     started = await second.until(events.is_kind("harness_started"))
     assert lost.sequence < started.sequence
@@ -174,7 +174,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     (stopped,) = await client.list_sessions()
     assert stopped.harness == pb.HARNESS_STATE_STOPPED
     assert stopped.last_sequence > first.cursor
-    second = await client.attach("sigterm-1", after_sequence=first.cursor)
+    second = await client.attach("sigterm-1", spec=spec, after_sequence=first.cursor)
     exited = await second.until(events.is_kind("harness_exited"))
     assert exited.harness_exited.stopped_by_runner
     started = await second.until(events.is_kind("harness_started"))

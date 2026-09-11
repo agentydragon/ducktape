@@ -46,13 +46,6 @@ class HarnessGoneError(RuntimeError):
     """The harness ended while a native response was still awaited."""
 
 
-class Attachment:
-    """The stream currently controlling a session; a newer Open supersedes it."""
-
-    def __init__(self) -> None:
-        self.superseded = asyncio.Event()
-
-
 class Session:
     def __init__(
         self,
@@ -79,7 +72,6 @@ class Session:
             self._apply(event)
         self.process: HarnessProcess | None = None
         self.adapter: HarnessAdapter | None = None
-        self.attachment: Attachment | None = None
         self._tasks: list[asyncio.Task[None]] = []
         self._waiters: list[tuple[Callable[[Frame], bool], asyncio.Future[NativeFrame]]] = []
         self._translating = 0
@@ -137,12 +129,6 @@ class Session:
             )
         for input_id in list(self.unsettled_inputs):
             self.emit(pb.InputUncertain(input_id=input_id))
-
-    def attach(self) -> Attachment:
-        if self.attachment is not None:
-            self.attachment.superseded.set()
-        self.attachment = Attachment()
-        return self.attachment
 
     @property
     def running(self) -> bool:

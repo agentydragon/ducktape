@@ -28,9 +28,11 @@ page is what the runner guarantees about it.
   `[A-Za-z0-9._-]` starting alphanumeric, and the runner keeps everything about it under
   `<state_dir>/sessions/<session_id>/`: the harness's own persistence and the runner's session log.
 - `Open` with an unknown id creates the session from `spec`; with a known id it attaches, and a
-  supplied `spec` must equal the stored one. Open starts the harness when it is not running,
+  supplied `spec` must equal the stored one. Open with a spec starts the harness when it is not running,
   resuming the native conversation when the session has one, and creates `spec.cwd`, which must
   be absolute, when it does not exist yet.
+- `Open` without a spec observes an existing session without starting its harness. A stopped
+  session replays its log and ends the stream; resuming requires an explicit spec.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy; empty is a session without any. They are
@@ -48,12 +50,12 @@ page is what the runner guarantees about it.
 - The runner then replays every event with a sequence greater than `Open.after_sequence`, in
   order, and continues with live events. A client that passes the last sequence it processed sees
   neither a gap nor a duplicate; a cursor beyond `last_sequence` ends the stream with an error.
-- One attachment controls a session at a time. A newer `Open` supersedes the current one, whose
-  stream ends with an error.
+- Multiple attachments independently replay and follow the session. Each may issue commands;
+  the runner serializes them with the session lock and deduplicates inputs by `input_id`.
 - `Detach`, or a dropped connection, ends the stream and nothing else. The harness keeps running
   and its events keep accruing in the log.
 - `Shutdown` interrupts an active turn, stops the harness, reports `HarnessExited`, and ends the
-  stream. The session stays resumable.
+  streams after every observer drains the terminal events. The session stays resumable.
 
 ## Events
 
@@ -107,7 +109,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   their tail but never reorder or lose a decision.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
   `PROCESS_LOST` if a turn was active, then `InputUncertain` for each input submitted but never
-  settled. The next `Open` resumes the native conversation and reports `HarnessStarted` with
+  settled. The next `Open` with a spec resumes the native conversation and reports `HarnessStarted` with
   `resumed`.
 - `InputUncertain` is the one window the runner cannot close: the input may or may not be in the
   harness's transcript. Resending it is the client's decision.
@@ -181,7 +183,7 @@ observed rather than read off the harnesses' own schemas.
 
 ## Not covered yet
 
-- Read-only follower attachments; only one attachment per session.
+- Read-only authorization for follower attachments; every attachment may issue commands.
 - Log compaction or retention; a session log grows for the session's lifetime.
 - Transport security; the listener is plaintext on loopback.
 - Recovery semantics for a turn lost mid-tool beyond reporting `PROCESS_LOST`.
