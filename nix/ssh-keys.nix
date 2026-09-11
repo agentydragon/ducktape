@@ -17,4 +17,6 @@ in
   wyrm2McpRoot = readKey "wyrm2-mcp-root.pub";
   ruggedMcpAgentydragon = readKey "rugged-mcp-agentydragon.pub";
   ruggedMcpRoot = readKey "rugged-mcp-root.pub";
+  publicCoderDevboxMcpRoot = readKey "public-coder-devbox-mcp-root.pub";
+  publicCoderDevboxMcpCoder = readKey "public-coder-devbox-mcp-coder.pub";
 }

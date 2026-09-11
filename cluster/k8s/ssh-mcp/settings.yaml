@@ -19,3 +19,11 @@ targets:
   - host: rugged.nebula.allegedly.works
     user: root
     identity_file: /etc/ssh-mcp/keys/rugged-root
+  # public-coder-devbox: an in-cluster KubeVirt VM, reached over its own ClusterIP Service
+  # (cluster/k8s/agents/public-coder-agent/devbox/service.yaml) rather than a Nebula hostAlias.
+  - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
+    user: root
+    identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-root
+  - host: public-coder-devbox-ssh.public-coder-agent.svc.cluster.local
+    user: coder
+    identity_file: /etc/ssh-mcp/keys-public-coder-devbox/public-coder-devbox-coder

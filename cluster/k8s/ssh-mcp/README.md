@@ -31,6 +31,16 @@ does not answer. They stay listed and fail closed — the designed behaviour for
 whose key or host trust is absent. Host verification stays strict, so capturing that key
 is a prerequisite for those two targets, not a formality.
 
+`public-coder-devbox × {root,coder}` is a second pair of targets, keyed in a **separate**
+Secret, `ssh-mcp-keys-public-coder-devbox` (`secrets/keys-public-coder-devbox.sops.yaml`),
+mounted as a second volume alongside `ssh-mcp-keys`. Deviation from the pattern above:
+whoever adds a target normally appends to `keys.sops.yaml` with `sops <file>`, which needs
+the cluster decryption identity; an agent session that can only encrypt (not decrypt) that
+file cannot safely do that without risking the working `wyrm2`/`rugged` keys it already
+holds, so it mints a new Secret instead. Reaching the devbox is a normal in-cluster
+`toEndpoints`/Service DNS path (`cluster/k8s/agents/public-coder-agent/devbox/`), not a
+Nebula hostAlias — it is an ordinary pod (a KubeVirt VM), not a cluster node.
+
 ## Network path
 
 Two Pod-specific properties are load-bearing, each commented at its own declaration: the
