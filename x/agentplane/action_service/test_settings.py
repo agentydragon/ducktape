@@ -109,23 +109,24 @@ def test_rendered_ssh_binding_uses_shared_bearer_file(
     deployment = one(r for r in staging_rendered if r["kind"] == "Deployment")
     pod = deployment["spec"]["template"]["spec"]
     actions = one(pod["containers"])
-    mount = one(m for m in actions["volumeMounts"] if Path(m["mountPath"]) == config.bearer_file)
+    mount = one(m for m in actions["volumeMounts"] if Path(m["mountPath"]) == config.bearer_file.parent)
     assert mount["readOnly"]
     volume = one(v for v in pod["volumes"] if v["name"] == mount["name"])
+    key = one(i for i in volume["secret"]["items"] if i["path"] == config.bearer_file.name)["key"]
     source = one(
         r
         for r in ssh_resources
         if r["kind"] == "ExternalSecret" and "dataFrom" in r["spec"] and "secretStoreRef" not in r["spec"]
     )
     assert volume["secret"]["secretName"] == source["spec"]["target"]["name"]
-    assert mount["subPath"] in source["spec"]["target"]["template"]["data"]
+    assert key in source["spec"]["target"]["template"]["data"]
     assert volume["secret"]["secretName"] in deployment["metadata"]["annotations"][
         "secret.reloader.stakater.com/reload"
     ].split(",")
     backend = one(r for r in ssh_resources if r["kind"] == "Deployment")
     server = one(backend["spec"]["template"]["spec"]["containers"])
     bearer = one(e for e in server["env"] if e["name"] == "SSH_MCP_BEARER_TOKEN")["valueFrom"]["secretKeyRef"]
-    assert bearer == {"name": volume["secret"]["secretName"], "key": mount["subPath"]}
+    assert bearer == {"name": volume["secret"]["secretName"], "key": key}
     service = one(r for r in ssh_resources if r["kind"] == "Service")
     endpoint = urlsplit(str(config.url))
     assert endpoint.hostname == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local"

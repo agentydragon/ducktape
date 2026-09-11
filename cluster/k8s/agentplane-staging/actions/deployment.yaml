@@ -128,9 +128,10 @@ spec:
             - name: settings
               mountPath: /etc/agentplane-actions
               readOnly: true
+            # Its own directory: a subPath file cannot be mounted inside the read-only
+            # settings volume (runc: "not a directory").
             - name: ssh-mcp-bearer
-              mountPath: /etc/agentplane-actions/ssh-mcp-bearer
-              subPath: bearer-token
+              mountPath: /run/secrets/ssh-mcp
               readOnly: true
           ports:
             - name: http

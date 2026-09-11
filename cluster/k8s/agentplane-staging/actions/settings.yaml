@@ -58,4 +58,4 @@ action_groups:
         transport: streamable-http
         url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
         auth: static_bearer
-        bearer_file: /etc/agentplane-actions/ssh-mcp-bearer
+        bearer_file: /run/secrets/ssh-mcp/bearer-token
