@@ -4,7 +4,7 @@ metadata:
   name: agentplane-testing-actions
   namespace: ducktape-flux
   annotations:
-    description: Action Service with isolated PostgreSQL, direct Dex operator federation, workload-proxy ingress and the testing-only MCP fixture.
+    description: Action Service with a dedicated database on testing's shared PostgreSQL, direct Dex operator federation, workload-proxy ingress and the testing-only MCP fixture.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -23,9 +23,9 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-    - name: agentplane-testing-mcp-everything
-      namespace: ducktape-flux
     - name: agentplane-testing-namespace
+      namespace: ducktape-flux
+    - name: agentplane-testing-db
       namespace: ducktape-flux
     - name: agentplane-testing-egress
       namespace: ducktape-flux

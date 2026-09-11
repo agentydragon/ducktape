@@ -140,9 +140,7 @@ resources:
   - agentplane-testing/db/flux-kustomization.yaml
   - agentplane-testing/dex/flux-kustomization.yaml
   - agentplane-testing/llm-ingress/flux-kustomization.yaml
-  - agentplane-testing/mcp-everything/flux-kustomization.yaml
   - agentplane-testing/app/flux-kustomization.yaml
-  - agentplane-testing/egress-db/flux-kustomization.yaml
   - agentplane-testing/egress/flux-kustomization.yaml
   - agentplane-testing/actions/flux-kustomization.yaml
 

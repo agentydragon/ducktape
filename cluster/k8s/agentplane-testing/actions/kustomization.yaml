@@ -4,12 +4,14 @@ namespace: agentplane-testing
 resources:
   - serviceaccount.yaml
   - rbac.yaml
-  - postgres-cluster.yaml
   - configmap-action-federation.yaml
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
   - httproute.yaml
+  - mcp-everything-deployment.yaml
+  - mcp-everything-service.yaml
+  - mcp-everything-networkpolicy.yaml
 configMapGenerator:
   - name: agentplane-actions-settings
     files:

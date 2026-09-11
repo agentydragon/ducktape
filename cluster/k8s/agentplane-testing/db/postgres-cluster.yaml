@@ -1,8 +1,7 @@
-# The trajectory store: every runner event of every session, copied out of the sandbox by the
-# integration app as it arrives, so a thread outlives its sandbox. Staging's database is
-# disposable (the app creates its schema at startup), so there is no migration Job and no backup
-# here. CNPG generates the app credential in the Secret agentplane-db-app, which the Deployment
-# composes into AGENTPLANE_DATABASE_URL.
+# Shared PostgreSQL for testing's trajectory, ActionRequest, and egress history stores. Each
+# service has its own logical database and login; sharing stops at the CNPG instance. The
+# trajectory database is created by initdb, while databases.yaml and the managed roles below
+# declare the actions and egress stores. All three are disposable and have no backups.
 #
 # One instance on the OVH tier: a deliberate deviation from both profiles R2 permits, and the
 # record of it, as study-casino-db's manifest is for its own (cnpg_conventions R2 inventory).
@@ -61,3 +60,16 @@ spec:
     initdb:
       database: agentplane
       owner: agentplane
+
+  managed:
+    roles:
+      - name: agentplane_actions
+        ensure: present
+        login: true
+        passwordSecret:
+          name: agentplane-db-actions
+      - name: agentplane_egress
+        ensure: present
+        login: true
+        passwordSecret:
+          name: agentplane-db-egress
