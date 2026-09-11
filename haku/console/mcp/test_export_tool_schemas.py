@@ -176,7 +176,7 @@ async def test_exports_console_native_status_result_schemas() -> None:
     schema = await build_mcp_tool_results_schema()
     tools = schema["properties"]["haku-console"]["properties"]
 
-    assert list(tools) == ["get_mcp_server_status", "list_mcp_servers", "list_node_daemons"]
+    assert list(tools) == ["get_mcp_server_status", "list_mcp_servers"]
 
     schemas_by_title: dict[str, dict] = {}
 

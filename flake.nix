@@ -248,7 +248,7 @@
               ;
             # These project packages are passed only to hosts that opt into them.
             # Lazy: hosts that do not consume a package never force its build/fetch.
-            inherit (ducktapePkgs) hostexecd bb bbr;
+            inherit (ducktapePkgs) bb bbr;
           };
           modules = [
             ./nix/nixos/modules/base.nix

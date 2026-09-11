@@ -48,7 +48,6 @@ from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccess
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
-from haku.console.hostexecd import service
 from haku.console.identity import (
     agent_bearer_authority,
     enrollment_routes,
@@ -245,9 +244,6 @@ def create_app(
         provider_store=provider_connection_store,
         authentik_store=authentik_operator_token_store,
         refresh_authentik_tokens=hostexec_config is not None,
-    )
-    hostexecd_service = (
-        service.Service(db_sessions, console_config.node_daemons) if console_config.node_daemons is not None else None
     )
     agent_authority = PostgresAgentAuthority(
         db_sessions,
@@ -447,7 +443,6 @@ def create_app(
         provider_store=provider_connection_store,
         dispatcher=dispatcher,
         catalogs=catalogs,
-        node_daemons=hostexecd_service,
     )
 
     console_mcp = server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver)
@@ -518,7 +513,6 @@ def create_app(
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
     app.state.mcp_catalogs = catalogs
-    app.state.hostexecd_service = hostexecd_service
     app.state.push_subscription_store = push_subscription_store
     app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
@@ -574,15 +568,11 @@ def create_app(
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
-    app.include_router(service.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
     app.include_router(
         aiquota_proxy.build_router(url=settings.aiquota_url, bearer_token=settings.aiquota_bearer_token),
         dependencies=operator_only,
     )
-    # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
-    # browser session.
-    app.include_router(service.machine_router)
     app.include_router(enrollment_routes.entry_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless configured SAR authorization is present.

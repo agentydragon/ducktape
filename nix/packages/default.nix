@@ -194,14 +194,6 @@ let
     description = "JavaScript debundling CLI";
   };
 
-  hostexecd = mkBinaryArtifact {
-    pname = "hostexecd";
-    src = artifacts.hostexecd;
-    description = "Host-side exec daemon for haku-console (Rust)";
-    # reqwest (jwks.rs) uses native-tls, so the prebuilt binary links libssl/libcrypto.
-    extraBuildInputs = [ pkgs.openssl ];
-  };
-
   # Instance-to-instance ActivityWatch importer: reads a device's local aw-server
   # over REST and folds its buckets into the central one, deduping on insert.
   # reqwest links aw-server-rust's rustls backend, so no libssl to autopatch.
@@ -430,9 +422,6 @@ rec {
 }
 // lib.optionalAttrs (artifacts ? debundle) {
   inherit debundle;
-}
-// lib.optionalAttrs (artifacts ? hostexecd) {
-  inherit hostexecd;
 }
 // lib.optionalAttrs (artifacts ? aw-importer) {
   inherit aw-importer;

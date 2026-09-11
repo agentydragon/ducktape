@@ -54,7 +54,6 @@ in
     ../../modules/k8s-worker.nix
     ../../modules/gpu-monitor.nix
     ../../modules/github-api-recorder.nix
-    ../../modules/hostexecd.nix
     ../../modules/attic-substituter.nix
   ];
 
@@ -88,11 +87,6 @@ in
     };
     # nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
-
-  # hostexecd: haku-console runs approved commands here under the operator's own
-  # Authentik identity and outbound daemon id derive from networking.hostName.
-  # See nix/nixos/modules/hostexecd.nix.
-  ducktape.hostexec.enable = true;
 
   # NVIDIA GPU (2x RTX 5090 via VFIO passthrough)
   # Open nvidia module allowlists GPUs by subsystem-ID; Gigabyte RTX 5090 (1458:416f) isn't listed.

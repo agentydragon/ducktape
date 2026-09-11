@@ -32,7 +32,6 @@ in
     ../../modules/claude-desktop.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
-    ../../modules/hostexecd.nix
     ../../modules/github-api-recorder.nix
     ./ipu7-camera.nix
     ./foxconn-wwan.nix
@@ -67,11 +66,6 @@ in
     };
     nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
-
-  # hostexecd: haku-console runs approved commands here under the operator's own
-  # Authentik identity and outbound daemon id derive from networking.hostName.
-  # See nix/nixos/modules/hostexecd.nix.
-  ducktape.hostexec.enable = true;
 
   # Attribution for the GitHub GraphQL quota drain; see the module header.
   ducktape.githubApiRecorder.enable = true;

@@ -1,5 +1,5 @@
-// The CodeMirror 6 grammar for displaying a bash script (see `code_block.tsx`'s `shell` language
-// and `hostexec/requests.tsx`'s rendering of `cmd`, which hostexecd runs verbatim as `bash -c cmd`).
+// The CodeMirror 6 grammar for displaying a bash script (see `code_block.tsx`'s `shell` language,
+// used by `tool_rendering/kubectl/requests.tsx`'s command rendering).
 // `@codemirror/legacy-modes` ships CodeMirror 5's shell mode as a `StreamParser`, which
 // `StreamLanguage.define` wraps into a CodeMirror 6 `Language` extension.
 import { StreamLanguage } from "@codemirror/language";

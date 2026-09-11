@@ -12,7 +12,6 @@ on:
       - "nix/nixos/hosts/public-coder-devbox/**"
       - "nix/nixos/modules/vm-hardware.nix"
       - "nix/nixos/modules/bazel/**"
-      - "nix/nixos/modules/hostexecd.nix"
       - "nix/ssh-keys.nix"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/public-coder-devbox-image.yml"
