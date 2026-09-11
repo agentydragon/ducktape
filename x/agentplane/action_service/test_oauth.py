@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 import pytest_bazel
+import uvicorn
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from key_value.aio.wrappers.base import BaseWrapper
@@ -25,10 +26,12 @@ from mcp.types import CallToolResult
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from x.agentplane.acceptance.dcr import register_client
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import DisabledOperatorAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog
@@ -184,6 +187,64 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
             response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
             response.raise_for_status()
             yield OAuthFixture(proxy, connections, enrollments, browser, base_url, response.json(), settings)
+
+
+@pytest.mark.parametrize("redirect_uri", ["http://127.0.0.1:49152/callback", CALLBACK])
+async def test_real_sdk_dcr_over_http_persists_client_metadata(
+    oauth: OAuthFixture,
+    engine: AsyncEngine,
+    db_url: str,
+    echo_catalog: ActionCatalog,
+    echo_executor: Executor,
+    redirect_uri: str,
+) -> None:
+    store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
+    service = ActionService(store, echo_catalog, {"agentplane": echo_executor})
+    # Only the unrelated Kubernetes TokenReview boundary is fake. The request has
+    # no workload token; OAuth routes, SDK HTTP, and PostgreSQL are real.
+    sandbox = AsyncMock(spec=SandboxPrincipalAuthenticator, side_effect=HTTPException(401, "no workload credential"))
+    app = create_app(
+        service,
+        sandbox,
+        DisabledOperatorAuthenticator(),
+        echo_catalog,
+        updates=ActionUpdates(db_url),
+        connections=oauth.connections,
+        enrollments=oauth.enrollments,
+        oauth=oauth.proxy,
+    )
+    port = urlsplit(oauth.base_url).port
+    assert port is not None
+    # PostgreSQL pools belong to the fixture event loop, not serve_app's thread.
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False))
+    serving = asyncio.create_task(server.serve())
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(OSError)
+        ):
+            with attempt:
+                _, writer = await asyncio.open_connection("127.0.0.1", port)
+                writer.close()
+                await writer.wait_closed()
+        registered = await register_client(f"{oauth.base_url}/mcp", redirect_uri)
+        assert registered.client.client_id is not None
+        # A separately constructed provider reads durable server metadata, not the
+        # client's cache or the registering provider's in-process objects.
+        async with running_oauth(oauth.settings, db_url, oauth.enrollments, oauth.connections) as replacement:
+            restored = await replacement.get_client(registered.client.client_id)
+            assert restored is not None
+            assert restored.client_name == registered.client.client_name
+            assert restored.redirect_uris == registered.client.redirect_uris
+            assert restored.scope == registered.client.scope
+            assert restored.token_endpoint_auth_method == registered.client.token_endpoint_auth_method
+        consent = await oauth.browser.get(registered.authorization_url)
+        assert consent.status_code == 302
+        assert consent.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
+        assert await oauth.connections.list() == []
+    finally:
+        server.should_exit = True
+        await asyncio.wait_for(serving, timeout=10)
+        await service.close()
 
 
 async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_url: str, engine: AsyncEngine) -> None:
