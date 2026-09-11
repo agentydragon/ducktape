@@ -4,7 +4,7 @@
 # (git.allegedly.works/ducktape-ci/<image>, e.g. codex-pod). Its password is the
 # shared value in the SOPS-provisioned `forgejo-images-creds` Secret, so CI push
 # (secrets/ci/forgejo-images-registry.sops.yaml) and the kubelet/Flux pull
-# credential (the same Secret, reflected into flux-system + consuming namespaces)
+# credential (the same Secret, distributed by ESO into consuming namespaces)
 # all authenticate as this user. Deliberately no proxy (unlike props): clients
 # talk to Forgejo directly.
 
@@ -36,22 +36,12 @@ resource "forgejo_user" "images" {
   visibility           = "private"
 }
 
-# Kubelet pull secret for the agent-workspaces namespace (workspace
-# SandboxTemplate pulls git.allegedly.works/ducktape-ci/agent-workspace).
-# Written by this module — which already holds the credential — instead of
-# extending the source Secret's reflector allowlist, which lives inside the
-# sops-encrypted registry-creds.sops.yaml and would need a manual re-encrypt
-# for every new consumer namespace.
-resource "kubernetes_secret" "agent_workspaces_pull" {
-  metadata {
-    name      = "forgejo-images-creds"
-    namespace = "agent-workspaces"
-    annotations = {
-      description = "ducktape-ci Forgejo registry pull credential for workspace pods; provisioned by tf/gitops/forgejo-images"
-    }
-  }
-  type = "kubernetes.io/dockerconfigjson"
-  data = {
-    ".dockerconfigjson" = data.kubernetes_secret.images_creds.data[".dockerconfigjson"]
+# ESO already owns this Secret through the agent-workspaces ExternalSecret.
+# CLEANUP(added 2026-09-11): Remove once all forgejo_images states have forgotten
+# kubernetes_secret.agent_workspaces_pull. Never destroy the ESO-owned Secret.
+removed {
+  from = kubernetes_secret.agent_workspaces_pull
+  lifecycle {
+    destroy = false
   }
 }
