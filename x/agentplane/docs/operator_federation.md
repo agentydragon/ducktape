@@ -230,10 +230,15 @@ acceptance above remains required even when every offline target is green.
   `operator_reauthentication_required`.
 - Token/session or source/target subject mismatch: 403 with `operator_federation_identity_mismatch`.
 - Signature/issuer/audience/azp/expiry/required-claim rejection: 403 with `operator_federation_token_invalid`.
-- Exchange/JWKS/network/provider failure: 403 with `operator_federation_exchange_failed`.
+- Signing keys unusable with no HTTP failure to report: 503 with
+  `operator_federation_verification_unavailable`.
+- Exchange response rejected by the OAuth client or malformed: 502 with
+  `operator_federation_exchange_failed`.
   These are intentionally fixed public codes; provider bodies/exceptions and tokens are not returned.
-- Destination rejection retains its HTTP status with the existing generic rejection message;
-  destination transport failure remains 503 `Action Service is unavailable`, not a configuration error.
+- An HTTP failure against either provider's JWKS, the token endpoint, or the Action Service re-raises
+  with the upstream status (503 when no response arrived) and
+  `detail={method, url, upstream_status, error_type}`; the URL is stripped of credentials, query,
+  and fragment, and no body or token is echoed.
 
 There is still one Action authority. Only Action **arguments** are exact in authenticated operator
 list/detail/decision receipts. Caller/workload arguments remain recursively key-redacted; origin,
@@ -257,5 +262,6 @@ A result echoing an argument does not become an operator credential-disclosure p
 The single human-authored `decision_note` is shared unchanged with caller and operator through
 canonical polling/BFF projections; provider outcome reason fields remain separate. There is no
 private human-note path. [Caller cancellation](../action_service/README.md#cancellation) is available
-before dispatch claim; the operator/BFF surface has no cancellation override. Push/Event Hub
-notification remains deferred.
+before dispatch claim; the operator/BFF surface has no cancellation override. Approval Web Push is
+served by the app (`/push/*`, the service worker at `/sw.js`); only the Event & Notification Hub is
+deferred.
