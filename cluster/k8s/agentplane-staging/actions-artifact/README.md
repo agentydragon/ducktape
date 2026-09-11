@@ -1,7 +1,8 @@
 # Staging Actions artifact
 
-This canary packages the staging Actions manifests without applying them. The
-existing Actions Kustomization still consumes Git until the separate cutover.
+This generator packages the staging Actions manifests. The existing Actions
+Kustomization consumes the resulting ExternalArtifact, retaining resource ownership,
+decryption, dependency gates, and health checks.
 
 The output revision hashes content; `originRevision` records Git provenance without
 turning unrelated commits into artifact updates. Keep the repository-relative path
@@ -14,7 +15,7 @@ controller. Source-watcher v2.1.1 comes from the Flux v2.8.8 release's
 are appended to `flux-system/gotk-components.yaml` so raw Terraform bootstrap also
 installs them; the existing shared Flux RBAC already includes source-watcher.
 
-Before consumer cutover, verify:
+Before merging the consumer cutover, verify the preceding canary deployment:
 
 1. Source-watcher is available and the ArtifactGenerator is Ready.
 2. The ExternalArtifact has a content-derived revision and Git origin revision.
@@ -26,3 +27,12 @@ Before consumer cutover, verify:
 The local contract test checks complete render inputs, not live digest behavior.
 Do not claim the canary passed until the controller has produced the artifact.
 Image automation continues editing the original Git manifests.
+
+After cutover, verify Actions' applied revision matches the ExternalArtifact, both
+replicas and Service endpoints are ready, and an authenticated Actions request
+succeeds through staging. Shared dependencies can still block while they reconcile;
+this pilot does not remove their gates or change the 30-second dependency retry.
+
+To roll back, restore the Actions sourceRef to GitRepository `ducktape` in namespace
+`ducktape-flux`. Keep the same path and Kustomization name; do not delete its managed
+resources or the generator during rollback.
