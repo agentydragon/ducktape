@@ -29,7 +29,7 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images # reflects the runner image's pull credential
       namespace: ducktape-flux
-    - name: litellm-keys-tf # writes the standing cheap-experiments key copy
+    - name: litellm-keys-tf # writes the staging subscription key
       namespace: ducktape-flux
     - name: agentplane-staging-egress # the proxy the sidecar relays to and the CA bundle the runner mounts
       namespace: ducktape-flux

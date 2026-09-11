@@ -29,6 +29,12 @@ filegroup(
 )
 
 filegroup(
+    name = "agentplane_staging_model_config",
+    srcs = ["agentplane-staging/app/config.yaml"],
+    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+)
+
+filegroup(
     name = "openclaw_model_config",
     srcs = [
         "agents/haku-openclaw-spike/app/deployment.yaml",

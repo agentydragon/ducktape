@@ -275,8 +275,8 @@ per-turn task remain the place for workload-specific constraints and the request
 - **Connection direction:** the app dials the runner Pod's address directly, re-resolving on
   reconnect; Pod replacement changes the address and the session log makes the cursor valid across
   it. A Service per sandbox is not needed until something outside the cluster must reach a runner.
-- **Staging first, on the cheap key:** the first instance exists for the agent to test against
-  autonomously, so its sandboxes spend the `cheap-experiments` LiteLLM budget. The Pod holds no
+- **Model credentials:** staging uses a dedicated OpenAI/Claude subscription key; testing uses
+  the `cheap-experiments` LiteLLM key. The Pod holds no
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
   EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the

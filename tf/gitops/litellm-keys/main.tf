@@ -180,7 +180,7 @@ locals {
 # Agents receive this Secret only through an expiring Haku Console Kubernetes grant.
 # There is deliberately no reflector copy or standing RoleBinding: the grant names
 # both the namespace and Secret, and LiteLLM enforces the model allowlist below.
-# Standing copies below serve the Agentplane staging and testing LLM ingresses.
+# A standing copy below serves the Agentplane testing LLM ingress.
 
 resource "litellm_key" "cheap_experiments" {
   key_alias       = "cheap-experiments"
@@ -206,21 +206,33 @@ resource "kubernetes_secret" "cheap_experiments" {
   }
 }
 
-# Server-held copy for the Agentplane LLM ingress (cluster/k8s/agentplane-staging/llm-ingress).
-# Runners receive only an inert workload-identity placeholder; central egress substitutes their
-# Pod-bound token and this service alone replaces it with the LiteLLM key. Not reflected — written
-# straight into the namespace. The key's existing budget and model allowlist remain the kill switch.
-resource "kubernetes_secret" "cheap_experiments_agentplane_staging" {
+resource "litellm_key" "agentplane_staging" {
+  key_alias       = "agentplane-staging"
+  models          = concat(local.oai_lane_models, local.claude_client_models)
+  max_budget      = 50
+  budget_duration = "30d"
+  metadata = {
+    consumer = "agentplane-staging"
+  }
+}
+
+moved {
+  from = kubernetes_secret.cheap_experiments_agentplane_staging
+  to   = kubernetes_secret.agentplane_staging
+}
+
+# Only the workload-authenticated LLM ingress holds the model key; runners use a placeholder.
+resource "kubernetes_secret" "agentplane_staging" {
   metadata {
-    name      = "litellm-key-cheap-experiments"
+    name      = "litellm-key-agentplane-staging"
     namespace = "agentplane-staging"
     annotations = {
-      description = "Server-held cheap-experiments LiteLLM virtual key for the Agentplane workload-authenticated LLM ingress; never mounted into runner Pods"
+      description = "Server-held OpenAI and Claude subscription key for Agentplane staging; never mounted into runner Pods"
     }
   }
 
   data = {
-    api-key = litellm_key.cheap_experiments.key
+    api-key = litellm_key.agentplane_staging.key
   }
 }
 

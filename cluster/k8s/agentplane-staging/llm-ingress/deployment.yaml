@@ -1,6 +1,6 @@
 # Authenticated byte-streaming ingress between Agentplane central egress and the existing LiteLLM
 # deployment. It resolves only SandboxPrincipal, replaces the workload bearer with the single
-# cheap-experiments virtual key, and stamps verified Sandbox metadata for LiteLLM spend logs.
+# staging subscription virtual key, and stamps verified Sandbox metadata for LiteLLM spend logs.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,7 +9,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-llm-ingress
   annotations:
-    secret.reloader.stakater.com/reload: litellm-key-cheap-experiments
+    secret.reloader.stakater.com/reload: litellm-key-agentplane-staging
 spec:
   replicas: 2
   strategy:
@@ -60,12 +60,11 @@ spec:
             - --host=0.0.0.0
             - --port=8080
           env:
-            # The only real model credential in this service. The same cheap-experiments virtual
-            # key/model roster/budget already used by staging is preserved; runners never mount it.
+            # The only real model credential in this service; runners never mount it.
             - name: AGENTPLANE_LLM_INGRESS_LITELLM_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-key-cheap-experiments
+                  name: litellm-key-agentplane-staging
                   key: api-key
           ports:
             - name: http

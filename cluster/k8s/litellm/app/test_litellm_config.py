@@ -46,6 +46,14 @@ def test_terraform_claude_allowlist_matches_the_anthropic_model_list() -> None:
     ]
 
 
+def test_agentplane_staging_offers_all_native_subscription_models() -> None:
+    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/agentplane-staging/app/config.yaml").read_text())
+    tf_locals = _litellm_keys_locals()
+    assert config["models"] == {"codex": tf_locals["oai_lane_models"], "claude": tf_locals["claude_client_models"]}
+    for preset in config["thread_presets"].values():
+        assert preset["model"] in config["models"][preset["provider"]]
+
+
 # main.tf's own comment: "Model names must match generated model_name entries in
 # cluster/k8s/litellm/app/proxy-config.yaml". These are the remaining live-key
 # locals that spell names out literally, so every element must resolve against the

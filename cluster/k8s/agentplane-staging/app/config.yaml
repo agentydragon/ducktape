@@ -1,11 +1,19 @@
 # The app's settings file (x/agentplane/app/main.py `Settings`), mounted by the Deployment.
-# What the session form offers per harness: routes the cheap-experiments key may call
-# (tf/gitops/litellm-keys), one native model per provider so far.
+# Native subscription routes authorized by the staging key in tf/gitops/litellm-keys.
 models:
   claude:
-    - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+    - anthropic-max20/ant-messages/claude-opus-5
+    - anthropic-max20/ant-messages/claude-sonnet-5
+    - anthropic-max20/ant-messages/claude-fable-5
+    - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
   codex:
+    - chatgpt/oai-responses/gpt-6-astra
+    - chatgpt/oai-responses/gpt-5.4
+    - chatgpt/oai-responses/gpt-5.5
+    - chatgpt/oai-responses/gpt-5.6-sol
+    - chatgpt/oai-responses/gpt-5.6-terra
     - chatgpt/oai-responses/gpt-5.6-luna
+    - chatgpt/oai-responses/gpt-5.3-codex-spark
 
 # Rendered into the image-owned agent-instruction template; deployments may use different service names.
 agent_egress_rules_url: http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules
