@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol, cast
 from uuid import UUID
 
 import httpx
+from anyio import CancelScope
 
 from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion, Identity
 from x.agentplane.action_service.enrollments import (
@@ -149,15 +151,20 @@ class OperatorActionServiceClient(_BearerClient):
         )
         return [ActionRequestView.model_validate(row) for row in response.json()]
 
-    async def stream_requests(self) -> AsyncIterator[bytes]:
-        """Yield raw SSE chunks from the operator Action stream."""
+    @asynccontextmanager
+    async def stream_requests(self) -> AsyncIterator[AsyncIterator[bytes]]:
+        """Open and check the upstream before handing its body to a streaming response."""
         token = await self._tokens.token()
-        async with self._http.stream(
+        request = self._http.build_request(
             "GET", "/v1/operator/action-requests/stream", headers={"Authorization": f"Bearer {token}"}
-        ) as response:
+        )
+        response = await self._http.send(request, stream=True)
+        try:
             response.raise_for_status()
-            async for chunk in response.aiter_raw():
-                yield chunk
+            yield response.aiter_raw()
+        finally:
+            with CancelScope(shield=True):
+                await response.aclose()
 
     async def push_config(self) -> dict[str, str | None]:
         response = await self._request("GET", "/v1/operator/push/config")

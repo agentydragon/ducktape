@@ -587,3 +587,22 @@ py_test(
         "@pypi//starlette",
     ],
 )
+
+py_test(
+    name = "test_action_stream",
+    srcs = ["test_action_stream.py"],
+    deps = [
+        ":action_federation",
+        ":api",
+        ":conftest",
+        ":identity",
+        ":oidc",
+        "//:conftest",
+        "//x/agentplane/action_service:client",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack
 from typing import Annotated
 from uuid import UUID
 
@@ -67,6 +69,7 @@ from x.agentplane.runner.client import RunnerError
 # gazelle:include_dep @pypi//itsdangerous
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
+logger = logging.getLogger(__name__)
 
 
 class InvalidLaunchError(Exception):
@@ -376,18 +379,33 @@ async def list_actions(
     return await client.list_requests(states=tuple(state or ()))
 
 
+async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator[bytes]]:
+    async with AsyncExitStack() as stack:
+        try:
+            async with asyncio.timeout(30):
+                chunks = await stack.enter_async_context(client.stream_requests())
+        except TimeoutError as error:
+            raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Action stream startup timed out") from error
+        yield chunks
+
+
 @actions_router.get("/stream")
-async def action_stream(request: Request, client: OperatorActions) -> StreamingResponse:
+async def action_stream(
+    request: Request, chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)]
+) -> StreamingResponse:
     async def body() -> AsyncIterator[bytes]:
         # Force periodic reauthentication (including logout in another replica), not state polling.
         try:
             async with asyncio.timeout(30):
-                async for chunk in client.stream_requests():
+                async for chunk in chunks:
                     if operator_session(request) is None or await request.is_disconnected():
                         return
                     yield chunk
         except TimeoutError:
             return
+        except httpx.RequestError:
+            # Headers are already sent. End the SSE connection so EventSource reconnects.
+            logger.warning("Action stream interrupted after response start", exc_info=True)
 
     return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 

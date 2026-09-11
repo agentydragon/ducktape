@@ -134,6 +134,7 @@ py_library(
         ":enrollments",
         ":mcp_linkage",
         ":models",
+        "@pypi//anyio",
         "@pypi//httpx",
     ],
 )
