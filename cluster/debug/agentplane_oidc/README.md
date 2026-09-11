@@ -24,15 +24,6 @@ the Gateway Service). DNS is unchanged.
   `hil-ovh` nodes only by hand. Options: delete the `iguana` Node object (PodGC
   frees one slot; rejoin needs a manual CSR approval), and raise `maxUnavailable`
   to roaming-node count plus one in the Helm values.
-- **mitmproxy Docker-CI rule.** The `toFQDNs docker-ci.allegedly.works:2376`
-  rule in <../../k8s/agents/mitmproxy/cnp-cloud-api-egress.yaml> (annotated as
-  suspected dead) is confirmed dead: on 2026-09-10 04:08 UTC a TCP connect from
-  the proxy pod timed out and Cilium monitor logged
-  `Policy denied; bpf_lxc.c:1651 identity 58778 -> remote-node
-10.244.2.242:40074 -> 147.135.37.175:2376 tcp SYN`.
-  Operator decision pending: retire the rule, or add 2376 to the
-  `toEntities: cluster` port list if the public Docker path is wanted (#6161
-  already dropped the dangling TLSRoute).
 - **Browser VM225 exception.** The `reportAllChanges/startTime` exception
   reported alongside the 2026-09-11 `/push/config` 403s has no matching symbol in
   the Agentplane frontend source or dependency manifests; its script source is

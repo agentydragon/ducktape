@@ -23,10 +23,10 @@ cert-manager issues the whole PKI from the cluster-internal CA — there is **no
 hand-rolled CA and no SOPS key material**. Both leaves are ECDSA P-256, chain to
 `cluster-root-ca`, and auto-rotate. Defined in `certificates.yaml`:
 
-| Certificate        | Namespace        | SANs / usage                                                                     | Secret                 |
-| ------------------ | ---------------- | -------------------------------------------------------------------------------- | ---------------------- |
-| `docker-ci-server` | `docker-ci`      | `docker-ci.allegedly.works`, `docker-ci.docker-ci.svc.cluster.local`; serverAuth | `docker-ci-server-tls` |
-| `docker-ci-client` | `claude-sandbox` | CN `docker-ci-client`; clientAuth                                                | `docker-ci-client`     |
+| Certificate        | Namespace        | SANs / usage                                        | Secret                 |
+| ------------------ | ---------------- | --------------------------------------------------- | ---------------------- |
+| `docker-ci-server` | `docker-ci`      | `docker-ci.docker-ci.svc.cluster.local`; serverAuth | `docker-ci-server-tls` |
+| `docker-ci-client` | `claude-sandbox` | CN `docker-ci-client`; clientAuth                   | `docker-ci-client`     |
 
 Both Secrets carry the standard cert-manager keys (`tls.crt`, `tls.key`,
 `ca.crt`, where `ca.crt` is the cluster root). The Deployment and the eval Job
@@ -50,10 +50,11 @@ the `reloader.stakater.com/auto: "true"` annotation on its Deployment.
 The external-RBE client path (`bbr test` over `DUCKTAPE_DOCKER_CLIENT_KEY` + the
 `util/testing/docker_mtls.py` fixture) is **dormant** — see that fixture's
 docstring and the tombstone in `devinfra/secrets/_common.sh` for how to revive it.
-Reviving it also needs a Gateway route for the public `docker-ci.allegedly.works`
-SAN the server Certificate still carries; the TLS-passthrough listener and TLSRoute
-that once served it were removed after the listener conflict
-([cilium#42159](https://github.com/cilium/cilium/issues/42159)).
+Decision: the daemon is not exposed through the Gateway, and no public SAN is
+issued for it. Reviving the external path means adding both — a TLS-passthrough
+route that does not trip the listener conflict
+([cilium#42159](https://github.com/cilium/cilium/issues/42159)) and a public
+`dnsNames` entry on the server Certificate — not restoring what was removed.
 
 ## Kubernetes Resources
 

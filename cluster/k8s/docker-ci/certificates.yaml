@@ -17,9 +17,8 @@ spec:
   privateKey:
     algorithm: ECDSA
     size: 256
-  commonName: docker-ci.allegedly.works
+  commonName: docker-ci.docker-ci.svc.cluster.local
   dnsNames:
-    - docker-ci.allegedly.works # external RBE via the TLSRoute passthrough
     - docker-ci.docker-ci.svc.cluster.local # in-cluster eval Job (#2074)
   usages:
     - server auth

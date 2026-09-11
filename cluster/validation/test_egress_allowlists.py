@@ -50,9 +50,8 @@ alone:
 - *A `*.allegedly.works` entry in a `toFQDNs` block enforces nothing.* Those
   names resolve to the hostNetwork Gateway node IPs, and `toFQDNs` cannot select
   node identities (`cluster/docs/cilium_network_policy.md`). The entries pinned
-  below that hit this — `alloy-otlp`, `haku-mailbox`, `aiquota`, `docker-ci` —
-  record intent at that layer; all but `docker-ci` are admitted by a `toEntities`
-  rule instead, while `docker-ci` appears to be a dead rule. What makes them
+  below that hit this — `alloy-otlp`, `haku-mailbox`, `aiquota` — record intent
+  at that layer and are admitted by a `toEntities` rule instead. What makes them
   load-bearing anyway is the DNS half of the pin, which does fence them.
 
 Known gaps
@@ -74,10 +73,9 @@ operator-facing version is in `haku/docs/security.md`.
   iron would send a placeholder and substitute in a trusted pod. Moving those to
   iron is blocked on three mitmproxy behaviours whose iron equivalents are
   unverified: `--set stream_large_bodies=1m` (dind image layers were buffered
-  whole into memory and OOM-killed the pod), and two `--ignore-hosts` raw TLS
-  passthroughs — `api.anthropic.com`, because interception breaks the Managed
-  Agents HTTP/2 session stream, and `docker-ci.allegedly.works`, because docker
-  mTLS must reach the daemon end to end. Verify those first.
+  whole into memory and OOM-killed the pod), and the `--ignore-hosts` raw TLS
+  passthrough for `api.anthropic.com`, because interception breaks the Managed
+  Agents HTTP/2 session stream. Verify those first.
 - TODO: enforce at two layers, not one. Every fence today is single-layer.
   The mitmproxy fences confine only via Cilium `toFQDNs` — the mitmproxy
   container itself has no allowlist. The iron fences confine only in app config:
@@ -312,9 +310,7 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
     ),
     # The `claude-sandbox` namespace, via the shared agents-mitmproxy.
     "agents/mitmproxy/cnp-cloud-api-egress.yaml": Confined(
-        allows=BUILD_REGISTRIES
-        | ANTHROPIC
-        | hosts("api.openai.com", "generativelanguage.googleapis.com", "docker-ci.allegedly.works")
+        allows=BUILD_REGISTRIES | ANTHROPIC | hosts("api.openai.com", "generativelanguage.googleapis.com")
     ),
     "agents/public-coder-agent/proxy/cnp-egress.yaml": Unconfined(
         reason=(
