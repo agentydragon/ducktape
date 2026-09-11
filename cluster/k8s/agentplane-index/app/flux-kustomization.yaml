@@ -19,7 +19,8 @@ spec:
       namespace: ducktape-flux
     - name: agentplane-index-secrets
       namespace: ducktape-flux
-    - name: agentplane-index-sources
+    # Reflects the haku-forgejo-git read credential into this namespace.
+    - name: haku-state
       namespace: ducktape-flux
     - name: ollama
       namespace: ducktape-flux

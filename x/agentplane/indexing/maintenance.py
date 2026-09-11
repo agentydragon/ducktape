@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from haku.recall_index.embedder import Embedder
-from x.agentplane.indexing.source import FluxSource
+from x.agentplane.indexing.source import GitSource
 from x.agentplane.indexing.store import Store
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Maintenance:
     store: Store
-    source: FluxSource
+    source: GitSource
     embedder: Embedder
     poll_seconds: float
     gc_seconds: float
@@ -32,13 +32,13 @@ class Maintenance:
     async def sync_once(self) -> None:
         state = await self.store.status()
         snapshot = await self.source.snapshot(
-            current_digest=state.desired_digest,
+            current_tree_id=state.desired_tree_id,
             current_revision=state.desired_revision,
             current_repository_url=state.desired_repository_url,
         )
         if snapshot is not None:
             await self.store.ingest(
-                digest=snapshot.digest,
+                tree_id=snapshot.tree_id,
                 revision=snapshot.revision,
                 repository_url=snapshot.repository_url,
                 files=snapshot.files,
@@ -50,7 +50,7 @@ class Maintenance:
                 await self.sync_once()
                 self.source_error = None
             except Exception as exc:
-                logger.exception("Flux snapshot reconciliation failed")
+                logger.exception("Source snapshot reconciliation failed")
                 self.source_error = type(exc).__name__
             await asyncio.sleep(self.poll_seconds)
 

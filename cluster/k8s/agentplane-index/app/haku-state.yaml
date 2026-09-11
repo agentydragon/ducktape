@@ -28,6 +28,8 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
+      # The worker reads its repository itself; nothing here talks to the API server.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -58,8 +60,20 @@ spec:
                   key: password
             - name: AGENTPLANE_INDEX_DATABASE_URL
               value: postgresql+asyncpg://$(DB_USERNAME):$(DB_PASSWORD)@agentplane-index-db-rw.agentplane-index.svc/haku_state
-            - name: AGENTPLANE_INDEX_SOURCE_NAME
-              value: agentplane-index-haku-state
+            - name: AGENTPLANE_INDEX_REPOSITORY_URL
+              value: http://forgejo-http.forgejo:3000/haku/haku-state.git
+            - name: AGENTPLANE_INDEX_BRANCH
+              value: main
+            - name: AGENTPLANE_INDEX_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: username
+            - name: AGENTPLANE_INDEX_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
             - name: AGENTPLANE_INDEX_READ_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -68,6 +82,9 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          volumeMounts:
+            - name: repository
+              mountPath: /var/lib/agentplane-index
           resources:
             requests:
               cpu: 250m
@@ -92,6 +109,11 @@ spec:
             timeoutSeconds: 5
             periodSeconds: 5
             failureThreshold: 60
+      volumes:
+        # A bare clone, fetched incrementally; a pod restart re-clones once.
+        - name: repository
+          emptyDir:
+            sizeLimit: 4Gi
 ---
 apiVersion: v1
 kind: Service

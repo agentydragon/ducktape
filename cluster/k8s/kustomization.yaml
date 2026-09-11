@@ -123,7 +123,6 @@ resources:
   - agentplane-index/namespace/flux-kustomization.yaml
   - agentplane-index/db/flux-kustomization.yaml
   - agentplane-index/secrets/flux-kustomization.yaml
-  - agentplane-index/sources/flux-kustomization.yaml
   - agentplane-index/app/flux-kustomization.yaml
   - agentplane-crds/flux-kustomization.yaml
   - agentplane-egress-credentials/namespace/flux-kustomization.yaml
