@@ -27,6 +27,7 @@ sandbox_presets:
     title: Public coder
     template: agentplane-runner
     policies:
+      - basic
       - github-public
     thread_preset: public-coder-codex
     bootstrap: |
