@@ -21,6 +21,8 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
+- [Mobile/compact UI density](mobile_density.md) — captured, not designed: nav/header overflow,
+  badge-to-dot and role-to-bubble transcript styling, a global pending-approval overlay
 
 ## Implemented contracts
 
