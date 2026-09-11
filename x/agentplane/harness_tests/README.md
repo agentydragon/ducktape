@@ -32,8 +32,10 @@ the tests outside Bazel with a Nix-built Python is not supported: the binaries f
 - `claude/harness.py`, `codex/harness.py`: the pinned binary wired to the upstream; provider
   fixtures live in each `conftest.py`.
 
-The four test modules per provider cover plain turns and resume, tool round trips, input and
-control during an active turn, and upstream connection loss. The scenarios drive the harnesses
+The test modules cover plain turns and resume (`test_turns.py`), tool round trips
+(`test_tools.py`), input and control during an active turn (`test_active_turn.py`), upstream
+connection loss (`test_connection_loss.py`), and, for Codex, developer instructions across a
+resume (`test_instructions.py`). The scenarios drive the harnesses
 through <../native/README.md>; features each harness has beyond what these tests exercise are
 listed in <../native/docs/protocol_roster.md>.
 

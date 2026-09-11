@@ -94,13 +94,6 @@ condition, or is asking for a refusal-fallback decision.
 inventing a shared retry state. Add typed events only once captures pin their shapes. A hosted
 fallback must depend on C5; otherwise keep the dialog path explicitly unsupported.
 
-### Corrected documentation bug
-
-The previous queue note claimed coalesced non-representative UUIDs received no terminal lifecycle
-receipt. The pinned runtime retains every contributor UUID and emits receipts for all of them; this
-PR corrects [claude_input_queue.md](claude_input_queue.md). Cancellation is still batch-granular
-after dequeue.
-
 ## Input and turn lifecycle
 
 `command_lifecycle {state: "queued"}` acknowledges admission to Claude's command queue. It does

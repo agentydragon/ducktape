@@ -7,8 +7,9 @@ an ordinary `Authorization: Bearer` header. This service resolves that bearer wi
 server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
-identity is attached only through LiteLLM 1.90.2's documented
-`x-litellm-spend-logs-metadata` JSON header. That version consumes the header in its common request
+identity is attached only through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
+(deployed `litellm/litellm:1.100.0`, `cluster/k8s/litellm/app/deployment.yaml:69`). That version
+consumes the header (`_get_spend_logs_metadata_from_request_headers`) in its common request
 setup used by both native `/v1/messages` and `/v1/responses`, including their streaming paths. The
 authoritative metadata object is:
 
