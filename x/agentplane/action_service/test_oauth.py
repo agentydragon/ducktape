@@ -19,9 +19,12 @@ import pytest
 import pytest_bazel
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
+from fastmcp.server.auth.cimd import CIMDDocument
+from fastmcp.server.auth.ssrf import SSRFFetchResponse
 from key_value.aio.wrappers.base import BaseWrapper
 from mcp.shared.auth import OAuthClientInformationFull
 from mcp.types import CallToolResult
+from pydantic import AnyHttpUrl
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
@@ -184,6 +187,58 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
             response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
             response.raise_for_status()
             yield OAuthFixture(proxy, connections, enrollments, browser, base_url, response.json(), settings)
+
+
+async def test_cimd_reaches_canonical_consent_and_grants(oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    client_id = "https://client.example.test/oauth/client-metadata"
+    document = CIMDDocument(
+        client_id=AnyHttpUrl(client_id),
+        client_name="Test CIMD client",
+        redirect_uris=[CALLBACK],
+        grant_types=["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+    )
+    fetch = AsyncMock(
+        return_value=SSRFFetchResponse(
+            content=document.model_dump_json().encode(),
+            status_code=200,
+            headers={"content-type": "application/json", "cache-control": "max-age=3600"},
+        )
+    )
+    # Only the external HTTPS document fetch is replaced. The pinned library still
+    # validates metadata/client identity; our consent, PKCE and grant stores are real.
+    monkeypatch.setattr("fastmcp.server.auth.cimd.ssrf_safe_fetch_response", fetch)
+    metadata = await oauth.browser.get(f"{oauth.base_url}/.well-known/oauth-authorization-server")
+    assert metadata.json()["client_id_metadata_document_supported"] is True
+    assert "none" in metadata.json()["token_endpoint_auth_methods_supported"]
+    assert metadata.json()["registration_endpoint"]  # DCR remains available.
+    handle, verifier = await oauth.authorize(client_id)
+    fetch.assert_awaited_once()
+    assert fetch.call_args.args == (client_id,)
+    assert await oauth.connections.list() == []
+    code = await oauth.callback(await oauth.approve(handle))
+    wrong_pkce = await oauth.exchange(client_id, code, "incorrect-verifier")
+    assert wrong_pkce.status_code == 401
+    issued = await oauth.exchange(client_id, code, verifier)
+    assert issued.status_code == 200
+    grant = await oauth.proxy.authenticate(issued.json()["access_token"])
+    assert grant is not None
+    assert grant.client_id == client_id
+    assert grant.identity_id == "public-coder"
+    await oauth.connections.revoke(grant.id)
+    assert await oauth.proxy.authenticate(issued.json()["access_token"]) is None
+
+
+@pytest.mark.parametrize(
+    "client_id",
+    [
+        "http://client.example.test/oauth/metadata",
+        "https://127.0.0.1/oauth/metadata",
+        "https://169.254.169.254/latest/meta-data",
+    ],
+)
+async def test_cimd_refuses_insecure_and_private_metadata_urls(oauth: OAuthFixture, client_id: str) -> None:
+    assert await oauth.proxy.get_client(client_id) is None
+    assert await oauth.connections.list() == []
 
 
 async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_url: str, engine: AsyncEngine) -> None:

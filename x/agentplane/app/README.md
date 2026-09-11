@@ -32,8 +32,12 @@ bbr test //x/agentplane/app/...
 - `bridge.py`: runner-first commands, leased ingestion per sandbox, and database-backed browser
   SSE; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
+- `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
+  response models and the runner protocol's `Event` messages.
 - `live.py`: one list-and-watch over Sandboxes, their Pods, and the egress objects
   (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open tab.
+- `changes.py`: the payload-free wake-up a reader of the cluster index or the trajectory store waits
+  on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads, events, feed state, and ingestion leases.
@@ -97,8 +101,9 @@ stopped moving says so rather than showing it as live.
 
 ## Authentication and authorization
 
-Every route needs a caller; only `/healthz` and the `/auth/*` endpoints answer without one. There
-are two credentials, and both are cryptographic:
+Every API route needs a caller; only `/healthz`, the `/auth/*` endpoints, the service worker at
+`/sw.js`, and the SPA's static files mounted at `/` answer without one. There are two credentials,
+and both are cryptographic:
 
 - **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
   Authentik client; `/auth/login` runs an authorization-code flow with PKCE and stores the
@@ -198,8 +203,10 @@ non-negative cursor (default 0).
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
-**Production federation remains disabled** until explicit Authentik target, subject mappings,
-allowlists, and network reachability are configured. The app now composes a request-bound
+Staging configures federation: the Deployment reads `AGENTPLANE_ACTION_FEDERATION` from the
+Git-owned `agentplane-action-federation` ConfigMap
+(`cluster/k8s/agentplane-staging/actions/configmap-action-federation.yaml`), and the app's network
+policy admits Authentik by TLS SNI and the Action Service on 8080. The app composes a request-bound
 JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF
 bearer or workload-token promotion is used. Missing configuration is specifically
 `503 detail.code=operator_federation_not_configured`; token callers get 403.
@@ -226,6 +233,14 @@ refreshes the inventory and asks for review, never automatically retrying a dest
 The app owns no Connection state. Reconnect/rebind begins with fresh authorization from the external
 client and selecting this Connection on the consent page; management has no direct retarget action.
 Policy editing and deployment are outside this surface.
+
+`/#/mcp-servers` lists the Action Service's OAuth-linked MCP server groups and links or disconnects
+each one. The BFF proxies `GET /mcp-servers`, `GET /mcp-servers/{id}/linkage`,
+`POST /mcp-servers/{id}/linkage/start`, and `POST /mcp-servers/{id}/linkage/disconnect` through the
+same operator federation; the provider's redirect lands on `GET /mcp-linkage/callback`, which
+completes the link and returns the browser to `/#/mcp-servers`. What a link authorizes and when a
+linked group becomes available is the Action Service's contract
+([its README](../action_service/README.md#action-catalog)).
 
 ## Launch presets
 

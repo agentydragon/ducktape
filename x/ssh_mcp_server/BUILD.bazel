@@ -1,0 +1,70 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        "//mcp_infra:static_bearer",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//paramiko",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server_cli",
+    main_module = "x.ssh_mcp_server.server",
+    deps = [":server"],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":server",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "server.py",
+    deps = [":server"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["agentplane-ssh-mcp:latest"],
+)

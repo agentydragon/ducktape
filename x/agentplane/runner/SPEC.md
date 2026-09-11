@@ -156,8 +156,10 @@ session and a new transcript.
   [`../docs/claude_runtime_contracts.md`](../docs/claude_runtime_contracts.md).
 - Codex reports no aggregated output for a shell command that outlived its first read, and keeps a
   streamed model connection open after an interrupt; neither changes the events above.
-- Native approval prompts, user dialogs, and hook callbacks are refused with an error answer, so a
-  turn never blocks on them. Both harnesses run with approvals off inside the sandbox.
+- Native approval prompts, user dialogs, and hook callbacks never block a turn. Claude Code's
+  `can_use_tool` is answered allow; `hook_callback` and any unrecognised control request get an
+  error answer. Codex runs under `approval_policy: never`, so no approval request arrives; a server
+  request that does (approval, user input, elicitation) is refused with a JSON-RPC error.
 
 ## Harness-originated messages
 
@@ -178,8 +180,9 @@ what a client that reads `Native` has to work with differs by harness:
   and `hookPrompt` reach `UnknownItem` and are emitted as **tool calls** named after the item type,
   so they already appear in a conversation view, mislabelled.
 
-Neither harness has been run with hooks registered, so none of the hook wire surface above is
-observed rather than read off the harnesses' own schemas.
+The hook wire surface above is observed live only by the capture probe's `hooks` and `hooks_deny`
+scenarios ([`../docs/hooks.md`](../docs/hooks.md)); the scripted tests and the runner run with
+hooks off, so the runner's own handling of it is read off the harnesses' schemas.
 
 ## Not covered yet
 

@@ -57,6 +57,15 @@ spec:
           serverNames:
             - fcm.googleapis.com
             - updates.push.services.mozilla.com
+    # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
+    - toFQDNs:
+        - matchName: claude.ai
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - claude.ai
     - toEntities:
         - kube-apiserver
     - toEndpoints:

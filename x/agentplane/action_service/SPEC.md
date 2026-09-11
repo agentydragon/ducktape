@@ -99,7 +99,8 @@ and caller-supplied identity/policy claims cannot acquire this authority. An Ori
 grant authority or categorically disqualify a caller; FastMCP provides automatic Host/Origin
 protection for loopback access. Browser cookies are not authentication on this endpoint.
 When external OAuth is configured, the frontend also accepts verified, active Connection grants.
-DCR registration alone is not authority. Consent binds one configured Identity and named Connection
+Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD).
+Neither registration nor metadata discovery is authority. Consent binds one configured Identity and named Connection
 to the validated authorization interaction and approving operator; upstream issuer/subject must
 match the explicit operator mapping before token issuance. One consent permits at most one token
 family. Ambiguous post-claim issuance requires fresh authorization.

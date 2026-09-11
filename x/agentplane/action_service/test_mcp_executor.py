@@ -320,6 +320,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
             kind="mcp",
             description="subprocess test server",
             config={
+                "transport": "stdio",
                 "command": sys.executable,
                 "args": [str(server_path)],
                 "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
@@ -377,6 +378,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
 async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path: Path) -> None:
     group = _group()
     group.executor.config = {
+        "transport": "stdio",
         "command": sys.executable,
         "args": [str(get_required_path(FAKE_SERVER))],
         "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},

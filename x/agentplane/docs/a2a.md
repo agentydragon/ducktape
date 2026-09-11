@@ -1,8 +1,6 @@
 # A2A suitability evaluation
 
-Status: **evaluated and not adopted**. This records the A2A 1.0 evaluation requested during design
-review. It is not an implementation plan, experiment lane, or future commitment. The evaluated A2A
-repository commit is
+Status: **evaluated and not adopted**. The evaluated A2A repository commit is
 [`c0f30b35`](https://github.com/a2aproject/A2A/tree/c0f30b35390c59d2cc398a1100823a9115b97a20)
 (latest GitHub release `v1.0.1` on 2026-05-28).
 
@@ -86,10 +84,3 @@ It remains useful only as external prior art and evidence that A2A can wrap a co
 opaque task boundary. It is not the harness supervisor for this architecture. Its Claude paths use
 ACP or the Claude Agent SDK and do not own the exact CLI stream/control frames, queue/admission
 evidence, Kubernetes runtime fencing, bridge log, or crash-window recovery model required here.
-
-## Consequence
-
-Remove A2A from the architecture topology, protocol model, implementation lanes, and experiment
-matrix. If a future product independently needs interoperability with third-party opaque agents, it
-should begin as a new requirements exercise rather than inheriting a presumed commitment from this
-evaluation.

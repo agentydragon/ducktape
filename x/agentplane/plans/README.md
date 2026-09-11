@@ -19,7 +19,6 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 - [External MCP connections](external_mcp_connections.md) — staging rollout, real Claude.ai/local Claude Code acceptance, remaining Connection management/reconnect, and Haku migration
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
-- [BuildBuddy hosted remote-run authentication](buildbuddy_remote_auth.md) — unresolved hosted-run credential boundary
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 

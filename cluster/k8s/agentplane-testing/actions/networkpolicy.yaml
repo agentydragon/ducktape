@@ -44,6 +44,18 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
+    - toFQDNs:
+        - matchName: claude.ai
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - claude.ai
     - toEntities:
         - kube-apiserver
     - toEndpoints:
@@ -53,6 +65,14 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+            app.kubernetes.io/name: agentplane-ssh-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
               protocol: TCP
     # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
     - toEntities:

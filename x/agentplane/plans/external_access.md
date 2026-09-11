@@ -94,7 +94,7 @@ of the unary `runner.RunRequest.steps[].run` protobuf field can keep the real ke
 Sandbox, but it delivers the key to agent-controlled code on the hosted runner; that is a weaker
 boundary, not full credentiallessness. The implemented transport contract is canonical in the
 [egress SPEC](../egress/SPEC.md); the candidate rewrite and its required evidence are in
-[`buildbuddy_remote_auth.md`](buildbuddy_remote_auth.md).
+[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
 ## Choosing
 

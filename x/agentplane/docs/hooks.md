@@ -3,7 +3,7 @@
 What each harness offers a driver of its JSON protocol when a hook fires, how fast the driver
 has to answer, and what that fixes about a hook capability on the runner protocol. The findings
 come from reading the pinned Claude Code (2.1.252) and Codex `main` at `312709252d`
-(`rust-v0.152.1`), and from the capture probe's `hooks` and `hooks_deny` scenarios
+(`rust-v0.152.1`, one patch past the pinned 0.152.0), and from the capture probe's `hooks` and `hooks_deny` scenarios
 ([capture README](../capture/README.md)) run against LiteLLM on the cheap-experiments key
 (Haiku 4.5 through the Anthropic messages route, `gpt-5.6-luna` through the responses route):
 one shell tool call per turn, every registered hook answered by the probe as it arrived. The
@@ -109,8 +109,8 @@ its veto was decorative.
 - **Log before answering.** The hook's request and the client's decision are session-log events
   written before the harness gets its answer, so a trajectory shows what was asked and decided.
 - **Webhooks sit above the runner.** HTTP callback registration belongs to the app, which holds
-  the client side of the capability and fans out; the runner protocol only ever has one
-  attachment to ask.
+  the client side of the capability and fans out; the runner asks only the attachment that
+  declared the hook, and attachments are independent ([SPEC](../runner/SPEC.md) § Attachments).
 
 The first hook worth wiring is `PreToolUse` for credentialed egress: a deny with a reason is a
 far better signal to the agent than a 403 from the proxy.

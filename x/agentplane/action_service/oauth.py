@@ -161,7 +161,7 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             client_storage=_ObservedStorage(client_storage),
             jwt_signing_key=signing_key,
             require_authorization_consent="external",
-            enable_cimd=False,
+            enable_cimd=True,
         )
         self._settings = settings
         # Local grants are revocable even if the authentication IdP has no revoke endpoint.

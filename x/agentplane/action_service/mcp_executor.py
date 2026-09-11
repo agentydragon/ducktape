@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from datetime import timedelta
-from typing import Any, Literal, cast
+from pathlib import Path
+from typing import Annotated, Any, Literal, cast
 
 import httpx
 import jsonschema
@@ -23,17 +25,7 @@ import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
-from pydantic import (
-    AnyHttpUrl,
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-    model_validator,
-)
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 
 from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key, McpExecutorBinding
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStatus
@@ -57,26 +49,11 @@ class McpStdioServerConfig(BaseModel):
     cwd: str | None = None
 
 
-class McpHttpServerConfig(BaseModel):
-    """Streamable-HTTP endpoint.
-
-    `auth: none` sends no credentials; `auth: oauth` requires `server_id`, the `mcp_servers` linkage
-    whose current access token the transport attaches per request. Header forwarding is not
-    configurable.
-    """
-
+class _McpHttpServerConfigBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     transport: Literal["streamable-http"]
     url: AnyHttpUrl
-    server_id: Key | None = None
-    auth: Literal["none", "oauth"] = "none"
-
-    @model_validator(mode="after")
-    def require_linkage_server(self) -> McpHttpServerConfig:
-        if self.auth == "oauth" and self.server_id is None:
-            raise ValueError("OAuth MCP HTTP config requires server_id")
-        return self
 
     @field_validator("url")
     @classmethod
@@ -86,7 +63,27 @@ class McpHttpServerConfig(BaseModel):
         return url
 
 
-McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
+class McpHttpNoAuthServerConfig(_McpHttpServerConfigBase):
+    auth: Literal["none"] = "none"
+    server_id: None = None
+    bearer_file: None = None
+
+
+class McpHttpOAuthServerConfig(_McpHttpServerConfigBase):
+    auth: Literal["oauth"] = "oauth"
+    server_id: Key
+    bearer_file: None = None
+
+
+class McpHttpStaticBearerServerConfig(_McpHttpServerConfigBase):
+    auth: Literal["static_bearer"] = "static_bearer"
+    server_id: None = None
+    bearer_file: Path
+
+
+McpHttpServerConfigValue = McpHttpNoAuthServerConfig | McpHttpOAuthServerConfig | McpHttpStaticBearerServerConfig
+McpHttpServerConfig = Annotated[McpHttpServerConfigValue, Field(discriminator="auth")]
+McpServerConfig = Annotated[McpStdioServerConfig | McpHttpServerConfig, Field(discriminator="transport")]
 _SERVER_CONFIG_ADAPTER: TypeAdapter[McpServerConfig] = TypeAdapter(McpServerConfig)
 
 
@@ -114,6 +111,21 @@ class _LinkageBearerAuth(httpx.Auth):
 
 class _InvalidMcpCatalogError(Exception):
     pass
+
+
+def _http_auth(config: McpHttpServerConfigValue) -> str | None:
+    """Resolve transport credentials by HTTP config variant, not optional fields."""
+    if isinstance(config, McpHttpStaticBearerServerConfig):
+        try:
+            token = config.bearer_file.read_text().strip()
+        except OSError:
+            raise ValueError("configured MCP static bearer file is unavailable") from None
+        if not token:
+            raise ValueError("configured MCP static bearer file is empty")
+        return token
+    if isinstance(config, McpHttpNoAuthServerConfig):
+        return None
+    raise ValueError("OAuth MCP config requires the linkage-aware executor")
 
 
 class McpActionGroupExecutor:
@@ -177,7 +189,7 @@ class McpActionGroupExecutor:
         else:
 
             def transport_factory() -> ClientTransport:
-                return StreamableHttpTransport(config.url, auth=None)
+                return StreamableHttpTransport(config.url, auth=_http_auth(config))
 
         return cls(
             group_key, group, catalog_refresh_interval=catalog_refresh_interval, transport_factory=transport_factory
@@ -195,7 +207,7 @@ class McpActionGroupExecutor:
         if not isinstance(group.executor, McpExecutorBinding):
             raise ValueError("unsupported executor binding; expected MCP")
         config = _SERVER_CONFIG_ADAPTER.validate_python(group.executor.config)
-        if not isinstance(config, McpHttpServerConfig) or config.auth != "oauth" or config.server_id is None:
+        if not isinstance(config, McpHttpOAuthServerConfig):
             return cls.from_group(group_key, group, catalog_refresh_interval=catalog_refresh_interval)
         server_id = config.server_id
 
@@ -486,6 +498,9 @@ class McpActionGroupExecutor:
             raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from error
 
         if result.is_error:
+            error_kind = _mcp_error_kind(result)
+            if error_kind == "execution_unknown":
+                raise ExecutionOutcomeUnknownError("MCP backend reported an unknown execution outcome")
             return ExecutionResult(
                 state=ExecutionState.FAILED, error={"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
             )
@@ -497,3 +512,19 @@ def _safe_result(result: Any) -> JsonValue:
         return cast(JsonValue, result.structured_content)
     texts: list[JsonValue] = [block.text for block in result.content if isinstance(block, mcp.types.TextContent)]
     return {"content": texts}
+
+
+def _mcp_error_kind(result: Any) -> str | None:
+    """Read only the bounded machine-readable kind used for backend unknown outcomes."""
+    for block in result.content:
+        if not isinstance(block, mcp.types.TextContent):
+            continue
+        try:
+            payload = json.loads(block.text)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict):
+            kind = cast(object, payload.get("kind"))
+            if isinstance(kind, str):
+                return kind
+    return None

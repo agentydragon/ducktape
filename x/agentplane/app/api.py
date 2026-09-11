@@ -22,7 +22,11 @@ from x.agentplane.action_service.enrollments import EnrollmentDecisionResult
 from x.agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
-from x.agentplane.app.action_federation import FederatedOperatorActions, OperatorFederationError
+from x.agentplane.app.action_federation import (
+    FederatedOperatorActions,
+    OperatorFederationError,
+    upstream_failure_detail,
+)
 from x.agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -304,15 +308,10 @@ async def _operator_actions(
 
 def upstream_http_error(error: httpx.HTTPStatusError | httpx.RequestError) -> HTTPException:
     """Describe the failed request, which may be to the identity provider or the service."""
-    response_status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+    detail = upstream_failure_detail(error)
+    response_status = detail["upstream_status"]
     return HTTPException(
-        response_status if response_status is not None else status.HTTP_503_SERVICE_UNAVAILABLE,
-        {
-            "method": error.request.method,
-            "url": str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
-            "upstream_status": response_status,
-            "error_type": type(error).__name__,
-        },
+        response_status if isinstance(response_status, int) else status.HTTP_503_SERVICE_UNAVAILABLE, detail
     )
 
 

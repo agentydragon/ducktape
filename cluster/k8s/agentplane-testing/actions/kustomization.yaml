@@ -12,6 +12,7 @@ resources:
   - mcp-everything-deployment.yaml
   - mcp-everything-service.yaml
   - mcp-everything-networkpolicy.yaml
+  - ../ssh-mcp
 configMapGenerator:
   - name: agentplane-actions-settings
     files:

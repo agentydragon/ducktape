@@ -19,7 +19,7 @@ system, or product persistence model.
   executable-integrity infrastructure.
 - A version string is useful human-readable metadata, not a compatibility gate.
 
-The existing `haku/runner`, `haku/cli_protocol`, and `haku/console` code is behavior evidence only.
+The existing `haku/cli_protocol` and `haku/console` code is behavior evidence only.
 The implementation under `x/agentplane/` must not import it.
 
 When a harness version changes or a new protocol area needs coverage, run the live probe with the
@@ -216,9 +216,7 @@ removed it from the queue, indistinguishable on its own from any other queue mut
 `turn/started` for a brand-new turn (dispatch always starts fresh, never joins), then
 `item/started`/`item/completed` for the `userMessage` item — that last pair, matched by
 `clientUserMessageId`, is the actual "entered the transcript, about to be sent" signal. Not yet
-exercised by the driver or captured live — the earlier "not observed" note in
-<../native/docs/protocol_roster.md> reflected that the probe only ever tried the implicit
-second-`turn/start` path, never the explicit `thread/queue/*` methods.
+exercised by the driver or captured live.
 
 ### Resume
 

@@ -1,0 +1,2 @@
+# configMapGenerator input; not a standalone Kubernetes manifest (kubeconform-excluded).
+# Populate and review actual host keys before enabling the backend.

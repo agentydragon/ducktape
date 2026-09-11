@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack
@@ -492,9 +493,10 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
     ],
 )
 async def test_provider_availability_is_not_operator_rejection(
-    review: Review, expected: int, upstream_path: str | None, error_type: str | None
+    review: Review, expected: int, upstream_path: str | None, error_type: str | None, caplog: pytest.LogCaptureFixture
 ) -> None:
     await review.browser.get("/auth/login")
+    caplog.set_level(logging.WARNING, logger="x.agentplane.app.action_federation")
     for path in ("/actions", "/mcp-servers", "/push/config"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
@@ -512,7 +514,12 @@ async def test_provider_availability_is_not_operator_rejection(
         assert "test-private" not in response.text
         assert "access_token" not in response.text
         assert SUBJECT_A not in response.text
-    assert review.calls == []
+    # Every failure leaves a cause in the log, and the log leaks no more than the response does.
+    federation_warnings = [r for r in caplog.records if r.name == "x.agentplane.app.action_federation"]
+    assert len(federation_warnings) == 3
+    assert "test-private" not in caplog.text
+    assert "access_token" not in caplog.text
+    assert SUBJECT_A not in caplog.text
 
 
 async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operators_distinct(review: Review) -> None:

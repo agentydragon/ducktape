@@ -1,0 +1,39 @@
+# Cluster-internal MCP backend. The Action Service is the only caller; SSH egress is
+# deliberately constrained by the target network policy once rugged/wyrm2 addresses are pinned.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-ssh-mcp
+  namespace: agentplane-testing
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-ssh-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+            app.kubernetes.io/name: agentplane-actions
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # TODO: replace this temporary host egress with exact rugged/wyrm2 destinations
+    # when their routable addresses are recorded in the deployment contract.
+    - toEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP

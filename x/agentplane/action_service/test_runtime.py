@@ -82,7 +82,9 @@ def test_missing_binding_is_rejected() -> None:
 
 @pytest.mark.parametrize("config", [{}, {"command": ""}, {"command": 42}])
 async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str, JsonValue]) -> None:
-    catalog = ActionCatalog(groups={"first": _group({"command": "unused"}), "invalid": _group(config)})
+    catalog = ActionCatalog(
+        groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group(config)}
+    )
     with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
             async with running_executor(catalog):
@@ -131,6 +133,7 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
               config:
                 transport: streamable-http
                 url: http://test-peer.invalid/mcp
+                auth: none
     """)
     )
     monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
@@ -138,6 +141,7 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     assert settings.action_groups["remote"].executor.config == {
         "transport": "streamable-http",
         "url": "http://test-peer.invalid/mcp",
+        "auth": "none",
     }
     path.write_text(
         path.read_text()
@@ -156,7 +160,9 @@ def test_invalid_group_key_rejected_by_settings() -> None:
 
 async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
     catalog = ActionCatalog(
-        groups={"remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp"})}
+        groups={
+            "remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp", "auth": "none"})
+        }
     )
     with (
         patch.object(McpActionGroupExecutor, "start", AsyncMock(side_effect=RuntimeError("private connect material"))),
@@ -200,7 +206,7 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
 
 @pytest.mark.parametrize("failure", ["connect", "discovery", "cancel"])
 async def test_partial_startup_closes_current_and_previous_adapter(failure: str) -> None:
-    catalog = ActionCatalog(groups={key: _group({"command": "unused"}) for key in ("one", "two")})
+    catalog = ActionCatalog(groups={key: _group({"transport": "stdio", "command": "unused"}) for key in ("one", "two")})
     events: list[str] = []
     adapters = {key: McpActionGroupExecutor.from_group(key, group) for key, group in catalog.groups.items()}
     names = {adapter: key for key, adapter in adapters.items()}
@@ -233,6 +239,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
     """Only Kubernetes configuration and the HTTP server loop are replaced; composition is real."""
     group = _group(
         {
+            "transport": "stdio",
             "command": sys.executable,
             "args": [str(get_required_path("_main/x/agentplane/action_service/test_fixtures/fake_mcp_server.py"))],
             "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
@@ -350,7 +357,7 @@ async def test_main_auto_allows_upstream_everything(db_url: str, everything_url:
     caller = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:fixture-uid", role=PrincipalRole.CALLER)
     settings = Settings(
         database_url=db_url,
-        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url})},
+        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url, "auth": "none"})},
         fixture_auto_allow=FixtureAutoAllow(group="fixture"),
         _cli_parse_args=False,
     )

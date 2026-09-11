@@ -337,8 +337,7 @@ separate from the integration app's database.
 ```yaml
 transport: streamable-http
 url: http://127.0.0.1:8000/mcp
-auth: none # default; `oauth` requires `server_id`
-server_id: github # an `mcp_servers` linkage key
+auth: none # or `oauth` with `server_id`, or `static_bearer` with `bearer_file`
 ```
 
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
@@ -348,7 +347,9 @@ exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, la
 header settings. `auth: none` sends no credentials. `auth: oauth` names a configured `mcp_servers`
 linkage through `server_id`; `from_group_with_linkage` attaches an `httpx` auth hook that resolves
 that linkage's current access token on every request, and the group stays unavailable until the
-linkage authority reports a current link ([§ Action catalog](#action-catalog)). The production
+linkage authority reports a current link ([§ Action catalog](#action-catalog)). `auth: static_bearer`
+reads `bearer_file`, a mounted secret, once when the transport is built and sends it as the bearer
+on every request; an unreadable or empty file makes the group unavailable. The production
 composition uses this same transport selection. Invalid discovered schemas or duplicate supported tool names
 make the entire group unavailable, clearing stale Actions. Invalid live schemas are refused before
 `tools/call`. Production startup and shutdown report only the group and failure category, not raw

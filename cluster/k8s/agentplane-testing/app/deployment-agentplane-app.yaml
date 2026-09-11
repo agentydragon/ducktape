@@ -3,8 +3,9 @@
 # Kubernetes is the inventory; every session's events are copied into the
 # trajectory store (../db) as they arrive. Reached straight from the gateway
 # (httproute.yaml): the app authenticates its own callers, by an operator's OIDC
-# session or a reviewed Kubernetes token. One replica: the bridge holds live
-# runner attachments in memory, and a second replica would supersede them.
+# session or a reviewed Kubernetes token. One replica until every existing
+# sandbox runner speaks the independent-attachment protocol and the app bounds
+# its Uvicorn graceful shutdown; ingestion is already PostgreSQL-leased.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

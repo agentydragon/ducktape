@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agentplane-testing
+resources:
+  - bearer-eso.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+configMapGenerator:
+  - name: agentplane-ssh-mcp-config
+    files:
+      - settings.yaml
+      - known_hosts

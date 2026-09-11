@@ -140,10 +140,6 @@ What it buys:
 - Residual order — two rules naming the same credential, or two naming none — decides only which
   rule the decision log names.
 
-The cost, stated plainly: it changes a line <../egress/SPEC.md> used to state, that the first rule
-whose hosts, methods and paths match decides. That is a contract change, acceptable at `v1alpha1`
-under `x/` but not free.
-
 ### Rejected: a priority integer on the binding
 
 Adding `EgressBinding.spec.priority` and sorting bindings by it would remove the cross-binding

@@ -1,7 +1,8 @@
 # SSH Executor for Agentplane
 
-Status: **planned**, replacing the earlier `HOSTEXEC`/hostexecd adapter direction. This is a plan
-change only; it does not yet alter the existing Haku Console hostexec implementation.
+Status: **implementation in progress**, replacing the earlier `HOSTEXEC`/hostexecd adapter
+direction. Layer 1 is a separate bearer-protected SSH MCP server; the existing Agentplane MCP
+Executor connects to it. This does not yet alter the existing Haku Console hostexec implementation.
 
 ## Outcome
 
@@ -15,9 +16,11 @@ The executor is a transport and credential-selection layer. It does **not** deci
 are allowed. The existing decider/Decision layer remains responsible for human or policy approval
 of the complete Action, including the command, machine, user, and any key-selection input.
 
-## Layer 1: one-shot SSH execution (P0 behavior)
+## Layer 1: one-shot SSH MCP backend (P0 behavior)
 
-- Add an Agentplane `ssh` Executor binding and adapter behind the existing `Executor` contract.
+- Add a standalone SSH MCP server pod and connect it through Agentplane's existing MCP Executor
+  binding. The SSH server owns SSH keys and OpenSSH execution; the Action Service remains the
+  durable Action/Decision authority and holds only the shared backend bearer.
 - Define and register the executor's `list_targets` and `exec` Actions, including their input
   schemas and descriptions, in executor code. Configuration selects the executor and supplies
   deployment data; it does not define or override the Action catalog contract.
@@ -48,8 +51,8 @@ answer the inventory question: registration in the reviewed ConfigMap is the sou
 The first implementation should exercise the real SSH process seam with a local test SSH server or
 an equivalent deterministic fixture. A test that only mocks the entire SSH client is insufficient.
 
-This layer intentionally does not require a host daemon. Agentplane opens one SSH connection for
-the Execution, runs the command, collects the bounded terminal result, and closes the connection.
+This layer intentionally does not require a host daemon. The SSH MCP server opens one SSH connection
+for the MCP call, runs the command, collects the bounded terminal result, and closes the connection.
 Durable process control is a separate follow-up below.
 
 ## Kubernetes configuration
@@ -74,11 +77,11 @@ keys:
     user: coder
 ```
 
-The exact schema remains to be aligned with the deployment's existing SOPS/Secret-controller
-conventions. The implementation must validate at startup that every referenced Secret-mounted key
-has a unique mapping and that host/user/key lookups are unambiguous. The Action Service pod receives
-only the mounted private-key files (or an SSH-agent socket); keys never enter PostgreSQL, Action
-payloads, logs, or transcripts.
+The exact schema follows the deployment's existing ESO/Secret-controller conventions. The SSH MCP
+pod receives the mounted private-key files; the Action Service receives only the shared bearer file.
+Keys never enter PostgreSQL, Action payloads, logs, or transcripts. The implementation validates at
+startup that every configured `(host, user)` tuple is unique; missing individual key files leave
+targets present but unavailable.
 
 The first deployment may use long-lived keys, as explicitly accepted for this slice. Key rotation
 is a deployment concern: update the Secret and roll/reload the Action Service so no stale key

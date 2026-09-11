@@ -141,7 +141,7 @@ def http_group(fake_server: FakeMcpServer) -> Iterator[ActionGroup]:
             executor=McpExecutorBinding(
                 kind="mcp",
                 description="HTTP test peer",
-                config={"transport": "streamable-http", "url": f"{url}/test-mcp"},
+                config={"transport": "streamable-http", "url": f"{url}/test-mcp", "auth": "none"},
             ),
         )
 

@@ -116,8 +116,8 @@ adds configurable auto-approval through concrete Actions-owned Sandbox bindings.
 an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
 subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
 [Action policy plan](action_policies.md) owns shared bounds and deciders; policy representation remains open.
-SSH execution is another adapter behind the existing Executor contract. The planned first slice uses
-OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
+SSH execution is a modular MCP backend behind the existing MCP Executor contract. The planned first
+slice uses OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
 it deliberately does not duplicate command authorization in the executor. It also exposes a reviewed
 read-only target-inventory Action so callers can see which configured machine/user pairs are available
 without receiving credential configuration. The existing decider and human approval path authorize
@@ -140,6 +140,14 @@ status controller, or leader election. Runtime contracts belong in the [egress s
   revocation/watch staleness on an already-open connection without replaying side-effecting requests.
 - Remove this entry only after deployed acceptance. PDBs do not protect against involuntary loss,
   independent watches do not provide linearizable revocation, and existing TCP streams do not migrate.
+
+### `BB` — BuildBuddy hosted-run credential boundary
+
+**Deferred decision:** accept the weaker hosted-runner boundary — a narrow `runner.RunRequest`
+rewrite that keeps the real key out of the local Sandbox but hands it to agent-controlled code on
+BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
+gateway). The boundary, wire shape and required evidence are in
+[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
@@ -371,9 +379,10 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 
 ### `SSHEXEC` — SSH-backed Action execution
 
-**Planned support:** add an SSH Executor adapter behind the existing Action Service execution
-contract. OpenSSH performs non-interactive execution using private keys mounted from Kubernetes
-Secrets; a reviewed ConfigMap maps each key to the machine and Unix user for which it may be used.
+**Implementation in progress:** add a standalone bearer-protected SSH MCP server and connect it via
+the existing Action Service MCP Executor. OpenSSH performs non-interactive execution using private
+keys mounted into the SSH MCP pod; a reviewed ConfigMap maps each key to the machine and Unix user
+for which it may be used.
 The executor code owns the `list_targets` and `exec` Action schemas; reviewed configuration supplies
 only target/key/transport data and the maximum execution timeout. `exec` may request a shorter
 per-Execution timeout but never a longer one. The executor performs target/key lookup and transport
@@ -542,5 +551,9 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - per-destination workload audiences until recipient isolation is required;
 - broad profiles beyond the landed launch-preset slice;
-- live browser/OS push acceptance and production VAPID/egress rollout; and
+- live browser/OS push acceptance and production VAPID/egress rollout;
+- separating the egress proxy's rule namespace from its Sandbox namespace — both deployments pass
+  one namespace for both today, the reason separation mattered is not recorded, and a split has to
+  replace the app's binding-to-Sandbox ownerReference cascade with a sweep
+  (`x/agentplane/app/egress.py`); and
 - cryptographic Decision signing until Decisions cross a boundary that requires it.

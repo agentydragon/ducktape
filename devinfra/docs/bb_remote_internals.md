@@ -132,7 +132,7 @@ A narrow BuildBuddy-specific `RunRequest` body rewrite is a possible weaker
 boundary, but it gives the real BuildBuddy credential to hosted agent-controlled
 code and is not equivalent to Sandbox workload authentication. The design
 tradeoff and required evidence are tracked in
-[`x/agentplane/plans/buildbuddy_remote_auth.md`](../../x/agentplane/plans/buildbuddy_remote_auth.md).
+[`x/agentplane/docs/buildbuddy_remote_auth.md`](../../x/agentplane/docs/buildbuddy_remote_auth.md).
 
 ## Git state synchronization
 
