@@ -1,14 +1,11 @@
 # BuildBuddy hosted remote-run authentication
 
-Status: **local HTTP/gRPC substitution landed in PR
-[#5650](https://github.com/agentydragon/ducktape/pull/5650); hosted `bb remote` remains a deferred
-design decision with no implementation selected.** The implemented local transport is canonical in
-[`../egress/SPEC.md`](../egress/SPEC.md). This note isolates the remaining hosted-run seam and the
-security meaning of the smallest feasible workaround.
+Why the egress proxy's BuildBuddy support is local-client only, what a hosted `bb remote` run
+would need, and what the smallest feasible workaround does and does not protect. The implemented
+transport contract is [the egress specification](../egress/SPEC.md); whether to accept the
+workaround is an open decision in the [task DAG](../plans/task_dag.md).
 
-## Outcome and boundary
-
-Two products share the word “remote”:
+## Two products called "remote"
 
 1. **Local Bazel client, remote BuildBuddy actions.** The Bazel process stays in the Agentplane
    Sandbox while Build Event Service, cache, and Remote Execution calls go to BuildBuddy. The
@@ -51,9 +48,9 @@ The Agentplane proxy substitutes the outer metadata. Under its current contract 
 leaves body values inert, so BuildBuddy launches the hosted command with the placeholder and the
 nested Bazel authentication fails.
 
-## Candidate P0 behavior: narrow RunRequest rewrite
+## Candidate: narrow RunRequest rewrite
 
-A BuildBuddy-specific request-body rewrite can make hosted remote builds work while keeping the
+A BuildBuddy-specific request-body rewrite would make hosted remote builds work while keeping the
 real key out of the local Sandbox:
 
 1. Admit and authenticate the request under the ordinary EgressBinding and EgressPolicy decision.
@@ -69,10 +66,9 @@ real key out of the local Sandbox:
 7. Record that body substitution occurred without logging the placeholder, real value, command, or
    body.
 
-This should be a special-purpose BuildBuddy presentation, not generic body search-and-replace. A
-generic body target would make URL, JSON, protobuf, compression, framing, and substring semantics
-part of the credential model and would reverse the current property that body placeholders are
-inert.
+This is a special-purpose BuildBuddy presentation, not generic body search-and-replace: a generic
+body target would make URL, JSON, protobuf, compression, framing, and substring semantics part of
+the credential model and would reverse the property that body placeholders are inert.
 
 ## Security semantics
 
@@ -95,10 +91,9 @@ recovery.
 
 A stronger boundary needs a different hosted seam: a BuildBuddy-issued per-run credential, or a
 run-scoped Agentplane gRPC gateway through which the hosted Bazel client sends placeholders. Both
-keep the reusable key out of the hosted workload and are deferred until that stronger guarantee is
-required.
+keep the reusable key out of the hosted workload.
 
-## Acceptance evidence required before implementation is called working
+## Acceptance evidence required before the rewrite is called working
 
 A focused fake-server integration must prove:
 
@@ -116,11 +111,11 @@ A live acceptance run must separately show that `bb remote` reaches the hosted B
 that the nested BES, cache, and Remote Execution calls succeed. Its report must state the known
 hosted-runner exposure rather than treating successful execution as proof of the stronger boundary.
 
-## Deferred
+## Alternatives not taken
 
-- Generic request-body credential substitution.
-- mTLS client-certificate presentation.
-- Per-run BuildBuddy key minting and revocation.
-- A public/run-scoped Agentplane gateway for hosted runners.
-- Any task-DAG scheduling decision; the task DAG may link this analysis after Rai chooses which
-  credential boundary is acceptable.
+- **Generic request-body credential substitution**: reverses the inert-body property above and
+  puts every body encoding into the credential model.
+- **mTLS client-certificate presentation**: a separate BuildBuddy authentication mode, not header
+  substitution; the proxy provisions and presents no client certificate.
+- **Per-run BuildBuddy key minting and revocation** and **a run-scoped Agentplane gateway for
+  hosted runners**: the stronger seams, unbuilt until the stronger guarantee is required.

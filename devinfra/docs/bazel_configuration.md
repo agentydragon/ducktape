@@ -95,7 +95,7 @@ Therefore:
 
 The deferred hosted-runner alternatives and their weaker/stronger security
 boundaries are recorded in
-[`x/agentplane/plans/buildbuddy_remote_auth.md`](../../x/agentplane/plans/buildbuddy_remote_auth.md).
+[`x/agentplane/docs/buildbuddy_remote_auth.md`](../../x/agentplane/docs/buildbuddy_remote_auth.md).
 
 ### NixOS and Nix-built images
 

@@ -141,6 +141,14 @@ status controller, or leader election. Runtime contracts belong in the [egress s
 - Remove this entry only after deployed acceptance. PDBs do not protect against involuntary loss,
   independent watches do not provide linearizable revocation, and existing TCP streams do not migrate.
 
+### `BB` — BuildBuddy hosted-run credential boundary
+
+**Deferred decision:** accept the weaker hosted-runner boundary — a narrow `runner.RunRequest`
+rewrite that keeps the real key out of the local Sandbox but hands it to agent-controlled code on
+BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
+gateway). The boundary, wire shape and required evidence are in
+[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
+
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
 **Deferred design:** define how an agent can request an expansion or change to its egress rules.
@@ -542,5 +550,9 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - per-destination workload audiences until recipient isolation is required;
 - broad profiles beyond the landed launch-preset slice;
-- live browser/OS push acceptance and production VAPID/egress rollout; and
+- live browser/OS push acceptance and production VAPID/egress rollout;
+- separating the egress proxy's rule namespace from its Sandbox namespace — both deployments pass
+  one namespace for both today, the reason separation mattered is not recorded, and a split has to
+  replace the app's binding-to-Sandbox ownerReference cascade with a sweep
+  (`x/agentplane/app/egress.py`); and
 - cryptographic Decision signing until Decisions cross a boundary that requires it.

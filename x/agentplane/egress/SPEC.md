@@ -119,12 +119,13 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - The proxy depends on the API server and nothing else. The integration app is a viewer of the
   same resources, never a participant: no part of a decision passes through it, so an app that is
   down or broken changes nothing about what a sandbox may reach.
-- Three namespaces are watched, and the separation is the point: policies and bindings in the
-  proxy's own, Sandboxes in the one their Pods run in, Secrets in the credentials namespace. A
-  sandbox is therefore never in a namespace holding the rules that govern it or the credentials
-  they substitute. The proxy's picture is kept equal to the API server's, and a rotated Secret is
-  substituted from the next request on without a restart. An authenticated workload source is
-  request context, not a Secret or another watched object.
+- The proxy watches policies, bindings and credentials in its configured rule namespace,
+  Sandboxes and their Pods in the configured sandbox namespace, and Secrets in the credentials
+  namespace. The rule and sandbox namespaces may be one namespace, and in both deployments they
+  are; the credentials namespace is separate, so a sandbox is never in a namespace holding the
+  Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a
+  rotated Secret is substituted from the next request on without a restart. An authenticated
+  workload source is request context, not a Secret or another watched object.
 - Bindings have no Kubernetes `status`. The admin binding observations describe the answering
   replica's current resolution and freshness, never an acknowledgement by every proxy.
 - Admission and readiness fail closed until all watched kinds are initially synced and remain
@@ -137,25 +138,41 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 ## Decisions
 
 - Decisions are admissions, not upstream completions. CONNECT and HTTP requests are distinct
-  events correlated by connection ID, with event time and stable producer/event IDs.
+  events correlated by connection ID, with event time and stable producer/event IDs. The IDs
+  support correlation, not global causal order.
+- A record carries names, never values. Paths are always null, for denied requests too: query
+  stripping cannot protect secrets embedded in arbitrary paths. Bodies, headers, query strings,
+  raw exceptions, and Kubernetes object payloads are not recorded. An unauthenticated attempt has
+  no claimed sandbox identity; a recorded Sandbox or Pod UID is a snapshot, not a reference to a
+  live object.
 - Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
   remove committed history. `/decisions?sandbox=<name>` keeps the list response and existing
-  field names (`at` is decision time); omission of `sandbox` selects unidentified requests.
+  field names (`at` is decision time); omission of `sandbox` selects unidentified requests. A
+  lookup by name spans every Sandbox that has carried it; each row keeps the UID verified at the
+  time.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
   ID, oldest first within that window. This is not a global causal or insertion order.
-- Paths are always null: query stripping cannot protect secrets embedded in arbitrary paths.
-  Bodies, headers, query strings, raw exceptions, and Kubernetes object payloads are not recorded.
 - Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous
   queue, finite retry budget, and bounded shutdown flush keep database failures off the admission
   path. Queue overflow, expired events, exhausted retries and shutdown loss are counted explicitly.
-- `/healthz` exposes decision-writer diagnostics without making DB availability an enforcement
-  readiness/liveness requirement. A failed history read returns 503, never an empty success or
-  a local fallback. A successful read may lag queued admissions.
-- Retention defaults to seven days. Queries exclude expired records, and bounded indexed cleanup
-  deletes them eventually. Database outages delay physical cleanup, not the visible time window.
+  A retried batch reuses its event IDs and insertion is idempotent on event ID, so an
+  acknowledgement lost after commit can count as a failure but never inserts a duplicate. The
+  counters describe producer knowledge: an event counted lost may still have been committed.
+- History is not tamper-evident auditing: the database owner can insert and delete records.
+- `/healthz` reports `decisionHistory`: accepted and acknowledged events (acknowledged counts
+  producer events, not newly inserted rows), loss by overflow, unavailability, expiry and shutdown,
+  write and cleanup failures, queue depth, whether the writer is running, and `available`, the
+  outcome of the last write attempt (`null` before one). Counters are per process and reset on
+  restart; none of it changes the enforcement verdict the status code reports. A failed history
+  read returns 503, never an empty success or a local fallback. A successful read may lag queued
+  admissions.
+- Retention defaults to seven days and is a visibility bound: queries exclude expired records, and
+  bounded indexed cleanup deletes them eventually. Database outages delay physical cleanup, not
+  the visible time window.
 - Schema changes are Alembic-managed and run separately from proxy startup. Runtime never creates
-  or migrates tables. Deployment gates each new Pod on its migration init container; existing request admission
-  remains independent of diagnostic DB availability.
+  or migrates tables. Deployment gates each new Pod on its migration init container while the
+  proxies it replaces keep enforcing, so a migration must stay compatible with them. Request
+  admission remains independent of diagnostic DB availability.
 
 ## Replica scope
 
@@ -182,5 +199,6 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   is request metadata. It does **not** make `bb remote` credentialless: the CLI authenticates its
   local Remote Runner control RPC with the metadata, then also serialises the API key into the
   Bazel command run on a BuildBuddy-hosted runner. That runner is outside this proxy, so a
-  placeholder arrives there unsubstituted
-  (<../../../cluster/k8s/agents/public-coder-agent/app/deployment.yaml>).
+  placeholder arrives there unsubstituted, which is why the public-coder devbox, whose `bbr` is a
+  `bb remote` client, still mounts the real key (<../../../cluster/k8s/agents/public-coder-agent/devbox/virtualmachine.yaml>). The
+  boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
