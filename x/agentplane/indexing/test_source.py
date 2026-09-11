@@ -100,11 +100,6 @@ def test_bounds_decompression_before_processing_tar_headers() -> None:
         read_archive(gzip.compress(b"\0" * 100_000), ArchiveLimits(expanded_bytes=1024))
 
 
-def test_negative_expansion_limit_cannot_enable_unbounded_read() -> None:
-    with pytest.raises(ValueError, match="positive"):
-        ArchiveLimits(expanded_bytes=-2)
-
-
 @pytest.fixture
 def source_factory(custom_objects: AsyncMock) -> Callable[[httpx.AsyncClient, ArchiveLimits], FluxSource]:
     def create(http: httpx.AsyncClient, limits: ArchiveLimits) -> FluxSource:

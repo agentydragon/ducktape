@@ -24,7 +24,7 @@ Flags use kebab case; environment variables have prefix `AGENTPLANE_INDEX_`.
 Optional settings include `QUERY_INSTRUCTION`, `POLL_SECONDS` (30),
 `EMBEDDING_TIMEOUT_SECONDS` (60), `GC_SECONDS` (3600), `GC_GRACE_SECONDS` (86400),
 `HOST` (`0.0.0.0`), `PORT` (8080), and `KUBECONFIG` (omit for in-cluster credentials).
-`CHUNK_BUDGET` and `ARCHIVE_LIMITS` accept JSON objects matching their dataclasses.
+`CHUNK_BUDGET` and `ARCHIVE_LIMITS` accept JSON objects; archive limits must be positive integers.
 The default archive limits are 128 MiB compressed, 512 MiB expanded, 8 MiB per file,
 and 100,000 entries. Exceeding a limit rejects the whole snapshot; use Flux ignore rules
 or explicitly raise limits for larger sources. Archive contents are held in memory during

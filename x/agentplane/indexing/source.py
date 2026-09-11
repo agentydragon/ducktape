@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 from types import MappingProxyType
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
 
@@ -24,16 +24,13 @@ class Snapshot:
     files: Mapping[str, bytes]
 
 
-@dataclass(frozen=True)
-class ArchiveLimits:
-    compressed_bytes: int = 128 * 1024 * 1024
-    expanded_bytes: int = 512 * 1024 * 1024
-    file_bytes: int = 8 * 1024 * 1024
-    entries: int = 100_000
+class ArchiveLimits(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
-    def __post_init__(self) -> None:
-        if min(self.compressed_bytes, self.expanded_bytes, self.file_bytes, self.entries) <= 0:
-            raise ValueError("Archive limits must be positive")
+    compressed_bytes: int = Field(default=128 * 1024 * 1024, gt=0)
+    expanded_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
+    file_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
+    entries: int = Field(default=100_000, gt=0)
 
 
 class Artifact(BaseModel):
