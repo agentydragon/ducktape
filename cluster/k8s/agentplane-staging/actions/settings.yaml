@@ -18,13 +18,13 @@ mcp_servers:
     server_url: https://api.githubcopilot.com/mcp/
     client_id: configured-by-secret
     client_secret_file: /etc/agentplane-github/client_secret
-    redirect_uri: https://haku.allegedly.works/mcp-linkage/callback
+    redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
   kubernetes:
     server_id: kubernetes
     provider: kubernetes
     server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
     client_id: kubectl-passthrough-mcp
-    redirect_uri: https://haku.allegedly.works/mcp-linkage/callback
+    redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
 action_groups:
   github:
     title: GitHub MCP
