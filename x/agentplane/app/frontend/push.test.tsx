@@ -68,10 +68,13 @@ it("lists registered browsers, identifies this browser, and unregisters it local
 
 it("explains pending settings and a failed load without claiming the server is unconfigured", async () => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const response = Promise.withResolvers<Response>();
+  let rejectResponse!: (reason: Error) => void;
+  const response = new Promise<Response>((_resolve, reject) => {
+    rejectResponse = reject;
+  });
   vi.stubGlobal(
     "fetch",
-    vi.fn(() => response.promise)
+    vi.fn(() => response)
   );
   const container = document.createElement("div");
   document.body.append(container);
@@ -90,7 +93,7 @@ it("explains pending settings and a failed load without claiming the server is u
       [...container.querySelectorAll("button")].find((button) => button.textContent === "Register this browser")
         ?.disabled
     ).toBe(true);
-    await act(async () => response.reject(new Error("Server unavailable")));
+    await act(async () => rejectResponse(new Error("Server unavailable")));
     expect(container.textContent).toContain("Could not load notification settings");
     expect(container.textContent).toContain("Server unavailable");
     expect(container.textContent).not.toContain("Loading notification settings");
