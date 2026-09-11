@@ -229,8 +229,3 @@ Staging declares two replicas, RollingUpdate `maxUnavailable: 1`/`maxSurge: 1`, 
 The PDB limits voluntary evictions, not involuntary failures; topology spread is limited to
 eligible scheduling domains. Testing retains one replica and `Recreate`. Both use a 60-second
 termination grace, readiness on `/healthz` and event-loop liveness on `/livez`.
-
-CLEANUP(added 2026-09-11): Remove the CRD's legacy status schema/printer column and proxy
-status-patch RBAC only after every running proxy uses an image containing the read-only informer.
-An old informer treats a rejected status patch as a fatal task-group error. Scaling remains
-gated on the new proxy image, not just the presence of shared diagnostic history.

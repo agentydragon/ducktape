@@ -42,60 +42,6 @@
           "format": "date-time"
         }
       }
-    },
-    "status": {
-      "type": "object",
-      "properties": {
-        "observedGeneration": {
-          "type": "integer",
-          "format": "int64"
-        },
-        "conditions": {
-          "type": "array",
-          "x-kubernetes-list-type": "map",
-          "x-kubernetes-list-map-keys": ["type"],
-          "items": {
-            "description": "A metav1.Condition; the proxy sets Active.",
-            "type": "object",
-            "required": ["type", "status", "lastTransitionTime", "reason", "message"],
-            "properties": {
-              "type": {
-                "type": "string",
-                "maxLength": 316,
-                "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$"
-              },
-              "status": {
-                "type": "string",
-                "enum": ["True", "False", "Unknown"]
-              },
-              "observedGeneration": {
-                "type": "integer",
-                "format": "int64",
-                "minimum": 0
-              },
-              "lastTransitionTime": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "reason": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024,
-                "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
-              },
-              "message": {
-                "type": "string",
-                "maxLength": 32768
-              }
-            }
-          }
-        },
-        "resolvedPolicies": {
-          "description": "How many of spec.policies name an existing EgressPolicy.",
-          "type": "integer",
-          "minimum": 0
-        }
-      }
     }
   }
 }
