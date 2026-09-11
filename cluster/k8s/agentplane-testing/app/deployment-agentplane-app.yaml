@@ -3,9 +3,8 @@
 # Kubernetes is the inventory; every session's events are copied into the
 # trajectory store (../db) as they arrive. Reached straight from the gateway
 # (httproute.yaml): the app authenticates its own callers, by an operator's OIDC
-# session or a reviewed Kubernetes token. One replica until every existing
-# sandbox runner speaks the independent-attachment protocol; ingestion is
-# already PostgreSQL-leased and shutdown is bounded.
+# session or a reviewed Kubernetes token. Testing keeps one replica and
+# Recreate; staging runs the two-replica rolling deployment.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -3,9 +3,9 @@
 # Kubernetes is the inventory; every session's events are copied into the
 # trajectory store (../db) as they arrive. Reached straight from the gateway
 # (httproute.yaml): the app authenticates its own callers, by an operator's OIDC
-# session or a reviewed Kubernetes token. One replica until every existing
-# sandbox runner speaks the independent-attachment protocol; ingestion is
-# already PostgreSQL-leased and shutdown is bounded.
+# session or a reviewed Kubernetes token. Two rolling replicas: ingestion is
+# PostgreSQL-leased, browser sessions and event delivery are database-backed,
+# and shutdown drains streams and fails readiness first.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,9 +18,13 @@ metadata:
     secret.reloader.stakater.com/reload: agentplane-oidc
     configmap.reloader.stakater.com/reload: agentplane-action-federation
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-app
@@ -33,6 +37,13 @@ spec:
       # Proxmox-single, which is the rule already unmet rather than a new constraint.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: agentplane-app
       # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease release and
       # the store's close.
       terminationGracePeriodSeconds: 60
