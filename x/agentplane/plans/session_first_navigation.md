@@ -36,31 +36,41 @@ resource with its own lifecycle (suspend/resume/delete — see `lifecycle.tsx`'s
 one Session inside it). This is about promoting Sessions to the default view, not hiding Sandboxes
 as a concept.
 
-## The real gap: there is no cross-sandbox session listing today
+## The gap is smaller than it looks: a durable store already exists
 
-This is not just a layout change. `listSessions` is called per Sandbox name and talks to that
-Sandbox's own runner directly, with "no stream" (`sandbox_page.tsx:150,161-187` — re-polled, not
-pushed). Two consequences for a session-first home view:
+`listSessions` against a Sandbox's own runner is a live, request-scoped read with "no stream"
+(`sandbox_page.tsx:150,161-187`) — that part of the worry holds. But the durable side is already
+built: `app/trajectory.py` is a PostgreSQL-backed store (`Thread`/`Event` tables) that a leased
+per-sandbox ingestion loop in `app/bridge.py` copies every runner event into as it happens, by
+design so that "a deleted sandbox loses nothing" (`trajectory.py:1-7`; corroborated in
+`app/README.md`: "PostgreSQL holds the copy of every event that outlives the sandbox"). `Event.payload`
+holds the full proto-JSON of each event — turns, items, tool calls/output, reasoning — not just a
+thread name or index entry, and `Thread` already carries `sandbox`, `session_id`, and `name`.
 
-1. **Building the list requires fan-out or a persisted index.** Fanning `listSessions` out across
-   every Sandbox from `SandboxList`'s existing fetch would work for _running_ sandboxes, but:
-2. **A suspended/archived/deleted Sandbox has no runner to ask.** The operator explicitly wants to
-   see "does the sandbox still exist" for a session whose sandbox might be gone — that information
-   can't come from asking a runner that no longer exists. That implies some durable,
-   server-persisted record of "this session belongs to this sandbox" (and probably a last-known
-   thread title/summary) that outlives the runner, not just a live fan-out at render time.
-
-Whether that durable index already exists elsewhere in the backend (the runner/store split
-mentioned in `sandbox_page.tsx`'s "Thread names by session id: the store's copy, which outlives the
-runner's list", line ~145) or needs new persistence is an open question for whoever picks this up —
-worth checking before assuming new backend work is required.
+So a session-first home view's list can likely be built by querying `Thread` (paginated,
+newest-first) directly, without fanning `listSessions` out across every Sandbox — the durable
+`Thread` row already ties a session to its Sandbox name independent of whether that Sandbox's
+runner (or the Sandbox itself) still exists. What's still open: `Thread` alone doesn't carry a
+Sandbox's _current_ lifecycle state (running/suspended/archived/deleted) — that still needs
+joining against live Sandbox state for sandboxes that exist, with "not found" read as deleted for
+ones that don't. Confirmed caveat: the trajectory schema has no Alembic migrations yet and its own
+docstring calls it "staging-only and disposable until a production instance needs migrations in
+place" (`trajectory.py:6-7`) — worth resolving before leaning on it as the backing store for a
+primary UI view.
 
 ## Open questions (not decided here)
 
 - Does a session-first list replace `SandboxList` as the `/` route, or live alongside it as a
   second top-level view (e.g. the nav-overflow split from [mobile density](mobile_density.md))?
 - What happens to a session row when its Sandbox is deleted — kept as a read-only historical entry,
-  or dropped once the Sandbox is gone?
+  or dropped once the Sandbox is gone? (Now answerable either way, since `Thread` rows already
+  outlive the Sandbox.)
 - Reuse `sandboxes.tsx`'s `STATE_COLORS` vocabulary and hover-condition-detail pattern
   (`conditionLine`, `sandboxes.tsx:44-46`) for the sandbox-state-per-session display, or does a
   session list need a simpler/collapsed state representation than the full Sandbox page does?
+- Does a deleted Sandbox's session become read-only against its last-ingested `Event` rows (a real
+  transcript replay with no live runner behind it), or just a dead list entry with no detail view?
+  `trajectory.py`'s stored payloads make the former possible, not just a metadata stub.
+- Whether to put Alembic migrations under `trajectory.py` is arguably a prerequisite for leaning on
+  it as a primary-view backing store, not just a "staging" nice-to-have — worth raising with
+  whoever owns that store before this navigation work starts.
