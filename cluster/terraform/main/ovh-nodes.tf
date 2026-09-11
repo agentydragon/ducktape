@@ -364,8 +364,8 @@ locals {
         }
         # Talos hardens user.max_user_namespaces to 0; the haku-ci runner's rootless
         # dind (docker:dind-rootless) needs user namespaces to start. Scoped to the
-        # OVH/hil workers (where the runner schedules via nodeSelector region=hil), not
-        # cluster-wide. Applies live — no reboot. See cluster/k8s/haku-ci.
+        # OVH/hil workers, not cluster-wide; the runner has no node affinity, so any
+        # Talos worker that should take CI jobs needs this too (home-nodes.tf: OptiPlex). Applies live — no reboot. See cluster/k8s/haku-ci.
         sysctls = {
           "user.max_user_namespaces" = "1048576"
         }
