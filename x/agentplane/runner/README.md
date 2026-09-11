@@ -16,6 +16,12 @@ bbr test //x/agentplane/runner/...
   point, configured by flags and credentialed from its environment.
 - `session.py`: one session's log, harness process, and derived state; `event_log.py` is the
   append-only JSONL log; `store.py` the session record on disk.
+- `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol
+  knowledge.
+- `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint,
+  credential) under `RunnerConfig`; none of it crosses the protocol.
+- `initialization.py`: the durable, replayable log of the one bootstrap initialization a sandbox
+  may select.
 - `claude.py`, `codex.py`: the adapters, one per harness, behind `adapter.py`. They parse frames
   with the wire models and reuse the frame constructors and launch configuration in
   <../native/README.md>.
@@ -29,4 +35,7 @@ the parametrized `model` fixture is the only place that knows the model API dial
 fixtures live in `testing/`: `scripted_model.py` is the neutral vocabulary (`Text`, `Reasoning`,
 `ShellCall`, and the request markers), `claude_model.py` and `codex_model.py` speak the two
 dialects, and `launches.py` wires the pinned binaries to a scripted upstream. `test_restart.py`
-runs the runner as its own process so a crash takes its harnesses with it.
+runs the runner as its own process so a crash takes its harnesses with it. `test_image.py` runs
+the built runner image as a container (Docker, so on RBE) through one scripted turn per harness;
+`test_image_packaging.py` inspects its OCI layout for the harnesses, their tools, and the
+entrypoint.

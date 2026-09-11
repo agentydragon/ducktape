@@ -9,7 +9,7 @@ are the evidence every rule here rests on.
 ## What the seam owns
 
 - One bidirectional stream per attachment, `Attach`, over session-scoped commands (`Open`,
-  `Input`, `Interrupt`, `Shutdown`, `Detach`) and sequenced events.
+  `Input`, `Interrupt`, `Shutdown`, `Detach`, `SwitchModel`) and sequenced events.
 - Only behavior the scripted tests prove with the real binaries. Its own tests are one
   interaction script per scenario run against both harnesses, so a caller never switches on
   the provider.
