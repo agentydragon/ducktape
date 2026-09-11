@@ -266,6 +266,14 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            # Heap snapshots and Node reports. Separate from /tmp so a capture
+            # outlives the Pod; see pvc-diagnostics.yaml. The path is half of a
+            # contract with --diagnostic-dir/--report-directory in
+            # openclaw/default.nix -- moving it there without moving it here
+            # leaves Node writing diagnostics into the container layer, where
+            # the next roll discards them.
+            - name: diagnostics
+              mountPath: /diag
           resources:
             requests:
               cpu: 250m
@@ -311,3 +319,6 @@ spec:
                   name: public-coder-agent-devbox-ssh-key
         - name: tmp
           emptyDir: {}
+        - name: diagnostics
+          persistentVolumeClaim:
+            claimName: public-coder-agent-diagnostics

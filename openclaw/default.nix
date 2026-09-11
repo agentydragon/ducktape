@@ -158,7 +158,7 @@ pkgs.dockerTools.buildLayeredImage {
       "NODE_ENV=production"
       # --report-on-signal makes a wedged gateway diagnosable: `kill -USR2 1` writes
       # a diagnostic report (JS stack, native stack per thread, libuv handles) to
-      # /tmp. Node generates it from a dedicated thread, which is the point --
+      # the diagnostics volume. Node generates it from a dedicated thread, which is the point --
       # public-coder hung with its main thread blocked in synchronous node:sqlite
       # work, so the event loop never turned, SIGUSR1 never opened the inspector,
       # and /proc/<pid>/{syscall,stack} were refused by PodSecurity baseline.
@@ -194,9 +194,13 @@ pkgs.dockerTools.buildLayeredImage {
       # raises its own limit to serialize, so the spike has to fit inside
       # `limits.memory` or the kernel turns a clean abort into an OOMKill.
       #
-      # Snapshots are roughly heap-sized, which is why --diagnostic-dir points at
-      # the /tmp emptyDir and not the state PVC that volsync backs up.
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp --report-on-fatalerror --heapsnapshot-signal=SIGPWR --heapsnapshot-near-heap-limit=1 --diagnostic-dir=/tmp --max-old-space-size=2048"
+      # Both directories are /diag, the dedicated claim mounted by
+      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml -- not /tmp,
+      # whose emptyDir the next Flux roll discards along with the capture, and
+      # not the state PVC, which volsync backs up. That mount is a precondition,
+      # not a preference: without it Node writes a roughly heap-sized snapshot
+      # into the container layer.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/diag --report-on-fatalerror --heapsnapshot-signal=SIGPWR --heapsnapshot-near-heap-limit=1 --diagnostic-dir=/diag --max-old-space-size=2048"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
