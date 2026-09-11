@@ -5,6 +5,7 @@ import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from http import HTTPStatus
 from typing import Literal, cast
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import httpx
@@ -20,6 +21,7 @@ from x.agentplane.acceptance.operator_login import (
     login_operator,
     read_operator_credentials,
 )
+from x.agentplane.action_service.mcp_linkage import McpLinkageStatus, McpLinkageView
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestView,
@@ -69,6 +71,33 @@ infer or fabricate a result.
 """)
     report = turn.report(McpReport)
     assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
+
+
+async def test_operator_links_oauth_mcp_server(operator_bff: httpx.AsyncClient) -> None:
+    """Links the `example` MCP server through the real deployed OAuth dance: no mocked provider,
+    no fabricated tokens -- the App's BFF, the Action Service, and a real in-cluster OAuth
+    authorization server (a self-contained fixture, not staging's GitHub/Kubernetes)."""
+    server_id = "example"
+    start_response = await operator_bff.post(f"/mcp-servers/{server_id}/linkage/start", json={"scopes": []})
+    assert start_response.status_code == HTTPStatus.OK, start_response.text
+    authorization_url = start_response.json()["authorization_url"]
+
+    # Not operator_bff: the authorization endpoint is the fixture's own public origin, reached the
+    # same way a browser would, carrying no operator session.
+    async with httpx.AsyncClient(follow_redirects=False) as anonymous:
+        authorize = await anonymous.get(authorization_url)
+    assert authorize.status_code == HTTPStatus.FOUND, authorize.text
+    query = parse_qs(urlsplit(authorize.headers["location"]).query)
+
+    callback = await operator_bff.get(
+        "/mcp-linkage/callback", params={"state": query["state"][0], "code": query["code"][0]}
+    )
+    assert callback.status_code == HTTPStatus.SEE_OTHER, callback.text
+
+    linkage_response = await operator_bff.get(f"/mcp-servers/{server_id}/linkage")
+    assert linkage_response.status_code == HTTPStatus.OK
+    linkage = McpLinkageView.model_validate(linkage_response.json())
+    assert linkage.status is McpLinkageStatus.LINKED
 
 
 @pytest.fixture

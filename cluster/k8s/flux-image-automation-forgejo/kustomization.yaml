@@ -52,5 +52,6 @@ resources:
   - agentplane-egress-image.yaml
   - agentplane-egress-sidecar-image.yaml
   - agentplane-llm-ingress-image.yaml
+  - agentplane-oauth-fixture-image.yaml
   - github-graphql-rate-exporter-image.yaml
   - github-api-proxy-image.yaml

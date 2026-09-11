@@ -39,6 +39,16 @@ identity, duplicate-decision idempotency and stale-version rejection. Python als
 reads the full event history through the BFF's `GET /actions/{id}/events` and asserts
 the contiguous sequence and state progression. No canonical operator API fallback is used.
 
+`test_operator_links_oauth_mcp_server` exercises the operator-managed MCP OAuth linkage flow
+end to end against a real, deployed, OAuth-protected MCP server -- the `example` server, a
+self-contained fixture (in-memory authorization server and one `echo` tool in one process, no
+external IdP) deployed the same way as `everything`. It starts the linkage through the BFF,
+follows the redirect the authorization endpoint returns the same way a browser would, completes
+the callback through the BFF, and asserts the server reaches `linked` status. Unlike the real
+GitHub/Kubernetes providers linked in staging, nothing here is mocked or fabricated: this is the
+same code path an operator uses to link any OAuth MCP server, run against a server this repo
+controls end to end.
+
 These cases read only `public-coder-agent/agentplane-testing-acceptance-operator` via
 `kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator`
 using the existing kubeconfig and Haku Console Kubernetes proxy

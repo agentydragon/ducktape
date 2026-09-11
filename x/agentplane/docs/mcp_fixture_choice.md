@@ -21,3 +21,21 @@ pinned upstream image and provider composition without claiming to be the live t
 The official `mcp/everything` latest image was also checked: its published May 2025
 digest lacks the streamable-HTTP entry point and failed the remote container test.
 The externally built v3 image avoids adding our own image or transport wrapper.
+
+## Testing MCP OAuth linkage
+
+`everything` has no auth, so it cannot exercise the operator-managed OAuth linkage flow
+(`x/agentplane/action_service/mcp_linkage.py`). For that,
+`x/agentplane/action_service/test_fixtures/oauth_mcp_server.py` builds a small, self-contained
+server: `fastmcp`'s `InMemoryOAuthProvider` (an in-memory OAuth 2.1 authorization server, built
+for exactly this — simulating the flow with no external calls) fronting one `echo` tool, in one
+process. A single client is pre-registered at startup with a fixed `client_id`, since dynamic
+registration would mint an unpredictable one and Agentplane's `McpOAuthServer` configuration
+needs to name it. This is our own code (unlike `everything`), so it is built and published like
+any other in-cluster image (`agentplane-oauth-fixture` in `devinfra/ci/image_targets.json`) and
+deployed under `cluster/k8s/agentplane-testing/actions/`, cluster-internal only (no public route),
+same as `everything`. The OAuth authorize step is normally browser-facing, but the acceptance
+suite runs from the `public-coder-devbox` KubeVirt VM
+(`cluster/k8s/agents/public-coder-agent/devbox/`) -- a genuine pod-network endpoint, not an
+external host -- so it reaches the fixture's `/authorize` directly the same way the Action
+Service reaches it for discovery/token exchange, no port-forward or public exposure needed.

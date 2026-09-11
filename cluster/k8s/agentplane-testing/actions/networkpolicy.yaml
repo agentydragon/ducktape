@@ -76,3 +76,13 @@ spec:
               protocol: TCP
           serverNames:
             - agentplane-dex-testing.allegedly.works
+    # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture: cluster-
+    # internal only, unlike the real GitHub/Kubernetes MCP OAuth providers linked in staging.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+            app.kubernetes.io/name: agentplane-oauth-fixture
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

@@ -254,6 +254,11 @@
       "target": "//x/agentplane/llm_ingress:image",
       "test": "//x/agentplane/llm_ingress/...",
       "registry": "forgejo"
+    },
+    "agentplane-oauth-fixture": {
+      "target": "//x/agentplane/action_service/test_fixtures:oauth_mcp_server_image",
+      "test": "//x/agentplane/action_service/test_fixtures/...",
+      "registry": "forgejo"
     }
   }
 }
