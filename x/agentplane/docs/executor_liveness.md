@@ -2,8 +2,10 @@
 
 Status: **implemented**, including the in-process MCP adapter. The
 [Action Service](../action_service/README.md) owns production composition; fixture executors remain
-test-only. This contract does not require an out-of-process worker transport or backend credentials
-for the current credentialless MCP adapter.
+test-only. This contract does not require an out-of-process worker transport, and it is independent
+of backend credentials: an OAuth-linked group's adapter resolves the operator linkage token per
+request ([README § MCP executor transports](../action_service/README.md#mcp-executor-transports))
+without involving the lease.
 
 ## Problem
 
@@ -28,14 +30,21 @@ the same way regardless of which process (or how many restarts of it) happens to
 - **Per-Execution lease** (`action_execution.lease_token` / `lease_expires_at`): granted at claim
   time with an unguessable `lease_token`, the authentication artifact for every later
   worker-originated call about that one `request_id` — the seam a future out-of-process worker
-  would present over the wire, called in-process for v0 via `ExecutionLease.heartbeat()`. The
-  adapter is responsible for renewing it during long work; nothing renews it automatically, so a
-  merely-hung adapter call is caught by the same mechanism as a dead process.
+  would present over the wire, called in-process for v0 via `ExecutionLease.heartbeat()`. The MCP
+  adapter renews it on a fixed interval while `tools/call` is in flight, and the coordinator keeps
+  renewing while it persists the completion
+  ([README § Shutdown budgets](../action_service/README.md#shutdown-budgets)). Renewal proves the
+  local owner is alive, not that the backend is progressing: a hung call is bounded by the adapter's
+  execution deadline, which raises `ExecutionOutcomeUnknownError`, while lease expiry catches a
+  dead or stalled owner.
 
-A periodic sweep (`ActionStore.expire_stale_leases`) — not process startup — is the only thing that
-marks a lease-holding Execution `execution_unknown`. It runs identically before and after any
-coordinator restart, so "the old process died" and "a separate worker died" are indistinguishable
-by design, and both get the same safe treatment. The sweep also distinguishes, for operator
+A periodic sweep (`ActionStore.expire_stale_leases`) — not process startup — marks a lease-holding
+Execution `execution_unknown` when its lease lapses. The owning coordinator also records
+uncertainty itself when it can: `execution_outcome_unknown` when the adapter raises
+`ExecutionOutcomeUnknownError`, and `coordinator_stopped` when a claimed dispatch is cancelled,
+whether `dispatching` or `running`. The sweep runs identically before and after any coordinator
+restart, so "the old process died" and "a separate worker died" are indistinguishable by design,
+and both get the same safe treatment. The sweep also distinguishes, for operator
 diagnosis only, whether the owning executor's own health heartbeat is also stale
 (`executor_lost`) or the executor is otherwise heartbeating and only this one attempt stopped
 renewing (`lease_expired`); both are equally final.
@@ -67,8 +76,9 @@ stateDiagram-v2
 
     dispatching --> execution_unknown : expire_stale_leases\n(lease_expired / executor_lost)
     running --> execution_unknown : expire_stale_leases\n(lease_expired / executor_lost)
+    dispatching --> execution_unknown : coordinator CancelledError\n(coordinator_stopped)
     running --> execution_unknown : coordinator CancelledError\n(coordinator_stopped)
-    dispatching --> execution_unknown : adapter raises ExecutionOutcomeUnknownError\n(adapter_outcome_unknown)
+    running --> execution_unknown : adapter raises ExecutionOutcomeUnknownError\n(execution_outcome_unknown)
 
     execution_unknown --> succeeded : finish_execution, same lease\n(reconciled: late_completion)
     execution_unknown --> failed : finish_execution, same lease\n(reconciled: late_completion)

@@ -3,8 +3,8 @@
 Owns the current FastMCP connection to the configured MCP server, mirrors its `tools/list` into
 the bound `ActionGroup`'s catalog, and initiates `tools/call` itself — the Agent/harness never
 gets a direct MCP client. OAuth-backed groups may be dormant until their shared linkage authority
-has a token. See plans/operations_and_access.md § "Action groups, MCP discovery, and backend
-ownership".
+has a token. See x/agentplane/action_service/README.md § "Action catalog" and § "MCP executor
+transports".
 """
 
 from __future__ import annotations
@@ -58,7 +58,12 @@ class McpStdioServerConfig(BaseModel):
 
 
 class McpHttpServerConfig(BaseModel):
-    """Credentialless endpoint; authentication and header forwarding are not configurable here."""
+    """Streamable-HTTP endpoint.
+
+    `auth: none` sends no credentials; `auth: oauth` requires `server_id`, the `mcp_servers` linkage
+    whose current access token the transport attaches per request. Header forwarding is not
+    configurable.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
