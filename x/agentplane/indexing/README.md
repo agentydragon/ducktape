@@ -6,7 +6,7 @@ publishes searchable file versions. No Agentplane app or Haku Console service is
 
 The container is `git.allegedly.works/ducktape-ci/agentplane-index`, published by the image
 roster after its test gate passes. Use a pinned published tag. The Bazel binary is
-`//x/agentplane/indexing:server`; the container target is `:image`.
+`//x/agentplane/indexing:main_bin`; the container target is `:image`.
 
 ## Configuration
 
@@ -73,8 +73,8 @@ livenessProbe:
   httpGet: { path: /healthz, port: 8080 }
 ```
 
-This PR supplies the service and image publication, not a live collection/database selection.
-Place an actual deployment behind the intended private service boundary and use TLS for
+Choose the source and dedicated database when deploying. Place the deployment behind the
+intended private service boundary and use TLS for
 bearer-authenticated requests outside a trusted internal network.
 
 ## Read API

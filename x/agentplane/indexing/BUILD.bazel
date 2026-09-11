@@ -6,7 +6,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
 py_binary(
-    name = "server",
+    name = "main_bin",
     main_module = "x.agentplane.indexing.main",
     deps = [":main"],
 )
