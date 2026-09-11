@@ -47,7 +47,7 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
     assert "egresspolicy-basic.yaml" in resources
     assert "egresscredential-agentplane-workload.yaml" in resources
     assert policy["metadata"]["name"] == "basic"
-    assert config["sandbox_presets"]["public-coder"]["policies"] == ["github-public"]
+    assert config["sandbox_presets"]["public-coder"]["policies"] == ["basic", "github-public"]
     assert config["default_policies"] == ["basic"]
     assert set(rules) == {rules_host, actions_host, llm_host}
     assert rules[llm_host]["methods"] == ["GET", "POST"]
