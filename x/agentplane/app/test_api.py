@@ -56,7 +56,8 @@ def test_upstream_http_error_preserves_request_without_secrets(host: str, upstre
         error = httpx.HTTPStatusError("private status details", request=request, response=response)
     result = upstream_http_error(error)
     assert result.status_code == (upstream_status if upstream_status is not None else 503)
-    assert result.detail == {
+    detail: object = result.detail
+    assert detail == {
         "method": "POST",
         "url": f"https://{host}/token",
         "upstream_status": upstream_status,
