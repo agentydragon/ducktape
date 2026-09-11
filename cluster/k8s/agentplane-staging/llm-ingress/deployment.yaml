@@ -11,9 +11,12 @@ metadata:
   annotations:
     secret.reloader.stakater.com/reload: litellm-key-cheap-experiments
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-llm-ingress
@@ -28,6 +31,13 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: agentplane-llm-ingress
       serviceAccountName: agentplane-llm-ingress
       automountServiceAccountToken: true
       imagePullSecrets:
