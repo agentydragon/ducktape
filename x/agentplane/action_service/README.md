@@ -236,7 +236,8 @@ Group bindings are reviewed runtime configuration, not a dynamic registry: `main
 follows the same `AGENTPLANE_ACTIONS_CONFIG_FILE`-mounted-YAML convention as the integration app's
 `AGENTPLANE_CONFIG_FILE` (`x/agentplane/app/main.py`), so an operator edits the group configuration and the
 process picks it up on restart — sufficient because ActionGroup/executor bindings change at
-operator/deploy cadence, not per-request, and the app uses a `Recreate`-strategy Deployment.
+operator/deploy cadence, not per-request. Staging uses two rolling replicas; configuration changes
+must remain compatible while old and new replicas overlap.
 `McpExecutorBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted

@@ -9,9 +9,13 @@ metadata:
     secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid
     configmap.reloader.stakater.com/reload: agentplane-action-federation
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-actions
@@ -22,6 +26,13 @@ spec:
     spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: agentplane-actions
       # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
       terminationGracePeriodSeconds: 60
       serviceAccountName: agentplane-actions

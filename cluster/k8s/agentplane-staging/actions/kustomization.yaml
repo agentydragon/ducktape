@@ -6,6 +6,7 @@ resources:
   - rbac.yaml
   - configmap-action-federation.yaml
   - deployment.yaml
+  - poddisruptionbudget.yaml
   - service.yaml
   - networkpolicy.yaml
   - httproute.yaml
