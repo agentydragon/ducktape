@@ -368,7 +368,7 @@ export function SessionView({
           color="red"
           aria-label="Shut down harness"
           onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
-          disabled={state.harness !== "running" || sending}
+          disabled={state.harness !== "running"}
         >
           <IconPower size={16} />
         </ActionIcon>
@@ -426,7 +426,7 @@ export function SessionView({
           autosize
           minRows={2}
           maxRows={12}
-          disabled={state.harness !== "running"}
+          disabled={state.harness !== "running" || sending}
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />
