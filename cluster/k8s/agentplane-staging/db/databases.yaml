@@ -3,23 +3,23 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
-  name: agentplane-db-actions
+  name: actions
   namespace: agentplane-staging
 spec:
   cluster:
-    name: agentplane-db
-  name: agentplane_actions
-  owner: agentplane_actions
+    name: postgres
+  name: actions
+  owner: actions
   databaseReclaimPolicy: delete
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
-  name: agentplane-db-egress
+  name: egress
   namespace: agentplane-staging
 spec:
   cluster:
-    name: agentplane-db
-  name: agentplane_egress
-  owner: agentplane_egress
+    name: postgres
+  name: egress
+  owner: egress
   databaseReclaimPolicy: delete

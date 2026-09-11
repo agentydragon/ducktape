@@ -77,7 +77,7 @@ most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   `region: hil`, one per OVH node, so it tolerates a node loss without
   quorum or primary impact. Deliberate deviation from the 2-instance
   profile; the manifest comment is the record.
-- `agentplane-db` (`k8s/agentplane-staging/db/`): 1 instance pinned
+- `postgres` (`k8s/agentplane-staging/db/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by staging's three disposable
   logical databases. Deliberate deviation from both profiles: the always-on pin
   of OVH-HA without its second instance, because staging is experimental. It

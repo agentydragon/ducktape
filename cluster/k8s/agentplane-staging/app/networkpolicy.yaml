@@ -136,7 +136,7 @@ spec:
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
-            k8s:cnpg.io/cluster: agentplane-db
+            k8s:cnpg.io/cluster: postgres
       toPorts:
         - ports:
             - port: "5432"

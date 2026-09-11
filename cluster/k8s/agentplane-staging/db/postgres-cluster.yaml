@@ -21,7 +21,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: agentplane-db
+  name: postgres
   namespace: agentplane-staging
 spec:
   instances: 1
@@ -58,18 +58,18 @@ spec:
 
   bootstrap:
     initdb:
-      database: agentplane
-      owner: agentplane
+      database: app
+      owner: app
 
   managed:
     roles:
-      - name: agentplane_actions
+      - name: actions
         ensure: present
         login: true
         passwordSecret:
-          name: agentplane-db-actions
-      - name: agentplane_egress
+          name: postgres-actions
+      - name: egress
         ensure: present
         login: true
         passwordSecret:
-          name: agentplane-db-egress
+          name: postgres-egress
