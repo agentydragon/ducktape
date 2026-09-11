@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import Provider, create_app, upstream_http_error
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
@@ -38,6 +38,32 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 
 TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
+
+
+@pytest.mark.parametrize("host", ["identity-provider.invalid", "actions.invalid"])
+@pytest.mark.parametrize("upstream_status", [None, 403, 429, 503])
+def test_upstream_http_error_preserves_request_without_secrets(host: str, upstream_status: int | None) -> None:
+    request = httpx.Request(
+        "POST",
+        f"https://user:private-password@{host}/token?code=private-code#private-fragment",
+        headers={"Authorization": "Bearer private-token"},
+    )
+    error: httpx.HTTPStatusError | httpx.RequestError
+    if upstream_status is None:
+        error = httpx.ConnectError("private transport details", request=request)
+    else:
+        response = httpx.Response(upstream_status, request=request, text="private response body")
+        error = httpx.HTTPStatusError("private status details", request=request, response=response)
+    result = upstream_http_error(error)
+    assert result.status_code == (upstream_status if upstream_status is not None else 503)
+    assert result.detail == {
+        "method": "POST",
+        "url": f"https://{host}/token",
+        "upstream_status": upstream_status,
+        "error_type": "ConnectError" if upstream_status is None else "HTTPStatusError",
+    }
+
+
 TEST_PRESETS = PresetCatalog(
     sandboxes={
         "public-coder": SandboxPreset(

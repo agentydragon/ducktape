@@ -98,30 +98,30 @@ export interface McpLinkageService {
 
 export const mcpLinkageService: McpLinkageService = {
   async list() {
-    const { data, error } = await api.GET("/mcp-servers");
-    if (error) throw new Error(displayableError(error));
+    const { data, error, response } = await api.GET("/mcp-servers");
+    if (error) throw new Error(httpError(response, error));
     return data;
   },
   async status(serverId) {
-    const { data, error } = await api.GET("/mcp-servers/{server_id}/linkage", {
+    const { data, error, response } = await api.GET("/mcp-servers/{server_id}/linkage", {
       params: { path: { server_id: serverId } },
     });
-    if (error) throw new Error(displayableError(error));
+    if (error) throw new Error(httpError(response, error));
     return data;
   },
   async start(serverId, scopes) {
-    const { data, error } = await api.POST("/mcp-servers/{server_id}/linkage/start", {
+    const { data, error, response } = await api.POST("/mcp-servers/{server_id}/linkage/start", {
       params: { path: { server_id: serverId } },
       body: { scopes },
     });
-    if (error) throw new Error(displayableError(error));
+    if (error) throw new Error(httpError(response, error));
     return data;
   },
   async disconnect(serverId) {
-    const { data, error } = await api.POST("/mcp-servers/{server_id}/linkage/disconnect", {
+    const { data, error, response } = await api.POST("/mcp-servers/{server_id}/linkage/disconnect", {
       params: { path: { server_id: serverId } },
     });
-    if (error) throw new Error(displayableError(error));
+    if (error) throw new Error(httpError(response, error));
     return data;
   },
 };
@@ -133,20 +133,24 @@ export interface ActionService {
 
 export const actionService: ActionService = {
   async list(): Promise<ActionRequestView[]> {
-    const { data, error } = await api.GET("/actions");
-    if (error) throw new Error(displayableError(error));
+    const { data, error, response } = await api.GET("/actions");
+    if (error) throw new Error(httpError(response, error));
     return data;
   },
 
   async decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
-    const { data, error } = await api.POST("/actions/{request_id}/decision", {
+    const { data, error, response } = await api.POST("/actions/{request_id}/decision", {
       params: { path: { request_id: request.id } },
       body: { verdict, expected_version: request.version, idempotency_key: crypto.randomUUID(), decision_note: null },
     });
-    if (error) throw new Error(displayableError(error));
+    if (error) throw new Error(httpError(response, error));
     return data;
   },
 };
+
+export function httpError(response: Response, error: unknown): string {
+  return `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}: ${displayableError(error)}`;
+}
 
 export function displayableError(error: unknown): string {
   if (error instanceof Error) return error.message;

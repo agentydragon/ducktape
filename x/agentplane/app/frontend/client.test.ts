@@ -1,6 +1,19 @@
 import { expect, it } from "vitest";
 
-import { displayableError } from "./client";
+import { displayableError, httpError } from "./client";
+
+it("includes HTTP status and the complete structured error without interpreting its envelope", () => {
+  const error = {
+    detail: { method: "GET", url: "https://upstream.invalid/mcp", upstream_status: null, error_type: "ConnectError" },
+  };
+  expect(httpError(new Response(null, { status: 503, statusText: "Service Unavailable" }), error)).toBe(
+    `HTTP 503 Service Unavailable: ${JSON.stringify(error)}`
+  );
+});
+
+it("keeps the status even when HTTP/2 supplies no status text", () => {
+  expect(httpError(new Response(null, { status: 502 }), "Bad gateway")).toBe("HTTP 502: Bad gateway");
+});
 
 it.each([
   [

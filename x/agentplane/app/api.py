@@ -294,9 +294,23 @@ async def _operator_actions(
     except OperatorFederationError as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": str(error)}) from None
     except httpx.HTTPStatusError as error:
-        raise HTTPException(error.response.status_code, "Action Service rejected the request") from error
+        raise upstream_http_error(error) from error
     except httpx.RequestError as error:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service is unavailable") from error
+        raise upstream_http_error(error) from error
+
+
+def upstream_http_error(error: httpx.HTTPStatusError | httpx.RequestError) -> HTTPException:
+    """Describe the failed request, which may be to the identity provider or the service."""
+    response_status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+    return HTTPException(
+        response_status if response_status is not None else status.HTTP_503_SERVICE_UNAVAILABLE,
+        {
+            "method": error.request.method,
+            "url": str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
+            "upstream_status": response_status,
+            "error_type": type(error).__name__,
+        },
+    )
 
 
 OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actions)]
