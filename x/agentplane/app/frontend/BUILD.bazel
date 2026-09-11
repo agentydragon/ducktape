@@ -144,6 +144,23 @@ ts_library(
 )
 
 ts_library(
+    name = "mcp_servers_test",
+    testonly = True,
+    srcs = ["mcp_servers.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":mcp_servers",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "connections_fixture",
     testonly = True,
     srcs = ["connections_fixture.ts"],
@@ -436,6 +453,7 @@ vitest_bin.vitest_test(
         ":consent_test",
         ":events_test",
         ":launch_presets_test",
+        ":mcp_servers_test",
         ":push_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
