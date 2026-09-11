@@ -127,17 +127,22 @@ A healthy pod, fresh process:
 | V8 heap                                        | 1000 MiB committed, **415 MiB live** | --             |
 | glibc `brk` arena                              | 78.8 MiB                             | 77.4 MiB       |
 
-**Over half the 4Gi charge is kernel slab, not openclaw.** The agent's filesystem
-activity — 25 active `fs_event` watchers, workspace and git churn, session-file
-indexing — grows the dentry/inode cache until it fills the cgroup. The gateway
-process itself is ~1 GiB, of which ~415 MiB is genuine live heap.
+**Over half the 4Gi charge was kernel slab, not openclaw**, on that pod: the
+agent's filesystem activity — dozens of `fs_event` watchers (88 on a later pod),
+workspace and git churn, session-file indexing — grows the dentry/inode cache
+until it fills the cgroup. The gateway process itself is ~1 GiB, of which
+~415 MiB is genuine live heap.
+
+The split is not stable across pods, so read `memory.stat` per incident rather
+than carrying these numbers forward: a later pod under the same limit measured
+`slab_reclaimable` at 19.7 MiB with `anon` 1543 MiB and `file` 1315 MiB.
 
 Only the V8 heap grows without bound, and this leak is what fills it, from
 ~415 MiB to the 2096 MiB cap. Slab and page cache are reclaimable, which is why
 the failure is always a clean V8 abort and never a 137: the 4Gi limit is not the
 binding constraint, the heap cap is.
 
-## Second, separate problem: the container lives in reclaim
+## Second, separate problem: the container lives in I/O stall
 
 ```text
 memory.current = 4095 MiB   max = 4096 MiB
@@ -145,10 +150,10 @@ memory.events:  max 12182   oom_kill 0
 ```
 
 The cgroup has hit its ceiling **12,182 times**, reclaiming cache each time and
-never being killed. That is the cause of the `/healthz` readiness timeouts
-between aborts — allocation stalls during direct reclaim, not the GC pauses the
-abort itself produces. Raising `limits.memory` would address this independently
-of the leak: the extra is cache the kernel returns under pressure.
+never being killed. Reclaim is not what costs the `/healthz` probe, though —
+pressure stall accounting puts it squarely on I/O (`io.pressure full avg10=24.58`
+against `memory.pressure some avg10=0.05`). What reads the databases, and what
+fills them, is measured in <2026_09_state_db_io.md>.
 
 ## Why one store costs 32 MiB
 
@@ -156,6 +161,9 @@ It holds **386 sessions**, restored from the SQLite state database at startup,
 including every `agent:coder:cron:<uuid>:run:<uuid>` ever executed, each with
 `compactionCheckpoints`. `openclaw.json5` exposes no retention or pruning knob.
 That sets the floor and multiplies every leaked store.
+
+`session_nodes` is where they come from: 386 rows whose `entry_json` averages
+64,209 bytes, 24.5 MiB on disk, inflating to ~32 MiB of live JS objects.
 
 ## Not established
 
