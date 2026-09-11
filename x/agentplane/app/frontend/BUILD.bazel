@@ -45,6 +45,17 @@ ts_library(
 )
 
 ts_library(
+    name = "client_test",
+    testonly = True,
+    srcs = ["client.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     tsconfig = TSCONFIG,
@@ -432,6 +443,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":actions_test",
+        ":client_test",
         ":connections_test",
         ":consent_test",
         ":events_test",
