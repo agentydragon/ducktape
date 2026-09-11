@@ -243,6 +243,24 @@ Acceptance, each against a non-canary `hil-ovh` node as control:
    increasing on the control.
 
 Rollback is deleting the object and recreating the same agent Pods. After a
-day without regressions, set `envoy.useOriginalSourceAddress: false` in
+soak without regressions, set `envoy.useOriginalSourceAddress: false` in
 <../../terraform/main/cilium-values.yaml>, run `//cluster:bootstrap`, and delete
 the canary object in the same change.
+
+### Canary result, 2026-09-11
+
+Both agents recreated (07:10 and 07:23 UTC); only those two Pods were touched.
+Before, from a pod on each node to its own node IP: 5/5 resets at 2.0 s. After:
+7/7 handshakes on each node, remote and Service rows unchanged, 12/12 JWKS
+fetches with normal DNS on each node, wrong SNI and out-of-policy hosts still
+refused, and the `egress-cluster-tls` connect-timeout counter flat across 35 and
+29 new upstream connections where it had been climbing. Conntrack shows the
+proxy's upstream legs leaving from the node IP with fresh ports. The restart
+pulled in one other pending key, the Gateway node-label selector, already live
+through the operator.
+
+Gotcha: the Envoy config dump never shows `use_original_source_address: false`;
+proto3 JSON omits false, so the active listener has no key at all while the
+draining copy of the old listener still shows `true`. Read the agent's
+`build-config` output or its `--proxy-use-original-source-address` argument
+instead.
