@@ -129,7 +129,7 @@ both appends the key to the local outgoing gRPC context and retains it in the ne
 Agents send an ordinary proxied HTTP `GET` to
 `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` with
 `Authorization: Bearer agentplane-credential-agentplane-workload`. The placeholder is inert and
-published in nonsecret runner instructions. The default `egress-rules` policy binds this exact
+published in nonsecret runner instructions. The default `basic` policy binds this exact
 host, method, and path to the existing `agentplane-workload` credential's `schemeToken` target.
 Central applies normal exact-placeholder substitution using the authenticated sidecar workload
 context; no rules-specific proxy dispatch or credential injection mode is involved.

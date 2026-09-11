@@ -33,21 +33,32 @@ def test_service_routes_rules_to_the_separate_declared_listener() -> None:
 
 
 def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_credentials() -> None:
-    policy = manifest("egress/egresspolicy-egress-rules.yaml")
+    policy = manifest("egress/egresspolicy-basic.yaml")
     credential = manifest("egress/egresscredential-agentplane-workload.yaml")
     config = manifest("app/config.yaml")
     resources = manifest("egress/kustomization.yaml")["resources"]
-    rule = one(policy["spec"]["rules"])
+    rules = {one(rule["hosts"]): rule for rule in policy["spec"]["rules"]}
+    rules_host = "agentplane-egress.agentplane-staging.svc.cluster.local"
+    actions_host = "agentplane-actions.agentplane-staging.svc.cluster.local"
+    llm_host = "agentplane-llm-ingress.agentplane-staging.svc.cluster.local"
+    rule = rules[rules_host]
     target = one(credential["spec"]["targets"])
 
-    assert "egresspolicy-egress-rules.yaml" in resources
+    assert "egresspolicy-basic.yaml" in resources
     assert "egresscredential-agentplane-workload.yaml" in resources
-    assert config["sandbox_presets"]["public-coder"]["policies"] == [
-        "github-public",
-        "agentplane-actions",
-        "egress-rules",
+    assert policy["metadata"]["name"] == "basic"
+    assert config["sandbox_presets"]["public-coder"]["policies"] == ["github-public"]
+    assert config["default_policies"] == ["basic"]
+    assert set(rules) == {rules_host, actions_host, llm_host}
+    assert rules[llm_host]["methods"] == ["GET", "POST"]
+    assert rules[actions_host]["methods"] == ["GET", "POST"]
+    assert rules[actions_host]["paths"] == [
+        "/mcp",
+        "/v1/action-groups",
+        "/v1/action-groups/**",
+        "/v1/action-requests",
+        "/v1/action-requests/**",
     ]
-    assert config["default_policies"] == ["agentplane-llm-ingress"]
     assert rule["credentialRef"]["name"] == credential["metadata"]["name"]
     assert credential["spec"]["source"] == {"authenticatedWorkloadToken": {}}
     assert target == {"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}

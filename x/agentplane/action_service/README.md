@@ -163,10 +163,8 @@ also accepted by `/mcp`. No public ingress or harness deployment is added here. 
 guard protects loopback access without categorically rejecting requests carrying Origin; authority
 comes from the explicit validated bearer, not Origin or browser cookies. Browser CORS policy can
 be configured alongside future external exposure.
-Staging's current `egresspolicy-agentplane-actions.yaml` permits only the REST paths; deploying
-Sandbox MCP clients also requires an explicit `/mcp` egress allowance with the same workload
-credential substitution. The protocol tests exercise substitution at that boundary, not a claim
-that the current cluster policy already permits the new route.
+Staging's current `egresspolicy-basic.yaml` permits the REST and `/mcp` paths with the same
+workload credential substitution. The protocol tests exercise substitution at that boundary.
 
 ### External OAuth
 

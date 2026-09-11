@@ -28,8 +28,6 @@ sandbox_presets:
     template: agentplane-runner
     policies:
       - github-public
-      - agentplane-actions
-      - egress-rules
     thread_preset: public-coder-codex
     bootstrap: |
       marker=/state/workspaces/.agentplane-public-coder-ready
@@ -41,7 +39,7 @@ sandbox_presets:
 # Granted to every sandbox before whatever the operator picks: without the model endpoint a
 # sandbox has no agent, so it is not a choice (cluster/k8s/agentplane-staging/egress).
 default_policies:
-  - agentplane-llm-ingress
+  - basic
 # The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked for each
 # sandbox's recent decisions; until the proxy Deployment lands the page shows the rules alone.
 egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081

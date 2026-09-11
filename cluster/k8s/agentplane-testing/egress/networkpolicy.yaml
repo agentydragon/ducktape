@@ -72,7 +72,7 @@ spec:
         - ports:
             - port: "8082"
               protocol: TCP
-    # The authenticated LLM ingress, which the agentplane-llm-ingress policy admits as a cluster-internal host.
+    # The authenticated LLM ingress, which the basic policy admits as a cluster-internal host.
     # LiteLLM itself is reachable only from that ingress; central never receives its virtual key.
     - toEndpoints:
         - matchLabels:

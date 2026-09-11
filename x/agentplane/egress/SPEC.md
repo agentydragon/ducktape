@@ -88,7 +88,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   does not appear here until someone writes it in.
   The caller sends the published inert `agentplane-credential-agentplane-workload` placeholder
   in ordinary `Authorization: Bearer` through the configured proxy. An active ordinary
-  `egress-rules` policy/binding authorizes exact substitution using `agentplane-workload`.
+  `basic` policy/binding authorizes exact substitution using `agentplane-workload`.
   Missing or forged destination auth and unbound placeholders fail closed.
   The destination independently authenticates its Authorization bearer with TokenReview and live
   Pod/Sandbox resolution, without relying on proxy-hop identity or the Sandbox's source address.

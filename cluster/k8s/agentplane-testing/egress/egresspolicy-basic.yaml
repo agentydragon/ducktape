@@ -1,0 +1,36 @@
+# The basic Agentplane-internal endpoints. Every rule authenticates the workload placeholder at the
+# proxy and substitutes the sidecar-only token; the LLM ingress then replaces that with its
+# server-held LiteLLM key. These are safe defaults for every sandbox, unlike external credentials.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: basic
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - agentplane-llm-ingress.agentplane-testing.svc.cluster.local
+      clusterInternal: true
+      methods: [GET, POST]
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - agentplane-actions.agentplane-testing.svc.cluster.local
+      clusterInternal: true
+      methods: [GET, POST]
+      paths:
+        - /mcp
+        - /v1/action-groups
+        - /v1/action-groups/**
+        - /v1/action-requests
+        - /v1/action-requests/**
+      credentialRef:
+        name: agentplane-workload
+    - hosts:
+        - agentplane-egress.agentplane-testing.svc.cluster.local
+      clusterInternal: true
+      methods: [GET]
+      paths:
+        - /v1/rules
+      credentialRef:
+        name: agentplane-workload

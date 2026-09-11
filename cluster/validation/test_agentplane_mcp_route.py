@@ -20,7 +20,7 @@ def manifests() -> dict[str, Any]:
             "route": "actions/httproute.yaml",
             "service": "actions/service.yaml",
             "deployment": "actions/deployment.yaml",
-            "policy": "egress/egresspolicy-agentplane-actions.yaml",
+            "policy": "egress/egresspolicy-basic.yaml",
             "credential": "egress/egresscredential-agentplane-workload.yaml",
         }.items()
     }

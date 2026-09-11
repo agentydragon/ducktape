@@ -184,7 +184,7 @@ class ProxyUnderTest:
             return Response(status=response.status, headers=dict(response.headers), body=await response.read())
 
     async def install_rules_route(self) -> None:
-        if RULES_POLICY in self.index.policies:
+        if BASIC_POLICY in self.index.policies:
             return
         self.fake.put(
             CREDENTIALS_PLURAL,
@@ -196,7 +196,7 @@ class ProxyUnderTest:
         self.fake.put(
             POLICIES_PLURAL,
             policy(
-                RULES_POLICY,
+                BASIC_POLICY,
                 [
                     {
                         "hosts": [RULES_HOST],
@@ -210,14 +210,14 @@ class ProxyUnderTest:
         )
         current = self.fake.objects[BINDINGS_PLURAL][BINDING]
         policies = [*current["spec"]["policies"]]
-        if RULES_POLICY not in policies:
-            policies.append(RULES_POLICY)
+        if BASIC_POLICY not in policies:
+            policies.append(BASIC_POLICY)
         self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=policies))
         await self.index.wait_for(
             lambda: (
                 WORKLOAD_CREDENTIAL in self.index.credentials
-                and RULES_POLICY in self.index.policies
-                and RULES_POLICY in self.index.bindings[BINDING].spec.policies
+                and BASIC_POLICY in self.index.policies
+                and BASIC_POLICY in self.index.bindings[BINDING].spec.policies
             )
         )
 
@@ -339,7 +339,7 @@ BINDING = f"{SANDBOX_A}-{GITHUB_POLICY}"
 WORKLOAD_CREDENTIAL = "agentplane-workload"
 WORKLOAD_PLACEHOLDER = placeholder_of(WORKLOAD_CREDENTIAL)
 WORKLOAD_POLICY = "first-party-workload"
-RULES_POLICY = "egress-rules"
+BASIC_POLICY = "basic"
 
 
 def denial(response: Response, reason: DenyReason) -> bool:
@@ -887,10 +887,10 @@ async def test_rules_unbound_placeholder_is_not_forwarded(proxy: ProxyUnderTest)
     proxy.fake.put(
         POLICIES_PLURAL,
         policy(
-            RULES_POLICY, [{"hosts": [RULES_HOST], "methods": ["GET"], "paths": [RULES_PATH], "clusterInternal": True}]
+            BASIC_POLICY, [{"hosts": [RULES_HOST], "methods": ["GET"], "paths": [RULES_PATH], "clusterInternal": True}]
         ),
     )
-    await proxy.index.wait_for(lambda: proxy.index.policies[RULES_POLICY].spec.rules[0].credential_ref is None)
+    await proxy.index.wait_for(lambda: proxy.index.policies[BASIC_POLICY].spec.rules[0].credential_ref is None)
 
     response = await proxy.get_rules(RULES_PATH)
 
