@@ -61,11 +61,16 @@ function input(container: HTMLElement, label: string): HTMLInputElement {
 
 async function choose(container: HTMLElement, label: string, value: string): Promise<void> {
   await act(async () => input(container, label).click());
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (node) => node.textContent === value
-  );
+  const option = options(container, label).find((node) => node.textContent === value);
   if (!option) throw new Error(`Missing ${value} option`);
   await act(async () => option.click());
+}
+
+function options(container: HTMLElement, label: string): HTMLElement[] {
+  const listId = input(container, label).getAttribute("aria-controls");
+  const list = listId ? document.getElementById(listId) : null;
+  if (!list) throw new Error(`Missing ${label} options`);
+  return [...list.querySelectorAll<HTMLElement>('[role="option"]')];
 }
 
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
@@ -76,7 +81,7 @@ it("inherits the preset model and replaces incompatible choices when the harness
   await choose(container, "Harness", "claude");
   expect(input(container, "Model").value).toBe("test-claude");
   await act(async () => input(container, "Model").click());
-  expect([...document.querySelectorAll('[role="option"]')].map((node) => node.textContent)).toEqual(["test-claude"]);
+  expect(options(container, "Model").map((node) => node.textContent)).toEqual(["test-claude"]);
 });
 
 it("clears an unavailable preset model and disables a harness with no offered models", async () => {
