@@ -48,27 +48,27 @@ spec:
             - name: AGENTPLANE_ACTIONS_DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: agentplane-db-actions
+                  name: postgres-actions
                   key: username
             - name: AGENTPLANE_ACTIONS_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: agentplane-db-actions
+                  name: postgres-actions
                   key: password
             - name: AGENTPLANE_ACTIONS_DB_HOST
               valueFrom:
                 secretKeyRef:
-                  name: agentplane-db-actions
+                  name: postgres-actions
                   key: host
             - name: AGENTPLANE_ACTIONS_DB_PORT
               valueFrom:
                 secretKeyRef:
-                  name: agentplane-db-actions
+                  name: postgres-actions
                   key: port
             - name: AGENTPLANE_ACTIONS_DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: agentplane-db-actions
+                  name: postgres-actions
                   key: dbname
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: "postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)"

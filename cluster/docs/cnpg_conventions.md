@@ -77,7 +77,7 @@ most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   `region: hil`, one per OVH node, so it tolerates a node loss without
   quorum or primary impact. Deliberate deviation from the 2-instance
   profile; the manifest comment is the record.
-- `agentplane-db` (`k8s/agentplane-testing/db/`): 1 instance pinned
+- `postgres` (`k8s/agentplane-testing/db/`): 1 instance pinned
   `zone: hil-ovh` on `local-path-ovh-ssd`, shared by testing's three disposable
   logical databases. This experimental environment deliberately accepts no
   CNPG-level or storage-level replication; the manifest comment is the record.
