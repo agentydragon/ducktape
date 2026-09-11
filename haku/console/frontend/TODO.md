@@ -7,10 +7,8 @@
 
 - Give the CLI's own **`Bash`** tool a real rendering in the conversation view. It reaches the
   transcript as a harness tool rather than through an MCP server, so `x/tool_call.tsx` renders it —
-  the same JSON blob and code block every tool gets — while `tool_rendering/hostexec/` already shows
-  what a `bash` widget is worth: the command as a command, a discriminated exit status, stdout as
-  output rather than as a quoted string. The widget largely exists; what does not is any path from
-  the conversation view to it.
+  the same JSON blob and code block every tool gets. A `bash` widget is worth building: the command
+  as a command, a discriminated exit status, stdout as output rather than as a quoted string.
 
 - Render the runner's calls **to haku-console** with the widgets those tools already have, instead
   of the generic JSON fallback. Every one of them is an MCP tool `tool_rendering/` knows —

@@ -63,7 +63,6 @@ from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp import approval, catalog_reconciler, mount, operator_oauth, server, tool_call_service
 from haku.console.mcp.in_process_servers import (
-    HostexecServerConfig,
     InProcessServerDependencies,
     SandboxServerConfig,
     build_in_process_servers,
@@ -93,7 +92,6 @@ from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.sandbox.kubernetes_client import InClusterSandboxClient
-from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
 # gazelle cannot see the dependency.
@@ -172,11 +170,13 @@ def create_app(
     gmail_client: gmail_tools.GmailToolsClient | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
-    # Deploy-time console config file (non-secret): the MCP server catalog, static agents, and the
-    # hostexec host map. `hostexec is not None` gates the hostexec in-process server, the login-time
-    # offline_access request, and operator-Authentik-token persistence — computed once here.
+    # Deploy-time console config file (non-secret): the MCP server catalog and static agents.
     console_config = settings
-    hostexec_config = console_config.hostexec
+    # The `hostexec` MCP tool (Tier 1) has been removed, so `ConsoleConfigFile` no longer carries a
+    # `hostexec` field. The operator-login-identity token-exchange plumbing this still gates
+    # (Authentik token refresh, login offline_access, hostexec_enabled) is orphaned-but-harmless
+    # dead code pending a follow-up removal; hardcode the always-off value here rather than touch it.
+    hostexec_config = None
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
@@ -351,16 +351,6 @@ def create_app(
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     sandbox_server: SandboxServerConfig | None = None
     if in_process_servers is None:
-        # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
-        # endpoint here (only in this branch) is safe.
-        hostexec_server = None
-        if hostexec_config is not None:
-            assert hostexecd_service is not None
-            hostexec_server = HostexecServerConfig(
-                config=hostexec_config,
-                token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
-                broker=hostexecd_service,
-            )
         # Configured rather than switched on separately: `config.yaml` is where the server is
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
@@ -396,7 +386,6 @@ def create_app(
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,
-                hostexec=hostexec_server,
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes.values()),
