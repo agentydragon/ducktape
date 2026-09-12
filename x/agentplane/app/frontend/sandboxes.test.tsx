@@ -2,9 +2,10 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, type SandboxPresetView } from "./client";
+import { api, type ActionPolicySetView, type SandboxPresetView } from "./client";
 import { SandboxList } from "./sandboxes";
 
 vi.mock("./live", () => ({
@@ -29,13 +30,28 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
     title: "Test preset",
     template: "test-template",
     policies: [],
-    action_policy_sets: [],
+    action_policy_sets: ["test-reads"],
     thread_preset: "test-thread",
     thread_defaults: { provider: "codex", model: "test-codex-b" },
   };
+  const policySets: ActionPolicySetView[] = [
+    {
+      name: "test-reads",
+      generation: 1,
+      ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
+      refused: null,
+    },
+    { name: "test-broken", generation: 1, ready: null, refused: "spec.autoApproveIf.0: unknown" },
+  ];
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
-      path === "/models" ? { claude: ["test-claude"], codex: codexModels } : path === "/presets" ? [preset] : [];
+      path === "/models"
+        ? { claude: ["test-claude"], codex: codexModels }
+        : path === "/presets"
+          ? [preset]
+          : path === "/action-policy/sets"
+            ? policySets
+            : [];
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
   const container = document.createElement("div");
@@ -45,7 +61,9 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
   await act(async () =>
     root.render(
       <MantineProvider>
-        <SandboxList onOpen={vi.fn()} />
+        <MemoryRouter>
+          <SandboxList onOpen={vi.fn()} />
+        </MemoryRouter>
       </MantineProvider>
     )
   );
@@ -67,6 +85,16 @@ async function choose(container: HTMLElement, label: string, value: string): Pro
   await act(async () => option.click());
 }
 
+/** Type into a controlled input the way a keyboard does, so React sees the change. */
+async function type(element: HTMLInputElement, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  if (!setter) throw new Error("HTMLInputElement.value has no setter");
+  await act(async () => {
+    setter.call(element, value);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 function options(container: HTMLElement, label: string): HTMLElement[] {
   const listId = input(container, label).getAttribute("aria-controls");
   const list = listId ? document.getElementById(listId) : null;
@@ -83,6 +111,29 @@ it("inherits the preset model and replaces incompatible choices when the harness
   expect(input(container, "Model").value).toBe("test-claude");
   await act(async () => input(container, "Model").click());
   expect(options(container, "Model").map((node) => node.textContent)).toEqual(["test-claude"]);
+});
+
+it("pre-fills the preset's action policy sets, offers every set with its verdict, and sends the pick", async () => {
+  const container = await render();
+  expect(input(container, "Action policy sets").value).toBe("");
+  expect(container.textContent).toContain("test-reads");
+  await act(async () => input(container, "Action policy sets").click());
+  expect(options(container, "Action policy sets").map((node) => node.textContent)).toEqual([
+    "test-reads",
+    "test-broken · invalid",
+  ]);
+  await act(async () => input(container, "Action policy sets").click());
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: {}, response: new Response() } as never);
+  await type(input(container, "Name"), "picked");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({
+      body: expect.objectContaining({ preset: "test-preset", action_policy_sets: ["test-reads"] }),
+    })
+  );
 });
 
 it("clears an unavailable preset model and disables a harness with no offered models", async () => {

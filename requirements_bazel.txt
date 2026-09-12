@@ -259,9 +259,9 @@ anthropic==0.80.0 \
     #   ducktape (pyproject.toml)
     #   agent-framework-anthropic
     #   pydantic-ai-slim
-anyio[trio]==4.14.2 \
-    --hash=sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494 \
-    --hash=sha256:cfa139f3ed1a23ee8f88a145ddb5ac7605b8bbfd8592baacd7ce3d8bb4313c7f
+anyio[trio]==4.15.1 \
+    --hash=sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101 \
+    --hash=sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94
     # via
     #   ducktape (pyproject.toml)
     #   anthropic
@@ -1068,9 +1068,9 @@ claude-code-sdk==0.0.25 \
     --hash=sha256:0d9e1eba432d4fe8a2f75f06ec9bb4c310f39b1d55246e7e4b2c69bfdd69eab3 \
     --hash=sha256:3d6a4ef958182f311d6050776d2675d9b39650a2db221c582a0a5156472dcee3
     # via ducktape (pyproject.toml)
-click==8.4.2 \
-    --hash=sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6 \
-    --hash=sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76
+click==8.5.0 \
+    --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
+    --hash=sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34
     # via
     #   ducktape (pyproject.toml)
     #   beancount
@@ -1464,10 +1464,6 @@ debugpy==1.8.21 \
     # via
     #   inspect-ai
     #   ipykernel
-decorator==5.3.1 \
-    --hash=sha256:4cbcdd55a6efadb9dbea26b858f4fb3264567b52d69ca0d25b721b553f60ea82 \
-    --hash=sha256:f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c
-    # via ipython
 defusedxml==0.7.1 \
     --hash=sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69 \
     --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
@@ -1917,13 +1913,13 @@ google-api-core==2.33.0 \
     --hash=sha256:3a36bcc3e319783f4c97da41f6f45ea6ffcaa55848e341de16e09cb70243c2bb \
     --hash=sha256:a2e22a0c1d0f03eafff1858b38cf46f832d5902b0c052235bf0ab8402929fbdc
     # via google-api-python-client
-google-api-python-client==2.198.0 \
-    --hash=sha256:dfe3e16fb241af6e9c460a33f65085b3450e05cea09364f6b5d8997fb7e43e2a \
-    --hash=sha256:fabac935474e817da5e662ff61bf7139439d6f92b32d332a7318a2d45931e03e
+google-api-python-client==2.200.0 \
+    --hash=sha256:82aa18b851328ea04867fd51c5a0c8da2e1b86ec45ce08487e902e7726d4ee50 \
+    --hash=sha256:c0c2c4072a110b7fcc30ac151744d4410cddaba99c53cb4e815463308952b638
     # via ducktape (pyproject.toml)
-google-auth==2.56.3 \
-    --hash=sha256:40e229fc901f0a305b553050e5fce562d509bee0435be053abfa91582b51b90c \
-    --hash=sha256:8ec438808f813ad034535000261eed1067475d229d05bbf4216e78c3f2362e53
+google-auth==2.58.0 \
+    --hash=sha256:55e30cf15e737de92c5323d78cda8a83fcd57e7ffbaf900c4600039fd60a80fd \
+    --hash=sha256:8a9c4645bb4c8e91668fb1934b95ae6a8687084232753639220ba9bf04a1610d
     # via
     #   ducktape (pyproject.toml)
     #   google-api-core
@@ -2171,9 +2167,9 @@ hass-client==1.3.0 \
     --hash=sha256:13f91c30040e1383b0e63bed6b728f61e823264b822c70aaed47ef9f481ec574 \
     --hash=sha256:82856ff6898e730d03147a55af387f2031de994dddfdbe8750db2da52d38602d
     # via ducktape (pyproject.toml)
-hcloud==2.23.0 \
-    --hash=sha256:5a3fa1bbd1f87bfc5f0c726caebe041b9e1119b4361aafabc12fad284a2c445a \
-    --hash=sha256:c12dce3f14404ea342d79236292a15fbc4ceeb7861724a09dd3fe60cef513e0b
+hcloud==2.24.0 \
+    --hash=sha256:4b210d7f276193300534c240b22789a6c6a65a1f350051504a4918ee1da1c396 \
+    --hash=sha256:e8d3cdaad7def81acf644b8be5bb977df3a5c52ffec2006b7422b0b65b93753b
     # via ducktape (pyproject.toml)
 hf-xet==1.6.0 \
     --hash=sha256:0e6e21fa3cdfcdcd76748564bf593870a5e013f47d97cf10aed63aa222cff5b7 \
@@ -2512,9 +2508,9 @@ iniconfig==2.3.0 \
     --hash=sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730 \
     --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
     # via pytest
-inspect-ai==0.3.259 \
-    --hash=sha256:11542a4b8ddd7cbfd888efeeba833856fc683d43d3fc6f95cd3be9495dbdbf9e \
-    --hash=sha256:9ceba53a8a3859f187d4000a1309b02c98be820c9e6b1b5b112a61c997915670
+inspect-ai==0.3.263 \
+    --hash=sha256:503e7ff509d77fcdf65989027a19fea966fb668deb88a234468c3290964fd86a \
+    --hash=sha256:54553ca8bfe711853414b49d962e492a60fd4cac8df935be47287a4b719f92b1
     # via ducktape (pyproject.toml)
 inventree==0.23.2 \
     --hash=sha256:58f1840f0106e654b89197cde65311326f8ae60816483d95ee97ca651d1cb05e \
@@ -2530,9 +2526,9 @@ ipykernel==7.2.0 \
     # via
     #   ducktape (pyproject.toml)
     #   jupyterlab
-ipython==9.10.0 \
-    --hash=sha256:c6ab68cc23bba8c7e18e9b932797014cc61ea7fd6f19de180ab9ba73e65ee58d \
-    --hash=sha256:cd9e656be97618a0676d058134cd44e6dc7012c0e5cb36a9ce96a8c904adaf77
+ipython==9.17.1 \
+    --hash=sha256:6d1645743cfd1a07eb695d85aa2b5fa66721f8cbae9431d4049f7084bbf06509 \
+    --hash=sha256:8919be8c27f20a6f4423145028063f6637b42a03ce57665bb12015ee1f073529
     # via
     #   ducktape (pyproject.toml)
     #   ipykernel
@@ -3405,6 +3401,7 @@ markdown-it-py[linkify]==4.2.0 \
     --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
     --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
     # via
+    #   inspect-ai
     #   mdit-py-plugins
     #   rich
     #   textual
@@ -3579,9 +3576,9 @@ mautrix==0.21.1 \
     --hash=sha256:2cad21fcff32bd549192091f9b7b58c01980a7b46f827eef8f34e62d92762b67 \
     --hash=sha256:7685b998eae26f6c5b3a0e010e6dd2d838364009dd7d6319dac804988f4b6823
     # via ducktape (pyproject.toml)
-mcp[cli]==1.29.0 \
-    --hash=sha256:52d01f334de1868cc3bb2d6604931126a67631f99a6c5d3b82ba47290315ec36 \
-    --hash=sha256:f5a075bb611f23d6f4d080c6a1699fa62772eebc562ba9e66b306ddde1c755f7
+mcp[cli]==1.30.0 \
+    --hash=sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4 \
+    --hash=sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0
     # via
     #   ducktape (pyproject.toml)
     #   claude-agent-sdk
@@ -4506,9 +4503,9 @@ pillow==12.3.0 \
     # via
     #   ducktape (pyproject.toml)
     #   matplotlib
-pint==0.25.3 \
-    --hash=sha256:27eb25143bd5de9fcc4d5a4b484f16faf6b4615aa93ece6b3373a8c1a3c1b97d \
-    --hash=sha256:f8f5df6cf65314d74da1ade1bf96f8e3e4d0c41b51577ac53c49e7d44ca5acee
+pint==0.26.1 \
+    --hash=sha256:1bbde36eae57a5a289cd05081c6405618a5899814940752064ce351cd0204f71 \
+    --hash=sha256:e982b129415c09c63308f314ae44697d83e5c96f253bcc0d5b833fc3329eb6d4
     # via ducktape (pyproject.toml)
 plaid-python==39.2.0 \
     --hash=sha256:552aff15f8e4dbbf469fcab224465fa2359e68757b60df9c8ed40e8163aa6c20
@@ -4547,20 +4544,20 @@ pluggy==1.6.0 \
     #   datalayer-reactor
     #   pytest
     #   pytest-cov
-polars==1.43.2 \
-    --hash=sha256:22aa0cb92a1ee2d60d6a15a638b2e8e0dd99aea21ac0cd8fb29da8e382e075a9 \
-    --hash=sha256:c699671b99eb71ff53334d237917aaa3db5ad4dda480abcb6c80e0eaee7b677b
+polars==1.44.2 \
+    --hash=sha256:1bb331f17a40d9d931101533dcd33637b66edc61eb377b07020dac16a0f0377b \
+    --hash=sha256:86c8e26b6c2de8c8d344bb910b74dfc47b118ac3fe0f19b44909467990a0b281
     # via ducktape (pyproject.toml)
-polars-runtime-32==1.43.2 \
-    --hash=sha256:00e33c28e321410c8d66e814a90043101e3bdd9ed2c6dabda07565aa8adbbdf1 \
-    --hash=sha256:09339eacc6d392206e78aabbaaa37d7276eb969b798f46cb1f367fd718798c60 \
-    --hash=sha256:10ed36e615ab362feb7406e6d084e124b445ad284caa73bd93ae7e65745ed894 \
-    --hash=sha256:2cc3ff96fd44789b02eb5c15b98dfcb000101636b177d3034fae2feec19b118f \
-    --hash=sha256:350a4868cae85bf8b3f81b33ba47927c15256bd9264dfc8c0753f1b927eac9d3 \
-    --hash=sha256:452b400e59e7f56e4c6437f435e796903272a9388feee12de2bea049ae87025e \
-    --hash=sha256:6d5a7ae004a2723ebf4427f6d6a639f30f86af4cf077075f6b35d04711154fc3 \
-    --hash=sha256:91abf205d4ec93f92ba95386b7f8776559ae3dfce425ed2e527efa75d117d04a \
-    --hash=sha256:d7b7c486bccee75a6af0158b87077da3d054657e3c60036b28644f4e1c7fdbf7
+polars-runtime-32==1.44.2 \
+    --hash=sha256:10c0c695a418407617b5159db7d9a21074a733e4c6d61275b6762f25cb31ca99 \
+    --hash=sha256:1fd536720668ba203a16a20b08cd6b23057e407a0279cf36b2f35f879d6e3208 \
+    --hash=sha256:8598e7a20efba70bb74978c7df7af7c606ff4d79b9b48fdd808250b189bc9a13 \
+    --hash=sha256:a1bafb441e99199a62c63bf1bbdc0ea09ee9776dbac2bf31452b5000fb1df2f7 \
+    --hash=sha256:b84842f7d621aaca7a52e165e19a24f89db45f8aa13744941430218419a14a67 \
+    --hash=sha256:bbf9b45040291dc1c6c588c837019c33557bde25ec536562a9cca9e1f6dfcc45 \
+    --hash=sha256:c4a09fb14aad711526346efc0cb2015c2fd0555ce4118b6524e5debbaea65ff5 \
+    --hash=sha256:d51040d3ab40157f6db3c62be59cab5b80fb3c8d158924769c4982a1c8eef730 \
+    --hash=sha256:e0fd43720c8222ae39919c8ff891636d53b352706087120e62f83544dd3ff782
     # via polars
 port-for==1.0.0 \
     --hash=sha256:35a848b98cf4cc075fe80dc49ae5c3a78e3ca345a23bd39bf5252277b4eef5c2 \
@@ -4750,6 +4747,7 @@ psutil==7.2.2 \
     #   ducktape (pyproject.toml)
     #   inspect-ai
     #   ipykernel
+    #   ipython
     #   mirakuru
 psycopg[binary]==3.3.5 \
     --hash=sha256:ce5aa5cdb4f9379f00f487590e5890bfa7df9a164648c969ffa628505e21af4e \
@@ -5353,9 +5351,9 @@ pygit2==1.19.1 \
     --hash=sha256:fef27b206955e66e3a63664e2ec93821e00ce2d917f8b4eae87c738163c00e14 \
     --hash=sha256:ffe94118d39f6969fda594224b2b6df1ae79306adaf090ede65bcaf1a41b3a81
     # via ducktape (pyproject.toml)
-pygithub==2.9.1 \
-    --hash=sha256:2ec78fca30092d51a42d76f4ddb02131b6f0c666a35dfdf364cf302cdda115b9 \
-    --hash=sha256:59771d7ff63d54d427be2e7d0dad2208dfffc2b0a045fec959263787739b611c
+pygithub==2.10.0 \
+    --hash=sha256:192ada2a76e4afc7d6b37e500c9bfeba1731e6506697445a5ba1c4af8bf0b924 \
+    --hash=sha256:90ff24ef1cd1bd57124c2a3869cafee9d7b066909129ecdaba2c2d1903bc118d
     # via ducktape (pyproject.toml)
 pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
@@ -5402,9 +5400,9 @@ pyhamcrest==2.1.0 \
     --hash=sha256:c6acbec0923d0cb7e72c22af1926f3e7c97b8e8d69fc7498eabacaf7c975bd9c \
     --hash=sha256:f6913d2f392e30e0375b3ecbd7aee79e5d1faa25d345c8f4ff597665dcac2587
     # via ducktape (pyproject.toml)
-pyjwt[crypto]==2.13.0 \
-    --hash=sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423 \
-    --hash=sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728
+pyjwt[crypto]==2.14.0 \
+    --hash=sha256:77283c83fb56ecf566a886c757a714bc83668e38156de2cce8263302f42e0b86 \
+    --hash=sha256:ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc
     # via
     #   ducktape (pyproject.toml)
     #   mcp
@@ -5466,9 +5464,9 @@ pyparsing==3.3.2 \
     #   httplib2
     #   matplotlib
     #   mitmproxy
-pypdf==6.16.1 \
-    --hash=sha256:63fec31c4092ae50b6729beedcb469055b60d20c834bde1c402df241f371f644 \
-    --hash=sha256:c4d1b43ddae921387321cf63936cd16a7743b91d2da92f165c149a195c972ba9
+pypdf==6.18.1 \
+    --hash=sha256:2441fc839053745638d9b9ddb38ed66beed8d611f47a3036c9838fc4e3074dea \
+    --hash=sha256:ee93a2665670ecf57ee81d197a4ca548f3dc15f9cefc56e59b8140866aaa3de5
     # via ducktape (pyproject.toml)
 pyperclip==1.11.0 \
     --hash=sha256:244035963e4428530d9e3a6101a1ef97209c6825edab1567beac148ccc1db1b6 \
@@ -5512,9 +5510,9 @@ pytest-cov==7.0.0 \
     --hash=sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1 \
     --hash=sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861
     # via ducktape (pyproject.toml)
-pytest-env==1.5.0 \
-    --hash=sha256:89a15686ac837c9cd009a8a2d52bd55865e2f23c82094247915dae4540c87161 \
-    --hash=sha256:db8994b9ce170f135a37acc09ac753a6fc697d15e691b576ed8d8ca261c40246
+pytest-env==1.7.1 \
+    --hash=sha256:22341b945305b65ef4e53d7c678982cfd64b5c5800afdf7d37caad2362ea002c \
+    --hash=sha256:f2c5aed2621dbfc73c2866a710e2e456409495c5ac10905612c9509b3ee631a2
     # via ducktape (pyproject.toml)
 pytest-mock==3.15.1 \
     --hash=sha256:0a25e2eb88fe5168d535041d09a4529a188176ae608a6d249ee65abc0949630d \
@@ -6731,6 +6729,7 @@ typing-extensions==4.16.0 \
     #   agent-framework-core
     #   alembic
     #   anthropic
+    #   anyio
     #   asyncpg-stubs
     #   beautifulsoup4
     #   ezdxf

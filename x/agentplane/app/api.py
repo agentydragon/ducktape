@@ -34,7 +34,12 @@ from x.agentplane.app.action_federation import (
     operator_actions,
     upstream_failure_detail,
 )
-from x.agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyView, UnknownPolicySetError
+from x.agentplane.app.action_policy import (
+    ActionPolicyInventory,
+    ActionPolicySetView,
+    ActionPolicyView,
+    UnknownPolicySetError,
+)
 from x.agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -177,17 +182,19 @@ async def create_sandbox(
     inventory: Inventory, egress: Egress, action_policy: ActionPolicy, presets: Presets, spec: NewSandbox
 ) -> SandboxView:
     """Resolve an optional app preset, then create the same concrete Sandbox the no-preset API does.
-    The preset's action policy sets become one binding of the new Sandbox; there is no per-launch
-    pick for those, so a Sandbox without a preset has no binding until the operator writes one."""
+    The launch's action policy sets, the preset's unless picked explicitly, become one binding of
+    the new Sandbox; a launch picking none leaves it without one."""
     template_name: str | None = None
     annotations: dict[str, str] | None = None
     picked_policies = spec.policies
-    policy_sets: list[str] = []
+    policy_sets = spec.action_policy_sets
     if spec.preset is not None:
         preset = presets.sandbox(spec.preset)
         template_name = preset.template
         picked_policies = preset.policies if "policies" not in spec.model_fields_set else spec.policies
-        policy_sets = preset.action_policy_sets
+        policy_sets = (
+            preset.action_policy_sets if "action_policy_sets" not in spec.model_fields_set else spec.action_policy_sets
+        )
         # Validate and preserve only explicit Sandbox-level edits; current preset defaults remain live.
         overrides = spec.thread_defaults or ThreadDefaults()
         if spec.thread_preset is not None:
@@ -287,6 +294,15 @@ async def revoke_binding(egress: Egress, name: str) -> Response:
     """Revoke a runtime binding by deleting the rule; one from git is refused with 409."""
     await egress.revoke(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+action_policy_router = APIRouter(prefix="/action-policy", tags=["action-policy"])
+
+
+@action_policy_router.get("/sets")
+async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetView]:
+    """The namespace's sets with the Action Service's verdict on each: what a launch picks from."""
+    return await action_policy.list_policy_sets()
 
 
 threads = APIRouter(prefix="/threads", tags=["threads"])
@@ -623,6 +639,7 @@ def create_app(
         consent_router,
         connections_router,
         egress_router,
+        action_policy_router,
         live_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])

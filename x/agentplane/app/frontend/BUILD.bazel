@@ -353,6 +353,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":action_policy",
         ":client",
         ":launch_presets",
         ":lifecycle",
@@ -361,6 +362,7 @@ ts_library(
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/react-router",
     ],
 )
 
@@ -660,6 +662,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//:node_modules/react-router",
         "//:node_modules/vitest",
     ],
 )

@@ -275,12 +275,12 @@ def _subject_binding(index: PolicyIndex, binding: ActionPolicyBinding) -> Subjec
         labels=binding.metadata.labels,
         expires_at=binding.spec.expires_at,
         ready=_ready_view(binding.status.ready()),
-        policy_sets=[_set_view(policy_set) for _, policy_set in named if policy_set is not None],
+        policy_sets=[set_view(policy_set) for _, policy_set in named if policy_set is not None],
         missing_policy_sets=[name for name, policy_set in named if policy_set is None],
     )
 
 
-def _set_view(policy_set: ActionPolicySet | InvalidResource) -> ActionPolicySetView:
+def set_view(policy_set: ActionPolicySet | InvalidResource) -> ActionPolicySetView:
     return ActionPolicySetView(
         name=policy_set.metadata.name,
         generation=policy_set.metadata.generation,

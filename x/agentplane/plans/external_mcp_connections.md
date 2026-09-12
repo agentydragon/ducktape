@@ -13,7 +13,7 @@ sequence. Independently running Claude Code (for example on wyrm2) extends the c
 `EXTERNALMCP`; the [task DAG](task_dag.md) owns dependencies and status.
 
 The first external requests require human approval. Configurable
-[Action policies](action_policies.md), backend-account OAuth, and the broader Thread model do not
+[Action policies](../docs/action_policies.md), backend-account OAuth, and the broader Thread model do not
 gate this delivery. Identity means configured authority, Connection means runtime client enrollment,
 and Thread means execution/conversation state. This remains single-operator, with no multi-operator
 management. Sandbox callers use the same MCP frontend with workload bearers, without DCR.
@@ -97,8 +97,8 @@ race tests already exist; fix regressions found in delivery rather than planning
 
 ## Later policy and lifecycle work
 
-Policy definitions and ServiceAccount/Sandbox-to-policy assignments are the model decided in
-[Action policies](action_policies.md). Runtime Connection/grant/enrollment storage is already PostgreSQL, with encrypted
+Policy definitions and ServiceAccount/Sandbox-to-policy assignments are the landed
+[Action policies](../docs/action_policies.md) model. Runtime Connection/grant/enrollment storage is already PostgreSQL, with encrypted
 PostgreSQL storage for SDK OAuth state; do not reopen it as part of policy selection. Reusable
 policy references must allow an external Identity and a class of Sandboxes to share permissions
 without sharing caller ownership or copying rules. SandboxPreset remains an app-only recipe.

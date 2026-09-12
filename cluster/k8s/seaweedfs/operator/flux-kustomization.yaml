@@ -10,7 +10,7 @@ spec:
   path: ./cluster/k8s/seaweedfs/operator
   prune: true
   sourceRef:
-    kind: GitRepository
+    kind: ExternalArtifact
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
