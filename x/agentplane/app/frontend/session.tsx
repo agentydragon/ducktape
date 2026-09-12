@@ -441,14 +441,6 @@ export function SessionView({
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
         <Badge>{status}</Badge>
         {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
-        <Select
-          aria-label="Model"
-          data={modelOptions}
-          value={model}
-          onChange={(next) => void selectModel(next)}
-          disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
-          w={280}
-        />
         <ActionIcon
           variant="light"
           color="red"
@@ -506,9 +498,11 @@ export function SessionView({
           )}
         </Stack>
       </ScrollArea>
-      <Group align="flex-end" gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+      {/* The model picker and stop control sit under the composer, not the header: on a phone
+          that's the row already in thumb reach, and it's one thing keeping the header a
+          two-line-tall row instead of three. */}
+      <Stack gap="xs" style={{ flexShrink: 0 }}>
         <Textarea
-          style={{ flex: 1 }}
           placeholder="Enter sends, Ctrl+Enter for a new line"
           value={draft}
           autosize
@@ -518,17 +512,29 @@ export function SessionView({
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />
-        {sending && <Text role="status">Sending…</Text>}
-        <ActionIcon
-          size="lg"
-          variant="light"
-          aria-label="Interrupt"
-          onClick={() => void run(() => interruptSession(sandbox, sessionId))}
-          disabled={!activeTurn}
-        >
-          <IconPlayerStop size={16} />
-        </ActionIcon>
-      </Group>
+        <Group justify="space-between" wrap="nowrap">
+          <Select
+            aria-label="Model"
+            data={modelOptions}
+            value={model}
+            onChange={(next) => void selectModel(next)}
+            disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
+            w={200}
+          />
+          <Group gap="xs" wrap="nowrap">
+            {sending && <Text role="status">Sending…</Text>}
+            <ActionIcon
+              size="lg"
+              variant="light"
+              aria-label="Interrupt"
+              onClick={() => void run(() => interruptSession(sandbox, sessionId))}
+              disabled={!activeTurn}
+            >
+              <IconPlayerStop size={16} />
+            </ActionIcon>
+          </Group>
+        </Group>
+      </Stack>
     </Stack>
   );
 }
