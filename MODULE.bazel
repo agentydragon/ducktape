@@ -634,8 +634,8 @@ use_repo(buildbuddy, "buildbuddy_toolchain")
 register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
 
 # Rust rules
-bazel_dep(name = "rules_rust", version = "0.74.0")
-bazel_dep(name = "rules_rust_prost", version = "0.74.0")
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_rust_prost", version = "0.70.0")
 
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
