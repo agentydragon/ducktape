@@ -57,7 +57,8 @@ separate native spending-amount or allocation-weight callback API.
 
 The action session supports one decision-making household with scripted
 counterparties, public securities, reduced-form TLH portfolios, cash, due claims
-and held dated bonds. It does not support household housing or PE actions.
+and held dated bonds, and services a mortgage that exists at month zero as a
+tracked contract. It does not support household housing purchases or PE actions.
 Configured scenario adapters use Python-controlled financial steps while retaining
 their scripted housing/PE events and funding conventions; they do not provide an
 alternative executable policy interface.

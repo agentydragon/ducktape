@@ -8,8 +8,9 @@ experiment policies and their outer time loops are Python code.
 
 An experiment supplies a `Scenario`, market paths, jurisdiction rules and
 locations to `compile_run` in <compiler/execution.py>. It then either tracks an
-`EconomicAgent` subclass (<agent.py>) on one `World` (<world.py>) per path and
-loops over `world.step()`, or starts the common `ActionSession` and submits one
+`EconomicAgent` subclass (<agent.py>), and any `Mortgage` (<mortgage.py>) that
+exists at month zero, on one `World` (<world.py>) per path and loops over
+`world.step()`, or starts the common `ActionSession` and submits one
 batch of ordered actions per decision month. Both read typed results from
 <results.py> and books from <books.py>. Exact requests are defined in
 <actions.py>; the statements and dues an actor is posted when a month opens are

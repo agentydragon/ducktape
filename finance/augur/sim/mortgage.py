@@ -6,7 +6,8 @@ settle; retain paid-interest facts until the caller completes tax assessment.
 
 from dataclasses import dataclass, field
 
-from finance.augur.sim.books import AccountRef, MortgageState
+from finance.augur.sim.actor import Actor, MonthOpened, Statement
+from finance.augur.sim.books import AccountRef, MortgageState, Record
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.money import round_ratio
 from finance.augur.sim.observations import Claim
@@ -89,18 +90,55 @@ class MortgagePayment:
     rental_interest: int
 
 
+class ServicingStatement(Statement):
+    """What a contract is told at open: the ledger's outstanding principal and the property's rented share."""
+
+    principal: int
+    rented_fraction_ppb: int
+
+
+class InstallmentPaid(Record):
+    """A quoted installment settled in full; `principal_after` is the ledger balance it left."""
+
+    payment: MortgagePayment
+    principal_after: int
+
+
 @dataclass
-class Mortgage:
-    """Servicing memory; each operation reads outstanding principal from its caller's ledger."""
+class Mortgage(Actor[MonthOpened | ServicingStatement | InstallmentPaid, MortgagePayment]):
+    """Servicing memory; each operation reads outstanding principal from its caller's ledger.
+
+    On `MonthOpened` the contract quotes this month's installment from the servicing
+    statement it was posted; the ledger registers the quote as the borrower's due.
+    `opening_principal` is the balance the ledger opens with when the contract is
+    tracked on a world; it is `None` for a loan whose origination a purchase books.
+    """
 
     terms: MortgageTerms
+    opening_principal: int | None = None
     monthly_payment: int = field(init=False)
+    servicing: ServicingStatement | None = field(init=False, default=None)
     interest_paid_ytd: int = field(init=False, default=0)
     rental_interest_paid_ytd: int = field(init=False, default=0)
     active: bool = field(init=False, default=True)
 
     def __post_init__(self) -> None:
         self.monthly_payment = _monthly_payment(self.terms)
+        if self.opening_principal is not None:
+            _count(self.opening_principal, "opening principal")
+
+    def handle(self, message: MonthOpened | ServicingStatement | InstallmentPaid) -> list[MortgagePayment]:
+        match message:
+            case ServicingStatement():
+                self.servicing = message
+            case MonthOpened():
+                if self.servicing is None or self.servicing.month != message.month:
+                    raise ValueError("a mortgage quotes from this month's servicing statement")
+                quote = self.payment(message.month, self.servicing.principal, self.servicing.rented_fraction_ppb)
+                return [] if quote is None else [quote]
+            case InstallmentPaid():
+                self.record_payment(message.payment, message.principal_after)
+        return []
 
     def payment(self, month: int, principal: int, rented_fraction_ppb: int) -> MortgagePayment | None:
         """Quote the next installment without changing servicing or ledger state."""

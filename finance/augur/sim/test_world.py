@@ -2,17 +2,21 @@
 
 from copy import deepcopy
 from dataclasses import replace
+from itertools import pairwise
 
 import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
+from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, assemble
+from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket
 from finance.augur.sim.configured import execute, product_row
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AgentId
+from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     CompiledRun,
@@ -23,7 +27,7 @@ from finance.augur.sim.prepared import (
     PreparedTransfer,
     _ScheduledSale,
 )
-from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction
+from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
 from finance.augur.sim.world import Capture, World
@@ -682,9 +686,11 @@ class _Household(EconomicAgent):
         super().__init__(agent_id)
         self.amounts = amounts
         self.months: list[int] = []
+        self.dues: list[tuple[int, str, int]] = []
 
     def decide(self, observation: Observation) -> list[Action]:
         self.months.append(observation.month)
+        self.dues.extend((observation.month, claim.obligation_type, claim.amount_due) for claim in observation.claims)
         actions: list[Action] = [
             PayClaim(
                 request_id=index,
@@ -758,6 +764,101 @@ def test_tracking_is_checked_before_the_world_starts() -> None:
     untracked.start()
     with pytest.raises(ValueError, match="tracked agent"):
         untracked.step()
+
+
+def loan(opening_principal: int | None = 6000) -> Mortgage:
+    """One year at 12% on 6000: the level installment is 533."""
+    return Mortgage(
+        MortgageTerms(
+            liability_id="test-loan",
+            property_id="test-home",
+            borrower=CASH,
+            lender=EXOGENOUS,
+            origination_month=0,
+            origination_principal=6000,
+            annual_interest_rate_ppb=120_000_000,
+            term_months=12,
+        ),
+        opening_principal=opening_principal,
+    )
+
+
+def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
+    world = World(actor_run(horizon=14), 0)
+    household, mortgage = _Household({}), loan()
+    world.track(household)
+    world.track(mortgage)
+    world.start()
+    receivable = AccountRef(agent_id=WORLD, account_id="asset:mortgage-receivable:test-loan")
+    assert (world.mortgage_principal("test-loan"), world.accounting.ledger.balance(receivable)) == (6000, 6000)
+    principals, interest_ytd = [6000], []
+    paid: list[tuple[int, int, int]] = []
+    while not world.finished:
+        world.step()
+        assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in world.accounting.journal)
+        paid.extend((row.month, row.interest, row.principal) for row in world.accounting.mortgage_payments)
+        [state] = world.book().mortgages
+        principals.append(state.principal)
+        interest_ytd.append(state.interest_paid_ytd)
+    assert world.stop is None
+    assert world.accounting.ledger.trial_balance() == 0
+    assert [due for due in household.dues if due[1] == "mortgage_payment"] == [
+        (month, "mortgage_payment", interest + principal) for month, interest, principal in paid
+    ]
+    assert [month for month, _, _ in paid] == list(range(1, 13))
+    assert paid[0] == (1, 60, 473)
+    assert principals[:2] == [6000, 6000]
+    assert [before - after for before, after in pairwise(principals[1:14])] == [principal for _, _, principal in paid]
+    assert principals[-2:] == [0, 0]
+    assert sum(principal for _, _, principal in paid) == 6000
+    # Year-to-date interest accrues through November, resets at the December close and restarts.
+    assert interest_ytd[10] == sum(interest for month, interest, _ in paid if month <= 10)
+    assert interest_ytd[11] == 0
+    assert interest_ytd[12] == paid[-1][1]
+    [state] = world.book().mortgages
+    assert (state.active, world.accounting.ledger.balance(receivable)) == (False, 0)
+    assert checking(world) == 10_000 - sum(interest + principal for _, interest, principal in paid)
+
+
+class _Deadbeat(EconomicAgent):
+    def decide(self, observation: Observation) -> list[Action]:
+        return []
+
+
+def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> None:
+    world = World(actor_run(horizon=3), 0)
+    mortgage = loan()
+    world.track(_Deadbeat(HOUSEHOLD))
+    world.track(mortgage)
+    world.start()
+    world.step()
+    assert world.stop is None
+    world.step()
+    assert world.finished
+    assert world.stop == UnpaidClaims(month=1, claims=[ClaimId(month=1, index=0)])
+    assert (mortgage.active, world.mortgage_principal("test-loan"), checking(world)) == (True, 6000, 10_000)
+
+
+def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> None:
+    world = World(actor_run(), 0)
+    with pytest.raises(ValueError, match="outstanding"):
+        world.track(loan(None))
+    with pytest.raises(ValueError, match="unknown actor"):
+        world.track(
+            Mortgage(replace(loan().terms, borrower=AccountRef(agent_id="test-nobody", account_id="checking")), 6000)
+        )
+    with pytest.raises(ValueError, match="not declared"):
+        world.track(
+            Mortgage(replace(loan().terms, borrower=AccountRef(agent_id=HOUSEHOLD, account_id="test-none")), 6000)
+        )
+    world.track(loan())
+    with pytest.raises(ValueError, match="duplicate"):
+        world.track(loan())
+    world.start()
+    with pytest.raises(ValueError, match="before starting"):
+        world.track(Mortgage(replace(loan().terms, liability_id="test-second"), 6000))
+    with pytest.raises(ValueError, match="servicing statement"):
+        loan().handle(MonthOpened(month=0))
 
 
 if __name__ == "__main__":

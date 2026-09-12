@@ -66,8 +66,14 @@ consequences.
 
 `mortgage.py` owns loan terms, the fixed installment, active servicing state and
 paid-interest YTD. Outstanding principal remains authoritative in the liability
-ledger. The session supplies immutable payment and year-end facts to Python accounting;
-capture DTOs do not maintain another mutable mortgage. Configured purchase/sale
+ledger: at open the world posts each contract a `ServicingStatement` carrying it,
+the contract's `MonthOpened` reply is the installment quote the ledger registers
+as the borrower's `InstallmentDue`, and a settled installment comes back as
+`InstallmentPaid`. A contract that exists at month zero is tracked with its
+outstanding balance, which opens the ledger against `equity:opening`; a
+configured purchase's loan is originated by the purchase entry and then serviced
+the same way. The world supplies immutable payment and year-end facts to Python
+accounting; capture DTOs do not maintain another mutable mortgage. Configured purchase/sale
 timing is documented in <../docs/rental_and_lifecycle.md>.
 
 `sim/world.py::World` owns one path's books, TLH portfolios, mortgages,

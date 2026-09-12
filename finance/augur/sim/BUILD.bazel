@@ -431,6 +431,7 @@ py_library(
     name = "mortgage",
     srcs = ["mortgage.py"],
     deps = [
+        ":actor",
         ":books",
         ":fixed_point",
         ":money",
@@ -944,11 +945,14 @@ py_test(
     srcs = ["test_world.py"],
     deps = [
         ":actions",
+        ":actor",
         ":agent",
+        ":books",
         ":capture",
         ":configured",
         ":events",
         ":ids",
+        ":mortgage",
         ":observations",
         ":prepared",
         ":results",
@@ -1067,10 +1071,7 @@ py_library(
 py_library(
     name = "actor",
     srcs = ["actor.py"],
-    deps = [
-        ":books",
-        ":ids",
-    ],
+    deps = [":books"],
 )
 
 py_library(

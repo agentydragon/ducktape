@@ -67,7 +67,9 @@ class EconomicAgent(Actor[Mail, Action]):
     """
 
     def __init__(self, agent_id: AgentId) -> None:
-        super().__init__(agent_id)
+        if not agent_id.strip():
+            raise ValueError("agent_id must not be empty")
+        self.agent_id = agent_id
         self.mail: list[Mail] = []
 
     def handle(self, message: Mail) -> list[Action]:

@@ -3,7 +3,6 @@
 from abc import ABC, abstractmethod
 
 from finance.augur.sim.books import Record
-from finance.augur.sim.ids import AgentId
 
 
 class Statement(Record):
@@ -23,12 +22,9 @@ class Actor[In, Out](ABC):
 
     The generic parameters say what an actor accepts and produces; `handle` bodies are
     checked against them. A statement needs no reply, so handling one returns nothing.
+    Mail is delivered to the object itself; an actor the ledger scopes carries the
+    `AgentId` its accounts are declared under.
     """
-
-    def __init__(self, agent_id: AgentId) -> None:
-        if not agent_id.strip():
-            raise ValueError("agent_id must not be empty")
-        self.agent_id = agent_id
 
     @abstractmethod
     def handle(self, message: In) -> list[Out]: ...
