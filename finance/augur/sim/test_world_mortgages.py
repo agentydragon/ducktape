@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import ClaimId, PayClaim
+from finance.augur.sim.capture import FinancialCapture
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.prepared import (
     CompiledRun,
@@ -141,11 +142,10 @@ def installment(mortgage: Mortgage, month: int, principal_before: int, principal
 def fingerprint(world: World) -> tuple[object, ...]:
     return deepcopy(
         (
-            world.book([]),
+            world.book(),
             world.accounting.tax.years,
             world.accounting.tax.income.by_source,
             world.accounting.journal,
-            world.accounting.journal_entry_count,
             world.accounting.transfers,
             world.accounting.mortgage_payments,
             world.properties.purchases,
@@ -158,7 +158,7 @@ def fingerprint(world: World) -> tuple[object, ...]:
 def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff(
     run: CompiledRun, mortgage: Mortgage
 ) -> None:
-    world = World(run, 0, capture_mode="forensic", actor=None)
+    world = World(run, 0)
     assert world.mortgage_principal("test-mortgage") == 0
     for month, ending_principal in enumerate((0, 0, 60_000, 59_000, 58_000, 0)):
         active = {"test-mortgage": mortgage} if month >= 2 else {}
@@ -193,13 +193,11 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
         if paid_off:
             mortgage.payoff()
         assert world.mortgage_principal("test-mortgage") == ending_principal
-        world.close_books(
-            failed=False,
-            shortfall=0,
-            mortgages=list(active.values()),
-            snapshots=[mortgage.observe(ending_principal)] if month >= 2 else [],
-        )
-    financial = world.finish([mortgage.observe(0)]).financial
+        world.close_books(failed=False, mortgages=list(active.values()))
+    # No month was opened through `open_month`, so every month's outcomes are still in the buffers.
+    capture = FinancialCapture(world, capture="forensic")
+    capture.record()
+    financial = capture.financial()
     assert financial is not None
     assert len(financial.mortgage_payments) == 2
     assert all(row.from_account_id == "savings" for row in financial.mortgage_payments)
@@ -222,7 +220,7 @@ def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(run: Compi
         series=(replace(run.series[0], values=(50, 100, 200, 240, 300, 360, 800, 500, 7, 200, 240, 300, 360, 800)),),
     )
     for rollout in range(2):
-        world = World(run, rollout, capture_mode="forensic", actor=None)
+        world = World(run, rollout)
         for month in range(6):
             world.prepare_month(month, {}, {})
             world.assemble_claims([])
@@ -232,7 +230,7 @@ def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(run: Compi
                 if month >= 3:
                     assert world.properties.market_value(purchase, world.market, month) == expected_mark
                     assert state.adjusted_basis == 100_000
-            world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
+            world.close_books(failed=False, mortgages=[])
         sale = world.properties.sales[0]
         assert (sale.gross_proceeds, sale.net_cash_to_owner, sale.realized_gain) == (180_000, 180_000, 80_000)
         assert world.account_balance(HOUSEHOLD, "checking") == 280_000
@@ -252,7 +250,7 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
         ),
     )
     mortgage = Mortgage(replace(mortgage.terms, origination_month=0))
-    world = World(run, 0, capture_mode="summary", actor=None)
+    world = World(run, 0)
     before = fingerprint(world)
     with pytest.raises(ValueError, match="mortgage origination"):
         world.prepare_month(0, {}, {})
@@ -260,7 +258,7 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
     assert world.mortgage_principal("test-mortgage") == 0
     world.prepare_month(0, {"test-mortgage": mortgage}, {})
     world.assemble_claims([])
-    world.close_books(failed=False, shortfall=0, mortgages=[mortgage], snapshots=[mortgage.observe(60_000)])
+    world.close_books(failed=False, mortgages=[mortgage])
     invalid = deepcopy(mortgage)
     if bad_payoff == "inactive":
         invalid.payoff()

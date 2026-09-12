@@ -4,10 +4,12 @@ A `JointHousehold` agent (an `EconomicAgent` subclass) composes the
 [bounded annual spending rule](../bounded_spending/README.md) with the
 [allocation example's cash-band/glide proposals](../allocation_glide/README.md).
 Each selected path is its own `World` tracking one fresh household; the experiment
-loops over `world.step()`, which asks the household to decide once per month. It
-reserves due claims plus intended consumption before any purchase and submits
-trades → claim payments → consumption. Helpers propose; the world owns exact lots,
-taxes, settlement and terminal rejection, and the household's intentions live on
+loops over `world.step()`, which asks the household to decide once per month, and
+reads what it measures from world state after each step (payments, taxes, assets,
+and for replays the month's journal and dispositions). The world keeps no history.
+The household reserves due claims plus intended consumption before any purchase and
+submits trades → claim payments → consumption. Helpers propose; the world owns exact
+lots, taxes, settlement and terminal rejection, and the household's intentions live on
 its instance.
 
 ```bash
@@ -37,7 +39,8 @@ is imposed. This is a composition example, not Guyton–Klinger or personal advi
 
 `execution-input.json` contains the exact materialized situation, paths and tax
 rules. `experiment.json` records the grid and reporting conventions. Each cell
-retains compact results plus selected `[2, 0]` forensic replays with original IDs.
+retains its measurements plus selected `[2, 0]` replays with original IDs, the
+replays carrying the journal and dispositions the experiment copied month by month.
 
 Measurements keep policy intention separate from attempted consumption requests
 and actual payments. A rejected consumption has known zero paid; consumption

@@ -38,11 +38,13 @@ Previously recorded independent roadmap work retains its own scope.
 
 Selected 2026-09-12. COMPOSE implements it in slices; each slice moves its
 durable statements to `SPEC.md` and `sim/DESIGN.md`, and this section leaves with
-the last one. Landed: `EconomicAgent`, `World.track/start/step/rollout` over the
-existing `CompiledRun`, the session as a layer over N worlds. Remaining: the
-constructor over tracked components instead of the scenario bag, the typed
-message queue and inbox, untracked domains absent from results, and a
-month-zero `Mortgage` as a tracked contract.
+the last one. Landed: `EconomicAgent`, `World.track/start/step` over the existing
+`CompiledRun`, the session as a layer over N worlds, and a present-tense world:
+no capture mode, no subject actor, no history; components keep only the state a
+later month reads plus this month's outcomes, and every caller records what it
+wants between steps. Remaining: the constructor over tracked components instead
+of the scenario bag, the typed message queue and inbox, untracked domains absent
+from results, and a month-zero `Mortgage` as a tracked contract.
 
 The experiment constructs an empty `World`, tracks the economic objects that take
 part, then owns the loop around `World.step()`:
@@ -135,12 +137,19 @@ An omitted duty must reject or produce an explicit incomplete/failure result,
 not silently certify the period. Checkpoints, nested forecasts, a many-agent
 economy and a throughput target are not prerequisites.
 
-## GMETRICS — experiment-owned measurements and recording
+## GMETRICS — decided: every caller records what it wants, between steps
 
-**Agreed responsibility:** experiments and applications choose their measurements;
-financial state does not grow a universal app-specific metric tuple.
-**Unresolved mechanism:** how observations, optional history and collectors are
-exposed and where collection is orchestrated.
+Selected 2026-09-12. The world exposes present state and each component's outcomes
+for the current month; it assembles no frame, log, summary or metric on anyone's
+behalf. A caller reads the values it cares about before or after `step()` and keeps
+them itself: the batch session builds the `Summary` and `Trace` its `Finished`
+promises, the configured runner builds `WorldResult` through
+`capture.FinancialCapture`, an experiment records only what it measures. Inside a
+component the rule is: a field stays if a later month reads it to compute the
+future; a log nothing reads is history and leaves. No observer class, collector
+protocol or event bus is introduced; if repetition across callers earns a shared
+helper later, it is extracted from the code that actually repeats. The rest of this
+section is the comparison that led here, kept until RECORD moves the app's slab.
 
 The operator's pull-style example is a candidate:
 

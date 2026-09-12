@@ -66,8 +66,8 @@ def private_issuer(asset: str) -> str | None:
 class Holdings:
     def __init__(self, scenario: PreparedScenario, accounting: Accounting) -> None:
         self.lots = [Lot(spec, spec.units, spec.basis) for spec in scenario.initial_lots]
+        # This month's dispositions, cleared by `begin_month`; lots are the state.
         self.dispositions: list[Disposition] = []
-        self.disposition_count = 0
         for pool in scenario.holding_pools:
             accounting.ledger.ensure_account(basis_account(pool.agent_id, pool.account_id, pool.asset_id))
             accounting.ledger.ensure_account(gain_account(pool.agent_id))
@@ -89,6 +89,9 @@ class Holdings:
                         ],
                     )
                 )
+
+    def begin_month(self) -> None:
+        self.dispositions.clear()
 
     def fifo(self, candidates: Sequence[int], units: int) -> tuple[LotSale, ...]:
         if units <= 0:
@@ -237,9 +240,6 @@ class Holdings:
                     gain,
                 )
             )
-        count = self.disposition_count + len(dispositions)
-        if count >= 1 << 64:
-            raise OverflowError("integer overflow during disposition count")
         accounting.apply(
             JournalEntry(
                 month=month,
@@ -260,9 +260,7 @@ class Holdings:
             self.lots[index].units_remaining = units
             self.lots[index].basis_remaining = basis
         accounting.tax = tax
-        self.disposition_count = count
-        if accounting.capture != "summary":
-            self.dispositions.extend(dispositions)
+        self.dispositions.extend(dispositions)
 
     def buy(self, scenario: PreparedScenario, accounting: Accounting, month: int, request: Buy, *, price: int) -> None:
         cash = AccountRef(agent_id=request.agent_id, account_id=request.cash_account_id)

@@ -42,7 +42,12 @@ The batch form drives one such world per selected path:
 ```
 
 The caller owns the time loop; a tracked agent owns its memory, a batch policy's
-memory belongs to the caller. Each path is stateful;
+memory belongs to the caller. `World` has no capture mode, no named subject and no
+history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
+hold the current month and are cleared when the next month opens, so a caller that
+wants a history copies them between steps. `ActionSession` records the summary and
+trace it returns; the configured runner records `WorldResult` through
+`capture.FinancialCapture`; an experiment records only what it measures. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
 actor-scoped facts, not future sampled market trajectories. The Python session
 owns month/phase sequencing, active paths, receipts and fatal-stop lifecycle.
@@ -71,8 +76,8 @@ Money and quantities use their declared fixed-point scales. Canonical state is
 not reconstructed by replaying event descriptions. `books.py` and `results.py`
 define typed books, receipts, stops and completed results; receipts reuse the
 request definitions in `actions.py`. `events.py` defines
-the columnar event frames. Compact capture and selected dense/forensic capture
-come from the same financial execution.
+the columnar event frames. Compact and dense/forensic capture are choices of the
+recorder outside the world, over the same financial execution.
 
 Opening snapshot zero precedes events. A stopped event month `f` has an ending
 book at snapshot `f + 1`, marked at the already observed month `f`; no future

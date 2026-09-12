@@ -33,6 +33,7 @@ py_library(
         ":scenario",
         "//finance/augur/sim:artifacts",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:holdings",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:quantiles",
         "//finance/augur/sim:results",

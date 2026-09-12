@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
+from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.prepared import CompiledRun, PreparedHoldingPool, PreparedLot, PreparedSeries, _TenderPolicy
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, prepared_scenario
 from finance.augur.sim.validation import validate
@@ -84,14 +85,19 @@ def recovery_run(total: int, positions: tuple[tuple[int, int], ...], *, earlier_
     return run
 
 
-def execute(run: CompiledRun) -> World:
-    world = World(run, 0, capture_mode="forensic", actor=None)
+def execute(run: CompiledRun) -> tuple[World, FinancialOutput]:
+    world = World(run, 0)
+    capture = FinancialCapture(world, capture="forensic")
+    world.start()
     for month in range(run.scenario.horizon_months):
-        world.prepare_month(month, {}, {})
         world.private_equity.advance(world.scenario, world.accounting, world.holdings, world.market, [], month)
-        world.assemble_claims([])
-        world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    return world
+        world.close_month()
+        capture.record()
+        if not world.finished:
+            world.open_month()
+    financial = capture.financial()
+    assert financial is not None
+    return world, financial
 
 
 @pytest.mark.parametrize(
@@ -104,9 +110,7 @@ def execute(run: CompiledRun) -> World:
     ],
 )
 def test_recovery_total(total: int, positions: tuple[tuple[int, int], ...], proceeds: tuple[int, ...]) -> None:
-    world = execute(recovery_run(total, positions))
-    financial = world.finish([]).financial
-    assert financial is not None
+    world, financial = execute(recovery_run(total, positions))
     assert financial.failed_month is None
     assert tuple(row.proceeds for row in financial.dispositions) == proceeds
     assert sum(row.proceeds for row in financial.dispositions) == total
@@ -126,9 +130,7 @@ def test_recovery_total(total: int, positions: tuple[tuple[int, int], ...], proc
 
 
 def test_recovery_cashout_applies_to_the_remaining_position_after_an_earlier_sale() -> None:
-    world = execute(recovery_run(2, ((3, 1), (1, 1)), earlier_sale=True))
-    financial = world.finish([]).financial
-    assert financial is not None
+    world, financial = execute(recovery_run(2, ((3, 1), (1, 1)), earlier_sale=True))
     assert financial.failed_month is None
     assert (financial.dispositions[0].proceeds, financial.dispositions[0].basis) == (18, 2)
     assert [(row.units, row.basis, row.proceeds) for row in financial.dispositions[1:]] == [(1, 1, 1), (1, 4, 1)]

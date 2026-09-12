@@ -8,10 +8,10 @@ import pytest_bazel
 
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.agent import EconomicAgent
-from finance.augur.sim.capture import WorldResult
+from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket
-from finance.augur.sim.configured import execute
-from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
+from finance.augur.sim.configured import execute, product_row
+from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     CompiledRun,
@@ -91,8 +91,23 @@ def cash_only() -> CompiledRun:
     )
 
 
-def world_for(run: CompiledRun, mode: Capture = "forensic", rollout: int = 0) -> World:
-    return World(run, rollout, capture_mode=mode, actor=HOUSEHOLD)
+def world_for(run: CompiledRun, rollout: int = 0) -> World:
+    world = World(run, rollout)
+    world.start()
+    return world
+
+
+def checking(world: World) -> int | None:
+    return world.account_balance(HOUSEHOLD, "checking")
+
+
+def next_month(world: World, capture: FinancialCapture, *, failed: bool = False) -> None:
+    """Close the open month the way `step` does, record it, and open the next one unless finished."""
+    world.failed = world.failed or failed
+    world.close_month()
+    capture.record()
+    if not world.finished:
+        world.open_month()
 
 
 def sell(units: int) -> Sell:
@@ -149,8 +164,7 @@ def bill(amount: int) -> PreparedObligation:
 
 def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: CompiledRun) -> None:
     world = world_for(cash_only)
-    world.prepare_month(0, {}, {})
-    world.assemble_claims([])
+    capture = FinancialCapture(world, capture="forensic")
     observation = world.observe(HOUSEHOLD)
     assert len(observation.holding_pools) == 1
     assert observation.holding_pools[0].account_id == "empty-brokerage"
@@ -159,15 +173,13 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
     action = buy("first-purchase", "checking", 2_000_000).model_copy(
         update={"holding_account_id": "empty-brokerage", "lot_id": "new-position"}
     )
-    assert isinstance(world.apply(HOUSEHOLD, action, 0), Executed)
-    world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    world.prepare_month(1, {}, {})
-    world.assemble_claims([])
+    assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
+    next_month(world, capture)
     observation = world.observe(HOUSEHOLD)
     assert observation.holding_pools[0].price == 2000
     assert (observation.public_holdings, observation.cash) == (4000, 500)
-    world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    financial = world.finish([]).financial
+    next_month(world, capture)
+    financial = capture.financial()
     assert financial is not None
     [lot] = financial.months[-1].lots
     assert (lot.units_remaining, lot.basis_remaining, lot.account_id) == (2_000_000, 2000, "empty-brokerage")
@@ -176,14 +188,14 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
 
 def test_declaring_an_empty_pool_does_not_invest_cash_without_an_action(cash_only: CompiledRun) -> None:
     world = world_for(cash_only)
-    for month in range(2):
-        world.prepare_month(month, {}, {})
-        world.assemble_claims([])
-        world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    summary = world.finish([]).summary
-    assert summary is not None
-    assert not summary.ending_book.lots
-    assert summary.cash[0].values == [2500] * 3
+    capture = FinancialCapture(world, capture="summary")
+    balances = [checking(world)]
+    for _ in range(2):
+        next_month(world, capture)
+        balances.append(checking(world))
+    assert world.finished
+    assert not world.book().lots
+    assert balances == [2500] * 3
 
 
 @pytest.mark.parametrize("wrong_scale", [False, True])
@@ -191,27 +203,20 @@ def test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation(
     cash_only: CompiledRun, wrong_scale: bool
 ) -> None:
     world = world_for(cash_only)
-    world.prepare_month(0, {}, {})
-    world.assemble_claims([])
+    capture = FinancialCapture(world, capture="forensic")
     action = buy("invalid-purchase", "checking", 1).model_copy(
         update={
             "holding_account_id": "empty-brokerage" if wrong_scale else "other-brokerage",
             "quantity_scale": 10 if wrong_scale else 1_000_000,
         }
     )
-    before = deepcopy(
-        (world.book([]), world.accounting.journal, world.holdings.dispositions, world.accounting.journal_entry_count)
-    )
-    assert isinstance(world.apply(HOUSEHOLD, action, 0), Rejected)
-    assert (
-        world.book([]),
-        world.accounting.journal,
-        world.holdings.dispositions,
-        world.accounting.journal_entry_count,
-    ) == before
-    assert world.account_balance(HOUSEHOLD, "checking") == 2500
-    world.close_books(failed=True, shortfall=0, mortgages=[], snapshots=[])
-    financial = world.finish([]).financial
+    before = deepcopy((world.book(), world.accounting.journal, world.holdings.dispositions))
+    assert isinstance(world.execute(HOUSEHOLD, action).outcome, Rejected)
+    assert (world.book(), world.accounting.journal, world.holdings.dispositions) == before
+    assert checking(world) == 2500
+    next_month(world, capture)
+    assert world.finished
+    financial = capture.financial()
     assert financial is not None
     assert not financial.months[-1].lots
     assert all(entry.cause_id != "invalid-purchase" for entry in financial.journal)
@@ -263,9 +268,8 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
         ),
     )
     world = world_for(run)
+    capture = FinancialCapture(world, capture="forensic")
     for month in range(13):
-        world.prepare_month(month, {}, {})
-        world.assemble_claims([])
         observation = world.observe(HOUSEHOLD)
         assert observation.cash == (20_000 if month == 0 else 0)
         assert len(observation.claims) == (1 if month in (0, 12) else 0)
@@ -274,8 +278,8 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
             assert claim.amount_due == (50_000 if month == 0 else 1500)
         units = 30_000_000 if month == 0 else 1_500_000 if month == 12 else 0
         if units:
-            assert isinstance(world.apply(HOUSEHOLD, sell(units), 0), Executed)
-        for index, claim in enumerate(observation.claims):
+            assert isinstance(world.execute(HOUSEHOLD, sell(units)).outcome, Executed)
+        for claim in observation.claims:
             action = PayClaim(
                 request_id=7,
                 cause_id=f"pay-{claim.cause_id}",
@@ -283,10 +287,10 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
                 from_account=claim.from_account,
                 amount=claim.amount_due,
             )
-            assert isinstance(world.apply(HOUSEHOLD, action, index + 1), Executed)
+            assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
         assert not world.unpaid_claims(HOUSEHOLD)
-        world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    financial = world.finish([]).financial
+        next_month(world, capture)
+    financial = capture.financial()
     assert financial is not None
     assert len(financial.months) == 14
     sale = financial.dispositions[0]
@@ -298,8 +302,7 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
 
 def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
     world = world_for(actor_run())
-    world.prepare_month(0, {}, {})
-    world.assemble_claims([])
+    capture = FinancialCapture(world, capture="forensic")
     actions: list[Action] = [
         sell(20_000_000),
         buy("first-buy", "checking", 10_000_000),
@@ -307,15 +310,13 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
         buy("second-buy", "savings", 15_000_000),
         consume(5000),
     ]
-    for index, action in enumerate(actions):
-        assert isinstance(world.apply(HOUSEHOLD, action, index), Executed)
-    world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    world.prepare_month(1, {}, {})
-    world.assemble_claims([])
+    for action in actions:
+        assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
+    next_month(world, capture)
     observation = world.observe(HOUSEHOLD)
     assert (observation.cash, observation.public_holdings) == (0, 105_000)
-    world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    financial = world.finish([]).financial
+    next_month(world, capture)
+    financial = capture.financial()
     assert financial is not None
     chosen = [action.cause_id for action in actions]
     assert [entry.cause_id for entry in financial.journal if entry.cause_id in chosen] == chosen
@@ -324,17 +325,15 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
 def test_rejected_financial_request_preserves_prior_sale_and_independent_world() -> None:
     run = actor_run(3, 2)
     failed, live = world_for(run), world_for(run, rollout=1)
-    failed.prepare_month(0, {}, {})
-    failed.assemble_claims([])
-    assert isinstance(failed.apply(HOUSEHOLD, sell(10_000_000), 0), Executed)
-    assert isinstance(failed.apply(HOUSEHOLD, buy("impossible", "checking", 1_000_000_000), 1), Rejected)
-    failed.close_books(failed=True, shortfall=0, mortgages=[], snapshots=[])
-    for month in range(3):
-        live.prepare_month(month, {}, {})
-        live.assemble_claims([])
-        assert isinstance(live.apply(HOUSEHOLD, consume(1000), 0), Executed)
-        live.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    failed_output, live_output = failed.finish([]).financial, live.finish([]).financial
+    failed_capture, live_capture = FinancialCapture(failed, capture="dense"), FinancialCapture(live, capture="dense")
+    assert isinstance(failed.execute(HOUSEHOLD, sell(10_000_000)).outcome, Executed)
+    assert isinstance(failed.execute(HOUSEHOLD, buy("impossible", "checking", 1_000_000_000)).outcome, Rejected)
+    next_month(failed, failed_capture)
+    assert failed.finished
+    for _ in range(3):
+        assert isinstance(live.execute(HOUSEHOLD, consume(1000)).outcome, Executed)
+        next_month(live, live_capture)
+    failed_output, live_output = failed_capture.financial(), live_capture.financial()
     assert failed_output is not None
     assert live_output is not None
     assert len(failed_output.dispositions) == 1
@@ -352,10 +351,8 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
 def test_payment_capture_names_the_actual_selected_source() -> None:
     run = actor_run(1)
     world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000),))))
-    world.prepare_month(0, {}, {})
-    world.assemble_claims([])
     [claim] = world.observe(HOUSEHOLD).claims
-    assert isinstance(world.apply(HOUSEHOLD, transfer(5000), 0), Executed)
+    assert isinstance(world.execute(HOUSEHOLD, transfer(5000)).outcome, Executed)
     action = PayClaim(
         request_id=11,
         cause_id="pay-from-reserve",
@@ -363,14 +360,11 @@ def test_payment_capture_names_the_actual_selected_source() -> None:
         from_account=RESERVE,
         amount=5000,
     )
-    assert isinstance(world.apply(HOUSEHOLD, action, 1), Executed)
-    world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-    output = world.finish([])
-    assert output.financial is not None
-    assert output.summary is not None
-    [payment] = output.financial.obligations
-    assert (payment.from_account, payment.amount_paid) == (RESERVE, 5000)
-    assert output.summary.payments[0].from_account == RESERVE
+    assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
+    world.close_month()
+    [obligation] = world.obligations
+    assert (obligation.from_account, obligation.amount_paid) == (RESERVE, 5000)
+    assert world.payments[0].from_account == RESERVE
 
 
 def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identity() -> None:
@@ -379,61 +373,61 @@ def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identit
     outputs = []
     modes: tuple[Capture, ...] = ("summary", "dense", "forensic")
     for mode in modes:
-        world = world_for(run, mode)
+        session = ActionSession(run, HOUSEHOLD, [0], capture=mode)
+        batch = session.start()
         for month in range(2):
-            world.prepare_month(month, {}, {})
-            world.assemble_claims([])
-            assert isinstance(world.apply(HOUSEHOLD, sell(1_000_000), 0), Executed)
-            outcome = world.apply(HOUSEHOLD, consume(1_000_000 if month == 1 else 1000), 1)
-            assert isinstance(outcome, Rejected) == (month == 1)
-            world.close_books(failed=month == 1, shortfall=0, mortgages=[], snapshots=[])
-        outputs.append(world.finish([]))
+            assert not isinstance(batch, Finished)
+            actions: list[Action] = [sell(1_000_000), consume(1_000_000 if month == 1 else 1000)]
+            batch = session.advance([DecisionActions(0, month, actions)])
+        assert isinstance(batch, Finished)
+        outputs.append(batch.rollouts[0])
+        session.close()
     compact = outputs[0].summary
-    assert compact is not None
-    assert outputs[0].financial is None
+    assert outputs[0].trace is None
     for output in outputs[1:]:
         assert compact == output.summary
-        assert output.financial is not None
-        assert compact.ending_book == output.financial.months[-1]
+        assert output.trace is not None
+        assert compact.ending_book == output.trace.books[-1]
         for payment in compact.payments:
             assert (payment.action_index, payment.receipt.request_id, payment.from_account) == (1, 3, CASH)
             assert payment.target is not None
             assert payment.target.to_account == EXOGENOUS
             assert payment.receipt.target == ConsumptionTarget(component_id="flex-budget")
-            assert payment.receipt.amount_paid == sum(
-                row.amount_paid for row in output.financial.obligations if row.month == payment.month
-            )
+    assert outputs[1].stop == outputs[2].stop == RejectedAction(month=1, action_index=1)
     assert (compact.ending_book.month, compact.ending_mark_month) == (2, 1)
     assert compact.public_holdings[0].values == [100_000, 198_000, 196_000]
     assert all(len(cash.values) == 3 for cash in compact.cash)
     assert compact.ending_book.lots[0].units_remaining == 98_000_000
     assert compact.payments[1].receipt.amount_paid == 0
     assert compact.cash[0].values[-1] == 12_000
+    assert outputs[2].trace is not None
+    assert outputs[1].trace is not None
+    assert outputs[2].trace.journal
+    assert not outputs[1].trace.journal
 
 
 @pytest.mark.parametrize("mode", ["summary", "forensic"])
 def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Capture) -> None:
     run = actor_run(3)
-    world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000), bill(7000)))), mode)
-    world.prepare_month(0, {}, {})
-    world.assemble_claims([])
+    world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000), bill(7000)))))
+    capture = FinancialCapture(world, capture=mode)
     unpaid = world.unpaid_claims(HOUSEHOLD)
     assert len(unpaid) == 2
     assert unpaid[0].id != unpaid[1].id
-    world.close_books(failed=True, shortfall=0, mortgages=[], snapshots=[])
-    output = world.finish([])
-    summary = output.summary
-    assert summary is not None
-    first, second = summary.unpaid_claims
+    next_month(world, capture, failed=True)
+    assert world.finished
+    first, second = world.unpaid_claims(HOUSEHOLD)
     assert first.id != second.id
     assert first.cause_id == second.cause_id
     assert (first.from_account, first.to_account, first.amount_due, second.amount_due) == (CASH, EXOGENOUS, 5000, 7000)
-    assert not summary.payments
-    assert summary.cash[0].values == [10_000, 10_000]
-    if output.financial is not None:
-        assert not output.financial.dispositions
-        assert not output.financial.transfers
-        assert all(row.amount_paid == 0 for row in output.financial.obligations)
+    assert not world.payments
+    assert checking(world) == 10_000
+    financial = capture.financial()
+    assert (financial is None) == (mode == "summary")
+    if financial is not None:
+        assert not financial.dispositions
+        assert not financial.transfers
+        assert all(row.amount_paid == 0 for row in financial.obligations)
 
 
 def assert_same_result(actual: WorldResult, expected: WorldResult) -> None:
@@ -491,13 +485,12 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
     )
     before = deepcopy(run)
     first, second = world_for(run, rollout=0), world_for(run, rollout=1)
-    untouched = deepcopy(first.book([]))
+    untouched = deepcopy(first.book())
     for world, units, tax_paid, basis in ((second, 10_000_000, 3000, 40_000), (first, 20_000_000, 2000, 30_000)):
+        capture = FinancialCapture(world, capture="forensic")
         for month in range(13):
-            world.prepare_month(month, {}, {})
-            world.assemble_claims([])
             if month == 0:
-                for index, lot in enumerate(run.scenario.initial_lots):
+                for lot in run.scenario.initial_lots:
                     action = Sell(
                         cause_id=f"sell-{lot.asset_id}",
                         agent_id=HOUSEHOLD,
@@ -505,20 +498,20 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
                         asset_id=lot.asset_id,
                         lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=units),),
                     )
-                    assert isinstance(world.apply(HOUSEHOLD, action, index), Executed)
+                    assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
             settlement = world.settle_claims()
             assert not settlement.failed
-            world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
-        output = world.finish([]).financial
+            next_month(world, capture)
+        output = capture.financial()
         assert output is not None
         assert output.failed_month is None
         assert [(p.month, p.amount_paid) for p in output.tax_payments] == [(12, tax_paid)]
         assert sum(e.cause_id == f"opening:{HOUSEHOLD}:checking" for e in output.journal) == 1
-        assert world.account_balance(HOUSEHOLD, "checking") == 5000 - tax_paid
+        assert checking(world) == 5000 - tax_paid
         assert sum(lot.basis_remaining for lot in output.months[-1].lots) == basis
         assert output.months[-1].month == 13
         if world is second:
-            assert first.book([]) == untouched
+            assert first.book() == untouched
             assert not first.accounting.tax_liabilities
     assert run == before
 
@@ -552,10 +545,12 @@ def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mo
         sales = (replace(sales[0], units=1_000_000),)
     run = replace(run, scenario=replace(run.scenario, _scheduled_sales=sales))
     [baseline] = execute(run, mode, HOUSEHOLD)
-    session = _Session(run, HOUSEHOLD, [0], capture=mode, configured=True, product_actor=HOUSEHOLD)
+    session = _Session(run, HOUSEHOLD, [0], capture=mode, configured=True)
+    path = session.paths[0]
+    capture = FinancialCapture(path, capture=mode)
+    rows = [product_row(path, HOUSEHOLD)]
     try:
         session.start()
-        path = session.paths[0]
         while not session.is_finished():
             if session.month == 12:
                 assert path.accounting.tax_liabilities[0].amount_owed == (50 if stopped else 2000)
@@ -563,28 +558,26 @@ def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mo
             for sale in sales:
                 if sale.month == session.month:
                     path.holdings.scheduled_sale(path.accounting, path.market, sale)
-            settlement = path.settle_claims()
+            settlement = path.settle_claims(HOUSEHOLD)
             path.failed, path.shortfall = settlement.failed, settlement.product_shortfall
             session.close_month()
-        assert path.result is not None
-        assert_same_result(path.result, baseline)
-        terminal = deepcopy(replace(path.result, events=None))
-        if path.result.events is not None:
-            terminal = replace(
-                terminal,
-                events=EventLog.from_frames(
-                    {spec.name: path.result.events.frame(spec).clone() for spec in EVENT_FRAME_SPECS},
-                    rollout_ids=path.result.events.rollout_ids,
-                ),
-            )
-        stopped_book = deepcopy(path.book([]))
+            capture.record()
+            rows.append(product_row(path, HOUSEHOLD))
+            session.open_month()
+        financial = capture.financial()
+        result = WorldResult(
+            0,
+            financial,
+            event_log(financial) if financial is not None else None,
+            capture.configured_summary() if mode == "summary" else None,
+            rows,
+        )
+        assert_same_result(result, baseline)
+        stopped_book = deepcopy(path.book())
         session.close_month()
-        assert_same_result(path.result, terminal)
-        assert path.book([]) == stopped_book
+        assert path.book() == stopped_book
         with pytest.raises(ValueError, match="finished"):
             session.begin_actions([DecisionActions(0, session.month, [])])
-        assert_same_result(path.result, terminal)
-        assert path.book([]) == stopped_book
         if mode == "summary":
             assert baseline.configured_summary is not None
             assert baseline.configured_summary.failed_month == (12 if stopped else None)
@@ -709,12 +702,14 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
     run = actor_run(horizon=3, paths=2)
     run = replace(run, scenario=replace(run.scenario, obligations=(bill(1000),)))
     amounts = {0: 500, 2: 700}
-    world = World(run, 1, capture_mode="forensic", actor=HOUSEHOLD)
+    world = World(run, 1)
     agent = _Household(amounts)
     world.track(agent)
     world.start()
+    balances = [checking(world)]
     while not world.finished:
         world.step()
+        balances.append(checking(world))
     assert agent.months == [0, 1, 2]
     session = ActionSession(run, HOUSEHOLD, [1], capture="forensic")
     batch = session.start()
@@ -722,33 +717,33 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
         [decision] = batch
         actions = _Household(amounts).decide(decision.observation)
         batch = session.advance([DecisionActions(1, decision.observation.month, actions)])
-    assert world.rollout() == batch.rollouts[0]
-    assert world.rollout().stop is None
+    [rollout] = batch.rollouts
+    assert world.stop is rollout.stop is None
+    assert world.book() == rollout.summary.ending_book
+    assert world.previous_receipts == rollout.summary.last_receipts
+    assert balances == rollout.summary.cash[0].values
 
 
 def test_rejected_action_stops_the_path_before_later_decisions() -> None:
-    world = World(actor_run(horizon=3), 0, capture_mode="summary", actor=HOUSEHOLD)
+    world = World(actor_run(horizon=3), 0)
     agent = _Household({0: 100, 1: 10_000_000, 2: 100})
     world.track(agent)
     world.start()
     while not world.finished:
         world.step()
     assert agent.months == [0, 1]
-    rollout = world.rollout()
-    assert rollout.stop == RejectedAction(month=1, action_index=0)
-    assert rollout.summary.ending_mark_month == 1
+    assert world.stop == RejectedAction(month=1, action_index=0)
+    assert world.mark_month == 1
     with pytest.raises(ValueError, match="not running"):
         world.step()
 
 
 def test_tracking_is_checked_before_the_world_starts() -> None:
-    world = World(actor_run(), 0, capture_mode="summary", actor=HOUSEHOLD)
+    world = World(actor_run(), 0)
     with pytest.raises(ValueError, match="not running"):
         world.step()
-    with pytest.raises(ValueError, match="has not finished"):
-        world.rollout()
-    with pytest.raises(ValueError, match="not this world's actor"):
-        world.track(_Household({}, agent_id=WORLD))
+    with pytest.raises(ValueError, match="unknown actor"):
+        world.track(_Household({}, agent_id="test-nobody"))
     world.track(_Household({}))
     with pytest.raises(ValueError, match="one decision-making agent"):
         world.track(_Household({}))
@@ -757,7 +752,7 @@ def test_tracking_is_checked_before_the_world_starts() -> None:
         world.track(_Household({}))
     with pytest.raises(ValueError, match="already started"):
         world.start()
-    untracked = World(actor_run(), 0, capture_mode="summary", actor=HOUSEHOLD)
+    untracked = World(actor_run(), 0)
     untracked.start()
     with pytest.raises(ValueError, match="tracked agent"):
         untracked.step()
