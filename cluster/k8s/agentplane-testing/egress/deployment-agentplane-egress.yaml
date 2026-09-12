@@ -52,7 +52,7 @@ spec:
       # it. The migration takes a PostgreSQL advisory lock, so concurrent starts serialize.
       initContainers:
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-migrate:devel-20260911030207-ea8d29b # {"$imagepolicy": "flux-system:agentplane-egress-migrate"}
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-migrate:devel-20260912094442-b1fb784 # {"$imagepolicy": "flux-system:agentplane-egress-migrate"}
           imagePullPolicy: Always
           env:
             - name: AGENTPLANE_EGRESS_DATABASE_URL
