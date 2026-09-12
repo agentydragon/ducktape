@@ -13,10 +13,10 @@ Action Service, plus ordinary ServiceAccounts as the external-caller principal. 
 owned either by Git through Flux or by a runtime writer (the integration app, or the operator with
 kubectl); the split is per object, never per kind.
 
-| Kind                  | Spec                                                                                                                            | Replaces                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies                                                        | `fixture_auto_allow`                           |
-| `ActionPolicyBinding` | `subject` (`serviceAccount {namespace, name}` or `sandbox {name, uid}`), `policySets`, the same three inline lists, `expiresAt` | nothing; today external callers are human-only |
+| Kind                  | Spec                                                                                               | Replaces                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies                           | `fixture_auto_allow`                           |
+| `ActionPolicyBinding` | `subject` (`serviceAccount {namespace, name}` or `sandbox {name, uid}`), `policySets`, `expiresAt` | nothing; today external callers are human-only |
 
 An **external caller is a Kubernetes ServiceAccount**, replacing the `identities:` map in the
 Action Service settings. One principal then carries both native permissions through ordinary
@@ -35,7 +35,9 @@ semantics, as in the Haku console's `auto_approval_policies`. Adding a constrain
 express means adding a kind, never a DSL. Two kinds cover the first slice:
 
 - `exact_actions`: `{group: [action, ...]}`, matches by name alone.
-- `argument_schema`: `actions` plus a JSON Schema fragment the arguments must satisfy. This is the
+- `argument_schema`: `actions` plus a JSON Schema the arguments must satisfy, with plain JSON
+  Schema semantics: the policy says which properties are required and which may be absent, so
+  "absent or an integer" is expressible and `properties` alone never implies presence. This is the
   hostexec host/`run_as` allow-list, the fixed-repository check, and the fixture's bounded `echo`.
 
 Kinds that consult state outside the arguments (repository visibility, "the caller can already do
@@ -52,11 +54,10 @@ Deny wins over approve; a request matching nothing takes the human path. The fir
 implements `autoApproveIf` only; the other two lists are schema now, behavior later, and a set with
 only `autoApproveIf` is the v1 object.
 
-A **binding** joins one subject to sets. A subject may have many bindings; the effective policy is
-the union of the unexpired bindings' lists, evaluated with the precedence above. `policySets` is the
-norm; the inline lists exist for one-off grants that no reusable set fits, such as a pinned pull
-request number. `expiresAt` makes an expired binding equivalent to an absent one at evaluation and
-at dispatch. Sandbox subjects pin the live UID, so a binding whose Sandbox is gone is inert.
+A **binding** joins one subject to sets, by reference only; a one-off grant is a small set of its
+own. A subject may have many bindings; the effective policy is the union of the unexpired bindings'
+sets, evaluated with the precedence above. `expiresAt` makes an expired binding equivalent to an
+absent one. Sandbox subjects pin the live UID, so a binding whose Sandbox is gone is inert.
 
 ## Ownership
 
@@ -76,9 +77,8 @@ at dispatch. Sandbox subjects pin the live UID, so a binding whose Sandbox is go
 ## Evaluation and evidence
 
 - **Admission**: resolve the caller's bindings and sets from the informer, evaluate deny lists,
-  then run `autoApproveIf` policies through the existing `DecisionProvider` aggregation. The
-  fixture provider becomes an `exact_actions` policy on the fixture group. A request matching no
-  list stays on the human path.
+  then run `autoApproveIf` policies through the existing `DecisionProvider` aggregation. A request
+  matching no list stays on the human path.
 - **Evaluate once.** Policies are evaluated at admission against the objects as they are then,
   and never again for that Action. A later edit, expiry, or deletion changes the next Action's
   Decision, not this one's, the same as a human approval is not withdrawn by a later change of
@@ -158,22 +158,33 @@ the binding revision they used.
 ## Steps
 
 1. **CRDs and informer.** `ActionPolicySet` and `ActionPolicyBinding` with validation status; an
-   informer on labeled ServiceAccounts; the `identities:` settings key and `fixture_auto_allow` go;
-   both environments' `personal` entries become labeled ServiceAccounts committed beside their
-   settings, and the consent UI lists eligible ServiceAccounts instead of configured Identities.
-   Rename "configured Identity" to "ServiceAccount" in the Action Service, the app, and the docs.
-   The persisted issuer string `configured-identity` stays readable while new rows write
-   `service-account` with the namespace and name as subject.
-2. **Evaluation.** Policy registry with `exact_actions` and `argument_schema`; the set provider
-   inside the existing aggregation; typed `DecisionContext` caller; evidence fields on the Decision.
-3. **Integration app.** Write the Sandbox binding at creation from the preset's set list; a runtime
-   form for additional bindings with `expiresAt`; optionally create a labeled ServiceAccount
-   during enrollment instead of a Git edit.
+   informer on labeled ServiceAccounts; the `identities:` settings key goes; both environments'
+   `personal` entries become labeled ServiceAccounts committed beside their settings, and the
+   consent UI lists eligible ServiceAccounts instead of configured Identities. Rename "configured
+   Identity" to "ServiceAccount" in the Action Service, the app, and the docs. The persisted issuer
+   string `configured-identity` stays readable while new rows write `service-account` with the
+   namespace and name as subject.
+2. **Evaluation and acceptance.** Policy registry with `exact_actions` and `argument_schema`; the
+   set provider inside the existing aggregation; typed `DecisionContext` caller; evidence fields on
+   the Decision. In the same change, `fixture_auto_allow` is deleted and the deployed
+   `//x/agentplane/acceptance` scenario creates the set and binding it needs through the
+   Kubernetes API for the Sandbox it launches: a matching Action gets an auto-approved Execution
+   with the expected evidence, a non-matching one waits for the operator, and an expired binding
+   no longer auto-approves. The suite's credentials gain create/delete on the two kinds in its
+   namespace.
+3. **Integration app.** Write the Sandbox binding at creation from the preset's set list, and show
+   what a Sandbox can currently do: its unexpired bindings, their sets, and the resulting lists.
+   Read-only; no runtime editing surface yet.
 4. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
-5. **Deployed acceptance.** Extend `//x/agentplane/acceptance` with a vertical scenario: the
-   test creates a set and a binding for the Sandbox it launches, the harness submits a matching
-   Action and gets an auto-approved Execution with the expected evidence, a non-matching one waits
-   for the operator, and an expired binding no longer auto-approves.
+
+## Later
+
+- A runtime editing surface for sets and bindings; kubectl is the first slice's editor.
+- Agent-initiated, operator-approved privilege changes: an Action that requests an additional
+  binding, or the removal of one, rendered for the operator as that specific request rather than a
+  generic approval card. Optionally, creating a labeled ServiceAccount during enrollment instead of
+  a Git edit.
+- A TokenReview admission path for clients that hold a ServiceAccount token.
 
 ## Acceptance
 
