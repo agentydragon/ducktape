@@ -40,8 +40,36 @@ renders.
   and the interrupt `ActionIcon` (`IconPlayerStop`, `session.tsx:490-498`) to sit adjacent to the
   composer (`session.tsx:477-499`) rather than in the top header, at least at narrow widths. Desktop
   can plausibly keep them in the header if there's room; mobile shouldn't have to.
+
+  **Landed** (transcript-restyle PR): the model picker and stop control now sit in a row under the
+  composer textarea on every width, not just narrow ones.
+
 - Shutdown (`IconPower`) and the harness badge are lower-frequency actions/status — candidates for
   the same overflow treatment as the raw-frames switch.
+
+### Under-composer area — a natural next landing spot
+
+Once the model picker/stop row exists under the composer, the operator's next observation: that
+row is where several of the still-header-bound items above could consolidate, rather than a
+separate settings surface:
+
+- **Combined status bubble.** Replace the header's separate status `Badge` + harness `Badge`
+  (`session.tsx:410-411`, `attached`/`connecting`/etc. plus `harness running`/`stopped`) with one
+  dot/bubble summarizing both, hover/focus revealing the detail of each — the same
+  `role="img"`/`aria-label`/`Tooltip` pattern this PR round already used for streaming/failed/sending
+  (`StatusDot` in `session.tsx`). Two independent state machines (session attachment, harness
+  process) folding into one glanceable indicator, with the breakdown one hover away.
+- **Hamburger/overflow menu near the composer**, holding the "Raw frames" switch and (see below)
+  the stop control, plus room for the combined-status bubble's detail if it reads better as a menu
+  item than a tooltip on small touch targets.
+- **Stop button in the menu — needs a label, and needs to not bury a time-critical action.** An
+  item inside a menu reads by its text, not an icon alone, so "Interrupt"/"Stop" would need a
+  visible label there (unlike today's icon-only `ActionIcon`). But stop is the one control here
+  that's genuinely time-sensitive — the operator reaches for it _during_ an active turn, not at
+  rest — so tucking it two taps deep (open menu, then tap Stop) trades away exactly the
+  responsiveness the current always-visible icon gives it. Worth evaluating a hybrid: stop stays a
+  visible icon whenever a turn is active (`activeTurn !== undefined`, `session.tsx:401`) and only
+  folds into the menu when there's nothing to stop — rather than always living inside it.
 
 ## Badges → dots, and message role → layout
 
@@ -124,3 +152,5 @@ It drafts the mock; it doesn't touch `x/agentplane` code.
   shared component infra exists).
 - Whether the pending-approval overlay preempts the operator's current page/input, or docks
   non-modally (a toast/banner) so it can't interrupt something like an in-progress composer edit.
+- Whether stop always lives in the under-composer overflow menu (simplest, but two taps deep during
+  an active turn) or only folds in there when idle, staying a visible icon while a turn is running.
