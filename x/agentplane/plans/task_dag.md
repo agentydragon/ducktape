@@ -348,8 +348,7 @@ Idempotency enforcement: repeat submission of same key refused with "already use
 Connection `088a0679-f6e3-4f97-b63c-c9fce3fc84ad`, grant revision 1, ServiceAccount
 `agentplane-staging/claude-ai`.
 
-**Not verified:** human operator approval path (step requires operator interaction); Sandbox
-authentication independent of external Connection.
+**Not verified:** Sandbox authentication independent of external Connection.
 
 ### `T3` — trajectory search and lookup
 
@@ -475,12 +474,14 @@ principal, shows Decision/result/error state, and offers Allow/Deny for pending 
 BFF routes, `/actions/stream`, `/push/*` routes, frontend tests, and service-worker tests cover the
 controls and live-update path; this is not a missing UI implementation.
 
-**Observed 2026-09-12T13:02Z:** human operator approval of a pending Action on staging. Request
+**Observed 2026-09-12T13:03Z:** human operator approval of a pending Action on staging. Request
 `github/create_branch` (request ID `d7e43a95-4dc3-4015-9895-7179dbd71fec`, created
-2026-09-12T12:58:16.505543Z) was approved through the integration-app Actions page by the operator.
-Demonstrated: (1) operator identity resolution from Authentik federation, (2) canonical Decisions
-recorded with `decision_pending` → `allowed` transition visible in durable event sequence, (3)
-Request state synchronized in Action Service PostgreSQL and reflected in BFF review page.
+2026-09-12T12:58:16.505543Z; arguments `agentydragon/ducktape`, branch `test-branch` from `devel`)
+waited in `decision_pending` until the operator allowed it on the integration-app Actions page:
+Decision provider `human_operator`, issuer the Authentik `agentplane-actions` application, decided
+2026-09-12T13:03:12.977810Z; the event sequence then ran `allowed`, `dispatching`, `running`,
+`succeeded` (13:03:14.902620Z), and the Execution result names `refs/heads/test-branch` at
+`9392be47`.
 
 **Not verified:** Push notification delivery to browser (requires service-worker interaction);
 credential/push-service egress policy; fallback-to-SSE behavior under push service unavailability;
