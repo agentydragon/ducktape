@@ -1,4 +1,4 @@
-import { Stack, Text } from "@mantine/core";
+import { Anchor, Stack, Text } from "@mantine/core";
 import { useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
@@ -27,9 +27,16 @@ function required(value: string | undefined, name: string): string {
 
 /** Nothing selected: the sidebar carries the Threads list, so the landing pane just points at it. */
 function ThreadsLanding(): JSX.Element {
+  const navigate = useNavigate();
   return (
     <Stack align="center" justify="center" h="100%">
-      <Text c="dimmed">Select a thread from the sidebar, or open Sandboxes to start one.</Text>
+      <Text c="dimmed">
+        Select a thread from the sidebar, or{" "}
+        <Anchor size="sm" onClick={() => void navigate("/sandboxes")}>
+          open Sandboxes
+        </Anchor>{" "}
+        to start one.
+      </Text>
     </Stack>
   );
 }
