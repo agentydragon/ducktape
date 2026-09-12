@@ -97,6 +97,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("agentplane-testing-dex", "agentplane-testing/dex"),
         ("agentplane-testing-egress", "agentplane-testing/egress"),
         ("agentplane-testing-llm-ingress", "agentplane-testing/llm-ingress"),
+        ("litellm-secrets", "litellm/secrets"),
+        ("matrix-namespace", "matrix/namespace"),
+        ("matrix-secrets", "matrix/secrets"),
+        ("ollama-namespace", "ollama/namespace"),
+        ("seaweedfs-csi", "seaweedfs-csi"),
+        ("seaweedfs-public-s3", "seaweedfs/public-s3"),
+        ("ssh-mcp-secrets", "ssh-mcp/secrets"),
+        ("study-casino-namespace", "study-casino/namespace"),
+        ("tana-mcp", "agents/tana-mcp"),
+        ("authentik-jwt-rotation", "agents/authentik-jwt-rotation"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}
