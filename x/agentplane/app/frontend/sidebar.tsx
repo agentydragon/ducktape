@@ -305,9 +305,16 @@ function ThreadGroupSection({
 export function Sidebar({
   settingsOpen,
   onOpenSettings,
+  mobileOpen,
+  onMobileClose,
 }: {
   settingsOpen: boolean;
   onOpenSettings: () => void;
+  /** Whether the sidebar is showing as a phone-width overlay drawer (UISHELL_MOBILE,
+   * x/agentplane/plans/task_dag.md). No effect at desktop width, where the sidebar is always
+   * visible regardless of this prop -- sidebar.css's phone media query is what makes it matter. */
+  mobileOpen: boolean;
+  onMobileClose: () => void;
 }): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
@@ -315,6 +322,15 @@ export function Sidebar({
   const [includeArchived, setIncludeArchived] = useState(false);
   const { width, setWidth, resizeBy } = useSidebarWidth();
   const { data, error, refresh } = useThreadsWithSandboxes();
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") onMobileClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen, onMobileClose]);
 
   const threads = data?.threads ?? [];
   const groups = groupThreads(threads, data?.sandboxes ?? {}, includeArchived);
@@ -335,101 +351,118 @@ export function Sidebar({
     }
   }
 
+  /** Every navigation out of the sidebar also closes the phone-width drawer -- harmless at desktop
+   * width, where `onMobileClose` just resets state nothing reads. */
+  function goTo(path: string): void {
+    onMobileClose();
+    void navigate(path);
+  }
+
   function open(thread: ThreadView): void {
-    void navigate(`/sandboxes/${encodeURIComponent(thread.sandbox)}/sessions/${encodeURIComponent(thread.session_id)}`);
+    goTo(`/sandboxes/${encodeURIComponent(thread.sandbox)}/sessions/${encodeURIComponent(thread.session_id)}`);
   }
 
   return (
-    <nav className="agentplane-sidebar" aria-label="Threads" style={{ width: `${width}px` }}>
-      <SidebarResizeHandle width={width} onDrag={setWidth} onStep={resizeBy} />
-      <div className="agentplane-sidebar-header">
-        <Text fw={700} size="xs" tt="uppercase" c="dimmed">
-          Threads
-        </Text>
-        {/* Stub for UISHELL_NEWTHREAD_LANDING: the unscoped composer isn't built yet, so "+" sends
-            the operator to the Sandbox list to start one the existing way -- label says exactly
-            that rather than promising a composer that isn't there yet. */}
-        <Tooltip label="New thread (via Sandboxes)" withArrow>
-          <ActionIcon
-            variant="light"
-            aria-label="New thread (via Sandboxes)"
-            onClick={() => void navigate("/sandboxes")}
-          >
-            <IconPlus size={13} />
-          </ActionIcon>
-        </Tooltip>
-      </div>
-      <div className="agentplane-sidebar-body">
-        {error && (
-          <Text c="red" size="xs" px={4}>
-            {error}
+    <>
+      {mobileOpen && <div className="agentplane-sidebar-backdrop" aria-hidden="true" onClick={onMobileClose} />}
+      <nav
+        className={`agentplane-sidebar${mobileOpen ? " agentplane-sidebar-mobile-open" : ""}`}
+        aria-label="Threads"
+        style={{ width: `${width}px` }}
+      >
+        <SidebarResizeHandle width={width} onDrag={setWidth} onStep={resizeBy} />
+        <div className="agentplane-sidebar-header">
+          <Text fw={700} size="xs" tt="uppercase" c="dimmed">
+            Threads
           </Text>
-        )}
-        {data === null && !error && (
-          <Text c="dimmed" size="xs" px={4}>
-            Loading threads…
-          </Text>
-        )}
-        {data !== null && groups.length === 0 && (
-          <Text c="dimmed" size="xs" px={4}>
-            No threads yet.
-          </Text>
-        )}
-        {groups.map((group) => (
-          <ThreadGroupSection
-            key={group.sandboxName}
-            group={group}
-            current={current}
-            onOpen={open}
-            onToggleArchived={(thread) => void toggleArchived(thread)}
-          />
-        ))}
-        {threads.length > 0 && (
-          <div className="agentplane-sidebar-archived-toggle">
-            <Text size="xs">Show archived ({archived})</Text>
-            <Switch
-              size="xs"
-              checked={includeArchived}
-              onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
-              aria-label="Show archived threads"
+          {/* Stub for UISHELL_NEWTHREAD_LANDING: the unscoped composer isn't built yet, so "+" sends
+              the operator to the Sandbox list to start one the existing way -- label says exactly
+              that rather than promising a composer that isn't there yet. */}
+          <Tooltip label="New thread (via Sandboxes)" withArrow>
+            <ActionIcon variant="light" aria-label="New thread (via Sandboxes)" onClick={() => goTo("/sandboxes")}>
+              <IconPlus size={13} />
+            </ActionIcon>
+          </Tooltip>
+        </div>
+        <div className="agentplane-sidebar-body">
+          {error && (
+            <Text c="red" size="xs" px={4}>
+              {error}
+            </Text>
+          )}
+          {data === null && !error && (
+            <Text c="dimmed" size="xs" px={4}>
+              Loading threads…
+            </Text>
+          )}
+          {data !== null && groups.length === 0 && (
+            <Text c="dimmed" size="xs" px={4}>
+              No threads yet.
+            </Text>
+          )}
+          {groups.map((group) => (
+            <ThreadGroupSection
+              key={group.sandboxName}
+              group={group}
+              current={current}
+              onOpen={open}
+              onToggleArchived={(thread) => void toggleArchived(thread)}
             />
-          </div>
-        )}
-      </div>
-      <div className="agentplane-sidebar-footer">
-        <Tooltip label="Sandboxes" withArrow>
-          <ActionIcon
-            variant={location.pathname === "/sandboxes" ? "light" : "subtle"}
-            aria-label="Sandboxes"
-            onClick={() => void navigate("/sandboxes")}
-          >
-            <IconBox size={15} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Pending approvals" withArrow>
-          <ActionIcon
-            variant={location.pathname === "/actions" ? "light" : "subtle"}
-            aria-label="Pending approvals"
-            onClick={() => void navigate("/actions")}
-          >
-            <IconListCheck size={15} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Action history" withArrow>
-          <ActionIcon
-            variant={location.pathname === "/actions/history" ? "light" : "subtle"}
-            aria-label="Action history"
-            onClick={() => void navigate("/actions/history")}
-          >
-            <IconHistory size={15} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Settings" withArrow>
-          <ActionIcon variant={settingsOpen ? "light" : "subtle"} aria-label="Settings" onClick={onOpenSettings}>
-            <IconSettings size={15} />
-          </ActionIcon>
-        </Tooltip>
-      </div>
-    </nav>
+          ))}
+          {threads.length > 0 && (
+            <div className="agentplane-sidebar-archived-toggle">
+              <Text size="xs">Show archived ({archived})</Text>
+              <Switch
+                size="xs"
+                checked={includeArchived}
+                onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
+                aria-label="Show archived threads"
+              />
+            </div>
+          )}
+        </div>
+        <div className="agentplane-sidebar-footer">
+          <Tooltip label="Sandboxes" withArrow>
+            <ActionIcon
+              variant={location.pathname === "/sandboxes" ? "light" : "subtle"}
+              aria-label="Sandboxes"
+              onClick={() => goTo("/sandboxes")}
+            >
+              <IconBox size={15} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Pending approvals" withArrow>
+            <ActionIcon
+              variant={location.pathname === "/actions" ? "light" : "subtle"}
+              aria-label="Pending approvals"
+              onClick={() => goTo("/actions")}
+            >
+              <IconListCheck size={15} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Action history" withArrow>
+            <ActionIcon
+              variant={location.pathname === "/actions/history" ? "light" : "subtle"}
+              aria-label="Action history"
+              onClick={() => goTo("/actions/history")}
+            >
+              <IconHistory size={15} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Settings" withArrow>
+            <ActionIcon
+              variant={settingsOpen ? "light" : "subtle"}
+              aria-label="Settings"
+              onClick={() => {
+                onMobileClose();
+                onOpenSettings();
+              }}
+            >
+              <IconSettings size={15} />
+            </ActionIcon>
+          </Tooltip>
+        </div>
+      </nav>
+    </>
   );
 }

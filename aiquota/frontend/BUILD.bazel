@@ -260,7 +260,6 @@ SCREENSHOT_DATA = [
     ":screenshot_bundle_js",
     "//util/testing/frontend_visual:capture",
     "//util/testing/frontend_visual:fonts",
-    "//util/testing/frontend_visual:fonts_conf",
     "//util/testing/frontend_visual:launcher",
     "//util/testing/frontend_visual:visual_review_manifest",
     "@playwright_browsers//:chromium-headless-shell",
@@ -275,11 +274,10 @@ js_test(
     env = {
         "SCENES_JSON": "$(rootpath :scenes_json)",
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
-        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
         # Peak-burn hours and credit expiries render in the viewer's zone, which is the point
         # of surfacing them; pin one so the renders do not depend on the worker's.
         "TZ": "UTC",
     },
     no_copy_to_bin = SCREENSHOT_DATA,
+    tags = ["visual"],
 )

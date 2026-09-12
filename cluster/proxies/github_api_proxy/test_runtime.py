@@ -133,7 +133,7 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
             if address not in (("93.184.216.34", 80), ("93.184.216.34", 443)):
                 raise OSError("Unexpected synthetic dial destination")
             assert isinstance(address, tuple)
-            address = ("127.0.0.1", origins.https_port if address[1] == 443 else origins.http_port)
+            address = ("127.0.0.1", origins.https_port if int(address[1]) == 443 else origins.http_port)
         await original_connect(loop, sock, address)
 
     def dns(

@@ -1,4 +1,6 @@
-import { Anchor, Stack, Text } from "@mantine/core";
+import { ActionIcon, Anchor, Stack, Text } from "@mantine/core";
+// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
+import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import { useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
@@ -86,11 +88,22 @@ function AppRoutes(): JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const fullBleed = sessionRoute !== null;
   return (
     <div className="agentplane-shell">
-      <Sidebar settingsOpen={settingsTab !== null} onOpenSettings={() => setSettingsTab("oauth-clients")} />
+      <Sidebar
+        settingsOpen={settingsTab !== null}
+        onOpenSettings={() => setSettingsTab("oauth-clients")}
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
       <div className={`agentplane-shell-main${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
+        <div className="agentplane-mobile-topbar">
+          <ActionIcon variant="subtle" aria-label="Open navigation" onClick={() => setMobileSidebarOpen(true)}>
+            <IconMenu2 size={18} />
+          </ActionIcon>
+        </div>
         <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
           <Routes>
             <Route path="/" element={<ThreadsLanding />} />

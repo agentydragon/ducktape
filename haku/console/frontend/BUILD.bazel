@@ -1094,6 +1094,7 @@ js_test(
         "@playwright_browsers//:chromium-headless-shell",
     ],
     shard_count = 4,
+    tags = ["visual"],
 )
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────

@@ -20,9 +20,9 @@ from finance.augur.model.exogenous import Sampler
 from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, ScenarioKey, SpendIndex
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
-DEFAULT_CONFIG_RUNFILE = "_main/finance/augur/api/testdata/config.yaml"
+DEFAULT_CONFIG_RUNFILE = own_repo_rlocation("finance/augur/api/testdata/config.yaml")
 DEFAULT_HORIZON_MONTHS = 100
 DEFAULT_ROLLOUT_COUNT = 50
 DEFAULT_MONTHLY_SPEND_USD = 7000.0
@@ -50,6 +50,8 @@ def main() -> int:
         models=_profile_models(config),
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=config.max_horizon_months,
+        # Profiling measures simulation, so every request must actually simulate.
+        result_cache_entries=0,
     )
     request = ProjectionSamplingRequest(
         scenario=ScenarioKey(

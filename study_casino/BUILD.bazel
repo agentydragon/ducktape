@@ -375,6 +375,7 @@ py_test(
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     requires_docker = True,
+    tags = ["visual"],
     deps = [
         ":app",
         ":changelog",

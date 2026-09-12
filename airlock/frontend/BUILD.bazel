@@ -1,8 +1,9 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -133,33 +134,19 @@ filegroup(
     srcs = ["tests/harness/index.html"],
 )
 
-VISUAL_DATA = [
-    ":harness_bundle",
-    ":harness_js",
-    ":visual_test_assets",
-    "//util/testing/frontend_visual:fonts",
-    "//util/testing/frontend_visual:fonts_conf",
-    "//util/testing/frontend_visual:visual_test_lib",
-    "@playwright_browsers//:chromium-headless-shell",
-]
-
 # Every scenario in tests/harness/scenarios.mjs, swept on one browser. The four per-scenario
 # targets this replaces each paid their own Chromium launch to render a single shot of the same
 # page at a different theme or width.
-js_test(
+visual_test(
     name = "visual",
     size = "small",
-    # :scenarios is copied to bin beside the runner that imports it, unlike the prebuilt harness
-    # assets, which are read where they lie.
-    data = VISUAL_DATA + [":scenarios"],
+    assets = [
+        ":harness_bundle",
+        ":visual_test_assets",
+    ],
     entry_point = "tests/visual_test_runner.mjs",
-    env = {
-        "HARNESS_PATH": "$(rootpath :harness_js)",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
-        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
-    },
-    no_copy_to_bin = VISUAL_DATA,
+    harness = ":harness_js",
+    scenarios = ":scenarios",
 )
 
 # Type-check the Svelte app, as props/frontend already does. Without it the

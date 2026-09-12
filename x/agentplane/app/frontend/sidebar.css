@@ -31,11 +31,39 @@
   outline: none;
 }
 
+/* Dims the page behind the phone-width drawer (UISHELL_MOBILE); only ever rendered while the
+   drawer is open (sidebar.tsx), so no default-hidden state is needed here for desktop -- but the
+   media query still guards against a stale `mobileOpen` surviving a resize from phone to desktop
+   width (e.g. rotating a tablet) without a click to reset it. */
+.agentplane-sidebar-backdrop {
+  display: none;
+}
+
 @media (max-width: 560px) {
+  .agentplane-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 29;
+  }
+
   /* Overrides the resized inline width: dragging a 6px handle on a touch-width sidebar isn't a
-     usable interaction, so phone width stays fixed and the handle itself is hidden. */
+     usable interaction, so the drawer gets its own fixed width and the handle is hidden. Hidden by
+     default and off-canvas -- only `.agentplane-sidebar-mobile-open` (the hamburger toggle in
+     app.tsx/shell.css) brings it on screen, since there's no room to show it alongside content at
+     this width the way the desktop layout does. */
   .agentplane-sidebar {
-    width: 168px !important;
+    display: none;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(85vw, 320px) !important;
+    z-index: 30;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .agentplane-sidebar.agentplane-sidebar-mobile-open {
+    display: flex;
   }
 
   .agentplane-sidebar-resize-handle {
