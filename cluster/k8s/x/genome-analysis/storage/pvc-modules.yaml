@@ -1,0 +1,13 @@
+# Reference-database modules for offline variant annotation (ClinVar, gnomAD, dbNSFP or
+# equivalent — exact set decided by ducktape#4788). Downloaded once, reused by every future
+# analysis run. Random-access-heavy (many small per-variant lookups), hence SSD over HDD.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: genome-analysis-modules
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path-ovh-ssd
+  resources:
+    requests:
+      storage: 50Gi
