@@ -4,8 +4,8 @@ Static HTML mocks (no framework, no build step — open directly in a browser) c
 design discussion. Not wired to real state; each mock's own footer names the plan doc it was made
 for.
 
-- **`app_shell.html`** — the settled session-first sidebar shell: current, referenced from
-  `UISHELL_SIDEBAR` in [`../task_dag.md`](../task_dag.md) and
+- **`app_shell.html`** — the session-first sidebar shell: shipped, referenced from
+  [`../task_dag.md`](../task_dag.md)'s UI-shell track and
   [`../session_first_navigation.md`](../session_first_navigation.md).
 - **`nav_overflow.html`** — an earlier proposal (fold the top nav's last three buttons behind a
   "More" menu) for the now-deleted `mobile_density.md`. Superseded by `app_shell.html`'s sidebar,

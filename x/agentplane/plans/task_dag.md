@@ -66,7 +66,6 @@ flowchart TB
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
 
-    UISHELL_SIDEBAR["Planned milestone<br/>session-first sidebar shell<br/>Threads grouped by Sandbox, replaces top nav"]:::milestone
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_MOBILE["Planned UI<br/>mobile sidebar collapse<br/>hamburger toggle, badge stays in top bar"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
@@ -98,10 +97,6 @@ flowchart TB
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
-
-    UISHELL_SIDEBAR --> UISHELL_DRAWER
-    UISHELL_SIDEBAR --> UISHELL_MOBILE
-    UISHELL_SIDEBAR --> UISHELL_NEWTHREAD_LANDING
 ```
 
 The credentialless MCP vertical is complete and is intentionally removed from this remaining-work
@@ -142,17 +137,13 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
 
-The session-first UI shell (`UISHELL_SIDEBAR`, `UISHELL_DRAWER`, `UISHELL_MOBILE`,
-`UISHELL_NEWTHREAD_SANDBOX`, `UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`) is a separate
-frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
-above. `UISHELL_NEWTHREAD_SANDBOX` has no dependencies and ships independently. The cross-sandbox
-Thread-listing endpoint (`GET /threads/with-sandboxes`) that was the sidebar's one real blocker has
-landed — a Thread was previously reachable only through its owning Sandbox's own session list —
-tolerant of a Thread whose Sandbox no longer exists, and reusing the same `include_archived` filter
-Thread archiving already added, rather than a second one. `UISHELL_SIDEBAR` is unblocked and
-replaces the top nav row entirely as one atomic cutover, not a transitional shim running both navs
-at once; `UISHELL_DRAWER`, `UISHELL_MOBILE`, and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+")
-build on its chrome after it lands. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed:
+The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_MOBILE`, `UISHELL_NEWTHREAD_SANDBOX`,
+`UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`) is a separate frontend-ergonomics track: it
+is not gated by, and does not gate, the Action Service milestones above. `UISHELL_NEWTHREAD_SANDBOX`
+has no dependencies and ships independently. The persistent left sidebar (`UISHELL_SIDEBAR`) has
+landed, replacing the top nav row entirely as one atomic cutover; `UISHELL_DRAWER`, `UISHELL_MOBILE`,
+and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+", currently a stub that opens the Sandbox
+list) now build on its chrome. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed:
 finding one old Thread once the sidebar's working-set list outgrows it needs its own
 paginated/searchable page eventually, flagged now only so the with-sandboxes endpoint isn't assumed
 to stay one unpaginated call forever. See [session-first navigation](session_first_navigation.md).
@@ -597,20 +588,6 @@ and Thread wake/queue semantics. It is not an executor or an Action decision aut
 the canonical Action event sequence, preserving individual events and ordering, and adds no second
 Action outbox or event store; cross-Identity delivery requires an explicit read policy.
 
-### `UISHELL_SIDEBAR` — session-first sidebar shell
-
-**Planned milestone:** replace `app.tsx`'s always-visible five-button nav row with a persistent
-left sidebar: a single Threads list grouped by the Sandbox that hosts them (state icon, name,
-thread count per group; a per-thread status dot for harness-running/idle/needs-approval), including
-a struck-through group for a Thread whose Sandbox was deleted (read-only, no folder-link, no
-composer). Sandboxes get no separate browse-by-sandbox tab — that identity/state/count already
-lives in the group headers. See [the App Shell mock](mocks/app_shell.html) for the settled layout.
-Ship as one atomic cutover; no transitional shim keeping both navs live.
-
-**Acceptance:** every Thread across every Sandbox appears exactly once, grouped correctly; a Thread
-survives its Sandbox's deletion and renders read-only; per-thread status reflects real
-harness/pending-approval state, not a cached snapshot.
-
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
 **Planned UI:** a persistent badge, reachable from any route regardless of phone collapse state,
@@ -620,15 +597,17 @@ opens a non-modal drawer over the current page showing pending Action approvals
 top-level push/subscription mechanism (alongside wherever `live.tsx`'s mechanism already lives) to
 raise the badge without a page visit.
 
-**Depends on** `UISHELL_SIDEBAR` for chrome placement; the subscription plumbing itself can be
-built in parallel.
+**Unblocked**: the sidebar's chrome (`UISHELL_SIDEBAR`) has landed; the subscription plumbing is
+the remaining work.
 
 ### `UISHELL_MOBILE` — mobile sidebar collapse
 
 **Planned UI:** collapse the sidebar behind a hamburger toggle at phone width; the pending-approval
 badge stays reachable in the top bar regardless of which sidebar view was last open.
 
-**Depends on** `UISHELL_SIDEBAR`; this is a breakpoint on its layout, not new logic.
+**Unblocked**: the sidebar (`UISHELL_SIDEBAR`) has landed; this is a breakpoint on its layout, not
+new logic. The sidebar is also independently resizable by drag or arrow keys at desktop width
+(persisted per viewer), unrelated to this collapse behavior.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
@@ -644,9 +623,10 @@ a composer-shape addition over data it already has. No dependency on the UI-shel
 Enter — the page then binds to whatever Sandbox/Thread the submission created. Reuses the same
 composer component as `UISHELL_NEWTHREAD_SANDBOX`, just unscoped.
 
-**Depends on** `UISHELL_SIDEBAR` for chrome placement — the "+" lives in the sidebar itself.
-Whether this composer eventually becomes the default landing page instead of requiring the sidebar
-click first is an open question, not decided.
+**Unblocked**: the sidebar (`UISHELL_SIDEBAR`) has landed, and its "+" is currently a stub that
+just opens the Sandbox list — this replaces that stub with the real composer. Whether this composer
+eventually becomes the default landing page instead of requiring the sidebar click first is an open
+question, not decided.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 

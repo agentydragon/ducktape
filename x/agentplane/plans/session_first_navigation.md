@@ -1,6 +1,6 @@
 # Session-first navigation
 
-Status: **captured, not designed.**
+Status: **the sidebar shell has shipped; the deleted-Sandbox transcript-replay question below is still open.**
 
 ## Current model: Sandbox-first, mirrors Kubernetes
 
@@ -54,17 +54,19 @@ still open: the response doesn't yet carry cursor pagination (see `THREAD_BROWSE
 Alembic migrations rather than the ad hoc idempotent-DDL pattern its docstring used to call out as
 a staging-only stopgap, and `Thread` already carries an `archived` flag.
 
-## Open questions (not decided here)
+## Resolved by the shipped sidebar
 
-- Does a session-first list replace `SandboxList` as the `/` route, or live alongside it as a
-  second top-level view? (Settled direction, per [the App Shell mock](mocks/app_shell.html):
-  replace it entirely as one atomic cutover — see `UISHELL_SIDEBAR` in [the task DAG](task_dag.md).)
-- What happens to a session row when its Sandbox is deleted — kept as a read-only historical entry,
-  or dropped once the Sandbox is gone? (Now answerable either way, since `Thread` rows already
-  outlive the Sandbox.)
-- Reuse `sandboxes.tsx`'s `STATE_COLORS` vocabulary and hover-condition-detail pattern
-  (`conditionLine`, `sandboxes.tsx:44-46`) for the sandbox-state-per-session display, or does a
-  session list need a simpler/collapsed state representation than the full Sandbox page does?
+The persistent left sidebar (formerly `UISHELL_SIDEBAR` in [the task DAG](task_dag.md), now
+landed) answered three of this doc's original open questions directly: it replaces `SandboxList`
+as the `/` route entirely (one atomic cutover, no dual-nav transition); a Thread whose Sandbox was
+deleted stays listed as a read-only, struck-through historical entry rather than being dropped; and
+it reuses `sandboxes.tsx`'s state vocabulary (`stateDetail`) for the per-group sandbox-state
+display rather than inventing a second one.
+
+## Still open
+
 - Does a deleted Sandbox's session become read-only against its last-ingested `Event` rows (a real
   transcript replay with no live runner behind it), or just a dead list entry with no detail view?
-  `trajectory.py`'s stored payloads make the former possible, not just a metadata stub.
+  `trajectory.py`'s stored payloads make the former possible, not just a metadata stub. The sidebar
+  currently takes the latter (clicking such a thread is a no-op); building the real replay view is
+  scoped out as separate future work.
