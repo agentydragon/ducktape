@@ -163,6 +163,7 @@ resources:
   # --- cert-manager ---
   - cert-manager/issuer-config-artifact/flux-kustomization.yaml
   - cert-manager/issuer-config/flux-kustomization.yaml
+  - cert-manager/app-artifact/flux-kustomization.yaml
   - cert-manager/app/flux-kustomization.yaml
   - cert-manager/servicemonitor/flux-kustomization.yaml
   - cert-manager/trust/flux-kustomization.yaml
