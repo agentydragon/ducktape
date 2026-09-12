@@ -87,6 +87,5 @@ py_library(
     deps = [
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:policy_informer",
-        "//x/agentplane/action_service/policies:resources",
     ],
 )

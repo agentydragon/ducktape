@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, ValidationError
 
-from x.agentplane.action_service.models import ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
 from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
 
@@ -30,14 +30,6 @@ CALLER_LABEL_SELECTOR = f"{CALLER_LABEL}=true"
 READY_CONDITION = "Ready"
 # metav1.Condition.message is capped by the CRD schema; a pydantic report for a large object can be longer.
 _MESSAGE_LIMIT = 32768
-
-
-@dataclass(frozen=True, slots=True, order=True)
-class NamespacedName:
-    """What the policy index is keyed by; ordered so a sorted index walks namespace, then name."""
-
-    namespace: str
-    name: str
 
 
 class _Wire(BaseModel):
@@ -54,6 +46,10 @@ class ObjectMeta(_Wire):
     resource_version: str = Field(
         alias="resourceVersion", description="Bumped on every write, status included; what a Decision records."
     )
+
+    @property
+    def namespaced_name(self) -> NamespacedName:
+        return NamespacedName(self.namespace, self.name)
 
 
 class Condition(_Wire):

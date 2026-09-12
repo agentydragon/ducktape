@@ -13,6 +13,7 @@ from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.models import (
     BindingEvidence,
     MatchedPolicy,
+    NamespacedName,
     PolicyEvidence,
     PolicySetEvidence,
     ProviderOutcome,
@@ -26,7 +27,6 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
-    NamespacedName,
     SandboxSubject,
     ServiceAccountSubject,
 )
@@ -87,7 +87,7 @@ def resolve_bindings(
 def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidence:
     bindings: list[ActionPolicyBinding] = [resolved.binding for resolved in context.bindings]
     sets = {
-        NamespacedName(policy_set.metadata.namespace, policy_set.metadata.name): policy_set
+        policy_set.metadata.namespaced_name: policy_set
         for resolved in context.bindings
         for policy_set in resolved.policy_sets
     }

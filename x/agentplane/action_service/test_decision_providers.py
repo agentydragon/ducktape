@@ -25,6 +25,7 @@ from x.agentplane.action_service.models import (
     BindingEvidence,
     DecisionInput,
     MatchedPolicy,
+    NamespacedName,
     PolicyKind,
     PolicySetEvidence,
     Principal,
@@ -34,7 +35,7 @@ from x.agentplane.action_service.models import (
     SandboxCaller,
     Verdict,
 )
-from x.agentplane.action_service.policies.resources import NamespacedName, parse_binding, parse_policy_set
+from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext

@@ -18,7 +18,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.action_service.models import ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL_SELECTOR,
@@ -31,7 +31,6 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicySet,
     Condition,
     InvalidResource,
-    NamespacedName,
     ObjectMeta,
     parse_binding,
     parse_policy_set,
@@ -56,7 +55,7 @@ class PolicyIndex:
 
     def eligible(self, ref: ServiceAccountRef) -> bool:
         """Whether this ServiceAccount currently carries the caller label; nothing is eligible before sync."""
-        return self.synced and NamespacedName(ref.namespace, ref.name) in self.service_accounts
+        return self.synced and ref.namespaced_name in self.service_accounts
 
     def caller_service_accounts(self) -> list[ServiceAccountRef]:
         return [self.service_accounts[key] for key in sorted(self.service_accounts)]
@@ -71,15 +70,11 @@ class PolicyIndex:
 
 
 def _namespaced(obj: ActionPolicySet | ActionPolicyBinding | InvalidResource) -> NamespacedName:
-    return NamespacedName(obj.metadata.namespace, obj.metadata.name)
+    return obj.metadata.namespaced_name
 
 
 def _service_account(raw: k8s_client.V1ServiceAccount) -> ServiceAccountRef:
     return ServiceAccountRef(namespace=raw.metadata.namespace, name=raw.metadata.name)
-
-
-def _service_account_key(ref: ServiceAccountRef) -> NamespacedName:
-    return NamespacedName(ref.namespace, ref.name)
 
 
 def _keys_in(store: Mapping[NamespacedName, object], namespace: str) -> set[NamespacedName]:
@@ -149,7 +144,7 @@ class PolicyInformer:
                     args=(namespace,),
                     kwargs={"label_selector": CALLER_LABEL_SELECTOR},
                     parse=_service_account,
-                    key=_service_account_key,
+                    key=lambda ref: ref.namespaced_name,
                     names=partial(_keys_in, index.service_accounts, namespace),
                     apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
                 ),

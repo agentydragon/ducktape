@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from x.agentplane.action_service.models import ServiceAccountRef
-from x.agentplane.action_service.policies.resources import NamespacedName
+from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
 from x.agentplane.action_service.policy_informer import PolicyIndex
 
 TEST_NAMESPACE = "agentplane-test"

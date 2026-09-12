@@ -18,6 +18,7 @@ from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
     MatchedPolicy,
     MatchedRepository,
+    NamespacedName,
     PolicyKind,
     ProviderVerdict,
     SandboxCaller,
@@ -28,7 +29,6 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
-    NamespacedName,
     ObjectMeta,
     Status,
     parse_binding,

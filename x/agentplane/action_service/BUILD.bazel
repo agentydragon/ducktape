@@ -659,7 +659,6 @@ py_test(
         ":service",
         ":updates",
         "//:conftest",
-        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:callers",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//alembic",

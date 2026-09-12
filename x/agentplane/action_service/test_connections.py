@@ -30,8 +30,13 @@ from x.agentplane.action_service.connections import (
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import ActionNotFoundError, ActionStore, Base, ConnectionGrantRow, make_sessionmaker
-from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, ServiceAccountRef
-from x.agentplane.action_service.policies.resources import NamespacedName
+from x.agentplane.action_service.models import (
+    ActionRequestInput,
+    NamespacedName,
+    Principal,
+    PrincipalRole,
+    ServiceAccountRef,
+)
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
