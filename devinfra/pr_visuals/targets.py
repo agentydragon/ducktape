@@ -74,13 +74,8 @@ class TestRun:
     summary: TestSummary
 
 
-def list_test_runs(invocation: str, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run) -> list[TestRun]:
-    """Every target in `invocation` that ran as a test.
-
-    The listing also carries each target's file and build rows; the test summary is what marks
-    the one row that actually ran, and the others have nothing to say about duration.
-    """
-    result = run([bbapi, "target", invocation, "--json"], check=False, text=True, capture_output=True)
+def _listing(invocation: str, *extra: str, bbapi: Path, run: Runner) -> list[TestRun]:
+    result = run([bbapi, "target", invocation, "--json", *extra], check=False, text=True, capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(f"listing targets of {invocation} failed: {result.stderr.strip()}")
     listing = TargetListing.model_validate_json(result.stdout)
@@ -90,3 +85,24 @@ def list_test_runs(invocation: str, *, bbapi: Path = Path("bbapi"), run: Runner 
         for target in group.targets
         if target.test_summary is not None and target.status is not None
     ]
+
+
+def list_test_runs(
+    invocation: str, expected: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+) -> list[TestRun]:
+    """Every target in `invocation` that ran as a test, including the ones the listing truncates.
+
+    The listing also carries each target's file and build rows; the test summary is what marks
+    the one row that actually ran, and the others have nothing to say about duration.
+
+    Gotcha: the bulk listing is capped -- it answered with exactly twelve targets per group for a
+    fifteen-target sweep, and offered no page token to say so. The missing three were simply the
+    last alphabetically, so a report built on it alone silently omits whatever sorts late. Asking
+    for those by `--label` returns them, so `expected` is what turns a truncated answer into a
+    complete one.
+    """
+    runs = _listing(invocation, bbapi=bbapi, run=run)
+    missing = sorted(set(expected) - {test_run.label for test_run in runs})
+    for label in missing:
+        runs.extend(_listing(invocation, "--label", label, bbapi=bbapi, run=run))
+    return runs

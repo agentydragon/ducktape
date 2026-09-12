@@ -29,6 +29,7 @@ py_library(
     deps = [
         ":artifacts",
         ":targets",
+        "//util/bazel:workspace",
     ],
 )
 
