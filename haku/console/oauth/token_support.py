@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx
-from mcp.client.auth.utils import handle_token_response_scopes
+import httpx2
 from mcp.shared.auth import OAuthToken
 from pydantic import ValidationError
 
@@ -50,7 +50,12 @@ def public_base_url(settings: Settings) -> str:
 
 
 def token_request_error_message(*, label: str, request_error: httpx.RequestError, timeout_seconds: float) -> str:
-    """Describe token-endpoint transport failures even when httpx's message is empty."""
+    """Describe token-endpoint transport failures even when httpx's message is empty.
+
+    This project's httpx2-based clients raise httpx2 exceptions, but this helper's only caller,
+    ``mcp/operator_oauth.py``, is not yet migrated and still raises plain httpx ones -- keep this
+    typed for httpx until that migration reaches it too.
+    """
     if isinstance(request_error, httpx.TimeoutException):
         return f"{label} timed out after {timeout_seconds:g} seconds"
     detail = str(request_error).strip()
@@ -69,7 +74,7 @@ def token_request_headers(headers: Mapping[str, str] | None = None) -> dict[str,
     return {**(headers or {}), "Accept": "application/json"}
 
 
-async def parse_token_response(response: httpx.Response, *, label: str) -> OAuthToken:
+async def parse_token_response(response: httpx2.Response, *, label: str) -> OAuthToken:
     if response.status_code != 200:
         detail, oauth_error = _oauth_error_detail(response)
         raise TokenResponseError(
@@ -79,7 +84,11 @@ async def parse_token_response(response: httpx.Response, *, label: str) -> OAuth
             invalid_response=False,
         )
     try:
-        return await handle_token_response_scopes(response)
+        # CLEANUP(added 2026-09-08): Call mcp.client.auth.utils.handle_token_response_scopes(response)
+        #   instead once mcp-sdk moves to httpx2 -- it does exactly this, but its parameter is typed
+        #   httpx.Response, which this project's httpx2 client responses don't satisfy.
+        content = await response.aread()
+        return OAuthToken.model_validate_json(content)
     except ValidationError as e:
         raise TokenResponseError(
             f"{label} response was invalid: {e}",
@@ -89,7 +98,7 @@ async def parse_token_response(response: httpx.Response, *, label: str) -> OAuth
         ) from e
 
 
-def _oauth_error_detail(response: httpx.Response) -> tuple[str, str | None]:
+def _oauth_error_detail(response: httpx2.Response) -> tuple[str, str | None]:
     """Return bounded, useful token-endpoint diagnostics without echoing token fields.
 
     OAuth error responses are normally JSON. Only the RFC error fields are retained from
