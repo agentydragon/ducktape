@@ -250,6 +250,7 @@ parallel. Each node leaves this section when it lands.
 
 ```mermaid
 graph TD
+    TLH_MONEY["TLH-MONEY: the managed portfolio is denominated in money, not proxy units"]
     INVEST["INVEST: a clamped, money-denominated invest order (decision open)"]
     SUITES_NOBUY["SUITES-A: configured suites that never purchase move onto a household"]
     SUITES_BUY["SUITES-B: configured suites that purchase move onto a household"]
@@ -264,6 +265,7 @@ graph TD
     SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
     VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
+    TLH_MONEY --> INVEST
     INVEST --> SUITES_BUY
     SUITES_NOBUY --> CONFIGURED_GONE
     SUITES_BUY --> CONFIGURED_GONE
@@ -275,12 +277,25 @@ graph TD
     RUN_GONE --> VECTOR
 ```
 
+- **TLH-MONEY.** Inside `sim/tlh.py` a cohort's exposure is a whole-unit count of the
+  proxy security on a `quantity_scale` grid, so contributions buy whole units and
+  park the remainder in `_cash`, withdrawals round unit counts up and park the
+  overshoot, basis is apportioned by units and distributions are computed per unit.
+  A direct-indexing account has none of that: a cohort becomes
+  `(exposure, basis, purchase_month)` with exposure exact and carried by the index
+  ratio, money quantized once when it crosses the ledger, a distribution
+  `rate / price × value`, and the opening declaration value, basis and month per
+  cohort instead of proxy lots. The harvest curve already works from embedded-gain
+  fraction, drawdown and cohort age. `quantity_scale`, `_cash` and the round-up
+  loop go; `tlh_test`, `harvest_test`, `tlh_session_test` and
+  `configured_allocation_test` update the rounding they pinned. The app declares no
+  managed sleeve, so its output is untouched.
 - **INVEST.** The configured runner buys after settlement, sized to the cash actually
   left; a household deciding once a month cannot see that cash. Open decision: an
   order the ledger fills up to an amount from the account's cash on hand, turned into
-  whole units for a lot pool and contributed as-is to a managed portfolio. The
-  managed case drops today's rounding of a contribution to whole units of the
-  underlying, which `tlh_session_test` and `configured_allocation_test` may pin.
+  whole units for a lot pool and contributed as-is to a managed portfolio. After
+  TLH-MONEY the managed case has nothing to round, so only the lot-pool shape is
+  left to decide.
 - **SUITES-A.** `TestConfigured{IncomeSources,PropertyStakes,PrivateEquity,Deductions,
 CashConservation,FrozenRollout,Rental*,YearEndTax,PropertyCarryingCost,ScanPhase,
 ValidationEdge}` and `configured_mortgage_test` use grouped settlement and scheduled
