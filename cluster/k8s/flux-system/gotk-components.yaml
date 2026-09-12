@@ -3379,6 +3379,7 @@ spec:
         - --enable-leader-election
         - --concurrent=8
         - --requeue-dependency=30s
+        - --feature-gates=ExternalArtifact=true
         env:
         - name: RUNTIME_NAMESPACE
           valueFrom:
