@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -59,6 +60,7 @@ from x.agentplane.action_service.models import Principal, PrincipalRole
 
 _ISSUING: ContextVar[UUID | None] = ContextVar("agentplane_oauth_issuing", default=None)
 _VERIFY_FAILURES: ContextVar[list[Exception] | None] = ContextVar("agentplane_oauth_verify_failures", default=None)
+logger = logging.getLogger(__name__)
 _INVALID_GRANT = "The Connection authorization grant is invalid; authorize a new connection."
 
 
@@ -219,15 +221,25 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
+        # Every refusal below reaches the client as one bounded invalid_grant; the log names the
+        # check that refused it, since nothing else in the flow does.
         try:
             code = await self._code_store.get(key=authorization_code.code)
             if code is None or code.client_id != client.client_id or authorization_code.client_id != client.client_id:
+                logger.warning("token exchange refused: authorization code unknown or bound to another client")
                 raise TokenError("invalid_grant", _INVALID_GRANT)
             principal = await self._principal_resolver.resolve(code.idp_tokens)
             if (principal.issuer, principal.subject) != (
                 self._settings.upstream_issuer,
                 self._settings.upstream_subject,
             ):
+                logger.warning(
+                    "token exchange refused: upstream principal is not the pinned operator "
+                    "(issuer_matches=%s subject_matches=%s observed_issuer=%s)",
+                    principal.issuer == self._settings.upstream_issuer,
+                    principal.subject == self._settings.upstream_subject,
+                    principal.issuer,
+                )
                 raise InvalidOidcPrincipalError
             binding = await self._enrollments.approved(
                 client_id=code.client_id,
@@ -238,13 +250,10 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             grant = await self._connections.bind(binding)
             await self._connections.validate_pending(grant.id, issuer=binding.issuer, client_id=code.client_id)
             await self._enrollments.claim_exchange(grant.id)
-        except (
-            InvalidOidcPrincipalError,
-            EnrollmentRejectedError,
-            GrantRejectedError,
-            ConnectionConflictError,
-            ConnectionNotFoundError,
-        ):
+        except InvalidOidcPrincipalError:
+            raise TokenError("invalid_grant", _INVALID_GRANT) from None
+        except (EnrollmentRejectedError, GrantRejectedError, ConnectionConflictError, ConnectionNotFoundError) as error:
+            logger.warning("token exchange refused: %s: %s", type(error).__name__, error)
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
         except (OidcPrincipalVerificationUnavailableError, SQLAlchemyError):
             raise _unavailable() from None
@@ -274,6 +283,13 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
                 self._settings.upstream_issuer,
                 self._settings.upstream_subject,
             ):
+                logger.warning(
+                    "token refresh refused: upstream principal is not the pinned operator "
+                    "(issuer_matches=%s subject_matches=%s observed_issuer=%s)",
+                    principal.issuer == self._settings.upstream_issuer,
+                    principal.subject == self._settings.upstream_subject,
+                    principal.issuer,
+                )
                 raise InvalidOidcPrincipalError
         except InvalidOidcPrincipalError:
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
