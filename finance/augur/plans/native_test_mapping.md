@@ -31,7 +31,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `withdrawal_receipt_does_not_recalculate_component_rounded_value` → `sim/test_managed.py::test_withdrawal_receipt_does_not_recalculate_component_rounded_value`
 - [x] `component_capture_keeps_explicit_stop_marks_and_independent_books` → `sim/test_managed.py::test_component_capture_keeps_explicit_stop_marks_and_independent_books`
 - [x] `opening_component_rows_require_exact_portfolio_coverage` → `sim/test_managed.py::test_opening_component_rows_require_exact_portfolio_coverage`
-- [x] `zero_component_marks_do_not_relax_ordinary_quote_or_negative_mark_validation` → `sim/validation_test.py::test_zero_price_is_allowed_only_for_exclusively_managed_assets`
+- [x] `zero_component_marks_do_not_relax_ordinary_quote_or_negative_mark_validation` → `sim/test_declaration_guards.py::test_a_zero_mark_is_valid_only_where_the_asset_is_held_exclusively_through_a_manager`
 
 ## `rust/engine/mortgages_test.rs`
 
@@ -59,20 +59,20 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `actor_books_follow_partial_sales_and_hide_exhausted_lots` → `sim/test_observations.py::test_actor_books_follow_partial_sales_and_hide_exhausted_lots`
 - [x] `actor_books_reject_unpriced_public_positions_before_inspection` → `sim/test_observations.py::test_actor_books_reject_unpriced_public_positions_before_inspection`
 - [x] `retained_rollouts_keep_opening_books_lots_and_tax_state_independent` → `sim/test_world.py::test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent`
-- [x] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode` → `sim/test_world.py::test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode`
+- [x] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode` → `sim/test_world.py::test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books`
 - [x] `claim_views_keep_assembled_amount_identity_and_payer_scope` → `sim/test_observations.py::test_claim_views_keep_assembled_amount_identity_and_payer_scope`
-- [x] `rejects_invalid_fixture_metadata` → `sim/test_validation_contracts.py::test_rejects_invalid_fixture_metadata`
+- [x] `rejects_invalid_fixture_metadata` → `sim/test_declaration_guards.py::{test_a_world_needs_a_positive_horizon_every_series_covers,test_a_path_admits_only_dense_series_named_once}` and `sim/fixed_point_test.py::test_currency_quantum_accepts_exact_inputs_and_rejects_implicit_float_money`
 - [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `sim/testing/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
 - [x] `series_indexed_amount_validation_rejects_invalid_paths` → `sim/testing/indexed_payments_test.py::{test_series_indexed_amount_cannot_fire_before_base_month,test_series_indexed_amount_requires_external_series_coverage,test_series_indexed_amount_rejects_zero_base_level}`
 - [x] `bond_principal_remains_until_redemption_event` → `sim/test_held_bonds.py::{test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon,test_stopped_bond_snapshot_uses_the_last_observed_index}`
 - [x] `nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts` → `sim/test_held_bonds.py::test_tips_deflation_changes_income_but_redemption_has_a_face_floor`
-- [x] `bond_validation_rejects_non_par_and_missing_index_paths` → `sim/test_validation_contracts.py::test_bond_validation_rejects_non_par_and_missing_index_paths`
-- [x] `rejects_invalid_references_before_rollout_execution` → `sim/test_validation_contracts.py::test_rejects_invalid_references_before_rollout_execution`
-- [x] `rejects_income_from_a_source_the_scenario_did_not_declare` → `sim/test_validation_contracts.py::test_rejects_income_from_a_source_the_scenario_did_not_declare`
-- [x] `distribution_tax_character_requires_a_complete_known_issuer_split` → `sim/test_validation_contracts.py::test_distribution_tax_character_requires_a_complete_known_issuer_split`
-- [x] `rejects_invalid_property_contracts_before_rollout_execution` → `sim/test_validation_contracts.py::test_rejects_invalid_property_contracts_before_rollout_execution`
-- [x] `rejects_mixed_quantity_scales_and_invalid_security_prices` → `sim/test_validation_contracts.py::test_rejects_mixed_quantity_scales_and_invalid_security_prices`
-- [x] `zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not` → `sim/test_validation_contracts.py::test_zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not`
+- [x] `bond_validation_rejects_non_par_and_missing_index_paths` → `sim/test_declaration_guards.py::test_a_dated_bond_is_bought_at_par_over_whole_coupon_periods`
+- [x] `rejects_invalid_references_before_rollout_execution` → `sim/test_declaration_guards.py::test_a_scheduled_flow_moves_declared_cash_from_a_declared_income_source`
+- [x] `rejects_income_from_a_source_the_scenario_did_not_declare` → `sim/test_declaration_guards.py::test_a_scheduled_flow_moves_declared_cash_from_a_declared_income_source`
+- [x] `distribution_tax_character_requires_a_complete_known_issuer_split` → `sim/test_declaration_guards.py::test_a_distribution_splits_its_tax_character_across_known_reported_issuers`
+- [x] `rejects_invalid_property_contracts_before_rollout_execution` → `sim/test_declaration_guards.py::{test_a_property_purchase_names_a_known_location_and_declared_parties,test_a_purchase_price_is_covered_by_the_down_payment_and_the_loan}`
+- [x] `rejects_mixed_quantity_scales_and_invalid_security_prices` → `sim/test_declaration_guards.py::{test_a_lot_needs_a_declared_pool_on_its_own_quantity_scale,test_a_pool_admits_no_quote_that_is_not_a_price_and_holds_nothing_when_it_refuses}`
+- [x] `zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not` → `sim/test_declaration_guards.py::test_a_zero_payout_is_valid_but_a_negative_one_is_not`
 - [x] `transfer_and_fifo_sale_remain_balanced` → `sim/test_world.py::test_transfer_and_fifo_sale_remain_balanced`
 - [x] `mid_horizon_property_mark_and_sale_share_the_purchase_anchor` → `sim/test_world_mortgages.py::test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor`
 - [x] `oversell_is_rejected_before_any_disposition` → `sim/test_holdings.py::test_oversell_is_rejected_before_any_disposition`

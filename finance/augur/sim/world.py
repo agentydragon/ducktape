@@ -37,19 +37,22 @@ from finance.augur.sim.books import (
 )
 from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.distributions import Distributions
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.held_bonds import BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import checked_count, position_value
+from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.prepared import (
     CompiledRun,
     PreparedAccount,
     PreparedBond,
     PreparedDistribution,
+    PreparedFixedAmount,
     PreparedHoldingPool,
+    PreparedIndexedCoupon,
     PreparedJurisdiction,
     PreparedLocation,
     PreparedLot,
@@ -64,7 +67,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
-from finance.augur.sim.scenario import TransferIncomeCategory
+from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
 from finance.augur.sim.tlh import (
     ModeledRealizations,
@@ -145,6 +148,12 @@ class World:
         """
         if horizon_months <= 0:
             raise ValueError("horizon must be positive")
+        for series in market.series.values():
+            if series.snapshots != horizon_months + 1:
+                raise ValueError(
+                    f"series {series.series_id!r} covers {series.snapshots} snapshots, "
+                    f"not the horizon's {horizon_months + 1}"
+                )
         self.market = market
         self.rollout_id = market.rollout_id
         self.horizon_months = horizon_months
@@ -239,27 +248,81 @@ class World:
         self.accounting.declare(account)
 
     def declare_pool(self, pool: PreparedHoldingPool) -> None:
-        """A place the owner may hold a security; a public one needs its price series on the path."""
+        """A place the owner may hold a security; a public one is priceable at every snapshot.
+
+        A pool whose quote is zero would value the position at nothing rather than admit the
+        engine cannot price it, so the declaration refuses it. Only a portfolio the owner holds
+        exclusively through a manager may carry a zero mark.
+        """
         self._composing()
-        if private_issuer(pool.asset_id) is None and f"security:{pool.asset_id}" not in self.market.series:
-            raise ValueError(f"missing public security series for {pool.asset_id!r}")
+        if not is_quantity_scale(pool.quantity_scale):
+            raise ValueError("invalid holding pool quantity scale")
+        if private_issuer(pool.asset_id) is None:
+            if f"security:{pool.asset_id}" not in self.market.series:
+                raise ValueError(f"missing public security series for {pool.asset_id!r}")
+            self.market.require_prices(f"security:{pool.asset_id}")
         self.holdings.declare_pool(self.accounting, pool)
 
     def hold(self, holding: PreparedLot | PreparedBond) -> None:
         """A lot or dated bond held at month zero."""
         self._composing()
         if isinstance(holding, PreparedLot):
+            pool = next(
+                (
+                    pool
+                    for pool in self.holdings.pools
+                    if (pool.agent_id, pool.account_id, pool.asset_id)
+                    == (holding.agent_id, holding.account_id, holding.asset_id)
+                ),
+                None,
+            )
+            if pool is None:
+                raise ValueError(f"lot {holding.lot_id!r} references no declared holding pool")
+            if pool.quantity_scale != holding.quantity_scale:
+                raise ValueError(f"lot {holding.lot_id!r} has a mixed quantity scale")
             if (issuer := private_issuer(holding.asset_id)) is not None:
                 for channel in private_equity.CHANNELS:
                     if f"private_equity_{channel}:{issuer}" not in self.market.series:
                         raise ValueError(f"missing private-equity {channel} series for issuer {issuer!r}")
+                # The terminal snapshot is not simulated but it is read: terminal value comes from it.
+                for month, mark in enumerate(self.market.path(f"private_equity_mark:{issuer}")):
+                    if mark < 0:
+                        raise ValueError(f"issuer {issuer!r} has invalid mark value {mark} at month {month}")
                 if self.private_equity is None:
                     self.private_equity = private_equity.PrivateEquity([])
             self.holdings.hold(self.accounting, holding)
             return
+        self._check_bond(holding)
         if self.bonds is None:
             self.bonds = HeldBonds((), self.market)
         self.bonds.hold(holding)
+
+    def _check_bond(self, bond: PreparedBond) -> None:
+        """Bought at par, a nonnegative coupon on whole periods, and indexed only on an index the path carries."""
+        if AccountRef(agent_id=bond.agent_id, account_id=bond.account_id) not in self.accounting.declared:
+            raise ValueError(f"bond {bond.bond_id!r} references an unknown account")
+        if bond.issuer_jurisdiction_id is not None and bond.issuer_jurisdiction_id not in {
+            item.jurisdiction_id for item in self.jurisdictions
+        }:
+            raise ValueError(f"bond {bond.bond_id!r} has unknown issuer")
+        term = bond.maturity_month_index - bond.purchase_month_index
+        coupon = bond.coupon.amount if isinstance(bond.coupon, PreparedFixedAmount) else bond.coupon.annual_rate_ppb
+        if (
+            bond.face_value <= 0
+            or bond.purchase_price != bond.face_value
+            or coupon < 0
+            or bond.coupon_period_months <= 0
+            or term <= 0
+            or term % bond.coupon_period_months
+        ):
+            raise ValueError(f"invalid bond terms for {bond.bond_id!r}")
+        if isinstance(bond.coupon, PreparedIndexedCoupon):
+            if "inflation" not in self.market.series:
+                raise ValueError(f"missing inflation series for indexed bond {bond.bond_id!r}")
+            if max(0, bond.purchase_month_index) > self.horizon_months or any(
+                value <= 0 for value in self.market.path("inflation")
+            ):
+                raise ValueError(f"invalid bond inflation path for {bond.bond_id!r}")
 
     def declare_tender_policy(self, policy: _TenderPolicy) -> None:
         """How an owner answers its issuers' sale opportunities and where compulsory proceeds land."""
@@ -274,10 +337,39 @@ class World:
         self.private_equity.tender_policies.append(policy)
 
     def declare_distribution(self, spec: PreparedDistribution) -> None:
-        """A security's periodic payout to its holder, on the path's distribution series."""
+        """A security's periodic payout to its holder, on the path's distribution series.
+
+        The payout goes to whoever holds the security, so the owner needs a declared pool or a
+        managed portfolio for it — a cash account is not a place a security is held.
+        """
         self._composing()
         if f"security_distribution:{spec.asset_id}" not in self.market.series:
             raise ValueError(f"missing distribution series for {spec.asset_id!r}")
+        for month, rate in enumerate(self.market.path(f"security_distribution:{spec.asset_id}")):
+            if rate < 0:
+                raise ValueError(f"series for {spec.asset_id!r} has a negative security distribution at month {month}")
+        if AccountRef(agent_id=spec.agent_id, account_id=spec.to_account_id) not in self.accounting.declared:
+            raise ValueError("distribution references an unknown account")
+        holding = (spec.agent_id, spec.holding_account_id, spec.asset_id)
+        if (
+            holding
+            not in {(pool.agent_id, pool.account_id, pool.asset_id) for pool in self.holdings.pools}
+            | self.holdings.managed
+        ):
+            raise ValueError(f"distribution references no lots for {':'.join(holding)}")
+        if (
+            not spec.tax_character
+            or any(not 0 <= part.fraction_ppb <= MONEY_FACTOR_SCALE for part in spec.tax_character)
+            or sum(part.fraction_ppb for part in spec.tax_character) != MONEY_FACTOR_SCALE
+        ):
+            raise ValueError("invalid distribution tax character split")
+        for part in spec.tax_character:
+            if part.issuer_jurisdiction_id is not None and part.issuer_jurisdiction_id not in {
+                item.jurisdiction_id for item in self.jurisdictions
+            }:
+                raise ValueError("distribution has unknown issuer")
+            if InterestIncome(issuer_jurisdiction_id=part.issuer_jurisdiction_id) not in self.income_sources:
+                raise ValueError("distribution has undeclared income source")
         if self.distributions is None:
             self.distributions = Distributions(
                 (), {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in self.specs.values()}
@@ -326,9 +418,35 @@ class World:
         self._composing()
         if self.properties is not None:
             raise ValueError("housing is already declared")
-        self.properties = Properties(housing, self.accounting)
         purchases = {purchase.property_id: purchase for purchase in housing.purchases}
         located = {location.location_id: location for location in locations}
+        for purchase in housing.purchases:
+            if purchase.location_id not in located:
+                raise ValueError(f"property {purchase.property_id!r} references unknown location")
+            for account in (
+                AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
+                AccountRef(agent_id=purchase.seller_agent_id, account_id=purchase.seller_account_id),
+            ):
+                if account not in self.accounting.declared:
+                    raise ValueError(f"purchase {purchase.cause_id!r} references an unknown account")
+            principal = 0 if purchase.mortgage is None else purchase.mortgage.principal
+            if (
+                purchase.purchase_price <= 0
+                or purchase.down_payment < 0
+                or purchase.buyer_closing_cost < 0
+                or not 0 <= purchase.rented_fraction_ppb <= MONEY_FACTOR_SCALE
+                or not 0 <= purchase.land_value_fraction_ppb <= MONEY_FACTOR_SCALE
+                or purchase.down_payment + principal != purchase.purchase_price
+            ):
+                raise ValueError(f"invalid property terms for {purchase.property_id!r}")
+        for sale in housing.sales:
+            if sale.property_id not in purchases:
+                raise ValueError(f"sale references unknown property {sale.property_id!r}")
+            series_id = f"home_value:{purchases[sale.property_id].location_id}"
+            if series_id not in self.market.series:
+                raise ValueError(f'missing series "{series_id}"')
+            self.market.require_prices(series_id)
+        self.properties = Properties(housing, self.accounting)
         self.property_tax_authorities = [
             PropertyTaxAuthority(
                 policy, purchases[policy.property_id], located[purchases[policy.property_id].location_id]

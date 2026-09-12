@@ -301,10 +301,9 @@ graph TD
   contribution keeps its rounding to whole units of the underlying, as the runner's
   `materialize_buy` does.
 - **SUITES-A.** `TestConfigured{IncomeSources,PropertyStakes,PrivateEquity,Deductions,
-CashConservation,FrozenRollout,Rental*,YearEndTax,PropertyCarryingCost,ScanPhase,
-ValidationEdge}` and `configured_mortgage_test` use grouped settlement and scheduled
-  sales but no purchases: each composes its worlds as `harvest_test` does and states
-  its sales and payments as actions. Grouped all-or-none settlement is the household's
+CashConservation,FrozenRollout,Rental*,YearEndTax,PropertyCarryingCost}` use grouped
+  settlement and scheduled sales but no purchases: each composes its worlds as
+  `harvest_test` does and states its sales and payments as actions. Grouped all-or-none settlement is the household's
   choice per account, as in `product/household.py`.
 - **SUITES-B.** `TestConfiguredTargetAllocation`, `configured_allocation_test`,
   `tlh_session_test`: the same, once the invest order exists.
@@ -321,9 +320,9 @@ ValidationEdge}` and `configured_mortgage_test` use grouped settlement and sched
   billers and authorities. `scheduled_transfers` and the property cashflow tables
   become tracked emitters or declarations on the way.
 - **SIMTESTS.** `sim/testing/example_run.py` and the tests of the prepared-input path
-  (`test_results`, `validation_test`, `test_validation_contracts`,
-  `testing/test_invocation`, `product/test_action_projection`) compose their worlds;
-  what they assert about validation moves to the declaration that now rejects it.
+  (`test_results`, `testing/test_invocation`, `product/test_action_projection`) compose
+  their worlds; what they assert about validation moves to the declaration that now
+  rejects it.
 - **RUN.** `CompiledRun`, `PreparedScenario`, `compile_run`, `World.from_run`,
   `ActionSession.from_run` and `sim/validation.py` are deleted; the prepared record
   types stay as the declaration vocabulary. `SCHEMA` closes here.

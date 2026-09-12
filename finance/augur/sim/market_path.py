@@ -23,7 +23,15 @@ class MarketPath:
             raise ValueError("invalid rollout selection")
         self.rollout_id = rollout_id
         self.rollout_count = rollout_count
-        self.series = {row.series_id: row for row in series}
+        self.series: dict[str, PreparedSeries] = {}
+        for row in series:
+            if row.series_id in self.series:
+                raise ValueError(f"duplicate series {row.series_id!r}")
+            if len(row.values) != rollout_count * row.snapshots:
+                raise ValueError(
+                    f"series {row.series_id!r} has invalid shape; expected {rollout_count} x {row.snapshots}"
+                )
+            self.series[row.series_id] = row
 
     @classmethod
     def from_run(cls, run: CompiledRun, rollout_id: int) -> MarketPath:
@@ -34,6 +42,16 @@ class MarketPath:
         if not 0 <= month < series.snapshots:
             raise ValueError(f"series {series_id!r} has no value at rollout {self.rollout_id} month {month}")
         return series.values[self.rollout_id * series.snapshots + month]
+
+    def path(self, series_id: str) -> list[int]:
+        """Every snapshot this rollout reads of one series, the terminal one included."""
+        return [self.value(series_id, month) for month in range(self.series[series_id].snapshots)]
+
+    def require_prices(self, series_id: str) -> None:
+        """A price series is a price at every snapshot: zero is refused, not read as worthless."""
+        for month, value in enumerate(self.path(series_id)):
+            if value <= 0:
+                raise ValueError(f"series {series_id!r} has non-positive value {value} at month {month}")
 
     def statement(self, month: int) -> MarketStatement:
         return MarketStatement(

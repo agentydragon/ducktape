@@ -176,6 +176,8 @@ class Accounting:
                 raise ValueError("bare actor transfers cannot declare tax character")
         if request.from_account not in self.declared or request.to_account not in self.declared:
             raise ValueError("unknown declared account")
+        if income is not None and income not in self.tax.income.sources:
+            raise ValueError(f"undeclared income source {income!r}")
         if actor is not None and (request.amount <= 0 or request.amount > self.ledger.balance(request.from_account)):
             raise ValueError("amount must be positive and covered by available cash")
         if deduction is not None and deduction != "ordinary":
