@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Literal
 
-from finance.augur.sim import claims, observations, payments, results
+from finance.augur.sim import claims, observations, payments, private_equity, results
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import (
     Action,
@@ -59,8 +59,8 @@ from finance.augur.sim.prepared import (
     PreparedTransfer,
     _PropertyPurchase,
     _PropertyTax,
+    _TenderPolicy,
 )
-from finance.augur.sim.private_equity import PrivateEquity
 from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
 from finance.augur.sim.scenario import TransferIncomeCategory
@@ -162,7 +162,7 @@ class World:
         self.properties: Properties | None = None
         self.bonds: HeldBonds | None = None
         self.distributions: Distributions | None = None
-        self.private_equity: PrivateEquity | None = None
+        self.private_equity: private_equity.PrivateEquity | None = None
         # Configured cashflow tables the import adapter attaches; a composed world moves cash through actions.
         self.scheduled_transfers: tuple[PreparedTransfer, ...] = ()
         self.recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
@@ -220,10 +220,8 @@ class World:
             world.declare_housing(housing, scenario._property_tax_policies, scenario.locations)
         for distribution in scenario.distributions:
             world.declare_distribution(distribution)
-        if scenario._private_equity_tender_policies or any(
-            private_issuer(lot.asset_id) is not None for lot in scenario.initial_lots
-        ):
-            world.private_equity = PrivateEquity(scenario._private_equity_tender_policies)
+        for policy in scenario._private_equity_tender_policies:
+            world.declare_tender_policy(policy)
         world.scheduled_transfers = scenario.scheduled_transfers
         world.recurring_transfers = scenario.recurring_transfers
         world.scheduled_property_cashflows = scenario.scheduled_property_cashflows
@@ -253,11 +251,29 @@ class World:
         """A lot or dated bond held at month zero."""
         self._composing()
         if isinstance(holding, PreparedLot):
+            if (issuer := private_issuer(holding.asset_id)) is not None:
+                for channel in private_equity.CHANNELS:
+                    if f"private_equity_{channel}:{issuer}" not in self.market.series:
+                        raise ValueError(f"missing private-equity {channel} series for issuer {issuer!r}")
+                if self.private_equity is None:
+                    self.private_equity = private_equity.PrivateEquity([])
             self.holdings.hold(self.accounting, holding)
             return
         if self.bonds is None:
             self.bonds = HeldBonds((), self.market)
         self.bonds.hold(holding)
+
+    def declare_tender_policy(self, policy: _TenderPolicy) -> None:
+        """How an owner answers its issuers' sale opportunities and where compulsory proceeds land."""
+        self._composing()
+        if (
+            AccountRef(agent_id=policy.owner_agent_id, account_id=policy.proceeds_account_id)
+            not in self.accounting.declared
+        ):
+            raise ValueError("tender proceeds account is not declared")
+        if self.private_equity is None:
+            self.private_equity = private_equity.PrivateEquity([])
+        self.private_equity.tender_policies.append(policy)
 
     def declare_distribution(self, spec: PreparedDistribution) -> None:
         """A security's periodic payout to its holder, on the path's distribution series."""
@@ -637,6 +653,8 @@ class World:
             if unpaid and self.stop is None:
                 self.failed = True
                 self.stop = results.UnpaidClaims(month=self.month, claims=[claim.id for claim in unpaid])
+        if not self.failed and self.private_equity is not None:
+            self.private_equity.advance(self.accounting, self.holdings, self.market, self.marks(), self.month)
         marks = [
             self.statement(
                 spec,

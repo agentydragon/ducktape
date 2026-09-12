@@ -1,11 +1,13 @@
 """Recovery totals survive unit rounding, FIFO order and prior compulsory sales."""
 
+from collections.abc import Callable
 from dataclasses import replace
 
 import pytest
 import pytest_bazel
 
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
+from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import CompiledRun, PreparedHoldingPool, PreparedLot, PreparedSeries, _TenderPolicy
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, prepared_scenario
 from finance.augur.sim.validation import validate
@@ -85,14 +87,30 @@ def recovery_run(total: int, positions: tuple[tuple[int, int], ...], *, earlier_
     return run
 
 
-def execute(run: CompiledRun) -> tuple[World, FinancialOutput]:
-    world = World.from_run(run, 0)
-    private_equity = world.private_equity
-    assert private_equity is not None
+def composed(run: CompiledRun) -> World:
+    """The fixture's world declared piece by piece: pools, lots and the owner's tender policy."""
+    scenario = run.scenario
+    world = World(MarketPath.from_run(run, 0), horizon_months=scenario.horizon_months)
+    for account in scenario.accounts:
+        world.declare_account(account)
+    for pool in scenario.holding_pools:
+        world.declare_pool(pool)
+    for lot in scenario.initial_lots:
+        world.hold(lot)
+    for policy in scenario._private_equity_tender_policies:
+        world.declare_tender_policy(policy)
+    return world
+
+
+BUILDS = pytest.mark.parametrize("build", [lambda run: World.from_run(run, 0), composed], ids=["from_run", "composed"])
+
+
+def execute(run: CompiledRun, build: Callable[[CompiledRun], World]) -> tuple[World, FinancialOutput]:
+    world = build(run)
+    assert world.private_equity is not None
     capture = FinancialCapture(world, capture="forensic")
     world.start()
-    for month in range(run.scenario.horizon_months):
-        private_equity.advance(world.accounting, world.holdings, world.market, [], month)
+    for _ in range(run.scenario.horizon_months):
         world.close_month()
         capture.record()
         if not world.finished:
@@ -111,8 +129,11 @@ def execute(run: CompiledRun) -> tuple[World, FinancialOutput]:
         pytest.param(2, ((1, 1), (10, 10), (100, 100)), (1, 1, 0), id="economic_units_across_scales"),
     ],
 )
-def test_recovery_total(total: int, positions: tuple[tuple[int, int], ...], proceeds: tuple[int, ...]) -> None:
-    world, financial = execute(recovery_run(total, positions))
+@BUILDS
+def test_recovery_total(
+    total: int, positions: tuple[tuple[int, int], ...], proceeds: tuple[int, ...], build: Callable[[CompiledRun], World]
+) -> None:
+    world, financial = execute(recovery_run(total, positions), build)
     assert financial.failed_month is None
     assert tuple(row.proceeds for row in financial.dispositions) == proceeds
     assert sum(row.proceeds for row in financial.dispositions) == total
@@ -131,8 +152,11 @@ def test_recovery_total(total: int, positions: tuple[tuple[int, int], ...], proc
     assert sum(row.balance for row in financial.months[-1].balances) == 0
 
 
-def test_recovery_cashout_applies_to_the_remaining_position_after_an_earlier_sale() -> None:
-    world, financial = execute(recovery_run(2, ((3, 1), (1, 1)), earlier_sale=True))
+@BUILDS
+def test_recovery_cashout_applies_to_the_remaining_position_after_an_earlier_sale(
+    build: Callable[[CompiledRun], World],
+) -> None:
+    world, financial = execute(recovery_run(2, ((3, 1), (1, 1)), earlier_sale=True), build)
     assert financial.failed_month is None
     assert (financial.dispositions[0].proceeds, financial.dispositions[0].basis) == (18, 2)
     assert [(row.units, row.basis, row.proceeds) for row in financial.dispositions[1:]] == [(1, 1, 1), (1, 4, 1)]

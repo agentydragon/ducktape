@@ -46,7 +46,7 @@ zero-valued observations. Policy intentions, attempted requests and actual paid
 consumption are distinct. Tax and contractual liabilities are not inferred from
 a generic spending shortfall.
 
-The configured runner still has grouped funding and expanded housing/PE
+The configured runner still has grouped funding and target-allocation
 behavior not supported by the common action session. Moving a caller requires
 explicit treatment of those differences, not a compatibility wrapper or removal
 of its financial coverage.
