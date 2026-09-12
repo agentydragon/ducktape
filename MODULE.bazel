@@ -321,10 +321,10 @@ oci.pull(
 #   crane digest --platform linux/amd64 docker.io/stalwartlabs/stalwart:<tag>
 oci.pull(
     name = "stalwart",
-    digest = "sha256:457b4333748f4d67010bc1c2f2bcd607aab8c54af09fcab6509b8c1816385028",
+    digest = "sha256:93c574e52249c1ebf90061da2c4c0756a7b72abfcc1fec34506a03c2e38b5977",
     image = "mirror.gcr.io/stalwartlabs/stalwart",
     platforms = ["linux/amd64"],
-    tag = "v0.16.16",
+    tag = "v0.16.21",
 )
 
 # Test infrastructure: a real Matrix homeserver for //haku/console/x's Matrix e2e tests. The
@@ -877,8 +877,8 @@ http_archive(
 http_archive(
     name = "stalwart_server",
     build_file_content = 'exports_files(["stalwart"])',
-    sha256 = "4a92cac3e8791ccbc0e47eaa2bdc3745b7718b314e4fcee94b3bb3dd4c8437c1",
-    urls = ["https://github.com/stalwartlabs/stalwart/releases/download/v0.16.16/stalwart-x86_64-unknown-linux-musl.tar.gz"],
+    sha256 = "3163bb9f7380dfda0abd3d3b4a74765aaf63ce789ef506a95f2b34316169c170",
+    urls = ["https://github.com/stalwartlabs/stalwart/releases/download/v0.16.21/stalwart-x86_64-unknown-linux-musl.tar.gz"],
 )
 
 # Adoptium Temurin JDK 21 — provides keytool and cacerts for claude tests.
