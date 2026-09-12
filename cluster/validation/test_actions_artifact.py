@@ -87,6 +87,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("haku-rbac", "haku/rbac"),
         ("langfuse-secrets", "langfuse/secrets"),
         ("litellm-namespace", "litellm/namespace"),
+        ("agentplane-egress-credentials-namespace", "agentplane-egress-credentials/namespace"),
+        ("agentplane-egress-credentials", "agentplane-egress-credentials/secrets"),
+        ("agentplane-staging-agent-rbac", "agentplane-staging/agent-rbac"),
+        ("agentplane-staging-egress", "agentplane-staging/egress"),
+        ("agentplane-staging-llm-ingress", "agentplane-staging/llm-ingress"),
+        ("agentplane-testing-agent-rbac", "agentplane-testing/agent-rbac"),
+        ("agentplane-testing-app", "agentplane-testing/app"),
+        ("agentplane-testing-dex", "agentplane-testing/dex"),
+        ("agentplane-testing-egress", "agentplane-testing/egress"),
+        ("agentplane-testing-llm-ingress", "agentplane-testing/llm-ingress"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}
