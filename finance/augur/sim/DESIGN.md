@@ -90,8 +90,13 @@ timing is documented in <../docs/rental_and_lifecycle.md>.
 
 `sim/world.py::World` owns one path's books, TLH portfolios, mortgages,
 receipts and stop state, and opens, acts and closes its months; `sim/session.py`
-drives one world per selected path under the batch routing envelope. `actions.py` owns exact requests;
-`observations.py` owns frozen current facts and private claim authority. There is
+drives one world per selected path under the batch routing envelope. `actions.py` owns exact requests:
+sell these units of these lots at the current price, withdraw or contribute this much,
+buy these units, pay this claim. "Raise enough for at least this much cash" or "invest
+whatever settlement leaves" is a policy's intent, which it realises as a combination of
+exact orders sized from what it observes; no position, managed portfolio or ledger sizes
+an order on a policy's behalf, and an order the account cannot fund is rejected, not
+trimmed. `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
 Configured allocators are not silently enabled through this API. The issuer
 protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`

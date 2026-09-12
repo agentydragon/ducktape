@@ -251,7 +251,7 @@ parallel. Each node leaves this section when it lands.
 ```mermaid
 graph TD
     TLH_MONEY["TLH-MONEY: the managed portfolio is denominated in money, not proxy units"]
-    INVEST["INVEST: a clamped, money-denominated invest order (decision open)"]
+    INVEST["INVEST: the household sizes exact purchases from its projected cash"]
     SUITES_NOBUY["SUITES-A: configured suites that never purchase move onto a household"]
     SUITES_BUY["SUITES-B: configured suites that purchase move onto a household"]
     CONFIGURED_GONE["CONFIGURED: delete sim/configured.py, case.py, the legacy result adapters"]
@@ -265,7 +265,6 @@ graph TD
     SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
     VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
-    TLH_MONEY --> INVEST
     INVEST --> SUITES_BUY
     SUITES_NOBUY --> CONFIGURED_GONE
     SUITES_BUY --> CONFIGURED_GONE
@@ -290,12 +289,17 @@ graph TD
   loop go; `tlh_test`, `harvest_test`, `tlh_session_test` and
   `configured_allocation_test` update the rounding they pinned. The app declares no
   managed sleeve, so its output is untouched.
-- **INVEST.** The configured runner buys after settlement, sized to the cash actually
-  left; a household deciding once a month cannot see that cash. Open decision: an
-  order the ledger fills up to an amount from the account's cash on hand, turned into
-  whole units for a lot pool and contributed as-is to a managed portfolio. After
-  TLH-MONEY the managed case has nothing to round, so only the lot-pool shape is
-  left to decide.
+- **INVEST — decided 2026-09-12: orders are exact, sizing is the policy's.** The
+  configured runner buys after settlement, sized to the cash actually left. There is
+  no clamped order: a household deciding once a month sizes exact `Buy` and
+  `Contribute` orders itself from the cash its observation shows plus what its own
+  sales and claim payments in the same batch leave, which is exact because a sale
+  settles at the quoted price and a withdrawal delivers its amount. An order the
+  account cannot fund is rejected and stops the path, as any invalid request does.
+  `product/household.py` already projects cash this way for its claim payments; the
+  configured suites' household extends it to purchases. Until TLH-MONEY a managed
+  contribution keeps its rounding to whole units of the underlying, as the runner's
+  `materialize_buy` does.
 - **SUITES-A.** `TestConfigured{IncomeSources,PropertyStakes,PrivateEquity,Deductions,
 CashConservation,FrozenRollout,Rental*,YearEndTax,PropertyCarryingCost,ScanPhase,
 ValidationEdge}` and `configured_mortgage_test` use grouped settlement and scheduled
