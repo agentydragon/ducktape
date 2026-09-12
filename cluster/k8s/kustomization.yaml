@@ -34,6 +34,7 @@ resources:
   - goldilocks/flux-kustomization.yaml
   - kube-system/flux-kustomization.yaml
   - descheduler/flux-kustomization.yaml
+  - cnpg-artifact/flux-kustomization.yaml
   - cnpg/flux-kustomization.yaml
   - valkey/flux-kustomization.yaml
   - reflector-artifact/flux-kustomization.yaml
