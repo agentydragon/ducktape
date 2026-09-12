@@ -13,6 +13,7 @@ import { SessionAwardToast } from "../../StudyView.jsx";
 import { ChangelogModal } from "../../ChangelogModal.jsx";
 import { COLORS } from "../../shared.jsx";
 import { casinoSync } from "../../sync.js";
+import { SCENARIOS } from "./scenarios.mjs";
 
 // visual-test-lib freezes the wall clock via an init script before this
 // bundle runs, so Date.now() *is* the frozen instant — reading it here keeps
@@ -145,54 +146,65 @@ function seedActiveSession(minutesAgo) {
   );
 }
 
-const page = new URLSearchParams(window.location.search).get("page") || "main_page";
-
-let element;
-switch (page) {
-  case "streak_rest":
-    // Long streak with a banked rest day and today's bonus still unclaimed.
+// One entry per scenario, keyed as scenarios.mjs keys them: each seeds whatever state its scene
+// needs and returns the tree to mount. A record rather than a switch so the scene set is data the
+// check below can compare -- and so an unrecognised name fails instead of quietly rendering the
+// main page, which a typo used to do.
+const SCENES = {
+  main_page: () => {
+    casinoSync.state.set(BASE_STATE);
+    return <StudyCasino />;
+  },
+  // Long streak with a banked rest day and today's bonus still unclaimed.
+  streak_rest: () => {
     casinoSync.state.set({ ...BASE_STATE, credit_state: UNCLAIMED_STATE });
-    element = <StudyCasino />;
-    break;
-  case "active_bonus_countdown":
-    // 3 minutes into a session, 2:00 from the daily-bonus threshold.
+    return <StudyCasino />;
+  },
+  // 3 minutes into a session, 2:00 from the daily-bonus threshold.
+  active_bonus_countdown: () => {
     seedActiveSession(3);
     casinoSync.state.set({ ...BASE_STATE, credit_state: UNCLAIMED_STATE });
-    element = <StudyCasino />;
-    break;
-  case "active_bonus_unlocked":
-    // 6 minutes in — past the threshold: strip flips to "unlocked", live
-    // estimate includes the +30 at the post-qualification multiplier.
+    return <StudyCasino />;
+  },
+  // 6 minutes in — past the threshold: strip flips to "unlocked", live estimate includes the +30
+  // at the post-qualification multiplier.
+  active_bonus_unlocked: () => {
     seedActiveSession(6);
     casinoSync.state.set({ ...BASE_STATE, credit_state: UNCLAIMED_STATE });
-    element = <StudyCasino />;
-    break;
-  case "session_award":
-    // #shot is visual-test-lib.mjs's screenshot target: an inline-block box that shrink-wraps the
-    // toast (plus a little padding for its shadow), so the PNG is just the toast on its felt
-    // backdrop — not however much of the viewport the test happens to ask for.
-    element = (
-      <Standalone>
-        <div id="shot" style={{ display: "inline-block", padding: 16 }}>
-          <SessionAwardToast award={AWARD_FIXTURE} onDismiss={() => {}} />
-        </div>
-      </Standalone>
-    );
-    break;
-  case "changelog":
-    // ChangelogModal is a real `position: fixed; inset: 0` blocking overlay in production (dims
-    // the whole screen behind a centered card) — genuinely full-viewport, not a small element
-    // artificially forced full-page, so this scene is captured via #app/viewport, not #shot.
-    element = (
-      <Standalone>
-        <ChangelogModal entries={CHANGELOG_FIXTURE} onAck={() => {}} />
-      </Standalone>
-    );
-    break;
-  default:
-    casinoSync.state.set(BASE_STATE);
-    element = <StudyCasino />;
+    return <StudyCasino />;
+  },
+  // The #shot box shrink-wraps the toast (plus a little padding for its shadow), so the PNG is
+  // just the toast on its felt backdrop — not however much of the viewport the test asks for.
+  session_award: () => (
+    <Standalone>
+      <div id="shot" style={{ display: "inline-block", padding: 16 }}>
+        <SessionAwardToast award={AWARD_FIXTURE} onDismiss={() => {}} />
+      </div>
+    </Standalone>
+  ),
+  changelog: () => (
+    <Standalone>
+      <ChangelogModal entries={CHANGELOG_FIXTURE} onAck={() => {}} />
+    </Standalone>
+  ),
+};
+
+// scenarios.mjs is what the sweep renders; SCENES is what this harness can build. A name in one
+// and not the other is a scene never captured, or one the runner asks for and cannot get.
+const declared = Object.keys(SCENARIOS);
+const buildable = Object.keys(SCENES);
+const missing = declared.filter((name) => !buildable.includes(name));
+const unswept = buildable.filter((name) => !declared.includes(name));
+if (missing.length || unswept.length) {
+  throw new Error(
+    `scenarios.mjs and harness scenes disagree: ${JSON.stringify({ missingFromHarness: missing, missingFromScenarios: unswept })}`
+  );
 }
+
+const page = new URLSearchParams(window.location.search).get("page") || "main_page";
+const scene = SCENES[page];
+if (scene === undefined) throw new Error(`unknown harness scenario ${page}`);
+const element = scene();
 casinoSync.status.set({ kind: "ok", lastSyncedAt: FROZEN_NOW_MS });
 
 createRoot(document.getElementById("app")).render(element);

@@ -18,7 +18,7 @@ bbr test //x/agentplane/app/...
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
 - `inventory.py`: the sandbox inventory read from and written to Kubernetes (create, suspend,
-  resume, archive, delete), with the parsed subset of each CR it needs. It works in
+  resume, delete), with the parsed subset of each CR it needs. It works in
   `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
   namespace with neither the app, its database, nor the rules below.
 - `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
@@ -165,8 +165,8 @@ Sandbox -> Pod, PVC               |
                     model traffic to LiteLLM through the egress proxy, which holds the key
 ```
 
-Kubernetes is the sandbox inventory, including the archived flag and a compact annotation holding
-its live preset association plus explicit thread-default edits; the runner holds the live session;
+Kubernetes is the sandbox inventory, including a compact annotation holding its live preset
+association plus explicit thread-default edits; the runner holds the live session;
 PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
 

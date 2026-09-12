@@ -8,7 +8,8 @@ the tool-call cards, or their styles (`styles.src.css`) — regenerate and **loo
 screenshots before handing off:
 
 ```bash
-bbr test //haku/console/frontend:screenshots
+bbr test //haku/console/frontend:screenshots                          # all 58 shots
+bbr test //haku/console/frontend:screenshots --test_filter=settings   # just the ones you touched
 ```
 
 It renders the production shell (`screenshots/harness.tsx`) in both light and dark themes to PNGs

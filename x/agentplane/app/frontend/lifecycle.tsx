@@ -13,7 +13,7 @@ import type { SandboxView } from "./client";
 
 export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";
 
-/** Whether the API will accept a deletion: an archived sandbox is suspended too, so it may go. */
+/** Whether the API will accept a deletion: only a suspended sandbox may go. */
 export function deletable(sandbox: SandboxView): boolean {
   return sandbox.operating_mode === "Suspended";
 }

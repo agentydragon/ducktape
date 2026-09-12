@@ -4,23 +4,18 @@
  * and seeds from it, visual/runner.mjs sweeps it -- so BUILD names no scenario at all.
  */
 
-export interface Scenario {
+import type { ScenarioOptions, Viewport } from "../../../../../util/testing/frontend_visual/visual-test-lib.mjs";
+
+/**
+ * A scenario is how the sweep captures it plus what this harness needs to build it. The capture
+ * half comes from the library rather than being restated here, so a field the sweep does not read
+ * fails to compile instead of silently doing nothing; `element` stays required from there.
+ */
+export interface Scenario extends ScenarioOptions {
   /** The app's hash route. The harness sets it before mounting, so App's router picks the view. */
   route: string;
-  /**
-   * The element to screenshot. Required, never defaulted: '#app' for a scenario that is genuinely
-   * a full page (every one here is -- the harness mounts App and routes to it), a scenario-specific
-   * selector for a single component, so its crop is its own bounding box. See
-   * util/testing/frontend_visual/README.md § Screenshot target.
-   */
-  element: string;
-  viewport: { width: number; height: number; deviceScaleFactor?: number };
-  /** PNG stem for the published render. Defaults to the scenario's key. */
-  outputName?: string;
-  /** What must be on the page before it is this scene at all -- see runScenarios' docstring. */
-  readySelectors?: string[];
-  /** Screenshot the viewport rather than #app, preserving clipping instead of expanding to fit. */
-  captureViewport?: boolean;
+  /** Required here, unlike the library's default, because every row states the size it needs. */
+  viewport: Viewport;
   /** Serve a watch that has stopped cycling: the staleness banner is the page saying so. */
   wedgedWatch?: boolean;
   /** Preselect an existing connection and service account: the reconnect review's opening state. */

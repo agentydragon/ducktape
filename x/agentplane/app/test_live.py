@@ -25,7 +25,7 @@ from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
-from x.agentplane.app.inventory import ARCHIVED_LABEL, SANDBOXES_PLURAL, ProvisioningState, SandboxInventory
+from x.agentplane.app.inventory import SANDBOXES_PLURAL, ProvisioningState, SandboxInventory
 from x.agentplane.app.live import (
     PODS_PLURAL,
     ActionPolicyFrames,
@@ -59,9 +59,7 @@ MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-m
 def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_index: LiveIndex) -> LiveIndex:
     """The same objects in the fake API server and in the index, so the two paths can be compared."""
     custom_objects.objects[(SANDBOXES_PLURAL, "runner-1")] = sandbox("runner-1")
-    custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox(
-        "shelved", labels={ARCHIVED_LABEL: "true"}, operating_mode="Suspended"
-    )
+    custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", operating_mode="Suspended")
     core_v1.pods["runner-1"] = pod("runner-1", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[("egresspolicies", "github")] = egress_policy(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
@@ -101,8 +99,7 @@ async def test_the_index_projects_the_rows_a_listing_would_return(
     seeded: LiveIndex, inventory: SandboxInventory
 ) -> None:
     """The push and the fetch share their projection; this is what says they still do."""
-    assert seeded.sandbox_views(include_archived=False) == await inventory.list_sandboxes()
-    assert seeded.sandbox_views(include_archived=True) == await inventory.list_sandboxes(include_archived=True)
+    assert seeded.sandbox_views() == await inventory.list_sandboxes()
     assert seeded.sandbox_view("runner-1") == await inventory.get("runner-1")
 
 
@@ -236,12 +233,12 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
     seeded.refreshed[SANDBOXES_PLURAL] = NOW
     stream = frames(lambda: _snapshot(seeded), lambda: seeded.health(NOW), seeded.changes, interval_s=0.01).__aiter__()
 
-    assert _read(await anext(stream)) == ("snapshot", ["runner-1"])
+    assert _read(await anext(stream)) == ("snapshot", ["runner-1", "shelved"])
     assert _read(await anext(stream))[0] == "health"
     del seeded.sandboxes["runner-1"]
     seeded.changes.notify()
 
-    assert await asyncio.wait_for(_next_snapshot(stream), timeout=5) == []
+    assert await asyncio.wait_for(_next_snapshot(stream), timeout=5) == ["shelved"]
 
 
 @pytest.fixture
@@ -279,7 +276,7 @@ def test_the_frame_models_are_published_in_the_document(app: FastAPI) -> None:
 
 
 async def _snapshot(index: LiveIndex) -> SandboxesSnapshot:
-    return SandboxesSnapshot(sandboxes=index.sandbox_views(include_archived=False), watch=index.health(NOW))
+    return SandboxesSnapshot(sandboxes=index.sandbox_views(), watch=index.health(NOW))
 
 
 def _read(frame: bytes) -> tuple[str, object]:

@@ -247,11 +247,7 @@ async def async_main(settings: Settings) -> None:
         await store.start_updates()
 
         async def running_sandboxes() -> list[str]:
-            return [
-                view.name
-                for view in live.sandbox_views(include_archived=False)
-                if view.state is ProvisioningState.RUNNING
-            ]
+            return [view.name for view in live.sandbox_views() if view.state is ProvisioningState.RUNNING]
 
         bridge = RunnerBridge(
             address_of=runner_address(live, settings.runner_port),
