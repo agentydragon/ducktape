@@ -5828,3 +5828,203 @@ spec:
           to: "@artifact/cluster/k8s/talos-cloud-controller-manager/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: tofu-state-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: tofu-state-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/tofu-state/namespace/**"
+          to: "@artifact/cluster/k8s/tofu-state/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: user-agentydragon
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: user-agentydragon
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/user-agentydragon/**"
+          to: "@artifact/cluster/k8s/user-agentydragon/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: vector-talos-logs
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: vector-talos-logs
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/vector-talos-logs/**"
+          to: "@artifact/cluster/k8s/vector-talos-logs/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: vm-images-publisher
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: vm-images-publisher
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/vm-images-publisher/**"
+          to: "@artifact/cluster/k8s/vm-images-publisher/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: vpa
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: vpa
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/vpa/**"
+          to: "@artifact/cluster/k8s/vpa/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: website
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: website
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/website/**"
+          to: "@artifact/cluster/k8s/website/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: archivebox-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: archivebox-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/archivebox/app/**"
+          to: "@artifact/cluster/k8s/x/archivebox/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: archivebox-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: archivebox-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/archivebox/namespace/**"
+          to: "@artifact/cluster/k8s/x/archivebox/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authelia-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authelia-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/authelia/app/**"
+          to: "@artifact/cluster/k8s/x/authelia/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authelia-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authelia-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/authelia/namespace/**"
+          to: "@artifact/cluster/k8s/x/authelia/namespace/"
+          exclude:
+            - flux-kustomization.yaml

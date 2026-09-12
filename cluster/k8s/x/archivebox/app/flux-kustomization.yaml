@@ -18,8 +18,8 @@ spec:
   deletionPolicy: Orphan
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: archivebox-app
     namespace: ducktape-flux
   dependsOn:
     - name: archivebox-namespace

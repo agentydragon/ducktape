@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/vm-images-publisher
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: vm-images-publisher
     # attic-reader-netrc.sops.yaml is SOPS-encrypted; without this, Flux applies
     # the ciphertext literally and the publisher's attic auth (netrc) is garbage.
     namespace: ducktape-flux
