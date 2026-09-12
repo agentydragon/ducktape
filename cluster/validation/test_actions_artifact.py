@@ -97,6 +97,36 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("agentplane-testing-dex", "agentplane-testing/dex"),
         ("agentplane-testing-egress", "agentplane-testing/egress"),
         ("agentplane-testing-llm-ingress", "agentplane-testing/llm-ingress"),
+        ("litellm-secrets", "litellm/secrets"),
+        ("matrix-namespace", "matrix/namespace"),
+        ("matrix-secrets", "matrix/secrets"),
+        ("ollama-namespace", "ollama/namespace"),
+        ("seaweedfs-csi", "seaweedfs-csi"),
+        ("seaweedfs-public-s3", "seaweedfs/public-s3"),
+        ("ssh-mcp-secrets", "ssh-mcp/secrets"),
+        ("study-casino-namespace", "study-casino/namespace"),
+        ("tana-mcp", "agents/tana-mcp"),
+        ("authentik-jwt-rotation", "agents/authentik-jwt-rotation"),
+        ("inventree-namespace", "inventree/namespace"),
+        ("authentik-sso-secrets", "authentik/sso-secrets"),
+        ("cdi", "kubevirt/cdi"),
+        ("firecrawl-namespace", "firecrawl/namespace"),
+        ("flux-image-automation-ghcr", "flux-image-automation-ghcr"),
+        ("gatus-namespace", "gatus/namespace"),
+        ("grafana-operator", "monitoring/grafana-operator"),
+        ("grocy-sf", "grocy/sf/app"),
+        ("grocy-vallejo", "grocy/vallejo/app"),
+        ("haku-console-namespace", "haku/console-namespace"),
+        ("haku-egress-proxy-namespace", "agents/haku-egress-proxy-namespace"),
+        ("haku-mailbox-namespace", "haku/mailbox-namespace"),
+        ("haku-openclaw-spike-namespace", "agents/haku-openclaw-spike/namespace"),
+        ("home-assistant", "home-assistant/app"),
+        ("inventree-secrets", "inventree/secrets"),
+        ("litellm", "litellm/app"),
+        ("monitoring-stack-secrets", "monitoring/stack-secrets"),
+        ("nix-cache", "nix-cache/app"),
+        ("nvidia-device-plugin", "nvidia-device-plugin"),
+        ("ollama-secrets", "ollama/secrets"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}
@@ -125,11 +155,12 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         }
         assert f"{artifact_relative}/flux-kustomization.yaml" in root_kustomization["resources"]
         source = root / source_relative
-        packaged = tmp_path / relative
+        packaged_root = tmp_path / artifact_name
+        packaged = packaged_root / relative
         for operation in artifact["copy"]:
             operation_source_relative = operation["from"].removeprefix("@repo/").removesuffix("/**")
             operation_source = root / operation_source_relative.removeprefix("cluster/k8s/")
-            operation_target = tmp_path / operation["to"].removeprefix("@artifact/")
+            operation_target = packaged_root / operation["to"].removeprefix("@artifact/")
             shutil.copytree(
                 operation_source, operation_target, ignore=shutil.ignore_patterns(*operation.get("exclude", []))
             )

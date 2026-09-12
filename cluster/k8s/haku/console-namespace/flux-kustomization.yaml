@@ -15,7 +15,7 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-console-namespace
     namespace: ducktape-flux
   timeout: 2m

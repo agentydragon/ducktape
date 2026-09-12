@@ -9,7 +9,7 @@ spec:
   path: ./cluster/k8s/inventree/namespace
   prune: false
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: inventree-namespace
     namespace: ducktape-flux
   timeout: 1m

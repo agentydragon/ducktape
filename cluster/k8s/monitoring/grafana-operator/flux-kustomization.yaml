@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/monitoring/grafana-operator
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: grafana-operator
 
     namespace: ducktape-flux
   healthChecks:
