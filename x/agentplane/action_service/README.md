@@ -185,7 +185,7 @@ workload credential substitution. The protocol tests exercise substitution at th
 
 ### External OAuth
 
-The optional `oauth` settings enable FastMCP 3.4.4's DCR, discovery, authorization, callback,
+The optional `oauth` settings enable FastMCP 3.4.7's DCR, discovery, authorization, callback,
 token and revocation routes in this process. `ActionsOAuthProxy` holds the validated upstream
 redirect in the durable enrollment authority and sends the browser to the integration app's
 consent page. The page chooses a new name or existing Connection and a labeled caller

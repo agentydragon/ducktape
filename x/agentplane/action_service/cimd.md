@@ -1,6 +1,6 @@
 # External MCP client metadata
 
-Actions uses FastMCP 3.4.4's built-in CIMD support alongside DCR. Discovery advertises
+Actions uses FastMCP 3.4.7's built-in CIMD support alongside DCR. Discovery advertises
 `client_id_metadata_document_supported: true` and public-client token authentication
 (`none`); Claude requires both before selecting CIMD.
 
