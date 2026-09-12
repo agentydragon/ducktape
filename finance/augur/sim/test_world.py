@@ -7,6 +7,7 @@ from itertools import pairwise
 import pytest
 import pytest_bazel
 
+from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, assemble
@@ -14,7 +15,6 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket
-from finance.augur.sim.configured import execute
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.market_path import MarketPath
@@ -33,6 +33,7 @@ from finance.augur.sim.prepared import (
 from finance.augur.sim.product_metrics import product_row
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction, UnpaidClaims
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
 from finance.augur.sim.world import Capture, World
 
@@ -530,11 +531,67 @@ def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(yea
     assert run == before
 
 
+def composed(run: CompiledRun, rollout: int = 0) -> World:
+    """The prepared run's facts declared one at a time, as an experiment would write them."""
+    scenario = run.scenario
+    world = World(
+        MarketPath.from_run(run, rollout),
+        horizon_months=scenario.horizon_months,
+        income_sources=scenario.income_sources,
+        jurisdictions=scenario.jurisdictions,
+    )
+    for account in scenario.accounts:
+        world.declare_account(account)
+    for profile in scenario.tax_profiles:
+        world.track(TaxAuthority(profile))
+    for pool in scenario.holding_pools:
+        world.declare_pool(pool)
+    for lot in scenario.initial_lots:
+        world.hold(lot)
+    world.scheduled_transfers = scenario.scheduled_transfers
+    for obligation in scenario.obligations:
+        world.track(Biller(obligation))
+    return world
+
+
+def recorded(world: World, mode: Capture) -> tuple[FinancialCapture, list[tuple[int, int, int, int, int, int, int]]]:
+    return FinancialCapture(world, capture=mode), [product_row(world, HOUSEHOLD)]
+
+
+def result_of(
+    world: World, capture: FinancialCapture, mode: Capture, rows: list[tuple[int, int, int, int, int, int, int]]
+) -> WorldResult:
+    financial = capture.financial()
+    return WorldResult(
+        world.rollout_id,
+        financial,
+        event_log(financial) if financial is not None else None,
+        capture.configured_summary() if mode == "summary" else None,
+        rows,
+    )
+
+
+def stepped(
+    run: CompiledRun, mode: Capture, *, rollout: int = 0, sales: tuple[_ScheduledSale, ...] = ()
+) -> WorldResult:
+    """One composed rollout to its horizon under a household that makes the scheduled sales."""
+    world = composed(run, rollout)
+    world.track(ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales))
+    capture, rows = recorded(world, mode)
+    world.start()
+    while not world.finished:
+        world.step()
+        capture.record()
+        rows.append(product_row(world, HOUSEHOLD))
+    return result_of(world, capture, mode, rows)
+
+
 @pytest.mark.parametrize("stopped", [False, True])
 @pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
-def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode(
+def test_step_is_the_explicit_phases_and_keeps_the_tax_year_and_stopped_books(
     year_run: CompiledRun, stopped: bool, mode: Capture
 ) -> None:
+    """`step` is open, decide, execute in order, close — and nothing else the phases do not do."""
     run = year_run
     sales = tuple(
         _ScheduledSale(
@@ -557,52 +614,57 @@ def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mo
             series=tuple(replace(s, snapshots=16, values=(*s.values, 9000, 10_000)) for s in run.series),
         )
         sales = (replace(sales[0], units=1_000_000),)
-    run = replace(run, scenario=replace(run.scenario, _scheduled_sales=sales))
-    [baseline] = execute(run, mode, HOUSEHOLD)
-    path = World.from_run(run, 0)
-    capture = FinancialCapture(path, capture=mode)
-    rows = [product_row(path, HOUSEHOLD)]
+
+    def household() -> ConfiguredHousehold:
+        return ConfiguredHousehold(HOUSEHOLD, (), scheduled_sales=sales)
+
+    phased = composed(run)
+    actor = household()
+    phased.track(actor)
+    phased_capture, phased_rows = recorded(phased, mode)
+    phased.start()
+    while not phased.finished:
+        actions = actor.handle(MonthOpened(month=phased.month))
+        phased.begin_actions(actions)
+        for action in actions:
+            if isinstance(phased.execute(HOUSEHOLD, action).outcome, Rejected):
+                break
+        phased.close_month()
+        phased_capture.record()
+        phased_rows.append(product_row(phased, HOUSEHOLD))
+        if not phased.finished:
+            phased.open_month()
+
+    path = composed(run)
+    path.track(household())
+    capture, rows = recorded(path, mode)
     path.start()
     while not path.finished:
         if path.month == 12:
             assert path.accounting.tax_liabilities[0].amount_owed == (50 if stopped else 2000)
-        path.begin_actions([])
-        for sale in sales:
-            if sale.month == path.month:
-                path.holdings.scheduled_sale(path.accounting, path.market, sale)
-        settlement = path.settle_claims(HOUSEHOLD)
-        path.failed, path.shortfall = settlement.failed, settlement.product_shortfall
-        path.close_month()
+        path.step()
         capture.record()
         rows.append(product_row(path, HOUSEHOLD))
-        if not path.finished:
-            path.open_month()
-    financial = capture.financial()
-    result = WorldResult(
-        0,
-        financial,
-        event_log(financial) if financial is not None else None,
-        capture.configured_summary() if mode == "summary" else None,
-        rows,
-    )
-    assert_same_result(result, baseline)
+    result = result_of(path, capture, mode, rows)
+    assert_same_result(result, result_of(phased, phased_capture, mode, phased_rows))
+
     stopped_book = deepcopy(path.book())
     with pytest.raises(ValueError, match="finished"):
         path.open_month()
     assert path.book() == stopped_book
     if mode == "summary":
-        assert baseline.configured_summary is not None
-        assert baseline.configured_summary.failed_month == (12 if stopped else None)
+        assert result.configured_summary is not None
+        assert result.configured_summary.failed_month == (12 if stopped else None)
     else:
-        assert baseline.financial is not None
-        assert baseline.financial.failed_month == (12 if stopped else None)
-    if baseline.financial is not None:
-        assert len(baseline.financial.months) == 14
-        assert [(p.month, p.amount_paid) for p in baseline.financial.tax_payments] == (
+        assert result.financial is not None
+        assert result.financial.failed_month == (12 if stopped else None)
+    if result.financial is not None:
+        assert len(result.financial.months) == 14
+        assert [(p.month, p.amount_paid) for p in result.financial.tax_payments] == (
             [(12, 0)] if stopped else [(12, 2000)]
         )
         if mode == "dense":
-            assert not baseline.financial.journal
+            assert not result.financial.journal
 
 
 @pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
@@ -628,25 +690,23 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
                     deduction_category=None,
                 ),
             ),
-            _scheduled_sales=(
-                _ScheduledSale(
-                    month=1,
-                    cause_id="sell-stock",
-                    agent_id=HOUSEHOLD,
-                    account_id="checking",
-                    asset_id="test_stock",
-                    units=1_000_000,
-                    proceeds_account_id="checking",
-                ),
-            ),
         ),
         series=(replace(run.series[0], values=(10_000, 15_000, 15_000, 10_000, 20_000, 20_000)),),
     )
-    baseline = execute(run, "forensic", HOUSEHOLD)
-    outputs = execute(run, mode, HOUSEHOLD)
-    assert len(baseline) == len(outputs) == 2
-    for index, output in enumerate(outputs):
-        expected = baseline[index]
+    sales = (
+        _ScheduledSale(
+            month=1,
+            cause_id="sell-stock",
+            agent_id=HOUSEHOLD,
+            account_id="checking",
+            asset_id="test_stock",
+            units=1_000_000,
+            proceeds_account_id="checking",
+        ),
+    )
+    for index in range(2):
+        expected = stepped(run, "forensic", rollout=index, sales=sales)
+        output = stepped(run, mode, rollout=index, sales=sales)
         assert output.product_metrics == expected.product_metrics
         financial = expected.financial
         assert financial is not None

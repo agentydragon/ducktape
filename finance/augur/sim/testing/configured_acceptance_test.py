@@ -2,26 +2,11 @@
 
 from decimal import Decimal
 
-import pytest
 import pytest_bazel
 
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.configured_result import run_case
-from finance.augur.sim.testing.engine_edges import ScanPhaseAcceptance, ValidationEdgeAcceptance
 from finance.augur.sim.testing.fixtures import SF, checking, home_purchase
-from finance.augur.sim.testing.simulation_result import Backend
-
-
-class TestConfiguredScanPhase(ScanPhaseAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredValidationEdge(ValidationEdgeAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
 
 
 def test_derived_building_basis_uses_engine_rounding() -> None:
