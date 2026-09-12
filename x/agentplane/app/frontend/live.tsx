@@ -47,8 +47,8 @@ export function liveSandboxesUrl(includeArchived: boolean): string {
   return `/live/sandboxes?include_archived=${includeArchived}`;
 }
 
-export function liveSandboxUrl(name: string): string {
-  return `/live/sandboxes/${encodeURIComponent(name)}`;
+export function liveSandboxUrl(name: string, includeArchived: boolean): string {
+  return `/live/sandboxes/${encodeURIComponent(name)}?include_archived=${includeArchived}`;
 }
 
 export function useLive<T extends { watch: WatchHealth }>(url: string): Live<T> {

@@ -550,6 +550,71 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert missing.status_code == 404
 
 
+async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    reviewer: TokenReviewer,
+) -> None:
+    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    thread_id = str(await store.thread("live", "s-1", spec))
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        assert (await http.post(f"/threads/{thread_id}/archive")).status_code == 204
+        assert (await http.get("/threads", params={"sandbox": "live"})).json() == []
+        [archived] = (await http.get("/threads", params={"sandbox": "live", "include_archived": "true"})).json()
+        assert archived["archived"] is True
+        assert (await http.get(f"/threads/{thread_id}")).json()["archived"] is True
+
+        assert (await http.post(f"/threads/{thread_id}/unarchive")).status_code == 204
+        [unarchived] = (await http.get("/threads", params={"sandbox": "live"})).json()
+        assert unarchived["archived"] is False
+
+        assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/archive")).status_code == 404
+        assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/unarchive")).status_code == 404
+
+
+async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    reviewer: TokenReviewer,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+) -> None:
+    """The cross-sandbox listing: a Thread survives its Sandbox's deletion, listed with `sandbox: None`."""
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    live_thread = await store.thread("live", "s-1", spec)
+    gone_thread = await store.thread("gone", "s-2", spec)
+    await store.archive(gone_thread)
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        default_rows = {
+            row["thread"]["id"]: row["sandbox"] for row in (await http.get("/threads/with-sandboxes")).json()
+        }
+        assert set(default_rows) == {str(live_thread)}
+        assert (default_rows[str(live_thread)]["name"], default_rows[str(live_thread)]["state"]) == ("live", "running")
+
+        all_rows = {
+            row["thread"]["id"]: row["sandbox"]
+            for row in (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
+        }
+        assert set(all_rows) == {str(live_thread), str(gone_thread)}
+        assert all_rows[str(gone_thread)] is None
+
+
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
     assert client.get("/healthz").status_code == 204
     assert "/healthz" not in client.get("/openapi.json").json()["paths"]
@@ -592,7 +657,10 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
         "/sandboxes/{name}/sessions/{session_id}/model",
         "/sandboxes/{name}/sessions/{session_id}/shutdown",
         "/threads",
+        "/threads/with-sandboxes",
         "/threads/{thread_id}",
+        "/threads/{thread_id}/archive",
+        "/threads/{thread_id}/unarchive",
         "/threads/{thread_id}/events",
         "/live/sandboxes",
         "/live/sandboxes/{name}",
@@ -614,6 +682,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
     assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}
+    assert set(paths["/threads/with-sandboxes"]) == {"get"}
     assert set(paths["/threads/{thread_id}"]) == {"get", "patch"}
     assert set(paths["/egress/bindings/{name}"]) == {"delete"}
 

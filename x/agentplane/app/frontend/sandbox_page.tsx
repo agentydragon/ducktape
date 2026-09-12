@@ -1,4 +1,21 @@
-import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Tabs, Text, Textarea, Title } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Button,
+  Code,
+  Group,
+  Menu,
+  Select,
+  Stack,
+  Switch,
+  Table,
+  Tabs,
+  Text,
+  Textarea,
+  Title,
+} from "@mantine/core";
+// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -12,6 +29,7 @@ import {
   RunnerUnavailableError,
   type Condition,
   type SandboxView,
+  type ThreadView,
 } from "./client";
 import { EgressSection } from "./egress";
 import { effectiveThreadDefaults } from "./launch_presets";
@@ -138,13 +156,21 @@ export function SandboxPage({
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
 
-  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name));
+  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived));
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
   const threads = live.snapshot?.threads ?? [];
+  // The store's copy of each session's thread, which outlives the runner's own list.
+  const threadBySession: Record<string, ThreadView> = Object.fromEntries(
+    threads.map((thread) => [thread.session_id, thread])
+  );
   // Thread names by session id: the store's copy, which outlives the runner's list.
   const names = Object.fromEntries(
     threads.flatMap((thread) => (thread.name ? [[thread.session_id, thread.name]] : []))
+  );
+  const visibleSessions = sessions.filter(
+    (session) => includeArchived || !threadBySession[session.sessionId]?.archived
   );
 
   // The runner answers ListSessions per request and has no stream, so the table is re-read at the
@@ -226,6 +252,14 @@ export function SandboxPage({
   // stream brings the sandbox's new state back on its own.
   async function act(action: "suspend" | "resume"): Promise<void> {
     const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, { params: { path: { name } } });
+    setError(failure ? displayableError(failure) : null);
+  }
+
+  // No refresh after an action: the live stream carries the thread's new archived state back.
+  async function threadAct(threadId: string, action: "archive" | "unarchive"): Promise<void> {
+    const { error: failure } = await api.POST(`/threads/{thread_id}/${action}`, {
+      params: { path: { thread_id: threadId } },
+    });
     setError(failure ? displayableError(failure) : null);
   }
 
@@ -360,25 +394,55 @@ export function SandboxPage({
                   <Table.Th>Harness state</Table.Th>
                   <Table.Th>Active turn</Table.Th>
                   <Table.Th>Events</Table.Th>
+                  <Table.Th />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {sessions.map((session) => (
-                  <Table.Tr key={session.sessionId}>
-                    <Table.Td>
-                      {/* The id is only useful once you're in the session's own detail view (which
+                {visibleSessions.map((session) => {
+                  const thread = threadBySession[session.sessionId];
+                  return (
+                    <Table.Tr key={session.sessionId}>
+                      <Table.Td>
+                        {/* The id is only useful once you're in the session's own detail view (which
                           shows it beside the name); the list links by name where one exists. */}
-                      <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
-                        {names[session.sessionId] ?? session.sessionId}
-                      </Button>
-                    </Table.Td>
-                    <Table.Td>{HarnessState[session.harness]}</Table.Td>
-                    <Table.Td>{session.activeTurnId || "—"}</Table.Td>
-                    <Table.Td>{String(session.lastSequence)}</Table.Td>
-                  </Table.Tr>
-                ))}
+                        <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
+                          {names[session.sessionId] ?? session.sessionId}
+                        </Button>
+                      </Table.Td>
+                      <Table.Td>{HarnessState[session.harness]}</Table.Td>
+                      <Table.Td>{session.activeTurnId || "—"}</Table.Td>
+                      <Table.Td>{String(session.lastSequence)}</Table.Td>
+                      <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
+                        {thread && (
+                          <Menu position="bottom-end">
+                            <Menu.Target>
+                              <ActionIcon variant="subtle" aria-label={`More actions for ${session.sessionId}`}>
+                                <IconDotsVertical size={16} />
+                              </ActionIcon>
+                            </Menu.Target>
+                            <Menu.Dropdown>
+                              {thread.archived ? (
+                                <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
+                              ) : (
+                                <Menu.Item onClick={() => void threadAct(thread.id, "archive")}>Archive</Menu.Item>
+                              )}
+                            </Menu.Dropdown>
+                          </Menu>
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
               </Table.Tbody>
             </Table>
+            <Group justify="flex-end">
+              <Switch
+                size="md"
+                label="Show archived"
+                checked={includeArchived}
+                onChange={(e) => setIncludeArchived(e.currentTarget.checked)}
+              />
+            </Group>
           </Stack>
         </Tabs.Panel>
       </Tabs>
