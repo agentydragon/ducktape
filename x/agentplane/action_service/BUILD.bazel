@@ -676,6 +676,7 @@ py_test(
 
 py_test(
     name = "test_external_grants",
+    size = "medium",
     srcs = ["test_external_grants.py"],
     requires_docker = True,
     deps = [
