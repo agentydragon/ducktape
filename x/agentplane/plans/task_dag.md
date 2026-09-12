@@ -623,8 +623,8 @@ cross-sandbox Thread-listing endpoint reuses this filter once both land.
 
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
-**Planned UI:** a persistent badge, reachable from any route regardless of sidebar tab or phone
-collapse state, opens a non-modal drawer over the current page showing pending Action approvals
+**Planned UI:** a persistent badge, reachable from any route regardless of phone collapse state,
+opens a non-modal drawer over the current page showing pending Action approvals
 (group/name, caller, collapsible arguments, Approve/Deny) — the shape
 `haku/console/frontend/shell_chrome.tsx` already ships for its own approval queue. Needs a
 top-level push/subscription mechanism (alongside wherever `live.tsx`'s mechanism already lives) to
