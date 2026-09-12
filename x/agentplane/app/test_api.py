@@ -607,11 +607,14 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
 ) -> None:
     spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
