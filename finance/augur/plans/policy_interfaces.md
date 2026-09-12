@@ -2,8 +2,9 @@
 
 Target design for the remaining migration and gates in [the roadmap](roadmap.md).
 The composition decision is recorded in [the gate note](library_design_gates.md):
-a coordinating `World` over tracked components whose `step()` invokes each tracked
-`EconomicAgent`'s `decide` once per month. GMETRICS is still open; these sketches
+a coordinating `World` over tracked components whose `step()` opens the month,
+drains a deterministic queue of typed messages and closes; each tracked
+`EconomicAgent`'s `decide` handles month-opened once per month with its inbox. GMETRICS is still open; these sketches
 do not finalize a metrics collector. Preserve the settled economic action contract.
 Reuse the common `ActionSession` and its single batch contract. Public requests
 already belong to `sim/actions.py`, current facts to `sim/observations.py`, and

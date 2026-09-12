@@ -59,11 +59,30 @@ while not world.finished:
 ```
 
 - `EconomicAgent` is a base class the experiment subclasses. Spending tiers,
-  memory and parameters live on the instance. `World.step()` calls each tracked
-  agent's `decide(observation)` exactly once per month, after scheduled flows and
-  due-claim assembly, then executes the returned ordered actions and closes the
-  month. The once-per-month, caller-ordered, fatal-rejection contract is unchanged;
-  only the invoker of `decide` moves from the experiment's loop into `step()`.
+  memory and parameters live on the instance. `decide(observation)` is the agent's
+  handler for the month-opened message and runs exactly once per month; the
+  observation carries the agent's state view plus its inbox (claims, offers,
+  statements, last month's receipts). The caller-ordered, fatal-rejection contract
+  is unchanged; only the invoker of `decide` moves from the experiment's loop into
+  `step()`.
+- A month has three global moments and no domain-specific phases. **Open:** the
+  World applies scheduled flows and delivers month-opened to everything tracked, in
+  a fixed three-tier order (market and paths, then contracts and components, then
+  agents), so claims exist before the household observes and TLH advances before
+  investor operations. **Drain:** typed messages emitted during the month are
+  queued in deterministic producer order and delivered to their addressee only; an
+  actor that receives mail after its month-opened handler is invoked again for that
+  message. The queue drains to quiescence under a per-month message budget, and
+  exceeding it raises an error naming the loop, never a silent stop. **Close:**
+  marks, tax-year close and stop determination. A domain nobody tracked emits no
+  messages, so the schedule never grows a phase for it. The month's message log is
+  the trace.
+- Settlement stays synchronous. Actions execute against the ledger in caller order
+  with atomic rejection, and a rejected action stops the path: the World never
+  delivers a "retry" message, so negotiation cannot creep back in. Intra-month
+  request/response (a quote before deciding) is a helper call, not a message.
+- Messages are a closed typed union per domain (claim, offer, statement, receipt),
+  not a generic bus, subscription protocol or global event registry.
 - Tracking closes before the opening snapshot. `track()` is where cross-object
   consistency is checked: unknown accounts, duplicate ownership, cross-actor
   references, missing price series. Attaching mid-run is contract origination and
@@ -76,16 +95,23 @@ while not world.finished:
   readings, never a second authoritative book.
 - The single-path world is the primary object. A batched N-path driver (today's
   `ActionSession`) becomes a layer over N worlds for vectorised policies, later and
-  not as a second policy interface. Selected replay re-creates agents with fresh
-  state on the same paths.
+  not as a second policy interface; reactive months make rounds ragged across
+  rollouts, the non-reactive case batches as before. Selected replay re-creates
+  agents with fresh state on the same paths.
 - Contracts that begin from an agent's decision (a purchase originating a mortgage)
   wait for GHOUSE; servicing a contract that exists at month zero is in scope.
 
-Rejected: explicit guarded composition without a World. Consistency checks across
-agents, contracts and tax treatment need one registration point, and every sketch
-of the lighter form reinvented it. A separable state-container/step-coordinator
-hybrid is deferred until a consumer needs the split; forwarding alone does not
-justify it.
+Rejected: explicit guarded composition without a World, because consistency checks
+across agents, contracts and tax treatment need one registration point and every
+sketch of the lighter form reinvented it. A fixed global phase list, because it
+must be the union of every domain's phases and runs them even where the domain is
+absent. "Re-ask every actor until all are quiet" as the drain rule, because
+termination then depends on every agent's politeness and batched policies face
+ragged rounds even when nothing reactive happened. A ledger that is itself an
+actor with a mailbox, because atomic rejection and caller-ordered execution are
+transaction semantics against one ledger and would change meaning as asynchronous
+messages. A separable state-container/step-coordinator hybrid is deferred until a
+consumer needs the split; forwarding alone does not justify it.
 
 ### COMPOSE evidence
 

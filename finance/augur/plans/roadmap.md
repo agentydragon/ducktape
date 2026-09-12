@@ -32,9 +32,11 @@ independent financial assertions. These cleanups do not authorize new financial
 features or silent timing changes.
 
 **World is the selected composition.** The experiment tracks agents, contracts
-and components on an empty `World` and loops over `World.step()`, which invokes
-each tracked `EconomicAgent`'s `decide` once per month; untracked domains are
-absent, not empty. COMPOSE lands it. **Metrics collection also remains open:** caller-authored per-step
+and components on an empty `World` and loops over `World.step()`: open, drain a
+deterministic queue of typed messages to quiescence, close. Each tracked
+`EconomicAgent`'s `decide` handles month-opened once per month with its inbox;
+settlement stays synchronous with fatal rejection; untracked domains are absent,
+not empty. COMPOSE lands it. **Metrics collection also remains open:** caller-authored per-step
 `metrics.append(...)`, observers/recorders and hybrids are candidates, not selected
 interfaces. Financial duties must not depend on a collector being enabled.
 
