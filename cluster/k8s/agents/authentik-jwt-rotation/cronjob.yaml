@@ -59,7 +59,7 @@ spec:
               # Initial placeholder matching the ImagePolicy filterTags regex
               # (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field to the
               # latest published tag on first reconcile after a push-images.yml run.
-              image: git.allegedly.works/ducktape-ci/authentik-jwt-rotation:devel-20260912134620-8966471 # {"$imagepolicy": "flux-system:authentik-jwt-rotation"}
+              image: git.allegedly.works/ducktape-ci/authentik-jwt-rotation:devel-20260912150959-3579607 # {"$imagepolicy": "flux-system:authentik-jwt-rotation"}
               args: ["--config", "/config/rotations.yaml"]
               securityContext:
                 allowPrivilegeEscalation: false
