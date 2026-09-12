@@ -1,8 +1,8 @@
 # Action policy bindings
 
 Status: **decided 2026-09-12; the Action Service side has landed (CRDs, informer, ServiceAccount
-callers, evaluation, evidence, the acceptance scenario); `SBPOLICY` and the deny lists are the steps
-below.**
+callers, evaluation, evidence, the acceptance scenario); `SBPOLICY` is the step below and the deny
+lists are deferred as `DENY_LISTS` in the task DAG.**
 The single operator configures bounded auto-approval for both external MCP connections and
 harnesses running in Threads inside Sandboxes. Both use the canonical Action Service and Decision
 lifecycle. Identity/OAuth/Connection authority is implemented independently of policy
@@ -166,7 +166,6 @@ the binding revision they used.
 1. **Integration app.** Write the Sandbox binding at creation from the preset's set list, and show
    what a Sandbox can currently do: its unexpired bindings, their sets, and the resulting lists.
    Read-only; no runtime editing surface yet.
-2. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
 
 ## Console policies the Action Service cannot express yet
 
@@ -200,8 +199,8 @@ with what it needs; an entry leaves when its set can be written.
 - **Schema auto-denial** (`autoDenyIf` equivalent): the console records a call whose arguments
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
   admission before persisting anything, so the audit row the console keeps does not exist here;
-  matching it needs `autoDenyIf` semantics (step 2) and a recorded, denied Decision for the
-  schema miss.
+  matching it needs `autoDenyIf` semantics (`DENY_LISTS` in the task DAG) and a recorded, denied
+  Decision for the schema miss.
 - **Kubectl passthrough redundancy check** (`kubectl_passthrough_redundancy_check`, commented out
   in the console): auto-deny a `kubectl-passthrough-mcp` call the caller's own Kubernetes identity
   already covers by SubjectAccessReview, pointing at the direct path. A kind with an injected

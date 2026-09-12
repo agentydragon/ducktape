@@ -14,7 +14,7 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 ## Open plans and gates
 
 - [Task DAG](task_dag.md) — remaining-work dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
-- [SSH Executor](ssh_executor.md) — Kubernetes-backed SSH keys, target bindings, and one-shot execution
+- [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Configured Action policies](action_policies.md) — the integration app's Sandbox bindings and read-only policy view, then the deny lists
 - [External MCP connections](external_mcp_connections.md) — staging rollout, real Claude.ai/local Claude Code acceptance, remaining Connection management/reconnect, and Haku migration
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
