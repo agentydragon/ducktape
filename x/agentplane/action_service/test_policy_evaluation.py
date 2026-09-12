@@ -278,11 +278,13 @@ def test_both_views_say_nothing_auto_decides_before_sync(mixed_index: PolicyInde
         assert (view.bindings, view.auto_approve_if) == ([], [])
 
 
-async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(mixed_index: PolicyIndex) -> None:
+async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
+    mixed_index: PolicyIndex, github_visibility: Callable[..., RepositoryVisibilityService]
+) -> None:
     """A caller reads a Decision's evidence and its own policy in one vocabulary: the entry the
     provider records in `MatchedPolicy` is the first `auto_approve_if` entry that matches."""
     view = caller_view(mixed_index, SANDBOX, NOW)
-    outcome = await PolicySetDecisionProvider().decide(
+    outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
         DecisionContext(
             request_id=uuid4(),
             action=ActionIdentity(group="everything", name="add"),
