@@ -52,7 +52,6 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
     assert rules[actions_host]["methods"] == ["GET", "POST"]
     assert rules[actions_host]["paths"] == [
         "/mcp",
-        "/openapi.json",
         "/v1/action-groups",
         "/v1/action-groups/**",
         "/v1/action-policy",
