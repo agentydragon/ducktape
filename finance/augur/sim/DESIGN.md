@@ -26,6 +26,14 @@ or HTTP modules.
 ```text
 authored scenario + supplied paths/rules
     -> compile_run
+    -> World(run, rollout_id, actor=...); world.track(agent); world.start()
+    -> world.step()  # agent.decide(observation) once, ordered actions, close
+    -> world.finished -> world.rollout()
+```
+
+The batch form drives one such world per selected path:
+
+```text
     -> ActionSession.start()
     -> current scoped observations
     -> Python batch policy
@@ -33,7 +41,13 @@ authored scenario + supplied paths/rules
     -> next observations or typed Finished
 ```
 
-The caller owns the time loop and optional policy memory. Each path is stateful;
+The caller owns the time loop; a tracked agent owns its memory, a batch policy's
+memory belongs to the caller. `World` has no capture mode, no named subject and no
+history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
+hold the current month and are cleared when the next month opens, so a caller that
+wants a history copies them between steps. `ActionSession` records the summary and
+trace it returns; the configured runner records `WorldResult` through
+`capture.FinancialCapture`; an experiment records only what it measures. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
 actor-scoped facts, not future sampled market trajectories. The Python session
 owns month/phase sequencing, active paths, receipts and fatal-stop lifecycle.
@@ -46,8 +60,9 @@ ledger. The session supplies immutable payment and year-end facts to Python acco
 capture DTOs do not maintain another mutable mortgage. Configured purchase/sale
 timing is documented in <../docs/rental_and_lifecycle.md>.
 
-`sim/session.py` owns component state and invokes one Python
-`sim/world.py::World` per selected path. `actions.py` owns exact requests;
+`sim/world.py::World` owns one path's books, TLH portfolios, mortgages,
+receipts and stop state, and opens, acts and closes its months; `sim/session.py`
+drives one world per selected path under the batch routing envelope. `actions.py` owns exact requests;
 `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
 Configured allocators, housing and PE behavior are not silently enabled through
@@ -61,8 +76,8 @@ Money and quantities use their declared fixed-point scales. Canonical state is
 not reconstructed by replaying event descriptions. `books.py` and `results.py`
 define typed books, receipts, stops and completed results; receipts reuse the
 request definitions in `actions.py`. `events.py` defines
-the columnar event frames. Compact capture and selected dense/forensic capture
-come from the same financial execution.
+the columnar event frames. Compact and dense/forensic capture are choices of the
+recorder outside the world, over the same financial execution.
 
 Opening snapshot zero precedes events. A stopped event month `f` has an ending
 book at snapshot `f + 1`, marked at the already observed month `f`; no future

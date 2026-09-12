@@ -33,7 +33,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
             ),
         ),
     )
-    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources, capture="forensic")
+    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
     books.tax.gain(HOUSEHOLD, -700, long_term=False)
     year = books.tax.years[HOUSEHOLD]
@@ -62,7 +62,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
 
 def test_year_close_rejection_keeps_income_carryovers_and_all_jurisdictions_uncommitted() -> None:
     scenario = prepared_scenario()
-    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources, capture="forensic")
+    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 1000)
     books.ledger = Ledger(
         account for account in books.ledger.balances if account.account_id != "liability:tax:test_federal"

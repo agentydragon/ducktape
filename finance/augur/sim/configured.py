@@ -14,26 +14,64 @@ from pydantic import JsonValue
 from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan, validate_prepared
 from finance.augur.sim import results
 from finance.augur.sim.actions import Buy, DecisionActions
-from finance.augur.sim.capture import WorldResult
+from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
+from finance.augur.sim.holdings import private_issuer
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
+from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import ProductMetricArrays
-from finance.augur.sim.session import Capture, _Session
+from finance.augur.sim.session import _Session
+from finance.augur.sim.world import Capture, World
+
+
+def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int, int]:
+    """The app's per-month metric slab for one actor, read from world state after a close."""
+    mark = world.mark_month
+    cash = sum(
+        world.accounting.ledger.balance(account) for account in world.accounting.declared if account.agent_id == actor
+    )
+    private = sum(
+        position_value(
+            world.market.value(f"private_equity_mark:{issuer}", mark), lot.units_remaining, lot.spec.quantity_scale
+        )
+        for lot in world.holdings.lots
+        if lot.spec.agent_id == actor
+        and lot.units_remaining
+        and (issuer := private_issuer(lot.spec.asset_id)) is not None
+    )
+    property_value = sum(
+        world.properties.market_value(purchase, world.market, mark)
+        for purchase in world.scenario._scheduled_property_purchases
+        if purchase.buyer_agent_id == actor
+        and purchase.property_id in world.properties.properties
+        and world.properties.properties[purchase.property_id].state.active
+        and f"home_value:{purchase.location_id}" in world.market.series
+    )
+    debt = sum(loan.principal for loan in world.mortgage_snapshots() if loan.agent_id == actor)
+    bonds = sum(row.principal for row in world.bonds.snapshots(world.month, mark) if row.agent_id == actor)
+    return (
+        checked_count(cash, "product cash"),
+        world.holding_value(actor, mark),
+        checked_count(private, "product private equity"),
+        checked_count(property_value, "product property"),
+        checked_count(debt, "product mortgage"),
+        world.shortfall,
+        checked_count(bonds, "product bonds"),
+    )
 
 
 def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> tuple[WorldResult, ...]:
     if not isinstance(run, CompiledRun):
         raise TypeError("execution requires a CompiledRun, not serialized input")
     validate_prepared(run)
-    session = _Session(
-        run,
-        product_actor,
-        list(range(run.rollout_count)),
-        capture=capture,
-        configured=True,
-        product_actor=product_actor,
-    )
+    session = _Session(run, product_actor, list(range(run.rollout_count)), capture=capture, configured=True)
+    captures = {id_: FinancialCapture(world, capture=capture) for id_, world in session.paths.items()}
+    rows: dict[int, list[tuple[int, int, int, int, int, int, int]]] = {id_: [] for id_ in session.paths}
+    if product_actor is not None:
+        for id_, world in session.paths.items():
+            world.validate_scope(product_actor)
+            rows[id_].append(product_row(world, product_actor))
     lot_sequences: defaultdict[tuple[int, int, int], int] = defaultdict(int)
     try:
         session.start()
@@ -48,24 +86,24 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                     spec = next(
                         (
                             spec
-                            for spec in session.specs.values()
+                            for spec in path.specs.values()
                             if (spec.owner_agent_id, spec.account_id, spec.asset_id)
                             == (sale.agent_id, sale.account_id, sale.asset_id)
                         ),
                         None,
                     )
                     if spec is None:
-                        path.world.holdings.scheduled_sale(path.world.accounting, path.world.market, sale)
+                        path.holdings.scheduled_sale(path.accounting, path.market, sale)
                         continue
                     candidate = deepcopy(path.portfolios[spec.portfolio_id])
                     withdrawal = candidate._withdraw_units(sale.units)
-                    path.world.managed.settle(
+                    path.managed.settle(
                         run.scenario,
-                        path.world.accounting,
+                        path.accounting,
                         session.month,
                         spec.owner_agent_id,
                         sale.cause_id,
-                        session.effects(
+                        path.effects(
                             spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
                         ),
                         operation="redemption",
@@ -76,10 +114,10 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         session.observe(rollout_id, policy.agent_id),
                         policy,
                         policy_index=index,
-                        floor=path.world.market.amount(policy.cash_floor, session.month),
-                        ceiling=path.world.market.amount(policy.cash_ceiling, session.month),
+                        floor=path.market.amount(policy.cash_floor, session.month),
+                        ceiling=path.market.amount(policy.cash_ceiling, session.month),
                         prices={
-                            sleeve.asset_id: session.price(f"security:{sleeve.asset_id}", rollout_id, session.month)
+                            sleeve.asset_id: path.market.value(f"security:{sleeve.asset_id}", session.month)
                             for sleeve in policy.sleeves
                         },
                     )
@@ -92,7 +130,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                     pending.extend((rollout_id, buy) for buy in proposal.buys)
             for path in paths.values():
                 if not path.failed:
-                    settlement = path.world.settle_claims()
+                    settlement = path.settle_claims(product_actor)
                     path.failed = settlement.failed
                     path.shortfall = settlement.product_shortfall
             for rollout_id, pending_buy in pending:
@@ -109,20 +147,34 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         lot_sequences[key] += 1
             for path in paths.values():
                 if not path.failed:
-                    path.world.private_equity.advance(
+                    path.private_equity.advance(
                         run.scenario,
-                        path.world.accounting,
-                        path.world.holdings,
-                        path.world.market,
-                        list(path.world.managed.marks.values()),
+                        path.accounting,
+                        path.holdings,
+                        path.market,
+                        list(path.managed.marks.values()),
                         session.month,
                     )
             session.close_month()
+            for rollout_id, path in paths.items():
+                captures[rollout_id].record()
+                if product_actor is not None:
+                    rows[rollout_id].append(product_row(path, product_actor))
+            session.open_month()
         completed = []
-        for path in session.paths.values():
-            if path.result is None:
+        for rollout_id, path in session.paths.items():
+            if not path.finished:
                 raise RuntimeError("configured execution requires finished rollouts")
-            completed.append(path.result)
+            financial = captures[rollout_id].financial()
+            completed.append(
+                WorldResult(
+                    rollout_id,
+                    financial,
+                    event_log(financial) if financial is not None else None,
+                    captures[rollout_id].configured_summary() if capture == "summary" else None,
+                    rows[rollout_id],
+                )
+            )
         return tuple(completed)
     finally:
         session.close()
