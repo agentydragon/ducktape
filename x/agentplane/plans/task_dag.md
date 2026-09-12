@@ -54,7 +54,7 @@ flowchart TB
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
-    NOTIFY["Observed evidence<br/>web push approval notifications<br/>delivery implementation complete"]:::milestone
+    NOTIFY["Observed evidence<br/>web push approval notifications<br/>delivered and decided on staging"]:::milestone
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
@@ -483,13 +483,16 @@ Decision provider `human_operator`, issuer the Authentik `agentplane-actions` ap
 `succeeded` (13:03:14.902620Z), and the Execution result names `refs/heads/test-branch` at
 `9392be47`.
 
-**Not verified:** Push notification delivery to browser (requires service-worker interaction);
-credential/push-service egress policy; fallback-to-SSE behavior under push service unavailability;
-Web Push reconciliation after disconnect/reconnect. The local-Gateway TLS reset that made
-federation fail intermittently is fixed cluster-wide
+**Operator-reported 2026-09-12:** a browser push for a pending Action arrived, and the request was
+decided from the notification's buttons.
+
+**Not verified, by the operator's choice (defects surface as bug reports):** credential/push-service
+egress policy; fallback-to-SSE behavior under push service unavailability; Web Push reconciliation
+after disconnect/reconnect. The local-Gateway TLS reset that made federation fail intermittently is
+fixed cluster-wide
 ([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)); a
 federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
-not deployed Authentik, SSE, or OS push proof.
+not deployed SSE proof.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
@@ -521,14 +524,14 @@ results, credentials, and unrestricted errors, and the service worker rechecks c
 before presenting approval buttons. Approve/Deny uses the existing authenticated Decision route;
 body taps only open review, and resolved/stale notifications do not offer decisions.
 
-**Remaining live acceptance:** a real operator must receive a push for a pending Action, approve
-and deny from buttons, see the canonical Action state update, and observe no duplicate Decision or
-Execution under retries, refresh, reconnect, or an already-decided request. Prove subscription
-revocation and unavailable-push fallback to the existing app UI with configured VAPID keys and
-reviewed push-service egress. Crash-after-send-before-commit may resend under the same notification
-tag; this is retryable delivery, not exactly-once push. This feature is not required to prove the
-first Claude.ai connection, but remains required before treating Agentplane push delivery as a
-replacement for the Haku Console experience.
+**Operator-reported 2026-09-12:** on staging, a browser push for a pending Action arrived, and the
+request was decided from the notification's buttons. Not exercised, by the operator's choice, with
+defects to surface as bug reports: the canonical Action state update after a button decision;
+duplicate Decision or Execution under retries, refresh, reconnect, or an already-decided request;
+subscription revocation; unavailable-push fallback to the existing app UI.
+Crash-after-send-before-commit may resend under the same notification tag; this is retryable
+delivery, not exactly-once push. Production VAPID keys and reviewed push-service egress remain
+before treating Agentplane push delivery as a replacement for the Haku Console experience.
 
 ### `INPUT_DELIVERY` — native queue evidence before common-protocol changes
 
@@ -601,7 +604,7 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - per-destination workload audiences until recipient isolation is required;
 - broad profiles beyond the landed launch-preset slice;
-- live browser/OS push acceptance and production VAPID/egress rollout;
+- production VAPID/egress rollout for push delivery;
 - separating the egress proxy's rule namespace from its Sandbox namespace — both deployments pass
   one namespace for both today, the reason separation mattered is not recorded, and a split has to
   replace the app's binding-to-Sandbox ownerReference cascade with a sweep
