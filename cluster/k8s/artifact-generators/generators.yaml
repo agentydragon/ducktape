@@ -2820,6 +2820,206 @@ spec:
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
+  name: atuin
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: atuin
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/atuin/app/**"
+          to: "@artifact/cluster/k8s/atuin/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: atuin-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: atuin-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/atuin/db/**"
+          to: "@artifact/cluster/k8s/atuin/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: atuin-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: atuin-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/atuin/secrets/**"
+          to: "@artifact/cluster/k8s/atuin/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: atuin-user-provisioner
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: atuin-user-provisioner
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/atuin/user-provisioner/**"
+          to: "@artifact/cluster/k8s/atuin/user-provisioner/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/db/**"
+          to: "@artifact/cluster/k8s/authentik/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik-proxy-routes
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik-proxy-routes
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/proxy-routes/**"
+          to: "@artifact/cluster/k8s/authentik/proxy-routes/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/secrets/**"
+          to: "@artifact/cluster/k8s/authentik/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/servicemonitor/**"
+          to: "@artifact/cluster/k8s/authentik/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: budget-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: budget-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/budget/app/**"
+          to: "@artifact/cluster/k8s/budget/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cert-manager-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cert-manager-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cert-manager/servicemonitor/**"
+          to: "@artifact/cluster/k8s/cert-manager/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
