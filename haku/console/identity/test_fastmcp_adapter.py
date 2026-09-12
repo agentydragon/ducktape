@@ -240,7 +240,7 @@ def test_fastmcp_version_guard_accepts_the_supported_runtime() -> None:
 def test_fastmcp_version_guard_rejects_an_unsupported_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fastmcp, "__version__", "3.4.3")
 
-    with pytest.raises(AssertionError, match=r"supports FastMCP 3\.4\.4 only"):
+    with pytest.raises(AssertionError, match=r"supports FastMCP 3\.4\.7 only"):
         ensure_supported_fastmcp_version()
 
 
