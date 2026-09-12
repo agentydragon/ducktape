@@ -17,6 +17,47 @@ py_binary(
 )
 
 py_library(
+    name = "artifacts",
+    srcs = ["artifacts.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "determinism",
+    srcs = ["determinism.py"],
+    deps = [
+        ":artifacts",
+        ":targets",
+    ],
+)
+
+py_library(
+    name = "targets",
+    srcs = ["targets.py"],
+    deps = [
+        ":artifacts",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "determinism_bin",
+    main_module = "devinfra.pr_visuals.determinism",
+    deps = [":determinism"],
+)
+
+py_test(
+    name = "test_determinism",
+    srcs = ["test_determinism.py"],
+    deps = [
+        ":determinism",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "publisher",
     srcs = ["publisher.py"],
     data = [
@@ -25,6 +66,7 @@ py_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":artifacts",
         ":check_run",
         "//devinfra/ci:invocation_ids",
         "//util:visual_diff",

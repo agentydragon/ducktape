@@ -1,0 +1,79 @@
+# Are the visual tests' renders actually reproducible?
+#
+# A green visual test proves a scene rendered, not that it renders the same pixels twice.
+# Left to be noticed by hand, drift surfaces as a misleading "X% changed" on somebody's
+# unrelated PR. This asks the question on a schedule instead. Mechanism, and why N runs
+# rather than two: devinfra/pr_visuals/determinism.py.
+#
+# Deliberately not part of PR CI. N uncached runs of every browser target costs far more
+# than a PR's feedback loop is worth, and "does this race fire 1-in-5" is not a per-PR
+# question.
+name: Visual determinism
+
+on:
+  schedule:
+    # Sundays 05:00 UTC, off the weekday merge peak, so the RBE contention these runs
+    # measure under is at least comparable from week to week.
+    - cron: "0 5 * * 0"
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Bazel target patterns to check (blank = the whole visual fleet)
+        required: false
+      runs:
+        description: Uncached runs of each target (blank = 5)
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serial: two of these at once would measure each other's RBE contention.
+  group: visual-determinism
+  cancel-in-progress: false
+
+jobs:
+  determinism:
+    runs-on: ubuntu-latest
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      # `bb run` for a binary that must execute here: Bazel supplies the checker's own
+      # deps, its build actions go to BuildBuddy, and the process that drives `bbr` is
+      # local. Each `bbr test` it then makes is a separate runner VM -- which is the
+      # point. Stacking the repeats onto one VM would share a warm page cache, one CPU
+      # and one clock, the exact conditions under which an intermittent race hides.
+      #
+      # Word-split unquoted, because the whole value is one space-separated target list.
+      - name: Run each target repeatedly and compare renders
+        env:
+          # Every target that renders a browser scene. Hand-listed only until this asks
+          # Bazel instead: #6336 tagged all fifteen `visual`, so
+          # `attr(tags, visual, //...)` already returns exactly this list.
+          TARGETS: >-
+            ${{ inputs.targets
+              || '//aiquota/frontend:screenshots
+                  //airlock/frontend:visual
+                  //finance/augur:visual_test
+                  //haku/console/frontend:screenshots
+                  //haku/console/frontend/tool_rendering/gmail:previews
+                  //haku/console/frontend/tool_rendering/google_calendar:previews
+                  //haku/console/frontend/tool_rendering/grants:previews
+                  //haku/console/frontend/tool_rendering/grocy:previews
+                  //haku/console/frontend/tool_rendering/haku_routine:previews
+                  //haku/console/frontend/tool_rendering/kubectl:previews
+                  //haku/console/frontend/tool_rendering/tana:previews
+                  //props/frontend:visual
+                  //study_casino:visual_test
+                  //study_casino/frontend:visual
+                  //x/agentplane/app/frontend:visual' }}
+          RUNS: ${{ inputs.runs || 5 }}
+        run: |
+          bb run //devinfra/pr_visuals:determinism_bin -- \
+            --runs "$RUNS" --summary "$GITHUB_STEP_SUMMARY" $TARGETS

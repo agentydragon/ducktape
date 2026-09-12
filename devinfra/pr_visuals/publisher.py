@@ -24,30 +24,18 @@ from botocore.exceptions import ClientError
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from more_itertools import one
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from devinfra.ci.invocation_ids import invocation_id
+from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
 from devinfra.pr_visuals.check_run import upsert_check_run
 from util.visual_diff import compare_pngs
 from util.visual_review import MANIFEST_NAME, VisualReviewAsset, VisualReviewManifest
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-Runner = Callable[..., subprocess.CompletedProcess[str]]
 COMMENT_MARKER = "<!-- pr-visuals -->"
 COMMENT_BUDGET = 6000
-
-
-class BuildBuddyArtifact(BaseModel):
-    label: str
-    name: str
-    uri: str
-
-
-@dataclass(frozen=True)
-class ListedArtifact:
-    invocation_id: str
-    artifact: BuildBuddyArtifact
 
 
 @dataclass(frozen=True)
@@ -252,34 +240,6 @@ def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api
     if found := search_ci_test_invocations(commit_sha, api_key=api_key, fetch=fetch):
         return found
     return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
-
-
-# BuildBuddy's reply for an invocation ID it has never seen. Invocation IDs are assigned
-# before the run (devinfra/ci/invocation_ids.py), so this is an ordinary state — a run
-# cancelled before Bazel started names two invocations that never existed — and must not
-# be confused with a query that genuinely failed.
-_INVOCATION_ABSENT = "invocation not found"
-
-
-def list_ci_artifacts(
-    invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
-) -> list[ListedArtifact]:
-    listed: list[ListedArtifact] = []
-    failures: list[str] = []
-    for invocation in invocations:
-        result = run([bbapi, "artifact", "list", invocation, "--json"], check=False, text=True, capture_output=True)
-        if result.returncode != 0 or _INVOCATION_ABSENT in result.stderr:
-            if _INVOCATION_ABSENT not in result.stderr:
-                failures.append(f"{invocation}: {result.stderr.strip()}")
-            continue
-        parsed_artifacts: list[BuildBuddyArtifact] | None = TypeAdapter(list[BuildBuddyArtifact] | None).validate_json(
-            result.stdout
-        )
-        artifacts: list[BuildBuddyArtifact] = parsed_artifacts or []
-        listed.extend(ListedArtifact(invocation, artifact) for artifact in artifacts)
-    if failures and len(failures) == len(invocations):
-        raise RuntimeError("all BuildBuddy artifact queries failed: " + "; ".join(failures))
-    return listed
 
 
 def list_ci_failures(invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run) -> list[str]:
