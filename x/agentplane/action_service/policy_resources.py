@@ -61,6 +61,9 @@ class ObjectMeta(_Wire):
     name: str
     namespace: str
     uid: str
+    labels: dict[str, str] = Field(
+        default_factory=dict, description="Read through to the operator view; the service decides nothing from them."
+    )
     generation: int = Field(description="Bumped by the API server on every spec change; a status write leaves it.")
     resource_version: str = Field(
         alias="resourceVersion", description="Bumped on every write, status included; what a Decision records."
