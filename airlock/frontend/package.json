@@ -15,7 +15,7 @@
     "pngjs": "^7.0.0",
     "puppeteer": "^23.11.1",
     "svelte-check": "^4.7.6",
-    "tailwindcss": "4.2.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0"
   },
   "pnpm": {
