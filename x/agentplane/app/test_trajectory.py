@@ -154,6 +154,43 @@ async def test_ensure_schema_adds_the_name_column_to_a_table_created_without_it(
         await store.close()
 
 
+async def test_a_thread_archives_and_unarchives_without_touching_its_progress(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.record(thread, [_event(1, harness_started=pb.HarnessStarted(pid=1))], lease=lease)
+    (unarchived,) = await store.list_threads()
+    assert unarchived.archived is False
+
+    archived = await store.archive(thread)
+
+    assert (archived.archived, archived.last_sequence) == (True, 1)
+    assert await store.get_thread(thread) == archived
+    assert await store.list_threads() == []
+    assert [view.id for view in await store.list_threads(include_archived=True)] == [thread]
+
+    unarchived = await store.unarchive(thread)
+    assert unarchived.archived is False
+    assert [view.id for view in await store.list_threads()] == [thread]
+    with pytest.raises(ThreadNotFoundError):
+        await store.archive(UUID(int=0))
+
+
+async def test_ensure_schema_adds_the_archived_column_to_a_table_created_without_it(db_url: str) -> None:
+    store = TrajectoryStore.connect(db_url)
+    try:
+        await store.ensure_schema()
+        older = create_async_engine(db_url)
+        async with older.begin() as connection:
+            await connection.execute(text("ALTER TABLE thread DROP COLUMN archived"))
+        await older.dispose()
+        await store.ensure_schema()
+        thread = await store.thread("sb-1", "s-1", SPEC)
+        assert (await store.archive(thread)).archived is True
+    finally:
+        await store.close()
+
+
 async def test_concurrent_replicas_create_one_thread(store: TrajectoryStore, replica: TrajectoryStore) -> None:
     first, second = await asyncio.gather(store.thread("sb-1", "s-1", SPEC), replica.thread("sb-1", "s-1", SPEC))
     assert first == second

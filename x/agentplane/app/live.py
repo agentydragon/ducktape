@@ -304,18 +304,24 @@ async def live_sandboxes(
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
-async def live_sandbox(index: Index, store: Store, shutdown: Shutdown, name: str) -> StreamingResponse:
+async def live_sandbox(
+    index: Index,
+    store: Store,
+    shutdown: Shutdown,
+    name: str,
+    include_archived: Annotated[bool, Query(description="Also carry archived threads.")] = False,
+) -> StreamingResponse:
     """One sandbox page, pushed: the sandbox, its bindings, and its threads.
 
-    Threads are not Kubernetes and no watch reaches them; the store notifies when it creates or
-    renames one, which is every change a page shows.
+    Threads are not Kubernetes and no watch reaches them; the store notifies when it creates,
+    renames, or archives one, which is every change a page shows.
     """
 
     async def snapshot() -> SandboxSnapshot:
         return SandboxSnapshot(
             sandbox=index.sandbox_view(name),
             bindings=index.bindings_for(name),
-            threads=await store.list_threads(sandbox=name),
+            threads=await store.list_threads(sandbox=name, include_archived=include_archived),
             watch=_health(index),
         )
 
