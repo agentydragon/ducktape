@@ -10,7 +10,6 @@ import socket
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urljoin
 
 import httpx
 import uvicorn
@@ -124,11 +123,13 @@ class Settings(BaseSettings):
         default=None,
         description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
     )
-    agent_egress_rules_url: str | None = Field(
-        default=None, description="Rules endpoint rendered into the image-owned agent-instruction template."
+    agent_egress_api_url: str | None = Field(
+        default=None,
+        description="Root of the egress proxy's agent-facing API, rendered into the image-owned agent-instruction template.",
     )
     agent_actions_service_url: str | None = Field(
-        default=None, description="Actions Service endpoint rendered into the image-owned agent-instruction template."
+        default=None,
+        description="Root of the Actions Service, rendered into the image-owned agent-instruction template.",
     )
     default_policies: list[str] = Field(
         default_factory=list,
@@ -182,22 +183,17 @@ class Settings(BaseSettings):
 
 
 def resolved_agent_instructions(
-    configured: str | None, *, egress_rules_url: str | None, actions_service_url: str | None
+    configured: str | None, *, egress_api_url: str | None, actions_service_url: str | None
 ) -> str:
     """Use the image-owned instructions unless deployment configuration explicitly replaces them."""
     if configured is not None:
         return configured
-    if egress_rules_url is None or actions_service_url is None:
-        raise ValueError("image-owned agent instructions require agent_egress_rules_url and agent_actions_service_url")
+    if egress_api_url is None or actions_service_url is None:
+        raise ValueError("image-owned agent instructions require agent_egress_api_url and agent_actions_service_url")
     template = Template(
         get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
     )
-    return template.render(
-        egress_rules_url=egress_rules_url,
-        # The rules API is a FastAPI app at the root of its listener, so its schema sits beside the rules path.
-        egress_rules_openapi_url=urljoin(egress_rules_url, "/openapi.json"),
-        actions_service_url=actions_service_url,
-    )
+    return template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url)
 
 
 def main() -> None:
@@ -279,7 +275,7 @@ async def async_main(settings: Settings) -> None:
                 threads=settings.thread_presets,
                 agent_instructions=resolved_agent_instructions(
                     settings.agent_instructions,
-                    egress_rules_url=settings.agent_egress_rules_url,
+                    egress_api_url=settings.agent_egress_api_url,
                     actions_service_url=settings.agent_actions_service_url,
                 ),
             ),

@@ -10,9 +10,9 @@ read, print, persist, or ask for substituted credentials.
 All protected network egress goes through the configured Agentplane egress proxy. The proxy checks
 the sandbox's active policy and substitutes an allowed placeholder with the real credential. Before
 using a protected service, ask what is currently allowed at
-{{ egress_rules_url }} with Authorization: Bearer
+{{ egress_api_url }}/v1/rules with Authorization: Bearer
 agentplane-credential-agentplane-workload; that API's OpenAPI schema is at
-{{ egress_rules_openapi_url }}. Use the returned destination, path, and credential
+{{ egress_api_url }}/openapi.json. Use the returned destination, path, and credential
 presentation through the proxy; do not bypass it.
 
 For a privileged or sensitive operation, prefer the Actions Service when it provides the operation.

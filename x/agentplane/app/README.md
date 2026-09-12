@@ -276,7 +276,7 @@ content to the runner under a stable preset identity. The runner executes it ide
 persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
 available when no preset is selected. Every launch prepends the image's `agent_instructions.j2` to
 the task or preset instructions, including direct `SessionSpec` API launches. The app renders its
-service URLs from `agent_egress_rules_url` and `agent_actions_service_url` in deployment
+service URLs from `agent_egress_api_url` and `agent_actions_service_url` in deployment
 configuration. A configured `agent_instructions` key replaces that image default, including an
 explicitly empty value. The
 shared block teaches agents the platform's egress and Actions Service protocol; a preset and the
