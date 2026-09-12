@@ -1072,6 +1072,16 @@ go_deps.module(
     version = "v1.4.0",
 )
 go_deps.module(
+    path = "github.com/coder/websocket",
+    sum = "h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=",
+    version = "v1.8.14",
+)
+go_deps.module(
+    path = "github.com/pb33f/ordered-map/v2",
+    sum = "h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=",
+    version = "v2.3.1",
+)
+go_deps.module(
     path = "github.com/goretk/gore",
     sum = "h1:ADlDhsNmAm3ve9Q5dClyUuHUPD7VnwPe1njSDvrENTk=",
     version = "v0.13.27",
