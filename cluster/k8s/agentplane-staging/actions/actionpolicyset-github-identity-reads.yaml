@@ -1,0 +1,17 @@
+# The console's `github_identity_reads` policy (cluster/k8s/haku/console/config.yaml) as an Action
+# policy set. `get_me` returns only the authenticated caller's own GitHub identity and has no
+# repository or mutation surface. Kept separate so a caller can be granted the identity read
+# without widening repository-scoped GitHub sets.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  name: github-identity-reads
+  namespace: agentplane-staging
+  annotations:
+    description: The caller's own GitHub identity read, with no repository or mutation surface.
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        github:
+          - get_me

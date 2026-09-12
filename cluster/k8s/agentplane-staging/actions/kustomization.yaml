@@ -4,6 +4,8 @@ namespace: agentplane-staging
 resources:
   - serviceaccount.yaml
   - serviceaccount-claude-ai.yaml
+  - actionpolicyset-github-reads.yaml
+  - actionpolicyset-github-identity-reads.yaml
   - rbac.yaml
   - configmap-action-federation.yaml
   - deployment.yaml
