@@ -230,12 +230,13 @@ def test_a_preset_naming_a_missing_action_policy_set_creates_nothing(
     """Refused before the Sandbox exists, as a missing egress policy is: a launch that would grant
     nothing leaves no Sandbox behind to puzzle over."""
     del custom_objects.objects[("actionpolicysets", "github-reads")]
+    seeded = {name for kind, name in custom_objects.objects if kind == "sandboxes"}
 
     response = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder"})
 
     assert response.status_code == 422, response.text
     assert "github-reads" in response.json()["detail"]
-    assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == ["live", "fresh", "shelved"]
+    assert {name for kind, name in custom_objects.objects if kind == "sandboxes"} == seeded
 
 
 def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, list[str]]]:
