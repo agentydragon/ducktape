@@ -136,6 +136,7 @@ resources:
   - agentplane-staging/agent-rbac/flux-kustomization.yaml
   - agentplane-staging/db/flux-kustomization.yaml
   - agentplane-staging/llm-ingress/flux-kustomization.yaml
+  - agentplane-staging/app-artifact/flux-kustomization.yaml
   - agentplane-staging/app/flux-kustomization.yaml
   - agentplane-staging/egress/flux-kustomization.yaml
   - agentplane-staging/actions/flux-kustomization.yaml
@@ -215,6 +216,7 @@ resources:
   - authentik/secrets/flux-kustomization.yaml
   - authentik/sso-secrets/flux-kustomization.yaml
   - authentik/proxy-routes/flux-kustomization.yaml
+  - authentik/sso-providers-tf-artifact/flux-kustomization.yaml
   - authentik/sso-providers-tf/flux-kustomization.yaml
 
 
@@ -231,6 +233,7 @@ resources:
   - forgejo/namespace/flux-kustomization.yaml
   - forgejo/db/flux-kustomization.yaml
   - forgejo/cache/flux-kustomization.yaml
+  - forgejo/app-artifact/flux-kustomization.yaml
   - forgejo/app/flux-kustomization.yaml
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
@@ -238,6 +241,7 @@ resources:
   # --- props (parked; flip cluster/k8s/props.yaml suspend to revive) ---
   - props.yaml
 
+  - forgejo-images-artifact/flux-kustomization.yaml
   - forgejo-images/flux-kustomization.yaml
   - forgejo/budget-ledger/flux-kustomization.yaml
   - forgejo/augur-evidence/flux-kustomization.yaml
