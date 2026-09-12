@@ -216,6 +216,14 @@ spa_bundle(
 # captures the same typography users see in production.
 
 js_library(
+    name = "visual_scenarios",
+    srcs = [
+        "tests/harness/scenarios.mjs",
+        "tests/scene_ready.mjs",
+    ],
+)
+
+js_library(
     name = "visual_harness_lib",
     srcs = ["tests/harness/harness.jsx"],
     tags = ["no-lint"],
@@ -237,6 +245,7 @@ js_binary(
         ":casino_fonts",
         ":node_modules",
         ":visual_harness_lib",
+        ":visual_scenarios",
     ],
     entry_point = "tests/harness/esbuild.config.mjs",
 )
@@ -247,6 +256,7 @@ js_run_binary(
         "tests/harness/esbuild.config.mjs",
         ":casino_fonts",
         ":visual_harness_lib",
+        ":visual_scenarios",
     ],
     outs = [
         "tests/harness/dist/harness.js",
@@ -262,43 +272,29 @@ filegroup(
     srcs = ["tests/harness/dist/harness.js"],
 )
 
-# One js_test per harness scenario (?page=<scenario> in tests/harness/harness.jsx);
-# each has a same-named entry at tests/visual_test_<scenario>.mjs.
-[
-    js_test(
-        name = "visual_%s" % scenario,
-        size = "small",
-        data = [
-            "tests/harness/index.html",
-            "tests/scene_ready.mjs",
-            ":casino_fonts",
-            ":visual_harness_js",
-            "//util/testing/frontend_visual:fonts_conf",
-            "//util/testing/frontend_visual:visual_test_lib",
-            "@playwright_browsers//:chromium-headless-shell",
-        ],
-        entry_point = "tests/visual_test_%s.mjs" % scenario,
-        env = {
-            "HARNESS_PATH": "$(rootpath :visual_harness_js)",
-            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-            "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
-            "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
-            "EXPECTED_FONT_FAMILY": "Outfit",
-        },
-        no_copy_to_bin = [
-            ":casino_fonts",
-            ":visual_harness_js",
-            "//util/testing/frontend_visual:fonts_conf",
-            "//util/testing/frontend_visual:visual_test_lib",
-            "@playwright_browsers//:chromium-headless-shell",
-        ],
-    )
-    for scenario in [
-        "main_page",
-        "streak_rest",
-        "session_award",
-        "changelog",
-        "active_bonus_countdown",
-        "active_bonus_unlocked",
-    ]
+# Every scenario in tests/harness/scenarios.mjs, swept on one browser per shard. BUILD carries a
+# shard count, not a scenario list. Run one with `--test_filter=<scenario>`.
+VISUAL_DATA = [
+    "tests/harness/index.html",
+    ":casino_fonts",
+    ":visual_harness_js",
+    "//util/testing/frontend_visual:fonts_conf",
+    "//util/testing/frontend_visual:visual_test_lib",
+    "@playwright_browsers//:chromium-headless-shell",
 ]
+
+js_test(
+    name = "visual",
+    size = "small",
+    data = VISUAL_DATA + [":visual_scenarios"],
+    entry_point = "tests/visual_runner.mjs",
+    env = {
+        "HARNESS_PATH": "$(rootpath :visual_harness_js)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+        "EXPECTED_FONT_FAMILY": "Outfit",
+    },
+    no_copy_to_bin = VISUAL_DATA,
+    shard_count = 2,
+)

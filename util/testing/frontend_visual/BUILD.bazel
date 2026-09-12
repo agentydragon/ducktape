@@ -44,7 +44,12 @@ js_library(
 # Puppeteer-based visual render-health test runner.
 js_library(
     name = "visual_test_lib",
-    srcs = ["visual-test-lib.mjs"],
+    srcs = [
+        # Types for the .mjs beside it, so a TypeScript scenario table is checked against what the
+        # sweep reads. `.d.mts` because TypeScript pairs it with the `.mjs`, not a `.js`.
+        "visual-test-lib.d.mts",
+        "visual-test-lib.mjs",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":capture",
