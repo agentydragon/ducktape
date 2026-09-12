@@ -40,7 +40,6 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
@@ -188,13 +187,11 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
-        SandboxPrincipalAuthenticator(
-            SandboxPrincipalResolver(
-                authentication=authentication,
-                core_v1=core,
-                audience=AUDIENCE,
-                allowed_service_account_namespaces=frozenset({NAMESPACE}),
-            )
+        SandboxPrincipalResolver(
+            authentication=authentication,
+            core_v1=core,
+            audience=AUDIENCE,
+            allowed_service_account_namespaces=frozenset({NAMESPACE}),
         ),
         DisabledOperatorAuthenticator(),
         catalog,
@@ -300,9 +297,58 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
 async def test_transport_requires_real_workload_bearer(frontend: Frontend, authorization: str | None) -> None:
     async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as client:
         headers = {"Authorization": authorization} if authorization is not None else {}
-        for method in ("GET", "POST", "DELETE"):
+        for method in ("POST", "DELETE"):
             response = await client.request(method, "/mcp", headers=headers)
             assert response.status_code == 401
+            # RFC 6750 §3.1: an error attribute only once credentials were presented and refused.
+            assert ('error="invalid_token"' in response.headers["www-authenticate"]) == (authorization is not None)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "0"},
+            },
+        },
+        {"method": "tools/list"},
+    ],
+    ids=["initialize", "tools/list"],
+)
+async def test_protocol_setup_needs_a_bearer_at_the_transport(frontend: Frontend, body: dict[str, object]) -> None:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        response = await http.post(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25"},
+            json={"jsonrpc": "2.0", "id": 1, **body},
+        )
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+
+
+async def test_tools_act_as_the_identity_the_transport_verified(frontend: Frontend) -> None:
+    receipts: dict[str, ActionRequestView] = {}
+    for token in ("test-token-a", "test-token-b"):
+        async with frontend.client(token) as client:
+            result = await client.call_tool(
+                "request_action",
+                {
+                    "request": {
+                        "idempotency_key": f"test-identity-{token}",
+                        "action": {"group": "test-group", "name": "alpha"},
+                        "arguments": {"message": "test-identity"},
+                    }
+                },
+            )
+            receipts[token] = ActionRequestView.model_validate(result.structured_content)
+    for token, receipt in receipts.items():
+        stored = await frontend.store.get(receipt.id, OPERATOR)
+        assert stored.caller_principal == workload_principal(frontend.tokens[token]).key
+        assert stored.external_grant is None
 
 
 async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(frontend: Frontend) -> None:

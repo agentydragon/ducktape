@@ -239,7 +239,6 @@ async def async_main(settings: Settings) -> None:
             resync_seconds=settings.resync_seconds,
         )
         store = TrajectoryStore.connect(settings.database_url)
-        await store.ensure_schema()
         await store.start_updates()
 
         async def running_sandboxes() -> list[str]:

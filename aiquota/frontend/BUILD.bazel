@@ -268,7 +268,8 @@ SCREENSHOT_DATA = [
 
 js_test(
     name = "screenshots",
-    size = "large",
+    # medium: 13 shots in one process, measured 28.5s.
+    size = "medium",
     data = SCREENSHOT_DATA,
     entry_point = "screenshots/render.mjs",
     env = {
