@@ -5028,3 +5028,203 @@ spec:
           to: "@artifact/cluster/k8s/monitoring/cilium/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-etcd
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-etcd
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/etcd/**"
+          to: "@artifact/cluster/k8s/monitoring/etcd/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-grafana-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-grafana-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/grafana-db/**"
+          to: "@artifact/cluster/k8s/monitoring/grafana-db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-loki
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-loki
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/loki/**"
+          to: "@artifact/cluster/k8s/monitoring/loki/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-mimir
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-mimir
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/mimir/**"
+          to: "@artifact/cluster/k8s/monitoring/mimir/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-rules
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-rules
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/rules/**"
+          to: "@artifact/cluster/k8s/monitoring/rules/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-tempo
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-tempo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/tempo/**"
+          to: "@artifact/cluster/k8s/monitoring/tempo/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: nix-cache-bootstrap
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: nix-cache-bootstrap
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/bootstrap/**"
+          to: "@artifact/cluster/k8s/nix-cache/bootstrap/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: nix-cache-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: nix-cache-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/db/**"
+          to: "@artifact/cluster/k8s/nix-cache/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: nix-cache-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: nix-cache-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/namespace/**"
+          to: "@artifact/cluster/k8s/nix-cache/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: node-feature-discovery
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: node-feature-discovery
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/node-feature-discovery/**"
+          to: "@artifact/cluster/k8s/node-feature-discovery/"
+          exclude:
+            - flux-kustomization.yaml
