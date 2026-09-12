@@ -47,53 +47,6 @@ py_library(
 )
 
 py_library(
-    name = "frozen_rollout",
-    srcs = ["frozen_rollout.py"],
-    deps = [
-        ":case",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "income_sources",
-    srcs = ["income_sources.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "cash_conservation",
-    srcs = ["cash_conservation.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "target_allocation",
     srcs = ["target_allocation.py"],
     deps = [
@@ -125,23 +78,6 @@ py_library(
         ":fixtures",
         "//finance/augur/model:series",
         "//finance/augur/sim:scenario",
-    ],
-)
-
-py_library(
-    name = "private_equity",
-    srcs = ["private_equity.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
     ],
 )
 
@@ -265,13 +201,9 @@ py_test(
     srcs = ["configured_acceptance_test.py"],
     deps = [
         ":case",
-        ":cash_conservation",
         ":configured_result",
         ":engine_edges",
         ":fixtures",
-        ":frozen_rollout",
-        ":income_sources",
-        ":private_equity",
         ":simulation_result",
         ":target_allocation",
         "//:conftest",
@@ -672,6 +604,128 @@ py_test(
         "//finance/augur/sim/compiler:tax",
         "@pypi//more_itertools",
         "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "issuer_protocol",
+    srcs = ["issuer_protocol.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:prepared",
+    ],
+)
+
+py_test(
+    name = "cash_conservation_test",
+    srcs = ["cash_conservation_test.py"],
+    deps = [
+        ":issuer_protocol",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:asset_key",
+        "//finance/augur/model:series",
+        "//finance/augur/product:household",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:property",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:execution",
+        "//finance/augur/sim/compiler:tax",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "frozen_rollout_test",
+    srcs = ["frozen_rollout_test.py"],
+    deps = [
+        ":issuer_protocol",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:asset_key",
+        "//finance/augur/model:series",
+        "//finance/augur/product:household",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:tax",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "income_sources_test",
+    srcs = ["income_sources_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:income_sources",
+        "//finance/augur/sim/compiler:tax",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "private_equity_test",
+    srcs = ["private_equity_test.py"],
+    deps = [
+        ":issuer_protocol",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:asset_key",
+        "//finance/augur/model:series",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:results",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:tax",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

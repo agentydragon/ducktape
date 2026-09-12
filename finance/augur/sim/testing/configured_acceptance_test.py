@@ -6,42 +6,14 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.testing.case import Case, scenario
-from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.configured_result import run_case
 from finance.augur.sim.testing.engine_edges import ScanPhaseAcceptance, ValidationEdgeAcceptance
 from finance.augur.sim.testing.fixtures import SF, checking, home_purchase
-from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
-from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
-from finance.augur.sim.testing.private_equity import PrivateEquityAcceptance
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
 
 
-class TestConfiguredIncomeSources(IncomeSourceAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredPrivateEquity(PrivateEquityAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
 class TestConfiguredTargetAllocation(TargetAllocationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredCashConservation(CashConservationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredFrozenRollout(FrozenRolloutAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_case
