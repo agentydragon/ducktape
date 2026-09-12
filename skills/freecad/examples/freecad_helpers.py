@@ -1,9 +1,7 @@
-"""Shared helpers for FreeCAD scripts running inside the test container.
+"""Shared helpers for FreeCAD scripts running inside the test environment.
 
-Mounted alongside FreeCAD scripts as a plain file.
 Uses only stdlib + FreeCAD's bundled Python (no Bazel workspace imports).
-Targets FreeCAD 1.1.0+ (PySide6). For older FreeCAD (0.21, PySide2) you'd
-need to swap the PySide6 imports below.
+Targets the pinned FreeCAD 1.2.dev environment (PySide6).
 """
 
 import os
@@ -14,11 +12,12 @@ import traceback
 import FreeCAD
 
 # gazelle:ignore PySide6,PySide6.QtCore
-# (Qt ships inside the FreeCAD container; not a repo dependency)
-from PySide6 import QtWidgets
+# (Qt ships inside the pinned FreeCAD environment; not a repo dependency)
+from PySide6 import QtGui, QtWidgets
 from PySide6.QtCore import QTimer
 
 _t0 = time.monotonic()
+_OSIFONT_FILENAME = "osifont-lgpl3fe.ttf"
 
 
 def log(msg):
@@ -26,8 +25,30 @@ def log(msg):
     print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
 
 
+def register_techdraw_fonts():
+    """Register FreeCAD's bundled TechDraw font with Qt.
+
+    TechDraw writes ``osifont`` into exported pages. Registering the font from
+    FreeCAD's own resource tree keeps Qt from resolving that family through
+    the runner's system-font fallback, which otherwise makes text metrics and
+    PDF font embedding depend on the host image.
+    """
+    font_path = os.path.join(  # noqa: PTH118 — FreeCAD resource path
+        FreeCAD.getResourceDir(), "Mod", "TechDraw", "Resources", "fonts", _OSIFONT_FILENAME
+    )
+    if not os.path.isfile(font_path):  # noqa: PTH113 — FreeCAD resource path
+        raise FileNotFoundError(f"FreeCAD TechDraw font not found: {font_path}")
+
+    font_id = QtGui.QFontDatabase.addApplicationFont(font_path)
+    if font_id < 0:
+        raise RuntimeError(f"Could not register FreeCAD TechDraw font: {font_path}")
+    families = QtGui.QFontDatabase.applicationFontFamilies(font_id)
+    log(f"Registered FreeCAD TechDraw font {font_path}: {list(families)}")
+
+
 def init_gui():
     """Get the running QApplication. Call at module level in GUI binary scripts."""
+    register_techdraw_fonts()
     return QtWidgets.QApplication.instance()
 
 
