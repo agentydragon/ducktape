@@ -69,13 +69,11 @@ separate settings surface:
   combined-status bubble's detail if it reads better as a menu item than a tooltip on small touch
   targets. A menu item reads by its text, not an icon alone, so "Shut down harness" would need its
   full label there (unlike today's icon-only `ActionIcon` with just a tooltip).
-- **Interrupt (`IconPlayerStop`, stops the current turn) is the one control here that should stay
-  out of the menu while it can be used.** It's genuinely time-sensitive — the operator reaches for
-  it _during_ an active turn, not at rest — so tucking it a menu-tap deep trades away exactly the
-  responsiveness the current always-visible icon gives it. A hybrid reads better than folding it in
-  unconditionally: interrupt stays a visible icon whenever a turn is active
-  (`activeTurn !== undefined`, `session.tsx:401`), and only that control — not shutdown — could
-  additionally fold into the menu (with a label) once there's nothing to interrupt.
+- **Decided: interrupt (`IconPlayerStop`, stops the current turn) stays a visible icon, always —
+  it does not move into the menu.** It's genuinely time-sensitive — the operator reaches for it
+  _during_ an active turn, not at rest — so tucking it a menu-tap deep would trade away exactly the
+  responsiveness the current always-visible icon gives it. Shutdown is the one that moves under the
+  hamburger, per the header-row bullet above; interrupt is the one that doesn't.
 
 ## Badges → dots, and message role → layout
 
@@ -158,7 +156,3 @@ It drafts the mock; it doesn't touch `x/agentplane` code.
   shared component infra exists).
 - Whether the pending-approval overlay preempts the operator's current page/input, or docks
   non-modally (a toast/banner) so it can't interrupt something like an in-progress composer edit.
-- Whether interrupt always lives in the under-composer overflow menu (simplest, but two taps deep
-  during an active turn) or only folds in there when idle, staying a visible icon while a turn is
-  running. Shutdown is the more clear-cut menu candidate of the two "stop"-shaped controls — see
-  the session-header-row section above for why.
