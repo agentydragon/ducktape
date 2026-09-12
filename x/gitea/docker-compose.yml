@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   gitea:
-    image: gitea/gitea:1.21.11
+    image: gitea/gitea:1.27.3
     container_name: public-git-gitea
     restart: unless-stopped
     environment:
@@ -27,7 +27,7 @@ services:
       retries: 30
 
   gitea-init:
-    image: gitea/gitea:1.21.11
+    image: gitea/gitea:1.27.3
     depends_on:
       gitea:
         condition: service_healthy
