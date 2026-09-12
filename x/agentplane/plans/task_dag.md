@@ -66,10 +66,14 @@ flowchart TB
     UISHELL_SETTINGS["Planned UI<br/>Settings modal consolidation<br/>OAuth clients table + ServiceAccount dropdown"]:::future
     UISHELL_HISTORY["Planned UI<br/>Action history full page<br/>caller, arguments, decision evidence"]:::future
     ACTION_CONTEXT["Planned schema<br/>caller-supplied Action title/description<br/>ActionRequestInput + ActionCard rendering"]:::future
+    THREAD_ARCHIVE["Planned support<br/>per-Thread archived flag + filter<br/>archive/unarchive wired into current UI"]:::future
     THREAD_LIST_API["Planned support<br/>cross-sandbox Thread-listing endpoint<br/>Sandbox id/state, deleted-Sandbox tolerance"]:::future
     UISHELL_SIDEBAR["Planned milestone<br/>session-first sidebar shell<br/>Threads grouped by Sandbox, replaces top nav"]:::milestone
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_MOBILE["Planned UI<br/>mobile sidebar collapse<br/>hamburger toggle, badge stays in top bar"]:::future
+    UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
+    UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
+    THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
@@ -98,6 +102,9 @@ flowchart TB
     THREAD_LIST_API --> UISHELL_SIDEBAR
     UISHELL_SIDEBAR --> UISHELL_DRAWER
     UISHELL_SIDEBAR --> UISHELL_MOBILE
+    UISHELL_SIDEBAR --> UISHELL_NEWTHREAD_LANDING
+    THREAD_LIST_API --> THREAD_BROWSE_PAGINATE
+    THREAD_ARCHIVE -. archived filter reused .-> THREAD_LIST_API
 ```
 
 The credentialless MCP vertical is complete and is intentionally removed from this remaining-work
@@ -139,16 +146,23 @@ can retire on different schedules after their respective replacement surfaces ex
 prerequisite for the first Action/MCP acceptance.
 
 The session-first UI shell (`UISHELL_SETTINGS`, `UISHELL_HISTORY`, `ACTION_CONTEXT`,
-`THREAD_LIST_API`, `UISHELL_SIDEBAR`, `UISHELL_DRAWER`, `UISHELL_MOBILE`) is a separate
+`THREAD_ARCHIVE`, `THREAD_LIST_API`, `UISHELL_SIDEBAR`, `UISHELL_DRAWER`, `UISHELL_MOBILE`,
+`UISHELL_NEWTHREAD_SANDBOX`, `UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`) is a separate
 frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
-above. `UISHELL_SETTINGS`, `UISHELL_HISTORY`, and `ACTION_CONTEXT` have no dependencies and ship
-independently and in parallel. `THREAD_LIST_API` is the one real blocker for the sidebar: a Thread
-is reachable today only through its owning Sandbox's own session list, and the sidebar needs one
-cross-sandbox listing call that also tolerates a Thread whose Sandbox no longer exists.
-`UISHELL_SIDEBAR` then replaces the top nav row entirely as one atomic cutover, not a transitional
-shim running both navs at once; `UISHELL_DRAWER` and `UISHELL_MOBILE` build on its chrome after it
-lands. See [mobile density](mobile_density.md), [session-first navigation](session_first_navigation.md),
-and [Action-request plaintext context](action_request_context.md).
+above. `UISHELL_SETTINGS`, `UISHELL_HISTORY`, `ACTION_CONTEXT`, `THREAD_ARCHIVE`, and
+`UISHELL_NEWTHREAD_SANDBOX` have no dependencies and ship independently and in parallel.
+`THREAD_LIST_API` is the one real blocker for the sidebar: a Thread is reachable today only through
+its owning Sandbox's own session list, and the sidebar needs one cross-sandbox listing call that
+also tolerates a Thread whose Sandbox no longer exists; it reuses the archived-Thread filter
+`THREAD_ARCHIVE` adds rather than inventing a second one. `UISHELL_SIDEBAR` then replaces the top
+nav row entirely as one atomic cutover, not a transitional shim running both navs at once;
+`UISHELL_DRAWER`, `UISHELL_MOBILE`, and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+") build on
+its chrome after it lands. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding
+one old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable
+page eventually, flagged now only so `THREAD_LIST_API` isn't built assuming one unpaginated call is
+enough forever. See [mobile density](mobile_density.md),
+[session-first navigation](session_first_navigation.md), and
+[Action-request plaintext context](action_request_context.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -560,8 +574,21 @@ status reflects real harness/pending-approval state, not a cached snapshot.
 
 **Needed support:** today a Thread is reachable only through its owning Sandbox's own session list;
 `UISHELL_SIDEBAR` needs one call returning every Thread the operator can see, each annotated with
-its Sandbox's id and current state, tolerant of a Thread whose Sandbox row is gone. This is the one
-real technical blocker in the UI-shell cluster; nothing else in it waits on this.
+its Sandbox's id and current state, tolerant of a Thread whose Sandbox row is gone. Reuses
+`THREAD_ARCHIVE`'s archived-Thread filter rather than inventing a second one. This is the one real
+technical blocker in the UI-shell cluster; nothing else in it waits on this.
+
+### `THREAD_ARCHIVE` — per-Thread archived flag and filter
+
+**Needed support:** `sandboxes.tsx` already has a Sandbox-level "archived" concept (a "Show
+archived" switch, default off, `includeArchived` filter, per-row Archive/Unarchive) that needs a
+Thread-level sibling now that Threads are meant to be browsed independently of their Sandbox.
+Before adding it, check for any other existing "archived"/"closed"/"ended" lifecycle concept
+already attached to a Thread or session that this could collide with or duplicate. Add the field,
+an archive/unarchive mutation, and a default-false filter on the existing per-Sandbox Thread
+listing; wire Archive/Unarchive into whatever lists a Sandbox's Threads today (there's no sidebar
+yet to host it). No dependency on `THREAD_LIST_API` — ships independently; `THREAD_LIST_API` reuses
+its filter once both exist.
 
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
@@ -604,6 +631,34 @@ badge stays reachable in the top bar regardless of which sidebar view was last o
 an approver to read, unlike the operator-authored `decision_note` that already flows the reverse
 direction. See [Action-request plaintext context](action_request_context.md) for the exact gap and
 the open field-shape questions. No dependency on the UI-shell cluster; ships independently.
+
+### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
+
+**Planned UI:** a Sandbox's own page keeps the ability to start a fresh conversation directly in
+it — a "+ New thread" composer (model picker + prompt) with the Sandbox, and therefore its preset,
+already fixed. `sandbox_page.tsx` already exists and already creates Threads in a Sandbox; this is
+a composer-shape addition over data it already has. No dependency on the UI-shell cluster.
+
+### `UISHELL_NEWTHREAD_LANDING` — sidebar "+" unscoped new-thread composer
+
+**Planned UI:** the sidebar's "+" opens an empty composer, not a wizard: pick an existing Sandbox or
+"+ New sandbox from preset" (which reveals a preset picker), pick a model, type a prompt, press
+Enter — the page then binds to whatever Sandbox/Thread the submission created. Reuses the same
+composer component as `UISHELL_NEWTHREAD_SANDBOX`, just unscoped.
+
+**Depends on** `UISHELL_SIDEBAR` for chrome placement — the "+" lives in the sidebar itself.
+Whether this composer eventually becomes the default landing page instead of requiring the sidebar
+click first is an open question, not decided.
+
+### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
+
+**Deferred, way later:** the sidebar's Threads list is fine for a working set, but finding one old
+Thread once it runs past the dozens needs its own answer — probably a full page, the same shape as
+`UISHELL_HISTORY`. Not designed here; flagged only so `THREAD_LIST_API` doesn't get built assuming
+one unpaginated call is enough forever.
+
+**Depends on** `THREAD_LIST_API` (extends its endpoint with cursor pagination and, eventually,
+search). Nothing above waits on this.
 
 ## Deferred
 
