@@ -1081,6 +1081,14 @@ go_deps.module(
     sum = "h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=",
     version = "v2.3.1",
 )
+
+# ordered-map/v2 imports the yaml.v4 module directly from its BUILD files.
+# Keep the transitive repository visible to the isolated go_deps extension.
+go_deps.module(
+    path = "go.yaml.in/yaml/v4",
+    sum = "h1:/FrI8D64VSr4HtGIlUtlFMGsm7H7pWTbj6vOLVZcA6s=",
+    version = "v4.0.0-rc.2",
+)
 go_deps.module(
     path = "github.com/goretk/gore",
     sum = "h1:ADlDhsNmAm3ve9Q5dClyUuHUPD7VnwPe1njSDvrENTk=",
@@ -1303,6 +1311,7 @@ use_repo(
     "com_github_spf13_cobra",
     "com_github_tcm1911_r2g2",
     "com_github_yosida95_uritemplate_v3",
+    "in_yaml_go_yaml_v4",
     "io_k8s_apimachinery",
     "io_k8s_apiserver",
     "io_opentelemetry_go_auto_sdk",
