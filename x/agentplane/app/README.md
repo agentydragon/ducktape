@@ -76,8 +76,9 @@ authoritative, and listener reconnects and keepalives trigger catch-up reads. St
 readable while the runner is unreachable.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
-app bridge is deployed. This change does not increase deployment replicas or change rollout strategy;
-old runner processes are not upgraded merely by publishing the new image.
+app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.
+Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
+`maxSurge: 1`) and a PodDisruptionBudget of one available; testing stays at one replica.
 
 ### Inventory snapshots
 

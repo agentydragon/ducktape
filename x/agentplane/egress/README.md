@@ -214,6 +214,9 @@ The process closes the rules/admin APIs with five-second server grace periods an
 lossy decision queue for at most its configured budget (five seconds by default). Deployment
 termination grace must cover those budgets plus master shutdown (20 seconds).
 There is no transparent TCP/HTTP2 migration, request replay, or promise to finish an unbounded stream.
+Staging runs two replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
+`maxSurge: 1`) and a PodDisruptionBudget of one available, so an image roll never takes a ready
+endpoint away before its replacement is ready, and a voluntary eviction keeps one.
 
 The admin-only `/bindings` endpoint reports `scope: replica-local`, observation time, readiness,
 and derived binding name/UID/generation, resolution reason, and present/missing policy names.
