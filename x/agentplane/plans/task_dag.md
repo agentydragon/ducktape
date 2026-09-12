@@ -475,16 +475,19 @@ principal, shows Decision/result/error state, and offers Allow/Deny for pending 
 BFF routes, `/actions/stream`, `/push/*` routes, frontend tests, and service-worker tests cover the
 controls and live-update path; this is not a missing UI implementation.
 
-**Needed live evidence:** human operator approval of a pending Action on staging. Staged request
+**Observed 2026-09-12T13:02Z:** human operator approval of a pending Action on staging. Request
 `github/create_branch` (request ID `d7e43a95-4dc3-4015-9895-7179dbd71fec`, created
-2026-09-12T12:58:16.505543Z) awaits operator decision through the integration-app Actions page.
-Operator approval via staging app will demonstrate: (1) operator identity from Authentik/federation,
-(2) canonical Decisions recorded in `decision_pending` → `allowed` transition, (3) Action Execution
-state transition captured in durable event sequence. Push notification delivery requires
-browser/service-worker interaction; credential/push-service egress and fallback-to-SSE behavior
-remain deferred. The local-Gateway TLS reset that made federation fail intermittently is fixed
-cluster-wide ([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md));
-a federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
+2026-09-12T12:58:16.505543Z) was approved through the integration-app Actions page by the operator.
+Demonstrated: (1) operator identity resolution from Authentik federation, (2) canonical Decisions
+recorded with `decision_pending` → `allowed` transition visible in durable event sequence, (3)
+Request state synchronized in Action Service PostgreSQL and reflected in BFF review page.
+
+**Not verified:** Push notification delivery to browser (requires service-worker interaction);
+credential/push-service egress policy; fallback-to-SSE behavior under push service unavailability;
+Web Push reconciliation after disconnect/reconnect. The local-Gateway TLS reset that made
+federation fail intermittently is fixed cluster-wide
+([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)); a
+federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
 not deployed Authentik, SSE, or OS push proof.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
