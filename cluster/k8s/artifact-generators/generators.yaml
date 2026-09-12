@@ -4628,3 +4628,203 @@ spec:
           to: "@artifact/cluster/k8s/keda/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kube-api-proxy
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kube-api-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kube-api-proxy/**"
+          to: "@artifact/cluster/k8s/kube-api-proxy/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kube-system
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kube-system
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kube-system/**"
+          to: "@artifact/cluster/k8s/kube-system/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kubevirt-cdi-operator
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kubevirt-cdi-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kubevirt/cdi-operator/**"
+          to: "@artifact/cluster/k8s/kubevirt/cdi-operator/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kubevirt-operator
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kubevirt-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kubevirt/operator/**"
+          to: "@artifact/cluster/k8s/kubevirt/operator/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kvm-device-plugin
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kvm-device-plugin
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kvm-device-plugin/**"
+          to: "@artifact/cluster/k8s/kvm-device-plugin/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: langfuse-agent-rbac
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: langfuse-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/agent-rbac/**"
+          to: "@artifact/cluster/k8s/langfuse/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: langfuse-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: langfuse-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/app/**"
+          to: "@artifact/cluster/k8s/langfuse/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: langfuse-cache
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: langfuse-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/cache/**"
+          to: "@artifact/cluster/k8s/langfuse/cache/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: langfuse-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: langfuse-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/db/**"
+          to: "@artifact/cluster/k8s/langfuse/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: litellm-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: litellm-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/db/**"
+          to: "@artifact/cluster/k8s/litellm/db/"
+          exclude:
+            - flux-kustomization.yaml
