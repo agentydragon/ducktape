@@ -1,0 +1,5 @@
+{
+  "name": "@ducktape/grpc-demo",
+  "private": true,
+  "type": "commonjs"
+}
