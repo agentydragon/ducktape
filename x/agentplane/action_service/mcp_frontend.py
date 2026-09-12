@@ -35,6 +35,7 @@ from x.agentplane.action_service.models import (
     ExternalGrantProvenance,
     Principal,
 )
+from x.agentplane.action_service.policy_view import PolicyTarget, SandboxTarget
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
 from x.agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
@@ -240,15 +241,19 @@ def create_server(
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
-    async def get_action_policy() -> ToolResult:
-        """Read what your own bindings auto-decide: the policy sets bound to you and the auto_approve_if,
+    async def get_action_policy(target: PolicyTarget = "self") -> ToolResult:
+        """Read what bindings auto-decide for a target: your own ("self", the default), or a named Sandbox
+        (namespace and UID) or ServiceAccount. The answer is the policy sets bound to it and the auto_approve_if,
         auto_deny_if and auto_deny_unless entries in evaluation order, each naming the binding, set and index
-        a Decision's policy_evidence names. Use this before request_action to learn which Actions and
-        arguments are approved without an operator; a request matching nothing waits for one, and until
-        synced is true nothing auto-decides. This never submits an Action and says nothing about past
-        Decisions; read those with get_action_request. Other callers' bindings are never returned.
+        a Decision's policy_evidence names. Use it before request_action to learn which Actions and arguments
+        are approved without an operator; a request matching nothing waits for one, and until synced is true
+        nothing auto-decides. A target the service does not watch reads as no bindings. This never submits an
+        Action and says nothing about past Decisions; read those with get_action_request.
         """
-        return _result(service.caller_action_policy(_principal(), _external_grant()))
+        if isinstance(target, str):
+            return _result(service.caller_action_policy(_principal(), _external_grant()))
+        subject = target.sandbox if isinstance(target, SandboxTarget) else target.service_account
+        return _result(service.target_action_policy(subject))
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors

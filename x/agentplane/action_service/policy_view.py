@@ -41,6 +41,20 @@ class _View(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class SandboxTarget(_View):
+    """A live Sandbox as the subject to read, by the namespace and UID a binding pins."""
+
+    sandbox: SandboxCaller
+
+
+class ServiceAccountTarget(_View):
+    service_account: ServiceAccountRef
+
+
+# Whose policy a caller asks for: its own, or a named subject.
+type PolicyTarget = Literal["self"] | SandboxTarget | ServiceAccountTarget
+
+
 class ReadyConditionView(_View):
     """The service's verdict on an object's spec, as its informer last wrote it."""
 
@@ -99,10 +113,14 @@ class CallerBindingView(_View):
 
 
 class CallerActionPolicyView(_EffectivePolicy):
-    """What the authenticated caller's own bindings auto-decide, as admission would resolve them now."""
+    """What a subject's bindings auto-decide, as admission would resolve them now, in the form a
+    caller may see: the caller's own subject by default, or one it named."""
 
+    subject: SandboxCaller | ServiceAccountRef = Field(
+        description="Whose bindings these are: a Sandbox by namespace and UID, or a ServiceAccount."
+    )
     bindings: list[CallerBindingView] = Field(
-        description="The caller's unexpired, valid bindings in name order; empty means every request waits for the operator."
+        description="The subject's unexpired, valid bindings in name order; empty means every request waits for the operator."
     )
 
 
@@ -177,12 +195,13 @@ def _effective(
 
 
 def caller_view(
-    index: PolicyIndex, caller: SandboxCaller | ServiceAccountCaller, now: datetime
+    index: PolicyIndex, subject: PolicySubject | ServiceAccountCaller, now: datetime
 ) -> CallerActionPolicyView:
-    """The caller's own view, from the same bindings admission resolves."""
-    bindings = resolve_bindings(index, caller, now)
+    """The caller-facing view of a subject, from the same bindings admission resolves."""
+    bindings = resolve_bindings(index, subject, now)
     auto_approve_if, auto_deny_if, auto_deny_unless = _effective(bindings)
     return CallerActionPolicyView(
+        subject=subject.service_account if isinstance(subject, ServiceAccountCaller) else subject,
         synced=index.synced,
         bindings=[
             CallerBindingView(

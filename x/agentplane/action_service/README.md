@@ -208,15 +208,15 @@ each Action retains immutable submitting Connection/grant/revision/issuer/client
 Production admission and dispatch use the same Connection authority. Sandbox bearers still use
 live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.
 
-| Tool                         | Use                                                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                    |
-| `get_action_policy`          | The caller's own effective policy: its bindings, the sets that resolved, and the three lists in evaluation order (`policy_view.py`).              |
-| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both. |
-| `request_action`             | The existing request envelope under `request`; caller-scoped idempotency and input validation are unchanged.                                      |
-| `get_action_request`         | One own-caller receipt by `request_id`, not an Action definition.                                                                                 |
-| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                        |
-| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                             |
+| Tool                         | Use                                                                                                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                         |
+| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, the three lists (`policy_view.py`). |
+| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                      |
+| `request_action`             | The existing request envelope under `request`; caller-scoped idempotency and input validation are unchanged.                                                           |
+| `get_action_request`         | One own-caller receipt by `request_id`, not an Action definition.                                                                                                      |
+| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
+| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
 
 `cancel_action_request(request_id)` explicitly withdraws an own-caller request before dispatch
 claim, without a version parameter. It returns the canonical outcome (`cancelled`,
@@ -325,9 +325,10 @@ those bindings; the provider's allow carries `PolicyEvidence`, persisted on the 
 lists are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
 authority, never policy.
 
-`policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` and the
-`get_action_policy` tool answer the authenticated caller (a Sandbox principal on the workload
-route; the grant's ServiceAccount through `/mcp`) with the redacted `CallerActionPolicyView`, and
+`policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
+the authenticated caller (a Sandbox principal on the workload route) and the `get_action_policy`
+tool a `target` (the caller itself, a Sandbox principal or the grant's ServiceAccount, by default;
+or a named Sandbox or ServiceAccount) with the redacted `CallerActionPolicyView`, and
 `GET /v1/operator/action-policy/{sandboxes/{namespace}/{uid},service-accounts/{namespace}/{name}}`
 answers the operator with `SubjectActionPolicyView`, adding each binding's labels and `Ready`
 verdict and each named set as present, refused or missing. Both carry `synced`; the integration
