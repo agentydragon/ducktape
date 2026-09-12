@@ -92,6 +92,11 @@ class PushSubscriptionInput(BaseModel):
 _operator_bearer = HTTPBearer(auto_error=False)
 
 
+IDEMPOTENCY_KEY_FILTER = (
+    "Only the request submitted under this idempotency key; recovers a submission whose response was lost."
+)
+
+
 def _sse_json(value: list[ActionRequestView]) -> bytes:
     return json.dumps([item.model_dump(mode="json") for item in value], separators=(",", ":")).encode()
 
@@ -254,8 +259,11 @@ def create_app(
         principal: Annotated[Principal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
+        idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
     ) -> list[ActionRequestView]:
-        return await action_service.list_requests(principal, states=tuple(state_filter or ()))
+        return await action_service.list_requests(
+            principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key
+        )
 
     @app.get("/v1/action-requests/{request_id}", response_model=ActionRequestView)
     async def get_own_request(
@@ -318,8 +326,11 @@ def create_app(
         principal: Annotated[Principal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
+        idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
     ) -> list[ActionRequestView]:
-        return await action_service.list_requests(principal, states=tuple(state_filter or ()))
+        return await action_service.list_requests(
+            principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key
+        )
 
     @app.get("/v1/operator/action-requests/stream")
     async def operator_stream(

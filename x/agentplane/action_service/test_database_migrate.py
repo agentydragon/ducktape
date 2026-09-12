@@ -49,7 +49,7 @@ async def test_decision_note_migration_preserves_data_and_matches_metadata(engin
     store = ActionStore(make_sessionmaker(engine))
     caller = Principal(issuer="test", subject="caller", role=PrincipalRole.CALLER)
     operator = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
-    pending, _ = await store.submit(
+    pending = await store.submit(
         ActionRequestInput(
             idempotency_key="migration-request",
             title="test title for migration-request",
