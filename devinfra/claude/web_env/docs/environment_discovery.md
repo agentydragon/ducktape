@@ -1,19 +1,35 @@
 # Claude Code Web Environment Discovery
 
-Documented from a live session on 2026-07-31.
+Documented from a live session on 2026-07-31; binary version table updated
+2026-09-12.
 
 ## Binary Versions
 
-| Binary                | Build ID   | Release / Version       |
-| --------------------- | ---------- | ----------------------- |
-| `process_api` (PID 1) | `edebff2c` | see `re/process_api/`   |
-| `environment-manager` | `0b86a2a0` | `release-1186d93b9-ext` |
+| Binary                | Build ID           | Release / Version                              |
+| --------------------- | ------------------ | ---------------------------------------------- |
+| `process_api` (PID 1) | `edebff2c`         | see `re/process_api/` (stale — see note below) |
+| `environment-manager` | none in this build | `release-ba76006550-ext`                       |
 
 `environment-manager` is garble-obfuscated with `-literals` (release channel,
-58.6 MB): symbol names randomized, no DWARF, and string constants encrypted so
-the binary's own help text is absent from `strings` output. Both are defeated —
-`re/environment_manager/README.md` documents how to get full disassembly and to
-recover the encrypted literals.
+31.2 MB uncompressed as of `release-ba76006550-ext`, down from 58.6 MB in
+`release-1186d93b9-ext`): symbol names randomized, no DWARF, and string
+constants encrypted so the binary's own help text is absent from `strings`
+output. Both are defeated — `re/environment_manager/README.md` documents how
+to get full disassembly and to recover the encrypted literals. The RE source
+under `re/environment_manager/src/` still reflects `0b86a2a0`
+(`release-1186d93b9-ext`) and has not been reconciled against
+`release-ba76006550-ext` yet; see `re/TODO.md`.
+
+**`process_api` could not be recaptured in the 2026-09-12 pass**:
+`/proc/1/exe` and `/proc/1/mem` both return `EPERM` for root with full
+capabilities (`cap_sys_ptrace` included), on a genuine Firecracker kernel (not
+a gVisor-synthesized `/proc` — confirmed via `/proc/version`). `/proc/1/maps`
+and `/proc/1/smaps_rollup` remain readable and show the binary still fully
+mapped (matches the documented ~4.4 MB size), so this is a real kernel-level
+ptrace-access block on reading PID 1's own memory/executable from inside the
+session it supervises, not a stale reference or a tooling gap. The existing
+`edebff2c` reference and RE source are unverified against whatever
+`process_api` build is live now.
 
 ## Table of Contents
 
@@ -152,7 +168,7 @@ From `/usr/local/bin/environment-manager print-sandbox-settings`:
 ## Environment Runner
 
 Binary: `/usr/local/bin/environment-manager` → `/opt/env-runner/environment-manager` (Go, ELF 64-bit, garble-obfuscated)
-Version: `release-1186d93b9-ext`
+Version: `release-ba76006550-ext`
 
 ### Overview
 
@@ -221,9 +237,9 @@ Flags:
       --local-testing                           Disable Claude WebSocket connections and git configuration
       --log-level string                        Log level (debug, info, warn, error) (default "info")
       --organization-id string                  Organization ID for API calls (required for self-hosted)
-      --print-code-logs                         Print Claude Code logs to console when execution completes or fails
+      --print-code-logs                         Print an end-of-session Claude Code summary to console when execution completes or fails (raw log dump requires ENV_MANAGER_PRINT_RAW_CC_LOGS)
       --session string                          ID of the session to manage (required)
-      --session-mode string                     Session mode: 'new', 'resume', 'resume-cached', 'setup-only' (default "new")
+      --session-mode string                     Session mode: 'new' (default for Cloud), 'resume' (skip git clone and setup scripts), 'resume-cached' (default for first self-hosted runs), 'setup-only' (exit after setup); 'retry' is reserved for the runner and cannot be passed explicitly (default "new")
       --skip-git-config                         Skip git configuration setup (use container's existing .gitconfig)
       --upgrade-claude-code                     Deprecated: use --claude-agent-version instead (default true)
       --verbose-claude-logs                     Enable verbose logging of Claude Agent output to console
@@ -899,26 +915,35 @@ Located at `~/.claude/skills/session-start-hook/SKILL.md`, teaches how to create
 
 ### Claude-Specific
 
-| Variable                                       | Description                                  |
-| ---------------------------------------------- | -------------------------------------------- |
-| `CLAUDECODE=1`                                 | Indicates Claude Code environment            |
-| `CLAUDE_CODE_BASE_REF`                         | Base git ref for the session (e.g., `devel`) |
-| `CLAUDE_CODE_CONTAINER_ID`                     | Container identifier                         |
-| `CLAUDE_CODE_DEBUG=true`                       | Debug mode enabled                           |
-| `CLAUDE_CODE_DIAGNOSTICS_FILE`                 | Path to diagnostics log file                 |
-| `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES=true`     | Emit tool use summaries in output            |
-| `CLAUDE_CODE_ENTRYPOINT=remote`                | Entry point mode (remote for web sessions)   |
-| `CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION`       | Version of environment-manager binary        |
-| `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=4`    | FD for OAuth token                           |
-| `CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2=true` | Use v2 session ingress POST endpoint         |
-| `CLAUDE_CODE_PROXY_RESOLVES_HOSTS=true`        | Git proxy configuration                      |
-| `CLAUDE_CODE_REMOTE=true`                      | Running in remote/container environment      |
-| `CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE`          | Environment type (e.g., `cloud_default`)     |
-| `CLAUDE_CODE_REMOTE_SESSION_ID`                | Remote session identifier                    |
-| `CLAUDE_CODE_SESSION_ID`                       | Current session identifier                   |
-| `CLAUDE_CODE_VERSION`                          | Claude Code version                          |
-| `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR=3` | FD for WebSocket auth                        |
-| `CLAUDE_SESSION_INGRESS_TOKEN_FILE`            | Path to session ingress token file           |
+| Variable                                        | Description                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `CLAUDECODE=1`                                  | Indicates Claude Code environment                                                                      |
+| `CLAUDE_CODE_BASE_REF`                          | Base git ref for the session (e.g., `devel`)                                                           |
+| `CLAUDE_CODE_BG_TASKS_REPORT_RUNNING`           | Seen as `0`; name suggests gating whether running background tasks are reported, behavior unconfirmed  |
+| `CLAUDE_CODE_CONTAINER_ID`                      | Container identifier                                                                                   |
+| `CLAUDE_CODE_DEBUG=true`                        | Debug mode enabled                                                                                     |
+| `CLAUDE_CODE_DIAGNOSTICS_FILE`                  | Path to diagnostics log file                                                                           |
+| `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`            | Seen as `1`; suppresses terminal title updates, behavior unconfirmed                                   |
+| `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES=true`      | Emit tool use summaries in output                                                                      |
+| `CLAUDE_CODE_ENTRYPOINT=remote`                 | Entry point mode (`remote` as of `release-ba76006550-ext`; older builds also used `remote_desktop`)    |
+| `CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION`        | Version of environment-manager binary                                                                  |
+| `CLAUDE_CODE_GZIP_REQUEST_BODIES`               | Seen as `1`; name suggests gzip-compressing outbound request bodies, behavior unconfirmed              |
+| `CLAUDE_CODE_HOLD_UNANSWERED_PARKED_PERMISSION` | Seen as `1`; name suggests holding a parked permission prompt until answered, behavior unconfirmed     |
+| `CLAUDE_CODE_MESSAGING_SOCKET`                  | Unix socket path for a local messaging channel (e.g. `/tmp/cc-socks/<pid>.sock`), unconfirmed protocol |
+| `CLAUDE_CODE_MESSAGING_TOKEN`                   | Auth token for `CLAUDE_CODE_MESSAGING_SOCKET`; treat as a secret                                       |
+| `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=4`     | FD for OAuth token (not present in every entrypoint)                                                   |
+| `CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2=true`  | Use v2 session ingress POST endpoint                                                                   |
+| `CLAUDE_CODE_PROXY_RESOLVES_HOSTS=true`         | Git proxy configuration                                                                                |
+| `CLAUDE_CODE_REMOTE=true`                       | Running in remote/container environment                                                                |
+| `CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE`           | Environment type (e.g., `cloud_default`)                                                               |
+| `CLAUDE_CODE_REMOTE_HERMETIC_MODE`              | Seen as `0`; name suggests a hermetic/no-egress mode toggle, behavior unconfirmed                      |
+| `CLAUDE_CODE_REMOTE_SESSION_ID`                 | Remote session identifier                                                                              |
+| `CLAUDE_CODE_SESSION_ATTENDED`                  | Seen as `1`; name suggests whether a human is actively attending the session, behavior unconfirmed     |
+| `CLAUDE_CODE_SESSION_ID`                        | Current session identifier                                                                             |
+| `CLAUDE_CODE_SYNC_SESSION_REFS`                 | Seen as `1`; name suggests syncing session git refs, behavior unconfirmed                              |
+| `CLAUDE_CODE_VERSION`                           | Claude Code version                                                                                    |
+| `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR=3`  | FD for WebSocket auth (not present in every entrypoint)                                                |
+| `CLAUDE_SESSION_INGRESS_TOKEN_FILE`             | Path to session ingress token file                                                                     |
 
 ### MCP-Specific
 

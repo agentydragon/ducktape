@@ -21,7 +21,26 @@ PID 1 duties (orphan adoption, zombie reaping).
 | **Rust toolchain** | `rustc 1.95.0-nightly (6a979b3e3 2026-02-26)`                       |
 | **Source paths**   | Remapped: application modules appear as bare `src/*.rs`             |
 
-Reconstructed source lives under `src/` in this directory.
+Reconstructed source lives under `src/` in this directory. This table
+describes the `edebff2c` build; whether the live binary still matches it is
+unverified as of 2026-09-12 — see "Capturing the binary" below.
+
+## Capturing the binary
+
+As of 2026-09-12, `/proc/1/exe` and `/proc/1/mem` both return `EPERM` from
+inside a live session, for root with full effective capabilities (including
+`cap_sys_ptrace`) and no Yama `ptrace_scope` file present. This is a genuine
+Firecracker kernel (confirmed via `/proc/version`; not a gVisor-synthesized
+`/proc`), so the block is a real kernel-level ptrace-access check, not a
+sandbox artifact of this repo's own tooling. `/proc/1/maps` and
+`/proc/1/smaps_rollup` still work and confirm the binary is fully mapped
+(headers/rodata/`.text`/`.data` segments matching the ~4.4 MB size above), so
+the bytes exist in memory but no accessible read path reaches them. Forcing a
+core dump by signaling PID 1 is not an option — PID 1 is this session's own
+container init, so that would take the session down with it. The
+`reference/process_api.gz` snapshot predates this restriction (a prior
+session could evidently read `/proc/1/exe` directly); there is currently no
+known way to recapture `process_api` from inside a session at all.
 
 ## Build
 
