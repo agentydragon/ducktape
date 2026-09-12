@@ -6,7 +6,7 @@
 ---
 manifest:
   modules_mapping:
-    4c842c94c09923bae9e4__mypyc: mypy
+    0aca9ce3d91742c5b361__mypyc: mypy
     955cd85d9c9a4f4b30d3__mypyc: tomli
     Crypto: pycryptodome
     FreeCADTemplates: freecad_stubs
@@ -334,7 +334,6 @@ manifest:
     nbclient: nbclient
     nbconvert: nbconvert
     nbformat: nbformat
-    nest_asyncio: nest_asyncio
     nest_asyncio2: nest_asyncio2
     networkx: networkx
     nio: matrix_nio
@@ -607,4 +606,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: d2e78da65267ac260f1753c1dda3187557119e20580ad528a2b7538e8be38c5b
+integrity: ce54f1baf9a8811c1730bebc0acab769c8b20582bc689b3f4e7a8d7af2fde575

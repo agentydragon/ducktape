@@ -101,7 +101,7 @@ dependencies = [
     "psycopg2-binary>=2.9.13",
 
     # Git
-    "pygit2>=1.18",
+    "pygit2>=1.20.1",
     "PyGithub>=2.10.0",
 
     # Visualization
@@ -112,7 +112,7 @@ dependencies = [
 
 
     # Jupyter
-    "ipykernel>=6",
+    "ipykernel>=7.3.0",
     "jupyter-mcp-server>=0.23.0",
     "jupyter-server>=2.21.0",
 
@@ -184,7 +184,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.20",
     "pyjwt>=2.14.0",
 
-    "numpy",
+    "numpy>=2.5.3",
     "polars>=1.44.2",
 
     # devinfra visual-review publisher — RGBA decode + pixel diff.
@@ -218,8 +218,8 @@ dependencies = [
     # Keep Redis aligned with the framework beta family; these releases require
     # the newer core floor and are updated together above.
     "agent-framework-redis==1.0.0b260910",
-    "pydantic-ai-slim[openai,anthropic,fastmcp]>=0.10",
-    "openai-agents>=0.0.1",
+    "pydantic-ai-slim[openai,anthropic,fastmcp]>=1.107.5,<2",
+    "openai-agents>=0.22.2",
     # crewai and the langgraph/langchain-* group backed the x/crewai and x/langgraph eval
     # variants, deleted 2026-09-07 (see skills/info_gathering/evals/twenty_questions/x/
     # {crewai,langgraph}.md): neither had a release compatible with mcp-sdk >=2.0 (crewai
@@ -257,15 +257,15 @@ dependencies = [
 
     # Development and testing
     "hypothesis>=6.0",
-    "pytest>=8.3",
-    "pytest-asyncio>=0.25",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-timeout>=2.3",
     "pytest-xdist>=3.0",
     "pytest-mock>=3.10.0",
     "pytest-env>=1.7.1",
-    "pytest-cov>=4.0",
-    "pytest-postgresql>=4.1.1",
-    "pytest-playwright",
+    "pytest-cov>=7.1.0",
+    "pytest-postgresql>=8.1.0,<9",
+    "pytest-playwright>=0.9.0",
     "pytest-bazel>=0.1.6",
     "pytest-shard>=0.1.2",
     "testcontainers[postgres]>=4.14.1",
@@ -273,7 +273,7 @@ dependencies = [
     "syrupy>=4.0",
     "pypdf>=6.18.1",
     "PyHamcrest>=2.1",
-    "mypy==1.19.1",
+    "mypy==1.20.2",
 
     # Protobuf and gRPC code generation for //x/agentplane/runner: grpcio-tools bundles protoc
     # and the gRPC Python plugin; mypy-protobuf adds the .pyi stubs mypy reads.
