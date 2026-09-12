@@ -33,7 +33,7 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
-    POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
+    POLICYBIND["Decided 2026-09-12<br/>StaticIdentity, ActionPolicySet, ActionPolicyBinding CRDs<br/>informer-resolved, Git or runtime per object"]:::active
     MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
@@ -240,56 +240,43 @@ caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
 ### `POLICYBIND` — policy-binding model and storage
 
-**Open design decision:** identify where policy definitions, Identity-to-policy bindings, and
-concrete Sandbox-to-policy bindings live and how they are modeled. Distinguish configured policy
-bindings from runtime named Connection-to-Identity bindings created/edited during enrollment and
-management. Keep SandboxPreset resolution and per-Sandbox additions in the integration app;
-downstream services only consume their own policy bindings. Choose
-cardinality/precedence, stable IDs, mutation ownership, and rollout/revocation semantics. This is
-single-operator; multiple-operator management is out of scope.
-
-**Required reuse:** a `public-coder` Sandbox type and a distinct external `claude-wyrm2` Identity can
-reference the same canonical ActionPolicySet (working name). One edit changes their Action policy
-under the chosen consistency contract without copying rules into each caller's configuration.
-Explicit references share permissions, not caller identity, receipt ownership, or upstream credentials.
-The first slice does not require a general inheritance system; the [Action policy plan](action_policies.md)
-owns the worked example, composition choices, and shared-policy acceptance.
-
-The [Action policy plan](action_policies.md) compares app configuration, Kubernetes resources,
-PostgreSQL, and mixed ownership. No option is selected. For Kubernetes, define resource shape,
-RBAC, references, and informer freshness. Runtime Connections/grants already use the Action
-Service's PostgreSQL authority. Walk one external and one hosted request through policy resolution,
-policy edit, and dispatch before implementing `CALLERPOLICY` persistence. Existing human-approved
-external access, Sandbox authentication, and Action execution remain usable while this design is open.
+**Decided (2026-09-12):** three namespaced CRDs watched by the Action Service — `StaticIdentity`
+(replacing the `identities:` settings map), `ActionPolicySet` (typed, Python-evaluated policies in
+`autoApproveIf`/`autoDenyIf`/`autoDenyUnless` lists), and `ActionPolicyBinding` (a static identity
+or a live Sandbox UID to sets, optionally expiring). Whether an object is Git-managed through Flux
+or written at runtime by the integration app or kubectl is decided per object. The app writes
+Sandbox bindings from its presets with owner references; the Action Service never reads preset
+language. Runtime Connections and grants stay in the Action Service's PostgreSQL. The
+[Action policy plan](action_policies.md) holds the model, the worked external-plus-Sandbox example,
+the evidence and dispatch-revalidation contract, and the implementation steps.
 
 ### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
 
-**Planned support:** configure exact Actions/argument conditions and auto-approval deciders selected
-through reusable policy-set bindings for an external Identity or an authenticated Sandbox.
-The integration app may derive concrete Sandbox bindings from its presets and instance additions;
-the Action Service does not interpret presets. Reuse the existing DecisionProvider aggregation and
-the canonical Decision/Execution lifecycle. Mandatory authorization bounds must fail closed even
-when another provider allows; permitted requests without auto-approval may take the human path.
+**Planned support:** the `exact_actions` and `argument_schema` policy kinds, the policy-set
+decision provider inside the existing DecisionProvider aggregation, a typed `DecisionContext`
+caller, Decision evidence naming the evaluated objects, and dispatch revalidation with
+`policy_not_authorized`. `autoDenyIf` and `autoDenyUnless` fail closed regardless of any other
+provider's allow; a request matching no list takes the human path.
 
-**Design gate / acceptance:** after `POLICYBIND`, the [Action policy plan](action_policies.md) owns typed caller
-selectors, mandatory bounds, decider composition, and policy changes between submission and dispatch.
-Prove matching auto-allow, changed-argument review/deny, caller-class isolation, and rejection on
-failed mandatory bounds. Trusted external Identity and Sandbox caller resolution already exist;
-this task adds policy associations and enforcement. Broad `PROFILES` and a policy DSL remain deferred.
+**Acceptance:** per the [Action policy plan](action_policies.md): matching auto-allow, argument
+miss to human review, caller-class isolation, expiry honored between admission and claim, and no
+authority from forged fields, invalid sets, an unsynced informer, or a deleted binding. Trusted
+static identity and Sandbox caller resolution already exist; this task adds policy objects and
+enforcement. Broad `PROFILES` and a policy DSL remain deferred.
 
 ### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
 
 **Planned behavior:** an agent harness running in a Thread in a Sandbox calls the Action Service
-through its existing workload authentication. The integration app resolves SandboxPreset defaults
-and per-Sandbox additions into concrete Actions-owned policy bindings, independently of the egress
-bindings it also manages. Neither enforcement service knows preset names or depends on the other.
-Sandbox authentication already exists; configurable bindings are new work.
+through its existing workload authentication. The integration app writes one `ActionPolicyBinding`
+per Sandbox it creates, from the preset's set list, next to the `EgressBinding` it already writes,
+both owner-referenced to the Sandbox; later widening of one Sandbox is another binding, usually
+with `expiresAt`. Neither enforcement service knows preset names or depends on the other.
 
-**Design gate / acceptance:** choose policy reference/addition semantics, binding writer authority,
-ownership/reconciliation and update/revocation rules. Verify matching/different Sandbox bindings and
-arguments, forged references, app outage, instance additions surviving preset updates, and policy
-changes before dispatch. Same-preset Sandboxes retain separate caller reads/idempotency; Threads
-within one Sandbox retain current shared workload scope. See [Action policies](action_policies.md).
+**Acceptance:** matching and different Sandbox bindings and arguments, forged references, app
+outage (enforcement continues from applied bindings), instance additions surviving a preset
+re-resolution, and policy changes before dispatch. Same-preset Sandboxes retain separate caller
+reads/idempotency; Threads within one Sandbox retain current shared workload scope. See
+[Action policies](action_policies.md).
 
 ### `CLAUDEAI` — working Claude.ai MCP facade
 

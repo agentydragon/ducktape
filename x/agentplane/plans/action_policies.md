@@ -1,215 +1,178 @@
-# Configured Action policies for external and hosted callers
+# Action policy bindings
 
-Status: **`POLICYBIND` design gate before `CALLERPOLICY` and `SBPOLICY` implementation in
-[the task DAG](task_dag.md).** The single
-operator configures bounded auto-approval for both external MCP connections and harnesses running
-in Threads inside Sandboxes. Both use the canonical Action Service and Decision lifecycle.
-Identity/OAuth/Connection authority is implemented independently of policy representation.
-This gate does not block the initial human-approved Claude.ai connection.
+Status: **`POLICYBIND` decided 2026-09-12; `CALLERPOLICY` and `SBPOLICY` are the steps below.**
+The single operator configures bounded auto-approval for both external MCP connections and
+harnesses running in Threads inside Sandboxes. Both use the canonical Action Service and Decision
+lifecycle. Identity/OAuth/Connection authority is implemented independently of policy
+representation; this work does not block the human-approved Claude.ai connection.
 
-## Callers and policy selectors
+## Model
 
-| Caller                      | Trusted policy selector                                                              | Request ownership                                                        |
-| --------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| External MCP client         | Configured Identity resolved through its authorized Connection.                      | Stable Identity; preserve the exact submitting Connection as provenance. |
-| Harness in a Sandbox Thread | Authenticated `SandboxPrincipal` and concrete Actions-owned Sandbox policy bindings. | Existing namespace/Sandbox UID caller; preserve workload provenance.     |
+Three namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`, watched by the
+Action Service. Each object is owned either by Git through Flux or by a runtime writer (the
+integration app, or the operator with kubectl); the split is per object, never per kind.
 
-SandboxPreset is an integration-app-only concept, not a runtime policy selector. Two Sandboxes
-from the same preset may receive the same auto-approval policy but cannot thereby read each other's
-Actions or share idempotency scope. Multiple Threads in one Sandbox currently share its workload
-caller scope; this plan does not invent authenticated per-Thread isolation. Hosted harnesses keep
-their workload-token path and need neither OAuth/DCR nor a configured external Identity.
+| Kind                  | Spec                                                                                                          | Replaces                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `StaticIdentity`      | `enabled`                                                                                                     | the `identities:` map in the Action Service settings YAML |
+| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies                                      | `fixture_auto_allow`                                      |
+| `ActionPolicyBinding` | `subject` (`staticIdentity` or `sandbox {name, uid}`), `policySets`, the same three inline lists, `expiresAt` | nothing; today external callers are human-only            |
 
-The external enrollment workflow is in [external MCP connections](external_mcp_connections.md).
-Shared concepts remain Identity (configured authority), Connection (runtime named client enrollment), Thread
-(execution/conversation state), and Sandbox (workload boundary). No multi-operator management is
-required for either caller class.
+A **static identity** is the authority an OAuth Connection binds to; the name distinguishes it from
+Sandbox callers, which are also identities. Connections keep referencing it by name from the
+Action Service's PostgreSQL. A missing or disabled static identity refuses resolution at admission
+and at the dispatch claim, as today; deleting the object is the disable.
 
-## `POLICYBIND`: storage and binding model
+A **policy** is one typed evaluator: YAML carries `type` and parameters, Python owns the
+semantics, as in the Haku console's `auto_approval_policies`. Adding a constraint the YAML cannot
+express means adding a kind, never a DSL. Two kinds cover the first slice:
 
-### Reusable policy sets and one source of truth
+- `exact_actions`: `{group: [action, ...]}`, matches by name alone.
+- `argument_schema`: `actions` plus a JSON Schema fragment the arguments must satisfy. This is the
+  hostexec host/`run_as` allow-list, the fixed-repository check, and the fixture's bounded `echo`.
 
-**Required reuse:** the operator can give an external Claude Code Connection the same Action
-permissions as a class of hosted Sandboxes without duplicating configuration or sharing caller
-identity. Use `ActionPolicySet` as a working name for the indirection: a named reusable definition
-of permitted Actions, conditions, and bounded auto-approval deciders. Its final name/schema and
-storage remain open; references to one canonical definition are the required behavior.
+Kinds that consult state outside the arguments (repository visibility, "the caller can already do
+this directly" in Kubernetes) arrive with the Actions that need them.
 
-For example:
+A **policy set** is the shared unit and the only thing a subject ever references. Its three lists
+mean exactly what they say:
 
-```mermaid
-flowchart LR
-    C["Connection: Claude Code on wyrm2"] --> I["Identity: claude-wyrm2"]
-    I --> P["ActionPolicySet: public-coder"]
-    A["Integration app: preset + instance additions"] --> B["Concrete ActionPolicyBindings"]
-    S["Authenticated Sandbox UID"] --> B
-    B --> P
+- `autoApproveIf`: a request matching any policy here is auto-approved.
+- `autoDenyIf`: a request matching any policy here is auto-denied.
+- `autoDenyUnless`: a request matching none of the policies here is auto-denied.
+
+Deny wins over approve; a request matching nothing takes the human path. The first slice
+implements `autoApproveIf` only; the other two lists are schema now, behavior later, and a set with
+only `autoApproveIf` is the v1 object.
+
+A **binding** joins one subject to sets. A subject may have many bindings; the effective policy is
+the union of the unexpired bindings' lists, evaluated with the precedence above. `policySets` is the
+norm; the inline lists exist for one-off grants that no reusable set fits, such as a pinned pull
+request number. `expiresAt` makes an expired binding equivalent to an absent one at evaluation and
+at dispatch. Sandbox subjects pin the live UID, so a binding whose Sandbox is gone is inert.
+
+## Ownership
+
+- Policy sets and static identities normally live in Git next to the environment's Action Service
+  settings; a set created at runtime by the app or kubectl is simply not Flux-owned.
+- The integration app writes one `ActionPolicyBinding` per Sandbox it creates, alongside the
+  `EgressBinding` it already writes, with an `ownerReference` to the Sandbox so both are garbage
+  collected with it. Which sets a preset selects is the app's knowledge, kept in the app's own
+  labels and annotations; the Action Service reads `spec` only and never sees preset language.
+- Widening one Sandbox later is another binding for the same subject, written through the app or
+  kubectl, usually with `expiresAt`. Re-resolving a preset touches only the bindings the app owns.
+- Static identity bindings are ordinarily Git-managed; a runtime, expiring one works the same way.
+- No caller-controlled field selects a binding: subjects resolve from the authenticated
+  `SandboxPrincipal` or the Connection's static identity, never from `origin`, `correlation`,
+  Thread ID, or a claimed type.
+
+## Evaluation and evidence
+
+- **Admission**: resolve the caller's bindings and sets from the informer, evaluate deny lists,
+  then run `autoApproveIf` policies through the existing `DecisionProvider` aggregation. The
+  fixture provider becomes an `exact_actions` policy on the fixture group. A request matching no
+  list stays on the human path.
+- **Dispatch**: before the claim, one live GET of the bindings and sets, not an informer read.
+  Expired or deleted bindings, and a disabled static identity, fail the unstarted Execution with
+  `policy_not_authorized`, mirroring `external_grant_not_authorized`. A committed allow Decision is
+  not re-litigated, the same as a human approval; a deletion racing the GET can leak at most one
+  dispatch.
+- **Evidence**: the Decision records binding names and `resourceVersion`s, set generations, and
+  the leaf policy that matched, so a Decision explains itself after the objects change.
+- **Freshness**: until the informer has synced, every caller is human-only. A set or binding that
+  fails Python validation contributes nothing and reports `Ready=False` with the message in its
+  status, so a bad runtime edit is visible in `kubectl get`.
+- **Context**: `DecisionContext` gets a typed caller, `SandboxCaller` or `StaticIdentityCaller`
+  with its grant revision, plus the resolved bindings, replacing the optional `agent_identity`.
+
+## Worked example
+
+```yaml
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata: { name: public-coder, namespace: agentplane-staging }
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions: { github: [get_file_contents, search_code, list_commits] }
+    - type: argument_schema
+      actions: { github: [create_issue] }
+      schema:
+        properties:
+          owner: { const: agentydragon }
+          repo: { const: ducktape }
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: StaticIdentity
+metadata: { name: personal, namespace: agentplane-staging }
+spec: { enabled: true }
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata: { name: personal-public-coder, namespace: agentplane-staging }
+spec:
+  subject: { staticIdentity: personal }
+  policySets: [public-coder]
+---
+# Written by the integration app when it creates Sandbox coder-7f3a from its preset.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  name: coder-7f3a-public-coder
+  namespace: agentplane-staging
+  labels: { app.agentplane.allegedly.works/managed-by: integration-app }
+  ownerReferences:
+    - { apiVersion: agentplane.allegedly.works/v1alpha1, kind: Sandbox, name: coder-7f3a, uid: 2c1d9e1a-… }
+spec:
+  subject: { sandbox: { name: coder-7f3a, uid: 2c1d9e1a-… } }
+  policySets: [public-coder]
+---
+# The operator widens that one Sandbox for the afternoon.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  name: coder-7f3a-ducktape-push-20260912
+  namespace: agentplane-staging
+  ownerReferences: [same owner]
+spec:
+  subject: { sandbox: { name: coder-7f3a, uid: 2c1d9e1a-… } }
+  policySets: [ducktape-push]
+  expiresAt: "2026-09-12T20:00:00Z"
 ```
 
-The app resolves preset defaults and explicit per-Sandbox additions into concrete policy references.
-Actions and egress each consume their own policy/binding objects and authenticated Sandbox identity;
-neither knows a preset name, resolves inheritance between presets, or calls the other for enforcement.
-The app owns inheritance intent and reconciliation; enforcement continues from applied bindings
-when the app is unavailable. Keep preset-derived assignments and instance additions separately owned
-so updating the former does not erase the latter. Scope, addition/replacement, reference lifetime and
-revocation conventions should be similar across subsystems without creating a shared policy engine.
-Matching policy/preset display names never imply authority.
-The Connection still binds an Identity, whose policy association selects the reusable set.
+A `search_code` in `agentydragon/ducktape` auto-approves for the Sandbox and for the OAuth client
+alike; removing that action from `public-coder` makes the next one wait for the operator for both,
+with no binding edited; at 20:01 the push grant is gone and the Decisions it produced still name
+the binding revision they used.
 
-Policies belong to the set and are evaluated through its reference. Creating a Sandbox, enrolling
-a Connection, or binding another Identity must not copy those rules into an independently editable
-configuration. An edit to `public-coder` applies to every reference under the chosen rollout and
-in-flight consistency contract. Keep the evaluated policy revision as Decision evidence; that audit
-snapshot is not another active policy definition. Missing/deleted references must not fall back to
-an old copied allow or a coincidentally same-named replacement.
+## Steps
 
-Keep the first model small: reusable policy references plus explicit instance additions need not
-require arbitrary preset inheritance graphs. Define additive grants versus mandatory restrictions,
-explicit replacement/removal, precedence and expansion limits before implementing composition.
-An added auto-approval grant must not bypass a mandatory prohibition. Identity, caller
-receipt ownership, credential bindings, and Sandbox/host restrictions remain separate. Sharing
-`public-coder` means equivalent Action permissions under its conditions, not control over Claude
-Code's local tools or automatic access to a particular upstream account's credentials.
-
-This is the Action-only reuse slice. The broader cross-authority profile in [profiles](profiles.md)
-remains deferred; do not create a competing Action-policy owner when that profile is later designed.
-
-### Open model and storage choices
-
-**Open design gate, not a selected schema.** Specify how policy configuration is associated with
-authority and where that association is stored before implementing policy selectors or policy-binding
-persistence. Configured Identities and runtime Connection authority already exist. The policy binding
-and the OAuth Connection are different relationships:
-
-- **Policy definition / set:** canonical named, versioned Action conditions and decider
-  configuration reusable across caller classes, as above.
-- **Policy binding:** an explicit reference from an Identity or trusted workload selector to a
-  reusable policy set. Decide cardinality and combination/precedence without copying the definition
-  or deriving authority from a shared name.
-- **Runtime Connection binding:** the operator creates a named Connection during OAuth enrollment,
-  associates it with a configured Identity, and can later rename, unbind, or rebind it. This mutable
-  runtime relationship is separate from the configured Identity's policy bindings and must have a
-  writable authority even when all policy configuration is in Git.
-  Enrollment and later management live in the integration app; its BFF calls the canonical runtime
-  PostgreSQL authority. This is implemented independently of policy-assignment storage; the remaining
-  management and reconnect UI work is tracked in the external connection plan.
-- **Caller resolution:** external token → Connection → configured Identity; workload token →
-  SandboxPrincipal → concrete Actions-owned Sandbox policy bindings. The integration app alone
-  resolves SandboxPreset defaults/additions into these bindings. Thread/preset IDs do not supply authority.
-
-Do not infer that sharing an Identity's policy makes all its Sandboxes and external Connections
-one caller for reads or idempotency. Preserve the current per-Sandbox ownership unless an explicit
-scope migration is designed. Decide whether mappings can vary per instance, whether external and
-hosted callers may intentionally share authority, and what happens when a type or Identity is removed.
-
-Storage options for policy definitions and their bindings (owned by the enforcing subsystem,
-not by a cross-service preset runtime):
-
-| Option                                               | Tradeoff                                                                                                                                                                                                                                                    |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Git-managed service configuration                    | Reviewable policy definitions and explicit bindings; changes follow configuration rollout and need stable references and removal/reload semantics.                                                                                                          |
-| Kubernetes resources                                 | Dedicated policy/Identity/binding resources can be GitOps-owned, changed without an app rollout, and resolved alongside Sandboxes. Define CRDs or a smaller resource shape, namespace/reference rules, RBAC ownership, and watch/cache freshness semantics. |
-| Definitions in configuration, bindings in PostgreSQL | Supports single-operator UI assignment; requires one explicit owner for bindings and handling of removed/renamed configured policies.                                                                                                                       |
-| Definitions and bindings in PostgreSQL               | Enables policy editing without rollout; adds policy authoring, versioning, audit, and export work that the first slice may not need.                                                                                                                        |
-
-**No storage option is selected.** Compare Git-managed service configuration with Kubernetes-owned
-policy/binding resources as the first two declarative candidates; GitOps can own either. Kubernetes
-is attractive when assignments should follow Sandbox/type resources and change independently of app
-rollouts. Include an external Identity/Connection in the worked example so the model is not limited
-to workloads that happen to live in Kubernetes. Consider database-managed bindings if operator UI
-assignment is needed now. Definitions and bindings need not share a physical store, but each fact
-must have exactly one authoritative owner.
-
-For the Kubernetes candidate, compare explicit policy and binding resources with references on
-existing Sandbox resources. A human-readable label or annotation is not automatically an authority:
-define its schema, who may write it, and the resolver that validates it. Work through informer lag,
-relist/restart, deletion/recreation, and stale or unavailable policy state before dispatch. Preserve
-the evaluated version and stable identity across resource changes; deleting and recreating the same
-name must not silently transfer existing grants or pending Actions. Kubernetes RBAC on configuration
-writers and per-Action authorization solve different parts of that contract.
-
-Runtime Connections/grants/enrollments already live in the Action Service's PostgreSQL authority,
-referencing configured Identities; OAuth SDK state uses encrypted PostgreSQL storage. Keep that
-runtime ownership separate from the open policy-definition/assignment choice. A GitOps reconciler
-must not overwrite runtime-owned Connection changes.
-
-For policy references, decide how dangling/deleted resources and policy changes invalidate access
-without treating cached or mirrored data as another authority. Do not copy the same editable policy
-binding into Kubernetes and PostgreSQL. The
-[Connection contract](../action_service/SPEC.md#external-connection-authority) already defines
-immutable revisions, historical provenance, and fresh authorization on replacement; policy work
-must preserve it rather than reopen token-retargeting semantics.
-
-The design decision must name the canonical owner for every relationship, identifier stability,
-cardinality and precedence, cross-reference validation, mutation path, and reload/revocation behavior
-for in-flight Actions. Persist enough policy-version and caller/binding evidence to explain a
-Decision after configuration changes. This is a single-operator configuration and enrollment problem, not a
-multi-operator account or ownership framework. A worked external Connection and a worked Sandbox
-submission, including a policy edit between admission and dispatch, are the acceptance for the design.
-
-## Bounded decisions
-
-Configure exact Action group/name and validated argument/resource conditions for an Identity or
-Sandbox binding. For example, app-created coder Sandbox bindings could auto-approve a configured
-read Action only for an explicit repository set; another binding receives no such auto-allow.
-Time/use/budget bounds are required only when the chosen policy calls for them.
-
-Separate the caller's permitted envelope from the deciders allowed to remove human review:
-
-- an in-bounds auto-allow uses the existing canonical Decision and at most one Execution;
-- a policy miss may defer to the existing human path only within the permitted envelope;
-- a prohibited Action cannot be rescued by another provider's allow or ordinary human review; and
-- missing/invalid policy, unknown required binding, or failure of a mandatory bound cannot
-  permit execution. An explicit configured human-only policy is a valid policy.
-
-The existing aggregation treats provider errors as `no_opinion` and can accept another provider's
-allow. Mandatory authorization bounds therefore cannot be optional advisory providers. Specify
-their enforcement separately from deciders which authorize automatic execution inside the envelope.
-No caller-controlled Action field, `origin`, `correlation`, Thread ID, environment value, or claimed
-type may select authority. Provide trusted caller/binding context to deciders and execution,
-and retain bounded policy/version evidence with the canonical Action records.
-
-## Design choices and implementation boundary
-
-- **Binding authority:** define who may create/change concrete Sandbox policy bindings and how the
-  app records ownership of preset-derived assignments versus instance additions. A preset name,
-  editable label, chosen image, or caller field is never enforcement authority.
-- **Binding lifetime:** specify behavior for existing/unbound Sandboxes, Pod replacement, app
-  reconciliation and unavailable policy/binding data. Prevent stale bindings from retaining removed
-  auto-approval. Preset inheritance stays in the app; broader capability profiles are not required.
-- **Configuration/composition:** resolve `POLICYBIND` above, then choose minimal typed conditions and
-  precedence of mandatory bounds and deciders. Trusted external Identity and Sandbox caller
-  resolution are already available; neither policy slice needs new OAuth implementation.
-- **Pending work and revocation:** define admission/Decision/dispatch consistency and record the
-  evaluated policy version. Revalidate required authority before dispatch and specify the
-  linearization point and revocation bound. A replacement Connection or changed Sandbox binding must
-  not silently lend new authority to queued work; already-started effects are not undone.
-
-[`SandboxPrincipal`](../sandbox_auth/principal.py) and its Action caller adapter already prove
-workload ownership; they do not need to carry a preset/type. The
-[`fixture policy`](../action_service/fixture_policy.py) matches a bounded Everything echo Action
-for Kubernetes Sandbox callers; it is not configurable per Sandbox binding. The current
-[`DecisionContext`](../action_service/models.py) carries a trusted caller and optional
-`agent_identity`; design a typed context for the actual callers and update all consumers together.
-Do not use Thread identity or a caller-supplied type string to populate it.
+1. **CRDs and informer.** `StaticIdentity`, `ActionPolicySet`, `ActionPolicyBinding` with
+   validation status; the Action Service resolves static identities from the informer; the
+   `identities:` settings key and `fixture_auto_allow` go; both environments' `personal` entries
+   become objects committed beside their settings. Rename "configured Identity" to "static identity"
+   in the Action Service, the app, and the docs. The persisted issuer string `configured-identity`
+   stays readable while new rows write `static-identity`.
+2. **Evaluation.** Policy registry with `exact_actions` and `argument_schema`; the set provider
+   inside the existing aggregation; typed `DecisionContext` caller; evidence fields on the Decision.
+3. **Dispatch revalidation** with the live GET, expiry, and `policy_not_authorized`.
+4. **Integration app.** Write the Sandbox binding at creation from the preset's set list; a runtime
+   form for additional bindings with `expiresAt`; optionally create a `StaticIdentity` during
+   enrollment instead of a Git edit.
+5. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
 
 ## Acceptance
 
-- A real harness in a Sandbox Thread submits a configured Action via workload authentication;
-  the matching trusted binding and in-bounds arguments produce auto-approval and one Execution.
-- The same request with a different binding does not inherit that allow; an argument-boundary miss
-  takes the configured human/deny path. Same-preset Sandboxes retain separate reads and idempotency.
-- Forged type/preset/Identity fields, unauthorized binding changes, missing required bindings,
-  and mandatory-policy failure never grant authority. Binding/revocation changes during
-  pending work obey the agreed dispatch contract, including after Pod/service restart.
-- Bind multiple `public-coder` Sandboxes and the distinct `claude-wyrm2` Identity to the same reusable
-  set. Equivalent Actions/arguments receive the same permissions/decider behavior; one change to
-  that set reaches both caller classes without editing their bindings. Verify revision evidence,
-  removal/tightening, and preservation of separate caller reads/idempotency and submission provenance.
-- External Identity A and a Sandbox binding share policy only through explicit references;
-  external Identity B does not inherit A's policy by name or provenance. Test with canonical Action/Decision/Execution
-  evidence, including safe results, bounded reasons, and unchanged retry/unknown-outcome semantics.
-
-Prove the Sandbox policy slice independently of external enrollment. The first human-approved
-`EXTERNALMCP` proof does not require this policy work; later all callers reuse the same configurable
-policy evaluation and Action lifecycle.
+- A harness in a Sandbox Thread submits a configured Action via workload authentication; its
+  binding and in-list arguments produce auto-approval and one Execution. The same request from a
+  Sandbox with a different binding does not inherit that allow; an argument miss takes the human
+  path. Same-preset Sandboxes retain separate reads and idempotency.
+- Several `public-coder` Sandboxes and the `personal` static identity reference one set; one
+  edit reaches both caller classes without touching bindings, and the Decisions record which set
+  generation they evaluated.
+- An expiring binding auto-approves before `expiresAt` and not after, including for an Action
+  admitted before expiry and claimed after it.
+- Forged type/preset/identity fields, an invalid set, an unsynced informer, and a deleted binding
+  grant nothing; a static identity whose binding names a missing set is human-only, never allowed.
+- The Sandbox slice is proven independently of external enrollment; the first human-approved
+  external connection does not wait on it.
