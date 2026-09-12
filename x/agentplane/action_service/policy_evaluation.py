@@ -87,9 +87,7 @@ def resolve_bindings(
 def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidence:
     bindings: list[ActionPolicyBinding] = [resolved.binding for resolved in context.bindings]
     sets = {
-        policy_set.metadata.namespaced_name: policy_set
-        for resolved in context.bindings
-        for policy_set in resolved.policy_sets
+        policy_set.namespaced_name: policy_set for resolved in context.bindings for policy_set in resolved.policy_sets
     }
     return PolicyEvidence(
         bindings=[

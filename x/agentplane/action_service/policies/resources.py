@@ -47,9 +47,15 @@ class ObjectMeta(_Wire):
         alias="resourceVersion", description="Bumped on every write, status included; what a Decision records."
     )
 
+
+class _Namespaced(_Wire):
+    """A namespaced object as read off the API server; `namespaced_name` is its key in the index."""
+
+    metadata: ObjectMeta
+
     @property
     def namespaced_name(self) -> NamespacedName:
-        return NamespacedName(self.namespace, self.name)
+        return NamespacedName(self.metadata.namespace, self.metadata.name)
 
 
 class Condition(_Wire):
@@ -84,8 +90,7 @@ class PolicySetSpec(Spec):
     )
 
 
-class ActionPolicySet(_Wire):
-    metadata: ObjectMeta
+class ActionPolicySet(_Namespaced):
     spec: PolicySetSpec
     status: Status = Field(default_factory=Status)
 
@@ -134,8 +139,7 @@ class BindingSpec(Spec):
     )
 
 
-class ActionPolicyBinding(_Wire):
-    metadata: ObjectMeta
+class ActionPolicyBinding(_Namespaced):
     spec: BindingSpec
     status: Status = Field(default_factory=Status)
 
@@ -147,6 +151,10 @@ class InvalidResource:
     metadata: ObjectMeta
     status: Status
     message: str
+
+    @property
+    def namespaced_name(self) -> NamespacedName:
+        return NamespacedName(self.metadata.namespace, self.metadata.name)
 
 
 def _report(error: ValidationError) -> str:

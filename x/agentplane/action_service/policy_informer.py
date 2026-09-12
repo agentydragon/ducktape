@@ -69,10 +69,6 @@ class PolicyIndex:
             await self.changed.wait_for(predicate)
 
 
-def _namespaced(obj: ActionPolicySet | ActionPolicyBinding | InvalidResource) -> NamespacedName:
-    return obj.metadata.namespaced_name
-
-
 def _service_account(raw: k8s_client.V1ServiceAccount) -> ServiceAccountRef:
     return ServiceAccountRef(namespace=raw.metadata.namespace, name=raw.metadata.name)
 
@@ -125,7 +121,7 @@ class PolicyInformer:
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, POLICY_SETS_PLURAL),
                     parse=parse_policy_set,
-                    key=_namespaced,
+                    key=lambda obj: obj.namespaced_name,
                     names=partial(_keys_in, index.policy_sets, namespace),
                     apply=lambda key, obj: apply_to(index.policy_sets, key, obj),
                 ),
@@ -134,7 +130,7 @@ class PolicyInformer:
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, BINDINGS_PLURAL),
                     parse=parse_binding,
-                    key=_namespaced,
+                    key=lambda obj: obj.namespaced_name,
                     names=partial(_keys_in, index.bindings, namespace),
                     apply=lambda key, obj: apply_to(index.bindings, key, obj),
                 ),

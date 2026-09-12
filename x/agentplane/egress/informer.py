@@ -31,10 +31,6 @@ def _name(obj: EgressPolicy | EgressBinding | EgressCredential | Sandbox) -> str
     return obj.metadata.name
 
 
-def _secret_name(secret: Secret) -> str:
-    return secret.name
-
-
 class Informer:
     def __init__(
         self,
@@ -92,7 +88,7 @@ class Informer:
                     list=core_v1.list_namespaced_secret,
                     args=(credentials_namespace,),
                     parse=Secret.from_v1,
-                    key=_secret_name,
+                    key=lambda secret: secret.name,
                     names=lambda: set(index.secrets),
                     apply=lambda name, obj: apply_to(index.secrets, name, obj),
                 ),
