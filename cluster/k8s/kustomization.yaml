@@ -22,6 +22,7 @@ resources:
   - reloader/flux-kustomization.yaml
   - coredns-custom/flux-kustomization.yaml
   - talos-cloud-controller-manager/flux-kustomization.yaml
+  - local-path-provisioner-artifact/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml
   - snapshot-controller/gitrepository.yaml
   - snapshot-controller/crds/flux-kustomization.yaml
