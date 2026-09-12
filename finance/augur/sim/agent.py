@@ -15,7 +15,7 @@ from finance.augur.sim.ids import AgentId
 from finance.augur.sim.managed import TlhStatement
 from finance.augur.sim.market_path import MarketStatement
 from finance.augur.sim.money import checked_count
-from finance.augur.sim.observations import Observation
+from finance.augur.sim.observations import Claim, Observation
 from finance.augur.sim.results import Receipt
 
 type Mail = (
@@ -52,7 +52,7 @@ def assemble(agent_id: AgentId, month: int, mail: Sequence[Mail]) -> Observation
         public_positions=positions.positions,
         held_bonds=bonds.bonds,
         tlh_portfolios=tlh.portfolios,
-        claims=tuple(message for message in mail if isinstance(message, Due)),
+        claims=tuple(message for message in mail if isinstance(message, Claim)),
         previous_receipts=tuple(message for message in mail if isinstance(message, Receipt)),
     )
 
