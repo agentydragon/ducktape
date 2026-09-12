@@ -115,6 +115,7 @@ py_library(
     deps = [
         ":cluster",
         ":crd_layering",
+        ":flux",
         "@pypi//networkx",
         "@pypi//numpy",
         "@pypi//types_networkx",

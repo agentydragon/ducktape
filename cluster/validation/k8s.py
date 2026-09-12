@@ -351,9 +351,20 @@ class ImagePolicyResource(K8sResource):
     spec: ImagePolicySpec = Field(default_factory=ImagePolicySpec)
 
 
-class _ArtifactGeneratorArtifact(BaseModel):
+class _ArtifactCopy(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    to: str = ""
+
+    def artifact_dir(self) -> str:
+        """The repo-relative directory this copy lands in: `@artifact/cluster/k8s/x/` -> `cluster/k8s/x`."""
+        return self.to.removeprefix("@artifact/").strip("/")
+
+
+class _ArtifactGeneratorArtifact(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
     name: str
+    # `copy` is BaseModel's own method; the wire key stays `copy`.
+    copies: list[_ArtifactCopy] = Field(default_factory=list, alias="copy")
 
 
 class ArtifactGeneratorSpec(BaseModel):

@@ -37,7 +37,9 @@ def test_artifact_generator_artifacts_are_source_ref_targets(tmp_path: Path) -> 
             """
         )
     )
-    assert ("ducktape-flux", "kyverno") in parse_cluster(tmp_path).flux_sources
+    parsed = parse_cluster(tmp_path)
+    assert ("ExternalArtifact", "ducktape-flux", "kyverno") in parsed.flux_sources
+    assert parsed.artifact_paths[("ducktape-flux", "kyverno")] == {"cluster/k8s/kyverno/app"}
 
 
 if __name__ == "__main__":
