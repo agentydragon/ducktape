@@ -15,7 +15,7 @@ the operator's to read, in the subject view.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -55,7 +55,9 @@ class ServiceAccountTarget(_View):
 
 
 # Whose policy a caller asks for: its own, or a named subject.
-type PolicyTarget = Literal["self"] | SandboxTarget | ServiceAccountTarget
+type SelfTarget = Literal["self"]
+SELF: Final[SelfTarget] = "self"
+type PolicyTarget = SelfTarget | SandboxTarget | ServiceAccountTarget
 
 
 class ReadyConditionView(_View):
