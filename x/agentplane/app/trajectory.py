@@ -16,7 +16,19 @@ from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, delete, func, select, update
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Text,
+    UniqueConstraint,
+    delete,
+    func,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Mapped, mapped_column
@@ -45,6 +57,7 @@ class Thread(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
 
 class Event(Base):
@@ -117,6 +130,7 @@ class ThreadView(BaseModel):
     cwd: str
     created_at: datetime
     name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
+    archived: bool
     last_sequence: int = Field(description="The highest stored sequence; 0 while nothing is stored.")
     last_event_at: datetime | None = None
 
@@ -292,8 +306,11 @@ class TrajectoryStore:
             end = None if state.end is None else FeedError(state.end["message"]) if state.end else FeedEnd()
             return FeedSnapshot(ParseDict(state.attached, pb.Attached()), end)
 
-    async def list_threads(self, *, sandbox: str | None = None, session_id: str | None = None) -> list[ThreadView]:
-        """Newest first; each filter given narrows the list to threads matching it."""
+    async def list_threads(
+        self, *, sandbox: str | None = None, session_id: str | None = None, include_archived: bool = False
+    ) -> list[ThreadView]:
+        """Newest first; each filter given narrows the list to threads matching it. Archived
+        threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
         last = (
             select(
                 Event.thread_id, func.max(Event.sequence).label("last_sequence"), func.max(Event.at).label("last_at")
@@ -310,6 +327,8 @@ class TrajectoryStore:
             query = query.where(Thread.sandbox == sandbox)
         if session_id is not None:
             query = query.where(Thread.session_id == session_id)
+        if not include_archived:
+            query = query.where(Thread.archived.is_(False))
         async with self._sessions() as session:
             return [
                 _view(thread, last_sequence, last_at) for thread, last_sequence, last_at in await session.execute(query)
@@ -333,6 +352,24 @@ class TrajectoryStore:
             renamed = _view(thread, *await _last(session, thread_id))
             await _notify(session)
         return renamed
+
+    async def archive(self, thread_id: UUID) -> ThreadView:
+        """Hide the thread from a default listing without touching its events."""
+        return await self._set_archived(thread_id, True)
+
+    async def unarchive(self, thread_id: UUID) -> ThreadView:
+        return await self._set_archived(thread_id, False)
+
+    async def _set_archived(self, thread_id: UUID, archived: bool) -> ThreadView:
+        async with self._sessions.begin() as session:
+            thread = await session.get(Thread, thread_id)
+            if thread is None:
+                raise ThreadNotFoundError(thread_id)
+            thread.archived = archived
+            await session.flush()
+            view = _view(thread, *await _last(session, thread_id))
+            await _notify(session)
+        return view
 
     async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int) -> list[pb.Event]:
         """Up to `limit` events after the cursor, in sequence order; a reader pages until a short page."""
@@ -403,6 +440,7 @@ def _view(thread: Thread, last_sequence: int | None, last_at: datetime | None) -
         cwd=thread.cwd,
         created_at=thread.created_at,
         name=thread.name,
+        archived=thread.archived,
         last_sequence=last_sequence or 0,
         last_event_at=last_at,
     )
