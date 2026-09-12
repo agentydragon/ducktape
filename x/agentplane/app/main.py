@@ -24,6 +24,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
@@ -231,6 +232,9 @@ async def async_main(settings: Settings) -> None:
         egress = EgressInventory(
             namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
         )
+        # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
+        # binding to the authenticated Sandbox, and where the owner reference cascades.
+        action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
         live = LiveIndex(stale_after_seconds=float(settings.resync_seconds * STALE_AFTER_CYCLES))
         watch = watch_for(
             live,
@@ -266,6 +270,7 @@ async def async_main(settings: Settings) -> None:
             egress,
             DecisionsClient(admin_http),
             live,
+            action_policy,
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,

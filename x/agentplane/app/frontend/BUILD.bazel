@@ -378,6 +378,36 @@ ts_library(
 )
 
 ts_library(
+    name = "action_policy",
+    srcs = ["action_policy.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":egress",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "action_policy_test",
+    testonly = True,
+    srcs = ["action_policy.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_policy",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "sandbox_page",
     srcs = [
         "sandbox_page.tsx",
@@ -388,6 +418,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":action_policy",
         ":client",
         ":egress",
         ":json_view",
@@ -639,6 +670,7 @@ vitest_bin.vitest_test(
     chdir = package_name(),
     data = [
         "vitest.config.ts",
+        ":action_policy_test",
         ":actions_history_test",
         ":actions_test",
         ":client_test",

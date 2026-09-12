@@ -150,13 +150,16 @@ resources:
   - agentplane-testing/actions/flux-kustomization.yaml
 
   # --- kyverno ---
+  - kyverno/app-artifact/flux-kustomization.yaml
   - kyverno/app/flux-kustomization.yaml
   - kyverno/policies/flux-kustomization.yaml
 
   # --- external-secrets ---
   - external-secrets/crds/gitrepository.yaml
   - external-secrets/crds/flux-kustomization.yaml
+  - external-secrets/operator-artifact/flux-kustomization.yaml
   - external-secrets/operator/flux-kustomization.yaml
+  - external-secrets/config-artifact/flux-kustomization.yaml
   - external-secrets/config/flux-kustomization.yaml
 
   # --- cert-manager ---
@@ -168,6 +171,7 @@ resources:
   - cert-manager/environment/flux-kustomization.yaml
 
   # --- gateway ---
+  - gateway-artifact/flux-kustomization.yaml
   - gateway/flux-kustomization.yaml
 
   # --- monitoring ---
@@ -409,6 +413,7 @@ resources:
   - study-casino/app/flux-kustomization.yaml
 
   # --- seaweedfs (trial) ---
+  - seaweedfs/namespace-artifact/flux-kustomization.yaml
   - seaweedfs/namespace/flux-kustomization.yaml
   - seaweedfs/secrets/flux-kustomization.yaml
   - seaweedfs/operator/flux-kustomization.yaml

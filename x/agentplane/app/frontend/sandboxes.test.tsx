@@ -29,6 +29,7 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
     title: "Test preset",
     template: "test-template",
     policies: [],
+    action_policy_sets: [],
     thread_preset: "test-thread",
     thread_defaults: { provider: "codex", model: "test-codex-b" },
   };

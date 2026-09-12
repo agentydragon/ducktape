@@ -11,9 +11,10 @@ function provenance(binding: BindingView): string {
   return binding.from_git ? "from git" : "runtime";
 }
 
-function expiry(binding: BindingView): JSX.Element {
-  if (!binding.expires_at) return <Text size="sm">never</Text>;
-  const at = new Date(binding.expires_at);
+/** When a binding stops counting, red once that is past: the objects are pushed, the clock is not. */
+export function expiry(expiresAt: string | null | undefined): JSX.Element {
+  if (!expiresAt) return <Text size="sm">never</Text>;
+  const at = new Date(expiresAt);
   return (
     <Text size="sm" c={at.getTime() < Date.now() ? "red" : undefined}>
       {at.toLocaleString()}
@@ -172,7 +173,7 @@ function BindingsTable({
               <Table.Td visibleFrom="sm">
                 <Text size="sm">{provenance(binding)}</Text>
               </Table.Td>
-              <Table.Td visibleFrom="sm">{expiry(binding)}</Table.Td>
+              <Table.Td visibleFrom="sm">{expiry(binding.expires_at)}</Table.Td>
               <Table.Td visibleFrom="sm">{policyNames}</Table.Td>
               <Table.Td visibleFrom="sm">
                 <Tooltip label="Desired binding, not acknowledgement by every proxy replica">

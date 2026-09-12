@@ -30,6 +30,7 @@ import {
   type SandboxView,
   type ThreadView,
 } from "./client";
+import { ActionPolicySection } from "./action_policy";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { effectiveThreadDefaults } from "./launch_presets";
@@ -43,7 +44,7 @@ const HARNESSES: Harness[] = ["claude", "codex"];
 const PROVIDER_ENUM: Record<Harness, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
 
 // The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
-const TABS = ["sessions", "egress", "status"] as const;
+const TABS = ["sessions", "egress", "policy", "status"] as const;
 type Tab = (typeof TABS)[number];
 const DEFAULT_TAB: Tab = "sessions";
 
@@ -342,10 +343,14 @@ export function SandboxPage({
         <Tabs.List>
           <Tabs.Tab value="sessions">Sessions</Tabs.Tab>
           <Tabs.Tab value="egress">Egress</Tabs.Tab>
+          <Tabs.Tab value="policy">Action policy</Tabs.Tab>
           <Tabs.Tab value="status">Status</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
           <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
+        </Tabs.Panel>
+        <Tabs.Panel value="policy" pt="sm">
+          <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
           {sandbox && <StatusView sandbox={sandbox} />}

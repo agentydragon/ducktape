@@ -19,6 +19,7 @@ import uvicorn
 from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.changes import Changes
@@ -89,6 +90,7 @@ async def app_url(
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
 ) -> AsyncIterator[str]:
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
@@ -113,6 +115,7 @@ async def app_url(
                 egress,
                 decisions,
                 live_index,
+                action_policy,
                 reviewer=reviewer,
             ),
             host="127.0.0.1",

@@ -34,7 +34,6 @@ flowchart TB
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
-    SBPOLICY["Planned behavior<br/>app-written Sandbox bindings<br/>and read-only effective policy view"]:::future
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
@@ -42,7 +41,6 @@ flowchart TB
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
     CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + SSH + GitHub"]:::active
     K8SAUTH["Planned support<br/>browser-mediated Kubernetes auth<br/>linkage, refresh, revocation"]:::future
-    SSHEXEC["Planned adapter<br/>SSH-backed Action execution<br/>Kubernetes keys + bindings"]:::future
     SSHDURABLE["Deferred support<br/>systemd-backed durable processes<br/>host daemon + signals/output"]:::future
     APPROVALUI["Needed live evidence<br/>deployed SSE/push operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
@@ -65,10 +63,10 @@ flowchart TB
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
+    DENY_LISTS["Deferred behavior<br/>autoDenyIf / autoDenyUnless<br/>when an Action needs them"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    SBPOLICY --> ELEVATE
     APPROVALUI --> ELEVATE
     ELEVATE --> FORK
     MCPDEPLOY --> CLAUDEAI
@@ -79,8 +77,6 @@ flowchart TB
     APPROVALUI --> CUTOVER
     K8SAUTH --> CUTOVER
     MCPAUTH --> CUTOVER
-    SSHEXEC --> CUTOVER
-    SSHEXEC --> SSHDURABLE
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
@@ -113,18 +109,14 @@ what it evaluated on the Decision. None of that gates the human-approved client 
 authority already lives in PostgreSQL. A caller ServiceAccount does not select backend credentials
 or wait for `CRED`/`PROFILES`; outbound account OAuth remains `MCPAUTH`. Initial client proof does
 not establish full Haku tool parity.
-Hosted harnesses continue to call Actions from their Sandbox Threads: `SBPOLICY` adds the
-integration app's writer for the same Actions-owned Sandbox bindings. SandboxPreset stays
-an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
-subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
-[Action policy plan](action_policies.md) owns the remaining app and deny-list steps.
-SSH execution is a modular MCP backend behind the existing MCP Executor contract. The planned first
-slice uses OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
-it deliberately does not duplicate command authorization in the executor. It also exposes a reviewed
-read-only target-inventory Action so callers can see which configured machine/user pairs are available
-without receiving credential configuration. The existing decider and human approval path authorize
-the complete target and command. The executor code, rather than runtime configuration, owns the
-`list_targets` and `exec` Action names and schemas. See [the SSH executor plan](ssh_executor.md).
+Hosted harnesses call Actions from their Sandbox Threads under the `ActionPolicyBinding` the
+integration app writes at launch. SandboxPreset stays an integration-app-only recipe: the app
+resolves preset defaults and per-Sandbox additions into each subsystem's bindings. Actions and
+egress do not resolve presets or depend on one another. The deny lists are `DENY_LISTS`.
+SSH execution is the independent `ssh-mcp` server (<../../ssh_mcp_server/README.md>) behind the
+existing MCP Executor contract; the Action Service holds only its bearer, and the decider and human
+approval path authorize the complete target and command. Processes that must outlive an SSH
+connection are `SSHDURABLE`.
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
@@ -192,6 +184,17 @@ collapsing the `sandbox` and `serviceAccount` subject forms and the two operator
 into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
 and the Pod) carries over. No dependency on anything else; nothing waits on this.
 
+### `DENY_LISTS` — `autoDenyIf` and `autoDenyUnless`
+
+**Deferred behavior:** an `ActionPolicySet` carries three lists and only `autoApproveIf` decides
+today; the CRD accepts `autoDenyIf` and `autoDenyUnless` and evaluation ignores them. Their
+semantics are settled in the [Action policy plan](action_policies.md): a request matching any
+`autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
+auto-denied, deny wins over approve, and a request matching nothing takes the human path.
+`autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
+console policies that need it (schema misses recorded as denied Decisions, the disabled kubectl
+passthrough redundancy check) are listed in that plan.
+
 ## Named gates and acceptance evidence
 
 ### `CUTOVER` — Haku Console affordance cutover
@@ -205,11 +208,9 @@ provenance, result recovery, and rollback evidence exists. The initial cutoff se
   consent or re-authentication, expiry/refresh, revocation, and wrong-cluster/wrong-user isolation.
   Do not copy a kubeconfig or reusable bearer into the MCP client, Sandbox, or transcript; Kubernetes
   RBAC remains authoritative and the browser flow returns only the reviewed linkage needed to call it.
-- **SSH:** add an Action Service Executor adapter using OpenSSH and deployment-owned Kubernetes
-  Secret/ConfigMap configuration. Keep command authorization in the existing decider and human
-  approval path; the SSH layer performs target/key lookup and transport. Repoint the affordance at an
-  Agentplane-owned route through a reversible rollout rather than changing the frontend and every
-  credential deployment at once.
+- **SSH:** the `ssh-mcp` server is wired behind the MCP Executor; repoint the Haku Console
+  affordance at the Agentplane-owned route through a reversible rollout rather than changing the
+  frontend and every credential deployment at once.
 - **GitHub:** use the credentialed-upstream account track (`MCPAUTH`) behind the generic MCP frontend.
   Prove account linkage, safe read execution, refresh/reconnect, revocation, and account isolation;
   PAT or OAuth refresh credentials stay with the broker/account authority, never in the MCP client,
@@ -257,21 +258,6 @@ merged source PR or a healthy old pod does not establish readiness. Then run `CL
 configuration task alone cannot satisfy it. Verify Sandbox MCP reachability in parallel; that
 caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
-### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
-
-**Planned behavior:** an agent harness running in a Thread in a Sandbox calls the Action Service
-through its existing workload authentication, which already evaluates the Sandbox's
-`ActionPolicyBinding`s at admission. The integration app writes one `ActionPolicyBinding`
-per Sandbox it creates, from the preset's set list, next to the `EgressBinding` it already writes,
-both owner-referenced to the Sandbox; later widening of one Sandbox is another binding, usually
-with `expiresAt`. Neither enforcement service knows preset names or depends on the other.
-
-**Acceptance:** matching and different Sandbox bindings and arguments, forged references, app
-outage (enforcement continues from applied bindings), instance additions surviving a preset
-re-resolution, and policy changes before dispatch. Same-preset Sandboxes retain separate caller
-reads/idempotency; Threads within one Sandbox retain current shared workload scope. See
-[Action policies](action_policies.md).
-
 ### `ELEVATE` — agent-requested temporary permission
 
 **Planned behavior:** a caller that knows it will need an Action outside its current policy asks
@@ -287,7 +273,7 @@ so the request itself can be auto-approved by policy later, never by default. A 
 evaluated like any other, once per subsequent Action at admission. Prove: a Sandbox requests a set,
 the operator approves, the next matching Action auto-approves and the Decision names the new
 binding; the same request from a different subject grants nothing to the requester; expiry ends it.
-Depends on `SBPOLICY` for bindings on both caller classes and on `APPROVALUI` for the rendering path.
+Depends on `APPROVALUI` for the rendering path.
 
 ### `FORK` — per-task identity fork
 
@@ -362,7 +348,7 @@ with explicit precedence and negative tests for stale, cross-Agent, or caller-su
 **Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
 brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
 use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
-external-access policy behind `MCPAUTH` and `SSHEXEC`, not a prerequisite for the completed credentialless MCP vertical.
+external-access policy behind `MCPAUTH` and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
 
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
@@ -403,32 +389,11 @@ per-Action projection may never be needed and is not required for migration. Act
 evidence determines whether to explore it. The migration order remains open.
 Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` milestone.
 
-### `SSHEXEC` — SSH-backed Action execution
-
-**Implementation in progress:** add a standalone bearer-protected SSH MCP server and connect it via
-the existing Action Service MCP Executor. OpenSSH performs non-interactive execution using private
-keys mounted into the SSH MCP pod; a reviewed ConfigMap maps each key to the machine and Unix user
-for which it may be used.
-The executor code owns the `list_targets` and `exec` Action schemas; reviewed configuration supplies
-only target/key/transport data and the maximum execution timeout. `exec` may request a shorter
-per-Execution timeout but never a longer one. The executor performs target/key lookup and transport
-only. It does not enforce an allowed-command list: the existing decider and human approval path
-remain authoritative for the complete Action.
-
-Start with long-lived keys and deployment-owned rotation. Prefer mounted key files over introducing
-an SSH-agent sidecar unless an agent materially improves the measured rotation boundary; if used,
-its socket and key inventory must remain private to the executor.
-
-**Acceptance evidence:** approved Actions run exactly once as the configured user on `wyrm2` and
-`rugged`, with strict `known_hosts`, bounded terminal output, redacted target/key provenance, safe
-terminal/unknown handling, and no duplicate starts. Mismatched bindings and changed host keys fail
-closed. Secret rotation is proven through deployment rollout. A later process-control slice may add
-reconnectable stdin/signals such as Ctrl+C; it is not part of this one-shot executor.
-
 ### `SSHDURABLE` — durable SSH-backed processes
 
-**Deferred support:** after the one-shot SSH adapter is proven, add a small `agentplane-execd` host
-component for `rugged` and `wyrm2`. SSH still authenticates as the configured target user; an
+**Deferred support:** the `ssh-mcp` server behind the MCP Executor runs one-shot commands; for
+processes that must survive an SSH disconnect, add a small `agentplane-execd` host component for
+`rugged` and `wyrm2`. SSH still authenticates as the configured target user; an
 unprivileged stdio client forwards structured requests over a local Unix socket to a root-owned
 daemon. The daemon derives the execution user from kernel Unix-socket peer credentials and does not
 accept a requested-user field. It delegates process lifetime, cgroups, signals, and unit status to
@@ -438,8 +403,8 @@ The daemon's durable handle is a systemd transient unit derived from the Agentpl
 Future code-owned Actions may start, inspect, read bounded output from, signal, and terminate that
 unit. Agentplane remains authoritative for Action schemas, approval, caller control rights, durable
 Execution state, leases, and unknown-outcome reconciliation; the daemon is only a constrained
-systemd adapter. See [the SSH executor plan](ssh_executor.md) for the protocol and acceptance
-boundaries. Do not add this daemon, PTYs, or stdin streaming to the first one-shot implementation.
+systemd adapter. See [the durable SSH process plan](ssh_durable_processes.md) for the protocol and
+acceptance boundaries. Do not add this daemon, PTYs, or stdin streaming to the first one-shot implementation.
 
 ### `LIVE_CLEAN` — executor heartbeat retention cleanup
 
