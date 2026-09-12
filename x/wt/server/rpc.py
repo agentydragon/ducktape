@@ -99,7 +99,9 @@ class RpcRegistry:
         c.register(WorktreeCoordinator, instance=deps.coordinator)
         c.register(WorktreeService, instance=deps.worktree_service)
         c.register(ServiceDependencies, instance=deps)
-        args = []
+        # Annotated: mypy infers an unannotated [] from its first append, which here would
+        # fix the element type to Stream and reject every other injected argument.
+        args: list[Any] = []
         type_hints = get_type_hints(fn)
         for p in sig.parameters.values():
             anno = type_hints.get(p.name, p.annotation)
