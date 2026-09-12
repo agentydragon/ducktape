@@ -620,6 +620,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
@@ -632,7 +633,9 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     live_thread = await store.thread("live", "s-1", spec)
     other_live_thread = await store.thread("live", "s-2", spec)
     gone_thread = await store.thread("gone", "s-3", spec)
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
