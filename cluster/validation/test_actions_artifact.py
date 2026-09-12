@@ -21,8 +21,15 @@ def test_actions_artifact_preserves_render_inputs(tmp_path: Path) -> None:
     assert artifact["name"] == "agentplane-staging-actions"
     assert "revision" not in artifact  # Content-derived, not the monorepo revision.
     assert artifact["originRevision"] == "@repo"
+    consumer = yaml.safe_load((root / "agentplane-staging/actions/flux-kustomization.yaml").read_text())
+    assert consumer["spec"]["sourceRef"] == {
+        "kind": "ExternalArtifact",
+        "name": artifact["name"],
+        "namespace": generator["metadata"]["namespace"],
+    }
     (operation,) = artifact["copy"]
     relative = "cluster/k8s/agentplane-staging/actions"
+    assert consumer["spec"]["path"] == f"./{relative}"
     assert operation == {
         "from": f"@repo/{relative}/**",
         "to": f"@artifact/{relative}/",
