@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertNetworkSettled,
+  assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
   waitForStable,
@@ -299,7 +300,6 @@ try {
       // (e.g. formatAge) would drift between runs instead of rendering the same value every time.
       await prepareDeterministicPage(page, { viewport: { ...viewport, deviceScaleFactor: 2 }, colorScheme });
       page.on("console", (message) => console.log(`[${name}] browser: ${message.text()}`));
-      page.on("pageerror", (error) => console.error(`[${name}] browser error:`, error));
       await page.setRequestInterception(true);
       const html = pageHtml(css, harnessJs, name, colorScheme);
       // Everything this page may load is served right here; anything else escaping to the network
@@ -433,6 +433,7 @@ try {
       if (escapedRequests.length > 0) {
         throw new Error(`scene ${name}: requests escaped the harness mocks:\n  ${escapedRequests.join("\n  ")}`);
       }
+      assertNoPageErrors(page, { context: `scene ${name}` });
       await waitForStable(page);
       const file = `${name}-${colorScheme}.png`;
       const shot = element
