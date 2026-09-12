@@ -1072,6 +1072,16 @@ go_deps.module(
     version = "v1.4.0",
 )
 go_deps.module(
+    path = "github.com/coder/websocket",
+    sum = "h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=",
+    version = "v1.8.14",
+)
+go_deps.module(
+    path = "github.com/pb33f/ordered-map/v2",
+    sum = "h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=",
+    version = "v2.3.1",
+)
+go_deps.module(
     path = "github.com/goretk/gore",
     sum = "h1:ADlDhsNmAm3ve9Q5dClyUuHUPD7VnwPe1njSDvrENTk=",
     version = "v0.13.27",
@@ -1269,6 +1279,7 @@ use_repo(
     "com_github_caarlos0_env_v11",
     "com_github_cespare_xxhash_v2",
     "com_github_cheynewallace_tabby",
+    "com_github_coder_websocket",
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",
     "com_github_elliotchance_orderedmap",
@@ -1283,6 +1294,7 @@ use_repo(
     "com_github_mark3labs_mcp_go",
     "com_github_munnerz_goautoneg",
     "com_github_nervsystems_osmmcp",
+    "com_github_pb33f_ordered_map_v2",
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
