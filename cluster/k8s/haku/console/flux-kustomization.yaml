@@ -19,33 +19,24 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: haku-console-namespace # the console's own trusted namespace (not haku-sandbox)
-      namespace: ducktape-flux
-    # forgejo-images-creds-eso.yaml extracts the source Secret from the
-    # forgejo-images namespace, so it must exist first.
-    - name: forgejo-images
-      namespace: ducktape-flux
     # Runtime namespace/template changes must become Ready before Console starts creating claims
     # against their new namespace. This makes namespace migrations fail closed instead of opening
     # a window where the API points at a pool that Flux has not reconciled yet.
     - name: haku-workspaces
       namespace: ducktape-flux
-    - name: haku-console-db # distributed approval ledger
-      namespace: ducktape-flux
-    # The fixed-name Job runs Alembic from the exact API image and reports completion before
-    # either API or static workloads in this Kustomization can roll.
+    # The fixed-name Job runs Alembic from the exact API image and reports completion before either
+    # API or static workloads can roll. Its dependency chain also gates the Console namespace,
+    # database, and Forgejo registry credential.
     - name: haku-console-migration
       namespace: ducktape-flux
     - name: haku-state # provisions the shared haku-ui/backend -> haku-console MCP static-Agent token
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
     # TF mints the console's Authentik OAuth2 providers + the haku-console-oidc Secret
     # (operator_oidc + mcp_oauth client credentials + session secret) into this namespace;
     # the pod's build_authentik_auth does a synchronous OIDC discovery fetch at startup, so
-    # the provider must exist first.
+    # the provider must exist first. The Terraform Kustomization itself depends on Authentik.
     - name: agent-machine-access-tf
       namespace: ducktape-flux
     - name: reflector
