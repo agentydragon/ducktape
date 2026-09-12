@@ -8,7 +8,7 @@ spec:
   path: ./cluster/k8s/forgejo/namespace
   prune: false
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: forgejo-namespace
     namespace: ducktape-flux
   timeout: 1m
