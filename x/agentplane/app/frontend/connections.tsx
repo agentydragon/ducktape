@@ -120,7 +120,11 @@ export function Connections({ service = connectionService }: { service?: Connect
                     </Badge>
                     <Text size="sm">Acts as: {serviceAccountKey(grant.caller)}</Text>
                     <Text size="sm" c={isEligibleCaller(grant.caller, accounts) ? "dimmed" : "orange"}>
-                      ({isEligibleCaller(grant.caller, accounts) ? "labeled caller" : "not a labeled caller"})
+                      (
+                      {isEligibleCaller(grant.caller, accounts)
+                        ? "labeled Action caller"
+                        : "ServiceAccount not labeled as an Action caller"}
+                      )
                     </Text>
                   </Group>
                   <Text size="xs" style={{ overflowWrap: "anywhere" }}>

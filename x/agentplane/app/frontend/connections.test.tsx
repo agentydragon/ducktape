@@ -51,7 +51,7 @@ it("renders immutable IDs and distinguishes an unlabeled ServiceAccount from an 
     "registered-client-123",
     "Grant active",
     "agentplane-test/personal",
-    "not a labeled caller",
+    "ServiceAccount not labeled as an Action caller",
   ])
     expect(container.textContent).toContain(value);
 });
