@@ -6,6 +6,8 @@ provider settings disable refreshes, so this process never mutates credential
 files or persists quota snapshots.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import hashlib
