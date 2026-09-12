@@ -1,7 +1,8 @@
 import { Button, Container, Group, Stack } from "@mantine/core";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
-import { ActionHistory, ActionRequests } from "./actions";
+import { ActionRequests } from "./actions";
+import { ActionHistory } from "./actions_history";
 import { Connections } from "./connections";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
