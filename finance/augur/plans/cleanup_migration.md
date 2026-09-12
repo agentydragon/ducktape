@@ -55,7 +55,7 @@ session. Public asset-sale controls live in `sim/testing/asset_sales_test.py` on
 same session; do not restore their deleted legacy suite classes. Remaining year-end tax,
 cash-conservation and feature-specific suites retain their actual numerical
 coverage until their own consumers migrate.
-The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped
+The multiple-taxpayer cases in `sim/testing/income_sources_test.py` need GP's scoped
 multiple-actor sequencing; separate runs are not a replacement for those joint
 controls. Keep the common-session product bond-value regression as actual adapter
 coverage, rather than a weaker principal-only assertion. Python financial step tests remain useful. The native full-run helpers and
