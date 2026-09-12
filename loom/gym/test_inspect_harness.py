@@ -33,7 +33,7 @@ from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, EvidenceItem
 from loom.wayback.proxy import fake_ia
-from third_party.containers import python_3_13_slim
+from third_party.containers import python_3_14_slim
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -286,12 +286,12 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     # evidence-as-files, the served-evidence manifest landing in the score,
     # and the gym's proper loss (outcome YES → -ln(0.8)).
     load_oci_image(WAYBACK_PROXY_IMAGE)
-    load_oci_image(python_3_13_slim.IMAGE)
+    load_oci_image(python_3_14_slim.IMAGE)
     # Bash-only tool: the agent runs python via the shell. Fetch the https://
     # evidence lead through the clamped MITM proxy unmodified — urllib honors
     # https_proxy and trusts the proxy CA via SSL_CERT_FILE. The harness's rich
     # sandbox image is for real runs; the mechanics test uses the lightweight
-    # bazel-loaded python:3.13-slim (also has bash + urllib).
+    # bazel-loaded python:3.14-slim (also has bash + urllib).
     fetch_cmd = dedent(
         """
         python3 - <<'PY'
@@ -320,7 +320,7 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
                 [EVIDENCE_TASK],
                 [RAMP],
                 wayback_upstream=f"http://host.docker.internal:{fake_upstream_port}",
-                agent_image="python:3.13-slim",
+                agent_image="python:3.14-slim",
                 compose_dir=tmp_path,
             ),
             model=model,

@@ -39,7 +39,7 @@ Relevant protos:
 **Result: fails — Python version incompatibility.**
 
 `rules_proto_grpc_python` 5.0.1 registers Python toolchains 3.8–3.12
-and its own `pip.parse` hub. Our repo uses Python 3.13. The select on
+and its own `pip.parse` hub. Our repo uses Python 3.14. The select on
 Python version fails because none of the registered versions match.
 
 ### B. `rules_proto_grpc_python` from master via `git_override` — tried 2026-03

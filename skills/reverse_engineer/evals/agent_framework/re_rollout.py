@@ -2,7 +2,7 @@
 
 Hands a Haiku agent the garbled go_crypto_server binary plus the
 reverse_engineer skill, gives it shell access via MCP exec inside a stock
-python:3.13-slim container, runs for up to 10 minutes, and writes the
+python:3.14-slim container, runs for up to 10 minutes, and writes the
 transcript + the agent's /work workspace to --output-dir.
 
 `Agent.run()` drives the tool-dispatch loop. JSONL transcript writes go

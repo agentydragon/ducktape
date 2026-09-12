@@ -17,7 +17,7 @@ ruff = lint_ruff_aspect(
 
 # Mypy aspect for --config=typecheck builds
 # Uses root mypy.ini for configuration
-# Uses custom mypy_cli to run under Python 3.13 (needed to parse homeassistant's 3.13 syntax)
+# Uses custom mypy_cli to run under Python 3.14 (needed to parse homeassistant's 3.14 syntax)
 #
 # Type checking behavior:
 # - Packages with py.typed (rich, structlog, aiohttp, aiodocker) are fully

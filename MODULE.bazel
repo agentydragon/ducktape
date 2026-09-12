@@ -284,11 +284,11 @@ oci.pull(
 
 # Base image for container E2E tests. rules_distroless layers git + JDK on top.
 oci.pull(
-    name = "python_3_13_slim",
-    digest = "sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285",
+    name = "python_3_14_slim",
+    digest = "sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6",
     image = "mirror.gcr.io/library/python",
     platforms = ["linux/amd64"],
-    tag = "3.13-slim",
+    tag = "3.14-slim",
 )
 oci.pull(
     name = "mitmproxy",
@@ -333,7 +333,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v1.160.0",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "synapse", "synapse_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "synapse", "synapse_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -355,7 +355,7 @@ apt.install(
 )
 use_repo(apt, "github_relay_squid")
 
-# E2E test container: git + JDK layered on python:3.13-slim base.
+# E2E test container: git + JDK layered on python:3.14-slim base.
 apt.install(
     name = "trixie_e2e",
     lock = "//devinfra/claude/claude_hook/container_e2e:trixie_e2e.lock.json",
@@ -533,7 +533,7 @@ use_repo(multitool, "multitool")
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
     is_default = True,
-    python_version = "3.13",
+    python_version = "3.14",
 )
 
 # rules_conda v0.3.2 hardcodes Python 3.11 for its internal tools (py-rattler, pyyaml).
@@ -549,15 +549,15 @@ pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 
 pip.parse(
     hub_name = "pypi",
-    python_version = "3.13",
+    python_version = "3.14",
     requirements_lock = "//:requirements_bazel.txt",
 )
 
-# Separate pip hub for homeassistant - requires Python 3.13.2+
-# Using "3.13" for Bazel toolchain (actual runtime is 3.13.x)
+# Separate pip hub for homeassistant - requires Python 3.14.2+
+# Using "3.14" for Bazel toolchain (actual runtime is 3.14.x)
 pip.parse(
     hub_name = "pypi_homeassistant",
-    python_version = "3.13",
+    python_version = "3.14",
     requirements_lock = "//homeassistant:requirements.txt",
 )
 
@@ -566,7 +566,7 @@ pip.parse(
 # keep the production proxy image in its own resolver universe.
 pip.parse(
     hub_name = "pypi_tana_litellm_proxy",
-    python_version = "3.13",
+    python_version = "3.14",
     requirements_lock = "//tana/litellm_proxy:requirements.txt",
 )
 use_repo(pip, "pypi", "pypi_homeassistant", "pypi_tana_litellm_proxy")

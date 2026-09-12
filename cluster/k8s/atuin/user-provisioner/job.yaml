@@ -97,7 +97,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: provisioner
-          image: python:3.13-alpine
+          image: python:3.14-alpine
           command:
             - sh
             - -c

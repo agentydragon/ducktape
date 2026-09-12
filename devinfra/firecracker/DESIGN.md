@@ -22,7 +22,7 @@ Run Firecracker microVMs on wyrm2 (bare metal NixOS, 32 CPU, 94G RAM, KVM,
 2x RTX 5090) that Claude Code sessions can SSH into. VMs have:
 
 - Internet access (for git clone, BCR fetches, BuildBuddy RBE)
-- Bazel + Python 3.13 + full build toolchain
+- Bazel + Python 3.14 + full build toolchain
 - Fast startup via snapshot/restore (~28ms vs ~15s cold boot)
 - Persistent caches across sessions
 
@@ -39,7 +39,7 @@ Run Firecracker microVMs on wyrm2 (bare metal NixOS, 32 CPU, 94G RAM, KVM,
 1. Claude Code session can create a VM via authenticated API call
 2. Claude Code session can SSH into the VM and run commands
 3. VM has internet access (git, curl, Bazel BCR, BuildBuddy)
-4. VM has Bazel, Python 3.13, JDK 21, Git, build-essential
+4. VM has Bazel, Python 3.14, JDK 21, Git, build-essential
 5. VM rootfs is reproducible (Nix-built)
 6. Multiple VMs can run concurrently (separate pods)
 7. VMs can be snapshotted and restored with warm Bazel state
@@ -264,7 +264,7 @@ Claude Code session (Anthropic Firecracker VM)
 │ │   └─ pivot_root to NixOS on /dev/vda             ││
 │ │                                                   ││
 │ │ NixOS guest (sshd for interactive access)        ││
-│ │ Bazel + Python 3.13 + JDK 21 + Git              ││
+│ │ Bazel + Python 3.14 + JDK 21 + Git              ││
 │ │ eth0 → TAP → pod eth0 → internet                ││
 │ └───────────────────────────────────────────────────┘│
 │                                                      │

@@ -168,7 +168,7 @@ Runtime B's image minus the Anthropic worker: bake base, reuse `bootstrap.sh`
 (kubeconfig + clone state), then run uvicorn.
 
 ```dockerfile
-FROM python:3.13-slim
+FROM python:3.14-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl ca-certificates postgresql-client bash \
  && rm -rf /var/lib/apt/lists/*

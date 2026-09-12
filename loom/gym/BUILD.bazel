@@ -353,7 +353,7 @@ py_test(
         ":task",
         "//:conftest",
         "//loom/wayback/proxy:fake_ia",
-        "//third_party/containers:python_3_13_slim",
+        "//third_party/containers:python_3_14_slim",
         "//util:oci",
         "//util/testing:undeclared_outputs",
         "@pypi//inspect_ai",

@@ -55,7 +55,7 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8080/vms/<id> -XDELETE
 The NixOS rootfs includes (via `bazel-dev.nix`):
 
 - Bazel 8 + Bazelisk
-- Python 3.13, GCC, Clang, Git
+- Python 3.14, GCC, Clang, Git
 - nix-ld (dynamically-linked Bazel toolchains)
 - envfs (`/bin/bash` for Bazel sandbox)
 - openssh-server

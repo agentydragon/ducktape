@@ -25,7 +25,7 @@ lock(
     srcs = ["requirements.in"],
     out = "requirements.txt",
     exec_properties = {"dockerNetwork": "bridge"},
-    python_version = "3.13",
+    python_version = "3.14",
 )
 
 native_test(

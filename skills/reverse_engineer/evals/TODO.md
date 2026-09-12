@@ -73,7 +73,7 @@ Land after at least one specimen + rubric is checked in:
 
 - Sandbox shape — Microsoft Agent Framework + `scratch_exec_server` +
   the **whole skill archive** (`//skills/reverse_engineer:reverse_engineer_skill`)
-  mounted at `/work/.skill/`. Stock `python:3.13-slim` base; agent has
+  mounted at `/work/.skill/`. Stock `python:3.14-slim` base; agent has
   internet (proxy already wired in
   <skills/eval_infra/docker_exec.py>) and installs `binutils`,
   `radare2`, `file`, etc. on demand.

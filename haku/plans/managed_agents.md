@@ -166,7 +166,7 @@ beta:agents create|update`): `model: claude-opus-4-8`, thin pointer `system`,
    `permission_policy: always_allow`.
 2. **`haku.environment.yaml`**: `config: {type: self_hosted}`.
 3. **Worker image** (Bazel `oci_image`, the standard
-   <../../cluster/docs/container-images.md> path): Python 3.13, `git`, `kubectl`,
+   <../../cluster/docs/container-images.md> path): Python 3.14, `git`, `kubectl`,
    postgres client, `curl`, `fastmcp`, `/bin/bash`, the `anthropic` SDK. Entrypoint
    reuses `bootstrap.sh`, then runs `EnvironmentWorker(...).run()`.
 4. **Supervisor** (small service): holds the control-plane API key, maintains one

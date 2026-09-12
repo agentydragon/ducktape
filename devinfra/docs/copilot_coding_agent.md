@@ -30,7 +30,7 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 
 **This repository's setup**:
 
-- ✅ Installs Python 3.13
+- ✅ Installs Python 3.14
 - ✅ Installs Bazelisk (for building with Bazel)
 - ✅ Caches Bazel artifacts for faster builds
 - ✅ Installs pre-commit hooks

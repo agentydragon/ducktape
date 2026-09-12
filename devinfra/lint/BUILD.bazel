@@ -24,7 +24,7 @@ py_binary(
     name = "mypy_cli",
     srcs = ["mypy_runner.py"],
     main = "mypy_runner.py",
-    python_version = "3.13",
+    python_version = "3.14",
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//mypy",

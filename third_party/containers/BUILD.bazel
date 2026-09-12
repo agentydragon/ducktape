@@ -65,10 +65,10 @@ oci_image_py(
 )
 
 oci_image_py(
-    name = "python_3_13_slim",
+    name = "python_3_14_slim",
     testonly = True,
-    image = "@python_3_13_slim_linux_amd64",
-    tag = "python:3.13-slim",
+    image = "@python_3_14_slim_linux_amd64",
+    tag = "python:3.14-slim",
     visibility = ["//visibility:public"],
 )
 

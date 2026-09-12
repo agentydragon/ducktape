@@ -157,7 +157,7 @@ def _already_loaded(tag: str, wanted: str) -> bool:
     """Whether this machine already loaded exactly *wanted* under *tag*, and it is still there.
 
     **Two facts, and both have to hold.** The marker says which layout was loaded — that is the
-    question a tag cannot answer, since `postgres:18` and `python:3.13-slim` move upstream and are
+    question a tag cannot answer, since `postgres:18` and `python:3.14-slim` move upstream and are
     pinned by digest in Bazel, and a tag this repo builds is reused on every build. The daemon says
     whether what was loaded is still present and still the same image, which is what catches a
     prune or an out-of-band retag and stops the marker from being believed on its own.

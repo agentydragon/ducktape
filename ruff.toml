@@ -6,8 +6,8 @@
 
 # Prefer one-line formatting when code fits
 line-length = 120
-# Target Python 3.13+ consistently
-target-version = "py313"
+# Target Python 3.14+ consistently
+target-version = "py314"
 
 # Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
 # .gitattributes is the source of truth; this list must stay in sync.
