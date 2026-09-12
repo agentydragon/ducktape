@@ -20,6 +20,8 @@ A `SandboxPreset` owns what is established by or needed to initialize a Sandbox:
 
 - the `SandboxTemplate` selection;
 - egress policy selections;
+- action policy set selections, editable at launch like the egress selections and written as one
+  `ActionPolicyBinding` per launched Sandbox;
 - persistent workspace/runtime settings; and
 - bootstrap source sent to the runner.
 

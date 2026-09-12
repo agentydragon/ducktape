@@ -130,7 +130,7 @@ export function Connections({ service = connectionService }: { service?: Connect
                         <Text>{serviceAccountKey(grant.caller)}</Text>
                         {!isEligibleCaller(grant.caller, accounts) && (
                           <Text size="xs" c="orange">
-                            not a labeled caller
+                            ServiceAccount not labeled as an Action caller
                           </Text>
                         )}
                       </>

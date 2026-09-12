@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-_SUPPORTED_FASTMCP_VERSION = "3.4.4"
+_SUPPORTED_FASTMCP_VERSION = "3.4.7"
 _RETRY_AFTER_SECONDS = 60
 _INVALID_GRANT = "The Agent authorization grant is invalid."
 

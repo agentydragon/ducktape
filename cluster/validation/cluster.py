@@ -9,7 +9,7 @@ import networkx as nx
 import pygit2
 
 from cluster.validation.flux import FLUX_SOURCE_KINDS, FluxKustomizationSpec, parse_flux_kustomizations
-from cluster.validation.k8s import K8sResource, parse_k8s_resource_file
+from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resource_file
 from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
 
 _K8S_SUBPATH = Path("cluster/k8s")
@@ -54,9 +54,10 @@ class ParsedCluster:
     flux_kustomizations: dict[str, FluxKustomizationSpec] = field(default_factory=dict)
     all_yaml_files: set[Path] = field(default_factory=set)
     source_resources: dict[Path, list[K8sResource]] = field(default_factory=dict)
-    # {(namespace, name)} of Flux source CRs (GitRepository/OCIRepository/...),
-    # including the bootstrap source under flux-system/. Used by cross-namespace
-    # sourceRef validation — see dependencies.check_cross_namespace_references.
+    # {(namespace, name)} a Kustomization.sourceRef can resolve to: Flux source CRs
+    # (GitRepository/OCIRepository/...), including the bootstrap source under
+    # flux-system/, and the ExternalArtifacts ArtifactGenerators declare. Used by
+    # cross-namespace sourceRef validation — see dependencies.check_cross_namespace_references.
     flux_sources: set[tuple[str, str]] = field(default_factory=set)
     build_results: list[KustomizeBuildResult] = field(default_factory=list)
 
@@ -89,6 +90,14 @@ class ParsedCluster:
         return result
 
 
+def _source_keys(resource: K8sResource) -> set[tuple[str, str]]:
+    """The (namespace, name) sourceRef targets one manifest declares; an ArtifactGenerator's
+    artifacts materialize as ExternalArtifacts in its own namespace."""
+    if isinstance(resource, ArtifactGeneratorResource):
+        return {(resource.namespace, artifact.name) for artifact in resource.spec.artifacts}
+    return {(resource.namespace, resource.name)} if resource.kind in FLUX_SOURCE_KINDS else set()
+
+
 def parse_cluster(k8s_dir: Path) -> ParsedCluster:
     """Parse all files in the cluster directory once."""
     kustomize_files: dict[Path, KustomizeFile] = {}
@@ -105,8 +114,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
         # lives here and is a valid sourceRef target for Kustomizations elsewhere.
         if "flux-system" in yaml_file.parts:
             for r in parse_k8s_resource_file(yaml_file):
-                if r.kind in FLUX_SOURCE_KINDS:
-                    flux_sources.add((r.namespace, r.name))
+                flux_sources |= _source_keys(r)
             continue
 
         # Skip blueprints directory (Authentik-specific YAML with !Env tags, not K8s resources)
@@ -130,8 +138,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
             if resources:
                 source_resources[yaml_file] = resources
                 for r in resources:
-                    if r.kind in FLUX_SOURCE_KINDS:
-                        flux_sources.add((r.namespace, r.name))
+                    flux_sources |= _source_keys(r)
 
     return ParsedCluster(
         kustomize_files=kustomize_files,

@@ -352,7 +352,7 @@ class ActionStore:
 
     async def submit(
         self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
-    ) -> tuple[ActionRequestView, bool]:
+    ) -> ActionRequestView:
         """Persist an admitted request; ActionService resolves its group/action before calling here."""
         async with self._sessions.begin() as session:
             if external_grant is not None:
@@ -384,31 +384,25 @@ class ActionStore:
                 .returning(ActionRequestRow.id)
             )
             if inserted_id is None:
-                existing = await session.scalar(
-                    select(ActionRequestRow).where(
-                        ActionRequestRow.caller_principal == principal.key,
-                        ActionRequestRow.idempotency_key == body.idempotency_key,
-                    )
+                raise ActionConflictError(
+                    "idempotency key already used by this caller; read that request by key instead of resubmitting"
                 )
-                if existing is None:
-                    raise RuntimeError("conflicting ActionRequest disappeared")
-                if not _same_request(existing, body):
-                    raise ActionConflictError("request idempotency key was already used for another envelope")
-                return await self._view(session, existing, principal), False
             row = await session.get(ActionRequestRow, inserted_id)
             if row is None:
                 raise RuntimeError("inserted ActionRequest is unreadable")
             _record_event(session, row, now)
-            return await self._view(session, row, principal), True
+            return await self._view(session, row, principal)
 
     async def list_requests(
-        self, principal: Principal, *, states: Sequence[ActionState] = ()
+        self, principal: Principal, *, states: Sequence[ActionState] = (), idempotency_key: str | None = None
     ) -> list[ActionRequestView]:
         query = select(ActionRequestRow).order_by(ActionRequestRow.created_at.desc())
         if principal.role is PrincipalRole.CALLER:
             query = query.where(ActionRequestRow.caller_principal == principal.key)
         if states:
             query = query.where(ActionRequestRow.state.in_([state.value for state in states]))
+        if idempotency_key is not None:
+            query = query.where(ActionRequestRow.idempotency_key == idempotency_key)
         async with self._sessions() as session:
             rows = list(await session.scalars(query))
             return [await self._view(session, row, principal) for row in rows]
@@ -851,17 +845,6 @@ class ActionStore:
             decision=_decision_view(decision),
             execution=_execution_view(execution),
         )
-
-
-def _same_request(row: ActionRequestRow, body: ActionRequestInput) -> bool:
-    return (
-        row.action == body.action.model_dump()
-        and row.arguments == body.arguments
-        and row.title == body.title
-        and row.description == body.description
-        and row.origin == body.origin
-        and row.correlation == body.correlation
-    )
 
 
 def _may_read(row: ActionRequestRow, principal: Principal) -> bool:

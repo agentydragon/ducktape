@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/external-secrets/config
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: external-secrets-config
     namespace: ducktape-flux
   timeout: 5m0s
   wait: true

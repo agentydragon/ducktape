@@ -30,6 +30,7 @@ py_library(
     srcs = ["api.py"],
     deps = [
         ":action_federation",
+        ":action_policy",
         ":auth_routes",
         ":bridge",
         ":consent",
@@ -85,6 +86,7 @@ py_library(
     ],  # keep: the SPA and service worker the server mounts
     deps = [
         ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":decisions",
@@ -114,6 +116,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":action_policy",
         ":bridge",
         ":database_migrate",
         ":decisions",
@@ -142,6 +145,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -166,16 +170,21 @@ py_test(
         "//x/agentplane/action_service:mcp_executor",
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:operator_oidc",
+        "//x/agentplane/action_service:policy_informer",
         "//x/agentplane/action_service:service",
         "//x/agentplane/action_service:updates",
+        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:callers",
+        "//x/agentplane/app/testing:kubernetes",
         "//x/agentplane/sandbox_auth:principal",
+        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+        "@pypi//uvicorn",
     ],
 )
 
@@ -184,6 +193,7 @@ py_test(
     size = "medium",
     srcs = ["test_api.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -266,6 +276,7 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":changes",
@@ -294,6 +305,7 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":decisions",
@@ -417,6 +429,7 @@ py_test(
     size = "medium",
     srcs = ["test_main.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -505,6 +518,7 @@ py_test(
     size = "medium",
     srcs = ["test_auth_routes.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -549,14 +563,19 @@ py_library(
     name = "live",
     srcs = ["live.py"],
     deps = [
+        ":action_federation",
+        ":action_policy",
         ":changes",
         ":egress",
+        ":identity",
         ":inventory",
         ":shutdown",
         ":trajectory",
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
+        "//x/agentplane/action_service/policies:resources",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -567,6 +586,8 @@ py_test(
     size = "medium",
     srcs = ["test_live.py"],
     deps = [
+        ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -575,8 +596,11 @@ py_test(
         ":identity",
         ":inventory",
         ":live",
+        ":oidc",
         ":trajectory",
         "//:conftest",
+        "//util:net",
+        "//x/agentplane/action_service:operator_oidc",
         "//x/agentplane/app/testing:kubernetes",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -605,11 +629,13 @@ py_library(
     name = "action_federation",
     srcs = ["action_federation.py"],
     deps = [
+        ":identity",
         ":oidc",
         "//mcp_infra/authentik_auth:oidc_principal",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:operator_oidc",
         "@pypi//authlib",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -719,5 +745,38 @@ py_test(
         "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "action_policy",
+    srcs = ["action_policy.py"],
+    deps = [
+        ":action_federation",
+        ":egress",
+        ":inventory",
+        "//util:kubernetes",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:policy_view",
+        "//x/agentplane/action_service/policies:resources",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_action_policy",
+    srcs = ["test_action_policy.py"],
+    deps = [
+        ":action_policy",
+        ":conftest",
+        ":egress",
+        "//:conftest",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:models",
+        "//x/agentplane/action_service:policy_view",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

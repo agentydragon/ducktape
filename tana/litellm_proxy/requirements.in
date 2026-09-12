@@ -3,7 +3,7 @@
 # Keep this separate from the repo-wide pyproject.toml lock. LiteLLM's proxy
 # extra owns exact pins for packages such as rich and boto3 that conflict with
 # unrelated monorepo dependencies.
-litellm[proxy]==1.82.0
+litellm[proxy]==1.100.1
 
 # Local custom provider code imports httpx directly.
 httpx>=0.27.0

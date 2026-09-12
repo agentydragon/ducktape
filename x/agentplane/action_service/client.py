@@ -162,10 +162,13 @@ class OperatorActionServiceClient(_BearerClient):
         )
         return Connection.model_validate(response.json())
 
-    async def list_requests(self, *, states: tuple[ActionState, ...] = ()) -> list[ActionRequestView]:
-        response = await self._request(
-            "GET", "/v1/operator/action-requests", params=[("state", state) for state in states]
-        )
+    async def list_requests(
+        self, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
+    ) -> list[ActionRequestView]:
+        params: list[tuple[str, str]] = [("state", state) for state in states]
+        if idempotency_key is not None:
+            params.append(("idempotency_key", idempotency_key))
+        response = await self._request("GET", "/v1/operator/action-requests", params=params)
         return [ActionRequestView.model_validate(row) for row in response.json()]
 
     @asynccontextmanager

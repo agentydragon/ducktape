@@ -3,6 +3,7 @@ import "../../app.css";
 import { mount } from "svelte";
 import App from "../../App.svelte";
 import HarnessIndex from "./HarnessIndex.svelte";
+import { SCENARIOS } from "./scenarios.mjs";
 import type { OAuthProviderStatus } from "../../types.ts";
 
 const DEPLOYMENT_INFO = {
@@ -40,12 +41,12 @@ const OAUTH_PROVIDERS: OAuthProviderStatus[] = [
   },
 ];
 
-const pages = { OAuthPage: {} };
+// The sweep names a scenario, not a page: four scenarios (theme x viewport) mount the one page.
 const params = new URLSearchParams(window.location.search);
-const pageName = params.get("page");
+const scenarioName = params.get("page");
 const appElement = document.getElementById("app")!;
 
-if (pageName && pageName in pages) {
+if (scenarioName && scenarioName in SCENARIOS) {
   const authority = "https://mock-auth";
   const clientId = "mock-client";
   sessionStorage.setItem(
@@ -78,6 +79,6 @@ if (pageName && pageName in pages) {
 } else {
   mount(HarnessIndex, {
     target: appElement,
-    props: { pages: Object.keys(pages), error: pageName },
+    props: { pages: Object.keys(SCENARIOS), error: scenarioName },
   });
 }

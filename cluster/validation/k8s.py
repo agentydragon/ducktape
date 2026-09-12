@@ -351,6 +351,24 @@ class ImagePolicyResource(K8sResource):
     spec: ImagePolicySpec = Field(default_factory=ImagePolicySpec)
 
 
+class _ArtifactGeneratorArtifact(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str
+
+
+class ArtifactGeneratorSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    artifacts: list[_ArtifactGeneratorArtifact] = Field(default_factory=list)
+
+
+class ArtifactGeneratorResource(K8sResource):
+    """source-watcher `ArtifactGenerator`: each `spec.artifacts[].name` is an `ExternalArtifact` the
+    controller creates in the generator's namespace -- a Kustomization sourceRef target that never
+    appears in Git itself."""
+
+    spec: ArtifactGeneratorSpec = Field(default_factory=ArtifactGeneratorSpec)
+
+
 class ReceiverResourceRef(BaseModel):
     model_config = ConfigDict(extra="ignore")
     kind: str = ""
@@ -414,6 +432,7 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "Terraform": TerraformResource,
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,
+    "ArtifactGenerator": ArtifactGeneratorResource,
     "Receiver": ReceiverResource,
     "Role": RoleResource,
     "RoleBinding": RoleBindingResource,
