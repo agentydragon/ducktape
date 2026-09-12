@@ -13,7 +13,6 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
-from typing import Any
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -71,19 +70,16 @@ class PolicyIndex:
             await self.changed.wait_for(predicate)
 
 
-def _parse_policy_set(raw: dict[str, Any]) -> tuple[NamespacedName, ActionPolicySet | InvalidResource]:
-    parsed = parse_policy_set(raw)
-    return NamespacedName(parsed.metadata.namespace, parsed.metadata.name), parsed
+def _namespaced(obj: ActionPolicySet | ActionPolicyBinding | InvalidResource) -> NamespacedName:
+    return NamespacedName(obj.metadata.namespace, obj.metadata.name)
 
 
-def _parse_binding(raw: dict[str, Any]) -> tuple[NamespacedName, ActionPolicyBinding | InvalidResource]:
-    parsed = parse_binding(raw)
-    return NamespacedName(parsed.metadata.namespace, parsed.metadata.name), parsed
+def _service_account(raw: k8s_client.V1ServiceAccount) -> ServiceAccountRef:
+    return ServiceAccountRef(namespace=raw.metadata.namespace, name=raw.metadata.name)
 
 
-def _parse_service_account(raw: k8s_client.V1ServiceAccount) -> tuple[NamespacedName, ServiceAccountRef]:
-    ref = ServiceAccountRef(namespace=raw.metadata.namespace, name=raw.metadata.name)
-    return NamespacedName(ref.namespace, ref.name), ref
+def _service_account_key(ref: ServiceAccountRef) -> NamespacedName:
+    return NamespacedName(ref.namespace, ref.name)
 
 
 def _keys_in(store: Mapping[NamespacedName, object], namespace: str) -> set[NamespacedName]:
@@ -133,7 +129,8 @@ class PolicyInformer:
                     name=f"{namespace}/{POLICY_SETS_PLURAL}",
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, POLICY_SETS_PLURAL),
-                    parse=_parse_policy_set,
+                    parse=parse_policy_set,
+                    key=_namespaced,
                     names=partial(_keys_in, index.policy_sets, namespace),
                     apply=lambda key, obj: apply_to(index.policy_sets, key, obj),
                 ),
@@ -141,7 +138,8 @@ class PolicyInformer:
                     name=f"{namespace}/{BINDINGS_PLURAL}",
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, BINDINGS_PLURAL),
-                    parse=_parse_binding,
+                    parse=parse_binding,
+                    key=_namespaced,
                     names=partial(_keys_in, index.bindings, namespace),
                     apply=lambda key, obj: apply_to(index.bindings, key, obj),
                 ),
@@ -150,7 +148,8 @@ class PolicyInformer:
                     list=core_v1.list_namespaced_service_account,
                     args=(namespace,),
                     kwargs={"label_selector": CALLER_LABEL_SELECTOR},
-                    parse=_parse_service_account,
+                    parse=_service_account,
+                    key=_service_account_key,
                     names=partial(_keys_in, index.service_accounts, namespace),
                     apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
                 ),
