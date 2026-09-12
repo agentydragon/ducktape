@@ -1,7 +1,14 @@
 """Read one rollout's supplied exact market marks; no sampling or future-path policy access."""
 
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.money import mul_div
 from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount
+
+
+class MarketStatement(Statement):
+    """Current/origin CPI, absent only when inflation is unmodeled."""
+
+    cpi: tuple[int, int] | None
 
 
 class MarketPath:
@@ -16,6 +23,12 @@ class MarketPath:
         if not 0 <= month < series.snapshots:
             raise ValueError(f"series {series_id!r} has no value at rollout {self.rollout_id} month {month}")
         return series.values[self.rollout_id * series.snapshots + month]
+
+    def statement(self, month: int) -> MarketStatement:
+        return MarketStatement(
+            month=month,
+            cpi=(self.value("inflation", month), self.value("inflation", 0)) if "inflation" in self.series else None,
+        )
 
     def amount(self, amount: PreparedAmount, month: int) -> int:
         if isinstance(amount, int):

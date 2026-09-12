@@ -4,7 +4,8 @@ A `JointHousehold` agent (an `EconomicAgent` subclass) composes the
 [bounded annual spending rule](../bounded_spending/README.md) with the
 [allocation example's cash-band/glide proposals](../allocation_glide/README.md).
 Each selected path is its own `World` tracking one fresh household; the experiment
-loops over `world.step()`, which asks the household to decide once per month, and
+loops over `world.step()`, which posts the household its statements and dues and then
+asks it to act once per month, and
 reads what it measures from world state after each step (payments, taxes, assets,
 and for replays the month's journal and dispositions). The world keeps no history.
 The household reserves due claims plus intended consumption before any purchase and

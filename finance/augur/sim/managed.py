@@ -7,6 +7,7 @@ from typing import Literal
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Contribute, Liquidate, Withdraw
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, DistributionOutcome, JournalEntry, Posting
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
@@ -56,6 +57,12 @@ def basis_account(observation: TlhPortfolioObservation) -> AccountRef:
     )
 
 
+class TlhStatement(Statement):
+    """The owner's managed portfolios at their current marks."""
+
+    portfolios: tuple[TlhPortfolioObservation, ...]
+
+
 class ManagedPortfolios:
     def __init__(
         self, scenario: PreparedScenario, accounting: Accounting, observations: Sequence[TlhPortfolioObservation]
@@ -87,6 +94,11 @@ class ManagedPortfolios:
             )
         accounting.apply_entries(entries)
         self.marks = {row.portfolio_id: row for row in observations}
+
+    def statement(self, actor: str, month: int) -> TlhStatement:
+        return TlhStatement(
+            month=month, portfolios=tuple(row for row in self.marks.values() if row.owner_agent_id == actor)
+        )
 
     def begin_month(self) -> None:
         self.effects.clear()

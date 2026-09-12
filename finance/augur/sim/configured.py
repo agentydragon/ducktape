@@ -13,16 +13,19 @@ from pydantic import JsonValue
 
 from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan, validate_prepared
 from finance.augur.sim import results
-from finance.augur.sim.actions import Buy, DecisionActions
+from finance.augur.sim.actions import Action, Buy
+from finance.augur.sim.agent import assemble
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 from finance.augur.sim.holdings import private_issuer
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.money import checked_count, position_value
+from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import ProductMetricArrays
-from finance.augur.sim.session import _Session
-from finance.augur.sim.world import Capture, World
+from finance.augur.sim.validation import validate
+from finance.augur.sim.world import Capture, World, acting_agent
 
 
 def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int, int]:
@@ -61,123 +64,128 @@ def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int,
     )
 
 
+def observe(world: World, actor: str) -> Observation:
+    """The configured runner's view for its allocation policy: an untracked actor's mail, assembled."""
+    return assemble(AgentId(actor), world.month, world.open_mail(AgentId(actor)))
+
+
+def apply(world: World, action: Action) -> results.Receipt:
+    """Per-action execution on behalf of the agent the action names."""
+    return world.execute(acting_agent(action), action)
+
+
 def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> tuple[WorldResult, ...]:
+    """Drive every path through the explicit phase methods; nothing here is tracked on the world."""
     if not isinstance(run, CompiledRun):
         raise TypeError("execution requires a CompiledRun, not serialized input")
     validate_prepared(run)
-    session = _Session(run, product_actor, list(range(run.rollout_count)), capture=capture, configured=True)
-    captures = {id_: FinancialCapture(world, capture=capture) for id_, world in session.paths.items()}
-    rows: dict[int, list[tuple[int, int, int, int, int, int, int]]] = {id_: [] for id_ in session.paths}
+    validate(run)
+    worlds = {rollout_id: World(run, rollout_id) for rollout_id in range(run.rollout_count)}
+    captures = {id_: FinancialCapture(world, capture=capture) for id_, world in worlds.items()}
+    rows: dict[int, list[tuple[int, int, int, int, int, int, int]]] = {id_: [] for id_ in worlds}
     if product_actor is not None:
-        for id_, world in session.paths.items():
+        for id_, world in worlds.items():
             world.validate_scope(product_actor)
             rows[id_].append(product_row(world, product_actor))
     lot_sequences: defaultdict[tuple[int, int, int], int] = defaultdict(int)
-    try:
-        session.start()
-        while not session.is_finished():
-            paths = session.active()
-            session.begin_actions([DecisionActions(id_, session.month, []) for id_ in paths])
-            pending: list[tuple[int, PendingBuy]] = []
-            for rollout_id, path in paths.items():
-                for sale in run.scenario._scheduled_sales:
-                    if sale.month != session.month:
-                        continue
-                    spec = next(
-                        (
-                            spec
-                            for spec in path.specs.values()
-                            if (spec.owner_agent_id, spec.account_id, spec.asset_id)
-                            == (sale.agent_id, sale.account_id, sale.asset_id)
-                        ),
-                        None,
-                    )
-                    if spec is None:
-                        path.holdings.scheduled_sale(path.accounting, path.market, sale)
-                        continue
-                    candidate = deepcopy(path.portfolios[spec.portfolio_id])
-                    withdrawal = candidate._withdraw_units(sale.units)
-                    path.managed.settle(
-                        run.scenario,
-                        path.accounting,
-                        session.month,
-                        spec.owner_agent_id,
-                        sale.cause_id,
-                        path.effects(
-                            spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
-                        ),
-                        operation="redemption",
-                    )
-                    path.portfolios[spec.portfolio_id] = candidate
-                for index, policy in enumerate(run.scenario._target_allocation_policies):
-                    proposal = plan(
-                        session.observe(rollout_id, policy.agent_id),
-                        policy,
-                        policy_index=index,
-                        floor=path.market.amount(policy.cash_floor, session.month),
-                        ceiling=path.market.amount(policy.cash_ceiling, session.month),
-                        prices={
-                            sleeve.asset_id: path.market.value(f"security:{sleeve.asset_id}", session.month)
-                            for sleeve in policy.sleeves
-                        },
-                    )
-                    for action in proposal.sales:
-                        receipt = session.apply(rollout_id, action)
-                        if isinstance(receipt.outcome, results.Rejected):
-                            break
-                    if path.failed:
-                        break
-                    pending.extend((rollout_id, buy) for buy in proposal.buys)
-            for path in paths.values():
-                if not path.failed:
-                    settlement = path.settle_claims(product_actor)
-                    path.failed = settlement.failed
-                    path.shortfall = settlement.product_shortfall
-            for rollout_id, pending_buy in pending:
-                path = paths[rollout_id]
-                if path.failed:
+    for world in worlds.values():
+        world.start()
+    month = 0
+    while paths := {id_: world for id_, world in worlds.items() if not world.finished}:
+        for path in paths.values():
+            path.begin_actions([])
+        pending: list[tuple[int, PendingBuy]] = []
+        for rollout_id, path in paths.items():
+            for sale in run.scenario._scheduled_sales:
+                if sale.month != month:
                     continue
-                key = (rollout_id, pending_buy.policy_index, pending_buy.sleeve_index)
-                buy_action = materialize_buy(
-                    session.observe(rollout_id, pending_buy.agent_id), pending_buy, lot_sequence=lot_sequences[key]
+                spec = next(
+                    (
+                        spec
+                        for spec in path.specs.values()
+                        if (spec.owner_agent_id, spec.account_id, spec.asset_id)
+                        == (sale.agent_id, sale.account_id, sale.asset_id)
+                    ),
+                    None,
                 )
-                if buy_action is not None:
-                    session.apply(rollout_id, buy_action)
-                    if isinstance(buy_action, Buy):
-                        lot_sequences[key] += 1
-            for path in paths.values():
-                if not path.failed:
-                    path.private_equity.advance(
-                        run.scenario,
-                        path.accounting,
-                        path.holdings,
-                        path.market,
-                        list(path.managed.marks.values()),
-                        session.month,
-                    )
-            session.close_month()
-            for rollout_id, path in paths.items():
-                captures[rollout_id].record()
-                if product_actor is not None:
-                    rows[rollout_id].append(product_row(path, product_actor))
-            session.open_month()
-        completed = []
-        for rollout_id, path in session.paths.items():
-            if not path.finished:
-                raise RuntimeError("configured execution requires finished rollouts")
-            financial = captures[rollout_id].financial()
-            completed.append(
-                WorldResult(
-                    rollout_id,
-                    financial,
-                    event_log(financial) if financial is not None else None,
-                    captures[rollout_id].configured_summary() if capture == "summary" else None,
-                    rows[rollout_id],
+                if spec is None:
+                    path.holdings.scheduled_sale(path.accounting, path.market, sale)
+                    continue
+                candidate = deepcopy(path.portfolios[spec.portfolio_id])
+                withdrawal = candidate._withdraw_units(sale.units)
+                path.managed.settle(
+                    run.scenario,
+                    path.accounting,
+                    month,
+                    spec.owner_agent_id,
+                    sale.cause_id,
+                    path.effects(
+                        spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
+                    ),
+                    operation="redemption",
                 )
+                path.portfolios[spec.portfolio_id] = candidate
+            for index, policy in enumerate(run.scenario._target_allocation_policies):
+                proposal = plan(
+                    observe(path, policy.agent_id),
+                    policy,
+                    policy_index=index,
+                    floor=path.market.amount(policy.cash_floor, month),
+                    ceiling=path.market.amount(policy.cash_ceiling, month),
+                    prices={
+                        sleeve.asset_id: path.market.value(f"security:{sleeve.asset_id}", month)
+                        for sleeve in policy.sleeves
+                    },
+                )
+                for action in proposal.sales:
+                    if isinstance(apply(path, action).outcome, results.Rejected):
+                        break
+                if path.failed:
+                    break
+                pending.extend((rollout_id, buy) for buy in proposal.buys)
+        for path in paths.values():
+            if not path.failed:
+                settlement = path.settle_claims(product_actor)
+                path.failed = settlement.failed
+                path.shortfall = settlement.product_shortfall
+        for rollout_id, pending_buy in pending:
+            path = paths[rollout_id]
+            if path.failed:
+                continue
+            key = (rollout_id, pending_buy.policy_index, pending_buy.sleeve_index)
+            buy_action = materialize_buy(
+                observe(path, pending_buy.agent_id), pending_buy, lot_sequence=lot_sequences[key]
             )
-        return tuple(completed)
-    finally:
-        session.close()
+            if buy_action is not None:
+                apply(path, buy_action)
+                if isinstance(buy_action, Buy):
+                    lot_sequences[key] += 1
+        for path in paths.values():
+            if not path.failed:
+                path.private_equity.advance(
+                    run.scenario, path.accounting, path.holdings, path.market, list(path.managed.marks.values()), month
+                )
+        for rollout_id, path in paths.items():
+            path.close_month()
+            captures[rollout_id].record()
+            if product_actor is not None:
+                rows[rollout_id].append(product_row(path, product_actor))
+            if not path.finished:
+                path.open_month()
+        month += 1
+    completed = []
+    for rollout_id in worlds:
+        financial = captures[rollout_id].financial()
+        completed.append(
+            WorldResult(
+                rollout_id,
+                financial,
+                event_log(financial) if financial is not None else None,
+                captures[rollout_id].configured_summary() if capture == "summary" else None,
+                rows[rollout_id],
+            )
+        )
+    return tuple(completed)
 
 
 def export_results(run: CompiledRun, capture: Capture) -> dict[str, Any]:

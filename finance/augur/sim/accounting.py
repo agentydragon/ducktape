@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from finance.augur.sim.actions import Transfer
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import (
     AccountRef,
     JournalEntry,
@@ -49,6 +50,12 @@ class MortgagePaymentOutcome:
     total_payment: int
 
 
+class AccountStatement(Statement):
+    """The owner's declared accounts and their balances, in declaration order."""
+
+    accounts: tuple[tuple[str, int], ...]
+
+
 class Accounting:
     """Ledger, tax book and outstanding liabilities are state; the outcome lists hold only this month.
 
@@ -63,7 +70,7 @@ class Accounting:
         profiles: Sequence[PreparedTaxProfile],
         income_sources: Sequence[TransferIncomeCategory],
     ) -> None:
-        self.declared = frozenset(account.account for account in accounts)
+        self.declared = tuple(account.account for account in accounts)
         self.ledger = Ledger(self.declared)
         self.tax = TaxBook(profiles, income_sources)
         self.journal: list[JournalEntry] = []
@@ -98,6 +105,16 @@ class Accounting:
                     self.ledger.ensure_account(
                         AccountRef(agent_id=profile.agent_id, account_id=f"{kind}:tax:{rules.jurisdiction_id}")
                     )
+
+    def statement(self, actor: str, month: int) -> AccountStatement:
+        return AccountStatement(
+            month=month,
+            accounts=tuple(
+                (account.account_id, self.ledger.balance(account))
+                for account in self.declared
+                if account.agent_id == actor
+            ),
+        )
 
     def begin_month(self) -> None:
         self.journal.clear()

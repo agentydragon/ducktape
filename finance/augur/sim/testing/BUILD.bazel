@@ -234,6 +234,7 @@ py_library(
         ":case",
         "//finance/augur/sim:accounting",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim/compiler:tax",

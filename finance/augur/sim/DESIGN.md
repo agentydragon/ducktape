@@ -26,9 +26,9 @@ or HTTP modules.
 ```text
 authored scenario + supplied paths/rules
     -> compile_run
-    -> World(run, rollout_id, actor=...); world.track(agent); world.start()
-    -> world.step()  # agent.decide(observation) once, ordered actions, close
-    -> world.finished -> world.rollout()
+    -> World(run, rollout_id); world.track(agent); world.start()
+    -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close
+    -> world.finished; the experiment read what it measures between steps
 ```
 
 The batch form drives one such world per selected path:
@@ -42,17 +42,27 @@ The batch form drives one such world per selected path:
 ```
 
 The caller owns the time loop; a tracked agent owns its memory, a batch policy's
-memory belongs to the caller. `World` has no capture mode, no named subject and no
-history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
+memory belongs to the caller. Everything tracked is an `Actor[In, Out]` (<actor.py>):
+it receives the typed messages addressed to it and returns the messages it emits.
+When a month opens the world posts each agent's mail — every emitter's statement
+(`MarketStatement`, `AccountStatement`, `PositionStatement`, `BondStatement`,
+`TlhStatement`, defined beside the component that issues it), the typed dues
+(`BillDue`, `AssessmentDue`, `InstallmentDue`, `PropertyTaxDue`) and last month's
+`Receipt`s — and `step` delivers `MonthOpened`, whose reply is the household's ordered
+actions. The world builds no view on anyone's behalf: `EconomicAgent` assembles the
+`Observation` its `decide` reads from the mail it kept, and the batch session assembles
+the same view for its `Decision`s from its delegate's mail. `World` has no capture
+mode, no named subject and no history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
 hold the current month and are cleared when the next month opens, so a caller that
 wants a history copies them between steps. `ActionSession` records the summary and
 trace it returns; the configured runner records `WorldResult` through
 `capture.FinancialCapture`; an experiment records only what it measures. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
-actor-scoped facts, not future sampled market trajectories. The Python session
-owns month/phase sequencing, active paths, receipts and fatal-stop lifecycle.
-Python financial operations own books, transaction validation, settlement,
-liabilities and tax consequences.
+actor-scoped facts, not future sampled market trajectories. `World` owns the
+month/phase sequencing, receipts and fatal-stop lifecycle of one path; `ActionSession`
+owns which paths it selected and the shared clock across them. Python financial
+operations own books, transaction validation, settlement, liabilities and tax
+consequences.
 
 `mortgage.py` owns loan terms, the fixed installment, active servicing state and
 paid-interest YTD. Outstanding principal remains authoritative in the liability

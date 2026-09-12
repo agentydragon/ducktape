@@ -411,7 +411,7 @@ def test_imported_policy_is_rejected_before_any_world_is_constructed(
     def unexpected_world(*args: object, **kwargs: object) -> None:
         raise AssertionError("invalid configured policy reached financial world construction")
 
-    monkeypatch.setattr(configured, "_Session", unexpected_world)
+    monkeypatch.setattr(configured, "World", unexpected_world)
     with pytest.raises(ValueError, match=error):
         configured.export_results(imported, "forensic")
 

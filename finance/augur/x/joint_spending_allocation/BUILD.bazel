@@ -50,6 +50,7 @@ py_library(
         "//finance/augur/sim:actions",
         "//finance/augur/sim:agent",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:observations",
         "//finance/augur/x/allocation_glide:policy",
         "//finance/augur/x/bounded_spending:python_policy",

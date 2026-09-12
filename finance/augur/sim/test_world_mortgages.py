@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import ClaimId, PayClaim
+from finance.augur.sim.agent import assemble
 from finance.augur.sim.capture import FinancialCapture
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.prepared import (
@@ -168,7 +169,7 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
         quote = installment(mortgage, month, 60_000 if month == 3 else 59_000) if month in (3, 4) else None
         world.assemble_claims([] if quote is None else [quote])
         if month in (3, 4):
-            observation = world.observe(HOUSEHOLD)
+            observation = assemble(HOUSEHOLD, month, world.open_mail(HOUSEHOLD))
             assert [claim.obligation_type for claim in observation.claims] == (
                 ["rent", "mortgage_payment", "property_tax"] if month == 3 else ["mortgage_payment", "property_tax"]
             )

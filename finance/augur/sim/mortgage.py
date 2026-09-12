@@ -9,8 +9,13 @@ from dataclasses import dataclass, field
 from finance.augur.sim.books import AccountRef, MortgageState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.money import round_ratio
+from finance.augur.sim.observations import Claim
 
 _CONTRACT_SCALE = 10**18
+
+
+class InstallmentDue(Claim):
+    """This month's installment, addressed to the borrower."""
 
 
 def _count(value: int, name: str) -> int:

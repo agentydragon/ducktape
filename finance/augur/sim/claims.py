@@ -3,13 +3,14 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from finance.augur.sim import observations
 from finance.augur.sim.actions import ClaimId
 from finance.augur.sim.books import AccountRef, PropertyState, TaxLiabilityState
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, checked_wide, mul_div, mul_div_wide
-from finance.augur.sim.mortgage import MortgagePayment
+from finance.augur.sim.mortgage import InstallmentDue, MortgagePayment
 from finance.augur.sim.prepared import PreparedScenario
 
 
@@ -38,6 +39,21 @@ class PropertyTax:
 type Effect = OrdinaryDeduction | TaxPayment | TaxTrueUp | MortgagePayment | PropertyTax | None
 
 
+class BillDue(observations.Claim):
+    """A scheduled or recurring obligation, addressed to its payer."""
+
+
+class AssessmentDue(observations.Claim):
+    """An estimated-tax instalment or a year-end true-up, addressed to the taxpayer."""
+
+
+class PropertyTaxDue(observations.Claim):
+    """A property's monthly tax, addressed to its owner."""
+
+
+type Due = BillDue | AssessmentDue | InstallmentDue | PropertyTaxDue
+
+
 @dataclass
 class Claim:
     cause_id: str
@@ -60,6 +76,33 @@ class Claims:
             for index, claim in enumerate(self.entries)
             if not claim.paid and claim.from_account.agent_id == actor
         ]
+
+    def dues(self, actor: str) -> list[Due]:
+        """This month's unpaid demands on `actor`, typed by what raised them."""
+        dues: list[Due] = []
+        for id_, claim in self.due(actor):
+            kind: type[Due]
+            match claim.effect:
+                case MortgagePayment():
+                    kind = InstallmentDue
+                case TaxPayment() | TaxTrueUp():
+                    kind = AssessmentDue
+                case PropertyTax():
+                    kind = PropertyTaxDue
+                case OrdinaryDeduction() | None:
+                    kind = BillDue
+            dues.append(
+                kind(
+                    month=id_.month,
+                    index=id_.index,
+                    cause_id=claim.cause_id,
+                    obligation_type=claim.obligation_type,
+                    from_account=claim.from_account,
+                    to_account=claim.to_account,
+                    amount_due=claim.amount_due,
+                )
+            )
+        return dues
 
 
 def assemble(

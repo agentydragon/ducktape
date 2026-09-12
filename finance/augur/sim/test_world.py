@@ -7,11 +7,12 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
-from finance.augur.sim.agent import EconomicAgent
+from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket
 from finance.augur.sim.configured import execute, product_row
 from finance.augur.sim.events import EVENT_FRAME_SPECS
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     CompiledRun,
@@ -23,7 +24,7 @@ from finance.augur.sim.prepared import (
     _ScheduledSale,
 )
 from finance.augur.sim.results import ConsumptionTarget, Executed, Finished, Rejected, RejectedAction
-from finance.augur.sim.session import ActionSession, _Session
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
 from finance.augur.sim.world import Capture, World
 
@@ -101,6 +102,11 @@ def checking(world: World) -> int | None:
     return world.account_balance(HOUSEHOLD, "checking")
 
 
+def view(world: World) -> Observation:
+    """The household's assembled view of the open month, as a tracked agent would see it."""
+    return assemble(HOUSEHOLD, world.month, world.open_mail(HOUSEHOLD))
+
+
 def next_month(world: World, capture: FinancialCapture, *, failed: bool = False) -> None:
     """Close the open month the way `step` does, record it, and open the next one unless finished."""
     world.failed = world.failed or failed
@@ -165,7 +171,7 @@ def bill(amount: int) -> PreparedObligation:
 def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_only: CompiledRun) -> None:
     world = world_for(cash_only)
     capture = FinancialCapture(world, capture="forensic")
-    observation = world.observe(HOUSEHOLD)
+    observation = view(world)
     assert len(observation.holding_pools) == 1
     assert observation.holding_pools[0].account_id == "empty-brokerage"
     assert observation.holding_pools[0].price == 1000
@@ -175,7 +181,7 @@ def test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset(cash_on
     )
     assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
     next_month(world, capture)
-    observation = world.observe(HOUSEHOLD)
+    observation = view(world)
     assert observation.holding_pools[0].price == 2000
     assert (observation.public_holdings, observation.cash) == (4000, 500)
     next_month(world, capture)
@@ -270,7 +276,7 @@ def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> No
     world = world_for(run)
     capture = FinancialCapture(world, capture="forensic")
     for month in range(13):
-        observation = world.observe(HOUSEHOLD)
+        observation = view(world)
         assert observation.cash == (20_000 if month == 0 else 0)
         assert len(observation.claims) == (1 if month in (0, 12) else 0)
         for claim in observation.claims:
@@ -313,7 +319,7 @@ def test_ordered_actions_can_buy_before_transferring_and_buy_again() -> None:
     for action in actions:
         assert isinstance(world.execute(HOUSEHOLD, action).outcome, Executed)
     next_month(world, capture)
-    observation = world.observe(HOUSEHOLD)
+    observation = view(world)
     assert (observation.cash, observation.public_holdings) == (0, 105_000)
     next_month(world, capture)
     financial = capture.financial()
@@ -351,7 +357,7 @@ def test_rejected_financial_request_preserves_prior_sale_and_independent_world()
 def test_payment_capture_names_the_actual_selected_source() -> None:
     run = actor_run(1)
     world = world_for(replace(run, scenario=replace(run.scenario, obligations=(bill(5000),))))
-    [claim] = world.observe(HOUSEHOLD).claims
+    [claim] = view(world).claims
     assert isinstance(world.execute(HOUSEHOLD, transfer(5000)).outcome, Executed)
     action = PayClaim(
         request_id=11,
@@ -545,54 +551,50 @@ def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mo
         sales = (replace(sales[0], units=1_000_000),)
     run = replace(run, scenario=replace(run.scenario, _scheduled_sales=sales))
     [baseline] = execute(run, mode, HOUSEHOLD)
-    session = _Session(run, HOUSEHOLD, [0], capture=mode, configured=True)
-    path = session.paths[0]
+    path = World(run, 0)
     capture = FinancialCapture(path, capture=mode)
     rows = [product_row(path, HOUSEHOLD)]
-    try:
-        session.start()
-        while not session.is_finished():
-            if session.month == 12:
-                assert path.accounting.tax_liabilities[0].amount_owed == (50 if stopped else 2000)
-            session.begin_actions([DecisionActions(0, session.month, [])])
-            for sale in sales:
-                if sale.month == session.month:
-                    path.holdings.scheduled_sale(path.accounting, path.market, sale)
-            settlement = path.settle_claims(HOUSEHOLD)
-            path.failed, path.shortfall = settlement.failed, settlement.product_shortfall
-            session.close_month()
-            capture.record()
-            rows.append(product_row(path, HOUSEHOLD))
-            session.open_month()
-        financial = capture.financial()
-        result = WorldResult(
-            0,
-            financial,
-            event_log(financial) if financial is not None else None,
-            capture.configured_summary() if mode == "summary" else None,
-            rows,
+    path.start()
+    while not path.finished:
+        if path.month == 12:
+            assert path.accounting.tax_liabilities[0].amount_owed == (50 if stopped else 2000)
+        path.begin_actions([])
+        for sale in sales:
+            if sale.month == path.month:
+                path.holdings.scheduled_sale(path.accounting, path.market, sale)
+        settlement = path.settle_claims(HOUSEHOLD)
+        path.failed, path.shortfall = settlement.failed, settlement.product_shortfall
+        path.close_month()
+        capture.record()
+        rows.append(product_row(path, HOUSEHOLD))
+        if not path.finished:
+            path.open_month()
+    financial = capture.financial()
+    result = WorldResult(
+        0,
+        financial,
+        event_log(financial) if financial is not None else None,
+        capture.configured_summary() if mode == "summary" else None,
+        rows,
+    )
+    assert_same_result(result, baseline)
+    stopped_book = deepcopy(path.book())
+    with pytest.raises(ValueError, match="finished"):
+        path.open_month()
+    assert path.book() == stopped_book
+    if mode == "summary":
+        assert baseline.configured_summary is not None
+        assert baseline.configured_summary.failed_month == (12 if stopped else None)
+    else:
+        assert baseline.financial is not None
+        assert baseline.financial.failed_month == (12 if stopped else None)
+    if baseline.financial is not None:
+        assert len(baseline.financial.months) == 14
+        assert [(p.month, p.amount_paid) for p in baseline.financial.tax_payments] == (
+            [(12, 0)] if stopped else [(12, 2000)]
         )
-        assert_same_result(result, baseline)
-        stopped_book = deepcopy(path.book())
-        session.close_month()
-        assert path.book() == stopped_book
-        with pytest.raises(ValueError, match="finished"):
-            session.begin_actions([DecisionActions(0, session.month, [])])
-        if mode == "summary":
-            assert baseline.configured_summary is not None
-            assert baseline.configured_summary.failed_month == (12 if stopped else None)
-        else:
-            assert baseline.financial is not None
-            assert baseline.financial.failed_month == (12 if stopped else None)
-        if baseline.financial is not None:
-            assert len(baseline.financial.months) == 14
-            assert [(p.month, p.amount_paid) for p in baseline.financial.tax_payments] == (
-                [(12, 0)] if stopped else [(12, 2000)]
-            )
-            if mode == "dense":
-                assert not baseline.financial.journal
-    finally:
-        session.close()
+        if mode == "dense":
+            assert not baseline.financial.journal
 
 
 @pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
@@ -676,7 +678,7 @@ def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
 class _Household(EconomicAgent):
     """Pays every due claim, then consumes a scripted amount in the months that have one."""
 
-    def __init__(self, amounts: dict[int, int], agent_id: str = HOUSEHOLD) -> None:
+    def __init__(self, amounts: dict[int, int], agent_id: AgentId = HOUSEHOLD) -> None:
         super().__init__(agent_id)
         self.amounts = amounts
         self.months: list[int] = []
@@ -743,7 +745,7 @@ def test_tracking_is_checked_before_the_world_starts() -> None:
     with pytest.raises(ValueError, match="not running"):
         world.step()
     with pytest.raises(ValueError, match="unknown actor"):
-        world.track(_Household({}, agent_id="test-nobody"))
+        world.track(_Household({}, agent_id=AgentId("test-nobody")))
     world.track(_Household({}))
     with pytest.raises(ValueError, match="one decision-making agent"):
         world.track(_Household({}))

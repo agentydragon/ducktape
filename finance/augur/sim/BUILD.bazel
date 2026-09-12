@@ -310,15 +310,18 @@ py_library(
     srcs = ["configured.py"],
     deps = [
         ":actions",
+        ":agent",
         ":capture",
         ":events",
         ":holdings",
+        ":ids",
         ":metric_composition",
         ":money",
+        ":observations",
         ":prepared",
         ":product_metrics",
         ":results",
-        ":session",
+        ":validation",
         ":world",
         "//finance/augur/policy:configured_allocation",
         "@pypi//numpy",
@@ -334,6 +337,7 @@ py_library(
         ":agent",
         ":books",
         ":capture",
+        ":ids",
         ":observations",
         ":prepared",
         ":results",
@@ -430,6 +434,7 @@ py_library(
         ":books",
         ":fixed_point",
         ":money",
+        ":observations",
     ],
 )
 
@@ -563,6 +568,7 @@ py_library(
     srcs = ["accounting.py"],
     deps = [
         ":actions",
+        ":actor",
         ":books",
         ":ledger",
         ":money",
@@ -585,6 +591,7 @@ py_library(
         ":market_path",
         ":money",
         ":mortgage",
+        ":observations",
         ":prepared",
         "//finance/augur/sim/compiler:tax",
     ],
@@ -594,6 +601,7 @@ py_library(
     name = "market_path",
     srcs = ["market_path.py"],
     deps = [
+        ":actor",
         ":money",
         ":prepared",
     ],
@@ -687,9 +695,11 @@ py_library(
     deps = [
         ":accounting",
         ":actions",
+        ":actor",
         ":books",
         ":market_path",
         ":money",
+        ":observations",
         ":prepared",
     ],
 )
@@ -699,10 +709,12 @@ py_library(
     srcs = ["held_bonds.py"],
     deps = [
         ":accounting",
+        ":actor",
         ":books",
         ":fixed_point",
         ":market_path",
         ":money",
+        ":observations",
         ":prepared",
         ":scenario",
     ],
@@ -785,6 +797,7 @@ py_library(
     deps = [
         ":accounting",
         ":actions",
+        ":actor",
         ":books",
         ":fixed_point",
         ":holdings",
@@ -832,12 +845,14 @@ py_library(
     deps = [
         ":accounting",
         ":actions",
+        ":actor",
         ":agent",
         ":books",
         ":claims",
         ":distributions",
         ":held_bonds",
         ":holdings",
+        ":ids",
         ":managed",
         ":market_path",
         ":money",
@@ -871,6 +886,7 @@ py_test(
     name = "validation_test",
     srcs = ["validation_test.py"],
     deps = [
+        ":configured",
         ":prepared",
         ":results",
         ":scenario",
@@ -932,6 +948,7 @@ py_test(
         ":capture",
         ":configured",
         ":events",
+        ":ids",
         ":observations",
         ":prepared",
         ":results",
@@ -951,6 +968,7 @@ py_test(
     srcs = ["test_world_mortgages.py"],
     deps = [
         ":actions",
+        ":agent",
         ":capture",
         ":mortgage",
         ":prepared",
@@ -969,7 +987,9 @@ py_test(
     srcs = ["test_observations.py"],
     deps = [
         ":actions",
+        ":agent",
         ":claims",
+        ":ids",
         ":observations",
         ":prepared",
         ":results",
@@ -988,9 +1008,9 @@ py_test(
     srcs = ["test_validation_contracts.py"],
     deps = [
         ":books",
+        ":configured",
         ":prepared",
         ":scenario",
-        ":session",
         ":validation",
         "//:conftest",
         "//finance/augur:conftest",
@@ -1028,7 +1048,32 @@ py_library(
     name = "agent",
     srcs = ["agent.py"],
     deps = [
+        ":accounting",
         ":actions",
+        ":actor",
+        ":claims",
+        ":held_bonds",
+        ":holdings",
+        ":ids",
+        ":managed",
+        ":market_path",
+        ":money",
         ":observations",
+        ":results",
+        "@pypi//more_itertools",
     ],
+)
+
+py_library(
+    name = "actor",
+    srcs = ["actor.py"],
+    deps = [
+        ":books",
+        ":ids",
+    ],
+)
+
+py_library(
+    name = "ids",
+    srcs = ["ids.py"],
 )
