@@ -44,7 +44,7 @@ class JobRow(Base):
     status: Mapped[JobStatus] = mapped_column(_str_enum(JobStatus), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
-    result: Mapped["ResultRow | None"] = relationship(back_populates="job", lazy="joined")
+    result: Mapped[ResultRow | None] = relationship(back_populates="job", lazy="joined")
 
 
 class ResultRow(Base):

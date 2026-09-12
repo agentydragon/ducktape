@@ -91,7 +91,7 @@ class TypedClient:
         return self._models
 
     @classmethod
-    def from_server(cls, server: FastMCP, session: Client) -> "TypedClient":
+    def from_server(cls, server: FastMCP, session: Client) -> TypedClient:
         """Create a TypedClient introspecting FastMCP's tool registry.
 
         Requires a server created via FastMCP. Introspects FlatTool instances
@@ -111,7 +111,7 @@ class TypedClient:
             try:
                 hints = get_type_hints(component.fn, include_extras=True)
                 hinted_output = hints.get("return")
-            except (NameError, TypeError, AttributeError):
+            except NameError, TypeError, AttributeError:
                 hinted_output = None
 
             output_type = _resolve_output_type(hinted_output, hinted_output)

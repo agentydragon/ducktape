@@ -27,7 +27,7 @@ class TreeNode:
     additions: int = 0
     deletions: int = 0
     is_binary: bool = False
-    children: dict[str, "TreeNode"] = field(default_factory=dict)
+    children: dict[str, TreeNode] = field(default_factory=dict)
     path: str = ""  # Full path from root (e.g., "dir/foo.py")
 
     @property
@@ -48,7 +48,7 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
         additions: int = 0
         deletions: int = 0
         is_binary: bool = False
-        children: dict[str, "_MutableNode"] = field(default_factory=dict)
+        children: dict[str, _MutableNode] = field(default_factory=dict)
         path: str = ""
 
     # Build mutable tree

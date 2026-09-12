@@ -72,7 +72,7 @@ class HookOutput(CamelModel):
     hook_specific_output: AnyHookSpecificOutput | None = None
 
     @model_validator(mode="after")
-    def _validate_stop_reason(self) -> "HookOutput":
+    def _validate_stop_reason(self) -> HookOutput:
         if self.stop_reason is not None and self.continue_:
             raise ValueError("stop_reason requires continue=false")
         return self

@@ -63,7 +63,7 @@ class Settings(BaseModel):
     tokens: dict[str, TokenConfig]
 
     @classmethod
-    def from_file(cls, path: Path) -> "Settings":
+    def from_file(cls, path: Path) -> Settings:
         logger.info(f"Loading settings from {path.absolute()}")
         with path.open() as f:
             data = yaml.safe_load(f)
@@ -82,6 +82,6 @@ class Settings(BaseModel):
         return cls.model_validate(data)
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         path = Path(os.getenv("HOMEASSISTANT_PROXY_CONFIG", "homeassistant_proxy.yaml"))
         return cls.from_file(path)

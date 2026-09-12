@@ -62,7 +62,7 @@ class FetchError(BaseModel):
     error: str
 
     @classmethod
-    def from_exception(cls, e: BaseException, context: str | None = None) -> "FetchError":
+    def from_exception(cls, e: BaseException, context: str | None = None) -> FetchError:
         message = str(e).strip() or type(e).__name__
         if context:
             message = f"{context}: {message}"

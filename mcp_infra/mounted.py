@@ -39,7 +39,7 @@ class Mounted[T: FastMCP]:
     prefix: MCPMountPrefix
     server: T
 
-    def tool_name(self, tool: "Tool") -> str:
+    def tool_name(self, tool: Tool) -> str:
         """Get fully-qualified MCP tool name.
 
         Args:

@@ -62,7 +62,7 @@ class CompoundCondition(BaseModel):
 
     any: str | list[str] | None = None
     all: str | list[str] | None = None
-    not_: "str | CompoundCondition | None" = Field(default=None, alias="not")
+    not_: str | CompoundCondition | None = Field(default=None, alias="not")
 
 
 class FilterRule(BaseModel):
@@ -111,7 +111,7 @@ class FilterRule(BaseModel):
     forward: str | None = None
 
     # Special keys (self-referential)
-    more: "FilterRule | builtins.list[FilterRule] | None" = None
+    more: FilterRule | builtins.list[FilterRule] | None = None
     ignore: bool | None = None
 
 
@@ -126,7 +126,7 @@ class FilterRuleSet(BaseModel):
     rules: list[FilterRule | ForEachRule]
 
     @classmethod
-    def from_yaml_list(cls, yaml_list: list[dict[str, Any]]) -> "FilterRuleSet":
+    def from_yaml_list(cls, yaml_list: list[dict[str, Any]]) -> FilterRuleSet:
         rules: list[FilterRule | ForEachRule] = []
         for rule_dict in yaml_list:
             if "for_each" in rule_dict:

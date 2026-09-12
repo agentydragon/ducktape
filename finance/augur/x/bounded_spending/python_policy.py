@@ -56,7 +56,7 @@ class Observations:
     cpi: NDArray[np.object_]
 
     @classmethod
-    def from_decisions(cls, batch: list[Decision]) -> "Observations":
+    def from_decisions(cls, batch: list[Decision]) -> Observations:
         cpi = []
         for row in batch:
             level = row.observation.cpi

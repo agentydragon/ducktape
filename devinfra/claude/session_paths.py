@@ -34,7 +34,7 @@ class SessionPaths:
     xdg_cache_home: Path
 
     @classmethod
-    def from_env(cls, session_id: str, env: dict[str, str]) -> "SessionPaths":
+    def from_env(cls, session_id: str, env: dict[str, str]) -> SessionPaths:
         """Construct from an environment dict, resolving home/cache eagerly."""
         home = Path(env["HOME"]) if "HOME" in env else Path.home()
         xdg_cache_home = Path(

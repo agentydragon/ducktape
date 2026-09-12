@@ -98,7 +98,7 @@ class _FakeService:
         if name.startswith("__") and name.endswith("__"):
             raise AttributeError(name)
 
-        def call(**kwargs: Any) -> "_FakeService":
+        def call(**kwargs: Any) -> _FakeService:
             self.calls.append((name, kwargs))
             return self
 

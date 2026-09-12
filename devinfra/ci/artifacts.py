@@ -76,7 +76,7 @@ class Artifact(BaseModel, frozen=True):
         return self.tag_pkg or self.pkg
 
 
-def _skill_artifacts() -> list["Artifact"]:
+def _skill_artifacts() -> list[Artifact]:
     """One Artifact per deployable skill, from skills/skills_registry.json.
 
     Each skill releases independently as `skill-<name>-<hash>` carrying a single
@@ -87,7 +87,7 @@ def _skill_artifacts() -> list["Artifact"]:
     return [Artifact(pkg=s["pkg"], filename=s["filename"]) for s in registry["skills"]]
 
 
-def _release_artifacts() -> list["Artifact"]:
+def _release_artifacts() -> list[Artifact]:
     targets = ArtifactTargets.model_validate_json(artifact_targets_path().read_text())
     return [
         Artifact(pkg=pkg, filename=Path(target.output).name, tag_pkg=target.release if target.release != pkg else None)
