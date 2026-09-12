@@ -1,0 +1,194 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "argument_schema",
+    srcs = ["argument_schema.py"],
+    deps = [
+        ":kind",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//jsonschema",
+        "@pypi//pydantic",
+        "@pypi//referencing",
+    ],
+)
+
+py_library(
+    name = "exact_actions",
+    srcs = ["exact_actions.py"],
+    deps = [
+        ":kind",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+    ],
+)
+
+py_library(
+    name = "kind",
+    srcs = ["kind.py"],
+    deps = [
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    deps = [
+        ":argument_schema",
+        ":exact_actions",
+        ":github_public_repository",
+        ":github_repository",
+        ":kind",
+        "//github_policy:visibility",
+        "//x/agentplane/action_service:catalog",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "resources",
+    srcs = ["resources.py"],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
+    deps = [
+        ":kind",
+        ":registry",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_argument_schema",
+    srcs = ["test_argument_schema.py"],
+    deps = [
+        ":argument_schema",
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//github_policy:visibility",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_exact_actions",
+    srcs = ["test_exact_actions.py"],
+    deps = [
+        ":exact_actions",
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//github_policy:visibility",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_registry",
+    srcs = ["test_registry.py"],
+    deps = [
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//github_policy:visibility",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_resources",
+    srcs = ["test_resources.py"],
+    deps = [
+        ":argument_schema",
+        ":exact_actions",
+        ":github_public_repository",
+        ":github_repository",
+        ":resources",
+        "//:conftest",
+        "//x/agentplane/action_service:conftest",
+        "//x/agentplane/action_service:models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "github_public_repository",
+    srcs = ["github_public_repository.py"],
+    deps = [
+        ":github_repository",
+        ":kind",
+        "//github_policy:repository",
+        "//github_policy:visibility",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "github_repository",
+    srcs = ["github_repository.py"],
+    deps = [
+        ":kind",
+        "//github_policy:repository",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_github_public_repository",
+    srcs = ["test_github_public_repository.py"],
+    deps = [
+        ":github_public_repository",
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//github_policy:visibility",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_github_repository",
+    srcs = ["test_github_repository.py"],
+    deps = [
+        ":github_repository",
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//github_policy:visibility",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

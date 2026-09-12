@@ -304,7 +304,7 @@ transactionally if unexpected preexisting rows exist.
 
 ## Action policy sets and bindings
 
-`policy_resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
+`policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
 `cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
 a subject that is not exactly one of `serviceAccount`/`sandbox` makes the object an
 `InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
@@ -314,14 +314,22 @@ shows a refused edit and a writer can wait for the service to have seen a spec c
 status subresource is the informer's only write, and the Role in each environment's `actions/`
 manifests grants exactly that.
 
-`policy_evaluation` holds the kinds' evaluators (`exact_actions`, `argument_schema` over the
-`jsonschema` package), `resolve_bindings` (the caller's unexpired valid bindings and the valid sets
-they name, nothing before sync), and `PolicySetDecisionProvider`, the one production
-`DecisionProvider`. `ActionService` builds the `DecisionContext` at admission with the typed
-caller (`SandboxCaller` from the workload principal, `ServiceAccountCaller` from the grant) and
-those bindings; the provider's allow carries `PolicyEvidence`, persisted on the Decision
-(migration `0014_action_policies`) and projected as `DecisionView.policy_evidence`. Deny
-lists are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
+Each policy kind is one module under `policies/` holding its wire model and its evaluator
+(`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
+`github_public_repository` over the `github_policy` package the Haku console's GitHub policies
+also use, so the search-qualifier boundaries and the unauthenticated visibility lookup exist once);
+`policies/registry` assembles the `type`-discriminated union and dispatches evaluation after the
+shared "is the Action listed" gate. `policy_evaluation` holds `resolve_bindings` (the caller's
+unexpired valid bindings and the valid sets they name, nothing before sync) and
+`PolicySetDecisionProvider`, the one production `DecisionProvider`, which `main` builds with the
+`RepositoryVisibilityService` the `github_visibility` settings describe (`api_base_url`,
+`cache_ttl_seconds`); staging's network policy admits `api.github.com:443` for that lookup.
+`ActionService` builds the `DecisionContext` at admission with the typed caller (`SandboxCaller`
+from the workload principal, `ServiceAccountCaller` from the grant) and those bindings; the
+provider's allow carries `PolicyEvidence`, persisted on the Decision (migration
+`0014_action_policies`) and projected as `DecisionView.policy_evidence`, whose `matched.repository`
+names the repository a GitHub kind resolved and whether the public lookup confirmed it. Deny lists
+are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
 authority, never policy.
 
 The deployed proof is `//x/agentplane/acceptance:test_mcp`, which creates the set and binding

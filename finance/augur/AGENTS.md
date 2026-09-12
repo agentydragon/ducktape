@@ -4,14 +4,12 @@ Augur is pre-production. Do not add compatibility shims for older URL state
 versions, request schemas, or serialized payloads unless the user explicitly
 asks for backward compatibility.
 
-Python owns financial execution through `augur/sim/session.py` and
-`augur/sim/world.py`. The retained `augur/rust` implementation is pending removal
-and must not be used as a runtime fallback. TLH portfolio state and its transitions belong to the Python
-component, not a second native holding book. Do not revive deleted `augur/core`
-execution or market-bundle adapters. When
-extending API responses, project the prepared input and the canonical frames
-directly, as `augur/product/projection.py` does, instead of adding parallel
-read-model tables over `SimulationRun`'s long-form polars frames.
+Python owns financial execution through <sim/session.py> and <sim/world.py>; there is
+no native evaluator or runtime fallback. TLH portfolio state and its transitions belong
+to the Python component, not a second holding book. Do not revive deleted `augur/core`
+execution or market-bundle adapters. When extending API responses, project the prepared
+input and the canonical frames directly, as <product/projection.py> does, instead of
+adding parallel read-model tables over the captured long-form polars frames.
 
 ## numpy vs jnp
 

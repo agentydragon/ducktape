@@ -16,7 +16,7 @@ from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
-from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
+from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
@@ -103,9 +103,6 @@ def client(
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[("sandboxes", "fresh")] = sandbox("fresh")
-    custom_objects.objects[("sandboxes", "shelved")] = sandbox(
-        "shelved", labels={ARCHIVED_LABEL: "true"}, operating_mode="Suspended"
-    )
     custom_objects.objects[("egresspolicies", "github")] = egress_policy(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
@@ -123,16 +120,11 @@ def client(
         yield test_client
 
 
-def test_list_reports_state_and_hides_archived_by_default(client: TestClient) -> None:
+def test_list_reports_state(client: TestClient) -> None:
     response = client.get("/sandboxes")
 
     assert response.status_code == 200
     assert {row["name"]: row["state"] for row in response.json()} == {"live": "running", "fresh": "waiting_for_pod"}
-    assert {row["name"] for row in client.get("/sandboxes", params={"include_archived": "true"}).json()} == {
-        "live",
-        "fresh",
-        "shelved",
-    }
 
 
 def test_get_returns_the_row_or_404(client: TestClient) -> None:
@@ -245,21 +237,15 @@ def test_create_rejects_invalid_requests(client: TestClient, custom_objects: Fak
     response = client.post("/sandboxes", json=body)
 
     assert response.status_code == 422
-    assert all(kind != "sandboxes" or name in {"live", "fresh", "shelved"} for kind, name in custom_objects.objects)
+    assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
 
 
-def test_suspend_resume_archive_unarchive_apply_in_order(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
-) -> None:
+def test_suspend_resume_apply_in_order(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
     assert client.post("/sandboxes/live/suspend").status_code == 204
     assert client.get("/sandboxes/live").json()["state"] == "suspended"
     assert client.post("/sandboxes/live/resume").status_code == 204
     assert client.get("/sandboxes/live").json()["state"] == "running"
-    assert client.post("/sandboxes/live/archive").status_code == 204
-    assert client.get("/sandboxes/live").json()["state"] == "archived"
-    assert client.post("/sandboxes/live/unarchive").status_code == 204
-    assert client.get("/sandboxes/live").json()["state"] == "suspended"
-    assert custom_objects.objects[("sandboxes", "live")]["spec"]["operatingMode"] == "Suspended"
+    assert custom_objects.objects[("sandboxes", "live")]["spec"]["operatingMode"] == "Running"
     assert client.post("/sandboxes/nope/suspend").status_code == 404
 
 
@@ -431,7 +417,7 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     assert client.post("/sandboxes/live/egress", json={"policies": []}).status_code == 422
     # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
     assert client.post("/sandboxes", json={"slug": "demo", "policies": ["vanished"]}).status_code == 422
-    assert all(kind != "sandboxes" or name in {"live", "fresh", "shelved"} for kind, name in custom_objects.objects)
+    assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
 
 
 def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
@@ -550,6 +536,36 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert missing.status_code == 404
 
 
+async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    reviewer: TokenReviewer,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+) -> None:
+    """The cross-sandbox listing: a Thread survives its Sandbox's deletion, and a Sandbox with
+    several Threads is not duplicated once per Thread."""
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    live_thread = await store.thread("live", "s-1", spec)
+    other_live_thread = await store.thread("live", "s-2", spec)
+    gone_thread = await store.thread("gone", "s-3", spec)
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        body = (await http.get("/threads/with-sandboxes")).json()
+        thread_ids = {row["id"] for row in body["threads"]}
+        assert thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
+        assert set(body["sandboxes"]) == {"live"}
+        assert (body["sandboxes"]["live"]["name"], body["sandboxes"]["live"]["state"]) == ("live", "running")
+
+
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
     assert client.get("/healthz").status_code == 204
     assert "/healthz" not in client.get("/openapi.json").json()["paths"]
@@ -579,8 +595,6 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
         "/sandboxes/{name}",
         "/sandboxes/{name}/suspend",
         "/sandboxes/{name}/resume",
-        "/sandboxes/{name}/archive",
-        "/sandboxes/{name}/unarchive",
         "/sandboxes/{name}/egress",
         "/sandboxes/{name}/egress/decisions",
         "/egress/policies",
@@ -592,6 +606,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
         "/sandboxes/{name}/sessions/{session_id}/model",
         "/sandboxes/{name}/sessions/{session_id}/shutdown",
         "/threads",
+        "/threads/with-sandboxes",
         "/threads/{thread_id}",
         "/threads/{thread_id}/events",
         "/live/sandboxes",
@@ -614,6 +629,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
     assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}
+    assert set(paths["/threads/with-sandboxes"]) == {"get"}
     assert set(paths["/threads/{thread_id}"]) == {"get", "patch"}
     assert set(paths["/egress/bindings/{name}"]) == {"delete"}
 

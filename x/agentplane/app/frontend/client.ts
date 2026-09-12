@@ -18,10 +18,12 @@ export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({
 
 // A 401 means the session expired or never existed; the app owns its login, so the browser goes
 // there rather than the page rendering an error it cannot act on. Inert where something in front
-// of the app does the authenticating, since then no request of ours is ever answered 401.
+// of the app does the authenticating, since then no request of ours is ever answered 401. While
+// the login navigation is in flight the document is being replaced, so the request never settles:
+// the page keeps its loading state instead of flashing the 401 it cannot act on.
 api.use({
   onResponse({ response }) {
-    if (response.status === 401) redirectToLogin();
+    if (response.status === 401 && redirectToLogin()) return new Promise<never>(() => {});
     return response;
   },
 });

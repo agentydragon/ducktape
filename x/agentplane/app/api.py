@@ -156,10 +156,8 @@ Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
 
 @router.get("")
-async def list_sandboxes(
-    inventory: Inventory, include_archived: Annotated[bool, Query(description="Also list archived sandboxes.")] = False
-) -> list[SandboxView]:
-    return await inventory.list_sandboxes(include_archived=include_archived)
+async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
+    return await inventory.list_sandboxes()
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -204,18 +202,6 @@ async def suspend_sandbox(inventory: Inventory, name: str) -> Response:
 @router.post("/{name}/resume", status_code=status.HTTP_204_NO_CONTENT)
 async def resume_sandbox(inventory: Inventory, name: str) -> Response:
     await inventory.resume(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/{name}/archive", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.archive(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/{name}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
-async def unarchive_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.unarchive(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -498,6 +484,30 @@ async def list_threads(
     """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
     name at most one thread: a session's."""
     return await store.list_threads(sandbox=sandbox, session_id=session_id)
+
+
+class ThreadsWithSandboxes(BaseModel):
+    """Every Thread across every Sandbox the operator can see, plus each Thread's own still-existing
+    Sandbox, keyed by name. Normalized rather than one Sandbox view per Thread that shares it: a
+    Sandbox with many Threads would otherwise have its view duplicated once per Thread. A Thread's
+    own `sandbox` name absent from `sandboxes` means that Sandbox row is gone."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    threads: list[ThreadView]
+    sandboxes: dict[str, SandboxView]
+
+
+@threads.get("/with-sandboxes")
+async def list_threads_with_sandboxes(store: Store, inventory: Inventory) -> ThreadsWithSandboxes:
+    """Every Thread across every Sandbox the operator can see, newest first, with each Thread's own
+    still-existing Sandbox included once regardless of how many Threads it hosts. A Thread survives
+    its Sandbox's deletion here rather than disappearing with it; look it up by `thread.sandbox` in
+    `sandboxes` and treat a miss as deleted."""
+    thread_views = await store.list_threads()
+    referenced = {thread.sandbox for thread in thread_views}
+    sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
+    return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
 @threads.get("/{thread_id}")

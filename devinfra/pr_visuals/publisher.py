@@ -23,13 +23,14 @@ import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from more_itertools import one
 from pydantic import BaseModel, TypeAdapter
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from devinfra.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.check_run import upsert_check_run
 from util.visual_diff import compare_pngs
-from util.visual_review import MANIFEST_NAME, VisualReviewManifest
+from util.visual_review import MANIFEST_NAME, VisualReviewAsset, VisualReviewManifest
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -244,7 +245,7 @@ def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api
     because it names the run that triggered this publish, which is frequently not the
     run that ran the tests.
 
-    The two are not combined: `download_visual_tests` rejects a target whose manifests
+    The two are not combined: `download_visual_tests` rejects a target whose rosters
     disagree across invocations, and mixing a sweep with an affected-set run invites
     exactly that.
     """
@@ -345,6 +346,51 @@ def _download_all(downloads: list[_Download], *, api_key: str, fetch: Fetcher) -
         download.result()
 
 
+def _merge_manifests(
+    target_label: str, downloads: list[_Download], parsed: list[VisualReviewManifest]
+) -> tuple[VisualReviewManifest, dict[str, str]]:
+    """One review per target, from however many results published a manifest.
+
+    Two different things produce several manifests for one label, and they reconcile differently.
+    WITHIN an invocation, a sharded test publishes one manifest per shard, each naming only the
+    scenes that shard rendered: those union into that invocation's roster.  ACROSS invocations --
+    a retry, or a child invocation discovered after the primary one -- each publishes a whole
+    roster, so they must agree.  Unioning there would paper over the case find_test_invocations
+    exists to avoid: a full sweep and an affected-set run at one commit publish different rosters
+    for the same target, and their union is a review that looks complete while taking each shot
+    from whichever run happened to be listed first.
+
+    Returns the merged manifest and, per asset path, the invocation whose result declared it.
+    """
+    titles = {manifest.title for manifest in parsed}
+    if len(titles) != 1:
+        raise ValueError(f"{target_label} exposed conflicting visual-review titles: {sorted(titles)}")
+
+    rosters: dict[str, dict[str, VisualReviewAsset]] = {}
+    for download, manifest in zip(downloads, parsed, strict=True):
+        roster = rosters.setdefault(download.listed.invocation_id, {})
+        for asset in manifest.assets:
+            if (previous := roster.get(asset.path)) is not None and previous != asset:
+                raise ValueError(f"{target_label} exposed conflicting visual-review entries for {asset.path}")
+            roster.setdefault(asset.path, asset)
+
+    canonical_id = min(rosters)
+    canonical = rosters[canonical_id]
+    for other_id, roster in sorted(rosters.items()):
+        if roster != canonical:
+            differing = sorted(set(canonical) ^ set(roster))
+            detail = f"paths {differing}" if differing else "the same paths labelled differently"
+            raise ValueError(
+                f"{target_label} published different visual-review rosters in invocations "
+                f"{canonical_id} and {other_id} ({detail}); a full sweep and an affected-set "
+                f"run at one commit do this, and there is no honest way to combine them"
+            )
+    return (
+        VisualReviewManifest(title=one(titles), assets=list(canonical.values())),
+        dict.fromkeys(canonical, canonical_id),
+    )
+
+
 def download_visual_tests(
     invocations: list[str],
     destination: Path,
@@ -359,17 +405,17 @@ def download_visual_tests(
     for listed in artifacts:
         by_target.setdefault(listed.artifact.label, []).append(listed)
 
-    # A bb remote script can expose the same test result through more than one linked
-    # invocation (for example, a retry or a child invocation that was discovered after
-    # the primary one).  Compare the manifests rather than rejecting the target merely
-    # because it has duplicate listings.  Conflicting manifests remain an error: there
-    # is no honest way to pick one candidate without a result-attempt identity.
+    # One target can publish several manifests: a sharded test publishes one per shard, and a bb
+    # remote script can expose one result through more than one linked invocation (a retry, or a
+    # child invocation discovered after the primary one).  _merge_manifests reconciles them; the
+    # sort keeps the merge order stable across runs of the same artifact set.
     planned: list[_PlannedTest] = []
     used_slugs: dict[str, str] = {}
     for target_label, target_artifacts in sorted(by_target.items()):
-        manifests = [
-            artifact for artifact in target_artifacts if artifact.artifact.name == f"test.outputs/{MANIFEST_NAME}"
-        ]
+        manifests = sorted(
+            (artifact for artifact in target_artifacts if artifact.artifact.name == f"test.outputs/{MANIFEST_NAME}"),
+            key=lambda listed: (listed.invocation_id, listed.artifact.uri),
+        )
         if not manifests:
             continue
         slug = target_slug(target_label)
@@ -395,27 +441,23 @@ def download_visual_tests(
         parsed = [
             VisualReviewManifest.model_validate_json(download.destination.read_text()) for download in plan.manifests
         ]
-        signatures = {json.dumps(manifest.model_dump(mode="json"), sort_keys=True) for manifest in parsed}
-        if len(signatures) != 1:
-            raise ValueError(
-                f"{plan.target_label} exposed conflicting visual manifests from {len(plan.manifests)} results"
-            )
-        selected, manifest = plan.manifests[0], parsed[0]
+        manifest, declared_by = _merge_manifests(plan.target_label, plan.manifests, parsed)
         test_dir = destination / plan.slug
         test_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(selected.destination, test_dir / MANIFEST_NAME)
 
-        available: dict[str, ListedArtifact] = {}
-        for artifact in sorted(
-            by_target[plan.target_label], key=lambda item: item.invocation_id != selected.listed.invocation_id
-        ):
-            available.setdefault(artifact.artifact.name, artifact)
+        listings: dict[str, list[ListedArtifact]] = {}
+        for artifact in by_target[plan.target_label]:
+            listings.setdefault(artifact.artifact.name, []).append(artifact)
         for asset in manifest.assets:
-            artifact_name = f"test.outputs/{asset.path}"
-            asset_artifact = available.get(artifact_name)
-            if asset_artifact is None:
+            candidates = listings.get(f"test.outputs/{asset.path}")
+            if candidates is None:
                 raise ValueError(f"{plan.target_label} visual manifest references missing artifact {asset.path}")
-            asset_downloads.append(_Download(asset_artifact, test_dir / asset.path))
+            # A retried target lists one asset name from several invocations: take the shot from
+            # the result whose manifest named it, so image and manifest come from the same run.
+            declaring = declared_by[asset.path]
+            asset_downloads.append(
+                _Download(min(candidates, key=lambda item: item.invocation_id != declaring), test_dir / asset.path)
+            )
         tests.append(DownloadedVisualTest(plan.target_label, plan.slug, manifest, test_dir))
     _download_all(asset_downloads, api_key=api_key, fetch=fetch)
     return tests

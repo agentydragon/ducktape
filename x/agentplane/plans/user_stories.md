@@ -102,7 +102,7 @@ Missing:
   to the sender as an input; a classifier only if the agent proves too slow or costly. The inbound direction (fleet to Haku) is the prompt-injection
   direction and gets its own, different check. The judge's decisions are trajectory events, so a
   leak that got through is findable.
-- **The orchestrator's identity on the API.** Haku creates, suspends, and archives sandboxes under
+- **The orchestrator's identity on the API.** Haku creates and suspends sandboxes under
   its own Kubernetes identity, presenting an audience-scoped token the way the Ducktape agent does
   on staging today. What it may create is a permission on that identity, held wherever the app
   keeps policy; a SandboxTemplate is a Pod shape and carries no permission, because a template

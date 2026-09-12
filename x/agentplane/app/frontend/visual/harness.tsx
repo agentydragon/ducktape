@@ -32,6 +32,17 @@ import {
   type SessionSummary,
 } from "../protocol_pb";
 import { routes } from "./network";
+import { SCENARIOS, type Scenario } from "./scenarios";
+
+/** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
+function resolveScenario(): Scenario {
+  const name = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
+  const found: Scenario | undefined = SCENARIOS[name];
+  if (found === undefined) throw new Error(`unknown harness scenario ${name}`);
+  return found;
+}
+
+const scenario = resolveScenario();
 
 // visual-test-lib freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
@@ -45,7 +56,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-    archived: false,
     state: "running",
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
@@ -67,7 +77,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "codex-c3d4",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-    archived: false,
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
@@ -95,7 +104,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "old-e5f6",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",
@@ -333,6 +341,80 @@ const ACTIONS: ActionRequestView[] = [
       reconciled_at: null,
     },
   },
+  {
+    id: "70000000-0000-4000-8000-000000000003",
+    action: { group: "everything", name: "echo" },
+    arguments: { repository: "test-owner/other-repository" },
+    origin: { thread_id: THREADS[1].id },
+    correlation: {},
+    idempotency_key: "visual-denied",
+    caller_principal: "service-account:agentplane-visual:test-public-coder",
+    external_grant: {
+      caller: { namespace: "agentplane-visual", name: "test-public-coder" },
+      issuer: "https://test-actions.example/oauth",
+      client_id: "test-external-client",
+      connection_id: "73000000-0000-4000-8000-000000000003",
+      grant_id: "74000000-0000-4000-8000-000000000003",
+      revision: 1,
+    },
+    state: "denied",
+    version: 2,
+    created_at: ago(80 * 60_000),
+    updated_at: ago(79 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000003",
+      verdict: "deny",
+      provider: "human_operator",
+      issuer: "test-operator",
+      decision_note: "Out of scope for this workload's binding.",
+      idempotency_key: "visual-deny",
+      decided_at: ago(79 * 60_000),
+    },
+    execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000004",
+    action: { group: "github", name: "search_code" },
+    arguments: { repository: "agentydragon/ducktape", query: "auto_allow" },
+    origin: { thread_id: THREADS[2].id },
+    correlation: {},
+    idempotency_key: "visual-auto-approved",
+    caller_principal: "kubernetes-sandbox:demo-a1b2",
+    state: "succeeded",
+    version: 3,
+    created_at: ago(15 * 60_000),
+    updated_at: ago(14 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000004",
+      verdict: "allow",
+      provider: "policy_engine",
+      issuer: "policy_engine",
+      decision_note: null,
+      idempotency_key: "visual-policy-allow",
+      decided_at: ago(14 * 60_000),
+      policy_evidence: {
+        bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resource_version: "12345" }],
+        policy_sets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
+        matched: {
+          namespace: "agentplane-visual",
+          policy_set: "fixture_auto_allow",
+          source: "autoApproveIf",
+          index: 0,
+          type: "exact_actions",
+        },
+      },
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000004",
+      state: "succeeded",
+      result: { matches: 3 },
+      error: null,
+      created_at: ago(14 * 60_000),
+      started_at: ago(14 * 60_000 - 500),
+      completed_at: ago(14 * 60_000 - 900),
+      reconciled_at: null,
+    },
+  },
 ];
 
 const ATTACHED: Attached = create(AttachedSchema, {
@@ -553,6 +635,11 @@ routes.push(
     ],
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
+  // The Settings modal mounts all three tabs at once (Mantine keepMounted); MCP servers and
+  // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
+  ["GET", /^\/mcp-servers$/, () => []],
+  ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
+  ["GET", /^\/push\/subscriptions$/, () => []],
   [
     "POST",
     /^\/connection-enrollments\/[^/]+\/preview$/,
@@ -606,7 +693,7 @@ const WEDGED: WatchHealth = {
 };
 
 function watch(): WatchHealth {
-  return new URLSearchParams(window.location.search).get("page")?.endsWith("_stale") ? WEDGED : FRESH;
+  return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
 /**
@@ -666,41 +753,7 @@ class HarnessEventSource extends EventTarget {
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
-const PAGES: Record<string, string> = {
-  sandboxes: "/",
-  // The same list under a watch that has stopped: the banner is the page saying so.
-  sandboxes_stale: "/",
-  actions: "/actions",
-  actions_phone: "/actions",
-  consent: "/connection-enrollments/test-only-opaque-handle",
-  consent_phone: "/connection-enrollments/test-only-opaque-handle",
-  consent_reconnect: "/connection-enrollments/test-only-opaque-handle",
-  consent_reconnect_phone: "/connection-enrollments/test-only-opaque-handle",
-  connections: "/connections",
-  connections_phone: "/connections",
-  sandbox: "/sandboxes/demo-a1b2",
-  // With the github-public binding's rules open, so the shot carries the credential detail — its
-  // description, where the proxy puts it, and which secret it comes from — and the other
-  // binding, still folded, shows the row the button starts as.
-  sandbox_egress: "/sandboxes/demo-a1b2?tab=egress&rules=demo-a1b2-github-public",
-  session: "/sandboxes/demo-a1b2/sessions/s-1",
-  // `%23` is the `#` of the item id: the view scrolls to the newest event, so the block this
-  // scenario has to show open is the second turn's, and the first stays folded beside it.
-  session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=r%231",
-  // The raw scenario opens it too: a reader following the frames wants the thinking they produced.
-  session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1&reasoning=r%231",
-  // A standalone failed tool call, a run whose reasoning is still streaming beside a tool call that
-  // already failed, and a message queued mid-turn -- every status this session's badge-to-dot
-  // restyle touches that the main `session` fixture doesn't produce on its own. The run's own
-  // open/closed state isn't URL-synced (unlike a reasoning block's), so it renders folded, which is
-  // fine here: its summary is exactly where the streaming/failed dots this scenario exists for show.
-  session_states: "/sandboxes/demo-a1b2/sessions/s-2",
-};
-
-const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
-const path = PAGES[page];
-if (path === undefined) throw new Error(`unknown harness page ${page}`);
-if (page.startsWith("consent_reconnect")) {
+if (scenario.preselectReconnect) {
   const selectExisting = new MutationObserver(() => {
     const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');
     const account = document.querySelector<HTMLSelectElement>('select[name="service_account"]');
@@ -713,7 +766,18 @@ if (page.startsWith("consent_reconnect")) {
   });
   selectExisting.observe(document, { childList: true, subtree: true });
 }
-window.location.hash = path;
+if (scenario.openSettings) {
+  // There's no dedicated route for the Settings modal; open it the way an operator would, by
+  // clicking the nav button, rather than a URL that only exists for this test.
+  const openSettings = new MutationObserver(() => {
+    const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent === "Settings");
+    if (!button) return;
+    openSettings.disconnect();
+    button.click();
+  });
+  openSettings.observe(document, { childList: true, subtree: true });
+}
+window.location.hash = scenario.route;
 
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");

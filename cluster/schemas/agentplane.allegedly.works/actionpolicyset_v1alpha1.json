@@ -9,13 +9,14 @@
           "description": "A request matching any policy here is auto-approved.",
           "type": "array",
           "items": {
+            "description": "One typed evaluator: `type` selects the kind, and each kind admits exactly the fields its `oneOf` branch names.",
             "type": "object",
             "required": ["type", "actions"],
             "properties": {
               "type": {
-                "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`.",
+                "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`; `github_repository` requires a GitHub MCP call to target `owner`/`repository`; `github_public_repository` requires it to target a repository an unauthenticated GitHub lookup confirms public.",
                 "type": "string",
-                "enum": ["exact_actions", "argument_schema"]
+                "enum": ["exact_actions", "argument_schema", "github_repository", "github_public_repository"]
               },
               "actions": {
                 "description": "Action names by ActionGroup key; the policy matches only these.",
@@ -31,24 +32,106 @@
                 }
               },
               "schema": {
-                "description": "A JSON Schema the arguments must satisfy, with plain JSON Schema semantics: `properties` alone never implies presence; use `required`. Read only by `argument_schema` policies.",
+                "description": "A JSON Schema the arguments must satisfy, with plain JSON Schema semantics: `properties` alone never implies presence; use `required`.",
                 "type": "object",
                 "x-kubernetes-preserve-unknown-fields": true
+              },
+              "owner": {
+                "description": "The GitHub repository owner.",
+                "type": "string",
+                "minLength": 1
+              },
+              "repository": {
+                "description": "The GitHub repository name.",
+                "type": "string",
+                "minLength": 1
               }
-            }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["exact_actions"]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["schema"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["argument_schema"]
+                  }
+                },
+                "required": ["schema"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["github_repository"]
+                  }
+                },
+                "required": ["owner", "repository"],
+                "not": {
+                  "required": ["schema"]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["github_public_repository"]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["schema"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              }
+            ]
           }
         },
         "autoDenyIf": {
           "description": "A request matching any policy here is auto-denied.",
           "type": "array",
           "items": {
+            "description": "One typed evaluator: `type` selects the kind, and each kind admits exactly the fields its `oneOf` branch names.",
             "type": "object",
             "required": ["type", "actions"],
             "properties": {
               "type": {
-                "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`.",
+                "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`; `github_repository` requires a GitHub MCP call to target `owner`/`repository`; `github_public_repository` requires it to target a repository an unauthenticated GitHub lookup confirms public.",
                 "type": "string",
-                "enum": ["exact_actions", "argument_schema"]
+                "enum": ["exact_actions", "argument_schema", "github_repository", "github_public_repository"]
               },
               "actions": {
                 "description": "Action names by ActionGroup key; the policy matches only these.",
@@ -64,24 +147,106 @@
                 }
               },
               "schema": {
-                "description": "A JSON Schema the arguments must satisfy, with plain JSON Schema semantics: `properties` alone never implies presence; use `required`. Read only by `argument_schema` policies.",
+                "description": "A JSON Schema the arguments must satisfy, with plain JSON Schema semantics: `properties` alone never implies presence; use `required`.",
                 "type": "object",
                 "x-kubernetes-preserve-unknown-fields": true
+              },
+              "owner": {
+                "description": "The GitHub repository owner.",
+                "type": "string",
+                "minLength": 1
+              },
+              "repository": {
+                "description": "The GitHub repository name.",
+                "type": "string",
+                "minLength": 1
               }
-            }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["exact_actions"]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["schema"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["argument_schema"]
+                  }
+                },
+                "required": ["schema"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["github_repository"]
+                  }
+                },
+                "required": ["owner", "repository"],
+                "not": {
+                  "required": ["schema"]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["github_public_repository"]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["schema"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              }
+            ]
           }
         },
         "autoDenyUnless": {
           "description": "A request matching none of the policies here is auto-denied.",
           "type": "array",
           "items": {
+            "description": "One typed evaluator: `type` selects the kind, and each kind admits exactly the fields its `oneOf` branch names.",
             "type": "object",
             "required": ["type", "actions"],
             "properties": {
               "type": {
-                "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`.",
+                "description": "The evaluator. `exact_actions` matches by Action name alone; `argument_schema` also requires the arguments to satisfy `schema`; `github_repository` requires a GitHub MCP call to target `owner`/`repository`; `github_public_repository` requires it to target a repository an unauthenticated GitHub lookup confirms public.",
                 "type": "string",
-                "enum": ["exact_actions", "argument_schema"]
+                "enum": ["exact_actions", "argument_schema", "github_repository", "github_public_repository"]
               },
               "actions": {
                 "description": "Action names by ActionGroup key; the policy matches only these.",
@@ -97,11 +262,92 @@
                 }
               },
               "schema": {
-                "description": "A JSON Schema the arguments must satisfy, with plain JSON Schema semantics: `properties` alone never implies presence; use `required`. Read only by `argument_schema` policies.",
+                "description": "A JSON Schema the arguments must satisfy, with plain JSON Schema semantics: `properties` alone never implies presence; use `required`.",
                 "type": "object",
                 "x-kubernetes-preserve-unknown-fields": true
+              },
+              "owner": {
+                "description": "The GitHub repository owner.",
+                "type": "string",
+                "minLength": 1
+              },
+              "repository": {
+                "description": "The GitHub repository name.",
+                "type": "string",
+                "minLength": 1
               }
-            }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["exact_actions"]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["schema"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["argument_schema"]
+                  }
+                },
+                "required": ["schema"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["github_repository"]
+                  }
+                },
+                "required": ["owner", "repository"],
+                "not": {
+                  "required": ["schema"]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": ["github_public_repository"]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["schema"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["repository"]
+                    }
+                  ]
+                }
+              }
+            ]
           }
         }
       }
