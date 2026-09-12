@@ -13,6 +13,20 @@ from finance.augur.sim.money import checked_count, mul_div, mul_div_wide, positi
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.prepared import _TenderPolicy
 
+# The issuer protocol's per-issuer series on a path, `private_equity_<channel>:<issuer>`.
+CHANNELS = (
+    "mark",
+    "regime",
+    "event_kind",
+    "sale_opportunity",
+    "sale_capacity",
+    "eligible",
+    "forced_sale",
+    "liquidity_blocked",
+    "forced_recovery",
+    "company_valuation",
+)
+
 
 @dataclass(frozen=True)
 class ProtocolEvent:
@@ -96,7 +110,7 @@ def liquid_net_worth(
 
 
 class PrivateEquity:
-    def __init__(self, tender_policies: Sequence[_TenderPolicy]) -> None:
+    def __init__(self, tender_policies: list[_TenderPolicy]) -> None:
         self.tender_policies = tender_policies
         # This month's protocol outcomes, cleared by `begin_month`.
         self.events: list[ProtocolEvent] = []

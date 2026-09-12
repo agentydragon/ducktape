@@ -93,8 +93,11 @@ receipts and stop state, and opens, acts and closes its months; `sim/session.py`
 drives one world per selected path under the batch routing envelope. `actions.py` owns exact requests;
 `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
-Configured allocators, housing and PE behavior are not silently enabled through
-this API. A rejected action stops only its rollout with the successful prefix
+Configured allocators are not silently enabled through this API. The issuer
+protocol on a private holding (`sim/private_equity.py`) is a world phase: `close_month`
+runs it after the month's settlement on a path that has not stopped, whichever
+driver closes the month, and `declare_tender_policy` says how an owner answers a
+sale opportunity. A rejected action stops only its rollout with the successful prefix
 intact; an unpaid due claim is a different stop reason. There is no retry callback
 within the month.
 

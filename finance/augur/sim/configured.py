@@ -168,9 +168,6 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                 apply(path, buy_action)
                 if isinstance(buy_action, Buy):
                     lot_sequences[key] += 1
-        for path in paths.values():
-            if not path.failed and path.private_equity is not None:
-                path.private_equity.advance(path.accounting, path.holdings, path.market, path.marks(), month)
         for rollout_id, path in paths.items():
             path.close_month()
             captures[rollout_id].record()
