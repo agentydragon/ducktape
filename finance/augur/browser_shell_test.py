@@ -19,6 +19,7 @@ import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
+from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
@@ -56,12 +57,11 @@ _PROPERTY_LIFECYCLE_URL = "/product?" + urlencode(
 
 @pytest.fixture
 def browser(playwright_sync: Playwright) -> Iterator[Browser]:
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    executable = str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
+    # The container base only, not the deterministic set the visual tests add: this drives the
+    # shell and reads the DOM, and never captures a pixel, so pinning rasterization would buy
+    # nothing. Shared rather than restated so a change to the base reaches here too.
     browser = playwright_sync.chromium.launch(
-        headless=True,
-        executable_path=executable,
-        args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        headless=True, executable_path=chromium_executable(), args=CONTAINER_BASE_BROWSER_ARGS
     )
     try:
         yield browser
