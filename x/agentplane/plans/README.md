@@ -16,6 +16,10 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
+- [Session-first navigation](session_first_navigation.md) — bigger later redesign: a conversation-list
+  home view instead of Sandbox-first, now that the cross-sandbox listing it needs has landed
+- [Push mechanism](push_mechanism.md) — shared design for `UISHELL_DRAWER`'s badge and
+  `NO_MANUAL_REFRESH`'s Settings tabs, not yet confirmed
 
 ## Implemented contracts
 
